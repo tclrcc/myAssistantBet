@@ -20,6 +20,8 @@ ENV_VARS = (
     "SCAN_HOUR",
     "SCAN_MINUTE",
     "HTTP_BACKOFF_BASE",
+    "BACKUP_DIR",
+    "BACKUP_KEEP_DAYS",
 )
 
 

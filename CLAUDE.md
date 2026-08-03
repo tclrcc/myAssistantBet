@@ -149,6 +149,17 @@ devient une ligne explicite dans le bloc, ou une mention dans le rapport d'enric
   Le template par defaut n'est pas supprimable.
 - Bandes de cotes : bornes controlees avant ecriture (haute > basse, quota max >= min).
 
+## Deploiement et sauvegardes
+
+- Les fichiers de deploiement sont dans `deploy/` : unite systemd durcie, unite et minuteur
+  de sauvegarde, exemple nginx. Ils sont valides par `systemd-analyze verify` et `nginx -t`.
+- `backup.py` utilise **`VACUUM INTO`**, jamais une copie de fichier : en mode WAL, copier
+  le `.db` seul livrerait une base incomplete.
+- La rotation ne supprime **jamais la sauvegarde la plus recente**, meme expiree.
+- L'application ecoute uniquement sur `127.0.0.1`. Elle n'a aucune authentification par
+  choix : c'est nginx qui la protege. Toute modification du deploiement doit conserver ces
+  deux proprietes.
+
 ## Front
 
 HTMX est **vendorise** dans `static/htmx.min.js` — aucun CDN, aucun appel reseau depuis la

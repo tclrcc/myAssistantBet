@@ -34,3 +34,33 @@ jobs:
 
       - name: Tests
         run: uv run pytest -q
+
+  deploy-files:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verifier les unites systemd
+        run: |
+          # `systemd-analyze verify` signale les chemins absents sur le runner :
+          # on ne retient que les erreurs de syntaxe et de cles inconnues.
+          systemd-analyze verify deploy/myassistantbet.service \
+                                 deploy/myassistantbet-backup.service \
+                                 deploy/myassistantbet-backup.timer 2>&1 \
+            | tee /tmp/units.log || true
+          ! grep -Eq "Unknown key|Failed to parse|Invalid" /tmp/units.log
+
+      - name: Verifier la configuration nginx
+        run: |
+          sudo apt-get install -y nginx openssl
+          mkdir -p /tmp/ng && cd /tmp/ng
+          openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem \
+            -days 1 -nodes -subj "/CN=test" 2>/dev/null
+          printf 'test:x\n' > htpasswd
+          sed -e "s|/etc/letsencrypt/live/myassistantbet.exemple.fr/fullchain.pem|/tmp/ng/cert.pem|" \
+              -e "s|/etc/letsencrypt/live/myassistantbet.exemple.fr/privkey.pem|/tmp/ng/key.pem|" \
+              -e "s|/etc/nginx/.htpasswd-myassistantbet|/tmp/ng/htpasswd|" \
+              "$GITHUB_WORKSPACE/deploy/nginx.conf.example" > /tmp/ng/site.conf
+          printf 'events { worker_connections 64; }\nhttp { include /tmp/ng/site.conf; }\n' \
+            > /tmp/ng/full.conf
+          sudo nginx -t -c /tmp/ng/full.conf

@@ -1,0 +1,68 @@
+# Unite systemd de MyAssistantBet.
+#
+#   sudo cp deploy/myassistantbet.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now myassistantbet
+#
+# Adapter User, Group et WorkingDirectory si l'application n'est pas installee
+# dans /opt/myassistantbet sous l'utilisateur `myassistantbet`.
+#
+# ExecStart suppose `uv` installe a l'echelle du systeme :
+#   curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin sh
+# Verifier avec `command -v uv` et corriger le chemin si besoin.
+
+[Unit]
+Description=MyAssistantBet — collecte de cotes et generation de prompt
+Documentation=https://github.com/tclrcc/myAssistantBet
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=myassistantbet
+Group=myassistantbet
+WorkingDirectory=/opt/myassistantbet
+
+# Secrets et configuration. Ce fichier doit etre en 0600, propriete du service.
+EnvironmentFile=/opt/myassistantbet/.env
+
+# `uv run` resout l'environnement virtuel du projet sans l'activer a la main.
+# On n'ecoute que sur la boucle locale : l'exposition passe par nginx.
+ExecStart=/usr/local/bin/uv run --frozen uvicorn myassistantbet.main:app \
+    --host 127.0.0.1 --port 8000 --proxy-headers --forwarded-allow-ips 127.0.0.1
+
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=20s
+
+# --- Durcissement ---------------------------------------------------------
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Seuls ces chemins sont accessibles en ecriture : la base, les sauvegardes,
+# les templates de prompt (editables depuis l'UI) et le cache de uv.
+ReadWritePaths=/opt/myassistantbet/data
+ReadWritePaths=/opt/myassistantbet/src/myassistantbet/templates/prompts
+ReadWritePaths=/opt/myassistantbet/.venv
+Environment=UV_CACHE_DIR=/opt/myassistantbet/data/.uv-cache
+
+# --- Journalisation -------------------------------------------------------
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=myassistantbet
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,29 @@
+# Sauvegarde ponctuelle de la base. Declenchee par myassistantbet-backup.timer.
+#
+#   sudo cp deploy/myassistantbet-backup.* /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now myassistantbet-backup.timer
+#
+# Declenchement manuel :  sudo systemctl start myassistantbet-backup
+
+[Unit]
+Description=Sauvegarde de la base MyAssistantBet
+Documentation=https://github.com/tclrcc/myAssistantBet
+
+[Service]
+Type=oneshot
+User=myassistantbet
+Group=myassistantbet
+WorkingDirectory=/opt/myassistantbet
+EnvironmentFile=/opt/myassistantbet/.env
+
+ExecStart=/usr/local/bin/uv run --frozen myassistantbet-backup
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/myassistantbet/data
+Environment=UV_CACHE_DIR=/opt/myassistantbet/data/.uv-cache
+
+SyslogIdentifier=myassistantbet-backup

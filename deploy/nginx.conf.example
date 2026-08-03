@@ -1,0 +1,88 @@
+# Exemple de configuration nginx pour MyAssistantBet.
+#
+#   sudo cp deploy/nginx.conf.example /etc/nginx/sites-available/myassistantbet
+#   sudo ln -s /etc/nginx/sites-available/myassistantbet /etc/nginx/sites-enabled/
+#   sudo nginx -t && sudo systemctl reload nginx
+#
+# Remplacer `myassistantbet.exemple.fr` par le nom de domaine reel.
+#
+# IMPORTANT — l'application n'a **aucune authentification** : c'est un choix
+# assume (SPEC.md section 1), et c'est donc ce proxy qui la protege. Ne pas
+# deployer sans l'authentification basique ci-dessous, ou sans une restriction
+# equivalente (VPN, filtrage par IP).
+
+server {
+    listen 80;
+    listen [::]:80;
+    server_name myassistantbet.exemple.fr;
+
+    # Laisse passer le challenge ACME, redirige tout le reste vers HTTPS.
+    location /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name myassistantbet.exemple.fr;
+
+    # HTTP/2 : la directive a change de forme entre les versions de nginx.
+    #   nginx >= 1.25.1 (Ubuntu 24.10+)  : ajouter `http2 on;` ici
+    #   nginx <  1.25.1 (Debian 12, 1.22) : ecrire `listen 443 ssl http2;` ci-dessus
+    # Verifier avec `nginx -v`. HTTP/1.1 suffit largement pour un usage mono-utilisateur.
+
+    # Certificats produits par certbot :
+    #   sudo certbot --nginx -d myassistantbet.exemple.fr
+    ssl_certificate     /etc/letsencrypt/live/myassistantbet.exemple.fr/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/myassistantbet.exemple.fr/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "no-referrer" always;
+
+    # --- Authentification -------------------------------------------------
+    # Seule barriere devant l'application. Creer le fichier avec :
+    #   sudo apt install apache2-utils
+    #   sudo htpasswd -c /etc/nginx/.htpasswd-myassistantbet <utilisateur>
+    auth_basic "MyAssistantBet";
+    auth_basic_user_file /etc/nginx/.htpasswd-myassistantbet;
+
+    access_log /var/log/nginx/myassistantbet.access.log;
+    error_log  /var/log/nginx/myassistantbet.error.log;
+
+    # Le prompt genere peut peser quelques dizaines de kilo-octets.
+    client_max_body_size 2m;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # L'enrichissement peut durer une minute sur une grosse selection.
+        proxy_connect_timeout 10s;
+        proxy_read_timeout    120s;
+        proxy_send_timeout    120s;
+
+        # Le polling HTMX de la barre de progression doit arriver sans delai.
+        proxy_buffering off;
+    }
+
+    # Les fichiers statiques sont peu nombreux et changent a chaque deploiement.
+    location /static/ {
+        proxy_pass http://127.0.0.1:8000/static/;
+        proxy_set_header Host $host;
+        expires 1h;
+        add_header Cache-Control "public";
+    }
+}

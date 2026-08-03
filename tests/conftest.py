@@ -30,6 +30,8 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     monkeypatch.setenv("ODDS_API_CREDIT_FLOOR", "500")
     monkeypatch.setenv("DEV_CACHE", "0")
     monkeypatch.setenv("DEV_CACHE_DIR", str(tmp_path / "dev_cache"))
+    monkeypatch.setenv("BACKUP_DIR", str(tmp_path / "backups"))
+    monkeypatch.setenv("BACKUP_KEEP_DAYS", "7")
     monkeypatch.setenv("TZ", "Europe/Paris")
     monkeypatch.setenv("SCHEDULER_ENABLED", "0")
     monkeypatch.setenv("HTTP_BACKOFF_BASE", "0")

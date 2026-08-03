@@ -20,7 +20,7 @@ La specification complete et faisant autorite est dans [`SPEC.md`](./SPEC.md).
 | 3 | Contexte sportif via API-Football, mapping des equipes | fait |
 | 4 | Tennis, cyclisme, evenements manuels | fait |
 | 5 | Historique des picks, personnalisation des templates | fait |
-| 6 | Deploiement VPS (systemd, nginx, sauvegardes) | a venir |
+| 6 | Deploiement VPS (systemd, nginx, sauvegardes) | fait |
 
 ## Prerequis
 
@@ -255,6 +255,131 @@ pas reconnu est affiche brut plutot que mal interprete.
 | Football | The Odds API, 14 marches profonds | API-Football | 16 marches sur les ligues a props buteurs |
 | Tennis | The Odds API, 8 marches profonds | aucun | Grands Chelems et Masters seulement ; le reste en saisie manuelle |
 | Cyclisme | saisie manuelle | saisie manuelle | aucune API ne le couvre |
+
+## Sauvegardes
+
+```bash
+uv run myassistantbet-backup                 # sauvegarde + rotation
+uv run myassistantbet-backup --keep-days 30  # retention ponctuelle differente
+```
+
+La sauvegarde utilise `VACUUM INTO`, qui produit une copie **coherente et compactee meme
+pendant que l'application ecrit**. Une simple copie du fichier `.db` laisserait de cote le
+journal WAL et pourrait livrer une base inutilisable : ne jamais faire ca.
+
+Les fichiers sont ecrits dans `BACKUP_DIR` sous la forme
+`myassistantbet-AAAAMMJJ-HHMMSS.db`, et ceux de plus de `BACKUP_KEEP_DAYS` jours sont
+supprimes. **La sauvegarde la plus recente n'est jamais supprimee**, meme si elle a depasse
+le delai : sans cette garde, une interruption prolongee finirait par effacer la derniere
+copie existante.
+
+Restauration :
+
+```bash
+sudo systemctl stop myassistantbet
+cp data/backups/myassistantbet-20260804-063000.db data/myassistantbet.db
+rm -f data/myassistantbet.db-wal data/myassistantbet.db-shm
+sudo systemctl start myassistantbet
+```
+
+## Deploiement VPS
+
+Testé sur Debian 12 et Ubuntu 24.04. Les fichiers cites sont dans [`deploy/`](./deploy).
+
+### 1. Utilisateur et code
+
+```bash
+sudo adduser --system --group --home /opt/myassistantbet myassistantbet
+sudo -u myassistantbet git clone https://github.com/tclrcc/myAssistantBet.git /opt/myassistantbet
+```
+
+### 2. uv, a l'echelle du systeme
+
+L'unite systemd appelle `/usr/local/bin/uv`. Installer uv a cet emplacement :
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin sh
+command -v uv
+```
+
+### 3. Dependances et configuration
+
+```bash
+cd /opt/myassistantbet
+sudo -u myassistantbet uv sync --frozen
+sudo -u myassistantbet cp .env.example .env
+sudo -u myassistantbet nano .env          # renseigner ODDS_API_KEY et APIFOOTBALL_KEY
+sudo chmod 600 .env                       # le fichier contient des secrets
+```
+
+### 4. Service
+
+```bash
+sudo cp deploy/myassistantbet.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now myassistantbet
+sudo systemctl status myassistantbet
+curl -s localhost:8000/health | python3 -m json.tool
+```
+
+L'application n'ecoute que sur `127.0.0.1` : elle n'est joignable que par le proxy. L'unite
+est durcie (`ProtectSystem=strict`, `NoNewPrivileges`, filtrage d'appels systeme) et seuls
+la base, les sauvegardes, les templates de prompt et l'environnement virtuel sont accessibles
+en ecriture.
+
+### 5. nginx et TLS
+
+```bash
+sudo apt install nginx apache2-utils
+sudo cp deploy/nginx.conf.example /etc/nginx/sites-available/myassistantbet
+sudo nano /etc/nginx/sites-available/myassistantbet   # remplacer le nom de domaine
+sudo ln -s /etc/nginx/sites-available/myassistantbet /etc/nginx/sites-enabled/
+sudo htpasswd -c /etc/nginx/.htpasswd-myassistantbet <utilisateur>
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d myassistantbet.exemple.fr
+```
+
+> **L'application n'a aucune authentification** — c'est un choix assume (section 1 de
+> `SPEC.md`), et c'est ce proxy qui la protege. Ne pas la deployer sans l'authentification
+> basique, ou sans une restriction equivalente (VPN, filtrage par IP). Sans cela, n'importe
+> qui peut declencher des scans et bruler le quota d'API.
+
+Verifier la version de nginx (`nginx -v`) : la directive HTTP/2 change de forme avant et
+apres la 1.25.1, un commentaire dans le fichier explique les deux ecritures.
+
+### 6. Sauvegardes automatiques
+
+```bash
+sudo cp deploy/myassistantbet-backup.service deploy/myassistantbet-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now myassistantbet-backup.timer
+sudo systemctl list-timers myassistantbet-backup
+sudo systemctl start myassistantbet-backup   # declenchement immediat, pour verifier
+```
+
+Le minuteur tourne a 06:30, avant le scan de 07:00. `Persistent=true` rattrape la sauvegarde
+si le serveur etait eteint a l'heure prevue.
+
+### 7. Exploitation
+
+```bash
+sudo journalctl -u myassistantbet -f              # logs en direct
+sudo journalctl -u myassistantbet-backup --since today
+sudo systemctl restart myassistantbet             # apres un changement de .env
+```
+
+Mise a jour :
+
+```bash
+cd /opt/myassistantbet
+sudo -u myassistantbet git pull
+sudo -u myassistantbet uv sync --frozen
+sudo systemctl restart myassistantbet
+```
+
+Les migrations de base sont appliquees automatiquement au demarrage. Faire une sauvegarde
+avant une mise a jour qui en contient une nouvelle :
+`sudo systemctl start myassistantbet-backup`.
 
 ## Fuseau horaire
 

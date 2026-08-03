@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     #: Mise a 0 dans les tests pour ne jamais attendre.
     http_backoff_base: float = Field(default=1.0, ge=0)
 
+    # --- Sauvegardes -------------------------------------------------------
+    backup_dir: Path = Path("./data/backups")
+    backup_keep_days: int = Field(default=7, ge=1, le=365)
+
     # --- Developpement -----------------------------------------------------
     dev_cache: bool = False
     dev_cache_dir: Path = Path("./data/dev_cache")
@@ -77,6 +81,13 @@ class Settings(BaseSettings):
         return (PROJECT_ROOT / self.db_path).resolve()
 
     @property
+    def backup_dir_absolute(self) -> Path:
+        """Chemin absolu du dossier de sauvegardes, resolu depuis la racine."""
+        if self.backup_dir.is_absolute():
+            return self.backup_dir
+        return (PROJECT_ROOT / self.backup_dir).resolve()
+
+    @property
     def migrations_dir(self) -> Path:
         return PACKAGE_DIR / "migrations"
 
@@ -89,6 +100,8 @@ class Settings(BaseSettings):
             "scan_window_days": self.scan_window_days,
             "scheduler_enabled": self.scheduler_enabled,
             "scan_at": f"{self.scan_hour:02d}:{self.scan_minute:02d}",
+            "backup_dir": str(self.backup_dir_absolute),
+            "backup_keep_days": self.backup_keep_days,
             "dev_cache": self.dev_cache,
             "odds_api_key_present": bool(self.odds_api_key),
             "apifootball_key_present": bool(self.apifootball_key),

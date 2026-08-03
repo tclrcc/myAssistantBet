@@ -1,0 +1,14 @@
+# Sauvegarde quotidienne, avant le scan de 07:00.
+
+[Unit]
+Description=Sauvegarde quotidienne de MyAssistantBet
+
+[Timer]
+OnCalendar=*-*-* 06:30:00
+# Rattrape la sauvegarde si le serveur etait eteint a l'heure prevue.
+Persistent=true
+# Evite que toutes les taches du serveur partent a la meme seconde.
+RandomizedDelaySec=5m
+
+[Install]
+WantedBy=timers.target
