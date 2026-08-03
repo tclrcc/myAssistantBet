@@ -1,0 +1,37 @@
+<div id="templates">
+  {% if template_error %}<div class="report report-warn">{{ template_error }}</div>{% endif %}
+  {% if template_saved %}<div class="report">Template enregistré : {{ template_saved }}.</div>{% endif %}
+
+  <form class="filters" method="get" action="/settings">
+    <label>
+      Template
+      <select name="template" onchange="this.form.submit()">
+        {% for item in templates %}
+          <option value="{{ item }}" {% if item == template_name %}selected{% endif %}>{{ item }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+
+  <form class="template-editor"
+        hx-post="/settings/templates"
+        hx-target="#templates"
+        hx-swap="outerHTML">
+    <textarea name="body" spellcheck="false">{{ template_body }}</textarea>
+    <div class="filters">
+      <label class="grow">
+        Enregistrer sous <span class="hint">changer le nom crée une variante</span>
+        <input type="text" name="name" value="{{ template_name }}" required>
+      </label>
+      <button type="submit" class="primary">Enregistrer</button>
+      {% if template_name != default_template %}
+      <button type="button" class="link-danger"
+              hx-post="/settings/templates/delete"
+              hx-vals='{"name": "{{ template_name }}"}'
+              hx-target="#templates"
+              hx-swap="outerHTML"
+              hx-confirm="Supprimer {{ template_name }} ?">supprimer</button>
+      {% endif %}
+    </div>
+  </form>
+</div>

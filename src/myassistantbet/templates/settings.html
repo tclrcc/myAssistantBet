@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Réglages — MyAssistantBet{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Réglages</h1>
+  <div class="actions"><a class="button" href="/">← Board</a></div>
+</div>
+
+<section class="settings-section">
+  <h2>Templates de prompt</h2>
+  <p class="muted small">
+    Modifiable sans redémarrage. Variables disponibles : <code>date_fr</code>,
+    <code>event_blocks</code> (liste de blocs), <code>session_label</code>,
+    <code>tiers</code>. Un template qui ne compile pas est refusé.
+  </p>
+  {% include "_templates.html" %}
+</section>
+
+<section class="settings-section">
+  <h2>Bandes de cotes</h2>
+  <p class="muted small">
+    Ces paliers sont injectés dans le prompt. Laisser la borne haute vide signifie
+    « pas de limite ».
+  </p>
+  {% include "_tiers.html" %}
+</section>
+{% endblock %}

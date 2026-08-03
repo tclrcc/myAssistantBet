@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% block title %}Picks — MyAssistantBet{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Picks — {{ session_label }}</h1>
+  <div class="actions">
+    <a class="button" href="/history">← Historique</a>
+    <a class="button" href="/session/{{ session_id }}/prompt">Prompt</a>
+  </div>
+</div>
+
+{% if prompts %}
+<p class="muted small">
+  Prompts générés :
+  {% for prompt in prompts %}
+    {{ prompt.created_local.strftime('%d/%m %H:%M') }} ({{ prompt.template_name }},
+    ~{{ prompt.token_estimate }} tokens){% if not loop.last %} · {% endif %}
+  {% endfor %}
+</p>
+{% endif %}
+
+{% if error %}<div class="report report-warn">{{ error }}</div>{% endif %}
+
+<form class="pick-form" method="post" action="/history/{{ session_id }}/picks">
+  <label>
+    Match
+    <select name="event_id">
+      <option value="">combiné / hors match</option>
+      {% for event in events %}
+        <option value="{{ event.id }}">{{ event.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Palier
+    <select name="tier" required>
+      {% for tier in tiers %}
+        <option value="{{ tier.key }}">{{ tier.label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <label>
+    Marché
+    <input type="text" name="market" required placeholder="O/U 2.5">
+  </label>
+  <label>
+    Sélection
+    <input type="text" name="selection" required placeholder="Over 2.5">
+  </label>
+  <label class="narrow">
+    Cote
+    <input type="text" name="price" inputmode="decimal" placeholder="1.72">
+  </label>
+  <label class="narrow">
+    Conf/5
+    <input type="text" name="confidence" inputmode="numeric" placeholder="3">
+  </label>
+  <label class="narrow">
+    Mise
+    <input type="text" name="stake" inputmode="decimal" placeholder="5">
+  </label>
+  <button type="submit" class="primary">Ajouter</button>
+</form>
+
+{% include "_picks.html" %}
+{% endblock %}

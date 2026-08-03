@@ -138,6 +138,17 @@ devient une ligne explicite dans le bloc, ou une mention dans le rapport d'enric
 - `services/competitions.py` : synchronisation depuis `GET /sports`, **gratuit**. Une
   competition decouverte est creee **inactive** — rien ne se met a couter sans decision.
 
+## Historique et personnalisation
+
+- `services/history.py` : **aucun calcul financier**, jamais. Le seul indicateur est
+  `gagnes / (gagnes + perdus)`. La mise est enregistree mais **jamais agregee** — un test
+  verifie qu'aucun champ `roi`, `profit` ou `stake` n'apparait sur les agregats.
+- Edition des templates : le corps est **compile avant ecriture**. Un template casse
+  briserait toute generation de prompt, donc on refuse plutot que d'ecrire.
+- Nom de template : `^[a-z0-9][a-z0-9_-]*\.md\.j2$`. Pas de traversee de repertoire.
+  Le template par defaut n'est pas supprimable.
+- Bandes de cotes : bornes controlees avant ecriture (haute > basse, quota max >= min).
+
 ## Front
 
 HTMX est **vendorise** dans `static/htmx.min.js` — aucun CDN, aucun appel reseau depuis la

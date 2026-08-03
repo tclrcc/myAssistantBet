@@ -7,12 +7,20 @@ elle le rend, l'humain le copie.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 from zoneinfo import ZoneInfo
 
-from jinja2 import Environment, FileSystemLoader, TemplateNotFound, select_autoescape
+from jinja2 import (
+    Environment,
+    FileSystemLoader,
+    TemplateNotFound,
+    TemplateSyntaxError,
+    select_autoescape,
+)
 
 from ..config import PACKAGE_DIR, Settings, get_settings
 from ..db import connect, utcnow
@@ -178,3 +186,94 @@ def save_prompt(session_id: int, prompt: RenderedPrompt, settings: Settings | No
 
 def template_path(name: str) -> Path:
     return TEMPLATES_DIR / name
+
+
+# -- Personnalisation (phase 5) ---------------------------------------------
+
+#: Un nom de template est un simple slug : aucune traversee de repertoire possible.
+TEMPLATE_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*\.md\.j2$")
+
+
+class CustomizationError(ValueError):
+    """Saisie invalide. Le message est affiche tel quel a l'utilisateur."""
+
+
+def read_template(name: str) -> str:
+    """Contenu d'un template, pour l'editeur."""
+    if name not in list_templates():
+        raise CustomizationError(f"Template inconnu : {name}")
+    return template_path(name).read_text(encoding="utf-8")
+
+
+def save_template(name: str, body: str) -> str:
+    """Ecrit un template apres l'avoir compile.
+
+    Un template qui ne compile pas casserait toute generation de prompt : on
+    refuse d'ecrire plutot que de laisser l'application dans cet etat.
+    """
+    name = (name or "").strip()
+    if not TEMPLATE_NAME.match(name):
+        raise CustomizationError(
+            "Nom invalide : minuscules, chiffres, tirets et underscores, "
+            "et l'extension .md.j2 (exemple : session_court.md.j2)."
+        )
+    if not body.strip():
+        raise CustomizationError("Le template est vide.")
+
+    try:
+        _environment().from_string(body)
+    except TemplateSyntaxError as exc:
+        raise CustomizationError(
+            f"Erreur de syntaxe Jinja ligne {exc.lineno} : {exc.message}"
+        ) from exc
+
+    path = template_path(name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(body, encoding="utf-8")
+    logger.info("Template enregistre : %s (%d caracteres)", name, len(body))
+    return name
+
+
+def delete_template(name: str) -> None:
+    """Supprime un template. Le template par defaut n'est jamais supprimable."""
+    if name == DEFAULT_TEMPLATE:
+        raise CustomizationError("Le template par défaut ne peut pas être supprimé.")
+    if name not in list_templates():
+        raise CustomizationError(f"Template inconnu : {name}")
+    template_path(name).unlink()
+    logger.info("Template supprime : %s", name)
+
+
+def save_tiers(rows: list[dict[str, Any]], settings: Settings | None = None) -> None:
+    """Met a jour les bandes de cotes. Les bornes doivent rester coherentes."""
+    for row in rows:
+        minimum = row.get("min_price")
+        maximum = row.get("max_price")
+        if minimum is None:
+            raise CustomizationError(f"Palier {row.get('key')} : borne basse manquante.")
+        if maximum is not None and maximum <= minimum:
+            raise CustomizationError(
+                f"Palier {row.get('key')} : la borne haute doit dépasser la borne basse."
+            )
+        quota_min, quota_max = row.get("quota_min"), row.get("quota_max")
+        if quota_min is not None and quota_max is not None and quota_max < quota_min:
+            raise CustomizationError(
+                f"Palier {row.get('key')} : le quota maximum est inférieur au minimum."
+            )
+
+    with connect(settings) as conn:
+        for row in rows:
+            conn.execute(
+                "UPDATE tiers SET label = ?, emoji = ?, min_price = ?, max_price = ?, "
+                "                 quota_min = ?, quota_max = ? WHERE key = ?",
+                (
+                    row["label"],
+                    row["emoji"],
+                    row["min_price"],
+                    row["max_price"],
+                    row["quota_min"],
+                    row["quota_max"],
+                    row["key"],
+                ),
+            )
+    logger.info("Bandes de cotes mises a jour : %d paliers", len(rows))

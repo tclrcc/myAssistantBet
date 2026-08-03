@@ -25,6 +25,7 @@ from .scheduler import build_scheduler
 from .services import board as board_service
 from .services import competitions as competitions_service
 from .services import enrich as enrich_service
+from .services import history as history_service
 from .services import manual as manual_service
 from .services import mapping_ui as mapping_service
 from .services import prompt as prompt_service
@@ -410,6 +411,196 @@ def prompt_download(session_id: int, template: str | None = None) -> PlainTextRe
         media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# --- Historique et picks ---------------------------------------------------
+
+
+@app.get("/history", response_class=HTMLResponse)
+def history_page(request: Request) -> HTMLResponse:
+    """Sessions passees et taux de reussite. Aucun indicateur financier."""
+    settings = get_settings()
+    return templates.TemplateResponse(
+        request,
+        "history.html",
+        {
+            "sessions": history_service.list_sessions(settings),
+            "stats": history_service.stats(settings),
+        },
+    )
+
+
+def _picks_context(session_id: int, error: str | None = None) -> dict[str, object]:
+    settings = get_settings()
+    return {
+        "session_id": session_id,
+        "session_label": session_service.session_label(session_id, settings),
+        "prompts": history_service.list_prompts(session_id, settings),
+        "events": history_service.session_events(session_id, settings),
+        "tiers": history_service.tiers(settings),
+        "picks": history_service.list_picks(session_id, settings),
+        "result_labels": list(history_service.RESULT_LABELS.items()),
+        "error": error,
+    }
+
+
+@app.get("/history/{session_id}", response_class=HTMLResponse)
+def picks_page(request: Request, session_id: int) -> HTMLResponse:
+    """Saisie a posteriori des picks joues pour une session."""
+    _require_session(session_id)
+    return templates.TemplateResponse(request, "picks.html", _picks_context(session_id))
+
+
+@app.post("/history/{session_id}/picks", response_class=HTMLResponse)
+async def add_pick(request: Request, session_id: int) -> HTMLResponse:
+    """Ajoute un pick. Une saisie refusee reaffiche la page avec son motif."""
+    _require_session(session_id)
+    form = {key: str(value) for key, value in (await request.form()).items()}
+    try:
+        history_service.add_pick(
+            session_id,
+            tier=form.get("tier", ""),
+            market=form.get("market", ""),
+            selection=form.get("selection", ""),
+            event_id=form.get("event_id", ""),
+            price=form.get("price", ""),
+            confidence=form.get("confidence", ""),
+            stake=form.get("stake", ""),
+            settings=get_settings(),
+        )
+    except history_service.HistoryError as exc:
+        return templates.TemplateResponse(
+            request, "picks.html", _picks_context(session_id, str(exc))
+        )
+    return templates.TemplateResponse(request, "picks.html", _picks_context(session_id))
+
+
+@app.post("/picks/{pick_id}/result", response_class=HTMLResponse)
+def set_pick_result(
+    request: Request, pick_id: int, result: str = Form(default="pending")
+) -> HTMLResponse:
+    """Met a jour le resultat d'un pick, depuis le selecteur de la ligne."""
+    settings = get_settings()
+    session_id = _pick_session(pick_id)
+    try:
+        history_service.set_result(pick_id, result, settings)
+    except history_service.HistoryError as exc:
+        logger.warning("Resultat refuse : %s", exc)
+    return templates.TemplateResponse(request, "_picks.html", _picks_context(session_id))
+
+
+@app.post("/picks/{pick_id}/delete", response_class=HTMLResponse)
+def remove_pick(request: Request, pick_id: int) -> HTMLResponse:
+    session_id = _pick_session(pick_id)
+    history_service.delete_pick(pick_id, get_settings())
+    return templates.TemplateResponse(request, "_picks.html", _picks_context(session_id))
+
+
+def _pick_session(pick_id: int) -> int:
+    row = db.query_one(
+        "SELECT session_id FROM picks WHERE id = ?", (pick_id,), settings=get_settings()
+    )
+    if row is None:
+        raise HTTPException(status_code=404, detail="Pick inconnu")
+    return int(row["session_id"])
+
+
+# --- Reglages : templates et bandes de cotes -------------------------------
+
+
+def _settings_context(**overrides: object) -> dict[str, object]:
+    settings = get_settings()
+    available = prompt_service.list_templates()
+    name = str(overrides.pop("template_name", "") or "") or prompt_service.DEFAULT_TEMPLATE
+    if name not in available:
+        name = available[0] if available else prompt_service.DEFAULT_TEMPLATE
+
+    context: dict[str, object] = {
+        "templates": available,
+        "template_name": name,
+        "template_body": prompt_service.read_template(name) if available else "",
+        "default_template": prompt_service.DEFAULT_TEMPLATE,
+        "template_error": None,
+        "template_saved": None,
+        "tiers": prompt_service.load_tiers(settings),
+        "tiers_error": None,
+        "tiers_saved": False,
+    }
+    context.update(overrides)
+    return context
+
+
+@app.get("/settings", response_class=HTMLResponse)
+def settings_page(request: Request, template: str | None = None) -> HTMLResponse:
+    """Edition des templates de prompt et des bandes de cotes."""
+    return templates.TemplateResponse(
+        request, "settings.html", _settings_context(template_name=template)
+    )
+
+
+@app.post("/settings/templates", response_class=HTMLResponse)
+async def save_template(request: Request) -> HTMLResponse:
+    """Enregistre un template apres compilation. Un template casse est refuse."""
+    form = {key: str(value) for key, value in (await request.form()).items()}
+    name = form.get("name", "")
+    body = form.get("body", "")
+    try:
+        saved = prompt_service.save_template(name, body)
+    except prompt_service.CustomizationError as exc:
+        return templates.TemplateResponse(
+            request,
+            "_templates.html",
+            _settings_context(template_error=str(exc), template_body=body, template_name=name),
+        )
+    return templates.TemplateResponse(
+        request, "_templates.html", _settings_context(template_name=saved, template_saved=saved)
+    )
+
+
+@app.post("/settings/templates/delete", response_class=HTMLResponse)
+def remove_template(request: Request, name: str = Form(default="")) -> HTMLResponse:
+    try:
+        prompt_service.delete_template(name)
+    except prompt_service.CustomizationError as exc:
+        return templates.TemplateResponse(
+            request, "_templates.html", _settings_context(template_error=str(exc))
+        )
+    return templates.TemplateResponse(request, "_templates.html", _settings_context())
+
+
+@app.post("/settings/tiers", response_class=HTMLResponse)
+async def save_tiers(request: Request) -> HTMLResponse:
+    """Enregistre les bandes de cotes, apres controle de coherence des bornes."""
+    form = await request.form()
+    keys = form.getlist("key")
+    rows = [
+        {
+            "key": key,
+            "emoji": form.getlist("emoji")[index],
+            "label": form.getlist("label")[index],
+            "min_price": _float_or_none(form.getlist("min_price")[index]),
+            "max_price": _float_or_none(form.getlist("max_price")[index]),
+            "quota_min": _int_or_none(form.getlist("quota_min")[index]) or 0,
+            "quota_max": _int_or_none(form.getlist("quota_max")[index]) or 0,
+        }
+        for index, key in enumerate(keys)
+    ]
+
+    try:
+        prompt_service.save_tiers(rows, get_settings())
+    except prompt_service.CustomizationError as exc:
+        return templates.TemplateResponse(
+            request, "_tiers.html", _settings_context(tiers_error=str(exc))
+        )
+    return templates.TemplateResponse(request, "_tiers.html", _settings_context(tiers_saved=True))
+
+
+def _float_or_none(value: str) -> float | None:
+    text = (value or "").strip().replace(",", ".")
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return None
 
 
 @app.get("/health")

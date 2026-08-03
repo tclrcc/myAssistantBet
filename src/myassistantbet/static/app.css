@@ -252,3 +252,78 @@ a.value.alert { color: var(--alert); }
 .manual-form textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .manual-form button { align-self: flex-start; }
 code { background: var(--panel-2); padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
+
+/* --- Historique et picks ------------------------------------------------- */
+
+.stats { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; }
+.stats > div { flex: 1; min-width: 260px; }
+.stats h3 { font-size: 0.85rem; font-weight: 600; color: var(--muted); margin: 0 0 0.4rem; }
+table.rates { font-size: 0.9rem; }
+
+.pick-form {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  padding: 0.75rem 1rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+}
+.pick-form label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; color: var(--muted); }
+.pick-form .narrow input { width: 5rem; }
+.pick-form input, .pick-form select {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.4rem 0.5rem;
+  font-size: 0.9rem;
+}
+
+table.board select {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.2rem 0.35rem;
+  font-size: 0.85rem;
+}
+tr.result-win td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
+tr.result-loss td:first-child { box-shadow: inset 3px 0 0 var(--alert); }
+
+.link-danger {
+  background: none;
+  border: 0;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.8rem;
+  text-decoration: underline;
+}
+.link-danger:hover { color: var(--alert); }
+
+/* --- Réglages ------------------------------------------------------------ */
+
+.settings-section { margin-bottom: 2rem; }
+.template-editor textarea {
+  width: 100%;
+  min-height: 460px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.75rem;
+  font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  resize: vertical;
+}
+.tiers-form input {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.3rem 0.4rem;
+  width: 100%;
+  font-size: 0.9rem;
+}
+.tiers-form input.tiny { width: 3.5rem; }

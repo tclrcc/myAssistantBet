@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Historique — MyAssistantBet{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Historique</h1>
+  <div class="actions"><a class="button" href="/">← Board</a></div>
+</div>
+
+<section class="group">
+  <h2>Taux de réussite</h2>
+  {% if stats.empty %}
+    <p class="empty">Aucun pick enregistré. Ouvre une session pour en saisir.</p>
+  {% else %}
+  <div class="stats">
+    <div>
+      <h3>Par palier</h3>
+      {% with rows = stats.by_tier, heading = "Palier" %}
+        {% include "_rates.html" %}
+      {% endwith %}
+    </div>
+    <div>
+      <h3>Par sport</h3>
+      {% with rows = stats.by_sport, heading = "Sport" %}
+        {% include "_rates.html" %}
+      {% endwith %}
+    </div>
+    <div>
+      <h3>Total</h3>
+      {% with rows = [stats.overall], heading = "Ensemble" %}
+        {% include "_rates.html" %}
+      {% endwith %}
+    </div>
+  </div>
+  <p class="muted small">
+    Taux = gagnés / (gagnés + perdus). Les paris annulés et en attente sont exclus du
+    dénominateur. Aucun calcul financier n'est produit, volontairement.
+  </p>
+  {% endif %}
+</section>
+
+<section class="group">
+  <h2>Sessions</h2>
+  {% if not sessions %}
+    <p class="empty">Aucune session.</p>
+  {% else %}
+  <table class="board">
+    <thead>
+      <tr>
+        <th>Session</th>
+        <th>Créée</th>
+        <th class="num">Matchs</th>
+        <th class="num">Prompts</th>
+        <th class="num">Picks</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in sessions %}
+      <tr>
+        <td class="affiche">{{ item.label }}</td>
+        <td class="num">{{ item.created_local.strftime('%d/%m/%Y %H:%M') }}</td>
+        <td class="num">{{ item.events }}</td>
+        <td class="num">{{ item.prompts }}</td>
+        <td class="num">{{ item.picks }}</td>
+        <td><a href="/history/{{ item.session_id }}">Picks →</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

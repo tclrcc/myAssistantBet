@@ -1,0 +1,24 @@
+<table class="board rates">
+  <thead>
+    <tr>
+      <th>{{ heading }}</th>
+      <th class="num">Taux</th>
+      <th class="num">G</th>
+      <th class="num">P</th>
+      <th class="num">Ann.</th>
+      <th class="num">Att.</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in rows %}
+    <tr>
+      <td class="affiche">{{ row.label }}</td>
+      <td class="num">{{ row.rate_label }}</td>
+      <td class="num">{{ row.won }}</td>
+      <td class="num">{{ row.lost }}</td>
+      <td class="num muted">{{ row.void }}</td>
+      <td class="num muted">{{ row.pending }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>

@@ -1,0 +1,43 @@
+<div id="tiers">
+  {% if tiers_error %}<div class="report report-warn">{{ tiers_error }}</div>{% endif %}
+  {% if tiers_saved %}<div class="report">Bandes de cotes enregistrées.</div>{% endif %}
+
+  <form class="tiers-form"
+        hx-post="/settings/tiers"
+        hx-target="#tiers"
+        hx-swap="outerHTML">
+    <table class="board">
+      <thead>
+        <tr>
+          <th>Clé</th>
+          <th>Emoji</th>
+          <th>Libellé</th>
+          <th class="num">Cote min</th>
+          <th class="num">Cote max</th>
+          <th class="num">Quota min</th>
+          <th class="num">Quota max</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for tier in tiers %}
+        <tr>
+          <td class="muted">
+            {{ tier.key }}
+            <input type="hidden" name="key" value="{{ tier.key }}">
+          </td>
+          <td><input class="tiny" type="text" name="emoji" value="{{ tier.emoji }}"></td>
+          <td><input type="text" name="label" value="{{ tier.label }}"></td>
+          <td><input class="tiny" type="text" name="min_price" value="{{ tier.min_price }}"></td>
+          <td>
+            <input class="tiny" type="text" name="max_price"
+                   value="{{ tier.max_price if tier.max_price is not none else '' }}">
+          </td>
+          <td><input class="tiny" type="text" name="quota_min" value="{{ tier.quota_min }}"></td>
+          <td><input class="tiny" type="text" name="quota_max" value="{{ tier.quota_max }}"></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <button type="submit" class="primary">Enregistrer les paliers</button>
+  </form>
+</div>

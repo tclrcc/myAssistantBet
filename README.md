@@ -19,7 +19,7 @@ La specification complete et faisant autorite est dans [`SPEC.md`](./SPEC.md).
 | 2 | Etage B (marches profonds), rendu compact, generation du prompt | fait |
 | 3 | Contexte sportif via API-Football, mapping des equipes | fait |
 | 4 | Tennis, cyclisme, evenements manuels | fait |
-| 5 | Historique des picks, personnalisation des templates | a venir |
+| 5 | Historique des picks, personnalisation des templates | fait |
 | 6 | Deploiement VPS (systemd, nginx, sauvegardes) | a venir |
 
 ## Prerequis
@@ -117,6 +117,30 @@ declenche aucun appel reseau**.
 Ce qui manque est toujours dit. Une ligue non couverte pour les blessures produit
 `Absents     donnees non disponibles pour cette competition`, jamais un silence.
 
+### Historique (`/history`)
+
+Sessions passees, prompts generes, et saisie **a posteriori** des picks joues.
+
+- Un pick porte un palier, un marche, une selection, et facultativement une cote, une
+  confiance sur 5 et une mise. Il peut etre rattache a un match ou rester un combine.
+- Le resultat se change directement depuis la ligne : en attente, gagne, perdu, annule.
+- **Taux de reussite** par palier, par sport et au total : `gagnes / (gagnes + perdus)`.
+  Les paris annules et en attente sont exclus du denominateur.
+
+**Aucun indicateur financier n'est produit** (SPEC section 9) : ni ROI, ni value, ni CLV, ni
+esperance. La mise est memorisee parce qu'elle fait partie de ce qui a ete joue, mais elle
+n'est jamais agregee. Un test verifie explicitement qu'aucun de ces champs n'existe.
+
+### Reglages (`/settings`)
+
+- **Templates de prompt** : editeur, creation de variantes, suppression. Un template qui ne
+  compile pas est **refuse avant ecriture** — sinon toute generation serait cassee. Le nom
+  est valide strictement, aucune traversee de repertoire n'est possible. Le template par
+  defaut n'est pas supprimable.
+- **Bandes de cotes** : libelle, emoji, bornes et quotas de chaque palier. Les bornes sont
+  controlees (haute > basse, quota max >= quota min) avant ecriture. Les valeurs alimentent
+  directement le prompt.
+
 ### Compétitions (`/competitions`)
 
 Seules les competitions **actives** sont scannees. Le bouton « Synchroniser depuis The Odds
@@ -205,6 +229,7 @@ src/myassistantbet/
 │   ├── mapping_ui.py # resolution manuelle des correspondances
 │   ├── manual.py   # evenements saisis a la main
 │   ├── competitions.py # catalogue des competitions, synchronisation gratuite
+│   ├── history.py  # sessions passees, picks joues, taux de reussite
 │   └── prompt.py   # assemblage du prompt final
 ├── templates/      # Jinja2 (HTML et templates de prompt .j2)
 └── static/         # CSS et htmx, servis en local (aucun CDN)
