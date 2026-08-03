@@ -1,0 +1,139 @@
+:root {
+  --bg: #14161a;
+  --panel: #1c1f26;
+  --panel-2: #23272f;
+  --line: #2e333d;
+  --text: #e6e8ec;
+  --muted: #8a919e;
+  --accent: #4c8bf5;
+  --alert: #e05a4e;
+  --ok: #4caf7d;
+  --radius: 6px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.topbar {
+  display: flex;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 0.75rem 1.25rem;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+}
+.brand { font-weight: 600; color: var(--text); }
+.topbar nav { display: flex; gap: 1rem; }
+
+main { padding: 1.25rem; max-width: 1400px; margin: 0 auto; }
+
+/* --- Bandeau ------------------------------------------------------------ */
+
+.banner {
+  display: flex;
+  align-items: center;
+  gap: 2rem;
+  flex-wrap: wrap;
+  padding: 0.75rem 1rem;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+}
+.banner-item { display: flex; align-items: baseline; gap: 0.5rem; }
+.banner-item.push { margin-left: auto; }
+.banner .label { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.banner .value { font-weight: 600; font-variant-numeric: tabular-nums; }
+.banner .value.alert { color: var(--alert); }
+.muted { color: var(--muted); font-weight: 400; }
+
+button.primary {
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+button.primary:hover { filter: brightness(1.1); }
+
+.htmx-indicator { display: none; color: var(--muted); margin-left: 0.6rem; }
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator { display: inline; }
+
+/* --- Rapport de scan ---------------------------------------------------- */
+
+.report {
+  padding: 0.6rem 1rem;
+  border-left: 3px solid var(--ok);
+  background: var(--panel-2);
+  border-radius: var(--radius);
+  margin-bottom: 1rem;
+}
+.report-warn { border-left-color: var(--alert); }
+.failures { margin: 0.4rem 0 0; padding-left: 1.2rem; color: var(--muted); }
+
+/* --- Filtres ------------------------------------------------------------ */
+
+.filters {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 1rem;
+}
+.filters label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; color: var(--muted); }
+.filters .grow { flex: 1; min-width: 200px; }
+.filters input, .filters select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.4rem 0.5rem;
+  font-size: 0.9rem;
+}
+.filters input[type="number"] { width: 5rem; }
+.filters .reset { font-size: 0.8rem; padding-bottom: 0.5rem; }
+
+/* --- Tableau ------------------------------------------------------------ */
+
+table.board {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+table.board th {
+  text-align: left;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  padding: 0.5rem 0.6rem;
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+}
+table.board td {
+  padding: 0.45rem 0.6rem;
+  border-bottom: 1px solid var(--line);
+}
+table.board tr:last-child td { border-bottom: 0; }
+table.board tr.is-selected { background: rgba(76, 139, 245, 0.09); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.line { color: var(--muted); }
+.affiche { font-weight: 500; }
+.tight { width: 1.75rem; }
+
+.empty { color: var(--muted); padding: 2rem 0; text-align: center; }

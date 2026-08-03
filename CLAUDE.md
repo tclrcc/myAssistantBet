@@ -76,3 +76,17 @@ groupe de 10 bookmakers compte pour 1 region : interroger `bookmakers=betclic_fr
 donc 1 par marche. `/sports` et `/sports/{sport}/events` sont gratuits, les reponses vides ne
 sont pas facturees. Les headers `x-requests-remaining` et `x-requests-used` doivent etre
 persistes dans `api_usage` a chaque appel et exposes dans l'UI.
+
+Le header `x-requests-last` donne le cout reellement facture : il fait foi quand il est
+present, `expected_cost()` ne servant que de repli et d'estimation avant appel. Une reponse
+servie par le cache de developpement (`DEV_CACHE=1`) ne consomme rien et n'ecrit rien dans
+`api_usage`.
+
+Etage A (`services/scan.py`) : `h2h,totals` sur `betclic_fr` seul, soit 2 credits par
+competition active.
+
+## Front
+
+HTMX est **vendorise** dans `static/htmx.min.js` — aucun CDN, aucun appel reseau depuis la
+page. Les fragments HTMX sont des templates `_*.html` autonomes, inclus par les pages
+completes : `_board.html` porte l'id `#board`, `_banner.html` porte l'id `#banner`.

@@ -27,7 +27,7 @@ def test_health_expose_l_etat_de_la_base(client: TestClient) -> None:
     db_state = client.get("/health").json()["db"]
 
     assert db_state["ok"] is True
-    assert db_state["schema_version"] == 1
+    assert db_state["schema_version"] == 2
     assert db_state["journal_mode"] == "wal"
     assert "events" in db_state["tables"]
     assert "odds" in db_state["tables"]

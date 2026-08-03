@@ -26,7 +26,7 @@ EXPECTED_TABLES = {
 def test_migrations_creent_toutes_les_tables(isolated_settings: Settings) -> None:
     applied = db.run_migrations(isolated_settings)
 
-    assert applied == ["001_init.sql"]
+    assert applied == ["001_init.sql", "002_seed_competitions.sql"]
     assert set(db.list_tables(isolated_settings)) == EXPECTED_TABLES
 
 
@@ -38,7 +38,10 @@ def test_migrations_sont_idempotentes(isolated_settings: Settings) -> None:
     assert set(db.list_tables(isolated_settings)) == EXPECTED_TABLES
 
     rows = db.query("SELECT version, name FROM schema_migrations", settings=isolated_settings)
-    assert [(row["version"], row["name"]) for row in rows] == [(1, "001_init.sql")]
+    assert [(row["version"], row["name"]) for row in rows] == [
+        (1, "001_init.sql"),
+        (2, "002_seed_competitions.sql"),
+    ]
 
 
 def test_pragmas_actifs(isolated_settings: Settings) -> None:
@@ -65,10 +68,13 @@ def test_rollback_sur_erreur(isolated_settings: Settings) -> None:
     db.run_migrations(isolated_settings)
 
     with pytest.raises(sqlite3.OperationalError), db.connect(isolated_settings) as conn:
-        conn.execute("INSERT INTO sports (key, label) VALUES ('football', 'Football')")
+        conn.execute("INSERT INTO sports (key, label) VALUES ('handball', 'Handball')")
         conn.execute("SELECT * FROM table_inexistante")
 
-    assert db.query("SELECT * FROM sports", settings=isolated_settings) == []
+    assert (
+        db.query_one("SELECT id FROM sports WHERE key = 'handball'", settings=isolated_settings)
+        is None
+    )
 
 
 def test_health_retourne_l_etat_du_schema(isolated_settings: Settings) -> None:
@@ -76,7 +82,7 @@ def test_health_retourne_l_etat_du_schema(isolated_settings: Settings) -> None:
     state = db.health(isolated_settings)
 
     assert state["ok"] is True
-    assert state["schema_version"] == 1
+    assert state["schema_version"] == 2
     assert state["journal_mode"] == "wal"
     assert set(state["tables"]) == EXPECTED_TABLES
 

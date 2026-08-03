@@ -1,0 +1,36 @@
+<div class="banner" id="banner">
+  <div class="banner-item">
+    <span class="label">Crédits Odds API</span>
+    {% if banner.credits_remaining is none %}
+      <span class="value muted">inconnu — aucun appel enregistré</span>
+    {% else %}
+      <span class="value {% if banner.below_floor %}alert{% endif %}">
+        {{ banner.credits_remaining }}
+      </span>
+      <span class="muted">plancher {{ banner.credit_floor }}</span>
+    {% endif %}
+  </div>
+
+  <div class="banner-item">
+    <span class="label">Dernier scan</span>
+    {% if banner.last_scan_at %}
+      <span class="value">{{ banner.last_scan_at.strftime('%d/%m %H:%M') }}</span>
+    {% else %}
+      <span class="value muted">jamais</span>
+    {% endif %}
+  </div>
+
+  <div class="banner-item">
+    <span class="label">Sélection</span>
+    <span class="value">{{ banner.selected_count }}</span>
+  </div>
+
+  <form class="banner-item push"
+        hx-post="/scan"
+        hx-target="#board"
+        hx-swap="outerHTML"
+        hx-indicator="#scan-spinner">
+    <button type="submit" class="primary">Relancer le scan</button>
+    <span id="scan-spinner" class="htmx-indicator">scan en cours…</span>
+  </form>
+</div>

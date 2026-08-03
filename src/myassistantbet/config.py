@@ -39,12 +39,22 @@ class Settings(BaseSettings):
     # --- Garde-fous quota --------------------------------------------------
     odds_api_credit_floor: int = 500
 
+    # --- Appels externes ---------------------------------------------------
+    #: Base du backoff exponentiel entre deux tentatives, en secondes.
+    #: Mise a 0 dans les tests pour ne jamais attendre.
+    http_backoff_base: float = Field(default=1.0, ge=0)
+
     # --- Developpement -----------------------------------------------------
     dev_cache: bool = False
     dev_cache_dir: Path = Path("./data/dev_cache")
 
     # --- Fenetre de scan (jours glissants a partir d'aujourd'hui) ----------
     scan_window_days: int = Field(default=2, ge=1, le=7)
+
+    # --- Scan quotidien (heure locale `tz`) --------------------------------
+    scheduler_enabled: bool = True
+    scan_hour: int = Field(default=7, ge=0, le=23)
+    scan_minute: int = Field(default=0, ge=0, le=59)
 
     @property
     def db_path_absolute(self) -> Path:
@@ -64,6 +74,8 @@ class Settings(BaseSettings):
             "tz": self.tz,
             "odds_api_credit_floor": self.odds_api_credit_floor,
             "scan_window_days": self.scan_window_days,
+            "scheduler_enabled": self.scheduler_enabled,
+            "scan_at": f"{self.scan_hour:02d}:{self.scan_minute:02d}",
             "dev_cache": self.dev_cache,
             "odds_api_key_present": bool(self.odds_api_key),
             "apifootball_key_present": bool(self.apifootball_key),

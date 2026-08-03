@@ -11,6 +11,7 @@ dependencies = [
     "httpx>=0.28,<0.29",
     "apscheduler>=3.11,<4",
     "pydantic-settings>=2.7,<3",
+    "python-multipart>=0.0.20,<0.1",
 ]
 
 [dependency-groups]
@@ -38,6 +39,6 @@ select = ["E", "F", "I", "UP", "B", "SIM", "C4"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
 asyncio_mode = "auto"
 filterwarnings = ["error"]

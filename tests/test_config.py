@@ -16,6 +16,10 @@ ENV_VARS = (
     "DEV_CACHE",
     "DEV_CACHE_DIR",
     "SCAN_WINDOW_DAYS",
+    "SCHEDULER_ENABLED",
+    "SCAN_HOUR",
+    "SCAN_MINUTE",
+    "HTTP_BACKOFF_BASE",
 )
 
 
@@ -68,3 +72,15 @@ def test_migrations_dir_existe() -> None:
 
     assert settings.migrations_dir.is_dir()
     assert (settings.migrations_dir / "001_init.sql").is_file()
+
+
+def test_temporisation_par_defaut_en_production(env_vierge: None) -> None:
+    # Les tests forcent 0 ; hors tests, le backoff doit rester reel.
+    assert Settings(_env_file=None).http_backoff_base == 1.0
+
+
+def test_planificateur_actif_par_defaut(env_vierge: None) -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.scheduler_enabled is True
+    assert (settings.scan_hour, settings.scan_minute) == (7, 0)
