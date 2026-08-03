@@ -18,6 +18,13 @@
           {% endfor %}
         </ul>
         {% endif %}
+        {% if progress.context_notes %}
+        <ul class="failures">
+          {% for note in progress.context_notes %}
+            <li>{{ note.label }} — {{ note.context_note }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
       {% else %}
         Enrichissement en cours — {{ progress.done }}/{{ progress.total }}
       {% endif %}

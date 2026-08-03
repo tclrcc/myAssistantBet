@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Mapping — MyAssistantBet{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Correspondances à résoudre</h1>
+  <div class="actions"><a class="button" href="/">← Board</a></div>
+</div>
+
+<p class="muted small">
+  Ces équipes n'ont pas pu être identifiées côté API-Football avec assez de certitude.
+  L'application ne devine pas : choisis la bonne, le choix est mémorisé définitivement.
+</p>
+
+{% include "_mapping_list.html" %}
+{% endblock %}

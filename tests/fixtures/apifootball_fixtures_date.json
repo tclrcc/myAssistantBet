@@ -1,0 +1,69 @@
+{
+  "get": "fixtures",
+  "parameters": {},
+  "errors": [],
+  "results": 2,
+  "paging": {
+    "current": 1,
+    "total": 1
+  },
+  "response": [
+    {
+      "fixture": {
+        "id": 1122334,
+        "date": "2026-08-03T15:30:00+00:00",
+        "status": {
+          "short": "NS"
+        }
+      },
+      "league": {
+        "id": 113,
+        "name": "Allsvenskan",
+        "season": 2026,
+        "round": "Regular Season - 17"
+      },
+      "teams": {
+        "home": {
+          "id": 376,
+          "name": "BK Hacken"
+        },
+        "away": {
+          "id": 377,
+          "name": "Djurgardens IF"
+        }
+      },
+      "goals": {
+        "home": null,
+        "away": null
+      }
+    },
+    {
+      "fixture": {
+        "id": 1122335,
+        "date": "2026-08-03T17:00:00+00:00",
+        "status": {
+          "short": "NS"
+        }
+      },
+      "league": {
+        "id": 113,
+        "name": "Allsvenskan",
+        "season": 2026
+      },
+      "teams": {
+        "home": {
+          "id": 380,
+          "name": "Malmo FF"
+        },
+        "away": {
+          "id": 378,
+          "name": "AIK"
+        }
+      },
+      "goals": {
+        "home": null,
+        "away": null
+      }
+    }
+  ]
+}

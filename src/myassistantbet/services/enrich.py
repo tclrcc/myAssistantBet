@@ -14,8 +14,10 @@ from typing import Any
 
 from ..config import Settings, get_settings
 from ..db import connect
+from ..providers.apifootball import APIFootballClient
 from ..providers.base import ProviderError, last_known_quota
 from ..providers.oddsapi import PROVIDER, OddsAPIClient, expected_cost
+from .context import fetch_context
 from .scan import replace_odds  # meme regle de remplacement qu'a l'etage A
 
 logger = logging.getLogger(__name__)
@@ -67,10 +69,29 @@ class EnrichTarget:
     oddsapi_sport_key: str
     label: str
     markets: tuple[str, ...]
+    #: Necessaire au contexte API-Football. Absent = pas de contexte possible.
+    apifootball_league_id: int | None = None
+    home: str = ""
+    away: str = ""
+    commence_time: str = ""
 
     @property
     def cost(self) -> int:
         return expected_cost(list(self.markets), ["betclic_fr"])
+
+    @property
+    def context_possible(self) -> bool:
+        return self.sport_key == "football" and self.apifootball_league_id is not None
+
+    def as_event(self) -> dict[str, Any]:
+        """Vue attendue par `services.context`."""
+        return {
+            "id": self.event_id,
+            "home": self.home,
+            "away": self.away,
+            "commence_time": self.commence_time,
+            "apifootball_league_id": self.apifootball_league_id,
+        }
 
 
 @dataclass
@@ -125,10 +146,22 @@ class EnrichResult:
     odds_rows: int = 0
     cost: int = 0
     error: str | None = None
+    context_kinds: list[str] = field(default_factory=list)
+    context_errors: list[str] = field(default_factory=list)
+    mapping_pending: bool = False
 
     @property
     def ok(self) -> bool:
         return self.error is None
+
+    @property
+    def context_note(self) -> str:
+        """Ce qui manque cote contexte, formule pour l'UI. Vide si tout va bien."""
+        if self.mapping_pending:
+            return "équipes non identifiées côté API-Football — résolution manuelle requise"
+        if self.context_errors:
+            return "contexte partiel : " + " ; ".join(self.context_errors)
+        return ""
 
 
 @dataclass
@@ -147,6 +180,11 @@ class EnrichReport:
     @property
     def failures(self) -> list[EnrichResult]:
         return [result for result in self.results if not result.ok]
+
+    @property
+    def context_notes(self) -> list[EnrichResult]:
+        """Matchs dont le contexte est incomplet, a signaler visiblement dans l'UI."""
+        return [result for result in self.results if result.context_note]
 
     @property
     def percent(self) -> int:
@@ -175,8 +213,9 @@ def build_estimate(session_id: int, settings: Settings | None = None) -> Estimat
 
     with connect(settings) as conn:
         rows = conn.execute(
-            "SELECT e.id, e.oddsapi_event_id, e.home, e.away, s.key AS sport_key, "
-            "       c.oddsapi_key AS competition_key "
+            "SELECT e.id, e.oddsapi_event_id, e.home, e.away, e.commence_time, "
+            "       s.key AS sport_key, c.oddsapi_key AS competition_key, "
+            "       c.apifootball_league_id "
             "FROM session_events se "
             "JOIN events e ON e.id = se.event_id "
             "JOIN sports s ON s.id = e.sport_id "
@@ -204,6 +243,10 @@ def build_estimate(session_id: int, settings: Settings | None = None) -> Estimat
                 oddsapi_sport_key=row["competition_key"],
                 label=label,
                 markets=markets,
+                apifootball_league_id=row["apifootball_league_id"],
+                home=row["home"],
+                away=row["away"],
+                commence_time=row["commence_time"],
             )
         )
     return estimate
@@ -219,16 +262,37 @@ def _store(event_id: int, payload: dict[str, Any], settings: Settings) -> tuple[
     return markets, rows
 
 
+async def _add_context(
+    context_client: APIFootballClient,
+    target: EnrichTarget,
+    result: EnrichResult,
+    settings: Settings,
+    cache: dict[str, Any],
+) -> None:
+    """Ajoute le contexte sportif. Un echec ici ne remet jamais en cause les cotes."""
+    try:
+        report = await fetch_context(context_client, target.as_event(), settings, cache)
+    except Exception as exc:  # noqa: BLE001 — le contexte est un bonus, jamais bloquant
+        result.context_errors.append(f"{type(exc).__name__}: {exc}")
+        logger.exception("Contexte indisponible pour %s", target.label)
+        return
+    result.context_kinds = report.kinds
+    result.context_errors = report.errors
+    result.mapping_pending = report.mapping_pending
+
+
 async def run_enrich(
     client: OddsAPIClient,
     session_id: int,
     settings: Settings | None = None,
     on_progress: Callable[[EnrichReport], None] | None = None,
+    context_client: APIFootballClient | None = None,
 ) -> EnrichReport:
-    """Enrichit tous les evenements d'une session.
+    """Enrichit tous les evenements d'une session : marches profonds puis contexte.
 
     Le garde-fou de quota est verifie avant de partir. Un evenement en echec
-    n'interrompt pas les suivants.
+    n'interrompt pas les suivants, et un contexte manquant n'empeche jamais les
+    cotes d'etre recuperees.
     """
     settings = settings or get_settings()
     estimate = build_estimate(session_id, settings)
@@ -242,6 +306,10 @@ async def run_enrich(
         if on_progress:
             on_progress(report)
         return report
+
+    # Classements et statistiques d'equipe sont partages entre les matchs d'une
+    # meme ligue : on ne les paie qu'une fois par enrichissement.
+    context_cache: dict[str, Any] = {}
 
     for target in estimate.targets:
         result = EnrichResult(label=target.label)
@@ -261,6 +329,9 @@ async def run_enrich(
             # autres matchs, ni mourir en silence dans une tache de fond.
             result.error = f"reponse inexploitable : {type(exc).__name__}: {exc}"
             logger.exception("Reponse inexploitable pour %s", target.label)
+
+        if context_client is not None and target.context_possible:
+            await _add_context(context_client, target, result, settings, context_cache)
 
         report.results.append(result)
         report.done += 1

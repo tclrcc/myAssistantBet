@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 
 from myassistantbet.main import app
 
+from .test_db import EXPECTED_TABLES, LATEST_VERSION
+
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
@@ -27,7 +29,7 @@ def test_health_expose_l_etat_de_la_base(client: TestClient) -> None:
     db_state = client.get("/health").json()["db"]
 
     assert db_state["ok"] is True
-    assert db_state["schema_version"] == 3
+    assert db_state["schema_version"] == LATEST_VERSION
     assert db_state["journal_mode"] == "wal"
     assert "events" in db_state["tables"]
     assert "odds" in db_state["tables"]
@@ -46,4 +48,4 @@ def test_health_expose_la_config_sans_secret(client: TestClient) -> None:
 
 def test_le_demarrage_applique_les_migrations(client: TestClient) -> None:
     # Le lifespan a tourne a l'ouverture du TestClient : la base doit etre complete.
-    assert len(client.get("/health").json()["db"]["tables"]) == 12
+    assert set(client.get("/health").json()["db"]["tables"]) == EXPECTED_TABLES

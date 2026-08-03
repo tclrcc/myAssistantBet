@@ -1,0 +1,34 @@
+<div id="mapping-list">
+  {% if not events %}
+    <p class="empty">Aucune correspondance en attente.</p>
+  {% endif %}
+
+  {% for event in events %}
+  <section class="group">
+    <h2>{{ event.affiche }} <span class="muted">· {{ event.competition }}</span></h2>
+    {% if event.reason %}<p class="muted small">{{ event.reason }}</p>{% endif %}
+
+    <form class="mapping-form"
+          hx-post="/mapping/{{ event.event_id }}"
+          hx-target="#mapping-list"
+          hx-swap="outerHTML">
+      {% for team in event.teams %}
+        {% if not team.resolved %}
+        <label>
+          {{ team.oddsapi_name }}
+          <select name="choice">
+            <option value="">— choisir —</option>
+            {% for candidate in team.candidates %}
+              <option value="{{ team.oddsapi_name }}|{{ candidate.id }}|{{ candidate.name }}">
+                {{ candidate.name }} ({{ '%.0f'|format(candidate.score * 100) }} %)
+              </option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endif %}
+      {% endfor %}
+      <button type="submit" class="primary">Enregistrer</button>
+    </form>
+  </section>
+  {% endfor %}
+</div>

@@ -1,0 +1,112 @@
+{
+  "get": "fixtures",
+  "parameters": {},
+  "errors": [],
+  "results": 5,
+  "paging": {
+    "current": 1,
+    "total": 1
+  },
+  "response": [
+    {
+      "fixture": {
+        "id": 800000,
+        "date": "2026-07-28T17:00:00+00:00"
+      },
+      "teams": {
+        "home": {
+          "id": 376,
+          "name": "BK Hacken"
+        },
+        "away": {
+          "id": 999,
+          "name": "Autre"
+        }
+      },
+      "goals": {
+        "home": 2,
+        "away": 1
+      }
+    },
+    {
+      "fixture": {
+        "id": 800001,
+        "date": "2026-07-24T17:00:00+00:00"
+      },
+      "teams": {
+        "home": {
+          "id": 376,
+          "name": "BK Hacken"
+        },
+        "away": {
+          "id": 999,
+          "name": "Autre"
+        }
+      },
+      "goals": {
+        "home": 3,
+        "away": 0
+      }
+    },
+    {
+      "fixture": {
+        "id": 800002,
+        "date": "2026-07-19T15:00:00+00:00"
+      },
+      "teams": {
+        "home": {
+          "id": 376,
+          "name": "BK Hacken"
+        },
+        "away": {
+          "id": 999,
+          "name": "Autre"
+        }
+      },
+      "goals": {
+        "home": 1,
+        "away": 1
+      }
+    },
+    {
+      "fixture": {
+        "id": 800003,
+        "date": "2026-07-13T17:00:00+00:00"
+      },
+      "teams": {
+        "home": {
+          "id": 376,
+          "name": "BK Hacken"
+        },
+        "away": {
+          "id": 999,
+          "name": "Autre"
+        }
+      },
+      "goals": {
+        "home": 2,
+        "away": 2
+      }
+    },
+    {
+      "fixture": {
+        "id": 800004,
+        "date": "2026-07-06T17:00:00+00:00"
+      },
+      "teams": {
+        "home": {
+          "id": 376,
+          "name": "BK Hacken"
+        },
+        "away": {
+          "id": 999,
+          "name": "Autre"
+        }
+      },
+      "goals": {
+        "home": 1,
+        "away": 0
+      }
+    }
+  ]
+}

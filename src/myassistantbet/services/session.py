@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
 from ..db import connect
+from .context import context_lines
 from .render import Outcome, RenderableEvent, render_event
 
 #: Marches releves par l'etage A. Leur presence seule signale un evenement
@@ -206,6 +207,13 @@ def renderable_events(session_id: int, settings: Settings | None = None) -> list
                     away=row["away"],
                     commence_local=_local(row["commence_time"], settings.tz),
                     markets=markets,
+                    context_lines=context_lines(
+                        int(row["id"]),
+                        row["home"],
+                        row["away"],
+                        row["commence_time"],
+                        settings,
+                    ),
                     note=row["note"] or None,
                     bookmaker_label=BOOKMAKER_LABELS.get(bookmaker or "", bookmaker or "—"),
                     fetched_local=_local(fetched, settings.tz) if fetched else None,

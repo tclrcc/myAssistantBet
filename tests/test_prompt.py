@@ -245,3 +245,79 @@ def test_prompt_sauvegarde_en_base(migrated: Settings) -> None:
     assert row["template_name"] == DEFAULT_TEMPLATE
     assert row["body"] == prompt.body
     assert row["token_estimate"] == prompt.token_estimate > 0
+
+
+# -- Contexte sportif dans le prompt ----------------------------------------
+
+
+@respx.mock
+async def test_le_prompt_contient_le_bloc_contexte(
+    odds_client: OddsAPIClient,
+    http_client: httpx.AsyncClient,
+    migrated: Settings,
+    load_fixture: Any,
+) -> None:
+    """Critere d'acceptation de la phase 3, vu depuis le prompt final."""
+    from myassistantbet.providers.apifootball import APIFootballClient
+    from myassistantbet.services.context import fetch_context
+
+    from .test_context import _mock_all
+
+    session_id = await _session_enrichie(odds_client, migrated, load_fixture)
+    event = db.query_one("SELECT * FROM events WHERE home = 'BK Hacken'", settings=migrated)
+    _mock_all(load_fixture)
+    await fetch_context(
+        APIFootballClient(http_client, migrated),
+        {
+            "id": event["id"],
+            "home": event["home"],
+            "away": event["away"],
+            "commence_time": event["commence_time"],
+            "apifootball_league_id": 113,
+        },
+        migrated,
+    )
+
+    body = build_prompt(session_id, settings=migrated).body
+
+    assert "CONTEXTE" in body
+    assert "  Classement  BK Hacken 4e (34pts, 16j)" in body
+    assert "  Forme 5     BK Hacken VVNDV (9-4)" in body
+    assert "  Absents     BK Hacken — M. Rygaard" in body
+    assert "  H2H (3)     1-1 · 0-2 D · 2-2" in body
+    # Le bloc MARCHES suit immediatement le contexte, sans ligne vide parasite.
+    assert "MARCHES (Betclic" in body
+
+
+@respx.mock
+async def test_absents_des_deux_equipes_sur_deux_lignes_alignees(
+    odds_client: OddsAPIClient,
+    http_client: httpx.AsyncClient,
+    migrated: Settings,
+    load_fixture: Any,
+) -> None:
+    from myassistantbet.providers.apifootball import APIFootballClient
+    from myassistantbet.services.context import fetch_context
+
+    from .test_context import _mock_all
+
+    session_id = await _session_enrichie(odds_client, migrated, load_fixture)
+    event = db.query_one("SELECT * FROM events WHERE home = 'BK Hacken'", settings=migrated)
+    _mock_all(load_fixture)
+    await fetch_context(
+        APIFootballClient(http_client, migrated),
+        {
+            "id": event["id"],
+            "home": event["home"],
+            "away": event["away"],
+            "commence_time": event["commence_time"],
+            "apifootball_league_id": 113,
+        },
+        migrated,
+    )
+
+    rows = build_prompt(session_id, settings=migrated).body.splitlines()
+    absents = next(index for index, row in enumerate(rows) if "Absents" in row)
+
+    assert rows[absents].startswith("  Absents     BK Hacken — ")
+    assert rows[absents + 1] == "              Djurgardens IF — aucun signale"

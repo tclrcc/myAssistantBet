@@ -1,0 +1,355 @@
+from __future__ import annotations
+
+from typing import Any
+
+import httpx
+import pytest
+import respx
+
+from myassistantbet import db
+from myassistantbet.config import Settings
+from myassistantbet.providers.apifootball import BASE_URL, APIFootballClient
+from myassistantbet.providers.base import ProviderError
+from myassistantbet.services.context import (
+    KIND_H2H,
+    KIND_INJURIES,
+    KIND_MAPPING,
+    context_lines,
+    fetch_context,
+    load,
+)
+from myassistantbet.services.matching import save_alias
+from myassistantbet.services.render import UNAVAILABLE
+
+RATE_HEADERS = {"x-ratelimit-requests-remaining": "82", "x-ratelimit-requests-limit": "100"}
+
+EVENT = {
+    "id": 1,
+    "home": "BK Hacken",
+    "away": "Djurgardens IF",
+    "commence_time": "2026-08-03T15:30:00Z",
+    "apifootball_league_id": 113,
+}
+
+
+@pytest.fixture
+def api_client(http_client: httpx.AsyncClient, migrated: Settings) -> APIFootballClient:
+    return APIFootballClient(http_client, migrated)
+
+
+def _seed_event(settings: Settings) -> None:
+    """Insere l'evenement de reference, rattache a l'Allsvenskan."""
+    competition = db.query_one(
+        "SELECT id, sport_id FROM competitions WHERE apifootball_league_id = 113", settings=settings
+    )
+    db.execute(
+        "INSERT INTO events (id, sport_id, competition_id, oddsapi_event_id, home, away, "
+        "commence_time, source, created_at) VALUES (1, ?, ?, 'evt-1', ?, ?, ?, 'api', ?)",
+        (
+            competition["sport_id"],
+            competition["id"],
+            EVENT["home"],
+            EVENT["away"],
+            EVENT["commence_time"],
+            db.utcnow(),
+        ),
+        settings=settings,
+    )
+
+
+def _mock_all(load_fixture: Any) -> None:
+    """Repond a tous les endpoints API-Football avec les fixtures capturees."""
+    respx.get(f"{BASE_URL}/fixtures", params__contains={"date": "2026-08-03"}).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("apifootball_fixtures_date.json"), headers=RATE_HEADERS
+        )
+    )
+    respx.get(f"{BASE_URL}/standings").mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("apifootball_standings.json"), headers=RATE_HEADERS
+        )
+    )
+    respx.get(f"{BASE_URL}/teams/statistics", params__contains={"team": "376"}).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("apifootball_stats_home.json"), headers=RATE_HEADERS
+        )
+    )
+    respx.get(f"{BASE_URL}/teams/statistics", params__contains={"team": "377"}).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("apifootball_stats_away.json"), headers=RATE_HEADERS
+        )
+    )
+    respx.get(f"{BASE_URL}/fixtures", params__contains={"team": "376"}).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("apifootball_recent_home.json"), headers=RATE_HEADERS
+        )
+    )
+    respx.get(f"{BASE_URL}/fixtures", params__contains={"team": "377"}).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("apifootball_recent_away.json"), headers=RATE_HEADERS
+        )
+    )
+    respx.get(f"{BASE_URL}/injuries").mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("apifootball_injuries.json"), headers=RATE_HEADERS
+        )
+    )
+    respx.get(f"{BASE_URL}/fixtures/headtohead").mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("apifootball_h2h.json"), headers=RATE_HEADERS
+        )
+    )
+
+
+def _lines(settings: Settings) -> dict[str, str]:
+    return dict(context_lines(1, EVENT["home"], EVENT["away"], EVENT["commence_time"], settings))
+
+
+# -- Provider ---------------------------------------------------------------
+
+
+@respx.mock
+async def test_cle_envoyee_en_header(api_client: APIFootballClient, migrated: Settings) -> None:
+    route = respx.get(f"{BASE_URL}/injuries").mock(
+        return_value=httpx.Response(200, json={"errors": [], "response": []}, headers=RATE_HEADERS)
+    )
+
+    await api_client.injuries(1)
+
+    assert route.calls[0].request.headers["x-apisports-key"] == ""
+
+
+@respx.mock
+async def test_quota_persiste(api_client: APIFootballClient, migrated: Settings) -> None:
+    respx.get(f"{BASE_URL}/injuries").mock(
+        return_value=httpx.Response(200, json={"errors": [], "response": []}, headers=RATE_HEADERS)
+    )
+
+    await api_client.injuries(1)
+
+    row = db.query_one("SELECT * FROM api_usage WHERE provider = 'apifootball'", settings=migrated)
+    assert row["endpoint"] == "/injuries"
+    assert row["cost"] == 1
+    assert row["remaining"] == 82
+
+
+@respx.mock
+async def test_erreur_applicative_en_http_200_devient_une_erreur(
+    api_client: APIFootballClient,
+) -> None:
+    # Piege du fournisseur : une cle invalide renvoie 200 avec `errors` rempli.
+    respx.get(f"{BASE_URL}/standings").mock(
+        return_value=httpx.Response(
+            200, json={"errors": {"token": "Invalid API key"}, "response": []}
+        )
+    )
+
+    with pytest.raises(ProviderError, match="Invalid API key"):
+        await api_client.standings(113, 2026)
+
+
+@respx.mock
+async def test_erreurs_en_liste_aussi(api_client: APIFootballClient) -> None:
+    respx.get(f"{BASE_URL}/standings").mock(
+        return_value=httpx.Response(200, json={"errors": ["quota depasse"], "response": []})
+    )
+
+    with pytest.raises(ProviderError, match="quota depasse"):
+        await api_client.standings(113, 2026)
+
+
+# -- Mapping ----------------------------------------------------------------
+
+
+@respx.mock
+async def test_mapping_automatique(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    report = await fetch_context(api_client, EVENT, migrated)
+
+    assert report.mapping_pending is False
+    event = db.query_one("SELECT * FROM events WHERE id = 1", settings=migrated)
+    assert event["apifootball_fixture_id"] == 1122334
+    assert event["mapping_pending"] == 0
+
+
+@respx.mock
+async def test_mapping_incertain_ne_declenche_aucun_autre_appel(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+    inconnu = {**EVENT, "home": "Racing Club de Nulle Part"}
+    standings = respx.routes[1]
+
+    report = await fetch_context(api_client, inconnu, migrated)
+
+    assert report.mapping_pending is True
+    assert standings.call_count == 0, "aucun appel supplementaire tant que le mapping est incertain"
+    event = db.query_one("SELECT mapping_pending FROM events WHERE id = 1", settings=migrated)
+    assert event["mapping_pending"] == 1
+
+
+@respx.mock
+async def test_candidats_memorises_pour_la_resolution_manuelle(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    await fetch_context(api_client, {**EVENT, "home": "Racing Club de Nulle Part"}, migrated)
+
+    payload = load(1, migrated)[KIND_MAPPING]
+    unresolved = [team for team in payload["teams"] if not team["resolved"]]
+    assert [team["oddsapi_name"] for team in unresolved] == ["Racing Club de Nulle Part"]
+    assert unresolved[0]["candidates"], "les candidats sont proposes a l'utilisateur"
+
+
+@respx.mock
+async def test_alias_manuel_debloque_le_mapping(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+    save_alias("Racing Club de Nulle Part", 376, "BK Hacken", "manual", migrated)
+
+    report = await fetch_context(
+        api_client, {**EVENT, "home": "Racing Club de Nulle Part"}, migrated
+    )
+
+    assert report.mapping_pending is False
+
+
+# -- Contexte rendu ---------------------------------------------------------
+
+
+@respx.mock
+async def test_bloc_contexte_complet(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Critere d'acceptation : forme, classement, absents et H2H sont presents."""
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated)
+    lines = _lines(migrated)
+
+    assert lines["Classement"] == "BK Hacken 4e (34pts, 16j) | Djurgardens IF 2e (39pts, 16j)"
+    assert lines["Forme 5"] == "BK Hacken VVNDV (9-4) | Djurgardens IF VVVND (11-3)"
+    assert lines["Dom/Ext"] == (
+        "BK Hacken dom 6V-1N-1D 2.1 bpm | Djurgardens IF ext 4V-2N-2D 1.4 bpm"
+    )
+    assert lines["H2H (3)"] == "1-1 · 0-2 D · 2-2"
+    assert "Rygaard" in lines["Absents"]
+    assert "Djurgardens IF — aucun signale" in lines["Absents"]
+    assert lines["Repos"] == "BK Hacken 6j | Djurgardens IF 3j"
+
+
+@respx.mock
+async def test_lettres_de_forme_traduites(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """W->V, D->N (nul), L->D (defaite) : le piege classique."""
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert "VVNDV" in _lines(migrated)["Forme 5"]
+
+
+@respx.mock
+async def test_h2h_toujours_du_point_de_vue_de_l_equipe_a_domicile(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated)
+    payload = load(1, migrated)[KIND_H2H]
+
+    # Le match du 21/09 s'est joue chez Djurgarden (2-0) : rendu 0-2 D pour Hacken.
+    assert payload["home_id"] == 376
+    assert _lines(migrated)["H2H (3)"].split(" · ")[1] == "0-2 D"
+
+
+@respx.mock
+async def test_absents_non_couverts_sont_explicites(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Critere d'acceptation : ce qui manque est dit, jamais tu."""
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+    respx.get(f"{BASE_URL}/injuries").mock(
+        return_value=httpx.Response(200, json={"errors": ["not covered"], "response": []})
+    )
+
+    report = await fetch_context(api_client, EVENT, migrated)
+
+    assert load(1, migrated)[KIND_INJURIES] == {"available": False}
+    assert _lines(migrated)["Absents"] == UNAVAILABLE
+    assert any("absents" in error for error in report.errors)
+
+
+@respx.mock
+async def test_classement_indisponible_omet_la_ligne(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+    respx.get(f"{BASE_URL}/standings").mock(return_value=httpx.Response(503, text="HS"))
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert "Classement" not in _lines(migrated)
+    assert "Forme 5" in _lines(migrated), "les autres donnees restent recuperees"
+
+
+@respx.mock
+async def test_contexte_relu_sans_reseau(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+    await fetch_context(api_client, EVENT, migrated)
+    appels = sum(route.call_count for route in respx.routes)
+
+    # Rejouer le rendu ne doit toucher a aucune API.
+    _lines(migrated)
+    _lines(migrated)
+
+    assert sum(route.call_count for route in respx.routes) == appels
+
+
+@respx.mock
+async def test_cache_partage_entre_matchs_de_la_meme_ligue(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    _seed_event(migrated)
+    db.execute(
+        "INSERT INTO events (id, sport_id, competition_id, oddsapi_event_id, home, away, "
+        "commence_time, source, created_at) SELECT 2, sport_id, competition_id, 'evt-2', "
+        "home, away, commence_time, 'api', created_at FROM events WHERE id = 1",
+        settings=migrated,
+    )
+    _mock_all(load_fixture)
+    standings = respx.routes[1]
+    cache: dict[str, object] = {}
+
+    await fetch_context(api_client, EVENT, migrated, cache)
+    await fetch_context(api_client, {**EVENT, "id": 2}, migrated, cache)
+
+    assert standings.call_count == 1, "le classement n'est paye qu'une fois par ligue"
+
+
+def test_aucun_contexte_ne_produit_aucune_ligne(migrated: Settings) -> None:
+    assert context_lines(1, "A", "B", "2026-08-03T15:30:00Z", migrated) == []
+
+
+def test_url_de_production() -> None:
+    # Meme verrou que pour The Odds API : les mocks respx suivent BASE_URL et ne
+    # detecteraient pas une URL de test laissee en place.
+    assert BASE_URL == "https://v3.football.api-sports.io"

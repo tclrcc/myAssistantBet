@@ -223,3 +223,15 @@ pre#prompt-body {
   word-break: break-word;
   font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
 }
+
+.mapping-form { display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; }
+.mapping-form label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; }
+.mapping-form select {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.4rem 0.5rem;
+  min-width: 260px;
+}
+a.value.alert { color: var(--alert); }

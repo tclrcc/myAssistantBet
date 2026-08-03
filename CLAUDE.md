@@ -107,6 +107,24 @@ Ajouter un marche : une entree dans `MARKET_ORDER`, un rendu dedie si sa forme l
 et un test. Sans rendu dedie, le repli generique s'applique — c'est acceptable, pas une
 regression.
 
+## Contexte sportif et mapping
+
+- `providers/apifootball.py` : piege du fournisseur, **les erreurs applicatives arrivent en
+  HTTP 200** dans le champ `errors` de l'enveloppe. Le client les convertit en `ProviderError`.
+- `services/context.py` : `fetch_context()` appelle et **persiste les charges utiles brutes**
+  dans la table `context` ; `context_lines()` relit la base. Regenerer un prompt ne declenche
+  donc aucun appel reseau.
+- Lettres de forme : `W -> V`, **`D -> N` (Draw = nul)**, **`L -> D` (Loss = defaite)**. C'est
+  le piege classique, il a son test.
+- H2H : toujours rendu du point de vue de l'equipe a domicile du match courant, avec un
+  marqueur `V`/`D` quand ce n'est pas un nul.
+- `services/matching.py` : alias memorise, puis normalisation + Levenshtein. Seuils
+  `MIN_SCORE` et `MIN_GAP`. **En cas de doute on ne devine pas** : `mapping_pending` et
+  resolution manuelle. Un alias manuel prime pour toujours.
+
+Un contexte manquant n'empeche jamais les cotes d'etre recuperees, et n'est jamais tu : il
+devient une ligne explicite dans le bloc, ou une mention dans le rapport d'enrichissement.
+
 ## Front
 
 HTMX est **vendorise** dans `static/htmx.min.js` — aucun CDN, aucun appel reseau depuis la

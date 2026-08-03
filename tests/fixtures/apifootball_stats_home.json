@@ -1,0 +1,72 @@
+{
+  "get": "teams/statistics",
+  "parameters": {},
+  "errors": [],
+  "results": 1,
+  "paging": {
+    "current": 1,
+    "total": 1
+  },
+  "response": [
+    {
+      "league": {
+        "id": 113,
+        "name": "Allsvenskan",
+        "season": 2026
+      },
+      "team": {
+        "id": 376,
+        "name": "BK Hacken"
+      },
+      "form": "WLDWWWWDLW",
+      "fixtures": {
+        "played": {
+          "home": 8,
+          "away": 8,
+          "total": 16
+        },
+        "wins": {
+          "home": 6,
+          "away": 3,
+          "total": 9
+        },
+        "draws": {
+          "home": 1,
+          "away": 2,
+          "total": 3
+        },
+        "loses": {
+          "home": 1,
+          "away": 3,
+          "total": 4
+        }
+      },
+      "goals": {
+        "for": {
+          "total": {
+            "home": 17,
+            "away": 11,
+            "total": 28
+          },
+          "average": {
+            "home": "2.1",
+            "away": "1.2",
+            "total": "1.8"
+          }
+        },
+        "against": {
+          "total": {
+            "home": 8,
+            "away": 12,
+            "total": 20
+          },
+          "average": {
+            "home": "1.0",
+            "away": "1.5",
+            "total": "1.2"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -15,6 +15,7 @@ from myassistantbet.providers.oddsapi import BASE_URL
 from myassistantbet.services.scan import active_competitions
 
 from .helpers import QUOTA_HEADERS
+from .test_db import LATEST_VERSION
 
 
 @pytest.fixture
@@ -135,7 +136,7 @@ def test_health_toujours_ok(client: TestClient) -> None:
 
     assert payload["status"] == "ok"
     assert payload["config"]["scheduler_enabled"] is False
-    assert payload["db"]["schema_version"] == 3
+    assert payload["db"]["schema_version"] == LATEST_VERSION
 
 
 # --- Shortlist et prompt ---------------------------------------------------

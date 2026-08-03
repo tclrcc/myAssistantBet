@@ -1,0 +1,547 @@
+"""Contexte sportif : forme, classement, absents, confrontations directes.
+
+Deux temps nettement separes :
+
+- `fetch_context()` interroge API-Football et **persiste les charges utiles brutes**
+  dans la table `context` ;
+- `context_lines()` relit la base et produit les lignes du bloc CONTEXTE.
+
+Cette separation permet de regenerer un prompt autant de fois qu'on veut sans
+retoucher au reseau, et de rendre explicite ce qui manque plutot que de le taire.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from typing import Any
+
+from ..config import Settings, get_settings
+from ..db import connect, utcnow
+from ..providers.apifootball import APIFootballClient
+from ..providers.base import ProviderError
+from .matching import Resolution, resolve_team
+from .render import UNAVAILABLE
+
+logger = logging.getLogger(__name__)
+
+H2H_LAST = 5
+RECENT_LAST = 5
+FORM_LENGTH = 5
+
+#: Lettres API-Football -> lettres francaises. Attention au piege : « D » cote
+#: API signifie Draw (nul), et « L » signifie Loss (defaite).
+FORM_LETTERS = {"W": "V", "D": "N", "L": "D"}
+
+KIND_STANDINGS = "standings"
+KIND_FORM = "form"
+KIND_INJURIES = "injuries"
+KIND_H2H = "h2h"
+KIND_RECENT = "recent"
+KIND_MAPPING = "mapping_pending"
+
+
+@dataclass
+class ContextReport:
+    """Ce qui a pu etre recupere pour un evenement, et ce qui a manque."""
+
+    event_id: int
+    label: str
+    mapping_pending: bool = False
+    kinds: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+    @property
+    def ok(self) -> bool:
+        return not self.mapping_pending and not self.errors
+
+
+# -- Persistance ------------------------------------------------------------
+
+
+def store(event_id: int, kind: str, payload: Any, settings: Settings | None = None) -> None:
+    """Remplace la charge utile d'un type de contexte pour cet evenement."""
+    with connect(settings) as conn:
+        conn.execute("DELETE FROM context WHERE event_id = ? AND kind = ?", (event_id, kind))
+        conn.execute(
+            "INSERT INTO context (event_id, kind, payload_json, fetched_at) VALUES (?, ?, ?, ?)",
+            (event_id, kind, json.dumps(payload, ensure_ascii=False), utcnow()),
+        )
+
+
+def load(event_id: int, settings: Settings | None = None) -> dict[str, Any]:
+    """Tout le contexte connu d'un evenement, indexe par type."""
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT kind, payload_json FROM context WHERE event_id = ?", (event_id,)
+        ).fetchall()
+    return {row["kind"]: json.loads(row["payload_json"]) for row in rows}
+
+
+def set_mapping_pending(event_id: int, pending: bool, settings: Settings | None = None) -> None:
+    with connect(settings) as conn:
+        conn.execute(
+            "UPDATE events SET mapping_pending = ? WHERE id = ?", (1 if pending else 0, event_id)
+        )
+
+
+# -- Mapping ----------------------------------------------------------------
+
+
+def _teams_from_fixtures(fixtures: list[dict[str, Any]]) -> list[tuple[int, str]]:
+    teams: dict[int, str] = {}
+    for fixture in fixtures:
+        for side in ("home", "away"):
+            team = (fixture.get("teams") or {}).get(side) or {}
+            if team.get("id") and team.get("name"):
+                teams[int(team["id"])] = str(team["name"])
+    return sorted(teams.items())
+
+
+def _find_fixture(
+    fixtures: list[dict[str, Any]], home_id: int, away_id: int
+) -> dict[str, Any] | None:
+    for fixture in fixtures:
+        teams = fixture.get("teams") or {}
+        if (teams.get("home") or {}).get("id") == home_id and (teams.get("away") or {}).get(
+            "id"
+        ) == away_id:
+            return fixture
+    return None
+
+
+@dataclass
+class FixtureMapping:
+    """Le match API-Football correspondant, et de quoi interroger le reste."""
+
+    fixture_id: int
+    league_id: int
+    season: int
+    home_id: int
+    away_id: int
+
+
+async def resolve_fixture(
+    client: APIFootballClient,
+    event: dict[str, Any],
+    settings: Settings | None = None,
+) -> FixtureMapping | None:
+    """Etablit la correspondance entre un evenement et un match API-Football.
+
+    En cas de doute sur une equipe, marque l'evenement `mapping_pending` et
+    memorise les candidats pour le formulaire de resolution manuelle.
+    """
+    settings = settings or get_settings()
+    league_id = event["apifootball_league_id"]
+    date_iso = event["commence_time"][:10]
+
+    fixtures = await client.fixtures_by_date(date_iso, league_id)
+    teams = _teams_from_fixtures(fixtures)
+
+    home = resolve_team(event["home"], teams, settings)
+    away = resolve_team(event["away"], teams, settings)
+
+    if not home.resolved or not away.resolved:
+        _record_pending(event, [home, away], settings)
+        return None
+
+    fixture = _find_fixture(fixtures, home.matched.apifootball_id, away.matched.apifootball_id)
+    if fixture is None:
+        _record_pending(
+            event, [home, away], settings, reason="aucun match ne reunit ces deux equipes"
+        )
+        return None
+
+    set_mapping_pending(int(event["id"]), False, settings)
+    with connect(settings) as conn:
+        conn.execute(
+            "DELETE FROM context WHERE event_id = ? AND kind = ?", (event["id"], KIND_MAPPING)
+        )
+        conn.execute(
+            "UPDATE events SET apifootball_fixture_id = ? WHERE id = ?",
+            (int(fixture["fixture"]["id"]), event["id"]),
+        )
+
+    return FixtureMapping(
+        fixture_id=int(fixture["fixture"]["id"]),
+        league_id=league_id,
+        season=int((fixture.get("league") or {}).get("season") or 0),
+        home_id=home.matched.apifootball_id,
+        away_id=away.matched.apifootball_id,
+    )
+
+
+def _record_pending(
+    event: dict[str, Any],
+    resolutions: list[Resolution],
+    settings: Settings,
+    reason: str = "correspondance incertaine",
+) -> None:
+    payload = {
+        "reason": reason,
+        "teams": [
+            {
+                "oddsapi_name": resolution.oddsapi_name,
+                "resolved": resolution.resolved,
+                "candidates": [
+                    {"id": item.apifootball_id, "name": item.apifootball_name, "score": item.score}
+                    for item in resolution.candidates
+                ],
+            }
+            for resolution in resolutions
+        ],
+    }
+    store(int(event["id"]), KIND_MAPPING, payload, settings)
+    set_mapping_pending(int(event["id"]), True, settings)
+    logger.info("Mapping en attente pour %s – %s : %s", event["home"], event["away"], reason)
+
+
+# -- Recuperation -----------------------------------------------------------
+
+
+def _standings_entry(standings: list[dict[str, Any]], team_id: int) -> dict[str, Any] | None:
+    for league in standings:
+        groups = ((league.get("league") or {}).get("standings")) or []
+        for group in groups:
+            for row in group or []:
+                if (row.get("team") or {}).get("id") == team_id:
+                    return {
+                        "rank": row.get("rank"),
+                        "points": row.get("points"),
+                        "played": ((row.get("all") or {}).get("played")),
+                    }
+    return None
+
+
+def _recent_summary(fixtures: list[dict[str, Any]], team_id: int) -> dict[str, Any]:
+    """Buts marques/encaisses et date du dernier match, sur les derniers matchs."""
+    goals_for = goals_against = 0
+    last_date: str | None = None
+    counted = 0
+    for fixture in fixtures:
+        teams = fixture.get("teams") or {}
+        goals = fixture.get("goals") or {}
+        home_id = (teams.get("home") or {}).get("id")
+        home_goals, away_goals = goals.get("home"), goals.get("away")
+        if home_goals is None or away_goals is None:
+            continue
+        if home_id == team_id:
+            goals_for += home_goals
+            goals_against += away_goals
+        else:
+            goals_for += away_goals
+            goals_against += home_goals
+        counted += 1
+        date = (fixture.get("fixture") or {}).get("date")
+        if date and (last_date is None or date > last_date):
+            last_date = date
+    return {
+        "goals_for": goals_for,
+        "goals_against": goals_against,
+        "matches": counted,
+        "last_date": last_date,
+    }
+
+
+async def fetch_context(
+    client: APIFootballClient,
+    event: dict[str, Any],
+    settings: Settings | None = None,
+    cache: dict[str, Any] | None = None,
+) -> ContextReport:
+    """Recupere et persiste tout le contexte disponible pour un evenement.
+
+    `cache` memorise classements et statistiques d'equipe le temps d'un
+    enrichissement : deux matchs de la meme ligue ne paient pas deux fois.
+    Aucune erreur n'est propagee : ce qui manque est simplement absent du
+    rapport, donc rendu comme « donnee non disponible ».
+    """
+    settings = settings or get_settings()
+    cache = cache if cache is not None else {}
+    report = ContextReport(event_id=int(event["id"]), label=f"{event['home']} – {event['away']}")
+
+    try:
+        mapping = await resolve_fixture(client, event, settings)
+    except ProviderError as exc:
+        report.errors.append(str(exc))
+        return report
+
+    if mapping is None:
+        report.mapping_pending = True
+        return report
+
+    async def _memo(key: str, coroutine_factory: Any) -> Any:
+        if key not in cache:
+            cache[key] = await coroutine_factory()
+        return cache[key]
+
+    # Classement — partage par toutes les rencontres de la ligue.
+    try:
+        standings = await _memo(
+            f"standings:{mapping.league_id}:{mapping.season}",
+            lambda: client.standings(mapping.league_id, mapping.season),
+        )
+        payload = {
+            "home": _standings_entry(standings, mapping.home_id),
+            "away": _standings_entry(standings, mapping.away_id),
+        }
+        if payload["home"] or payload["away"]:
+            store(report.event_id, KIND_STANDINGS, payload, settings)
+            report.kinds.append(KIND_STANDINGS)
+    except ProviderError as exc:
+        report.errors.append(f"classement : {exc}")
+
+    # Forme et repartition domicile / exterieur.
+    try:
+        stats = {}
+        for side, team_id in (("home", mapping.home_id), ("away", mapping.away_id)):
+            stats[side] = await _memo(
+                f"stats:{mapping.league_id}:{mapping.season}:{team_id}",
+                lambda tid=team_id: client.team_statistics(mapping.league_id, mapping.season, tid),
+            )
+        if any(stats.values()):
+            store(report.event_id, KIND_FORM, stats, settings)
+            report.kinds.append(KIND_FORM)
+    except ProviderError as exc:
+        report.errors.append(f"forme : {exc}")
+
+    # Derniers matchs : buts sur la periode recente et jours de repos.
+    try:
+        recent = {}
+        for side, team_id in (("home", mapping.home_id), ("away", mapping.away_id)):
+            fixtures = await _memo(
+                f"recent:{team_id}", lambda tid=team_id: client.last_fixtures(tid, RECENT_LAST)
+            )
+            recent[side] = _recent_summary(fixtures, team_id)
+        store(report.event_id, KIND_RECENT, recent, settings)
+        report.kinds.append(KIND_RECENT)
+    except ProviderError as exc:
+        report.errors.append(f"matchs recents : {exc}")
+
+    # Blesses et suspendus — couverture irreguliere selon les ligues.
+    try:
+        rows = await client.injuries(mapping.fixture_id)
+        payload = {"available": True, "home": [], "away": []}
+        for row in rows:
+            team_id = (row.get("team") or {}).get("id")
+            side = (
+                "home"
+                if team_id == mapping.home_id
+                else "away"
+                if team_id == mapping.away_id
+                else None
+            )
+            if side is None:
+                continue
+            player = row.get("player") or {}
+            payload[side].append(
+                {
+                    "name": player.get("name"),
+                    "reason": player.get("reason"),
+                    "type": player.get("type"),
+                }
+            )
+        store(report.event_id, KIND_INJURIES, payload, settings)
+        report.kinds.append(KIND_INJURIES)
+    except ProviderError as exc:
+        store(report.event_id, KIND_INJURIES, {"available": False}, settings)
+        report.errors.append(f"absents : {exc}")
+
+    # Confrontations directes.
+    try:
+        h2h = await client.head_to_head(mapping.home_id, mapping.away_id, H2H_LAST)
+        matches = []
+        for fixture in h2h:
+            teams = fixture.get("teams") or {}
+            goals = fixture.get("goals") or {}
+            if goals.get("home") is None or goals.get("away") is None:
+                continue
+            matches.append(
+                {
+                    "home_id": (teams.get("home") or {}).get("id"),
+                    "home_goals": goals.get("home"),
+                    "away_goals": goals.get("away"),
+                    "date": (fixture.get("fixture") or {}).get("date"),
+                }
+            )
+        store(report.event_id, KIND_H2H, {"home_id": mapping.home_id, "matches": matches}, settings)
+        report.kinds.append(KIND_H2H)
+    except ProviderError as exc:
+        report.errors.append(f"h2h : {exc}")
+
+    return report
+
+
+# -- Rendu ------------------------------------------------------------------
+
+
+def _form_letters(form: str | None) -> str:
+    if not form:
+        return ""
+    return "".join(FORM_LETTERS.get(letter, letter) for letter in form[-FORM_LENGTH:])
+
+
+def _side_record(stats: dict[str, Any] | None, side: str) -> str:
+    """`dom 6V-1N-1D 2.1 bpm` a partir des statistiques de saison."""
+    if not stats:
+        return ""
+    fixtures = stats.get("fixtures") or {}
+    wins = (fixtures.get("wins") or {}).get(side)
+    draws = (fixtures.get("draws") or {}).get(side)
+    loses = (fixtures.get("loses") or {}).get(side)
+    if wins is None and draws is None and loses is None:
+        return ""
+    average = (((stats.get("goals") or {}).get("for") or {}).get("average") or {}).get(side)
+    label = "dom" if side == "home" else "ext"
+    record = f"{label} {wins or 0}V-{draws or 0}N-{loses or 0}D"
+    return f"{record} {average} bpm" if average else record
+
+
+def _pair(home: str, away: str) -> str:
+    """Assemble deux fragments cote a cote, en omettant celui qui manque."""
+    parts = [part for part in (home, away) if part]
+    return " | ".join(parts)
+
+
+def _injuries_for(entries: list[dict[str, Any]], team: str) -> str:
+    if not entries:
+        return f"{team} — aucun signale"
+    listed = []
+    for entry in entries:
+        name = entry.get("name") or "?"
+        detail = ", ".join(str(item) for item in (entry.get("type"), entry.get("reason")) if item)
+        listed.append(f"{name} ({detail})" if detail else name)
+    return f"{team} — {', '.join(listed)}"
+
+
+def _h2h_line(payload: dict[str, Any], settings: Settings) -> str:
+    """`1-1 · 0-2 D · 2-2`, toujours du point de vue de l'equipe a domicile."""
+    matches = payload.get("matches") or []
+    home_id = payload.get("home_id")
+    fragments = []
+    for match in sorted(matches, key=lambda item: item.get("date") or "", reverse=True):
+        if match.get("home_id") == home_id:
+            ours, theirs = match["home_goals"], match["away_goals"]
+        else:
+            ours, theirs = match["away_goals"], match["home_goals"]
+        marker = " V" if ours > theirs else " D" if ours < theirs else ""
+        fragments.append(f"{ours}-{theirs}{marker}")
+    return " · ".join(fragments)
+
+
+def _rest_days(summary: dict[str, Any] | None, commence_time: str) -> str:
+    if not summary or not summary.get("last_date"):
+        return ""
+    try:
+        last = datetime.fromisoformat(str(summary["last_date"]).replace("Z", "+00:00"))
+        start = datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
+    except ValueError:
+        return ""
+    if last.tzinfo is None:
+        last = last.replace(tzinfo=UTC)
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=UTC)
+    # Ecart en jours calendaires : un match le 28 au soir et un match le 3 en
+    # debut d'apres-midi font « 6j » de repos, pas 5 tranches de 24 heures.
+    days = (start.date() - last.date()).days
+    return f"{days}j" if days >= 0 else ""
+
+
+def context_lines(
+    event_id: int,
+    home: str,
+    away: str,
+    commence_time: str,
+    settings: Settings | None = None,
+) -> list[tuple[str, str]]:
+    """Lignes du bloc CONTEXTE, pretes pour `render_event`.
+
+    Une donnee absente produit une ligne omise ; une donnee dont on sait qu'elle
+    n'est pas couverte produit une ligne explicite.
+    """
+    settings = settings or get_settings()
+    data = load(event_id, settings)
+    lines: list[tuple[str, str]] = []
+
+    standings = data.get(KIND_STANDINGS) or {}
+    ranked = _pair(
+        _rank_fragment(home, standings.get("home")), _rank_fragment(away, standings.get("away"))
+    )
+    if ranked:
+        lines.append(("Classement", ranked))
+
+    form = data.get(KIND_FORM) or {}
+    recent = data.get(KIND_RECENT) or {}
+    forms = _pair(
+        _form_fragment(home, form.get("home"), recent.get("home")),
+        _form_fragment(away, form.get("away"), recent.get("away")),
+    )
+    if forms:
+        lines.append(("Forme 5", forms))
+
+    sides = _pair(
+        _prefix(home, _side_record(form.get("home"), "home")),
+        _prefix(away, _side_record(form.get("away"), "away")),
+    )
+    if sides:
+        lines.append(("Dom/Ext", sides))
+
+    injuries = data.get(KIND_INJURIES)
+    if injuries is not None:
+        if not injuries.get("available"):
+            lines.append(("Absents", UNAVAILABLE))
+        else:
+            lines.append(
+                (
+                    "Absents",
+                    _injuries_for(injuries.get("home") or [], home)
+                    + "\n"
+                    + _injuries_for(injuries.get("away") or [], away),
+                )
+            )
+
+    h2h = data.get(KIND_H2H)
+    if h2h:
+        rendered = _h2h_line(h2h, settings)
+        if rendered:
+            lines.append((f"H2H ({len(h2h.get('matches') or [])})", rendered))
+
+    rest = _pair(
+        _prefix(home, _rest_days(recent.get("home"), commence_time)),
+        _prefix(away, _rest_days(recent.get("away"), commence_time)),
+    )
+    if rest:
+        lines.append(("Repos", rest))
+
+    return lines
+
+
+def _prefix(team: str, value: str) -> str:
+    return f"{team} {value}" if value else ""
+
+
+def _rank_fragment(team: str, entry: dict[str, Any] | None) -> str:
+    if not entry or entry.get("rank") is None:
+        return ""
+    rank = entry["rank"]
+    suffix = "er" if rank == 1 else "e"
+    detail = ", ".join(
+        part
+        for part in (
+            f"{entry['points']}pts" if entry.get("points") is not None else "",
+            f"{entry['played']}j" if entry.get("played") is not None else "",
+        )
+        if part
+    )
+    return f"{team} {rank}{suffix} ({detail})" if detail else f"{team} {rank}{suffix}"
+
+
+def _form_fragment(team: str, stats: dict[str, Any] | None, recent: dict[str, Any] | None) -> str:
+    letters = _form_letters((stats or {}).get("form"))
+    if not letters:
+        return ""
+    if recent and recent.get("matches"):
+        return f"{team} {letters} ({recent['goals_for']}-{recent['goals_against']})"
+    return f"{team} {letters}"

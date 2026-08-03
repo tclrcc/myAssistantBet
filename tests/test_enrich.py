@@ -309,3 +309,93 @@ async def test_reponse_inexploitable_ne_tue_pas_l_enrichissement(
     assert report.finished is True
     assert len(report.failures) == 1
     assert "inexploitable" in report.failures[0].error
+
+
+# -- Orchestration avec le contexte sportif ---------------------------------
+
+
+@respx.mock
+async def test_enrichissement_recupere_aussi_le_contexte(
+    odds_client: OddsAPIClient,
+    http_client: httpx.AsyncClient,
+    migrated: Settings,
+    load_fixture: Any,
+) -> None:
+    from myassistantbet.providers.apifootball import APIFootballClient
+
+    from .test_context import _mock_all
+
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    respx.get(EVENT_ODDS_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("oddsapi_event_odds_football.json"), headers=QUOTA_HEADERS
+        )
+    )
+    _mock_all(load_fixture)
+
+    report = await run_enrich(
+        odds_client,
+        session_id,
+        migrated,
+        context_client=APIFootballClient(http_client, migrated),
+    )
+
+    result = report.results[0]
+    assert result.ok is True
+    assert result.mapping_pending is False
+    assert {"standings", "form", "injuries", "h2h"} <= set(result.context_kinds)
+    assert result.context_note == ""
+
+
+@respx.mock
+async def test_contexte_absent_n_empeche_pas_les_cotes(
+    odds_client: OddsAPIClient,
+    http_client: httpx.AsyncClient,
+    migrated: Settings,
+    load_fixture: Any,
+) -> None:
+    """API-Football hors service : les cotes doivent quand meme etre recuperees."""
+    from myassistantbet.providers.apifootball import BASE_URL as AF_BASE
+    from myassistantbet.providers.apifootball import APIFootballClient
+
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    respx.get(EVENT_ODDS_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("oddsapi_event_odds_football.json"), headers=QUOTA_HEADERS
+        )
+    )
+    respx.get(url__startswith=AF_BASE).mock(return_value=httpx.Response(503, text="HS"))
+
+    report = await run_enrich(
+        odds_client,
+        session_id,
+        migrated,
+        context_client=APIFootballClient(http_client, migrated),
+    )
+
+    assert report.results[0].ok is True, "l'echec du contexte ne fait pas echouer le match"
+    assert report.results[0].odds_rows > 0
+    assert report.context_notes, "le manque est signale visiblement, pas tu"
+
+
+@respx.mock
+async def test_sans_client_de_contexte_l_enrichissement_reste_possible(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    respx.get(EVENT_ODDS_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("oddsapi_event_odds_football.json"), headers=QUOTA_HEADERS
+        )
+    )
+
+    report = await run_enrich(odds_client, session_id, migrated)
+
+    assert report.results[0].ok is True
+    assert report.results[0].context_kinds == []

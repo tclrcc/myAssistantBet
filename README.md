@@ -17,7 +17,7 @@ La specification complete et faisant autorite est dans [`SPEC.md`](./SPEC.md).
 | 0 | Fondations : projet, config, base, migrations, `/health`, CI | fait |
 | 1 | The Odds API, etage A (scan large), ecran Board | fait |
 | 2 | Etage B (marches profonds), rendu compact, generation du prompt | fait |
-| 3 | Contexte sportif via API-Football, mapping des equipes | a venir |
+| 3 | Contexte sportif via API-Football, mapping des equipes | fait |
 | 4 | Tennis, cyclisme, evenements manuels | a venir |
 | 5 | Historique des picks, personnalisation des templates | a venir |
 | 6 | Deploiement VPS (systemd, nginx, sauvegardes) | a venir |
@@ -100,6 +100,33 @@ Les matchs coches, regroupes par sport. Le bandeau du board mene a la session du
 - **Note perso** : la zone de texte de chaque match est injectee telle quelle dans le bloc
   `CONTEXTE`, sous `NOTE PERSO`.
 
+### Contexte sportif
+
+L'enrichissement recupere aussi, via API-Football, le classement, la forme sur 5 matchs, la
+repartition domicile/exterieur, les absents, les confrontations directes et les jours de
+repos. Ces donnees alimentent le bloc `CONTEXTE` de chaque match.
+
+Cout : environ **7 appels par match** au premier passage (matchs du jour, classement,
+statistiques des deux equipes, derniers matchs des deux equipes, blessures, H2H). Classement
+et statistiques sont partages entre les matchs d'une meme ligue au sein d'un enrichissement,
+donc le second match d'une meme competition coute nettement moins.
+
+Les charges utiles brutes sont persistees dans la table `context` : **regenerer un prompt ne
+declenche aucun appel reseau**.
+
+Ce qui manque est toujours dit. Une ligue non couverte pour les blessures produit
+`Absents     donnees non disponibles pour cette competition`, jamais un silence.
+
+### Mapping des equipes (`/mapping`)
+
+The Odds API et API-Football n'utilisent ni les memes identifiants ni les memes noms. La
+resolution se fait par alias memorise, puis par normalisation et distance de Levenshtein.
+
+**En cas de doute, l'application ne devine pas** : l'evenement est marque `mapping_pending`,
+le bandeau du board affiche le nombre de correspondances a resoudre, et la page `/mapping`
+propose les candidats vus lors de la tentative — sans nouvel appel d'API. Un choix manuel est
+memorise definitivement et prime sur toute deduction ulterieure.
+
 ### Prompt (`/session/{id}/prompt`)
 
 Le prompt assemble, avec selecteur de template, estimation de tokens, bouton « Copier » et
@@ -138,14 +165,18 @@ src/myassistantbet/
 ├── scheduler.py    # scan quotidien (APScheduler)
 ├── migrations/     # fichiers .sql numerotes
 ├── providers/      # clients d'APIs externes — ne connaissent rien du metier
-│   ├── base.py     # timeouts, retry, cache dev, comptabilite du quota
-│   └── oddsapi.py  # The Odds API v4
+│   ├── base.py         # timeouts, retry, cache dev, comptabilite du quota
+│   ├── oddsapi.py      # The Odds API v4
+│   └── apifootball.py  # API-Football v3
 ├── services/       # logique metier — aucun appel HTTP direct
 │   ├── scan.py     # etage A : scan large, upserts
 │   ├── board.py    # lecture du board, selection
 │   ├── enrich.py   # etage B : marches profonds, estimation et garde-fou
 │   ├── render.py   # compression d'un evenement en bloc texte compact
 │   ├── session.py  # shortlist, notes, assemblage des blocs
+│   ├── context.py  # contexte sportif : recuperation, persistance, rendu
+│   ├── matching.py # correspondance des equipes entre les deux APIs
+│   ├── mapping_ui.py # resolution manuelle des correspondances
 │   └── prompt.py   # assemblage du prompt final
 ├── templates/      # Jinja2 (HTML et templates de prompt .j2)
 └── static/         # CSS et htmx, servis en local (aucun CDN)
@@ -157,8 +188,9 @@ tests/
 ## Fixtures de test
 
 `tests/fixtures/oddsapi_allsvenskan_scan.json` reproduit la forme d'une reponse d'etage A.
-`tests/fixtures/oddsapi_event_odds_football.json` reproduit celle d'un etage B : elle est
-**construite d'apres le schema documente, pas capturee sur l'API reelle**. Les noms d'issues
+`tests/fixtures/oddsapi_event_odds_football.json` et les fixtures `apifootball_*.json`
+reproduisent la forme documentee des reponses : elles sont
+**construites d'apres le schema documente, pas capturees sur l'API reelle**. Les noms d'issues
 de certains marches (notamment `double_chance` et `halftime_fulltime`) restent donc a
 confirmer par un appel reel. Le rendu est concu pour cela : un marche dont le nommage n'est
 pas reconnu est affiche brut plutot que mal interprete.

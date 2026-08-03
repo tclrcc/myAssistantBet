@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.oddsapi import PROVIDER as ODDSAPI_PROVIDER
+from .mapping_ui import pending_count
 from .scan import scan_window
 
 H2H_MARKET = "h2h"
@@ -68,6 +69,7 @@ class Banner:
     selected_count: int = 0
     credit_floor: int = 500
     session_id: int | None = None
+    mapping_pending: int = 0
 
     @property
     def below_floor(self) -> bool:
@@ -281,6 +283,7 @@ def banner(settings: Settings | None = None) -> Banner:
 
     state.session_id = current_session(settings)
     state.selected_count = len(selected_event_ids(settings))
+    state.mapping_pending = pending_count(settings)
     return state
 
 

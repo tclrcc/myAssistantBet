@@ -29,6 +29,13 @@
     {% endif %}
   </div>
 
+  {% if banner.mapping_pending %}
+  <div class="banner-item">
+    <span class="label">Mapping</span>
+    <a class="value alert" href="/mapping">{{ banner.mapping_pending }} à résoudre →</a>
+  </div>
+  {% endif %}
+
   <form class="banner-item push"
         hx-post="/scan"
         hx-target="#board"

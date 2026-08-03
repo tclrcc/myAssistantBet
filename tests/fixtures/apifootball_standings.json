@@ -1,0 +1,67 @@
+{
+  "get": "standings",
+  "parameters": {},
+  "errors": [],
+  "results": 1,
+  "paging": {
+    "current": 1,
+    "total": 1
+  },
+  "response": [
+    {
+      "league": {
+        "id": 113,
+        "name": "Allsvenskan",
+        "season": 2026,
+        "standings": [
+          [
+            {
+              "rank": 1,
+              "team": {
+                "id": 380,
+                "name": "Malmo FF"
+              },
+              "points": 41,
+              "all": {
+                "played": 16
+              }
+            },
+            {
+              "rank": 2,
+              "team": {
+                "id": 377,
+                "name": "Djurgardens IF"
+              },
+              "points": 39,
+              "all": {
+                "played": 16
+              }
+            },
+            {
+              "rank": 4,
+              "team": {
+                "id": 376,
+                "name": "BK Hacken"
+              },
+              "points": 34,
+              "all": {
+                "played": 16
+              }
+            },
+            {
+              "rank": 9,
+              "team": {
+                "id": 378,
+                "name": "AIK"
+              },
+              "points": 20,
+              "all": {
+                "played": 16
+              }
+            }
+          ]
+        ]
+      }
+    }
+  ]
+}

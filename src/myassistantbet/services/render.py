@@ -336,7 +336,16 @@ def _header(event: RenderableEvent) -> str:
 
 
 def _context_block(event: RenderableEvent) -> list[str]:
-    rows = [line(label, value) for label, value in event.context_lines if value]
+    rows: list[str] = []
+    for label, value in event.context_lines:
+        if not value:
+            continue
+        # Une valeur multiligne (les absents des deux equipes) est alignee sous
+        # la premiere ligne plutot que de repeter le libelle.
+        first, *rest = value.split("\n")
+        rows.append(line(label, first))
+        rows.extend(CONTINUATION + extra for extra in rest if extra)
+
     if event.note and event.note.strip():
         rows.append(line("NOTE PERSO", event.note.strip()))
     return ["CONTEXTE", *rows] if rows else []

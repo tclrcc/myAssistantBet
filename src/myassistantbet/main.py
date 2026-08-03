@@ -16,10 +16,12 @@ from jinja2 import TemplateNotFound
 
 from . import __version__, db
 from .config import PACKAGE_DIR, get_settings
+from .providers.apifootball import APIFootballClient
 from .providers.oddsapi import OddsAPIClient
 from .scheduler import build_scheduler
 from .services import board as board_service
 from .services import enrich as enrich_service
+from .services import mapping_ui as mapping_service
 from .services import prompt as prompt_service
 from .services import session as session_service
 from .services.scan import run_scan
@@ -183,12 +185,25 @@ async def start_enrich(request: Request, session_id: int) -> HTMLResponse:
         estimate = enrich_service.build_estimate(session_id, settings)
         ENRICH_PROGRESS[session_id] = enrich_service.EnrichReport(total=estimate.events)
         client = OddsAPIClient(request.app.state.http, settings)
+        # Sans cle API-Football, on enrichit les cotes sans contexte plutot que
+        # d'echouer : le bloc CONTEXTE sera simplement absent.
+        context_client = (
+            APIFootballClient(request.app.state.http, settings)
+            if settings.apifootball_key
+            else None
+        )
 
         async def _run() -> None:
             def _track(report: enrich_service.EnrichReport) -> None:
                 ENRICH_PROGRESS[session_id] = report
 
-            await enrich_service.run_enrich(client, session_id, settings, on_progress=_track)
+            await enrich_service.run_enrich(
+                client,
+                session_id,
+                settings,
+                on_progress=_track,
+                context_client=context_client,
+            )
 
         task = asyncio.create_task(_run())
         ENRICH_TASKS.add(task)
@@ -202,6 +217,50 @@ def enrich_status(request: Request, session_id: int) -> HTMLResponse:
     """Fragment de progression, interroge en boucle par HTMX."""
     _require_session(session_id)
     return templates.TemplateResponse(request, "_enrich.html", _shortlist_context(session_id))
+
+
+# --- Mapping des equipes ---------------------------------------------------
+
+
+@app.get("/mapping", response_class=HTMLResponse)
+def mapping_page(request: Request) -> HTMLResponse:
+    """Resolution manuelle des correspondances d'equipes incertaines."""
+    return templates.TemplateResponse(
+        request, "mapping.html", {"events": mapping_service.pending_events(get_settings())}
+    )
+
+
+#: Champ de formulaire du choix manuel, un par equipe a resoudre.
+CHOICE_FIELD = Form(default=[])
+
+
+@app.post("/mapping/{event_id}", response_class=HTMLResponse)
+def resolve_mapping(
+    request: Request, event_id: int, choice: list[str] = CHOICE_FIELD
+) -> HTMLResponse:
+    """Enregistre les alias choisis. Un choix manuel vaut pour toujours."""
+    settings = get_settings()
+    choices: dict[str, tuple[int, str]] = {}
+    for raw in choice:
+        oddsapi_name, apifootball_id, apifootball_name = _parse_choice(raw)
+        if oddsapi_name:
+            choices[oddsapi_name] = (apifootball_id, apifootball_name)
+
+    mapping_service.resolve_manually(event_id, choices, settings)
+    return templates.TemplateResponse(
+        request, "_mapping_list.html", {"events": mapping_service.pending_events(settings)}
+    )
+
+
+def _parse_choice(raw: str) -> tuple[str, int, str]:
+    """`nom odds|id|nom apifootball`. Une valeur vide signifie « pas de choix »."""
+    parts = raw.split("|", 2)
+    if len(parts) != 3:
+        return "", 0, ""
+    try:
+        return parts[0], int(parts[1]), parts[2]
+    except ValueError:
+        return "", 0, ""
 
 
 # --- Prompt ----------------------------------------------------------------

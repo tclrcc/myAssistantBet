@@ -1,0 +1,42 @@
+{
+  "get": "injuries",
+  "parameters": {},
+  "errors": [],
+  "results": 2,
+  "paging": {
+    "current": 1,
+    "total": 1
+  },
+  "response": [
+    {
+      "player": {
+        "id": 901,
+        "name": "M. Rygaard",
+        "type": "Suspended",
+        "reason": "Red card"
+      },
+      "team": {
+        "id": 376,
+        "name": "BK Hacken"
+      },
+      "fixture": {
+        "id": 1122334
+      }
+    },
+    {
+      "player": {
+        "id": 902,
+        "name": "S. Svanback",
+        "type": "Missing Fixture",
+        "reason": "Knee Injury"
+      },
+      "team": {
+        "id": 376,
+        "name": "BK Hacken"
+      },
+      "fixture": {
+        "id": 1122334
+      }
+    }
+  ]
+}
