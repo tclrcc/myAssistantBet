@@ -124,7 +124,7 @@ def _upsert_event(
     return int(row["id"])
 
 
-def _replace_odds(conn: sqlite3.Connection, event_id: int, payload: dict[str, Any]) -> int:
+def replace_odds(conn: sqlite3.Connection, event_id: int, payload: dict[str, Any]) -> int:
     """Remplace les cotes de l'evenement pour chaque (bookmaker, marche) recu."""
     inserted = 0
     for bookmaker in payload.get("bookmakers") or []:
@@ -180,7 +180,7 @@ def _persist(
             if not _within_window(payload.get("commence_time"), window_end):
                 continue
             event_id = _upsert_event(conn, payload, competition)
-            odds_rows += _replace_odds(conn, event_id, payload)
+            odds_rows += replace_odds(conn, event_id, payload)
             kept += 1
     return kept, odds_rows
 

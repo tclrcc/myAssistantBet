@@ -1,0 +1,311 @@
+from __future__ import annotations
+
+from typing import Any
+
+import httpx
+import pytest
+import respx
+
+from myassistantbet import db
+from myassistantbet.config import Settings
+from myassistantbet.providers.oddsapi import BASE_URL, OddsAPIClient
+from myassistantbet.services import board as board_service
+from myassistantbet.services.enrich import (
+    FOOTBALL_MARKETS,
+    PLAYER_PROP_MARKETS,
+    TENNIS_MARKETS,
+    build_estimate,
+    markets_for,
+    run_enrich,
+)
+from myassistantbet.services.scan import active_competitions, run_scan
+
+from .helpers import NOW, QUOTA_HEADERS
+
+EVENT_ID = "3c7f9a1b2d4e5f60718293a4b5c6d7e8"
+EVENT_ODDS_URL = f"{BASE_URL}/sports/soccer_sweden_allsvenskan/events/{EVENT_ID}/odds"
+
+
+async def _seed_session(client: OddsAPIClient, settings: Settings, payload: Any) -> int:
+    """Scanne, puis coche le premier evenement. Renvoie l'id de session."""
+    for competition in active_competitions(settings):
+        key = competition["oddsapi_key"]
+        respx.get(f"{BASE_URL}/sports/{key}/odds").mock(
+            return_value=httpx.Response(
+                200,
+                json=payload if key == "soccer_sweden_allsvenskan" else [],
+                headers=QUOTA_HEADERS,
+            )
+        )
+    await run_scan(client, settings, now=NOW)
+
+    event = db.query_one("SELECT id FROM events WHERE home = 'BK Hacken'", settings=settings)
+    return board_service.toggle_selection(int(event["id"]), True, settings)
+
+
+# -- Choix des marches ------------------------------------------------------
+
+
+def test_marches_football(migrated: Settings) -> None:
+    assert markets_for("football", "soccer_sweden_allsvenskan", migrated) == FOOTBALL_MARKETS
+    assert len(FOOTBALL_MARKETS) == 14
+
+
+def test_props_buteurs_seulement_sur_la_liste_blanche(migrated: Settings) -> None:
+    # Allsvenskan : hors liste blanche, on ne depense pas pour des marches vides.
+    hors_liste = markets_for("football", "soccer_sweden_allsvenskan", migrated)
+    dans_liste = markets_for("football", "soccer_epl", migrated)
+
+    assert not set(PLAYER_PROP_MARKETS) & set(hors_liste)
+    assert set(PLAYER_PROP_MARKETS) <= set(dans_liste)
+    assert len(dans_liste) == len(hors_liste) + 2
+
+
+def test_liste_blanche_configurable(migrated: Settings, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(migrated, "player_props_leagues", "soccer_sweden_allsvenskan")
+
+    assert set(PLAYER_PROP_MARKETS) <= set(
+        markets_for("football", "soccer_sweden_allsvenskan", migrated)
+    )
+    assert not set(PLAYER_PROP_MARKETS) & set(markets_for("football", "soccer_epl", migrated))
+
+
+def test_marches_tennis(migrated: Settings) -> None:
+    assert markets_for("tennis", "tennis_atp_us_open", migrated) == TENNIS_MARKETS
+
+
+def test_cyclisme_ne_declenche_aucun_appel(migrated: Settings) -> None:
+    assert markets_for("cycling", "", migrated) == ()
+
+
+# -- Estimation de cout -----------------------------------------------------
+
+
+@respx.mock
+async def test_estimation_un_credit_par_marche(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+
+    estimate = build_estimate(session_id, migrated)
+
+    assert estimate.events == 1
+    assert estimate.cost == 14, "14 marches football, un bookmaker, donc 14 credits"
+    assert estimate.remaining == 4821
+    assert estimate.remaining_after == 4807
+    assert estimate.allowed is True
+    assert estimate.blocked_reason is None
+
+
+@respx.mock
+async def test_estimation_bloquee_sous_le_plancher(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    db.execute(
+        "INSERT INTO api_usage (provider, endpoint, cost, remaining, called_at) "
+        "VALUES ('oddsapi', '/x', 2, 505, '2099-01-01T00:00:00Z')",
+        settings=migrated,
+    )
+
+    estimate = build_estimate(session_id, migrated)
+
+    assert estimate.remaining == 505
+    assert estimate.remaining_after == 491
+    assert estimate.allowed is False
+    assert "plancher" in estimate.blocked_reason
+
+
+def test_estimation_sans_selection(migrated: Settings) -> None:
+    session_id = board_service.current_session(migrated)
+
+    estimate = build_estimate(session_id, migrated)
+
+    assert estimate.events == 0
+    assert estimate.cost == 0
+    assert estimate.allowed is False
+    assert estimate.blocked_reason == "Aucun evenement selectionne."
+
+
+def test_evenement_manuel_est_ignore_sans_cout(migrated: Settings) -> None:
+    session_id = board_service.current_session(migrated)
+    sport = db.query_one("SELECT id FROM sports WHERE key = 'cycling'", settings=migrated)
+    db.execute(
+        "INSERT INTO events (sport_id, home, away, commence_time, source, created_at) "
+        "VALUES (?, 'Etape 12', 'Alpe d''Huez', '2026-08-03T12:00:00Z', 'manual', ?)",
+        (sport["id"], db.utcnow()),
+        settings=migrated,
+    )
+    event = db.query_one("SELECT id FROM events", settings=migrated)
+    board_service.toggle_selection(int(event["id"]), True, migrated)
+
+    estimate = build_estimate(session_id, migrated)
+
+    assert estimate.events == 0
+    assert estimate.cost == 0
+    assert estimate.skipped == ["Etape 12 – Alpe d'Huez"]
+
+
+# -- Execution --------------------------------------------------------------
+
+
+@respx.mock
+async def test_enrichissement_stocke_les_marches_profonds(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    respx.get(EVENT_ODDS_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("oddsapi_event_odds_football.json"), headers=QUOTA_HEADERS
+        )
+    )
+
+    report = await run_enrich(odds_client, session_id, migrated)
+
+    assert report.finished is True
+    assert report.failures == []
+    assert report.done == 1
+    assert report.results[0].markets_received == 8
+
+    markets = {
+        row["market_key"]
+        for row in db.query("SELECT DISTINCT market_key FROM odds", settings=migrated)
+    }
+    assert {"correct_score", "btts", "team_totals", "alternate_totals_corners"} <= markets
+    assert "h2h" in markets, "le releve de l'etage A est conserve"
+
+
+@respx.mock
+async def test_marches_demandes_a_l_api(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    route = respx.get(EVENT_ODDS_URL).mock(
+        return_value=httpx.Response(200, json={"bookmakers": []}, headers=QUOTA_HEADERS)
+    )
+
+    await run_enrich(odds_client, session_id, migrated)
+
+    params = route.calls[0].request.url.params
+    assert set(params["markets"].split(",")) == set(FOOTBALL_MARKETS)
+    assert params["bookmakers"] == "betclic_fr"
+
+
+@respx.mock
+async def test_enrichissement_refuse_sous_le_plancher_sans_aucun_appel(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    db.execute(
+        "INSERT INTO api_usage (provider, endpoint, cost, remaining, called_at) "
+        "VALUES ('oddsapi', '/x', 2, 501, '2099-01-01T00:00:00Z')",
+        settings=migrated,
+    )
+    route = respx.get(EVENT_ODDS_URL).mock(return_value=httpx.Response(200, json={}))
+
+    report = await run_enrich(odds_client, session_id, migrated)
+
+    assert route.call_count == 0, "aucun credit ne doit etre depense"
+    assert report.finished is True
+    assert "plancher" in report.failures[0].error
+
+
+@respx.mock
+async def test_un_evenement_en_echec_n_interrompt_pas_les_autres(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    # On coche aussi le second match du scan.
+    second = db.query_one("SELECT id FROM events WHERE home = 'IFK Norrkoping'", settings=migrated)
+    board_service.toggle_selection(int(second["id"]), True, migrated)
+
+    respx.get(EVENT_ODDS_URL).mock(return_value=httpx.Response(503, text="indisponible"))
+    respx.get(
+        f"{BASE_URL}/sports/soccer_sweden_allsvenskan/events/9f8e7d6c5b4a39281706f5e4d3c2b1a0/odds"
+    ).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("oddsapi_event_odds_football.json"), headers=QUOTA_HEADERS
+        )
+    )
+
+    report = await run_enrich(odds_client, session_id, migrated)
+
+    assert report.done == 2
+    assert len(report.failures) == 1
+    assert report.failures[0].label == "BK Hacken – Djurgardens IF"
+
+
+@respx.mock
+async def test_progression_rapportee_a_chaque_etape(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    respx.get(EVENT_ODDS_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("oddsapi_event_odds_football.json"), headers=QUOTA_HEADERS
+        )
+    )
+
+    steps: list[tuple[int, int, bool]] = []
+    await run_enrich(
+        odds_client,
+        session_id,
+        migrated,
+        on_progress=lambda report: steps.append((report.done, report.percent, report.finished)),
+    )
+
+    assert steps == [(1, 100, False), (1, 100, True)]
+
+
+@respx.mock
+async def test_enrichissement_idempotent(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    respx.get(EVENT_ODDS_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("oddsapi_event_odds_football.json"), headers=QUOTA_HEADERS
+        )
+    )
+
+    await run_enrich(odds_client, session_id, migrated)
+    first = len(db.query("SELECT id FROM odds", settings=migrated))
+    await run_enrich(odds_client, session_id, migrated)
+    second = len(db.query("SELECT id FROM odds", settings=migrated))
+
+    assert first == second
+
+
+@respx.mock
+async def test_reponse_inexploitable_ne_tue_pas_l_enrichissement(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Une reponse de forme imprevue est signalee, jamais propagee en exception."""
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    respx.get(EVENT_ODDS_URL).mock(
+        return_value=httpx.Response(200, json=["forme", "inattendue"], headers=QUOTA_HEADERS)
+    )
+
+    report = await run_enrich(odds_client, session_id, migrated)
+
+    assert report.finished is True
+    assert len(report.failures) == 1
+    assert "inexploitable" in report.failures[0].error

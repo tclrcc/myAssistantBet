@@ -39,6 +39,15 @@ class Settings(BaseSettings):
     # --- Garde-fous quota --------------------------------------------------
     odds_api_credit_floor: int = 500
 
+    # --- Etage B -----------------------------------------------------------
+    #: Competitions (cles The Odds API) pour lesquelles demander les props buteurs.
+    #: Ailleurs, ces marches ne sont servis par aucun bookmaker : ne pas depenser
+    #: de credit. Liste separee par des virgules.
+    player_props_leagues: str = (
+        "soccer_epl,soccer_france_ligue_one,soccer_spain_la_liga,"
+        "soccer_germany_bundesliga,soccer_italy_serie_a,soccer_usa_mls"
+    )
+
     # --- Appels externes ---------------------------------------------------
     #: Base du backoff exponentiel entre deux tentatives, en secondes.
     #: Mise a 0 dans les tests pour ne jamais attendre.
@@ -55,6 +64,10 @@ class Settings(BaseSettings):
     scheduler_enabled: bool = True
     scan_hour: int = Field(default=7, ge=0, le=23)
     scan_minute: int = Field(default=0, ge=0, le=59)
+
+    @property
+    def player_props_whitelist(self) -> frozenset[str]:
+        return frozenset(key.strip() for key in self.player_props_leagues.split(",") if key.strip())
 
     @property
     def db_path_absolute(self) -> Path:

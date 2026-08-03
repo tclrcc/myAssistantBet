@@ -118,6 +118,32 @@ class OddsAPIClient(BaseHTTPClient):
         )
         return response.data, cost
 
+    async def get_event_odds(
+        self,
+        sport_key: str,
+        event_id: str,
+        *,
+        markets: tuple[str, ...],
+        bookmakers: tuple[str, ...] = (DEFAULT_BOOKMAKER,),
+    ) -> tuple[dict[str, Any], int]:
+        """Etage B : marches profonds d'un match. Coute 1 credit par marche.
+
+        Un marche absent pour ce match n'est pas une erreur : il manque
+        simplement de la reponse.
+        """
+        endpoint = f"/sports/{sport_key}/events/{event_id}/odds"
+        params = self._params(
+            bookmakers=",".join(bookmakers),
+            markets=",".join(markets),
+            oddsFormat="decimal",
+            dateFormat="iso",
+        )
+        response = await self._get(endpoint, params=params)
+        cost = self._account(
+            endpoint, response, estimated_cost=expected_cost(list(markets), list(bookmakers))
+        )
+        return response.data, cost
+
     async def get_events(self, sport_key: str) -> list[dict[str, Any]]:
         """Evenements a venir d'une competition, sans cotes. Endpoint gratuit."""
         endpoint = f"/sports/{sport_key}/events"

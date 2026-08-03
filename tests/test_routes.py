@@ -135,4 +135,117 @@ def test_health_toujours_ok(client: TestClient) -> None:
 
     assert payload["status"] == "ok"
     assert payload["config"]["scheduler_enabled"] is False
-    assert payload["db"]["schema_version"] == 2
+    assert payload["db"]["schema_version"] == 3
+
+
+# --- Shortlist et prompt ---------------------------------------------------
+
+
+def _select_event(client: TestClient, settings: Settings) -> tuple[int, int]:
+    """Coche un evenement et renvoie (session_id, event_id)."""
+    event_id = _seed_event(settings)
+    client.post(f"/events/{event_id}/select", data={"selected": "1"})
+    session = db.query_one("SELECT id FROM sessions", settings=settings)
+    return int(session["id"]), event_id
+
+
+def test_shortlist_affiche_la_selection(client: TestClient, isolated_settings: Settings) -> None:
+    session_id, _ = _select_event(client, isolated_settings)
+
+    response = client.get(f"/session/{session_id}")
+
+    assert response.status_code == 200
+    assert "Lyon – Nice" in response.text
+    assert "Coût estimé" in response.text
+    # Ligue 1 est dans la liste blanche des props : 14 marches + 2 props.
+    assert "16 crédits" in response.text
+
+
+def test_shortlist_inconnue_renvoie_404(client: TestClient) -> None:
+    assert client.get("/session/999").status_code == 404
+
+
+def test_bouton_enrichir_desactive_sous_le_plancher(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    session_id, _ = _select_event(client, isolated_settings)
+    db.execute(
+        "INSERT INTO api_usage (provider, endpoint, cost, remaining, called_at) "
+        "VALUES ('oddsapi', '/x', 2, 505, '2099-01-01T00:00:00Z')",
+        settings=isolated_settings,
+    )
+
+    response = client.get(f"/session/{session_id}")
+
+    assert "disabled" in response.text
+    assert "plancher" in response.text
+
+
+def test_note_enregistree(client: TestClient, isolated_settings: Settings) -> None:
+    session_id, event_id = _select_event(client, isolated_settings)
+
+    response = client.post(
+        f"/session/{session_id}/events/{event_id}/note", data={"note": "  Gardien incertain  "}
+    )
+
+    assert response.status_code == 204
+    row = db.query_one("SELECT note FROM session_events", settings=isolated_settings)
+    assert row["note"] == "Gardien incertain"
+
+
+@respx.mock
+def test_enrichissement_via_htmx(client: TestClient, isolated_settings: Settings) -> None:
+    session_id, _ = _select_event(client, isolated_settings)
+    respx.get(url__regex=r".*/events/evt-test/odds.*").mock(
+        return_value=httpx.Response(200, json={"bookmakers": []}, headers=QUOTA_HEADERS)
+    )
+
+    lance = client.post(f"/session/{session_id}/enrich")
+    assert lance.status_code == 200
+    assert 'id="enrich"' in lance.text
+
+    statut = client.get(f"/session/{session_id}/enrich/status")
+    assert statut.status_code == 200
+
+
+def test_page_prompt(client: TestClient, isolated_settings: Settings) -> None:
+    session_id, _ = _select_event(client, isolated_settings)
+
+    response = client.get(f"/session/{session_id}/prompt")
+
+    assert response.status_code == 200
+    assert "SESSION D&#39;ANALYSE" in response.text or "SESSION D'ANALYSE" in response.text
+    assert "Lyon – Nice" in response.text
+    assert "tokens" in response.text
+    assert "Copier" in response.text
+    assert "session_default.md.j2" in response.text
+
+
+def test_prompt_sauvegarde_a_chaque_generation(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    session_id, _ = _select_event(client, isolated_settings)
+
+    client.get(f"/session/{session_id}/prompt")
+    client.get(f"/session/{session_id}/prompt")
+
+    assert len(db.query("SELECT id FROM prompts", settings=isolated_settings)) == 2
+
+
+def test_prompt_template_inconnu_renvoie_404(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    session_id, _ = _select_event(client, isolated_settings)
+
+    assert client.get(f"/session/{session_id}/prompt?template=nope.md.j2").status_code == 404
+
+
+def test_telechargement_markdown(client: TestClient, isolated_settings: Settings) -> None:
+    session_id, _ = _select_event(client, isolated_settings)
+
+    response = client.get(f"/session/{session_id}/prompt.md")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/markdown")
+    assert f'filename="session-{session_id}.md"' in response.headers["content-disposition"]
+    assert response.text.startswith("# SESSION D'ANALYSE")

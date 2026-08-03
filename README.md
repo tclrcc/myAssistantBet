@@ -16,7 +16,7 @@ La specification complete et faisant autorite est dans [`SPEC.md`](./SPEC.md).
 |---|---|---|
 | 0 | Fondations : projet, config, base, migrations, `/health`, CI | fait |
 | 1 | The Odds API, etage A (scan large), ecran Board | fait |
-| 2 | Etage B (marches profonds), rendu compact, generation du prompt | a venir |
+| 2 | Etage B (marches profonds), rendu compact, generation du prompt | fait |
 | 3 | Contexte sportif via API-Football, mapping des equipes | a venir |
 | 4 | Tennis, cyclisme, evenements manuels | a venir |
 | 5 | Historique des picks, personnalisation des templates | a venir |
@@ -37,7 +37,8 @@ uv sync                 # cree .venv et installe les dependances verrouillees
 cp .env.example .env    # puis renseigner les cles d'API
 ```
 
-Aucune cle n'est necessaire pour demarrer l'application en Phase 0.
+Aucune cle n'est necessaire pour demarrer l'application, mais sans `ODDS_API_KEY`
+aucun scan ne ramenera de donnees.
 
 ## Lancement
 
@@ -79,13 +80,34 @@ J+1, via `SCAN_WINDOW_DAYS`), avec leurs cotes 1N2 et leur ligne O/U principale.
   un scan coute 14 credits.
 - **Bandeau** — credits restants (rouge sous `ODDS_API_CREDIT_FLOOR`), date du dernier scan
   payant, et nombre de matchs coches.
-- **Selection** — cocher un match l'ajoute a la session du jour. Cette selection alimentera
-  l'ecran Shortlist de la Phase 2.
+- **Selection** — cocher un match l'ajoute a la session du jour, visible sur la Shortlist.
 - **Competitions** — les 7 competitions initiales sont posees par la migration `002`. Pour en
   ajouter, en retirer ou en desactiver une, editer la table `competitions` directement.
 
 Une competition dont l'API ne repond pas n'interrompt jamais le scan : l'echec est affiche
 dans le rapport et les autres competitions sont traitees normalement.
+
+### Shortlist (`/session/{id}`)
+
+Les matchs coches, regroupes par sport. Le bandeau du board mene a la session du jour.
+
+- **Cout affiche avant le clic** : 14 credits par match de football (1 par marche profond),
+  16 sur les competitions de la liste blanche des props buteurs, 8 par match de tennis.
+- **Garde-fou** : si `restant - cout` passe sous `ODDS_API_CREDIT_FLOOR`, le bouton
+  « Enrichir la selection » est desactive et la raison est affichee. Aucun appel n'est tente.
+- **Progression** : l'enrichissement tourne en tache de fond, la barre est rafraichie par
+  polling HTMX. Un match en echec n'interrompt pas les autres.
+- **Note perso** : la zone de texte de chaque match est injectee telle quelle dans le bloc
+  `CONTEXTE`, sous `NOTE PERSO`.
+
+### Prompt (`/session/{id}/prompt`)
+
+Le prompt assemble, avec selecteur de template, estimation de tokens, bouton « Copier » et
+telechargement `.md`. Chaque generation est archivee dans la table `prompts`.
+
+Les templates sont des fichiers `.md.j2` dans `src/myassistantbet/templates/prompts/`, relus
+a chaque requete : **editer un fichier suffit, sans redemarrage**. Les bandes de cotes
+exposees au template viennent de la table `tiers`.
 
 ### Economiser le quota en developpement
 
@@ -120,13 +142,26 @@ src/myassistantbet/
 │   └── oddsapi.py  # The Odds API v4
 ├── services/       # logique metier — aucun appel HTTP direct
 │   ├── scan.py     # etage A : scan large, upserts
-│   └── board.py    # lecture du board, selection
+│   ├── board.py    # lecture du board, selection
+│   ├── enrich.py   # etage B : marches profonds, estimation et garde-fou
+│   ├── render.py   # compression d'un evenement en bloc texte compact
+│   ├── session.py  # shortlist, notes, assemblage des blocs
+│   └── prompt.py   # assemblage du prompt final
 ├── templates/      # Jinja2 (HTML et templates de prompt .j2)
 └── static/         # CSS et htmx, servis en local (aucun CDN)
 tests/
-├── fixtures/       # reponses d'API reelles capturees, en JSON
+├── fixtures/       # reponses d'API en JSON (voir l'avertissement ci-dessous)
 └── test_*.py
 ```
+
+## Fixtures de test
+
+`tests/fixtures/oddsapi_allsvenskan_scan.json` reproduit la forme d'une reponse d'etage A.
+`tests/fixtures/oddsapi_event_odds_football.json` reproduit celle d'un etage B : elle est
+**construite d'apres le schema documente, pas capturee sur l'API reelle**. Les noms d'issues
+de certains marches (notamment `double_chance` et `halftime_fulltime`) restent donc a
+confirmer par un appel reel. Le rendu est concu pour cela : un marche dont le nommage n'est
+pas reconnu est affiche brut plutot que mal interprete.
 
 ## Fuseau horaire
 

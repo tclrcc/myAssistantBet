@@ -20,13 +20,14 @@ EXPECTED_TABLES = {
     "session_events",
     "sessions",
     "sports",
+    "tiers",
 }
 
 
 def test_migrations_creent_toutes_les_tables(isolated_settings: Settings) -> None:
     applied = db.run_migrations(isolated_settings)
 
-    assert applied == ["001_init.sql", "002_seed_competitions.sql"]
+    assert applied == ["001_init.sql", "002_seed_competitions.sql", "003_tiers.sql"]
     assert set(db.list_tables(isolated_settings)) == EXPECTED_TABLES
 
 
@@ -41,6 +42,7 @@ def test_migrations_sont_idempotentes(isolated_settings: Settings) -> None:
     assert [(row["version"], row["name"]) for row in rows] == [
         (1, "001_init.sql"),
         (2, "002_seed_competitions.sql"),
+        (3, "003_tiers.sql"),
     ]
 
 
@@ -82,7 +84,7 @@ def test_health_retourne_l_etat_du_schema(isolated_settings: Settings) -> None:
     state = db.health(isolated_settings)
 
     assert state["ok"] is True
-    assert state["schema_version"] == 2
+    assert state["schema_version"] == 3
     assert state["journal_mode"] == "wal"
     assert set(state["tables"]) == EXPECTED_TABLES
 

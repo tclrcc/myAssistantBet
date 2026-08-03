@@ -67,6 +67,7 @@ class Banner:
     last_scan_at: datetime | None = None
     selected_count: int = 0
     credit_floor: int = 500
+    session_id: int | None = None
 
     @property
     def below_floor(self) -> bool:
@@ -278,6 +279,7 @@ def banner(settings: Settings | None = None) -> Banner:
     if last_scan is not None and last_scan["at"]:
         state.last_scan_at = _local(last_scan["at"], settings.tz)
 
+    state.session_id = current_session(settings)
     state.selected_count = len(selected_event_ids(settings))
     return state
 

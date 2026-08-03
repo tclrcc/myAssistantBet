@@ -1,0 +1,64 @@
+{# Zone d'enrichissement : estimation avant clic, puis progression pendant. #}
+<div id="enrich"
+     {% if progress and not progress.finished %}
+     hx-get="/session/{{ view.session_id }}/enrich/status"
+     hx-trigger="load delay:600ms"
+     hx-target="#enrich"
+     hx-swap="outerHTML"
+     {% endif %}>
+
+  {% if progress %}
+    <div class="report {% if progress.finished and progress.failures %}report-warn{% endif %}">
+      {% if progress.finished %}
+        Enrichissement terminé : {{ progress.done }} match(s), {{ progress.cost }} crédit(s) consommé(s).
+        {% if progress.failures %}
+        <ul class="failures">
+          {% for failure in progress.failures %}
+            <li>{{ failure.label }} — {{ failure.error }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+      {% else %}
+        Enrichissement en cours — {{ progress.done }}/{{ progress.total }}
+      {% endif %}
+      <div class="progress"><div class="bar" style="width: {{ progress.percent }}%"></div></div>
+    </div>
+  {% endif %}
+
+  {% if not progress or progress.finished %}
+  <div class="enrich-bar">
+    <div class="estimate">
+      <span class="label">Coût estimé</span>
+      <span class="value">{{ estimate.cost }} crédits</span>
+      <span class="muted">
+        {{ estimate.events }} match(s)
+        {%- if estimate.remaining is not none %},
+          reste {{ estimate.remaining }} → {{ estimate.remaining_after }}
+          (plancher {{ estimate.floor }})
+        {%- else %}, quota inconnu
+        {%- endif %}
+      </span>
+    </div>
+
+    {% if estimate.allowed %}
+      <form hx-post="/session/{{ view.session_id }}/enrich"
+            hx-target="#enrich"
+            hx-swap="outerHTML">
+        <button type="submit" class="primary">Enrichir la sélection</button>
+      </form>
+    {% else %}
+      <div class="blocked">
+        <button type="button" class="primary" disabled>Enrichir la sélection</button>
+        <span class="alert">{{ estimate.blocked_reason }}</span>
+      </div>
+    {% endif %}
+  </div>
+
+  {% if estimate.skipped %}
+    <p class="muted small">
+      Sans appel API (événement manuel ou sport non couvert) :
+      {{ estimate.skipped | join(', ') }}
+    </p>
+  {% endif %}
+  {% endif %}
+</div>

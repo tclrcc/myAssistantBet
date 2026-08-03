@@ -10,6 +10,7 @@ import pytest
 
 from myassistantbet import db
 from myassistantbet.config import Settings, get_settings
+from myassistantbet.main import ENRICH_PROGRESS
 from myassistantbet.providers.oddsapi import OddsAPIClient
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -34,10 +35,12 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     monkeypatch.setenv("HTTP_BACKOFF_BASE", "0")
 
     get_settings.cache_clear()
+    ENRICH_PROGRESS.clear()
     try:
         yield get_settings()
     finally:
         get_settings.cache_clear()
+        ENRICH_PROGRESS.clear()
 
 
 @pytest.fixture

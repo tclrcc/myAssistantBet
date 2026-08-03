@@ -85,6 +85,28 @@ servie par le cache de developpement (`DEV_CACHE=1`) ne consomme rien et n'ecrit
 Etage A (`services/scan.py`) : `h2h,totals` sur `betclic_fr` seul, soit 2 credits par
 competition active.
 
+Etage B (`services/enrich.py`) : 1 credit par marche profond, match par match. 14 marches
+football, 16 sur les competitions de `PLAYER_PROPS_LEAGUES` (props buteurs), 8 en tennis.
+Le cout est estime **avant** l'appel et compare a `ODDS_API_CREDIT_FLOOR` : sous le plancher,
+aucun appel n'est emis.
+
+## Le rendu compact (`services/render.py`)
+
+C'est le composant le plus important : la qualite de l'analyse depend de sa densite. Regles
+non negociables, toutes couvertes par des tests :
+
+- une ligne sans donnee est **omise**, jamais vide ni « N/A » ;
+- une donnee volontairement absente devient une ligne explicite
+  (« donnees non disponibles pour cette competition ») ;
+- cotes a deux decimales ; scores exacts limites aux 10 cotes les plus basses, triees
+  croissant ; lignes O/U limitees aux 5 plus proches de la ligne principale ;
+- libelle sur 12 caracteres, indentation de 2, continuations alignees a 14 ;
+- un marche paye mais non modelise est rendu brut plutot que perdu silencieusement.
+
+Ajouter un marche : une entree dans `MARKET_ORDER`, un rendu dedie si sa forme le merite,
+et un test. Sans rendu dedie, le repli generique s'applique — c'est acceptable, pas une
+regression.
+
 ## Front
 
 HTMX est **vendorise** dans `static/htmx.min.js` — aucun CDN, aucun appel reseau depuis la

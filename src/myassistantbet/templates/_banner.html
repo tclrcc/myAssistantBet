@@ -22,7 +22,11 @@
 
   <div class="banner-item">
     <span class="label">Sélection</span>
-    <span class="value">{{ banner.selected_count }}</span>
+    {% if banner.session_id %}
+      <a class="value" href="/session/{{ banner.session_id }}">{{ banner.selected_count }} →</a>
+    {% else %}
+      <span class="value">{{ banner.selected_count }}</span>
+    {% endif %}
   </div>
 
   <form class="banner-item push"

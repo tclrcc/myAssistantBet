@@ -1,0 +1,111 @@
+{
+  "id": "3c7f9a1b2d4e5f60718293a4b5c6d7e8",
+  "sport_key": "soccer_sweden_allsvenskan",
+  "sport_title": "Allsvenskan - Sweden",
+  "commence_time": "2026-08-03T15:30:00Z",
+  "home_team": "BK Hacken",
+  "away_team": "Djurgardens IF",
+  "bookmakers": [
+    {
+      "key": "betclic_fr",
+      "title": "Betclic",
+      "last_update": "2026-08-03T06:12:04Z",
+      "markets": [
+        {
+          "key": "double_chance",
+          "last_update": "2026-08-03T06:12:04Z",
+          "outcomes": [
+            { "name": "BK Hacken/Draw", "price": 1.48 },
+            { "name": "BK Hacken/Djurgardens IF", "price": 1.29 },
+            { "name": "Draw/Djurgardens IF", "price": 1.5 }
+          ]
+        },
+        {
+          "key": "alternate_totals",
+          "last_update": "2026-08-03T06:12:04Z",
+          "outcomes": [
+            { "name": "Over", "price": 1.05, "point": 0.5 },
+            { "name": "Under", "price": 9.0, "point": 0.5 },
+            { "name": "Over", "price": 1.22, "point": 1.5 },
+            { "name": "Under", "price": 4.1, "point": 1.5 },
+            { "name": "Over", "price": 1.72, "point": 2.5 },
+            { "name": "Under", "price": 2.05, "point": 2.5 },
+            { "name": "Over", "price": 2.9, "point": 3.5 },
+            { "name": "Under", "price": 1.38, "point": 3.5 },
+            { "name": "Over", "price": 5.2, "point": 4.5 },
+            { "name": "Under", "price": 1.14, "point": 4.5 },
+            { "name": "Over", "price": 11.0, "point": 5.5 },
+            { "name": "Under", "price": 1.02, "point": 5.5 }
+          ]
+        },
+        {
+          "key": "btts",
+          "last_update": "2026-08-03T06:12:04Z",
+          "outcomes": [
+            { "name": "Yes", "price": 1.6 },
+            { "name": "No", "price": 2.25 }
+          ]
+        },
+        {
+          "key": "totals_h1",
+          "last_update": "2026-08-03T06:12:04Z",
+          "outcomes": [
+            { "name": "Over", "price": 1.32, "point": 0.5 },
+            { "name": "Under", "price": 3.2, "point": 0.5 },
+            { "name": "Over", "price": 2.55, "point": 1.5 },
+            { "name": "Under", "price": 1.48, "point": 1.5 }
+          ]
+        },
+        {
+          "key": "team_totals",
+          "last_update": "2026-08-03T06:12:04Z",
+          "outcomes": [
+            { "name": "Over", "description": "BK Hacken", "price": 2.3, "point": 1.5 },
+            { "name": "Under", "description": "BK Hacken", "price": 1.58, "point": 1.5 },
+            { "name": "Over", "description": "Djurgardens IF", "price": 2.45, "point": 1.5 },
+            { "name": "Under", "description": "Djurgardens IF", "price": 1.52, "point": 1.5 }
+          ]
+        },
+        {
+          "key": "correct_score",
+          "last_update": "2026-08-03T06:12:04Z",
+          "outcomes": [
+            { "name": "1-1", "price": 6.5 },
+            { "name": "2-1", "price": 8.0 },
+            { "name": "1-2", "price": 8.5 },
+            { "name": "1-0", "price": 8.5 },
+            { "name": "0-1", "price": 9.5 },
+            { "name": "2-2", "price": 11.0 },
+            { "name": "2-0", "price": 11.0 },
+            { "name": "0-0", "price": 11.0 },
+            { "name": "3-1", "price": 15.0 },
+            { "name": "1-3", "price": 17.0 },
+            { "name": "3-0", "price": 21.0 },
+            { "name": "0-3", "price": 26.0 },
+            { "name": "4-0", "price": 41.0 }
+          ]
+        },
+        {
+          "key": "alternate_totals_corners",
+          "last_update": "2026-08-03T06:12:04Z",
+          "outcomes": [
+            { "name": "Over", "price": 1.85, "point": 9.5 },
+            { "name": "Under", "price": 1.9, "point": 9.5 },
+            { "name": "Over", "price": 2.6, "point": 10.5 },
+            { "name": "Under", "price": 1.45, "point": 10.5 }
+          ]
+        },
+        {
+          "key": "halftime_fulltime",
+          "last_update": "2026-08-03T06:12:04Z",
+          "outcomes": [
+            { "name": "BK Hacken/BK Hacken", "price": 4.5 },
+            { "name": "Draw/BK Hacken", "price": 7.5 },
+            { "name": "Draw/Draw", "price": 5.25 },
+            { "name": "Djurgardens IF/Djurgardens IF", "price": 4.6 }
+          ]
+        }
+      ]
+    }
+  ]
+}
