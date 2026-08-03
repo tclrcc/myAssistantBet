@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}Événement manuel — MyAssistantBet{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Ajouter un événement manuel</h1>
+  <div class="actions"><a class="button" href="/">← Board</a></div>
+</div>
+
+<p class="muted small">
+  Pour ce qu'aucune API ne couvre : le cyclisme entièrement, et le tennis en dehors des
+  Grands Chelems et des Masters. L'événement apparaît ensuite sur le board comme les autres.
+</p>
+
+{% if error %}<div class="report report-warn">{{ error }}</div>{% endif %}
+{% if created %}
+<div class="report">
+  Événement créé : <strong>{{ created.home }}{% if created.away %} – {{ created.away }}{% endif %}</strong>
+  ({{ created.odds.outcomes|length }} cote(s)).
+  {% if created.odds.rejected %}
+    <ul class="failures">
+      {% for line in created.odds.rejected %}
+        <li>Ligne de cote ignorée, format non reconnu : <code>{{ line }}</code></li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</div>
+{% endif %}
+
+<form class="manual-form" method="post" action="/manual">
+  <div class="row">
+    <label>
+      Sport
+      <select name="sport" required>
+        <option value="cycling" {% if form.sport == 'cycling' %}selected{% endif %}>Cyclisme</option>
+        <option value="tennis" {% if form.sport == 'tennis' %}selected{% endif %}>Tennis</option>
+        <option value="football" {% if form.sport == 'football' %}selected{% endif %}>Football</option>
+      </select>
+    </label>
+
+    <label class="grow">
+      Compétition <span class="hint">course, tournoi, championnat</span>
+      <input type="text" name="competition" value="{{ form.competition }}"
+             placeholder="Tour de France">
+    </label>
+  </div>
+
+  <div class="row">
+    <label class="grow">
+      Participant 1 / étape <span class="hint">obligatoire</span>
+      <input type="text" name="home" value="{{ form.home }}" required
+             placeholder="Étape 12 — Briançon > Alpe d'Huez">
+    </label>
+    <label class="grow">
+      Participant 2 <span class="hint">vide en cyclisme</span>
+      <input type="text" name="away" value="{{ form.away }}" placeholder="">
+    </label>
+  </div>
+
+  <div class="row">
+    <label>
+      Date
+      <input type="date" name="date" value="{{ form.date }}" required>
+    </label>
+    <label>
+      Heure <span class="hint">locale</span>
+      <input type="time" name="time" value="{{ form.time }}" required>
+    </label>
+  </div>
+
+  <div class="row">
+    <label class="grow">
+      Cotes <span class="hint">une par ligne : <code>Nom 2.50</code></span>
+      <textarea name="odds" rows="6" placeholder="Pogacar 2.50&#10;Vingegaard 3.00&#10;Evenepoel 7.50">{{ form.odds }}</textarea>
+    </label>
+    <label class="grow">
+      URLs de référence <span class="hint">une par ligne</span>
+      <textarea name="links" rows="6" placeholder="https://www.procyclingstats.com/race/tour-de-france/2026/stage-12">{{ form.links }}</textarea>
+    </label>
+  </div>
+
+  <div class="row">
+    <label class="grow">
+      Profil <span class="hint">cyclisme</span>
+      <textarea name="profile" rows="3" placeholder="Haute montagne, 4 cols, arrivée au sommet 13.8 km à 8.1 %">{{ form.profile }}</textarea>
+    </label>
+    <label class="grow">
+      Startlist / favoris <span class="hint">cyclisme</span>
+      <textarea name="startlist" rows="3" placeholder="Pogacar, Vingegaard, Evenepoel, Roglic">{{ form.startlist }}</textarea>
+    </label>
+  </div>
+
+  <label>
+    Infos libres
+    <textarea name="notes" rows="2" placeholder="Météo annoncée, objectifs d'équipe, état du général…">{{ form.notes }}</textarea>
+  </label>
+
+  <button type="submit" class="primary">Créer l'événement</button>
+</form>
+{% endblock %}

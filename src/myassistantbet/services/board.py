@@ -53,7 +53,8 @@ class BoardRow:
 
     @property
     def affiche(self) -> str:
-        return f"{self.home} – {self.away}"
+        # Le cyclisme n'a pas de second participant : pas de tiret orphelin.
+        return f"{self.home} – {self.away}" if self.away else self.home
 
     @property
     def has_odds(self) -> bool:

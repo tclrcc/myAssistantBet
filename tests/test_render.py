@@ -75,14 +75,10 @@ def test_1n2() -> None:
 
 
 def test_1n2_sans_nul_devient_deux_issues() -> None:
-    event = _event(
-        sport_key="tennis",
-        home="Alcaraz",
-        away="Sinner",
-        markets={"h2h": [Outcome("Alcaraz", 1.4), Outcome("Sinner", 2.95)]},
-    )
+    # Football sans issue « Draw » : le libelle 1N2 n'aurait plus de sens.
+    event = _event(markets={"h2h": [Outcome("Hacken", 2.1), Outcome("Djurgarden", 1.8)]})
 
-    assert _lines(event)["1-2"] == "1.40 / 2.95"
+    assert _lines(event)["1-2"] == "2.10 / 1.80"
 
 
 def test_double_chance() -> None:
@@ -362,3 +358,100 @@ def test_densite_du_bloc(load_fixture: object) -> None:
     }
 
     assert estimate_tokens(render_event(_event(markets=outcomes))) < 400
+
+
+# -- Bloc tennis ------------------------------------------------------------
+
+
+def _tennis(**overrides: object) -> RenderableEvent:
+    base = {
+        "index": 2,
+        "sport_key": "tennis",
+        "competition": "US Open",
+        "home": "Alcaraz",
+        "away": "Sinner",
+        "commence_local": datetime(2026, 8, 4, 19, 0, tzinfo=PARIS),
+        "markets": {},
+        "fetched_local": datetime(2026, 8, 4, 8, 12, tzinfo=PARIS),
+    }
+    base.update(overrides)
+    return RenderableEvent(**base)  # type: ignore[arg-type]
+
+
+def test_tennis_vainqueur_sans_nul() -> None:
+    event = _tennis(markets={"h2h": [Outcome("Alcaraz", 1.4), Outcome("Sinner", 2.95)]})
+
+    assert _lines(event)["Vainqueur"] == "1.40 / 2.95"
+
+
+def test_tennis_jeux_over_under() -> None:
+    event = _tennis(
+        markets={
+            "totals": [
+                Outcome("Over", 1.9, 21.5),
+                Outcome("Under", 1.9, 21.5),
+                Outcome("Over", 2.05, 22.5),
+                Outcome("Under", 1.8, 22.5),
+            ]
+        }
+    )
+
+    assert _lines(event)["Jeux O/U"] == "21.5: 1.90/1.90 | 22.5: 2.05/1.80"
+
+
+def test_tennis_sets() -> None:
+    event = _tennis(
+        markets={
+            "h2h_s1": [Outcome("Alcaraz", 1.45), Outcome("Sinner", 2.7)],
+            "h2h_s2": [Outcome("Alcaraz", 1.5), Outcome("Sinner", 2.6)],
+        }
+    )
+    lines = _lines(event)
+
+    assert lines["Set 1"] == "1.45 / 2.70"
+    assert lines["Set 2"] == "1.50 / 2.60"
+
+
+def test_tennis_handicap_en_jeux() -> None:
+    event = _tennis(
+        markets={
+            "spreads": [
+                Outcome("Alcaraz", 1.85, -3.5),
+                Outcome("Sinner", 1.95, 3.5),
+            ]
+        }
+    )
+
+    assert _lines(event)["Hand. jeux"] == "Alcaraz -3.5 1.85 | Sinner +3.5 1.95"
+
+
+def test_tennis_jeux_du_premier_set_fusionnes() -> None:
+    event = _tennis(
+        markets={
+            "totals_s1": [Outcome("Over", 1.85, 9.5), Outcome("Under", 1.95, 9.5)],
+            "alternate_totals_s1": [Outcome("Over", 2.6, 10.5), Outcome("Under", 1.45, 10.5)],
+        }
+    )
+
+    assert _lines(event)["Jeux S1"] == "9.5: 1.85/1.95 | 10.5: 2.60/1.45"
+
+
+def test_tennis_n_emprunte_pas_les_libelles_du_football() -> None:
+    event = _tennis(markets={"h2h": [Outcome("Alcaraz", 1.4), Outcome("Sinner", 2.95)]})
+    rendered = render_event(event)
+
+    assert "1N2" not in rendered
+    assert "1-2" not in rendered
+
+
+def test_ordre_des_marches_tennis() -> None:
+    event = _tennis(
+        markets={
+            "h2h_s1": [Outcome("Alcaraz", 1.45), Outcome("Sinner", 2.7)],
+            "h2h": [Outcome("Alcaraz", 1.4), Outcome("Sinner", 2.95)],
+            "totals": [Outcome("Over", 1.9, 21.5), Outcome("Under", 1.9, 21.5)],
+        }
+    )
+
+    labels = [row[2:14].strip() for row in render_event(event).splitlines() if row.startswith("  ")]
+    assert labels == ["Vainqueur", "Jeux O/U", "Set 1"]

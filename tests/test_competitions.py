@@ -1,0 +1,239 @@
+from __future__ import annotations
+
+from collections.abc import Iterator
+
+import httpx
+import pytest
+import respx
+from fastapi.testclient import TestClient
+
+from myassistantbet import db
+from myassistantbet.config import Settings
+from myassistantbet.main import app
+from myassistantbet.providers.oddsapi import BASE_URL, OddsAPIClient
+from myassistantbet.services.competitions import list_all, set_active, sync_from_api
+from myassistantbet.services.scan import active_competitions
+
+from .helpers import QUOTA_HEADERS
+
+SPORTS_PAYLOAD = [
+    {"key": "soccer_epl", "group": "Soccer", "title": "EPL", "active": True},
+    {"key": "soccer_france_ligue_one", "group": "Soccer", "title": "Ligue 1 - France"},
+    {"key": "tennis_atp_us_open", "group": "Tennis", "title": "ATP US Open"},
+    {"key": "tennis_wta_us_open", "group": "Tennis", "title": "WTA US Open"},
+    {"key": "americanfootball_nfl", "group": "American Football", "title": "NFL"},
+    {"key": "basketball_nba", "group": "Basketball", "title": "NBA"},
+]
+
+
+@pytest.fixture
+def client(isolated_settings: Settings) -> Iterator[TestClient]:
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+# -- Seed -------------------------------------------------------------------
+
+
+def test_les_competitions_tennis_sont_seedees_inactives(migrated: Settings) -> None:
+    rows = db.query(
+        "SELECT c.label, c.active FROM competitions c JOIN sports s ON s.id = c.sport_id "
+        "WHERE s.key = 'tennis'",
+        settings=migrated,
+    )
+
+    assert len(rows) == 8
+    assert all(row["active"] == 0 for row in rows), "aucun credit sans decision explicite"
+    assert all(item["sport_key"] == "football" for item in active_competitions(migrated)), (
+        "le scan ne voit que le football tant que rien n'est active"
+    )
+
+
+def test_activer_une_competition_la_rend_scannable(migrated: Settings) -> None:
+    tennis = db.query_one(
+        "SELECT id FROM competitions WHERE oddsapi_key = 'tennis_atp_us_open'", settings=migrated
+    )
+
+    set_active(int(tennis["id"]), True, migrated)
+
+    keys = {item["oddsapi_key"] for item in active_competitions(migrated)}
+    assert "tennis_atp_us_open" in keys
+
+
+def test_desactiver_une_competition(migrated: Settings) -> None:
+    ligue1 = db.query_one(
+        "SELECT id FROM competitions WHERE oddsapi_key = 'soccer_france_ligue_one'",
+        settings=migrated,
+    )
+
+    set_active(int(ligue1["id"]), False, migrated)
+
+    keys = {item["oddsapi_key"] for item in active_competitions(migrated)}
+    assert "soccer_france_ligue_one" not in keys
+
+
+# -- Synchronisation --------------------------------------------------------
+
+
+@respx.mock
+async def test_synchronisation_cree_les_competitions_manquantes(
+    odds_client: OddsAPIClient, migrated: Settings
+) -> None:
+    respx.get(f"{BASE_URL}/sports").mock(
+        return_value=httpx.Response(200, json=SPORTS_PAYLOAD, headers=QUOTA_HEADERS)
+    )
+
+    report = await sync_from_api(odds_client, migrated)
+
+    keys = {row["oddsapi_key"] for row in list_all(migrated)}
+    assert "tennis_wta_us_open" in keys
+    assert report.ignored == 2, "NFL et NBA sont hors perimetre"
+    assert "americanfootball_nfl" not in keys
+
+
+@respx.mock
+async def test_une_competition_decouverte_est_inactive(
+    odds_client: OddsAPIClient, migrated: Settings
+) -> None:
+    respx.get(f"{BASE_URL}/sports").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"key": "tennis_atp_shanghai_masters", "title": "ATP Shanghai"}],
+            headers=QUOTA_HEADERS,
+        )
+    )
+
+    await sync_from_api(odds_client, migrated)
+
+    row = db.query_one(
+        "SELECT active FROM competitions WHERE oddsapi_key = 'tennis_atp_shanghai_masters'",
+        settings=migrated,
+    )
+    assert row["active"] == 0
+
+
+@respx.mock
+async def test_synchronisation_ne_desactive_jamais_l_existant(
+    odds_client: OddsAPIClient, migrated: Settings
+) -> None:
+    respx.get(f"{BASE_URL}/sports").mock(
+        return_value=httpx.Response(200, json=SPORTS_PAYLOAD, headers=QUOTA_HEADERS)
+    )
+
+    await sync_from_api(odds_client, migrated)
+
+    row = db.query_one(
+        "SELECT active FROM competitions WHERE oddsapi_key = 'soccer_epl'", settings=migrated
+    )
+    assert row["active"] == 1, "la Premier League etait active, elle le reste"
+
+
+@respx.mock
+async def test_le_libelle_du_fournisseur_fait_foi(
+    odds_client: OddsAPIClient, migrated: Settings
+) -> None:
+    respx.get(f"{BASE_URL}/sports").mock(
+        return_value=httpx.Response(200, json=SPORTS_PAYLOAD, headers=QUOTA_HEADERS)
+    )
+
+    report = await sync_from_api(odds_client, migrated)
+
+    row = db.query_one(
+        "SELECT label FROM competitions WHERE oddsapi_key = 'soccer_epl'", settings=migrated
+    )
+    assert row["label"] == "EPL"
+    assert any("EPL" in item for item in report.updated)
+
+
+@respx.mock
+async def test_synchronisation_idempotente(odds_client: OddsAPIClient, migrated: Settings) -> None:
+    respx.get(f"{BASE_URL}/sports").mock(
+        return_value=httpx.Response(200, json=SPORTS_PAYLOAD, headers=QUOTA_HEADERS)
+    )
+
+    await sync_from_api(odds_client, migrated)
+    total = len(list_all(migrated))
+    second = await sync_from_api(odds_client, migrated)
+
+    assert len(list_all(migrated)) == total
+    assert second.created == []
+
+
+@respx.mock
+async def test_synchronisation_gratuite(odds_client: OddsAPIClient, migrated: Settings) -> None:
+    """`/sports` est gratuit : le cout facture doit rester nul."""
+    respx.get(f"{BASE_URL}/sports").mock(
+        return_value=httpx.Response(
+            200,
+            json=SPORTS_PAYLOAD,
+            headers={"x-requests-remaining": "4821", "x-requests-last": "0"},
+        )
+    )
+
+    await sync_from_api(odds_client, migrated)
+
+    row = db.query_one("SELECT cost FROM api_usage", settings=migrated)
+    assert row["cost"] == 0
+
+
+# -- Routes -----------------------------------------------------------------
+
+
+def test_page_competitions(client: TestClient) -> None:
+    response = client.get("/competitions")
+
+    assert response.status_code == 200
+    assert "Ligue 1" in response.text
+    assert "ATP — US Open" in response.text
+    assert "Synchroniser depuis The Odds API" in response.text
+
+
+def test_activation_via_htmx(client: TestClient, isolated_settings: Settings) -> None:
+    tennis = db.query_one(
+        "SELECT id FROM competitions WHERE oddsapi_key = 'tennis_atp_us_open'",
+        settings=isolated_settings,
+    )
+
+    response = client.post(f"/competitions/{tennis['id']}/active", data={"active": "1"})
+
+    assert response.status_code == 200
+    assert response.text.strip().startswith('<div id="competitions">')
+    row = db.query_one(
+        "SELECT active FROM competitions WHERE id = ?", (tennis["id"],), settings=isolated_settings
+    )
+    assert row["active"] == 1
+
+
+def test_desactivation_via_htmx(client: TestClient, isolated_settings: Settings) -> None:
+    ligue1 = db.query_one(
+        "SELECT id FROM competitions WHERE oddsapi_key = 'soccer_france_ligue_one'",
+        settings=isolated_settings,
+    )
+
+    client.post(f"/competitions/{ligue1['id']}/active", data={})
+
+    row = db.query_one(
+        "SELECT active FROM competitions WHERE id = ?", (ligue1["id"],), settings=isolated_settings
+    )
+    assert row["active"] == 0
+
+
+@respx.mock
+def test_synchronisation_via_htmx(client: TestClient) -> None:
+    respx.get(f"{BASE_URL}/sports").mock(
+        return_value=httpx.Response(200, json=SPORTS_PAYLOAD, headers=QUOTA_HEADERS)
+    )
+
+    response = client.post("/competitions/sync")
+
+    assert response.status_code == 200
+    assert "Aucun crédit consommé" in response.text
+
+
+@respx.mock
+def test_synchronisation_en_echec_ne_casse_pas_la_page(client: TestClient) -> None:
+    respx.get(f"{BASE_URL}/sports").mock(return_value=httpx.Response(503, text="HS"))
+
+    response = client.post("/competitions/sync")
+
+    assert response.status_code == 200, "une API HS ne doit jamais empecher de servir la page"

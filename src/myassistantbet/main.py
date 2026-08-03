@@ -6,6 +6,8 @@ import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import FastAPI, Form, HTTPException, Request
@@ -17,10 +19,13 @@ from jinja2 import TemplateNotFound
 from . import __version__, db
 from .config import PACKAGE_DIR, get_settings
 from .providers.apifootball import APIFootballClient
+from .providers.base import ProviderError
 from .providers.oddsapi import OddsAPIClient
 from .scheduler import build_scheduler
 from .services import board as board_service
+from .services import competitions as competitions_service
 from .services import enrich as enrich_service
+from .services import manual as manual_service
 from .services import mapping_ui as mapping_service
 from .services import prompt as prompt_service
 from .services import session as session_service
@@ -217,6 +222,102 @@ def enrich_status(request: Request, session_id: int) -> HTMLResponse:
     """Fragment de progression, interroge en boucle par HTMX."""
     _require_session(session_id)
     return templates.TemplateResponse(request, "_enrich.html", _shortlist_context(session_id))
+
+
+# --- Evenements manuels ----------------------------------------------------
+
+
+def _empty_manual_form() -> dict[str, str]:
+    today = datetime.now(ZoneInfo(get_settings().tz))
+    return {
+        "sport": "cycling",
+        "competition": "",
+        "home": "",
+        "away": "",
+        "date": today.strftime("%Y-%m-%d"),
+        "time": "14:00",
+        "odds": "",
+        "links": "",
+        "notes": "",
+        "profile": "",
+        "startlist": "",
+    }
+
+
+@app.get("/manual", response_class=HTMLResponse)
+def manual_form(request: Request) -> HTMLResponse:
+    """Formulaire d'ajout d'un evenement que ni Odds API ni API-Football ne couvrent."""
+    return templates.TemplateResponse(
+        request, "manual.html", {"form": _empty_manual_form(), "error": None, "created": None}
+    )
+
+
+@app.post("/manual", response_class=HTMLResponse)
+async def manual_create(request: Request) -> HTMLResponse:
+    """Cree l'evenement manuel. La saisie est conservee si elle est refusee."""
+    settings = get_settings()
+    form = dict(await request.form())
+    values = {**_empty_manual_form(), **{key: str(value) for key, value in form.items()}}
+
+    try:
+        event = manual_service.build(
+            sport_key=values["sport"],
+            competition=values["competition"],
+            home=values["home"],
+            away=values["away"],
+            date_value=values["date"],
+            time_value=values["time"],
+            odds_raw=values["odds"],
+            links_raw=values["links"],
+            notes=values["notes"],
+            profile=values["profile"],
+            startlist=values["startlist"],
+            settings=settings,
+        )
+    except manual_service.ManualError as exc:
+        return templates.TemplateResponse(
+            request, "manual.html", {"form": values, "error": str(exc), "created": None}
+        )
+
+    manual_service.save(event, settings)
+    return templates.TemplateResponse(
+        request, "manual.html", {"form": _empty_manual_form(), "error": None, "created": event}
+    )
+
+
+# --- Competitions ----------------------------------------------------------
+
+
+def _competitions_context(report: object | None = None) -> dict[str, object]:
+    return {"competitions": competitions_service.list_all(get_settings()), "report": report}
+
+
+@app.get("/competitions", response_class=HTMLResponse)
+def competitions_page(request: Request) -> HTMLResponse:
+    """Competitions connues et leur etat d'activation."""
+    return templates.TemplateResponse(request, "competitions.html", _competitions_context())
+
+
+@app.post("/competitions/sync", response_class=HTMLResponse)
+async def competitions_sync(request: Request) -> HTMLResponse:
+    """Synchronise le catalogue depuis `/sports`. Endpoint gratuit."""
+    settings = get_settings()
+    client = OddsAPIClient(request.app.state.http, settings)
+    try:
+        report = await competitions_service.sync_from_api(client, settings)
+    except ProviderError as exc:
+        logger.warning("Synchronisation impossible : %s", exc)
+        report = None
+    return templates.TemplateResponse(request, "_competitions.html", _competitions_context(report))
+
+
+@app.post("/competitions/{competition_id}/active", response_class=HTMLResponse)
+def competition_toggle(
+    request: Request, competition_id: int, active: str | None = Form(default=None)
+) -> HTMLResponse:
+    """Active ou desactive une competition : seules les actives sont scannees."""
+    competitions_service.set_active(competition_id, active is not None, get_settings())
+    return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
 
 
 # --- Mapping des equipes ---------------------------------------------------

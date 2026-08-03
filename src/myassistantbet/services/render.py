@@ -131,16 +131,17 @@ def _totals_fragments(outcomes: Iterable[Outcome], keep: int = TOTALS_KEEP) -> l
 # -- Rendu des marches ------------------------------------------------------
 
 
-def _render_h2h(event: RenderableEvent, outcomes: list[Outcome]) -> list[str]:
+def _render_h2h(event: RenderableEvent, outcomes: list[Outcome], label: str = "1N2") -> list[str]:
     prices = {outcome.name: outcome.price for outcome in outcomes}
     home, draw, away = prices.get(event.home), prices.get("Draw"), prices.get(event.away)
     if home is None and away is None:
-        return []
+        return _render_generic(label, outcomes) if outcomes else []
     if draw is None:
-        # Tennis et sports sans nul : deux issues seulement.
+        # Tennis et sports sans nul : deux issues seulement. Le libelle « 1N2 »
+        # n'aurait alors aucun sens.
         parts = [price(value) for value in (home, away) if value is not None]
-        return [line("1-2", " / ".join(parts))]
-    return [line("1N2", " / ".join(price(value) for value in (home, draw, away) if value))]
+        return [line("1-2" if label == "1N2" else label, " / ".join(parts))]
+    return [line(label, " / ".join(price(value) for value in (home, draw, away) if value))]
 
 
 def _render_double_chance(event: RenderableEvent, outcomes: list[Outcome]) -> list[str]:
@@ -223,8 +224,10 @@ def _render_main_total_only(label: str, outcomes: list[Outcome]) -> list[str]:
     return [line(label, f"O/U {fragments[0]}")] if fragments else []
 
 
-def _render_spreads(event: RenderableEvent, outcomes: list[Outcome]) -> list[str]:
-    """Handicap : la ligne la plus serree pour chaque equipe."""
+def _render_spreads(
+    event: RenderableEvent, outcomes: list[Outcome], label: str = "Handicap"
+) -> list[str]:
+    """Handicap : la ligne la plus serree pour chaque equipe (ou chaque joueur)."""
     by_team: dict[str, list[Outcome]] = {}
     for outcome in outcomes:
         by_team.setdefault(outcome.name, []).append(outcome)
@@ -237,7 +240,7 @@ def _render_spreads(event: RenderableEvent, outcomes: list[Outcome]) -> list[str
         best = min(team_outcomes, key=lambda item: abs(item.price - 2.0))
         sign = "+" if best.point and best.point > 0 else ""
         fragments.append(f"{team} {sign}{_point(best.point)} {price(best.price)}")
-    return [line("Handicap", " | ".join(fragments))] if fragments else []
+    return [line(label, " | ".join(fragments))] if fragments else []
 
 
 def _render_generic(label: str, outcomes: list[Outcome]) -> list[str]:
@@ -253,7 +256,7 @@ def _render_generic(label: str, outcomes: list[Outcome]) -> list[str]:
     return _wrap(label, chunks, 4) if chunks else []
 
 
-#: Ordre d'affichage des marches, et libelle de chaque ligne.
+#: Ordre d'affichage des marches football, et libelle de chaque ligne.
 MARKET_ORDER: list[tuple[str, str]] = [
     ("h2h", "1N2"),
     ("double_chance", "DC"),
@@ -272,13 +275,41 @@ MARKET_ORDER: list[tuple[str, str]] = [
     ("alternate_totals_corners", "Corners"),
     ("corners_1x2", "Corners 1N2"),
     ("alternate_totals_cards", "Cartons"),
+    # Saisie manuelle : marche libre, sans forme imposee.
+    ("outright", "Cotes"),
 ]
+
+#: Tennis : pas de nul, et tout se compte en sets et en jeux.
+TENNIS_MARKET_ORDER: list[tuple[str, str]] = [
+    ("h2h", "Vainqueur"),
+    ("spreads", "Hand. jeux"),
+    ("totals", "Jeux O/U"),
+    ("h2h_s1", "Set 1"),
+    ("h2h_s2", "Set 2"),
+    ("spreads_s1", "Hand. S1"),
+    ("totals_s1", "Jeux S1"),
+    ("alternate_totals_s1", "Jeux S1"),
+    ("outright", "Vainqueur"),
+]
+
+#: Cyclisme : aucune API ne le couvre, tout est saisi a la main.
+CYCLING_MARKET_ORDER: list[tuple[str, str]] = [
+    ("outright", "Vainqueur"),
+    ("podium", "Podium"),
+]
+
+MARKET_ORDER_BY_SPORT: dict[str, list[tuple[str, str]]] = {
+    "football": MARKET_ORDER,
+    "tennis": TENNIS_MARKET_ORDER,
+    "cycling": CYCLING_MARKET_ORDER,
+}
 
 #: Marches fusionnes dans une meme ligne (la variante « alternate » complete la base).
 MERGED_MARKETS = {
     "alternate_totals": "totals",
     "alternate_team_totals": "team_totals",
     "spreads": "alternate_spreads",
+    "alternate_totals_s1": "totals_s1",
 }
 
 
@@ -289,22 +320,23 @@ def _render_markets(event: RenderableEvent) -> list[str]:
         target = MERGED_MARKETS.get(key, key)
         pooled.setdefault(target, []).extend(outcomes)
 
+    order = MARKET_ORDER_BY_SPORT.get(event.sport_key, MARKET_ORDER)
     rendered: list[str] = []
     done: set[str] = set()
-    for key, label in MARKET_ORDER:
+    for key, label in order:
         target = MERGED_MARKETS.get(key, key)
         if target in done or target not in pooled:
             continue
         done.add(target)
         outcomes = pooled[target]
 
-        if target == "h2h":
-            rendered += _render_h2h(event, outcomes)
+        if target in {"h2h", "h2h_s1", "h2h_s2"}:
+            rendered += _render_h2h(event, outcomes, label)
         elif target == "double_chance":
             rendered += _render_double_chance(event, outcomes)
-        elif target == "alternate_spreads":
-            rendered += _render_spreads(event, outcomes)
-        elif target in {"totals", "totals_h1"}:
+        elif target in {"alternate_spreads", "spreads_s1"}:
+            rendered += _render_spreads(event, outcomes, label)
+        elif target in {"totals", "totals_h1", "totals_s1"}:
             rendered += _render_totals(label, outcomes)
         elif target in {"btts", "btts_h1"}:
             rendered += _render_btts(label, outcomes)
@@ -330,9 +362,9 @@ def _render_markets(event: RenderableEvent) -> list[str]:
 def _header(event: RenderableEvent) -> str:
     sport = SPORT_LABELS.get(event.sport_key, event.sport_key.upper())
     when = event.commence_local.strftime("%d/%m %H:%M")
-    return (
-        f"### M{event.index} · {sport} · {event.competition} · {event.home} – {event.away} · {when}"
-    )
+    # Le cyclisme n'a pas de second participant : l'etape tient lieu d'affiche.
+    affiche = f"{event.home} – {event.away}" if event.away else event.home
+    return f"### M{event.index} · {sport} · {event.competition} · {affiche} · {when}"
 
 
 def _context_block(event: RenderableEvent) -> list[str]:

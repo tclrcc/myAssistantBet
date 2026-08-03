@@ -125,6 +125,19 @@ regression.
 Un contexte manquant n'empeche jamais les cotes d'etre recuperees, et n'est jamais tu : il
 devient une ligne explicite dans le bloc, ou une mention dans le rapport d'enrichissement.
 
+## Tennis, cyclisme et saisie manuelle
+
+- `render.py` a un ordre de marches **par sport** (`MARKET_ORDER_BY_SPORT`). Le tennis parle
+  en sets et en jeux, jamais en « 1N2 ». Le cyclisme n'a qu'un marche `outright`.
+- Un evenement sans second participant (une etape) ne doit jamais afficher de tiret orphelin :
+  `affiche` et `_header` le gerent, avec leurs tests.
+- `services/manual.py` : cotes libres, une par ligne. Une ligne illisible part dans
+  `ParsedOdds.rejected` et **est affichee a l'utilisateur** — jamais ignoree en silence.
+- Les cotes manuelles portent le bookmaker `manual` et **aucun horodatage de releve** : ce
+  serait l'heure de la frappe, pas celle d'un releve de marche.
+- `services/competitions.py` : synchronisation depuis `GET /sports`, **gratuit**. Une
+  competition decouverte est creee **inactive** — rien ne se met a couter sans decision.
+
 ## Front
 
 HTMX est **vendorise** dans `static/htmx.min.js` — aucun CDN, aucun appel reseau depuis la

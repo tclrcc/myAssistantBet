@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Compétitions — MyAssistantBet{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Compétitions scannées</h1>
+  <div class="actions"><a class="button" href="/">← Board</a></div>
+</div>
+
+<p class="muted small">
+  Seules les compétitions actives sont scannées. La synchronisation utilise
+  <code>GET /sports</code>, qui est gratuit, et n'active jamais rien d'elle-même.
+</p>
+
+{% include "_competitions.html" %}
+{% endblock %}

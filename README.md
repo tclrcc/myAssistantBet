@@ -18,7 +18,7 @@ La specification complete et faisant autorite est dans [`SPEC.md`](./SPEC.md).
 | 1 | The Odds API, etage A (scan large), ecran Board | fait |
 | 2 | Etage B (marches profonds), rendu compact, generation du prompt | fait |
 | 3 | Contexte sportif via API-Football, mapping des equipes | fait |
-| 4 | Tennis, cyclisme, evenements manuels | a venir |
+| 4 | Tennis, cyclisme, evenements manuels | fait |
 | 5 | Historique des picks, personnalisation des templates | a venir |
 | 6 | Deploiement VPS (systemd, nginx, sauvegardes) | a venir |
 
@@ -117,6 +117,32 @@ declenche aucun appel reseau**.
 Ce qui manque est toujours dit. Une ligue non couverte pour les blessures produit
 `Absents     donnees non disponibles pour cette competition`, jamais un silence.
 
+### Compétitions (`/competitions`)
+
+Seules les competitions **actives** sont scannees. Le bouton « Synchroniser depuis The Odds
+API » aligne le catalogue local sur `GET /sports` — **endpoint gratuit** : la synchronisation
+ne consomme aucun credit. Elle n'active jamais rien d'elle-meme et ne desactive jamais
+l'existant.
+
+C'est le moyen fiable d'obtenir les cles de competition tennis, qui changent d'une saison a
+l'autre. Les 8 Grands Chelems seedes par la migration `005` sont **inactifs** : un tournoi ne
+dure que deux semaines, on l'active au moment voulu.
+
+### Evenements manuels (`/manual`)
+
+Pour ce qu'aucune API ne couvre : le cyclisme entierement, et le tennis en dehors des Grands
+Chelems et des Masters.
+
+- Sport, competition, participants, date et heure locale.
+- **Cotes saisies a la main**, une par ligne : `Pogacar 2.50`, `Pogacar = 2.50` ou
+  `Pogacar; 2,50`. Une ligne illisible est signalee, jamais avalee en silence.
+- **URLs de reference** (ProCyclingStats, etc.), une par ligne.
+- **Profil d'etape** et **startlist / favoris**, qui alimentent le bloc CONTEXTE cyclisme.
+
+L'evenement apparait ensuite sur le board comme les autres : il se coche, entre dans une
+session et se rend avec le meme moteur. Ses cotes portent le bookmaker `manual` et son
+enrichissement ne declenche aucun appel d'API.
+
 ### Mapping des equipes (`/mapping`)
 
 The Odds API et API-Football n'utilisent ni les memes identifiants ni les memes noms. La
@@ -177,6 +203,8 @@ src/myassistantbet/
 │   ├── context.py  # contexte sportif : recuperation, persistance, rendu
 │   ├── matching.py # correspondance des equipes entre les deux APIs
 │   ├── mapping_ui.py # resolution manuelle des correspondances
+│   ├── manual.py   # evenements saisis a la main
+│   ├── competitions.py # catalogue des competitions, synchronisation gratuite
 │   └── prompt.py   # assemblage du prompt final
 ├── templates/      # Jinja2 (HTML et templates de prompt .j2)
 └── static/         # CSS et htmx, servis en local (aucun CDN)
@@ -194,6 +222,14 @@ reproduisent la forme documentee des reponses : elles sont
 de certains marches (notamment `double_chance` et `halftime_fulltime`) restent donc a
 confirmer par un appel reel. Le rendu est concu pour cela : un marche dont le nommage n'est
 pas reconnu est affiche brut plutot que mal interprete.
+
+## Sports couverts
+
+| Sport | Cotes | Contexte | Remarque |
+|---|---|---|---|
+| Football | The Odds API, 14 marches profonds | API-Football | 16 marches sur les ligues a props buteurs |
+| Tennis | The Odds API, 8 marches profonds | aucun | Grands Chelems et Masters seulement ; le reste en saisie manuelle |
+| Cyclisme | saisie manuelle | saisie manuelle | aucune API ne le couvre |
 
 ## Fuseau horaire
 

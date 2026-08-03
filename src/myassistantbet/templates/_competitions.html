@@ -1,0 +1,63 @@
+<div id="competitions">
+  {% if report %}
+  <div class="report">
+    Synchronisation : {{ report.created|length }} compétition(s) découverte(s),
+    {{ report.updated|length }} mise(s) à jour. Aucun crédit consommé.
+    {% if report.created %}
+      <ul class="failures">
+        {% for label in report.created[:12] %}<li>{{ label }}</li>{% endfor %}
+        {% if report.created|length > 12 %}
+          <li>… et {{ report.created|length - 12 }} autre(s)</li>
+        {% endif %}
+      </ul>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="enrich-bar">
+    <div class="estimate">
+      <span class="label">Actives</span>
+      <span class="value">{{ competitions | selectattr('active') | list | length }}</span>
+      <span class="muted">
+        sur {{ competitions|length }} — un scan coûte 2 crédits par compétition active
+      </span>
+    </div>
+    <form hx-post="/competitions/sync" hx-target="#competitions" hx-swap="outerHTML"
+          hx-indicator="#sync-spinner">
+      <button type="submit" class="primary">Synchroniser depuis The Odds API</button>
+      <span id="sync-spinner" class="htmx-indicator">synchronisation…</span>
+    </form>
+  </div>
+
+  <table class="board">
+    <thead>
+      <tr>
+        <th class="tight"></th>
+        <th>Sport</th>
+        <th>Compétition</th>
+        <th>Clé Odds API</th>
+        <th>Ligue API-Football</th>
+        <th>Priorité</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for competition in competitions %}
+      <tr class="{% if competition.active %}is-selected{% endif %}">
+        <td class="tight">
+          <input type="checkbox" name="active" value="1"
+                 aria-label="Activer {{ competition.label }}"
+                 hx-post="/competitions/{{ competition.id }}/active"
+                 hx-target="#competitions"
+                 hx-swap="outerHTML"
+                 {% if competition.active %}checked{% endif %}>
+        </td>
+        <td>{{ competition.sport_label }}</td>
+        <td class="affiche">{{ competition.label }}</td>
+        <td class="muted">{{ competition.oddsapi_key or '—' }}</td>
+        <td class="num muted">{{ competition.apifootball_league_id or '—' }}</td>
+        <td class="num">{{ competition.priority }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

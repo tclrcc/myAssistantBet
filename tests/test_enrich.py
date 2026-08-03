@@ -399,3 +399,86 @@ async def test_sans_client_de_contexte_l_enrichissement_reste_possible(
 
     assert report.results[0].ok is True
     assert report.results[0].context_kinds == []
+
+
+# -- Tennis -----------------------------------------------------------------
+
+
+def _tennis_event(settings: Settings) -> int:
+    """Un match de tennis rattache a une competition Odds API active."""
+    competition = db.query_one(
+        "SELECT id, sport_id FROM competitions WHERE oddsapi_key = 'tennis_atp_us_open'",
+        settings=settings,
+    )
+    db.execute(
+        "UPDATE competitions SET active = 1 WHERE id = ?", (competition["id"],), settings=settings
+    )
+    db.execute(
+        "INSERT INTO events (sport_id, competition_id, oddsapi_event_id, home, away, "
+        "commence_time, source, created_at) VALUES (?, ?, 'evt-tennis', 'Alcaraz', 'Sinner', "
+        "'2026-08-04T17:00:00Z', 'api', ?)",
+        (competition["sport_id"], competition["id"], db.utcnow()),
+        settings=settings,
+    )
+    row = db.query_one(
+        "SELECT id FROM events WHERE oddsapi_event_id = 'evt-tennis'", settings=settings
+    )
+    return int(row["id"])
+
+
+def test_estimation_tennis_huit_marches(migrated: Settings) -> None:
+    event_id = _tennis_event(migrated)
+    session_id = board_service.toggle_selection(event_id, True, migrated)
+
+    estimate = build_estimate(session_id, migrated)
+
+    assert estimate.events == 1
+    assert estimate.cost == 8, "8 marches tennis, un bookmaker, donc 8 credits"
+    assert estimate.targets[0].markets == TENNIS_MARKETS
+
+
+@respx.mock
+async def test_etage_b_tennis(odds_client: OddsAPIClient, migrated: Settings) -> None:
+    event_id = _tennis_event(migrated)
+    session_id = board_service.toggle_selection(event_id, True, migrated)
+    route = respx.get(f"{BASE_URL}/sports/tennis_atp_us_open/events/evt-tennis/odds").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": "evt-tennis",
+                "bookmakers": [
+                    {
+                        "key": "betclic_fr",
+                        "last_update": "2026-08-04T06:12:00Z",
+                        "markets": [
+                            {
+                                "key": "h2h",
+                                "outcomes": [
+                                    {"name": "Alcaraz", "price": 1.4},
+                                    {"name": "Sinner", "price": 2.95},
+                                ],
+                            },
+                            {
+                                "key": "totals_s1",
+                                "outcomes": [
+                                    {"name": "Over", "price": 1.85, "point": 9.5},
+                                    {"name": "Under", "price": 1.95, "point": 9.5},
+                                ],
+                            },
+                        ],
+                    }
+                ],
+            },
+            headers=QUOTA_HEADERS,
+        )
+    )
+
+    report = await run_enrich(odds_client, session_id, migrated)
+
+    assert report.failures == []
+    assert set(route.calls[0].request.url.params["markets"].split(",")) == set(TENNIS_MARKETS)
+    markets = {
+        row["market_key"]
+        for row in db.query("SELECT DISTINCT market_key FROM odds", settings=migrated)
+    }
+    assert markets == {"h2h", "totals_s1"}

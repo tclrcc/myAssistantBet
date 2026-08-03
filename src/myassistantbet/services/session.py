@@ -19,7 +19,10 @@ from .render import Outcome, RenderableEvent, render_event
 #: pas encore enrichi.
 SCAN_ONLY_MARKETS = frozenset({"h2h", "totals"})
 
-BOOKMAKER_LABELS = {"betclic_fr": "Betclic"}
+BOOKMAKER_LABELS = {"betclic_fr": "Betclic", "manual": "saisie manuelle"}
+
+#: Bookmakers pour lesquels un horodatage de releve n'aurait aucun sens.
+UNTIMED_BOOKMAKERS = frozenset({"manual"})
 
 
 @dataclass
@@ -39,7 +42,8 @@ class ShortlistEvent:
 
     @property
     def affiche(self) -> str:
-        return f"{self.home} – {self.away}"
+        # Le cyclisme n'a pas de second participant : pas de tiret orphelin.
+        return f"{self.home} – {self.away}" if self.away else self.home
 
     @property
     def enriched(self) -> bool:
@@ -216,7 +220,14 @@ def renderable_events(session_id: int, settings: Settings | None = None) -> list
                     ),
                     note=row["note"] or None,
                     bookmaker_label=BOOKMAKER_LABELS.get(bookmaker or "", bookmaker or "—"),
-                    fetched_local=_local(fetched, settings.tz) if fetched else None,
+                    # Pour une saisie manuelle, l'horodatage est celui de la
+                    # frappe, pas celui d'un releve de cotes : l'afficher
+                    # tromperait sur la fraicheur de la donnee.
+                    fetched_local=(
+                        _local(fetched, settings.tz)
+                        if fetched and bookmaker not in UNTIMED_BOOKMAKERS
+                        else None
+                    ),
                 )
             )
     return events

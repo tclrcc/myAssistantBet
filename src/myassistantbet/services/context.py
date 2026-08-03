@@ -41,6 +41,7 @@ KIND_INJURIES = "injuries"
 KIND_H2H = "h2h"
 KIND_RECENT = "recent"
 KIND_MAPPING = "mapping_pending"
+KIND_MANUAL_NOTE = "manual_note"
 
 
 @dataclass
@@ -464,6 +465,16 @@ def context_lines(
     settings = settings or get_settings()
     data = load(event_id, settings)
     lines: list[tuple[str, str]] = []
+
+    # Saisie manuelle : profil d'etape, startlist et references d'abord, car
+    # c'est tout ce dont dispose un evenement qu'aucune API ne couvre.
+    manual = data.get(KIND_MANUAL_NOTE) or {}
+    for label, key in (("Profil", "profile"), ("Startlist", "startlist"), ("Infos", "notes")):
+        value = (manual.get(key) or "").strip()
+        if value:
+            lines.append((label, value))
+    if manual.get("links"):
+        lines.append(("References", " ".join(manual["links"])))
 
     standings = data.get(KIND_STANDINGS) or {}
     ranked = _pair(

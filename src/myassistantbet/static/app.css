@@ -235,3 +235,20 @@ pre#prompt-body {
   min-width: 260px;
 }
 a.value.alert { color: var(--alert); }
+
+.manual-form { display: flex; flex-direction: column; gap: 1rem; max-width: 1000px; }
+.manual-form .row { display: flex; gap: 1rem; flex-wrap: wrap; }
+.manual-form label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; }
+.manual-form .grow { flex: 1; min-width: 260px; }
+.manual-form .hint { color: var(--muted); font-weight: 400; font-size: 0.78rem; }
+.manual-form input, .manual-form select, .manual-form textarea {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 0.45rem 0.55rem;
+  font: inherit;
+}
+.manual-form textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.manual-form button { align-self: flex-start; }
+code { background: var(--panel-2); padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
