@@ -1,0 +1,76 @@
+"""Configuration de l'application, chargee depuis l'environnement et `.env`."""
+
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+PACKAGE_DIR = Path(__file__).resolve().parent
+PROJECT_ROOT = PACKAGE_DIR.parent.parent
+
+
+class Settings(BaseSettings):
+    """Parametres de l'application.
+
+    Les secrets ne proviennent que de l'environnement (ou du `.env` non versionne).
+    Aucune valeur par defaut n'est fournie pour les cles d'API : leur absence est
+    un etat normal (phases 0 a 1) qui doit rester visible.
+    """
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # --- Secrets -----------------------------------------------------------
+    odds_api_key: str = ""
+    apifootball_key: str = ""
+
+    # --- Base de donnees ---------------------------------------------------
+    db_path: Path = Path("./data/myassistantbet.db")
+
+    # --- Affichage ---------------------------------------------------------
+    tz: str = "Europe/Paris"
+
+    # --- Garde-fous quota --------------------------------------------------
+    odds_api_credit_floor: int = 500
+
+    # --- Developpement -----------------------------------------------------
+    dev_cache: bool = False
+    dev_cache_dir: Path = Path("./data/dev_cache")
+
+    # --- Fenetre de scan (jours glissants a partir d'aujourd'hui) ----------
+    scan_window_days: int = Field(default=2, ge=1, le=7)
+
+    @property
+    def db_path_absolute(self) -> Path:
+        """Chemin absolu de la base, resolu depuis la racine du projet."""
+        if self.db_path.is_absolute():
+            return self.db_path
+        return (PROJECT_ROOT / self.db_path).resolve()
+
+    @property
+    def migrations_dir(self) -> Path:
+        return PACKAGE_DIR / "migrations"
+
+    def public_dict(self) -> dict[str, object]:
+        """Vue de la config sans aucun secret, exposable dans `/health`."""
+        return {
+            "db_path": str(self.db_path_absolute),
+            "tz": self.tz,
+            "odds_api_credit_floor": self.odds_api_credit_floor,
+            "scan_window_days": self.scan_window_days,
+            "dev_cache": self.dev_cache,
+            "odds_api_key_present": bool(self.odds_api_key),
+            "apifootball_key_present": bool(self.apifootball_key),
+        }
+
+
+@lru_cache
+def get_settings() -> Settings:
+    """Instance unique des parametres (cache pour eviter les relectures disque)."""
+    return Settings()

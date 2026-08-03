@@ -1,0 +1,27 @@
+# Secrets
+.env
+
+# Base de donnees et caches locaux
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+build/
+dist/
+
+# Outils
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Editeurs / OS
+.vscode/
+.idea/
+.DS_Store
