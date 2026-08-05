@@ -24,6 +24,11 @@ logger = logging.getLogger(__name__)
 #: Prefixes de cles The Odds API par sport interne. Le cyclisme n'est pas couvert.
 SPORT_PREFIXES = {"soccer_": "football", "tennis_": "tennis"}
 
+#: Surfaces de tennis. Elles decident quel Elo de surface est rendu dans le
+#: bloc CONTEXTE ; laissee vide, seul l'Elo general apparait. Aucune deduction
+#: automatique depuis le libelle du tournoi : ce serait une invention.
+SURFACES = {"hard": "Dur", "clay": "Terre battue", "grass": "Gazon"}
+
 
 @dataclass
 class SyncReport:
@@ -50,7 +55,7 @@ def list_all(settings: Settings | None = None) -> list[dict[str, Any]]:
     with connect(settings) as conn:
         rows = conn.execute(
             "SELECT c.id, c.label, c.oddsapi_key, c.apifootball_league_id, c.priority, "
-            "       c.active, c.notes, s.key AS sport_key, s.label AS sport_label "
+            "       c.active, c.notes, c.surface, s.key AS sport_key, s.label AS sport_label "
             "FROM competitions c JOIN sports s ON s.id = c.sport_id "
             "ORDER BY c.active DESC, s.id, c.priority DESC, c.label"
         ).fetchall()
@@ -84,6 +89,21 @@ def set_notes(competition_id: int, notes: str, settings: Settings | None = None)
         competition_id,
         f"{len(cleaned)} caracteres" if cleaned else "effacee",
     )
+
+
+def set_surface(competition_id: int, surface: str, settings: Settings | None = None) -> None:
+    """Fixe la surface d'une competition de tennis.
+
+    Une valeur inconnue est traitee comme « non renseignee » plutot que refusee :
+    le seul effet est de ne rendre que l'Elo general, ce qui n'a rien de grave.
+    """
+    value = (surface or "").strip().lower()
+    with connect(settings) as conn:
+        conn.execute(
+            "UPDATE competitions SET surface = ? WHERE id = ?",
+            (value if value in SURFACES else None, competition_id),
+        )
+    logger.info("Surface de la competition %d : %s", competition_id, value or "non renseignee")
 
 
 async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None) -> SyncReport:

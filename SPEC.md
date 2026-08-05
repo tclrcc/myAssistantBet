@@ -498,6 +498,18 @@ Ce qui nourrit le prompt en dehors des cotes, entièrement local : aucun appel r
 
 *Critère d'acceptation :* après une dizaine de picks saisis et tranchés, le prompt généré contient mes taux par palier et par confiance, refuse toute comparaison à une cote, et affiche la fiche de chaque compétition du lot une seule fois.
 
+### Phase 9 — Contexte tennis : classements Elo
+Le football reçoit forme, classement, absents et H2H ; le tennis n'avait aucune source et son bloc CONTEXTE restait vide. Les classements Elo publiés par Tennis Abstract le comblent, gratuitement et sans clé.
+
+- `providers/tennisabstract.py` : deux pages HTML statiques, une par circuit. Pas une API — le client de base sait désormais rendre du texte brut. Aucun quota, donc rien dans `api_usage`.
+- Limites de la source, à respecter : le domaine apex ne répond pas (`www.` obligatoire), un User-Agent de navigateur est requis, et le `robots.txt` interdit les pages joueur et match. Seul `/reports/` est utilisé.
+- `services/elo.py` : récupération, stockage, rapprochement des noms et rendu. Deux temps séparés comme pour le contexte football — régénérer un prompt ne déclenche aucun appel.
+- Rapprochement plus sévère que pour les clubs, et **aucune résolution manuelle n'existe ici** : en cas de doute, pas de ligne du tout. Un rating attribué au mauvais joueur serait pire qu'une absence.
+- La surface est portée par la compétition et saisie à la main. La déduire du libellé d'un tournoi serait une invention ; sans elle, seul l'Elo général est rendu.
+- **Interdit sans exception : convertir un écart d'Elo en probabilité.** La page source publie la table de correspondance ; l'utiliser puis rapprocher le résultat d'une cote serait le calcul d'espérance qu'interdit la section 9. Le template de prompt porte l'interdiction, un test la vérifie.
+
+*Critère d'acceptation :* le bloc d'un match de tennis porte une ligne Elo avec le rating général, celui de la surface du tournoi, le pic de carrière et le classement officiel des deux joueurs — et le prompt interdit explicitement d'en tirer une probabilité.
+
 ---
 
 ## 11. Exigences de qualité

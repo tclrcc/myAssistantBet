@@ -22,10 +22,12 @@ from .config import PACKAGE_DIR, get_settings
 from .providers.apifootball import APIFootballClient
 from .providers.base import ProviderError
 from .providers.oddsapi import OddsAPIClient
+from .providers.tennisabstract import TennisAbstractClient
 from .scheduler import build_scheduler
 from .services import board as board_service
 from .services import competitions as competitions_service
 from .services import coverage as coverage_service
+from .services import elo as elo_service
 from .services import enrich as enrich_service
 from .services import grid as grid_service
 from .services import history as history_service
@@ -381,6 +383,9 @@ async def start_enrich(request: Request, session_id: int) -> HTMLResponse:
                 settings,
                 on_progress=_track,
                 context_client=context_client,
+                # Gratuit et sans cle : toujours branche, contrairement au
+                # contexte football qui depend d'un abonnement.
+                elo_client=TennisAbstractClient(request.app.state.http, settings),
             )
 
         task = asyncio.create_task(_run())
@@ -461,12 +466,17 @@ async def manual_create(request: Request) -> HTMLResponse:
 # --- Competitions ----------------------------------------------------------
 
 
-def _competitions_context(report: object | None = None) -> dict[str, object]:
+def _competitions_context(
+    report: object | None = None, elo_report: object | None = None
+) -> dict[str, object]:
     settings = get_settings()
     return {
         "competitions": competitions_service.list_all(settings),
         "coverage": coverage_service.by_competition(settings),
         "report": report,
+        "elo_report": elo_report,
+        "surfaces": competitions_service.SURFACES,
+        "elo_state": elo_service.state(settings),
     }
 
 
@@ -508,6 +518,26 @@ def competition_notes(
     """Enregistre la fiche d'une competition, injectee une fois par prompt."""
     competitions_service.set_notes(competition_id, notes, get_settings())
     return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
+
+
+@app.post("/competitions/{competition_id}/surface", response_class=HTMLResponse)
+def competition_surface(
+    request: Request, competition_id: int, surface: str = Form(default="")
+) -> HTMLResponse:
+    """Fixe la surface d'une competition : elle decide quel Elo de surface est rendu."""
+    competitions_service.set_surface(competition_id, surface, get_settings())
+    return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
+
+
+@app.post("/competitions/elo/refresh", response_class=HTMLResponse)
+async def refresh_elo(request: Request) -> HTMLResponse:
+    """Rafraichit les classements Elo tennis. Gratuit, aucun credit consomme."""
+    settings = get_settings()
+    client = TennisAbstractClient(request.app.state.http, settings)
+    report = await elo_service.refresh(client, settings, force=True)
+    return templates.TemplateResponse(
+        request, "_competitions.html", _competitions_context(elo_report=report)
+    )
 
 
 @app.post("/competitions/{competition_id}/coverage/reset", response_class=HTMLResponse)

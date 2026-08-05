@@ -14,6 +14,38 @@
   </div>
   {% endif %}
 
+  {% if elo_report %}
+  <div class="report {% if not elo_report.ok %}report-warn{% endif %}">
+    Classements Elo :
+    {% if elo_report.counts %}
+      {% for tour, count in elo_report.counts.items() %}{{ tour|upper }} {{ count }} joueur(s){% if not loop.last %}, {% endif %}{% endfor %}.
+    {% else %}rien de récupéré.{% endif %}
+    Aucun crédit consommé.
+    {% if elo_report.errors %}
+      <ul class="failures">{% for error in elo_report.errors %}<li>{{ error }}</li>{% endfor %}</ul>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="enrich-bar">
+    <div class="estimate">
+      <span class="label">Elo tennis</span>
+      {% if elo_state %}
+        <span class="value">{{ elo_state | sum(attribute='players') }}</span>
+        <span class="muted">
+          joueurs — {% for row in elo_state %}{{ row.tour|upper }} au {{ row.fetched_at[:10] }}{% if not loop.last %}, {% endif %}{% endfor %}
+        </span>
+      {% else %}
+        <span class="muted">jamais récupérés</span>
+      {% endif %}
+    </div>
+    <form hx-post="/competitions/elo/refresh" hx-target="#competitions" hx-swap="outerHTML"
+          hx-indicator="#elo-spinner">
+      <button type="submit" class="button">Rafraîchir l'Elo</button>
+      <span id="elo-spinner" class="htmx-indicator">récupération…</span>
+    </form>
+  </div>
+
   <div class="enrich-bar">
     <div class="estimate">
       <span class="label">Actives</span>
@@ -75,6 +107,19 @@
           {% endif %}
         </td>
         <td class="small">
+          {% if competition.sport_key == 'tennis' %}
+          <form class="surface-form" hx-post="/competitions/{{ competition.id }}/surface"
+                hx-target="#competitions" hx-swap="outerHTML">
+            <select name="surface" aria-label="Surface de {{ competition.label }}"
+                    hx-trigger="change" hx-post="/competitions/{{ competition.id }}/surface"
+                    hx-target="#competitions" hx-swap="outerHTML">
+              <option value="">Surface —</option>
+              {% for key, label in surfaces.items() %}
+              <option value="{{ key }}" {% if competition.surface == key %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </form>
+          {% endif %}
           <form class="notes-form" hx-post="/competitions/{{ competition.id }}/notes"
                 hx-target="#competitions" hx-swap="outerHTML">
             <textarea name="notes" rows="2" spellcheck="false"

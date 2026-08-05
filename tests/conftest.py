@@ -67,6 +67,16 @@ def load_fixture() -> Callable[[str], Any]:
 
 
 @pytest.fixture
+def load_text_fixture() -> Callable[[str], str]:
+    """Charge une reponse capturee non-JSON : les rapports Elo sont du HTML."""
+
+    def _load(name: str) -> str:
+        return (FIXTURES_DIR / name).read_text(encoding="utf-8")
+
+    return _load
+
+
+@pytest.fixture
 async def http_client() -> AsyncIterator[httpx.AsyncClient]:
     async with httpx.AsyncClient() as client:
         yield client

@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
 from ..db import connect
-from . import coverage
+from . import coverage, elo
 from .context import context_lines
 from .labels import UNTIMED_BOOKMAKERS, affiche, bookmaker_label, primary_book
 from .render import Outcome, RenderableEvent, render_event
@@ -230,6 +230,19 @@ def _market_counts(event_ids: list[int], settings: Settings) -> dict[int, tuple[
     return counts
 
 
+def _context_for(row: Any, settings: Settings) -> list[tuple[str, str]]:
+    """Lignes du bloc CONTEXTE, toutes sources confondues.
+
+    Le contexte football vient d'API-Football, le tennis de son classement Elo :
+    deux sources disjointes, assemblees ici plutot que dans `context.py`, qui
+    n'a pas a connaitre le tennis.
+    """
+    lines = context_lines(int(row["id"]), row["home"], row["away"], row["commence_time"], settings)
+    if row["sport_key"] == "tennis":
+        lines += elo.lines(row["home"], row["away"], row["oddsapi_key"], row["surface"], settings)
+    return lines
+
+
 def renderable_events(
     session_id: int,
     settings: Settings | None = None,
@@ -244,7 +257,8 @@ def renderable_events(
     with connect(settings) as conn:
         rows = conn.execute(
             "SELECT e.id, e.home, e.away, e.commence_time, e.competition_id, se.note, "
-            "       s.key AS sport_key, COALESCE(c.label, '—') AS competition "
+            "       s.key AS sport_key, COALESCE(c.label, '—') AS competition, "
+            "       c.oddsapi_key, c.surface "
             "FROM session_events se "
             "JOIN events e ON e.id = se.event_id "
             "JOIN sports s ON s.id = e.sport_id "
@@ -303,13 +317,7 @@ def renderable_events(
                     away=row["away"],
                     commence_local=_local(row["commence_time"], settings.tz),
                     markets=markets,
-                    context_lines=context_lines(
-                        int(row["id"]),
-                        row["home"],
-                        row["away"],
-                        row["commence_time"],
-                        settings,
-                    ),
+                    context_lines=_context_for(row, settings),
                     note=row["note"] or None,
                     # L'en-tete ne nomme que la source principale : les autres
                     # sont portees ligne par ligne. Un en-tete « Betclic +

@@ -18,7 +18,8 @@ from ..db import connect
 from ..providers.apifootball import APIFootballClient
 from ..providers.base import ProviderError, last_known_quota
 from ..providers.oddsapi import DEFAULT_BOOKMAKER, PROVIDER, OddsAPIClient, expected_cost
-from . import coverage, reference
+from ..providers.tennisabstract import TennisAbstractClient
+from . import coverage, elo, reference
 from .context import fetch_context
 from .labels import affiche
 from .scan import replace_odds  # meme regle de remplacement qu'a l'etage A
@@ -334,6 +335,43 @@ async def _add_context(
     result.mapping_pending = report.mapping_pending
 
 
+def has_tennis(session_id: int, settings: Settings) -> bool:
+    """Vrai si la session contient au moins un match de tennis.
+
+    Porte sur toute la session et non sur les seules cibles payantes : un match
+    dont plus aucun marche n'est a acheter garde son bloc, et son Elo l'interesse
+    autant que les autres.
+    """
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT 1 FROM session_events se "
+            "JOIN events e ON e.id = se.event_id "
+            "JOIN sports s ON s.id = e.sport_id "
+            "WHERE se.session_id = ? AND s.key = 'tennis' LIMIT 1",
+            (session_id,),
+        ).fetchone()
+    return row is not None
+
+
+async def _refresh_elo(
+    elo_client: TennisAbstractClient,
+    session_id: int,
+    settings: Settings,
+    now: datetime | None,
+) -> None:
+    """Met a jour les classements Elo si la session en a l'usage.
+
+    Gratuit et sans quota : aucun garde-fou de credit ne s'applique. Un echec
+    n'interrompt rien — le bloc CONTEXTE perdra sa ligne Elo, comme avant.
+    """
+    if not has_tennis(session_id, settings):
+        return
+    try:
+        await elo.refresh(elo_client, settings, now=now)
+    except Exception as exc:  # noqa: BLE001 — l'Elo est un bonus, jamais bloquant
+        logger.exception("Rafraichissement Elo impossible : %s", exc)
+
+
 async def run_enrich(
     client: OddsAPIClient,
     session_id: int,
@@ -341,6 +379,7 @@ async def run_enrich(
     on_progress: Callable[[EnrichReport], None] | None = None,
     context_client: APIFootballClient | None = None,
     now: datetime | None = None,
+    elo_client: TennisAbstractClient | None = None,
 ) -> EnrichReport:
     """Enrichit tous les evenements d'une session : marches profonds puis contexte.
 
@@ -349,6 +388,11 @@ async def run_enrich(
     cotes d'etre recuperees.
     """
     settings = settings or get_settings()
+    # Avant tout garde-fou de credit : l'Elo est gratuit, et c'est justement
+    # quand il n'y a plus un seul marche a acheter qu'il faut le recuperer.
+    if elo_client is not None:
+        await _refresh_elo(elo_client, session_id, settings, now)
+
     estimate = build_estimate(session_id, settings, now)
     report = EnrichReport(total=estimate.events)
 

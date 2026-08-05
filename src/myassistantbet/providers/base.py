@@ -144,10 +144,15 @@ class BaseHTTPClient:
         *,
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
+        as_text: bool = False,
     ) -> ProviderResponse:
         """GET avec retry sur 429/5xx et sur les erreurs reseau.
 
         Leve `ProviderError` apres `MAX_ATTEMPTS` tentatives infructueuses.
+
+        `as_text` rend le corps brut au lieu de le decoder en JSON : toutes les
+        sources ne sont pas des APIs, et une page publiee en HTML se traverse
+        avec le meme retry, le meme timeout et le meme cache que le reste.
         """
         params = params or {}
         url = f"{self.base_url}{path}"
@@ -169,7 +174,7 @@ class BaseHTTPClient:
                 last_status = None
             else:
                 if response.status_code < 400:
-                    data = response.json()
+                    data = response.text if as_text else response.json()
                     self._cache_write(path, params, data)
                     return ProviderResponse(
                         data=data,

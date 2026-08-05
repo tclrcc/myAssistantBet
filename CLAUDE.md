@@ -142,6 +142,33 @@ regression.
 Un contexte manquant n'empeche jamais les cotes d'etre recuperees, et n'est jamais tu : il
 devient une ligne explicite dans le bloc, ou une mention dans le rapport d'enrichissement.
 
+## Elo tennis (`providers/tennisabstract.py`, `services/elo.py`)
+
+Le football recoit son contexte d'API-Football ; le tennis n'avait rien. Les classements
+Elo de Tennis Abstract comblent ce trou, **gratuitement et sans cle**.
+
+- Ce ne sont pas des APIs mais deux pages HTML statiques, une par circuit. Trois pieges,
+  tous verifies : le domaine apex ne repond pas (**`www.` obligatoire**), l'absence de
+  `User-Agent` de navigateur donne un **403**, et le `robots.txt` interdit `/jsfrags/`,
+  `/jsmatches/` et `/jsplayers/`. Seul `/reports/` est autorise : ne rien ajouter d'autre.
+- Aucun quota, donc **rien n'est ecrit dans `api_usage`**, qui ne compte que des credits.
+  Le rafraichissement passe avant le garde-fou de credit dans `run_enrich` : c'est
+  justement quand il n'y a plus un marche a acheter que l'Elo compte.
+- Les colonnes sont rapprochees **par libelle**, jamais par position — la colonne du
+  classement officiel s'appelle `ATP Rank` ou `WTA Rank` selon la page.
+- Rapprochement des noms : seuils plus severes que pour les clubs (`MIN_SCORE = 0.88`).
+  **En cas de doute on ne devine pas**, et ici il n'existe aucune resolution manuelle pour
+  rattraper : attribuer a un joueur le rating d'un autre serait pire qu'une ligne absente.
+- La surface vient de `competitions.surface`, saisie a la main. La deduire d'un libelle de
+  tournoi serait une invention ; non renseignee, seul l'Elo general est rendu.
+- Base vierge = aucune ligne. Ecrire deux fois « non trouve » ferait chercher un probleme
+  de rapprochement la ou il n'y a qu'un rafraichissement jamais lance. En revanche, un
+  joueur absent d'un classement existant est dit : c'est une information sur lui.
+- **Interdit, et c'est le coeur du sujet** : convertir un ecart d'Elo en probabilite. La
+  page source publie la table de correspondance ; s'en servir, puis rapprocher le resultat
+  d'une cote, est exactement le calcul d'esperance qu'interdit la section 9. Le template
+  de prompt porte cette interdiction, et un test verifie qu'elle y est.
+
 ## Tennis, cyclisme et saisie manuelle
 
 - `render.py` a un ordre de marches **par sport** (`MARKET_ORDER_BY_SPORT`). Le tennis parle
