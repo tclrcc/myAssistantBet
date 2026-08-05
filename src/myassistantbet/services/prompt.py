@@ -26,6 +26,7 @@ from ..config import PACKAGE_DIR, Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.oddsapi import SCAN_MARKETS
 from .enrich import markets_for
+from .history import feedback
 from .render import estimate_tokens, ordered_labels, render_event
 from .session import has_started, renderable_events, session_label, started_labels
 
@@ -104,6 +105,23 @@ class Catalogue:
         if not self.markets:
             return f"{self.sport} : aucun marché d'API, saisie manuelle uniquement."
         return f"{self.sport} : {', '.join(self.markets)}."
+
+
+@dataclass
+class CompetitionNote:
+    """Fiche d'une competition presente dans le lot.
+
+    Rendue une seule fois, et non a chaque match : le format d'une coupe, la
+    phase en cours ou une reprise de championnat ne changent pas d'une affiche
+    a l'autre. Les repeter couterait des tokens sans rien apprendre de plus.
+    """
+
+    label: str
+    notes: str
+
+    @property
+    def line(self) -> str:
+        return f"{self.label} : {self.notes}"
 
 
 @dataclass
@@ -212,6 +230,37 @@ def catalogues(
     ]
 
 
+def competition_notes(
+    session_id: int,
+    settings: Settings | None = None,
+    now: datetime | None = None,
+) -> list[CompetitionNote]:
+    """Fiches des competitions du lot. Lecture locale, aucun appel.
+
+    Un match deja commence n'entre pas dans le prompt : sa competition n'a donc
+    pas a y apporter sa fiche, sans quoi le lot semblerait plus large qu'il
+    n'est.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT c.label, c.notes, e.commence_time "
+            "FROM session_events se "
+            "JOIN events e ON e.id = se.event_id "
+            "JOIN competitions c ON c.id = e.competition_id "
+            "WHERE se.session_id = ? AND c.notes IS NOT NULL AND TRIM(c.notes) <> '' "
+            "ORDER BY c.label",
+            (session_id,),
+        ).fetchall()
+
+    seen: dict[str, CompetitionNote] = {}
+    for row in rows:
+        if has_started(row["commence_time"], now) or row["label"] in seen:
+            continue
+        seen[row["label"]] = CompetitionNote(label=row["label"], notes=row["notes"].strip())
+    return list(seen.values())
+
+
 def build_prompt(
     session_id: int,
     template_name: str = DEFAULT_TEMPLATE,
@@ -237,6 +286,11 @@ def build_prompt(
             tiers=load_tiers(settings),
             tz=settings.tz,
             catalogues=catalogues(session_id, settings, moment),
+            competition_notes=competition_notes(session_id, settings, moment),
+            # Les consignes permanentes et le retour d'experience ne coutent
+            # aucun appel : ils sortent de la base, donc ils sont toujours la.
+            preferences=read_preference(PREFERENCE_NOTES, settings),
+            feedback=feedback(settings),
             # Le multichoix scores exacts n'a de sens que si un bloc sert
             # vraiment ce marche : l'imposer a un lot de tennis fait ecrire
             # « impossible » a chaque session, ce qui n'apprend rien.
@@ -281,10 +335,51 @@ def template_path(name: str) -> Path:
     return TEMPLATES_DIR / name
 
 
-# -- Personnalisation (phase 5) ---------------------------------------------
+# -- Personnalisation --------------------------------------------------------
 
 #: Un nom de template est un simple slug : aucune traversee de repertoire possible.
 TEMPLATE_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*\.md\.j2$")
+
+#: Consignes permanentes de l'utilisateur, injectees dans chaque prompt.
+PREFERENCE_NOTES = "session_notes"
+
+#: Garde-fou de taille : ces consignes sont recopiees dans chaque prompt, et
+#: un pave de plusieurs pages y noierait les blocs de match qu'il doit servir.
+PREFERENCE_MAX_LENGTH = 4000
+
+
+def read_preference(key: str, settings: Settings | None = None) -> str:
+    """Valeur d'une consigne permanente, ou chaine vide si elle n'existe pas."""
+    with connect(settings) as conn:
+        row = conn.execute("SELECT value FROM preferences WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else ""
+
+
+def save_preference(key: str, value: str, settings: Settings | None = None) -> str:
+    """Ecrit une consigne permanente. Vide, elle est supprimee plutot que stockee.
+
+    Ce texte part tel quel dans le prompt : il n'est ni compile ni interprete,
+    donc rien ne peut le casser — seule sa longueur est bornee.
+    """
+    cleaned = (value or "").strip()
+    if len(cleaned) > PREFERENCE_MAX_LENGTH:
+        raise CustomizationError(
+            f"Consignes trop longues : {len(cleaned)} caractères pour un maximum "
+            f"de {PREFERENCE_MAX_LENGTH}. Elles sont recopiées dans chaque prompt."
+        )
+
+    with connect(settings) as conn:
+        if not cleaned:
+            conn.execute("DELETE FROM preferences WHERE key = ?", (key,))
+        else:
+            conn.execute(
+                "INSERT INTO preferences (key, value, updated_at) VALUES (?, ?, ?) "
+                "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+                "                               updated_at = excluded.updated_at",
+                (key, cleaned, utcnow()),
+            )
+    logger.info("Consigne « %s » : %d caracteres", key, len(cleaned))
+    return cleaned
 
 
 class CustomizationError(ValueError):

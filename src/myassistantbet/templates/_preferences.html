@@ -1,0 +1,12 @@
+<div id="preferences">
+  {% if preferences_error %}<div class="report report-warn">{{ preferences_error }}</div>{% endif %}
+  {% if preferences_saved %}<div class="report">Consignes enregistrées.</div>{% endif %}
+
+  <form hx-post="/settings/preferences"
+        hx-target="#preferences"
+        hx-swap="outerHTML">
+    <textarea name="preferences" rows="8" spellcheck="false"
+              placeholder="Exemple : je ne joue jamais les marchés cartons ni corners.&#10;Pas de combiné sur deux matchs de la même compétition.&#10;En tennis, jamais de pari sur un joueur qui revient de blessure.">{{ preferences }}</textarea>
+    <button type="submit" class="primary">Enregistrer les consignes</button>
+  </form>
+</div>

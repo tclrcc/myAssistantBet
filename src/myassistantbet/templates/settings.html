@@ -7,11 +7,24 @@
 </div>
 
 <section class="settings-section">
+  <h2>Consignes permanentes</h2>
+  <p class="muted small">
+    Recopiées en tête de chaque prompt, avant toute analyse. C'est l'endroit
+    pour ce qui ne change pas d'une session à l'autre : marchés que tu ne joues
+    jamais, contraintes de combiné, façon de trancher. Elles ne peuvent pas
+    lever les interdits du prompt.
+  </p>
+  {% include "_preferences.html" %}
+</section>
+
+<section class="settings-section">
   <h2>Templates de prompt</h2>
   <p class="muted small">
     Modifiable sans redémarrage. Variables disponibles : <code>date_fr</code>,
     <code>event_blocks</code> (liste de blocs), <code>session_label</code>,
-    <code>tiers</code>. Un template qui ne compile pas est refusé.
+    <code>tiers</code>, <code>catalogues</code>, <code>competition_notes</code>,
+    <code>preferences</code>, <code>feedback</code>. Un template qui ne compile
+    pas est refusé.
   </p>
   {% include "_templates.html" %}
 </section>

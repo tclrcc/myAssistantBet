@@ -586,6 +586,12 @@ tr.result-loss td:first-child { box-shadow: inset 3px 0 0 var(--alert); }
 .tiers-form input { width: 100%; }
 .tiers-form input.tiny { width: 3.5rem; }
 
+#preferences textarea { width: 100%; padding: var(--s3); margin-bottom: var(--s3); }
+
+/* La fiche d'une competition tient dans sa cellule : la colonne ne doit pas
+   ecraser le reste du tableau, ni le texte devenir illisible en 2 lignes. */
+.notes-form textarea { min-width: 260px; margin-bottom: var(--s2); }
+
 /* --- Petits ecrans --------------------------------------------------------- */
 
 @media (max-width: 720px) {

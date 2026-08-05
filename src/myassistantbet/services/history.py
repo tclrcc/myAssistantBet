@@ -11,6 +11,8 @@ Les paris annules et ceux encore en attente sont exclus du denominateur.
 from __future__ import annotations
 
 import logging
+import re
+import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -378,3 +380,181 @@ def stats(settings: Settings | None = None) -> Stats:
         overall.pending += entry.pending
 
     return Stats(by_tier=by_tier, by_sport=by_sport, overall=overall)
+
+
+# -- Retour d'experience, pour le prompt ------------------------------------
+
+#: Fenetre du retour : les N derniers picks tranches. Au-dela on parlerait
+#: d'une autre saison, d'autres competitions et d'une autre facon de jouer.
+FEEDBACK_WINDOW = 60
+
+#: Sous ce total, aucun taux n'est publie. Un 2/3 se lit « 67 % » et n'apprend
+#: rien ; dire qu'il manque du recul est en revanche une information juste.
+FEEDBACK_MIN_TOTAL = 10
+
+#: Meme regle a l'echelle d'une ligne : un palier vu trois fois reste tu.
+FEEDBACK_MIN_ROWS = 4
+
+
+@dataclass
+class FeedbackRow:
+    """Un regroupement et son taux. Ni mise, ni gain, ni esperance."""
+
+    key: str
+    label: str
+    won: int = 0
+    lost: int = 0
+
+    @property
+    def settled(self) -> int:
+        return self.won + self.lost
+
+    @property
+    def rate(self) -> float | None:
+        return None if self.settled == 0 else self.won / self.settled
+
+    @property
+    def line(self) -> str:
+        """`🔴 GIGA FUN     2/14    14 %`, aligne comme le reste du prompt."""
+        if self.rate is None:
+            return self.label
+        return f"{self.label:<16} {f'{self.won}/{self.settled}':<7} {self.rate * 100:.0f} %"
+
+
+@dataclass
+class Feedback:
+    """Ce que l'historique dit, tel qu'il entre dans le prompt.
+
+    Le seul indicateur reste `gagnes / (gagnes + perdus)`, comme partout
+    ailleurs dans ce module : aucun montant n'y entre, et rien ici ne se
+    rapproche d'une cote — ce serait calculer une esperance.
+    """
+
+    settled: int = 0
+    window: int = FEEDBACK_WINDOW
+    minimum: int = FEEDBACK_MIN_TOTAL
+    by_tier: list[FeedbackRow] = field(default_factory=list)
+    by_confidence: list[FeedbackRow] = field(default_factory=list)
+    by_sport: list[FeedbackRow] = field(default_factory=list)
+    by_market: list[FeedbackRow] = field(default_factory=list)
+
+    @property
+    def empty(self) -> bool:
+        """Aucun pari tranche : le bloc disparait entierement du prompt."""
+        return self.settled == 0
+
+    @property
+    def enough(self) -> bool:
+        """Assez de recul pour qu'un pourcentage veuille dire quelque chose."""
+        return self.settled >= self.minimum
+
+
+def _market_key(text: str) -> str:
+    """Regroupe les libelles de marche, qui sont ecrits a la main.
+
+    `Over 2.5 buts`, `over 2,5 buts` et `Over  2.5 Buts` sont le meme marche.
+    La normalisation de `matching.py` ne convient pas ici : elle retire les
+    chiffres aux extremites, et « Over 2.5 » y deviendrait « over ».
+    """
+    decomposed = unicodedata.normalize("NFKD", text or "")
+    stripped = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", stripped.lower()).split())
+
+
+def _feedback_tally(entries: list[tuple[str, str, str]]) -> list[FeedbackRow]:
+    """Agrege des triplets (cle, libelle, resultat) en lignes exploitables.
+
+    Les regroupements trop peu fournis sont ecartes : sur trois paris, le taux
+    mesure le hasard. Les entrees arrivant du plus recent au plus ancien, le
+    libelle retenu est la derniere orthographe employee.
+    """
+    grouped: dict[str, FeedbackRow] = {}
+    for key, label, result in entries:
+        row = grouped.setdefault(key, FeedbackRow(key=key, label=label))
+        if result == "win":
+            row.won += 1
+        else:
+            row.lost += 1
+    return [row for row in grouped.values() if row.settled >= FEEDBACK_MIN_ROWS]
+
+
+def feedback(settings: Settings | None = None) -> Feedback:
+    """Taux de reussite des derniers picks tranches, pour nourrir le prompt.
+
+    Ferme la boucle du parcours : le prompt part, les picks reviennent, leurs
+    resultats sont saisis — et la session suivante sait enfin ce qui a tenu.
+    Sans cela l'analyse repart de zero a chaque fois et conseille un palier
+    sans jamais apprendre qu'il ne passe pas.
+
+    Les paris annules et ceux en attente sont exclus : un pick sans resultat
+    n'apprend rien, et le compter au denominateur ferait mentir le taux.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        tier_order = [row["key"] for row in conn.execute("SELECT key FROM tiers ORDER BY position")]
+        tier_labels = _tier_labels(conn)
+        sport_labels = {
+            row["key"]: row["label"] for row in conn.execute("SELECT key, label FROM sports")
+        }
+        rows = conn.execute(
+            "SELECT k.tier, k.result, k.market, k.confidence, s.key AS sport_key FROM picks k "
+            "LEFT JOIN events e ON e.id = k.event_id "
+            "LEFT JOIN sports s ON s.id = e.sport_id "
+            "WHERE k.played = 1 AND k.result IN ('win', 'loss') "
+            "ORDER BY k.created_at DESC, k.id DESC LIMIT ?",
+            (FEEDBACK_WINDOW,),
+        ).fetchall()
+
+    report = Feedback(settled=len(rows))
+    if not report.enough:
+        # En dessous du seuil, on ne publie aucun detail : le prompt dira qu'il
+        # manque du recul, ce qui vaut mieux qu'un pourcentage trompeur.
+        return report
+
+    report.by_tier = _feedback_tally(
+        [(row["tier"], tier_labels.get(row["tier"], row["tier"]), row["result"]) for row in rows]
+    )
+    report.by_tier.sort(
+        key=lambda item: tier_order.index(item.key) if item.key in tier_order else 99
+    )
+
+    report.by_confidence = _feedback_tally(
+        [
+            (str(row["confidence"]), f"confiance {row['confidence']}", row["result"])
+            for row in rows
+            if row["confidence"] is not None
+        ]
+    )
+    report.by_confidence.sort(key=lambda item: item.key, reverse=True)
+
+    report.by_sport = sorted(
+        _feedback_tally(
+            [
+                (
+                    row["sport_key"] or NO_SPORT,
+                    sport_labels.get(row["sport_key"], NO_SPORT),
+                    row["result"],
+                )
+                for row in rows
+            ]
+        ),
+        key=lambda item: item.label,
+    )
+
+    report.by_market = sorted(
+        _feedback_tally(
+            [
+                (_market_key(row["market"]), (row["market"] or "").strip(), row["result"])
+                for row in rows
+                if _market_key(row["market"])
+            ]
+        ),
+        key=lambda item: (-item.settled, item.label),
+    )
+
+    logger.info(
+        "Retour d'experience : %d pari(s) tranche(s) sur les %d derniers",
+        report.settled,
+        FEEDBACK_WINDOW,
+    )
+    return report

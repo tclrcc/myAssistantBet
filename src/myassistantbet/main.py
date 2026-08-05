@@ -501,6 +501,15 @@ def competition_toggle(
 # --- Mapping des equipes ---------------------------------------------------
 
 
+@app.post("/competitions/{competition_id}/notes", response_class=HTMLResponse)
+def competition_notes(
+    request: Request, competition_id: int, notes: str = Form(default="")
+) -> HTMLResponse:
+    """Enregistre la fiche d'une competition, injectee une fois par prompt."""
+    competitions_service.set_notes(competition_id, notes, get_settings())
+    return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
+
+
 @app.post("/competitions/{competition_id}/coverage/reset", response_class=HTMLResponse)
 def reset_coverage(request: Request, competition_id: int) -> HTMLResponse:
     """Oublie les marches constates vides : la competition sera retestee."""
@@ -757,6 +766,9 @@ def _settings_context(**overrides: object) -> dict[str, object]:
         "tiers": prompt_service.load_tiers(settings),
         "tiers_error": None,
         "tiers_saved": False,
+        "preferences": prompt_service.read_preference(prompt_service.PREFERENCE_NOTES, settings),
+        "preferences_error": None,
+        "preferences_saved": False,
     }
     context.update(overrides)
     return context
@@ -798,6 +810,22 @@ def remove_template(request: Request, name: str = Form(default="")) -> HTMLRespo
             request, "_templates.html", _settings_context(template_error=str(exc))
         )
     return templates.TemplateResponse(request, "_templates.html", _settings_context())
+
+
+@app.post("/settings/preferences", response_class=HTMLResponse)
+def save_preferences(request: Request, preferences: str = Form(default="")) -> HTMLResponse:
+    """Enregistre les consignes permanentes recopiees dans chaque prompt."""
+    try:
+        prompt_service.save_preference(prompt_service.PREFERENCE_NOTES, preferences, get_settings())
+    except prompt_service.CustomizationError as exc:
+        return templates.TemplateResponse(
+            request,
+            "_preferences.html",
+            _settings_context(preferences_error=str(exc), preferences=preferences),
+        )
+    return templates.TemplateResponse(
+        request, "_preferences.html", _settings_context(preferences_saved=True)
+    )
 
 
 @app.post("/settings/tiers", response_class=HTMLResponse)

@@ -50,7 +50,7 @@ def list_all(settings: Settings | None = None) -> list[dict[str, Any]]:
     with connect(settings) as conn:
         rows = conn.execute(
             "SELECT c.id, c.label, c.oddsapi_key, c.apifootball_league_id, c.priority, "
-            "       c.active, s.key AS sport_key, s.label AS sport_label "
+            "       c.active, c.notes, s.key AS sport_key, s.label AS sport_label "
             "FROM competitions c JOIN sports s ON s.id = c.sport_id "
             "ORDER BY c.active DESC, s.id, c.priority DESC, c.label"
         ).fetchall()
@@ -63,6 +63,27 @@ def set_active(competition_id: int, active: bool, settings: Settings | None = No
         conn.execute(
             "UPDATE competitions SET active = ? WHERE id = ?", (1 if active else 0, competition_id)
         )
+
+
+def set_notes(competition_id: int, notes: str, settings: Settings | None = None) -> None:
+    """Enregistre la fiche d'une competition : format, phase, enjeu, particularites.
+
+    Ce texte entre tel quel dans le prompt, une fois par lot. Il tient lieu de
+    ce qu'aucune API ne donne — qu'une coupe se joue en aller-retour, qu'un
+    championnat vient de reprendre, qu'une competition se dispute a huis clos.
+    Vide, la fiche disparait plutot que d'occuper une ligne pour rien.
+    """
+    cleaned = (notes or "").strip()
+    with connect(settings) as conn:
+        conn.execute(
+            "UPDATE competitions SET notes = ? WHERE id = ?",
+            (cleaned or None, competition_id),
+        )
+    logger.info(
+        "Fiche de competition %d : %s",
+        competition_id,
+        f"{len(cleaned)} caracteres" if cleaned else "effacee",
+    )
 
 
 async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None) -> SyncReport:

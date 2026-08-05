@@ -39,6 +39,7 @@
         <th>Ligue API-Football</th>
         <th>Priorité</th>
         <th>Marchés profonds</th>
+        <th>Fiche (injectée dans le prompt)</th>
       </tr>
     </thead>
     <tbody>
@@ -72,6 +73,14 @@
               <button type="submit" class="link-action">retester</button>
             </form>
           {% endif %}
+        </td>
+        <td class="small">
+          <form class="notes-form" hx-post="/competitions/{{ competition.id }}/notes"
+                hx-target="#competitions" hx-swap="outerHTML">
+            <textarea name="notes" rows="2" spellcheck="false"
+                      placeholder="Format, phase, enjeu, particularités…">{{ competition.notes or '' }}</textarea>
+            <button type="submit" class="link-action">enregistrer</button>
+          </form>
         </td>
       </tr>
       {% endfor %}

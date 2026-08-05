@@ -22,6 +22,7 @@ EXPECTED_TABLES = {
     "market_coverage",
     "odds",
     "picks",
+    "preferences",
     "prompts",
     "schema_migrations",
     "session_events",

@@ -166,6 +166,33 @@ devient une ligne explicite dans le bloc, ou une mention dans le rapport d'enric
   Le template par defaut n'est pas supprimable.
 - Bandes de cotes : bornes controlees avant ecriture (haute > basse, quota max >= min).
 
+## Ce qui nourrit le prompt en dehors des cotes
+
+Trois sources locales, relues a chaque generation : aucun appel reseau, aucun credit,
+donc rien qui puisse manquer un matin.
+
+- `history.feedback()` ferme la boucle du parcours : le prompt part, les picks reviennent,
+  leurs resultats sont saisis, et la session suivante sait enfin ce qui a tenu. Taux par
+  palier, par confiance annoncee, par sport et par marche, sur les `FEEDBACK_WINDOW`
+  derniers paris **tranches** — annules et en attente hors denominateur.
+  - Sous `FEEDBACK_MIN_TOTAL`, **aucun detail n'est publie** : le prompt dit qu'il manque
+    du recul. Un 2/3 lu « 67 % » ferait plus de degats que le silence.
+  - Sous `FEEDBACK_MIN_ROWS`, un regroupement est tu pour la meme raison.
+  - **Le garde-fou compte autant que le chiffre.** Le template interdit explicitement de
+    rapprocher un taux d'une cote : ce serait calculer une esperance, et le fait que le
+    chiffre vienne de l'historique de l'utilisateur n'y change rien (section 9). Un test
+    verifie que le bloc porte cette interdiction, un autre qu'aucun champ financier
+    n'apparait sur `Feedback` ni `FeedbackRow`.
+  - Le signal le plus utile est l'ecart entre la confiance annoncee et le taux constate :
+    il dit que la notation derive. C'est pour lui que `by_confidence` existe.
+- `competitions.notes` : la fiche d'une competition (format, phase, enjeu, particularites).
+  Rendue **une seule fois par lot**, pas par match : repeter le format d'une coupe a chaque
+  affiche couterait des tokens sans rien apprendre.
+- `preferences` (table cle/valeur, cle `session_notes`) : les consignes permanentes de
+  l'utilisateur, recopiees en tete de prompt. Elles priment sur les preferences generales
+  du template, **jamais sur les interdits** — le template le dit noir sur blanc. Seule leur
+  longueur est bornee : ce texte n'est ni compile ni interprete.
+
 ## Deploiement et sauvegardes
 
 - Les fichiers de deploiement sont dans `deploy/` : unite systemd durcie, unite et minuteur

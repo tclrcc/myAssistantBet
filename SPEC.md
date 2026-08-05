@@ -486,6 +486,18 @@ Travaille **phase par phase**. À la fin de chaque phase : lance `ruff` et `pyte
 - Script de sauvegarde SQLite (`VACUUM INTO`, rotation 7 jours)
 - Section « Déploiement VPS » dans le README
 
+### Phase 8 — Boucle de retour et contexte permanent
+Ce qui nourrit le prompt en dehors des cotes, entièrement local : aucun appel réseau, aucun crédit.
+
+- **Retour d'expérience** (`history.feedback()`) : taux de réussite par palier, par confiance annoncée, par sport et par marché sur les N derniers paris tranchés, injectés dans le prompt. Ferme la boucle prompt → picks → résultats → prompt suivant, qui était ouverte : l'analyse repartait de zéro à chaque session.
+  - Sous un seuil de picks, aucun détail n'est publié — le prompt dit qu'il manque du recul. Un taux sur trois paris mesure le hasard, et un pourcentage faux fait plus de dégâts que le silence.
+  - **Le garde-fou fait partie de la fonctionnalité** : le prompt interdit explicitement de rapprocher un taux de réussite d'une cote. Ce serait calculer une espérance, et le fait que le chiffre vienne de mon propre historique n'y change rien (section 9). Le taux ne sert qu'à relever le niveau d'exigence là où le passé est mauvais.
+  - L'écart entre la confiance annoncée et le taux constaté est le signal le plus utile du bloc : il dit que la notation de confiance dérive.
+- **Fiches de compétition** (`competitions.notes`) : format, phase, enjeu, particularités. Saisies une fois, rendues **une seule fois par lot** et non à chaque match.
+- **Consignes permanentes** (table `preferences`) : ce qui ne change pas d'une session à l'autre, recopié en tête de prompt. Prime sur les préférences générales du template, jamais sur les interdits.
+
+*Critère d'acceptation :* après une dizaine de picks saisis et tranchés, le prompt généré contient mes taux par palier et par confiance, refuse toute comparaison à une cote, et affiche la fiche de chaque compétition du lot une seule fois.
+
 ---
 
 ## 11. Exigences de qualité
