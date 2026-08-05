@@ -1,0 +1,63 @@
+{# Corps de la shortlist : zone d'enrichissement et matchs coches, par sport.
+   Recharge en bloc quand un match est retire de la selection. #}
+<div id="shortlist">
+
+  {% include "_enrich.html" %}
+
+  {% if view.count == 0 %}
+    <p class="empty">Aucun match sélectionné. Retourne au board pour en cocher.</p>
+  {% elif view.started_count %}
+    <p class="muted small">
+      {{ view.started_count }} match(s) déjà commencé(s) : gardés ici pour l'historique,
+      mais exclus du prompt et de l'enrichissement.
+    </p>
+  {% endif %}
+
+  {% for sport_label, events in view.groups %}
+  <section class="group">
+    <h2>{{ sport_label }} <span class="muted">({{ events|length }})</span></h2>
+    <table class="board">
+      <thead>
+        <tr>
+          <th>Heure</th>
+          <th>Compétition</th>
+          <th>Affiche</th>
+          <th>Marchés</th>
+          <th>Note perso</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for event in events %}
+        <tr {% if event.started %}class="started"{% endif %}>
+          <td class="num">{{ event.local_time.strftime('%d/%m %H:%M') }}</td>
+          <td>{{ event.competition }}</td>
+          <td class="affiche">
+            <a href="/events/{{ event.event_id }}">{{ event.affiche }}</a>
+            {% if event.started %}<span class="tag">commencé</span>{% endif %}
+          </td>
+          <td class="num">
+            <a href="/events/{{ event.event_id }}"
+               class="badge {% if event.enriched %}ok{% endif %}"
+               title="Voir toutes les cotes">{{ event.markets }}</a>
+          </td>
+          <td>
+            <textarea name="note" rows="1" placeholder="injectée telle quelle dans le prompt"
+                      hx-post="/session/{{ view.session_id }}/events/{{ event.event_id }}/note"
+                      hx-trigger="change, keyup changed delay:600ms"
+                      hx-swap="none">{{ event.note }}</textarea>
+          </td>
+          <td class="num">
+            <button type="button" class="link-danger"
+                    title="Retirer de la sélection"
+                    hx-post="/session/{{ view.session_id }}/events/{{ event.event_id }}/remove"
+                    hx-target="#shortlist"
+                    hx-swap="outerHTML">×</button>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endfor %}
+</div>

@@ -31,6 +31,12 @@
   <p class="empty">Aucun match dans cette session : le prompt ne contient aucun bloc.</p>
 {% endif %}
 
+{% if started %}
+  <p class="muted small">
+    Écarté(s) du prompt car déjà commencé(s) : {{ started | join(', ') }}.
+  </p>
+{% endif %}
+
 <pre id="prompt-body">{{ body }}</pre>
 
 <script>

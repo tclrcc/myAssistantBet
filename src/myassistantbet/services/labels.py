@@ -1,0 +1,57 @@
+"""Libelles d'evenements, de bookmakers et de marches, partages entre services.
+
+Le cyclisme (une etape) et les marches outright n'ont pas de second
+participant. Chaque service qui recopiait la concatenation risquait d'oublier
+la garde et d'afficher un tiret orphelin : elle vit ici, une seule fois.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+from ..providers.oddsapi import DEFAULT_BOOKMAKER
+
+#: Nom lisible d'un bookmaker. Une cle inconnue est rendue telle quelle.
+BOOKMAKER_LABELS = {
+    "betclic_fr": "Betclic",
+    "manual": "saisie manuelle",
+    # Books de reference : ils comblent les marches que Betclic ne sert pas via
+    # l'API. Le suffixe « (ref.) » est porte jusque dans le prompt — une cote de
+    # reference situe le marche, elle n'est pas jouable telle quelle.
+    "pinnacle": "Pinnacle (ref.)",
+    "unibet_nl": "Unibet NL (ref.)",
+    "matchbook": "Matchbook (ref.)",
+    "onexbet": "1xBet (ref.)",
+    "betonlineag": "BetOnline (ref.)",
+    "gtbets": "GTbets (ref.)",
+    "nordicbet": "NordicBet (ref.)",
+    "pmu_fr": "PMU (ref.)",
+}
+
+#: Bookmakers pour lesquels un horodatage de releve n'aurait aucun sens : la
+#: saisie manuelle porte l'heure de la frappe, pas celle d'un releve de marche.
+UNTIMED_BOOKMAKERS = frozenset({"manual"})
+
+
+def affiche(home: str, away: str | None) -> str:
+    """Affiche d'un evenement, sans tiret orphelin quand `away` est absent."""
+    return f"{home} – {away}" if away else home
+
+
+def bookmaker_label(key: str | None) -> str:
+    """Nom lisible d'un bookmaker, la cle brute a defaut."""
+    return BOOKMAKER_LABELS.get(key or "", key or "—")
+
+
+def primary_book(books: Sequence[str]) -> str:
+    """Source principale d'un evenement : celle dont les cotes sont jouables.
+
+    Betclic s'il a servi quoi que ce soit, sinon le premier book releve. La
+    saisie manuelle n'arrive qu'en dernier : elle complete un releve, elle ne le
+    remplace pas — sauf sur un evenement entierement saisi a la main, ou elle
+    est bien la source principale.
+    """
+    if DEFAULT_BOOKMAKER in books:
+        return DEFAULT_BOOKMAKER
+    timed = [book for book in books if book not in UNTIMED_BOOKMAKERS]
+    return next(iter(timed or list(books)), "")

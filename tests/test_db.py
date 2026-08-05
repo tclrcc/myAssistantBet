@@ -19,6 +19,7 @@ EXPECTED_TABLES = {
     "competitions",
     "context",
     "events",
+    "market_coverage",
     "odds",
     "picks",
     "prompts",

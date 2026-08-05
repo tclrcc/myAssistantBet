@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -24,10 +25,14 @@ from .providers.oddsapi import OddsAPIClient
 from .scheduler import build_scheduler
 from .services import board as board_service
 from .services import competitions as competitions_service
+from .services import coverage as coverage_service
 from .services import enrich as enrich_service
+from .services import grid as grid_service
 from .services import history as history_service
 from .services import manual as manual_service
 from .services import mapping_ui as mapping_service
+from .services import odds_view as odds_view_service
+from .services import picks_import as picks_import_service
 from .services import prompt as prompt_service
 from .services import session as session_service
 from .services.scan import run_scan
@@ -71,31 +76,40 @@ app = FastAPI(title="MyAssistantBet", version=__version__, lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=PACKAGE_DIR / "static"), name="static")
 
 
-def _filters(request: Request) -> board_service.Filters:
-    """Convertit les parametres de requete en criteres de filtrage.
+def _filters_from(params: Mapping[str, Any]) -> board_service.Filters:
+    """Convertit un jeu de parametres en criteres de filtrage.
 
     Les parametres inconnus ou mal formes sont ignores : un lien bricole a la
-    main ne doit pas renvoyer une erreur 500.
+    main ne doit pas renvoyer une erreur 500. Accepte aussi bien la chaine de
+    requete d'un GET que le corps d'un POST envoye par `hx-include`.
     """
-    params = request.query_params
     return board_service.Filters(
-        sport=params.get("sport", "").strip(),
+        sport=str(params.get("sport", "")).strip(),
         competition_id=_int_or_none(params.get("competition_id")),
         hour_from=_int_or_none(params.get("hour_from")),
         hour_to=_int_or_none(params.get("hour_to")),
-        text=params.get("text", "").strip(),
+        text=str(params.get("text", "")).strip(),
     )
 
 
-def _int_or_none(value: str | None) -> int | None:
+def _filters(request: Request) -> board_service.Filters:
+    return _filters_from(request.query_params)
+
+
+def _int_or_none(value: object | None) -> int | None:
     try:
         return int(value)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         return None
 
 
-def _render_board(request: Request, template: str, report: object | None = None) -> HTMLResponse:
-    view = board_service.build_view(_filters(request), get_settings())
+def _render_board(
+    request: Request,
+    template: str,
+    report: object | None = None,
+    filters: board_service.Filters | None = None,
+) -> HTMLResponse:
+    view = board_service.build_view(filters or _filters(request), get_settings())
     return templates.TemplateResponse(
         request,
         template,
@@ -141,7 +155,79 @@ def select_event(
     )
 
 
+@app.post("/events/select-all", response_class=HTMLResponse)
+async def select_all(request: Request) -> HTMLResponse:
+    """Coche ou decoche d'un coup tous les evenements du filtre courant.
+
+    Porte sur le filtre affiche, jamais sur toute la base : ce qu'on voit est
+    ce qu'on selectionne.
+    """
+    form = dict(await request.form())
+    wanted = str(form.get("mode", "on")) == "on"
+    filters = _filters_from(form)
+    board_service.toggle_filtered(filters, wanted, get_settings())
+    return _render_board(request, "_board.html", filters=filters)
+
+
+# --- Fiche evenement -------------------------------------------------------
+
+
+def _event_context(event_id: int, **extra: object) -> dict[str, object]:
+    view = odds_view_service.build(event_id, get_settings())
+    if view is None:
+        raise HTTPException(status_code=404, detail="Evenement inconnu")
+    return {"event": view, "error": None, "result": None, **extra}
+
+
+@app.get("/events/{event_id}", response_class=HTMLResponse)
+def event_page(request: Request, event_id: int) -> HTMLResponse:
+    """Fiche d'un evenement : toutes ses cotes, et la saisie manuelle."""
+    return templates.TemplateResponse(request, "event.html", _event_context(event_id))
+
+
+@app.post("/events/{event_id}/shortlist", response_class=HTMLResponse)
+def toggle_event_shortlist(
+    request: Request, event_id: int, selected: str | None = Form(default=None)
+) -> HTMLResponse:
+    """Coche ou decoche depuis la fiche, et re-rend son en-tete."""
+    board_service.toggle_selection(event_id, selected is not None, get_settings())
+    return templates.TemplateResponse(request, "_event_head.html", _event_context(event_id))
+
+
+@app.post("/events/{event_id}/odds", response_class=HTMLResponse)
+async def add_manual_odds(request: Request, event_id: int) -> HTMLResponse:
+    """Ajoute des cotes saisies a la main. La saisie est conservee si refusee."""
+    form = dict(await request.form())
+    raw = str(form.get("odds", ""))
+    replace = str(form.get("replace", "")) == "on"
+    try:
+        result = manual_service.attach_odds(event_id, raw, replace, get_settings())
+    except manual_service.ManualError as exc:
+        return templates.TemplateResponse(
+            request,
+            "_event_odds.html",
+            _event_context(event_id, error=str(exc), typed=raw),
+        )
+    return templates.TemplateResponse(
+        request, "_event_odds.html", _event_context(event_id, result=result)
+    )
+
+
+@app.post("/events/{event_id}/odds/clear", response_class=HTMLResponse)
+def clear_manual_odds(request: Request, event_id: int) -> HTMLResponse:
+    """Retire toutes les cotes manuelles de l'evenement. Les cotes d'API restent."""
+    removed = manual_service.clear_manual_odds(event_id, get_settings())
+    return templates.TemplateResponse(
+        request,
+        "_event_odds.html",
+        _event_context(event_id, result=manual_service.AttachResult(removed=removed)),
+    )
+
+
 # --- Shortlist -------------------------------------------------------------
+
+#: Colonnes de la grille de saisie, quand aucun libelle d'issue n'est fourni.
+GRID_COLUMNS = 2
 
 #: Progression des enrichissements en cours, par session. Mono-utilisateur,
 #: un seul process : un dictionnaire en memoire suffit et evite une table.
@@ -173,12 +259,98 @@ def shortlist(request: Request, session_id: int) -> HTMLResponse:
     return templates.TemplateResponse(request, "shortlist.html", _shortlist_context(session_id))
 
 
+def _grid_context(session_id: int, **extra: object) -> dict[str, object]:
+    return {
+        "grid": grid_service.build_view(session_id, get_settings()),
+        "market": "",
+        "outcomes": "",
+        "error": None,
+        "result": None,
+        "paste": None,
+        "prefill": {},
+        **extra,
+    }
+
+
+@app.post("/session/{session_id}/odds/paste", response_class=HTMLResponse)
+async def grid_paste(request: Request, session_id: int) -> HTMLResponse:
+    """Pre-remplit la grille depuis un bloc colle. N'ecrit rien en base."""
+    _require_session(session_id)
+    form = dict(await request.form())
+    view = grid_service.build_view(session_id, get_settings())
+    labels = grid_service.parse_outcome_labels(str(form.get("outcomes", "")))
+    paste = grid_service.parse_paste(
+        str(form.get("pasted", "")), view.rows, len(labels) or GRID_COLUMNS
+    )
+    return templates.TemplateResponse(
+        request,
+        "grid.html",
+        _grid_context(
+            session_id,
+            market=str(form.get("market", "")),
+            outcomes=str(form.get("outcomes", "")),
+            paste=paste,
+            prefill=paste.cells,
+        ),
+    )
+
+
+@app.get("/session/{session_id}/odds", response_class=HTMLResponse)
+def grid_page(request: Request, session_id: int) -> HTMLResponse:
+    """Saisie groupee : un marche, une ligne par match de la shortlist."""
+    _require_session(session_id)
+    return templates.TemplateResponse(request, "grid.html", _grid_context(session_id))
+
+
+@app.post("/session/{session_id}/odds", response_class=HTMLResponse)
+async def grid_save(request: Request, session_id: int) -> HTMLResponse:
+    """Enregistre la grille. La saisie est conservee telle quelle si elle est refusee."""
+    _require_session(session_id)
+    form = dict(await request.form())
+    market = str(form.get("market", ""))
+    outcomes = str(form.get("outcomes", ""))
+    cells = {
+        key[len("price_") :].replace("_", ":"): str(value)
+        for key, value in form.items()
+        if key.startswith("price_")
+    }
+    typed = {"market": market, "outcomes": outcomes}
+    try:
+        result = grid_service.save_grid(
+            session_id,
+            market,
+            grid_service.parse_outcome_labels(outcomes),
+            cells,
+            str(form.get("replace", "")) == "on",
+            get_settings(),
+        )
+    except manual_service.ManualError as exc:
+        return templates.TemplateResponse(
+            request, "grid.html", _grid_context(session_id, error=str(exc), **typed)
+        )
+    return templates.TemplateResponse(
+        request, "grid.html", _grid_context(session_id, result=result, **typed)
+    )
+
+
 @app.post("/session/{session_id}/events/{event_id}/note")
 def save_note(session_id: int, event_id: int, note: str = Form(default="")) -> PlainTextResponse:
     """Note libre d'un evenement, injectee telle quelle sous NOTE PERSO."""
     _require_session(session_id)
     session_service.set_note(session_id, event_id, note, get_settings())
     return PlainTextResponse("", status_code=204)
+
+
+@app.post("/session/{session_id}/events/{event_id}/remove", response_class=HTMLResponse)
+def remove_from_shortlist(request: Request, session_id: int, event_id: int) -> HTMLResponse:
+    """Retire un evenement de la shortlist, depuis la shortlist elle-meme.
+
+    Un match commence a quitte le board : sans cette action, il n'y aurait plus
+    aucun endroit ou le decocher.
+    """
+    _require_session(session_id)
+    session_service.remove_event(session_id, event_id, get_settings())
+    return templates.TemplateResponse(request, "_shortlist.html", _shortlist_context(session_id))
 
 
 @app.post("/session/{session_id}/enrich", response_class=HTMLResponse)
@@ -290,7 +462,12 @@ async def manual_create(request: Request) -> HTMLResponse:
 
 
 def _competitions_context(report: object | None = None) -> dict[str, object]:
-    return {"competitions": competitions_service.list_all(get_settings()), "report": report}
+    settings = get_settings()
+    return {
+        "competitions": competitions_service.list_all(settings),
+        "coverage": coverage_service.by_competition(settings),
+        "report": report,
+    }
 
 
 @app.get("/competitions", response_class=HTMLResponse)
@@ -322,6 +499,13 @@ def competition_toggle(
 
 
 # --- Mapping des equipes ---------------------------------------------------
+
+
+@app.post("/competitions/{competition_id}/coverage/reset", response_class=HTMLResponse)
+def reset_coverage(request: Request, competition_id: int) -> HTMLResponse:
+    """Oublie les marches constates vides : la competition sera retestee."""
+    coverage_service.reset(competition_id, get_settings())
+    return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
 
 
 @app.get("/mapping", response_class=HTMLResponse)
@@ -396,6 +580,7 @@ def prompt_page(request: Request, session_id: int, template: str | None = None) 
             "body": rendered.body,
             "token_estimate": rendered.token_estimate,
             "blocks": rendered.blocks,
+            "started": rendered.started,
         },
     )
 
@@ -430,7 +615,7 @@ def history_page(request: Request) -> HTMLResponse:
     )
 
 
-def _picks_context(session_id: int, error: str | None = None) -> dict[str, object]:
+def _picks_context(session_id: int, error: str | None = None, **extra: object) -> dict[str, object]:
     settings = get_settings()
     return {
         "session_id": session_id,
@@ -441,6 +626,10 @@ def _picks_context(session_id: int, error: str | None = None) -> dict[str, objec
         "picks": history_service.list_picks(session_id, settings),
         "result_labels": list(history_service.RESULT_LABELS.items()),
         "error": error,
+        "preview": None,
+        "imported": 0,
+        "import_failures": [],
+        **extra,
     }
 
 
@@ -473,6 +662,49 @@ async def add_pick(request: Request, session_id: int) -> HTMLResponse:
             request, "picks.html", _picks_context(session_id, str(exc))
         )
     return templates.TemplateResponse(request, "picks.html", _picks_context(session_id))
+
+
+@app.post("/history/{session_id}/picks/preview", response_class=HTMLResponse)
+async def preview_picks_import(request: Request, session_id: int) -> HTMLResponse:
+    """Lit le tableau de Claude et propose un import. N'ecrit rien en base."""
+    _require_session(session_id)
+    form = dict(await request.form())
+    preview = picks_import_service.build_preview(
+        session_id, str(form.get("table", "")), get_settings()
+    )
+    return templates.TemplateResponse(
+        request, "picks.html", _picks_context(session_id, preview=preview)
+    )
+
+
+@app.post("/history/{session_id}/picks/import", response_class=HTMLResponse)
+async def confirm_picks_import(request: Request, session_id: int) -> HTMLResponse:
+    """Enregistre les lignes cochees dans la proposition d'import."""
+    _require_session(session_id)
+    form = {key: str(value) for key, value in (await request.form()).items()}
+    settings = get_settings()
+    created, failures = 0, []
+    for index in sorted({key.split("_")[-1] for key in form if key.startswith("keep_")}):
+        try:
+            history_service.add_pick(
+                session_id,
+                tier=form.get(f"tier_{index}", ""),
+                market=form.get(f"market_{index}", ""),
+                selection=form.get(f"selection_{index}", ""),
+                event_id=form.get(f"event_{index}", ""),
+                price=form.get(f"price_{index}", ""),
+                confidence=form.get(f"confidence_{index}", ""),
+                settings=settings,
+            )
+            created += 1
+        except history_service.HistoryError as exc:
+            failures.append(f"ligne {index} : {exc}")
+
+    return templates.TemplateResponse(
+        request,
+        "picks.html",
+        _picks_context(session_id, imported=created, import_failures=failures),
+    )
 
 
 @app.post("/picks/{pick_id}/result", response_class=HTMLResponse)

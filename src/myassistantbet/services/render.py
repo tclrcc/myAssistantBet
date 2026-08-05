@@ -10,7 +10,9 @@ Regles absolues :
   (« donnees non disponibles pour cette competition ») ;
 - les cotes sont formatees a deux decimales ;
 - les scores exacts sont limites aux 10 cotes les plus basses, triees croissant ;
-- les lignes O/U sont limitees aux 5 lignes les plus proches de la ligne principale.
+- les lignes O/U sont limitees aux 5 lignes les plus proches de la ligne principale ;
+- une ligne qui ne vient pas du book principal porte sa source en fin de ligne ;
+- un marche demande et jamais servi devient une ligne « Non servis » explicite.
 """
 
 from __future__ import annotations
@@ -18,6 +20,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+
+from .labels import affiche, bookmaker_label
 
 INDENT = "  "
 LABEL_WIDTH = 12
@@ -33,6 +37,10 @@ SPORT_LABELS = {"football": "FOOT", "tennis": "TENNIS", "cycling": "CYCLISME"}
 
 UNAVAILABLE = "donnees non disponibles pour cette competition"
 
+#: Libelle de la ligne qui enumere les marches demandes et jamais obtenus.
+UNSERVED_LABEL = "Non servis"
+UNSERVED_NOTE = "aucun book interroge ne les sert sur cette competition"
+
 
 @dataclass
 class Outcome:
@@ -42,6 +50,8 @@ class Outcome:
     price: float
     point: float | None = None
     description: str | None = None
+    #: Book qui sert cette cote. Vide = source inconnue, aucune mention rendue.
+    bookmaker: str = ""
 
 
 @dataclass
@@ -60,6 +70,13 @@ class RenderableEvent:
     note: str | None = None
     bookmaker_label: str = "Betclic"
     fetched_local: datetime | None = None
+    #: Cle du book dont les cotes sont jouables telles quelles. Les lignes
+    #: servies par un autre book portent leur source : une cote de reference
+    #: situe le marche, elle n'est pas le prix qu'on obtiendra.
+    primary_book: str = ""
+    #: Marches demandes a l'API et jamais servis sur cette competition. Les
+    #: taire laisserait croire a un bloc incomplet plutot qu'a une limite connue.
+    unserved: list[str] = field(default_factory=list)
 
 
 # -- Formatage elementaire --------------------------------------------------
@@ -289,7 +306,10 @@ TENNIS_MARKET_ORDER: list[tuple[str, str]] = [
     ("spreads_s1", "Hand. S1"),
     ("totals_s1", "Jeux S1"),
     ("alternate_totals_s1", "Jeux S1"),
-    ("outright", "Vainqueur"),
+    # Marche libre de la saisie manuelle. Il ne peut pas s'appeler « Vainqueur »
+    # comme `h2h` : depuis qu'une saisie peut completer un match d'API, les deux
+    # coexistent sur le meme bloc et deux libelles identiques seraient illisibles.
+    ("outright", "Cotes"),
 ]
 
 #: Cyclisme : aucune API ne le couvre, tout est saisi a la main.
@@ -313,6 +333,70 @@ MERGED_MARKETS = {
 }
 
 
+def market_label(sport_key: str, key: str) -> str:
+    """Libelle d'affichage d'un marche, la cle brute a defaut."""
+    order = MARKET_ORDER_BY_SPORT.get(sport_key, MARKET_ORDER)
+    return next((label for market, label in order if market == key), key)
+
+
+def ordered_labels(sport_key: str, keys: Iterable[str]) -> list[str]:
+    """Libelles d'un ensemble de marches, dans l'ordre du bloc et sans doublon.
+
+    Deux cles peuvent partager un libelle (`totals_s1` et sa variante
+    `alternate_totals_s1`) : les repeter ferait croire a deux marches distincts.
+    """
+    order = [key for key, _ in MARKET_ORDER_BY_SPORT.get(sport_key, MARKET_ORDER)]
+    ranked = sorted(keys, key=lambda key: (order.index(key) if key in order else len(order), key))
+    labels: list[str] = []
+    for key in ranked:
+        label = market_label(sport_key, key)
+        if label not in labels:
+            labels.append(label)
+    return labels
+
+
+def _render_one(
+    event: RenderableEvent, target: str, label: str, outcomes: list[Outcome]
+) -> list[str]:
+    """Rendu dedie d'un marche, ou repli generique s'il n'en a pas."""
+    if target in {"h2h", "h2h_s1", "h2h_s2"}:
+        return _render_h2h(event, outcomes, label)
+    if target == "double_chance":
+        return _render_double_chance(event, outcomes)
+    if target in {"alternate_spreads", "spreads_s1"}:
+        return _render_spreads(event, outcomes, label)
+    if target in {"totals", "totals_h1", "totals_s1"}:
+        return _render_totals(label, outcomes)
+    if target in {"btts", "btts_h1"}:
+        return _render_btts(label, outcomes)
+    if target == "team_totals":
+        return _render_team_totals(event, outcomes)
+    if target in {"correct_score", "correct_score_h1"}:
+        return _render_correct_score(label, outcomes)
+    if target in {"alternate_totals_corners", "alternate_totals_cards"}:
+        return _render_main_total_only(label, outcomes)
+    return _render_generic(label, outcomes)
+
+
+def _source_tag(event: RenderableEvent, outcomes: Iterable[Outcome]) -> str:
+    """Mention de source d'une ligne. Vide quand elle vient du book principal.
+
+    Sans elle, un bloc annoncant « Betclic + Pinnacle (ref.) » laisse deviner
+    quelle ligne est jouable et laquelle ne fait que situer le marche.
+    """
+    books = {outcome.bookmaker for outcome in outcomes if outcome.bookmaker}
+    if not books or not event.primary_book:
+        return ""
+    foreign = sorted(books - {event.primary_book})
+    if not foreign:
+        return ""
+    names = " + ".join(bookmaker_label(book) for book in foreign)
+    # Une ligne fusionnee peut melanger le principal et une reference : le dire,
+    # sinon la mention condamnerait des cotes pourtant jouables.
+    partial = "dont " if len(foreign) < len(books) else ""
+    return f"  [{partial}{names}]"
+
+
 def _render_markets(event: RenderableEvent) -> list[str]:
     """Rend chaque marche disponible, dans l'ordre, en fusionnant les variantes."""
     pooled: dict[str, list[Outcome]] = {}
@@ -329,31 +413,34 @@ def _render_markets(event: RenderableEvent) -> list[str]:
             continue
         done.add(target)
         outcomes = pooled[target]
-
-        if target in {"h2h", "h2h_s1", "h2h_s2"}:
-            rendered += _render_h2h(event, outcomes, label)
-        elif target == "double_chance":
-            rendered += _render_double_chance(event, outcomes)
-        elif target in {"alternate_spreads", "spreads_s1"}:
-            rendered += _render_spreads(event, outcomes, label)
-        elif target in {"totals", "totals_h1", "totals_s1"}:
-            rendered += _render_totals(label, outcomes)
-        elif target in {"btts", "btts_h1"}:
-            rendered += _render_btts(label, outcomes)
-        elif target == "team_totals":
-            rendered += _render_team_totals(event, outcomes)
-        elif target in {"correct_score", "correct_score_h1"}:
-            rendered += _render_correct_score(label, outcomes)
-        elif target in {"alternate_totals_corners", "alternate_totals_cards"}:
-            rendered += _render_main_total_only(label, outcomes)
-        else:
-            rendered += _render_generic(label, outcomes)
+        rendered += _with_source(event, _render_one(event, target, label, outcomes), outcomes)
 
     # Marches payes mais absents du catalogue : rendus en dernier, jamais perdus.
+    # Un caractere de moins que la colonne, sinon le libelle touche sa valeur.
     for key in sorted(set(pooled) - done):
-        rendered += _render_generic(key[:LABEL_WIDTH], pooled[key])
+        raw = _render_generic(key[: LABEL_WIDTH - 1], pooled[key])
+        rendered += _with_source(event, raw, pooled[key])
 
     return rendered
+
+
+def _with_source(event: RenderableEvent, rows: list[str], outcomes: list[Outcome]) -> list[str]:
+    """Ajoute la mention de source a la premiere ligne d'un marche rendu."""
+    tag = _source_tag(event, outcomes)
+    if tag and rows:
+        rows[0] += tag
+    return rows
+
+
+def _unserved_line(event: RenderableEvent) -> list[str]:
+    """Marches demandes et jamais servis : un fait acquis, pas un oubli.
+
+    Les taire laisserait chercher un handicap jeux qui n'existe pas, ou croire
+    a une collecte incomplete la ou l'API a repondu tout ce qu'elle avait.
+    """
+    absent = (key for key in event.unserved if key not in event.markets)
+    labels = ordered_labels(event.sport_key, absent)
+    return [line(UNSERVED_LABEL, f"{', '.join(labels)} — {UNSERVED_NOTE}")] if labels else []
 
 
 # -- Bloc complet -----------------------------------------------------------
@@ -363,8 +450,10 @@ def _header(event: RenderableEvent) -> str:
     sport = SPORT_LABELS.get(event.sport_key, event.sport_key.upper())
     when = event.commence_local.strftime("%d/%m %H:%M")
     # Le cyclisme n'a pas de second participant : l'etape tient lieu d'affiche.
-    affiche = f"{event.home} – {event.away}" if event.away else event.home
-    return f"### M{event.index} · {sport} · {event.competition} · {affiche} · {when}"
+    return (
+        f"### M{event.index} · {sport} · {event.competition} · "
+        f"{affiche(event.home, event.away)} · {when}"
+    )
 
 
 def _context_block(event: RenderableEvent) -> list[str]:
@@ -384,7 +473,7 @@ def _context_block(event: RenderableEvent) -> list[str]:
 
 
 def _markets_block(event: RenderableEvent) -> list[str]:
-    rows = _render_markets(event)
+    rows = _render_markets(event) + _unserved_line(event)
     if not rows:
         return []
     heading = f"MARCHES ({event.bookmaker_label}"

@@ -38,6 +38,7 @@
         <th>Clé Odds API</th>
         <th>Ligue API-Football</th>
         <th>Priorité</th>
+        <th>Marchés profonds</th>
       </tr>
     </thead>
     <tbody>
@@ -51,11 +52,27 @@
                  hx-swap="outerHTML"
                  {% if competition.active %}checked{% endif %}>
         </td>
-        <td>{{ competition.sport_label }}</td>
+        <td><span class="sport sport-{{ competition.sport_key }}">{{ competition.sport_label }}</span></td>
         <td class="affiche">{{ competition.label }}</td>
         <td class="muted">{{ competition.oddsapi_key or '—' }}</td>
         <td class="num muted">{{ competition.apifootball_league_id or '—' }}</td>
         <td class="num">{{ competition.priority }}</td>
+        <td class="small">
+          {% set seen = coverage.get(competition.id) %}
+          {% if not seen %}
+            <span class="muted">jamais testé</span>
+          {% else %}
+            {% if seen.servis %}
+              <span class="badge ok">{{ seen.servis }}</span> servi(s) sur {{ seen.testes }}
+            {% else %}
+              <span class="muted">aucun servi sur {{ seen.testes }}</span>
+            {% endif %}
+            <form hx-post="/competitions/{{ competition.id }}/coverage/reset"
+                  hx-target="#competitions" hx-swap="outerHTML" style="display:inline">
+              <button type="submit" class="link-action">retester</button>
+            </form>
+          {% endif %}
+        </td>
       </tr>
       {% endfor %}
     </tbody>

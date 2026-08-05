@@ -28,6 +28,10 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     monkeypatch.setenv("ODDS_API_KEY", "cle-odds-de-test")
     monkeypatch.setenv("APIFOOTBALL_KEY", "")
     monkeypatch.setenv("ODDS_API_CREDIT_FLOOR", "500")
+    # Sans cette ligne, les books de reference du `.env` de developpement
+    # entreraient dans les appels de test : une machine sans `.env` et la
+    # machine du developpeur ne verraient pas les memes requetes.
+    monkeypatch.setenv("REFERENCE_BOOKMAKERS", "")
     monkeypatch.setenv("DEV_CACHE", "0")
     monkeypatch.setenv("DEV_CACHE_DIR", str(tmp_path / "dev_cache"))
     monkeypatch.setenv("BACKUP_DIR", str(tmp_path / "backups"))

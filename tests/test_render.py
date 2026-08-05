@@ -455,3 +455,126 @@ def test_ordre_des_marches_tennis() -> None:
 
     labels = [row[2:14].strip() for row in render_event(event).splitlines() if row.startswith("  ")]
     assert labels == ["Vainqueur", "Jeux O/U", "Set 1"]
+
+
+# -- Provenance des cotes ---------------------------------------------------
+#
+# Un bloc annoncant « Betclic + Pinnacle (ref.) » laissait deviner quelle ligne
+# etait jouable et laquelle ne faisait que situer le marche. La mention descend
+# donc sur la ligne, la ou la selection se decide.
+
+
+def test_une_ligne_du_book_principal_ne_porte_aucune_mention() -> None:
+    event = _tennis(
+        primary_book="betclic_fr",
+        markets={
+            "h2h": [
+                Outcome("Alcaraz", 1.4, bookmaker="betclic_fr"),
+                Outcome("Sinner", 2.95, bookmaker="betclic_fr"),
+            ]
+        },
+    )
+
+    assert _lines(event)["Vainqueur"] == "1.40 / 2.95"
+
+
+def test_une_ligne_de_reference_nomme_sa_source() -> None:
+    event = _tennis(
+        primary_book="betclic_fr",
+        markets={
+            "h2h": [
+                Outcome("Alcaraz", 1.4, bookmaker="betclic_fr"),
+                Outcome("Sinner", 2.95, bookmaker="betclic_fr"),
+            ],
+            "spreads": [
+                Outcome("Alcaraz", 1.85, -3.5, bookmaker="pinnacle"),
+                Outcome("Sinner", 1.95, 3.5, bookmaker="pinnacle"),
+            ],
+        },
+    )
+    lignes = _lines(event)
+
+    assert lignes["Vainqueur"] == "1.40 / 2.95"
+    assert lignes["Hand. jeux"] == "Alcaraz -3.5 1.85 | Sinner +3.5 1.95  [Pinnacle (ref.)]"
+
+
+def test_une_ligne_fusionnee_dit_ce_qu_elle_melange() -> None:
+    """Une variante « alternate » peut venir d'un autre book que sa base."""
+    event = _tennis(
+        primary_book="betclic_fr",
+        markets={
+            "totals_s1": [
+                Outcome("Over", 1.85, 9.5, bookmaker="betclic_fr"),
+                Outcome("Under", 1.95, 9.5, bookmaker="betclic_fr"),
+            ],
+            "alternate_totals_s1": [
+                Outcome("Over", 2.6, 10.5, bookmaker="pinnacle"),
+                Outcome("Under", 1.45, 10.5, bookmaker="pinnacle"),
+            ],
+        },
+    )
+
+    assert _lines(event)["Jeux S1"].endswith("[dont Pinnacle (ref.)]")
+
+
+def test_une_saisie_manuelle_se_signale_comme_les_autres() -> None:
+    event = _tennis(
+        primary_book="betclic_fr",
+        markets={
+            "h2h": [Outcome("Alcaraz", 1.4, bookmaker="betclic_fr")],
+            "outright": [Outcome("Oui", 2.15, bookmaker="manual")],
+        },
+    )
+
+    assert _lines(event)["Cotes"] == "Oui 2.15  [saisie manuelle]"
+
+
+def test_sans_book_principal_connu_aucune_mention_n_est_inventee() -> None:
+    """Les blocs construits sans provenance restent rendus tels quels."""
+    event = _tennis(markets={"spreads": [Outcome("Alcaraz", 1.85, -3.5, bookmaker="pinnacle")]})
+
+    assert "[" not in render_event(event)
+
+
+# -- Marches non servis -----------------------------------------------------
+
+
+def test_les_marches_jamais_servis_deviennent_une_ligne() -> None:
+    event = _tennis(
+        markets={"h2h": [Outcome("Alcaraz", 1.4), Outcome("Sinner", 2.95)]},
+        unserved=["totals_s1", "h2h_s1", "spreads"],
+    )
+
+    assert _lines(event)["Non servis"] == (
+        "Hand. jeux, Set 1, Jeux S1 — aucun book interroge ne les sert sur cette competition"
+    )
+
+
+def test_un_marche_present_n_est_jamais_dit_non_servi() -> None:
+    """Une saisie manuelle peut combler ce que l'API ne sert pas."""
+    event = _tennis(
+        markets={
+            "h2h": [Outcome("Alcaraz", 1.4)],
+            "spreads": [Outcome("Alcaraz", 1.85, -3.5)],
+        },
+        unserved=["spreads", "h2h_s1"],
+    )
+
+    assert _lines(event)["Non servis"] == (
+        "Set 1 — aucun book interroge ne les sert sur cette competition"
+    )
+
+
+def test_sans_marche_abandonne_aucune_ligne_n_apparait() -> None:
+    event = _tennis(markets={"h2h": [Outcome("Alcaraz", 1.4)]})
+
+    assert "Non servis" not in render_event(event)
+
+
+def test_un_evenement_sans_cote_dit_quand_meme_ce_qui_manque() -> None:
+    """Sinon un bloc vide et un bloc jamais enrichi seraient indiscernables."""
+    event = _tennis(unserved=["spreads"])
+    rendered = render_event(event)
+
+    assert "MARCHES" in rendered
+    assert "Hand. jeux — aucun book interroge" in rendered

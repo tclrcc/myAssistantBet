@@ -56,7 +56,7 @@ async def _session_enrichie(
                 200, json=load_fixture("oddsapi_event_odds_football.json"), headers=QUOTA_HEADERS
             )
         )
-        await run_enrich(client, session_id, settings)
+        await run_enrich(client, session_id, settings, now=NOW)
     return session_id
 
 
@@ -82,8 +82,8 @@ def test_paliers_lus_en_base(migrated: Settings) -> None:
 @pytest.mark.parametrize(
     ("moment", "expected"),
     [
-        (datetime(2026, 8, 3, tzinfo=PARIS), "3 aout 2026"),
-        (datetime(2026, 12, 25, tzinfo=PARIS), "25 decembre 2026"),
+        (datetime(2026, 8, 3, tzinfo=PARIS), "lundi 3 août 2026"),
+        (datetime(2026, 12, 25, tzinfo=PARIS), "vendredi 25 décembre 2026"),
     ],
 )
 def test_date_en_francais(moment: datetime, expected: str) -> None:
@@ -101,11 +101,28 @@ async def test_prompt_contient_les_sections_attendues(
 
     body = build_prompt(session_id, settings=migrated, now=datetime(2026, 8, 3, tzinfo=PARIS)).body
 
-    assert "# SESSION D'ANALYSE — 3 aout 2026" in body
+    assert "# SESSION D'ANALYSE — lundi 3 août 2026" in body
     assert "## TON RÔLE" in body
-    assert "## RECHERCHE PRÉALABLE" in body
+    assert "## MÉTHODE" in body
+    assert "## CE QU'IL FAUT VÉRIFIER" in body
     assert "## MATCHS" in body
-    assert "### D. Le match que tu ne jouerais pas" in body
+    # Les faits avant les opinions : la fiche precede l'analyse dans le corps.
+    assert body.index("### A. Fiche de vérification") < body.index("### B. Analyse par match")
+    assert "### E. Le match que tu ne jouerais pas" in body
+    assert "### F. Ce qui aurait changé ton analyse" in body
+
+
+@respx.mock
+async def test_le_prompt_interdit_toujours_le_calcul_de_value(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Garde-fou de la section 9 de SPEC.md : le prompt doit porter l'interdit."""
+    session_id = await _session_enrichie(odds_client, migrated, load_fixture)
+
+    body = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    for interdit in ("value bet", "EV", "edge", "CLV", "devigging", "Kelly"):
+        assert interdit in body, f"« {interdit} » doit rester explicitement interdit"
 
 
 @respx.mock
@@ -114,7 +131,7 @@ async def test_prompt_contient_scores_exacts_et_over_under(
 ) -> None:
     session_id = await _session_enrichie(odds_client, migrated, load_fixture)
 
-    body = build_prompt(session_id, settings=migrated).body
+    body = build_prompt(session_id, settings=migrated, now=NOW).body
 
     assert "Score exact" in body
     assert "1-1 6.50" in body
@@ -130,7 +147,7 @@ async def test_paliers_injectes_dans_le_prompt(
 ) -> None:
     session_id = await _session_enrichie(odds_client, migrated, load_fixture)
 
-    body = build_prompt(session_id, settings=migrated).body
+    body = build_prompt(session_id, settings=migrated, now=NOW).body
 
     assert "🟢 SAFE         1.25 – 1.70" in body
     assert "💥 GIGA+" in body
@@ -145,7 +162,9 @@ async def test_note_perso_injectee_telle_quelle(
     event = db.query_one("SELECT id FROM events WHERE home = 'BK Hacken'", settings=migrated)
     session_service.set_note(session_id, int(event["id"]), "Gardien n°2 annoncé", migrated)
 
-    assert "NOTE PERSO  Gardien n°2 annoncé" in build_prompt(session_id, settings=migrated).body
+    body = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "NOTE PERSO  Gardien n°2 annoncé" in body
 
 
 @respx.mock
@@ -195,7 +214,7 @@ async def test_prompt_reste_sous_huit_mille_tokens_pour_six_matchs(
                 )
         board_service.toggle_selection(int(clone["id"]), True, migrated)
 
-    prompt = build_prompt(session_id, settings=migrated)
+    prompt = build_prompt(session_id, settings=migrated, now=NOW)
 
     assert prompt.blocks == 6
     assert prompt.token_estimate < 8000, f"prompt trop lourd : {prompt.token_estimate} tokens"
@@ -209,7 +228,7 @@ async def test_matchs_numerotes_dans_l_ordre(
     second = db.query_one("SELECT id FROM events WHERE home = 'IFK Norrkoping'", settings=migrated)
     session_id = board_service.toggle_selection(int(second["id"]), True, migrated)
 
-    body = build_prompt(session_id, settings=migrated).body
+    body = build_prompt(session_id, settings=migrated, now=NOW).body
 
     assert "### M1 · FOOT · Allsvenskan · BK Hacken – Djurgardens IF" in body
     assert "### M2 · FOOT · Allsvenskan · IFK Norrkoping – Malmo FF" in body
@@ -218,7 +237,7 @@ async def test_matchs_numerotes_dans_l_ordre(
 def test_session_vide_produit_un_prompt_sans_bloc(migrated: Settings) -> None:
     session_id = board_service.current_session(migrated)
 
-    prompt = build_prompt(session_id, settings=migrated)
+    prompt = build_prompt(session_id, settings=migrated, now=NOW)
 
     assert prompt.blocks == 0
     assert "## MATCHS" in prompt.body
@@ -236,7 +255,7 @@ def test_template_inconnu_refuse(migrated: Settings) -> None:
 
 def test_prompt_sauvegarde_en_base(migrated: Settings) -> None:
     session_id = board_service.current_session(migrated)
-    prompt = build_prompt(session_id, settings=migrated)
+    prompt = build_prompt(session_id, settings=migrated, now=NOW)
 
     prompt_id = save_prompt(session_id, prompt, migrated)
 
@@ -278,7 +297,7 @@ async def test_le_prompt_contient_le_bloc_contexte(
         migrated,
     )
 
-    body = build_prompt(session_id, settings=migrated).body
+    body = build_prompt(session_id, settings=migrated, now=NOW).body
 
     assert "CONTEXTE" in body
     assert "  Classement  BK Hacken 4e (34pts, 16j)" in body
@@ -316,8 +335,145 @@ async def test_absents_des_deux_equipes_sur_deux_lignes_alignees(
         migrated,
     )
 
-    rows = build_prompt(session_id, settings=migrated).body.splitlines()
+    rows = build_prompt(session_id, settings=migrated, now=NOW).body.splitlines()
     absents = next(index for index, row in enumerate(rows) if "Absents" in row)
 
     assert rows[absents].startswith("  Absents     BK Hacken — ")
     assert rows[absents + 1] == "              Djurgardens IF — aucun signale"
+
+
+@respx.mock
+async def test_le_prompt_verrouille_les_cotes_du_bloc(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Une cote substituee classerait la selection dans le mauvais palier."""
+    session_id = await _session_enrichie(odds_client, migrated, load_fixture)
+
+    body = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "Ne remplace jamais une cote du bloc" in body
+    assert "au centime près" in body
+
+
+@respx.mock
+async def test_le_prompt_impose_une_hierarchie_de_sources(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Une blessure decide d'un pari : elle ne peut pas venir d'un agregateur."""
+    session_id = await _session_enrichie(odds_client, migrated, load_fixture)
+
+    body = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "Qualité des sources" in body
+    assert "non confirmé" in body
+
+
+@respx.mock
+async def test_le_prompt_refuse_de_gonfler_un_combine(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    session_id = await _session_enrichie(odds_client, migrated, load_fixture)
+
+    body = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "N'ajoute\njamais une jambe sous confiance 3" in body.replace("**", "")
+
+
+# -- Ce que le prompt annonce du lot ----------------------------------------
+#
+# Sans ces annonces, l'analyste redemande des marches que le fournisseur ne sert
+# pas, recalcule la taille du lot a chaque session et devine le fuseau des
+# horaires. Trois devinettes evitables, toutes verifiables ici.
+
+
+@respx.mock
+async def test_le_prompt_annonce_les_marches_demandes(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    session_id = await _session_enrichie(odds_client, migrated, load_fixture)
+
+    body = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "Football : " in body
+    assert "Score exact" in body, "un marche demande et servi est annonce"
+    assert "BTTS" in body
+
+
+@respx.mock
+async def test_le_catalogue_suit_le_sport_du_lot(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Un lot de tennis n'annonce pas les marches du football."""
+    session_id = await _session_enrichie(odds_client, migrated, load_fixture, enrich=False)
+    sport = db.query_one("SELECT id FROM sports WHERE key = 'tennis'", settings=migrated)
+    competition = db.query_one(
+        "SELECT id FROM competitions WHERE oddsapi_key = 'tennis_atp_us_open'", settings=migrated
+    )
+    db.execute(
+        "INSERT INTO events (sport_id, competition_id, oddsapi_event_id, home, away, "
+        "commence_time, source, created_at) VALUES (?, ?, 'evt', 'Fils', 'Rune', "
+        "'2026-08-03T18:00:00Z', 'oddsapi', ?)",
+        (sport["id"], competition["id"], db.utcnow()),
+        settings=migrated,
+    )
+    event = db.query_one("SELECT MAX(id) AS id FROM events", settings=migrated)
+    board_service.toggle_selection(int(event["id"]), True, migrated)
+
+    body = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    ligne = next(row for row in body.splitlines() if row.strip().startswith("· Tennis"))
+    assert "Hand. jeux" in ligne and "Set 1" in ligne
+    assert "BTTS" not in ligne and "Score exact" not in ligne
+
+
+@respx.mock
+async def test_le_prompt_donne_la_taille_du_lot_et_son_plafond(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    session_id = await _session_enrichie(odds_client, migrated, load_fixture, enrich=False)
+
+    body = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "Ce lot comporte **1 match(s)**" in body
+    assert "le total ne\npeut donc pas dépasser 1, tous paliers confondus." in body
+
+
+@respx.mock
+async def test_le_fuseau_des_horaires_est_dit(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    session_id = await _session_enrichie(odds_client, migrated, load_fixture, enrich=False)
+
+    body = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "Toutes les heures sont en Europe/Paris" in body
+
+
+@respx.mock
+async def test_le_multichoix_n_est_propose_que_si_le_marche_existe(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Sur un lot sans scores exacts, l'imposer fait ecrire « impossible » pour rien."""
+    sans = await _session_enrichie(odds_client, migrated, load_fixture, enrich=False)
+    assert "multichoix scores exacts" not in build_prompt(sans, settings=migrated, now=NOW).body
+
+    respx.get(f"{BASE_URL}/sports/soccer_sweden_allsvenskan/events/{EVENT_ID}/odds").mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("oddsapi_event_odds_football.json"), headers=QUOTA_HEADERS
+        )
+    )
+    await run_enrich(odds_client, sans, migrated, now=NOW)
+
+    assert "multichoix scores exacts" in build_prompt(sans, settings=migrated, now=NOW).body
+
+
+@respx.mock
+async def test_l_arbitrage_des_paliers_est_ecrit(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Les bandes se chevauchent : sans regle, le modele en invente une par session."""
+    session_id = await _session_enrichie(odds_client, migrated, load_fixture, enrich=False)
+
+    body = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "la confiance tranche" in body

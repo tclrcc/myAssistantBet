@@ -125,22 +125,31 @@ class OddsAPIClient(BaseHTTPClient):
         *,
         markets: tuple[str, ...],
         bookmakers: tuple[str, ...] = (DEFAULT_BOOKMAKER,),
+        regions: str = "",
     ) -> tuple[dict[str, Any], int]:
         """Etage B : marches profonds d'un match. Coute 1 credit par marche.
 
         Un marche absent pour ce match n'est pas une erreur : il manque
         simplement de la reponse.
+
+        `regions` sert au sondage de couverture : il interroge tous les
+        bookmakers d'une zone au lieu d'une liste nommee. Il coute le meme prix
+        qu'une liste (1 region), mais ne doit pas servir a la collecte courante :
+        on ne veut en base que les books sur lesquels on joue.
         """
         endpoint = f"/sports/{sport_key}/events/{event_id}/odds"
+        extra = {"regions": regions} if regions else {"bookmakers": ",".join(bookmakers)}
         params = self._params(
-            bookmakers=",".join(bookmakers),
+            **extra,
             markets=",".join(markets),
             oddsFormat="decimal",
             dateFormat="iso",
         )
         response = await self._get(endpoint, params=params)
         cost = self._account(
-            endpoint, response, estimated_cost=expected_cost(list(markets), list(bookmakers))
+            endpoint,
+            response,
+            estimated_cost=expected_cost(list(markets), [] if regions else list(bookmakers)),
         )
         return response.data, cost
 

@@ -13,6 +13,7 @@ from typing import Any
 from ..config import Settings, get_settings
 from ..db import connect
 from .context import KIND_MAPPING
+from .labels import affiche
 from .matching import save_alias
 
 
@@ -39,8 +40,7 @@ class PendingEvent:
 
     @property
     def affiche(self) -> str:
-        # Le cyclisme n'a pas de second participant : pas de tiret orphelin.
-        return f"{self.home} – {self.away}" if self.away else self.home
+        return affiche(self.home, self.away)
 
     @property
     def unresolved(self) -> list[PendingTeam]:

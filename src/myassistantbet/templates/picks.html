@@ -21,6 +21,106 @@
 
 {% if error %}<div class="report report-warn">{{ error }}</div>{% endif %}
 
+{% if imported %}
+  <p class="notice notice-ok">
+    {{ imported }} pick(s) importé(s) depuis le tableau.
+    {% if import_failures %}
+      <br><span class="rejected">{{ import_failures | join(' · ') }}</span>
+    {% endif %}
+  </p>
+{% elif import_failures %}
+  <p class="notice notice-warn">
+    Aucun pick importé — <span class="rejected">{{ import_failures | join(' · ') }}</span>
+  </p>
+{% endif %}
+
+{% if preview %}
+  {% if preview.ignored %}
+    <p class="notice notice-warn">{{ preview.ignored | join(' ') }}</p>
+  {% else %}
+    <p class="notice {% if preview.ready_count == preview.count %}notice-ok{% else %}notice-warn{% endif %}">
+      {{ preview.count }} ligne(s) lue(s), {{ preview.ready_count }} prête(s) à enregistrer.
+      <b>Rien n'est enregistré</b> : corrige ce qu'il faut, décoche ce que tu ne veux pas,
+      puis valide.
+    </p>
+
+    <form method="post" action="/history/{{ session_id }}/picks/import">
+      <table class="board import-table">
+        <thead>
+          <tr>
+            <th class="tight"></th>
+            <th>Match</th>
+            <th>Marché</th>
+            <th>Sélection</th>
+            <th class="num">Cote</th>
+            <th>Palier</th>
+            <th class="num">Conf</th>
+            <th>À vérifier</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for pick in preview.picks %}
+          <tr>
+            <td class="tight">
+              <input type="checkbox" name="keep_{{ pick.index }}"
+                     {% if pick.ready %}checked{% endif %}
+                     aria-label="Importer la ligne {{ pick.index }}">
+            </td>
+            <td>
+              <select name="event_{{ pick.index }}">
+                <option value="">combiné / hors match</option>
+                {% for event in events %}
+                  <option value="{{ event.id }}"
+                          {% if event.id == pick.event_id %}selected{% endif %}>
+                    {{ event.label }}
+                  </option>
+                {% endfor %}
+              </select>
+            </td>
+            <td><input type="text" name="market_{{ pick.index }}" value="{{ pick.market }}"></td>
+            <td>
+              <input type="text" name="selection_{{ pick.index }}" value="{{ pick.selection }}">
+            </td>
+            <td class="num">
+              <input type="text" class="tiny" name="price_{{ pick.index }}" value="{{ pick.price }}">
+            </td>
+            <td>
+              <select name="tier_{{ pick.index }}">
+                {% for tier in tiers %}
+                  <option value="{{ tier.key }}"
+                          {% if tier.key == pick.tier %}selected{% endif %}>{{ tier.label }}</option>
+                {% endfor %}
+              </select>
+            </td>
+            <td class="num">
+              <input type="text" class="tiny" name="confidence_{{ pick.index }}"
+                     value="{{ pick.confidence }}">
+            </td>
+            <td class="muted small">{{ pick.problems | join(', ') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <div class="grid-foot">
+        <button type="submit" class="primary">Importer les lignes cochées</button>
+      </div>
+    </form>
+  {% endif %}
+{% endif %}
+
+<form method="post" action="/history/{{ session_id }}/picks/preview" class="paste-form">
+  <label>
+    Importer le tableau de Claude
+    <span class="hint">
+      colle la section C du rendu, en-tête compris — les matchs sont rapprochés
+      par leur nom, les paliers par leur emoji ou leur libellé
+    </span>
+    <textarea name="table" rows="4"
+              placeholder="| # | Match | Marché | Sélection | Cote | Palier | Conf/5 | …"></textarea>
+  </label>
+  <button type="submit" class="button">Lire le tableau</button>
+</form>
+
 <form class="pick-form" method="post" action="/history/{{ session_id }}/picks">
   <label>
     Match

@@ -22,9 +22,15 @@ from myassistantbet.config import Settings
 MOMENT = datetime(2026, 8, 4, 6, 30, tzinfo=UTC)
 
 
-def _age(path: Path, days: float) -> None:
-    """Vieillit artificiellement un fichier de `days` jours."""
-    stamp = (datetime.now(UTC) - timedelta(days=days)).timestamp()
+def _age(path: Path, days: float, reference: datetime | None = None) -> None:
+    """Vieillit artificiellement un fichier de `days` jours.
+
+    La reference par defaut est l'horloge reelle, ce qu'attendent les tests qui
+    laissent `rotate` lire l'heure lui-meme. **Un test qui fige le moment de la
+    rotation doit figer celui-ci aussi** : sinon l'ecart entre l'horloge reelle
+    et `MOMENT` grandit chaque jour et finit par decider seul du resultat.
+    """
+    stamp = ((reference or datetime.now(UTC)) - timedelta(days=days)).timestamp()
     os.utime(path, (stamp, stamp))
 
 
@@ -173,7 +179,7 @@ def test_les_fichiers_etrangers_sont_ignores(migrated: Settings) -> None:
 
 def test_run_sauvegarde_puis_purge(migrated: Settings) -> None:
     expiree = create_backup(migrated, MOMENT)
-    _age(expiree, 30)
+    _age(expiree, 30, reference=MOMENT)
 
     created, removed = run(migrated, keep_days=7, moment=MOMENT + timedelta(hours=2))
 
@@ -184,7 +190,7 @@ def test_run_sauvegarde_puis_purge(migrated: Settings) -> None:
 def test_run_utilise_la_configuration(migrated: Settings, monkeypatch) -> None:
     monkeypatch.setattr(migrated, "backup_keep_days", 1)
     expiree = create_backup(migrated, MOMENT)
-    _age(expiree, 2)
+    _age(expiree, 2, reference=MOMENT)
 
     _, removed = run(migrated, moment=MOMENT + timedelta(hours=3))
 

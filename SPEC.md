@@ -330,6 +330,15 @@ Règles de rendu :
 - Les lignes O/U sont limitées aux 5 lignes les plus proches de la ligne principale.
 - Les cotes sont formatées à 2 décimales.
 - Une donnée de contexte volontairement absente (ex. blessures non couvertes pour cette ligue) devient une ligne explicite : `Absents      données non disponibles pour cette compétition`.
+- **L'en-tête ne nomme que le bookmaker principal**, celui dont les cotes sont jouables telles quelles. Toute ligne servie par une autre source la porte entre crochets, en fin de ligne : `[Pinnacle (ref.)]` pour un book de référence, `[saisie manuelle]` pour une cote relevée à la main, `[dont …]` quand une ligne fusionnée mélange les deux. Un en-tête « Betclic + Pinnacle (ref.) » laisse deviner quelle cote est jouable et laquelle ne fait que situer le marché — et une sélection se décide sur la ligne, pas sur l'en-tête.
+- **Un marché demandé à l'API et jamais servi devient une ligne `Non servis`**, énumérant les marchés abandonnés pour cette compétition. Une absence constatée est une information : la taire fait chercher un handicap jeux qui n'existe pas, et fait remonter en section F une question déjà tranchée. Un marché qu'aucun bloc ne mentionne — ni en cote, ni en `Non servis` — est au contraire un marché que personne n'a encore demandé.
+
+```
+MARCHÉS (Betclic, relevé 14:22)
+  Vainqueur   3.60 / 1.30
+  Hand. jeux  Svajda +4 1.84 | Fils -4 2.02  [Pinnacle (ref.)]
+  Non servis  Set 1, Set 2 — aucun book interrogé ne les sert sur cette compétition
+```
 
 Le tennis et le cyclisme ont leurs propres variantes de bloc, dans le même esprit.
 

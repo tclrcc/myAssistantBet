@@ -1,0 +1,129 @@
+{% extends "base.html" %}
+{% block title %}Saisie groupée — MyAssistantBet{% endblock %}
+{% block content %}
+
+<div class="page-head">
+  <div>
+    <h1>Saisie groupée — {{ grid.label }}</h1>
+    <p class="subtitle">
+      Un marché, {{ grid.count }} match(s). Relève une page de bookmaker de haut
+      en bas : tu ne tapes que des nombres, <kbd>Tab</kbd> passe à la case suivante.
+    </p>
+  </div>
+  <div class="actions">
+    <a class="button" href="/session/{{ grid.session_id }}">← Shortlist</a>
+    <a class="button primary-link" href="/session/{{ grid.session_id }}/prompt">Prompt →</a>
+  </div>
+</div>
+
+{% if error %}
+  <p class="notice notice-warn">{{ error }}</p>
+{% elif result %}
+  <p class="notice notice-ok">
+    « {{ result.market }} » : {{ result.written }} cote(s) sur {{ result.events }} match(s).
+    {% if result.removed %}{{ result.removed }} retirée(s).{% endif %}
+    {% if result.rejected %}
+      <br>{{ result.rejected | length }} cellule(s) refusée(s) —
+      <span class="rejected">{{ result.rejected | join(' · ') }}</span>
+    {% endif %}
+  </p>
+{% endif %}
+
+{% if not grid.rows %}
+  <p class="empty">
+    La shortlist est vide. Coche des matchs sur le board avant de saisir des cotes.
+  </p>
+{% else %}
+{% if paste %}
+  <p class="notice {% if paste.missing %}notice-warn{% else %}notice-ok{% endif %}">
+    Collage : {{ paste.filled }} cellule(s) pré-remplie(s) sur
+    {{ paste.recognised | length }} match(s) reconnu(s).
+    {% if paste.missing %}
+      <br>Non reconnus, à saisir à la main —
+      <span class="rejected">{{ paste.missing | join(' · ') }}</span>
+    {% endif %}
+    {% if paste.orphan_prices %}
+      <br>{{ paste.orphan_prices }} cote(s) sans match identifiable, ignorée(s).
+    {% endif %}
+    <br><b>Rien n'est enregistré</b> : vérifie la grille, puis clique Enregistrer.
+  </p>
+{% endif %}
+
+<form method="post" action="/session/{{ grid.session_id }}/odds/paste" class="paste-form">
+  <label>
+    Coller depuis le bookmaker
+    <span class="hint">
+      sélectionne le bloc du marché sur la page du bookmaker et colle-le ici —
+      les matchs sont reconnus par leur nom, pas par leur position
+    </span>
+    <textarea name="pasted" rows="4"
+              placeholder="Sebastian Baez&#10;1,84&#10;Mattia Bellucci&#10;2,01&#10;…"></textarea>
+  </label>
+  <input type="hidden" name="market" value="{{ market }}">
+  <input type="hidden" name="outcomes" value="{{ outcomes }}">
+  <button type="submit" class="button">Pré-remplir la grille</button>
+</form>
+
+<form method="post" action="/session/{{ grid.session_id }}/odds">
+  <div class="grid-head">
+    <label>
+      Marché
+      <span class="hint">11 caractères — la largeur de colonne du prompt</span>
+      <input type="text" name="market" value="{{ market }}" maxlength="11"
+             placeholder="2jrs 1 set" required>
+    </label>
+    <label class="grow">
+      Issues
+      <span class="hint">séparées par des virgules — vide : les deux participants</span>
+      <input type="text" name="outcomes" value="{{ outcomes }}" placeholder="Oui, Non">
+    </label>
+    <button type="submit" class="primary">Enregistrer</button>
+  </div>
+
+  <table class="board grid-table">
+    <thead>
+      <tr>
+        <th>Heure</th>
+        <th>Compétition</th>
+        <th>Affiche</th>
+        <th class="num">Issue 1</th>
+        <th class="num">Issue 2</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in grid.rows %}
+      <tr {% if row.started %}class="started"{% endif %}>
+        <td class="num">{{ row.local_time.strftime('%d/%m %H:%M') }}</td>
+        <td class="muted">{{ row.competition }}</td>
+        <td class="affiche">
+          {{ row.affiche }}
+          {% if row.started %}<span class="tag">commencé</span>{% endif %}
+        </td>
+        <td class="num">
+          <input type="text" inputmode="decimal" class="cell"
+                 name="price_{{ row.event_id }}_0"
+                 value="{{ prefill.get(row.event_id ~ ':0', '') }}"
+                 aria-label="Première issue, {{ row.affiche }}">
+        </td>
+        <td class="num">
+          <input type="text" inputmode="decimal" class="cell"
+                 name="price_{{ row.event_id }}_1"
+                 value="{{ prefill.get(row.event_id ~ ':1', '') }}"
+                 aria-label="Deuxième issue, {{ row.affiche }}">
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="grid-foot">
+    <label class="check">
+      <input type="checkbox" name="replace">
+      vider ce marché sur les matchs laissés vides
+    </label>
+    <button type="submit" class="primary">Enregistrer</button>
+  </div>
+</form>
+{% endif %}
+
+{% endblock %}

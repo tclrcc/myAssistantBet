@@ -1,329 +1,719 @@
+/* MyAssistantBet — feuille de style unique, sans build step.
+   Les tokens vivent dans :root ; tout le reste s'y rapporte. */
+
 :root {
-  --bg: #14161a;
-  --panel: #1c1f26;
-  --panel-2: #23272f;
-  --line: #2e333d;
-  --text: #e6e8ec;
-  --muted: #8a919e;
-  --accent: #4c8bf5;
-  --alert: #e05a4e;
-  --ok: #4caf7d;
-  --radius: 6px;
+  /* Fonds, du plus profond au plus clair. */
+  --bg: #0f1115;
+  --panel: #171a21;
+  --panel-2: #1e222b;
+  --panel-3: #262b36;
+  --line: #2b3140;
+  --line-soft: #212632;
+
+  /* Texte. */
+  --text: #e8eaf0;
+  --text-dim: #b3bac7;
+  --muted: #808896;
+
+  /* Accents. Un seul bleu porteur d'action, le reste est semantique. */
+  --accent: #5b93f7;
+  --accent-soft: rgba(91, 147, 247, 0.13);
+  --accent-line: rgba(91, 147, 247, 0.4);
+  --alert: #ec6a5e;
+  --alert-soft: rgba(236, 106, 94, 0.12);
+  --ok: #4fb783;
+  --ok-soft: rgba(79, 183, 131, 0.12);
+  --warn: #d9a441;
+  --warn-soft: rgba(217, 164, 65, 0.12);
+
+  /* Rythme : une echelle, pas des valeurs au hasard. */
+  --s1: 0.25rem;
+  --s2: 0.5rem;
+  --s3: 0.75rem;
+  --s4: 1rem;
+  --s5: 1.5rem;
+  --s6: 2rem;
+
+  --radius: 8px;
+  --radius-sm: 5px;
+  /* Hauteur de la barre de navigation collante : l'en-tete de tableau s'y cale. */
+  --topbar-h: 53px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.22);
+
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
-* { box-sizing: border-box; }
+*,
+*::before,
+*::after { box-sizing: border-box; }
 
 body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.45 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 14px/1.5 var(--sans);
+  -webkit-font-smoothing: antialiased;
 }
+
+h1, h2, h3 { line-height: 1.25; }
 
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
+/* Un anneau de focus visible au clavier, invisible a la souris. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
+
+::selection { background: var(--accent-soft); }
+
+/* --- Barre de navigation -------------------------------------------------- */
+
 .topbar {
   display: flex;
   align-items: center;
-  gap: 1.5rem;
-  padding: 0.75rem 1.25rem;
-  background: var(--panel);
+  gap: var(--s5);
+  padding: var(--s3) var(--s5);
+  background: rgba(23, 26, 33, 0.92);
+  backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 20;
 }
-.brand { font-weight: 600; color: var(--text); }
-.topbar nav { display: flex; gap: 1rem; }
+.brand {
+  font-weight: 650;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+.brand:hover { text-decoration: none; }
+.topbar nav { display: flex; gap: var(--s1); flex-wrap: wrap; }
+.topbar nav a {
+  color: var(--text-dim);
+  padding: var(--s1) var(--s2);
+  border-radius: var(--radius-sm);
+  transition: background 0.12s, color 0.12s;
+}
+.topbar nav a:hover {
+  background: var(--panel-2);
+  color: var(--text);
+  text-decoration: none;
+}
 
-main { padding: 1.25rem; max-width: 1400px; margin: 0 auto; }
+main { padding: var(--s5); max-width: 1440px; margin: 0 auto; }
 
-/* --- Bandeau ------------------------------------------------------------ */
+/* --- Surfaces ------------------------------------------------------------- */
 
-.banner {
+.banner,
+.enrich-bar,
+.pick-form {
   display: flex;
   align-items: center;
-  gap: 2rem;
+  gap: var(--s5);
   flex-wrap: wrap;
-  padding: 0.75rem 1rem;
+  padding: var(--s3) var(--s4);
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  margin-bottom: 1rem;
+  margin-bottom: var(--s4);
 }
-.banner-item { display: flex; align-items: baseline; gap: 0.5rem; }
+.banner-item,
+.enrich-bar .estimate { display: flex; align-items: baseline; gap: var(--s2); }
 .banner-item.push { margin-left: auto; }
-.banner .label { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
-.banner .value { font-weight: 600; font-variant-numeric: tabular-nums; }
-.banner .value.alert { color: var(--alert); }
-.muted { color: var(--muted); font-weight: 400; }
 
+.label,
+.banner .label,
+.enrich-bar .label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+.value {
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+.value.alert, a.value.alert { color: var(--alert); }
+.muted { color: var(--muted); font-weight: 400; }
+.small { font-size: 0.85rem; }
+.subtitle { color: var(--muted); margin: var(--s1) 0 0; font-size: 0.88rem; }
+
+/* --- Boutons -------------------------------------------------------------- */
+
+button.primary,
+.button {
+  display: inline-block;
+  font: inherit;
+  font-size: 0.88rem;
+  padding: 0.42rem 0.85rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, filter 0.12s;
+  white-space: nowrap;
+}
 button.primary {
   background: var(--accent);
   color: #fff;
-  border: 0;
-  padding: 0.45rem 0.9rem;
-  border-radius: var(--radius);
-  font-size: 0.9rem;
-  cursor: pointer;
+  border: 1px solid var(--accent);
+  font-weight: 550;
 }
-button.primary:hover { filter: brightness(1.1); }
-
-.htmx-indicator { display: none; color: var(--muted); margin-left: 0.6rem; }
-.htmx-request .htmx-indicator,
-.htmx-request.htmx-indicator { display: inline; }
-
-/* --- Rapport de scan ---------------------------------------------------- */
-
-.report {
-  padding: 0.6rem 1rem;
-  border-left: 3px solid var(--ok);
+button.primary:hover { filter: brightness(1.12); }
+button.primary:disabled {
   background: var(--panel-2);
-  border-radius: var(--radius);
-  margin-bottom: 1rem;
-}
-.report-warn { border-left-color: var(--alert); }
-.failures { margin: 0.4rem 0 0; padding-left: 1.2rem; color: var(--muted); }
-
-/* --- Filtres ------------------------------------------------------------ */
-
-.filters {
-  display: flex;
-  gap: 0.75rem;
-  align-items: flex-end;
-  flex-wrap: wrap;
-  margin-bottom: 1rem;
-}
-.filters label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; color: var(--muted); }
-.filters .grow { flex: 1; min-width: 200px; }
-.filters input, .filters select {
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.4rem 0.5rem;
-  font-size: 0.9rem;
-}
-.filters input[type="number"] { width: 5rem; }
-.filters .reset { font-size: 0.8rem; padding-bottom: 0.5rem; }
-
-/* --- Tableau ------------------------------------------------------------ */
-
-table.board {
-  width: 100%;
-  border-collapse: collapse;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-table.board th {
-  text-align: left;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  border-color: var(--line);
   color: var(--muted);
-  padding: 0.5rem 0.6rem;
-  background: var(--panel-2);
-  border-bottom: 1px solid var(--line);
+  cursor: not-allowed;
+  filter: none;
 }
-table.board td {
-  padding: 0.45rem 0.6rem;
-  border-bottom: 1px solid var(--line);
-}
-table.board tr:last-child td { border-bottom: 0; }
-table.board tr.is-selected { background: rgba(76, 139, 245, 0.09); }
-.num { text-align: right; font-variant-numeric: tabular-nums; }
-.line { color: var(--muted); }
-.affiche { font-weight: 500; }
-.tight { width: 1.75rem; }
-
-.empty { color: var(--muted); padding: 2rem 0; text-align: center; }
-
-/* --- Pages Shortlist et Prompt ------------------------------------------ */
-
-.page-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-.page-head h1 { font-size: 1.15rem; margin: 0; font-weight: 600; }
-.page-head .actions { display: flex; gap: 0.5rem; }
-
 .button {
-  display: inline-block;
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--line);
-  padding: 0.4rem 0.8rem;
-  border-radius: var(--radius);
-  font-size: 0.9rem;
 }
-.button:hover { text-decoration: none; border-color: var(--accent); }
-.primary-link { background: var(--accent); border-color: var(--accent); color: #fff; }
-
-.enrich-bar {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  flex-wrap: wrap;
-  padding: 0.75rem 1rem;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  margin-bottom: 1rem;
+.button:hover { text-decoration: none; border-color: var(--accent-line); background: var(--panel-3); }
+.primary-link {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 550;
 }
-.enrich-bar .estimate { display: flex; align-items: baseline; gap: 0.5rem; }
-.enrich-bar .label { color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
-.enrich-bar .value { font-weight: 600; font-variant-numeric: tabular-nums; }
-.enrich-bar form, .enrich-bar .blocked { margin-left: auto; display: flex; align-items: center; gap: 0.75rem; }
-.blocked .alert { color: var(--alert); font-size: 0.85rem; }
-button.primary:disabled { background: var(--line); color: var(--muted); cursor: not-allowed; }
+.primary-link:hover { background: var(--accent); filter: brightness(1.12); }
 
-.progress { height: 4px; background: var(--line); border-radius: 2px; margin-top: 0.5rem; overflow: hidden; }
-.progress .bar { height: 100%; background: var(--accent); transition: width 0.3s; }
-
-.group { margin-bottom: 1.5rem; }
-.group h2 { font-size: 0.95rem; font-weight: 600; margin: 0 0 0.5rem; }
-
-.badge {
-  display: inline-block;
-  min-width: 1.8rem;
-  padding: 0.1rem 0.35rem;
-  border-radius: 10px;
-  background: var(--panel-2);
-  border: 1px solid var(--line);
-  font-size: 0.8rem;
-  text-align: center;
-}
-.badge.ok { border-color: var(--ok); color: var(--ok); }
-
-table.board textarea {
-  width: 100%;
-  min-width: 220px;
-  background: var(--panel-2);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.3rem 0.45rem;
+.link-action {
+  background: none;
+  border: 0;
+  color: var(--accent);
+  cursor: pointer;
   font: inherit;
-  resize: vertical;
-}
-
-.prompt-actions { margin-left: auto; display: flex; align-items: center; gap: 0.75rem; }
-.small { font-size: 0.85rem; }
-
-pre#prompt-body {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 1rem;
-  overflow-x: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-  font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-}
-
-.mapping-form { display: flex; gap: 1rem; align-items: flex-end; flex-wrap: wrap; }
-.mapping-form label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.85rem; }
-.mapping-form select {
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.4rem 0.5rem;
-  min-width: 260px;
-}
-a.value.alert { color: var(--alert); }
-
-.manual-form { display: flex; flex-direction: column; gap: 1rem; max-width: 1000px; }
-.manual-form .row { display: flex; gap: 1rem; flex-wrap: wrap; }
-.manual-form label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; }
-.manual-form .grow { flex: 1; min-width: 260px; }
-.manual-form .hint { color: var(--muted); font-weight: 400; font-size: 0.78rem; }
-.manual-form input, .manual-form select, .manual-form textarea {
-  background: var(--panel);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.45rem 0.55rem;
-  font: inherit;
-}
-.manual-form textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-.manual-form button { align-self: flex-start; }
-code { background: var(--panel-2); padding: 0.05rem 0.3rem; border-radius: 3px; font-size: 0.9em; }
-
-/* --- Historique et picks ------------------------------------------------- */
-
-.stats { display: flex; gap: 1.5rem; flex-wrap: wrap; align-items: flex-start; }
-.stats > div { flex: 1; min-width: 260px; }
-.stats h3 { font-size: 0.85rem; font-weight: 600; color: var(--muted); margin: 0 0 0.4rem; }
-table.rates { font-size: 0.9rem; }
-
-.pick-form {
-  display: flex;
-  gap: 0.75rem;
-  align-items: flex-end;
-  flex-wrap: wrap;
-  padding: 0.75rem 1rem;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  margin-bottom: 1rem;
-}
-.pick-form label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8rem; color: var(--muted); }
-.pick-form .narrow input { width: 5rem; }
-.pick-form input, .pick-form select {
-  background: var(--panel-2);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.4rem 0.5rem;
-  font-size: 0.9rem;
-}
-
-table.board select {
-  background: var(--panel-2);
-  color: var(--text);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.2rem 0.35rem;
   font-size: 0.85rem;
+  padding: 0;
 }
-tr.result-win td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
-tr.result-loss td:first-child { box-shadow: inset 3px 0 0 var(--alert); }
+.link-action:hover { text-decoration: underline; }
 
 .link-danger {
   background: none;
   border: 0;
   color: var(--muted);
   cursor: pointer;
+  font: inherit;
   font-size: 0.8rem;
   text-decoration: underline;
+  padding: 0;
 }
 .link-danger:hover { color: var(--alert); }
 
-/* --- Réglages ------------------------------------------------------------ */
+.htmx-indicator { display: none; color: var(--muted); margin-left: var(--s2); }
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator { display: inline; }
 
-.settings-section { margin-bottom: 2rem; }
-.template-editor textarea {
-  width: 100%;
-  min-height: 460px;
-  background: var(--panel);
-  color: var(--text);
+/* --- Messages ------------------------------------------------------------- */
+
+.report,
+.notice {
+  padding: var(--s3) var(--s4);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.75rem;
-  font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
-  resize: vertical;
+  border-left: 3px solid var(--muted);
+  background: var(--panel-2);
+  border-radius: var(--radius-sm);
+  margin-bottom: var(--s4);
 }
-.tiers-form input {
+.report { border-left-color: var(--ok); background: var(--ok-soft); }
+.report-warn { border-left-color: var(--alert); background: var(--alert-soft); }
+.notice-ok { border-left-color: var(--ok); background: var(--ok-soft); }
+.notice-warn { border-left-color: var(--warn); background: var(--warn-soft); }
+.failures { margin: var(--s2) 0 0; padding-left: var(--s5); color: var(--text-dim); }
+.rejected { font-family: var(--mono); font-size: 0.85em; color: var(--warn); }
+
+.alert { color: var(--alert); }
+.blocked .alert { font-size: 0.85rem; }
+
+/* --- Champs --------------------------------------------------------------- */
+
+input[type="text"],
+input[type="search"],
+input[type="number"],
+input[type="date"],
+input[type="time"],
+select,
+textarea {
   background: var(--panel-2);
   color: var(--text);
   border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: 0.3rem 0.4rem;
-  width: 100%;
-  font-size: 0.9rem;
+  border-radius: var(--radius-sm);
+  padding: 0.42rem 0.55rem;
+  font: inherit;
+  font-size: 0.88rem;
+  transition: border-color 0.12s, background 0.12s;
 }
+input:hover, select:hover, textarea:hover { border-color: var(--panel-3); }
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent-line);
+  background: var(--panel);
+  outline: none;
+}
+textarea { resize: vertical; font-family: var(--mono); font-size: 0.85rem; line-height: 1.55; }
+input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
+label.check { display: flex; align-items: center; gap: var(--s2); font-size: 0.85rem; cursor: pointer; }
+
+.filters {
+  display: flex;
+  gap: var(--s3);
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: var(--s3);
+}
+.filters label,
+.pick-form label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--muted);
+}
+.filters .grow { flex: 1; min-width: 220px; }
+.filters input[type="number"] { width: 4.5rem; }
+.pick-form .narrow input { width: 5rem; }
+.filters .reset { font-size: 0.8rem; padding-bottom: 0.55rem; }
+
+/* --- Selection en masse --------------------------------------------------- */
+
+.bulk {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  margin-bottom: var(--s2);
+  padding: 0 var(--s1);
+}
+.bulk form { display: inline; }
+.bulk-count { color: var(--muted); font-size: 0.82rem; margin-right: auto; }
+
+/* --- Tableaux ------------------------------------------------------------- */
+
+table.board {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  /* Surtout pas d'`overflow` ici : un ancetre qui rogne devient le conteneur
+     de reference du `position: sticky` de l'en-tete, qui se met alors a glisser
+     a l'interieur du tableau. Les coins sont arrondis cellule par cellule. */
+}
+table.board th {
+  text-align: left;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 650;
+  color: var(--muted);
+  padding: var(--s2) var(--s3);
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: var(--topbar-h);
+  z-index: 10;
+}
+table.board thead tr:first-child th:first-child { border-top-left-radius: var(--radius); }
+table.board thead tr:first-child th:last-child { border-top-right-radius: var(--radius); }
+table.board tbody tr:last-child td:first-child { border-bottom-left-radius: var(--radius); }
+table.board tbody tr:last-child td:last-child { border-bottom-right-radius: var(--radius); }
+table.board td {
+  padding: 0.42rem var(--s3);
+  border-bottom: 1px solid var(--line-soft);
+}
+table.board tbody tr:last-child td { border-bottom: 0; }
+table.board tbody tr { transition: background 0.1s; }
+table.board tbody tr:hover { background: var(--panel-2); }
+table.board tr.is-selected { background: var(--accent-soft); }
+table.board tr.is-selected:hover { background: rgba(91, 147, 247, 0.18); }
+table.board tr.is-selected td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+
+/* Match deja commence : lisible, mais visiblement hors du prompt. */
+table.board tr.started td { color: var(--muted); }
+table.board tr.started .affiche a { color: var(--muted); }
+
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.line { color: var(--muted); }
+.affiche { font-weight: 500; }
+.affiche a { color: var(--text); }
+.affiche a:hover { color: var(--accent); text-decoration: none; }
+.tight { width: 1.9rem; }
+
+.empty {
+  color: var(--muted);
+  padding: var(--s6) var(--s4);
+  text-align: center;
+  background: var(--panel);
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+}
+
+.badge {
+  display: inline-block;
+  min-width: 1.8rem;
+  padding: 0.08rem 0.4rem;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  color: var(--text-dim);
+}
+a.badge:hover { border-color: var(--accent-line); text-decoration: none; }
+.badge.ok { border-color: var(--ok); color: var(--ok); background: var(--ok-soft); }
+
+.tag {
+  display: inline-block;
+  padding: 0.05rem 0.45rem;
+  border-radius: 999px;
+  background: var(--panel-3);
+  border: 1px solid var(--line);
+  color: var(--text-dim);
+  font-size: 0.72rem;
+  letter-spacing: 0.02em;
+}
+.tag-thin { background: none; color: var(--muted); }
+
+/* --- En-tete de page ------------------------------------------------------ */
+
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--s4);
+  margin-bottom: var(--s4);
+}
+.page-head h1 {
+  font-size: 1.3rem;
+  margin: 0;
+  font-weight: 650;
+  letter-spacing: -0.015em;
+}
+.page-head .actions { display: flex; gap: var(--s2); align-items: center; flex-shrink: 0; }
+.page-head form { display: inline; }
+
+.group { margin-bottom: var(--s5); }
+.group h2 { font-size: 0.95rem; font-weight: 650; margin: 0 0 var(--s2); }
+
+.progress {
+  height: 4px;
+  background: var(--line);
+  border-radius: 2px;
+  margin-top: var(--s2);
+  overflow: hidden;
+  width: 100%;
+}
+.progress .bar { height: 100%; background: var(--accent); transition: width 0.3s; }
+
+.enrich-bar form,
+.enrich-bar .blocked { margin-left: auto; display: flex; align-items: center; gap: var(--s3); }
+
+/* --- Fiche evenement ------------------------------------------------------ */
+
+.odds-summary {
+  display: flex;
+  gap: var(--s4);
+  flex-wrap: wrap;
+  align-items: center;
+  padding: var(--s3) var(--s4);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: var(--s4);
+  font-size: 0.88rem;
+  color: var(--text-dim);
+}
+.odds-summary b { color: var(--text); font-variant-numeric: tabular-nums; }
+
+.markets {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(270px, 1fr));
+  gap: var(--s3);
+  margin-bottom: var(--s6);
+}
+.market {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.market-raw { border-style: dashed; }
+.market h3 {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: 0;
+  padding: var(--s2) var(--s3);
+  background: var(--panel-2);
+  border-bottom: 1px solid var(--line);
+  font-size: 0.82rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.market-key {
+  font-family: var(--mono);
+  font-size: 0.68rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--muted);
+}
+/* Source d'un marche que le book principal ne sert pas : la cote situe le
+   marche, elle n'est pas le prix qu'on obtiendra. */
+.market-book {
+  font-size: 0.68rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--warn);
+}
+.market-count {
+  margin-left: auto;
+  color: var(--muted);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+table.odds { width: 100%; border-collapse: collapse; }
+table.odds td {
+  padding: 0.28rem var(--s3);
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 0.87rem;
+}
+table.odds tr:last-child td { border-bottom: 0; }
+table.odds tr:hover { background: var(--panel-2); }
+table.odds .outcome { color: var(--text-dim); }
+table.odds .price { font-variant-numeric: tabular-nums; font-weight: 600; width: 4rem; }
+table.odds .line { width: 3rem; font-size: 0.82rem; }
+
+.manual-odds {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s4);
+  max-width: 720px;
+}
+.manual-odds h2 { font-size: 1rem; margin: 0 0 var(--s2); font-weight: 650; }
+.manual-odds .hint { color: var(--muted); font-size: 0.85rem; margin: 0 0 var(--s3); }
+.manual-odds textarea { width: 100%; }
+.manual-odds-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  margin-top: var(--s3);
+  flex-wrap: wrap;
+}
+.manual-odds-actions button { margin-left: auto; }
+.manual-odds > form + form { margin-top: var(--s3); }
+
+/* --- Prompt --------------------------------------------------------------- */
+
+.prompt-actions { margin-left: auto; display: flex; align-items: center; gap: var(--s3); }
+
+pre#prompt-body {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: var(--s4);
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: 12.5px/1.6 var(--mono);
+  color: var(--text-dim);
+  box-shadow: var(--shadow);
+}
+
+code {
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  padding: 0.05rem 0.32rem;
+  border-radius: 4px;
+  font-family: var(--mono);
+  font-size: 0.86em;
+  color: var(--text-dim);
+}
+
+/* --- Formulaires longs ---------------------------------------------------- */
+
+.manual-form { display: flex; flex-direction: column; gap: var(--s4); max-width: 1000px; }
+.manual-form .row { display: flex; gap: var(--s4); flex-wrap: wrap; }
+.manual-form label { display: flex; flex-direction: column; gap: var(--s1); font-size: 0.85rem; }
+.manual-form .grow { flex: 1; min-width: 260px; }
+.manual-form .hint { color: var(--muted); font-weight: 400; font-size: 0.78rem; }
+.manual-form button { align-self: flex-start; }
+
+.mapping-form { display: flex; gap: var(--s4); align-items: flex-end; flex-wrap: wrap; }
+.mapping-form label { display: flex; flex-direction: column; gap: var(--s1); font-size: 0.85rem; }
+.mapping-form select { min-width: 260px; }
+
+table.board textarea { width: 100%; min-width: 220px; }
+table.board select { padding: 0.2rem 0.35rem; font-size: 0.85rem; }
+
+/* --- Historique et picks --------------------------------------------------- */
+
+.stats { display: flex; gap: var(--s5); flex-wrap: wrap; align-items: flex-start; }
+.stats > div { flex: 1; min-width: 260px; }
+.stats h3 {
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 var(--s2);
+}
+table.rates { font-size: 0.9rem; }
+tr.result-win td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
+tr.result-loss td:first-child { box-shadow: inset 3px 0 0 var(--alert); }
+
+/* --- Reglages -------------------------------------------------------------- */
+
+.settings-section { margin-bottom: var(--s6); }
+.template-editor textarea {
+  width: 100%;
+  min-height: 460px;
+  padding: var(--s3);
+  font: 12.5px/1.6 var(--mono);
+}
+.tiers-form input { width: 100%; }
 .tiers-form input.tiny { width: 3.5rem; }
+
+/* --- Petits ecrans --------------------------------------------------------- */
+
+@media (max-width: 720px) {
+  main { padding: var(--s3); }
+  .topbar { gap: var(--s3); padding: var(--s2) var(--s3); }
+  .page-head { flex-direction: column; align-items: stretch; }
+  table.board th { position: static; }
+  .markets { grid-template-columns: 1fr; }
+}
+
+/* --- Saisie groupee -------------------------------------------------------- */
+
+.grid-head {
+  display: flex;
+  gap: var(--s4);
+  align-items: flex-end;
+  flex-wrap: wrap;
+  padding: var(--s3) var(--s4);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: var(--s3);
+}
+.grid-head label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--muted);
+  min-width: 220px;
+}
+.grid-head .grow { flex: 1; }
+.grid-head .hint {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.grid-head button { margin-left: auto; }
+
+.grid-table td { padding-top: 0.3rem; padding-bottom: 0.3rem; }
+.grid-table input.cell {
+  width: 5.5rem;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+  padding: 0.3rem 0.45rem;
+}
+.grid-table input.cell:focus { border-color: var(--accent); background: var(--panel-3); }
+
+.grid-foot {
+  display: flex;
+  align-items: center;
+  gap: var(--s4);
+  margin-top: var(--s3);
+  padding: 0 var(--s1);
+}
+.grid-foot button { margin-left: auto; }
+
+kbd {
+  background: var(--panel-3);
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  padding: 0.02rem 0.32rem;
+  font-family: var(--mono);
+  font-size: 0.8em;
+  color: var(--text-dim);
+}
+
+.paste-form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  align-items: flex-start;
+  padding: var(--s3) var(--s4);
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: var(--s3);
+}
+.paste-form label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  width: 100%;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--muted);
+}
+.paste-form .hint {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+  font-size: 0.75rem;
+}
+.paste-form textarea { width: 100%; }
+
+.import-table td { padding: 0.3rem var(--s2); vertical-align: middle; }
+.import-table input[type="text"] { width: 100%; min-width: 6rem; }
+.import-table input.tiny { width: 4rem; min-width: 0; text-align: right; }
+.import-table select { max-width: 15rem; }
+
+/* --- Reperage des sports --------------------------------------------------- */
+
+.sport {
+  display: inline-block;
+  padding: 0.06rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+.sport-football { background: rgba(79, 183, 131, 0.16); color: #6fd3a4; border-color: rgba(79, 183, 131, 0.35); }
+.sport-tennis   { background: rgba(217, 164, 65, 0.16);  color: #e6bb63; border-color: rgba(217, 164, 65, 0.35); }
+.sport-cycling  { background: rgba(168, 130, 240, 0.16); color: #bda3f5; border-color: rgba(168, 130, 240, 0.35); }
+
+/* Filet de couleur en bord de ligne : le sport se lit sans lire la colonne. */
+table.board tbody tr.sportrow-football td:first-child { box-shadow: inset 3px 0 0 rgba(79, 183, 131, 0.55); }
+table.board tbody tr.sportrow-tennis   td:first-child { box-shadow: inset 3px 0 0 rgba(217, 164, 65, 0.55); }
+table.board tbody tr.sportrow-cycling  td:first-child { box-shadow: inset 3px 0 0 rgba(168, 130, 240, 0.55); }
+/* La selection reprend la main : c'est l'information la plus utile. */
+table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }

@@ -49,6 +49,10 @@ Le front est en HTMX + CSS vanilla : pas de build step, pas de `node_modules`.
   **jamais** : creer un nouveau fichier.
 - **Idempotence** : relancer un scan ne duplique aucune ligne. Upserts sur cles naturelles.
 - **Cotes** : une ligne par outcome dans `odds`. Jamais de blob JSON de cotes.
+- **Matchs commences** : `session.has_started()` porte la regle. Un evenement dont l'heure est
+  passee sort du prompt, de l'enrichissement et du compteur de selection — il quitte deja le
+  board — mais **reste attache a la session** : l'historique des picks s'appuie dessus. Il est
+  affiche marque « commence », jamais retire tout seul.
 - **Secrets** : uniquement via l'environnement / `.env`. Jamais dans le code, les logs, les
   reponses HTTP ni les fixtures de test.
 - **Erreurs** : une API indisponible n'empeche jamais de servir la page. Les donnees partielles
@@ -85,6 +89,12 @@ servie par le cache de developpement (`DEV_CACHE=1`) ne consomme rien et n'ecrit
 Etage A (`services/scan.py`) : `h2h,totals` sur `betclic_fr` seul, soit 2 credits par
 competition active.
 
+`services/coverage.py` memorise ce qu'une competition sert vraiment, pour ne pas repayer
+deux fois le meme constat vide. **Les books interroges font partie de la cle** : un marche
+constate absent chez Betclic seul ne prouve rien sur un book de reference, et le
+`REFERENCE_BOOKMAKERS` ajoute apres coup rouvre la question. Un constat vaut pour
+l'ensemble qui l'a produit et pour tout ensemble plus etroit, jamais plus large.
+
 Etage B (`services/enrich.py`) : 1 credit par marche profond, match par match. 14 marches
 football, 16 sur les competitions de `PLAYER_PROPS_LEAGUES` (props buteurs), 8 en tennis.
 Le cout est estime **avant** l'appel et compare a `ODDS_API_CREDIT_FLOOR` : sous le plancher,
@@ -101,7 +111,14 @@ non negociables, toutes couvertes par des tests :
 - cotes a deux decimales ; scores exacts limites aux 10 cotes les plus basses, triees
   croissant ; lignes O/U limitees aux 5 plus proches de la ligne principale ;
 - libelle sur 12 caracteres, indentation de 2, continuations alignees a 14 ;
-- un marche paye mais non modelise est rendu brut plutot que perdu silencieusement.
+- un marche paye mais non modelise est rendu brut plutot que perdu silencieusement ;
+- l'en-tete ne nomme que le book principal ; **toute ligne servie par une autre source la
+  porte en fin de ligne** (`[Pinnacle (ref.)]`, `[saisie manuelle]`, `[dont …]` quand une
+  ligne fusionnee melange les deux). Un en-tete « Betclic + Pinnacle (ref.) » laissait
+  deviner quelle cote etait jouable et laquelle ne faisait que situer le marche ;
+- les marches demandes a l'API et jamais servis deviennent une ligne `Non servis` : une
+  absence constatee est une information, et la taire fait chercher un handicap jeux qui
+  n'existe pas.
 
 Ajouter un marche : une entree dans `MARKET_ORDER`, un rendu dedie si sa forme le merite,
 et un test. Sans rendu dedie, le repli generique s'applique — c'est acceptable, pas une

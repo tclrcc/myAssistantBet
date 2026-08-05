@@ -10,15 +10,19 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from ..config import Settings, get_settings
 from ..db import connect
 from ..providers.apifootball import APIFootballClient
 from ..providers.base import ProviderError, last_known_quota
-from ..providers.oddsapi import PROVIDER, OddsAPIClient, expected_cost
+from ..providers.oddsapi import DEFAULT_BOOKMAKER, PROVIDER, OddsAPIClient, expected_cost
+from . import coverage, reference
 from .context import fetch_context
+from .labels import affiche
 from .scan import replace_odds  # meme regle de remplacement qu'a l'etage A
+from .session import has_started
 
 logger = logging.getLogger(__name__)
 
@@ -69,15 +73,20 @@ class EnrichTarget:
     oddsapi_sport_key: str
     label: str
     markets: tuple[str, ...]
+    #: Competition d'appartenance, pour memoriser les marches qu'elle sert.
+    competition_id: int | None = None
     #: Necessaire au contexte API-Football. Absent = pas de contexte possible.
     apifootball_league_id: int | None = None
     home: str = ""
     away: str = ""
     commence_time: str = ""
 
+    #: Books interroges pour cet evenement. Jusqu'a dix, le cout est le meme.
+    bookmakers: tuple[str, ...] = (DEFAULT_BOOKMAKER,)
+
     @property
     def cost(self) -> int:
-        return expected_cost(list(self.markets), ["betclic_fr"])
+        return expected_cost(list(self.markets), list(self.bookmakers))
 
     @property
     def context_possible(self) -> bool:
@@ -102,6 +111,16 @@ class Estimate:
     remaining: int | None = None
     floor: int = 500
     skipped: list[str] = field(default_factory=list)
+    #: Evenements deja commences. Payer leurs marches profonds serait acheter
+    #: des cotes qu'aucun pari avant-match ne peut plus utiliser.
+    started: list[str] = field(default_factory=list)
+    #: Evenements ecartes parce que le bookmaker n'a jamais servi le moindre
+    #: marche profond sur leur competition. Distinct de `skipped` : ceux-la
+    #: sont couverts par l'API, il n'y a simplement rien de plus a acheter.
+    barren: list[str] = field(default_factory=list)
+    #: Evenements de la shortlist, quel que soit leur sort. Sans ce compteur,
+    #: « rien a enrichir » et « rien de coche » seraient indiscernables.
+    considered: int = 0
 
     @property
     def events(self) -> int:
@@ -127,8 +146,22 @@ class Estimate:
 
     @property
     def blocked_reason(self) -> str | None:
+        """Pourquoi le bouton est inactif. Jamais un motif faux : dire « rien de
+        coche » alors que des matchs le sont enverrait chercher le probleme au
+        mauvais endroit."""
         if not self.targets:
-            return "Aucun evenement selectionne."
+            if not self.considered:
+                return "Aucun evenement selectionne."
+            if self.started and not self.skipped and not self.barren:
+                return "Rien a enrichir : tous les matchs selectionnes ont deja commence."
+            if self.barren and not self.skipped:
+                return (
+                    "Rien a enrichir : le bookmaker ne sert aucun marche profond "
+                    "sur ces competitions. Passe par la saisie groupee."
+                )
+            if self.skipped and not self.barren:
+                return "Rien a enrichir : aucun de ces evenements n'est servi par l'API."
+            return "Rien a enrichir sur cette selection."
         if self.allowed:
             return None
         return (
@@ -149,6 +182,9 @@ class EnrichResult:
     context_kinds: list[str] = field(default_factory=list)
     context_errors: list[str] = field(default_factory=list)
     mapping_pending: bool = False
+    #: Marches obtenus d'un book de reference : {marche: book}. Ils disent ou
+    #: se situe le marche, pas le prix qu'on obtiendra chez le principal.
+    borrowed: dict[str, str] = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -202,7 +238,11 @@ def markets_for(sport_key: str, oddsapi_sport_key: str, settings: Settings) -> t
     return FOOTBALL_MARKETS
 
 
-def build_estimate(session_id: int, settings: Settings | None = None) -> Estimate:
+def build_estimate(
+    session_id: int,
+    settings: Settings | None = None,
+    now: datetime | None = None,
+) -> Estimate:
     """Cout previsionnel de l'enrichissement d'une session, avant tout appel."""
     settings = settings or get_settings()
     estimate = Estimate(floor=settings.odds_api_credit_floor)
@@ -215,7 +255,7 @@ def build_estimate(session_id: int, settings: Settings | None = None) -> Estimat
         rows = conn.execute(
             "SELECT e.id, e.oddsapi_event_id, e.home, e.away, e.commence_time, "
             "       s.key AS sport_key, c.oddsapi_key AS competition_key, "
-            "       c.apifootball_league_id "
+            "       c.id AS competition_id, c.apifootball_league_id "
             "FROM session_events se "
             "JOIN events e ON e.id = se.event_id "
             "JOIN sports s ON s.id = e.sport_id "
@@ -225,8 +265,12 @@ def build_estimate(session_id: int, settings: Settings | None = None) -> Estimat
             (session_id,),
         ).fetchall()
 
+    estimate.considered = len(rows)
     for row in rows:
-        label = f"{row['home']} – {row['away']}"
+        label = affiche(row["home"], row["away"])
+        if has_started(row["commence_time"], now):
+            estimate.started.append(label)
+            continue
         if not row["oddsapi_event_id"] or not row["competition_key"]:
             # Evenement manuel (cyclisme, ATP 250) : aucun appel possible.
             estimate.skipped.append(label)
@@ -234,6 +278,13 @@ def build_estimate(session_id: int, settings: Settings | None = None) -> Estimat
         markets = markets_for(row["sport_key"], row["competition_key"], settings)
         if not markets:
             estimate.skipped.append(label)
+            continue
+        # Ne pas repayer un constat deja fait : les marches que cette competition
+        # n'a jamais servis sont retires, et si plus rien d'utile ne reste,
+        # l'evenement est ecarte plutot qu'appele pour rien.
+        markets = coverage.useful(row["competition_id"], markets, settings)
+        if not markets:
+            estimate.barren.append(label)
             continue
         estimate.targets.append(
             EnrichTarget(
@@ -243,6 +294,8 @@ def build_estimate(session_id: int, settings: Settings | None = None) -> Estimat
                 oddsapi_sport_key=row["competition_key"],
                 label=label,
                 markets=markets,
+                bookmakers=(DEFAULT_BOOKMAKER, *settings.reference_books),
+                competition_id=row["competition_id"],
                 apifootball_league_id=row["apifootball_league_id"],
                 home=row["home"],
                 away=row["away"],
@@ -287,6 +340,7 @@ async def run_enrich(
     settings: Settings | None = None,
     on_progress: Callable[[EnrichReport], None] | None = None,
     context_client: APIFootballClient | None = None,
+    now: datetime | None = None,
 ) -> EnrichReport:
     """Enrichit tous les evenements d'une session : marches profonds puis contexte.
 
@@ -295,7 +349,7 @@ async def run_enrich(
     cotes d'etre recuperees.
     """
     settings = settings or get_settings()
-    estimate = build_estimate(session_id, settings)
+    estimate = build_estimate(session_id, settings, now)
     report = EnrichReport(total=estimate.events)
 
     if not estimate.allowed:
@@ -318,9 +372,19 @@ async def run_enrich(
                 target.oddsapi_sport_key,
                 target.oddsapi_event_id,
                 markets=target.markets,
+                bookmakers=target.bookmakers,
             )
             result.cost = cost
+            # Une seule source par marche : le principal d'abord, un book de
+            # reference seulement pour ce qu'il ne sert pas.
+            payload = reference.merge(payload, DEFAULT_BOOKMAKER, settings.reference_books)
+            result.borrowed = reference.borrowed_markets(payload, DEFAULT_BOOKMAKER)
             result.markets_received, result.odds_rows = _store(target.event_id, payload, settings)
+            # Le constat ne vaut que pour les books qui l'ont produit : les
+            # memoriser avec lui, sinon elargir la liste ne rouvrirait rien.
+            coverage.record(
+                target.competition_id, target.markets, payload, settings, target.bookmakers
+            )
         except ProviderError as exc:
             result.error = str(exc)
             logger.warning("Enrichissement echoue pour %s : %s", target.label, exc)

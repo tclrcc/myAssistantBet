@@ -230,9 +230,17 @@ def session_events(session_id: int, settings: Settings | None = None) -> list[di
 
 
 def tiers(settings: Settings | None = None) -> list[dict[str, str]]:
+    """Paliers pour les formulaires. `emoji` et `name` restent separes du
+    `label` complet : l'import des picks doit pouvoir reconnaitre l'un ou
+    l'autre dans un tableau ecrit a la main."""
     with connect(settings) as conn:
         return [
-            {"key": row["key"], "label": f"{row['emoji']} {row['label']}"}
+            {
+                "key": row["key"],
+                "label": f"{row['emoji']} {row['label']}",
+                "emoji": row["emoji"] or "",
+                "name": row["label"],
+            }
             for row in conn.execute("SELECT key, label, emoji FROM tiers ORDER BY position")
         ]
 

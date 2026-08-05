@@ -214,3 +214,83 @@ def save(event: ManualEvent, settings: Settings | None = None) -> int:
         len(event.odds.outcomes),
     )
     return event_id
+
+
+@dataclass
+class AttachResult:
+    """Bilan d'une saisie de cotes sur un evenement deja connu."""
+
+    written: int = 0
+    removed: int = 0
+    rejected: list[str] = field(default_factory=list)
+
+
+def attach_odds(
+    event_id: int,
+    raw: str,
+    replace: bool = False,
+    settings: Settings | None = None,
+) -> AttachResult:
+    """Ajoute des cotes saisies a la main a un evenement existant.
+
+    Sert a completer ce que l'API ne donne pas : un marche absent de Betclic,
+    une cote relevee a l'ecran. Ne touche **que** les lignes portant le
+    bookmaker `manual` : les cotes d'API ne sont jamais ecrasees, sans quoi un
+    releve de marche serait remplace par une frappe au clavier.
+
+    Ressaisir un nom deja present met sa cote a jour au lieu de la dupliquer.
+    """
+    settings = settings or get_settings()
+    parsed = parse_odds(raw)
+    if not parsed.outcomes:
+        raise ManualError(
+            "Aucune cote lisible. Une ligne par cote, au format « Nom 2.50 »."
+            if parsed.rejected
+            else "Saisis au moins une cote."
+        )
+
+    result = AttachResult(rejected=parsed.rejected)
+    with connect(settings) as conn:
+        event = conn.execute("SELECT id FROM events WHERE id = ?", (event_id,)).fetchone()
+        if event is None:
+            raise ManualError("Cet evenement n'existe pas.")
+
+        if replace:
+            cursor = conn.execute(
+                "DELETE FROM odds WHERE event_id = ? AND bookmaker = ?",
+                (event_id, MANUAL_BOOKMAKER),
+            )
+            result.removed = cursor.rowcount
+
+        for name, price in parsed.outcomes:
+            if not replace:
+                conn.execute(
+                    "DELETE FROM odds WHERE event_id = ? AND bookmaker = ? AND market_key = ? "
+                    "AND outcome_name = ?",
+                    (event_id, MANUAL_BOOKMAKER, MANUAL_MARKET, name),
+                )
+            conn.execute(
+                "INSERT INTO odds (event_id, bookmaker, market_key, outcome_name, price, "
+                "                  fetched_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (event_id, MANUAL_BOOKMAKER, MANUAL_MARKET, name, price, utcnow()),
+            )
+            result.written += 1
+
+    logger.info(
+        "Cotes manuelles sur l'evenement %d : %d ecrite(s), %d retiree(s), %d refusee(s)",
+        event_id,
+        result.written,
+        result.removed,
+        len(result.rejected),
+    )
+    return result
+
+
+def clear_manual_odds(event_id: int, settings: Settings | None = None) -> int:
+    """Retire toutes les cotes manuelles d'un evenement. Renvoie le nombre retire."""
+    with connect(settings) as conn:
+        cursor = conn.execute(
+            "DELETE FROM odds WHERE event_id = ? AND bookmaker = ?",
+            (event_id, MANUAL_BOOKMAKER),
+        )
+        return cursor.rowcount

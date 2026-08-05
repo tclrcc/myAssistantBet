@@ -27,6 +27,9 @@
     {% else %}
       <span class="value">{{ banner.selected_count }}</span>
     {% endif %}
+    {% if banner.started_count %}
+      <span class="muted">+ {{ banner.started_count }} commencé(s), hors prompt</span>
+    {% endif %}
   </div>
 
   {% if banner.mapping_pending %}

@@ -1,0 +1,89 @@
+<div id="event-odds">
+  {% if error %}
+    <p class="notice notice-warn">{{ error }}</p>
+  {% elif result %}
+    <p class="notice notice-ok">
+      {% if result.written %}{{ result.written }} cote(s) enregistrée(s).{% endif %}
+      {% if result.removed %}{{ result.removed }} cote(s) manuelle(s) retirée(s).{% endif %}
+      {% if result.rejected %}
+        {{ result.rejected | length }} ligne(s) refusée(s) :
+        <span class="rejected">{{ result.rejected | join(' · ') }}</span>
+      {% endif %}
+    </p>
+  {% endif %}
+
+  <div class="odds-summary">
+    <span><b>{{ event.market_count }}</b> marché(s)</span>
+    <span><b>{{ event.outcome_count }}</b> cote(s)</span>
+    {% if event.bookmakers %}<span>{{ event.bookmakers | join(', ') }}</span>{% endif %}
+    {% if event.fetched_local %}
+      <span class="muted">relevé {{ event.fetched_local.strftime('%d/%m %H:%M') }}</span>
+    {% endif %}
+    {% if not event.enriched %}
+      <span class="tag tag-thin">étage A seulement</span>
+    {% endif %}
+  </div>
+
+  {% if event.is_empty %}
+    <p class="empty">
+      Aucune cote pour cet événement. Enrichis-le depuis la shortlist, ou saisis
+      des cotes à la main ci-dessous.
+    </p>
+  {% else %}
+    <div class="markets">
+      {% for block in event.blocks %}
+      <section class="market {% if block.unmodelled %}market-raw{% endif %}">
+        <h3>
+          {{ block.label }}
+          <span class="market-key">{{ block.key }}</span>
+          {% if block.source_note %}
+            <span class="market-book">{{ block.source_note }}</span>
+          {% endif %}
+          <span class="market-count">{{ block.count }}</span>
+        </h3>
+        <table class="odds">
+          <tbody>
+            {% for outcome in block.outcomes %}
+            <tr>
+              <td class="outcome">{{ outcome.full_name }}</td>
+              <td class="num line">
+                {{ '%g'|format(outcome.point) if outcome.point is not none else '' }}
+              </td>
+              <td class="num price">{{ '%.2f'|format(outcome.price) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </section>
+      {% endfor %}
+    </div>
+  {% endif %}
+
+  <section class="manual-odds">
+    <h2>Ajouter des cotes à la main</h2>
+    <p class="hint">
+      Pour ce que l'API ne sert pas — une cote relevée à l'écran, un marché absent
+      de Betclic. Une par ligne, au format <code>Nom 2.50</code>. Ces cotes portent
+      le bookmaker <code>manual</code> et n'écrasent jamais les cotes d'API.
+    </p>
+    <form hx-post="/events/{{ event.event_id }}/odds"
+          hx-target="#event-odds"
+          hx-swap="outerHTML">
+      <textarea name="odds" rows="5" placeholder="Vainqueur set 3 1.85&#10;Total jeux Over 22.5 1.92">{{ typed or '' }}</textarea>
+      <div class="manual-odds-actions">
+        <label class="check">
+          <input type="checkbox" name="replace">
+          remplacer les cotes manuelles existantes
+        </label>
+        <button type="submit" class="primary">Enregistrer</button>
+        <span class="htmx-indicator">…</span>
+      </div>
+    </form>
+    <form hx-post="/events/{{ event.event_id }}/odds/clear"
+          hx-target="#event-odds"
+          hx-swap="outerHTML"
+          hx-confirm="Retirer toutes les cotes saisies à la main pour cet événement ?">
+      <button type="submit" class="link-danger">Retirer toutes les cotes manuelles</button>
+    </form>
+  </section>
+</div>

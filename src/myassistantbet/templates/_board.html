@@ -65,6 +65,25 @@
   </form>
 
   {% if rows %}
+  <div class="bulk">
+    <span class="bulk-count">{{ rows | length }} événement(s) affiché(s)</span>
+    <form hx-post="/events/select-all"
+          hx-target="#board"
+          hx-swap="outerHTML"
+          hx-include=".filters input, .filters select">
+      <input type="hidden" name="mode" value="on">
+      <button type="submit" class="link-action">Tout cocher</button>
+    </form>
+    <form hx-post="/events/select-all"
+          hx-target="#board"
+          hx-swap="outerHTML"
+          hx-include=".filters input, .filters select">
+      <input type="hidden" name="mode" value="off">
+      <button type="submit" class="link-action">Tout décocher</button>
+    </form>
+    <span class="htmx-indicator">…</span>
+  </div>
+
   <table class="board">
     <thead>
       <tr>
@@ -79,7 +98,7 @@
     </thead>
     <tbody>
       {% for row in rows %}
-      <tr class="{% if row.selected %}is-selected{% endif %}">
+      <tr class="sportrow-{{ row.sport_key }} {% if row.selected %}is-selected{% endif %}">
         <td class="tight">
           <input type="checkbox" name="selected" value="1"
                  aria-label="Sélectionner {{ row.affiche }}"
@@ -89,9 +108,11 @@
                  {% if row.selected %}checked{% endif %}>
         </td>
         <td class="num">{{ row.local_time.strftime('%d/%m %H:%M') }}</td>
-        <td>{{ row.sport_label }}</td>
+        <td><span class="sport sport-{{ row.sport_key }}">{{ row.sport_label }}</span></td>
         <td>{{ row.competition_label }}</td>
-        <td class="affiche">{{ row.affiche }}</td>
+        <td class="affiche">
+          <a href="/events/{{ row.event_id }}">{{ row.affiche }}</a>
+        </td>
         <td class="num">{{ '%.2f'|format(row.home_price) if row.home_price else '·' }}</td>
         <td class="num">{{ '%.2f'|format(row.draw_price) if row.draw_price else '·' }}</td>
         <td class="num">{{ '%.2f'|format(row.away_price) if row.away_price else '·' }}</td>

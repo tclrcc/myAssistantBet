@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -24,8 +24,10 @@ from jinja2 import (
 
 from ..config import PACKAGE_DIR, Settings, get_settings
 from ..db import connect, utcnow
-from .render import estimate_tokens
-from .session import render_blocks, session_label
+from ..providers.oddsapi import SCAN_MARKETS
+from .enrich import markets_for
+from .render import estimate_tokens, ordered_labels, render_event
+from .session import has_started, renderable_events, session_label, started_labels
 
 logger = logging.getLogger(__name__)
 
@@ -35,17 +37,29 @@ TEMPLATE_SUFFIX = ".md.j2"
 
 MOIS_FR = (
     "janvier",
-    "fevrier",
+    "février",
     "mars",
     "avril",
     "mai",
     "juin",
     "juillet",
-    "aout",
+    "août",
     "septembre",
     "octobre",
     "novembre",
-    "decembre",
+    "décembre",
+)
+
+#: Le jour de la semaine porte du sens : calendrier, session de nuit, reprise
+#: apres week-end. Le laisser deduire de la date etait une devinette inutile.
+JOURS_FR = (
+    "lundi",
+    "mardi",
+    "mercredi",
+    "jeudi",
+    "vendredi",
+    "samedi",
+    "dimanche",
 )
 
 
@@ -73,12 +87,35 @@ class Tier:
 
 
 @dataclass
+class Catalogue:
+    """Ce que l'app sait demander a l'API pour un sport du lot.
+
+    Sans cette annonce, un marche absent partout est indiscernable d'un marche
+    que personne n'a jamais demande : la section F reclame alors des marches que
+    le fournisseur ne sert pas — scores exacts ou tie-break en tennis — et la
+    boucle de retour tourne a vide.
+    """
+
+    sport: str
+    markets: list[str] = field(default_factory=list)
+
+    @property
+    def line(self) -> str:
+        if not self.markets:
+            return f"{self.sport} : aucun marché d'API, saisie manuelle uniquement."
+        return f"{self.sport} : {', '.join(self.markets)}."
+
+
+@dataclass
 class RenderedPrompt:
     """Le prompt genere, avant sauvegarde."""
 
     template_name: str
     body: str
     blocks: int
+    #: Matchs de la session absents du prompt parce qu'ils ont commence. Une
+    #: selection amputee en silence se remarquerait trop tard.
+    started: list[str] = field(default_factory=list)
 
     @property
     def token_estimate(self) -> int:
@@ -130,7 +167,49 @@ def load_tiers(settings: Settings | None = None) -> list[Tier]:
 
 
 def date_fr(moment: datetime) -> str:
-    return f"{moment.day} {MOIS_FR[moment.month - 1]} {moment.year}"
+    jour = JOURS_FR[moment.weekday()]
+    return f"{jour} {moment.day} {MOIS_FR[moment.month - 1]} {moment.year}"
+
+
+def catalogues(
+    session_id: int,
+    settings: Settings | None = None,
+    now: datetime | None = None,
+) -> list[Catalogue]:
+    """Marches demandes a l'API, par sport du lot. Lecture locale, aucun appel.
+
+    Les marches de l'etage A comptent : le bloc les affiche, taire qu'on les
+    demande laisserait croire que le « 1N2 » vient d'ailleurs.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT s.key AS sport_key, s.label AS sport_label, "
+            "       c.oddsapi_key AS competition_key, e.commence_time "
+            "FROM session_events se "
+            "JOIN events e ON e.id = se.event_id "
+            "JOIN sports s ON s.id = e.sport_id "
+            "LEFT JOIN competitions c ON c.id = e.competition_id "
+            "WHERE se.session_id = ? "
+            "ORDER BY s.id",
+            (session_id,),
+        ).fetchall()
+
+    asked: dict[str, tuple[str, set[str]]] = {}
+    for row in rows:
+        if has_started(row["commence_time"], now):
+            continue
+        label, keys = asked.setdefault(row["sport_key"], (row["sport_label"], set()))
+        if not row["competition_key"]:
+            # Evenement saisi a la main : aucun appel possible, rien a annoncer.
+            continue
+        keys.update(SCAN_MARKETS)
+        keys.update(markets_for(row["sport_key"], row["competition_key"], settings))
+
+    return [
+        Catalogue(sport=label, markets=ordered_labels(sport_key, keys))
+        for sport_key, (label, keys) in asked.items()
+    ]
 
 
 def build_prompt(
@@ -144,8 +223,9 @@ def build_prompt(
     if template_name not in list_templates():
         raise TemplateNotFound(template_name)
 
-    blocks = render_blocks(session_id, settings)
     moment = (now or datetime.now(ZoneInfo(settings.tz))).astimezone(ZoneInfo(settings.tz))
+    events = renderable_events(session_id, settings, moment)
+    blocks = [render_event(event) for event in events]
 
     body = (
         _environment()
@@ -155,9 +235,22 @@ def build_prompt(
             event_blocks=blocks,
             session_label=session_label(session_id, settings),
             tiers=load_tiers(settings),
+            tz=settings.tz,
+            catalogues=catalogues(session_id, settings, moment),
+            # Le multichoix scores exacts n'a de sens que si un bloc sert
+            # vraiment ce marche : l'imposer a un lot de tennis fait ecrire
+            # « impossible » a chaque session, ce qui n'apprend rien.
+            exact_scores=any(
+                key.startswith("correct_score") for event in events for key in event.markets
+            ),
         )
     )
-    return RenderedPrompt(template_name=template_name, body=body, blocks=len(blocks))
+    return RenderedPrompt(
+        template_name=template_name,
+        body=body,
+        blocks=len(blocks),
+        started=started_labels(session_id, settings, moment),
+    )
 
 
 def save_prompt(session_id: int, prompt: RenderedPrompt, settings: Settings | None = None) -> int:

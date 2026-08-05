@@ -61,10 +61,23 @@
     {% endif %}
   </div>
 
+  {% if estimate.started %}
+    <p class="muted small">
+      Déjà commencé(s), donc hors enrichissement :
+      {{ estimate.started | join(', ') }}
+    </p>
+  {% endif %}
   {% if estimate.skipped %}
     <p class="muted small">
       Sans appel API (événement manuel ou sport non couvert) :
       {{ estimate.skipped | join(', ') }}
+    </p>
+  {% endif %}
+  {% if estimate.barren %}
+    <p class="muted small">
+      Aucun marché profond servi par le bookmaker sur cette compétition — plus rien
+      à acheter, saisis-les à la main si tu les veux :
+      {{ estimate.barren | join(', ') }}
     </p>
   {% endif %}
   {% endif %}

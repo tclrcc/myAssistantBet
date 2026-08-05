@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -89,7 +90,7 @@ async def test_estimation_un_credit_par_marche(
         odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
     )
 
-    estimate = build_estimate(session_id, migrated)
+    estimate = build_estimate(session_id, migrated, NOW)
 
     assert estimate.events == 1
     assert estimate.cost == 14, "14 marches football, un bookmaker, donc 14 credits"
@@ -112,7 +113,7 @@ async def test_estimation_bloquee_sous_le_plancher(
         settings=migrated,
     )
 
-    estimate = build_estimate(session_id, migrated)
+    estimate = build_estimate(session_id, migrated, NOW)
 
     assert estimate.remaining == 505
     assert estimate.remaining_after == 491
@@ -120,10 +121,53 @@ async def test_estimation_bloquee_sous_le_plancher(
     assert "plancher" in estimate.blocked_reason
 
 
+@respx.mock
+async def test_un_match_commence_ne_coute_plus_rien(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Acheter les marches profonds d'un match lance, c'est bruler des credits."""
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    # Le match du fixture debute a 15h30 UTC : on se place apres le coup d'envoi.
+    apres = datetime(2026, 8, 3, 16, 0, tzinfo=UTC)
+
+    estimate = build_estimate(session_id, migrated, apres)
+
+    assert estimate.events == 0
+    assert estimate.cost == 0
+    assert estimate.considered == 1, "il reste coche, il n'est simplement plus enrichissable"
+    assert estimate.started == ["BK Hacken – Djurgardens IF"]
+    assert estimate.allowed is False
+    assert estimate.blocked_reason == (
+        "Rien a enrichir : tous les matchs selectionnes ont deja commence."
+    )
+
+
+@respx.mock
+async def test_aucun_appel_pour_un_match_commence(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    route = respx.get(EVENT_ODDS_URL).mock(
+        return_value=httpx.Response(200, json={"bookmakers": []}, headers=QUOTA_HEADERS)
+    )
+
+    report = await run_enrich(
+        odds_client, session_id, migrated, now=datetime(2026, 8, 3, 16, 0, tzinfo=UTC)
+    )
+
+    assert route.call_count == 0
+    assert report.cost == 0
+    assert report.failures, "le refus est rapporte, pas silencieux"
+
+
 def test_estimation_sans_selection(migrated: Settings) -> None:
     session_id = board_service.current_session(migrated)
 
-    estimate = build_estimate(session_id, migrated)
+    estimate = build_estimate(session_id, migrated, NOW)
 
     assert estimate.events == 0
     assert estimate.cost == 0
@@ -143,11 +187,29 @@ def test_evenement_manuel_est_ignore_sans_cout(migrated: Settings) -> None:
     event = db.query_one("SELECT id FROM events", settings=migrated)
     board_service.toggle_selection(int(event["id"]), True, migrated)
 
-    estimate = build_estimate(session_id, migrated)
+    estimate = build_estimate(session_id, migrated, NOW)
 
     assert estimate.events == 0
     assert estimate.cost == 0
     assert estimate.skipped == ["Etape 12 – Alpe d'Huez"]
+
+
+def test_etape_sans_second_participant_na_pas_de_tiret_orphelin(migrated: Settings) -> None:
+    """Une etape cycliste n'a pas d'adversaire : le libelle s'arrete au nom."""
+    session_id = board_service.current_session(migrated)
+    sport = db.query_one("SELECT id FROM sports WHERE key = 'cycling'", settings=migrated)
+    db.execute(
+        "INSERT INTO events (sport_id, home, away, commence_time, source, created_at) "
+        "VALUES (?, 'Etape 12 — Pau > Hautacam', '', '2026-08-03T12:00:00Z', 'manual', ?)",
+        (sport["id"], db.utcnow()),
+        settings=migrated,
+    )
+    event = db.query_one("SELECT id FROM events", settings=migrated)
+    board_service.toggle_selection(int(event["id"]), True, migrated)
+
+    estimate = build_estimate(session_id, migrated, NOW)
+
+    assert estimate.skipped == ["Etape 12 — Pau > Hautacam"]
 
 
 # -- Execution --------------------------------------------------------------
@@ -166,7 +228,7 @@ async def test_enrichissement_stocke_les_marches_profonds(
         )
     )
 
-    report = await run_enrich(odds_client, session_id, migrated)
+    report = await run_enrich(odds_client, session_id, migrated, now=NOW)
 
     assert report.finished is True
     assert report.failures == []
@@ -192,7 +254,7 @@ async def test_marches_demandes_a_l_api(
         return_value=httpx.Response(200, json={"bookmakers": []}, headers=QUOTA_HEADERS)
     )
 
-    await run_enrich(odds_client, session_id, migrated)
+    await run_enrich(odds_client, session_id, migrated, now=NOW)
 
     params = route.calls[0].request.url.params
     assert set(params["markets"].split(",")) == set(FOOTBALL_MARKETS)
@@ -213,7 +275,7 @@ async def test_enrichissement_refuse_sous_le_plancher_sans_aucun_appel(
     )
     route = respx.get(EVENT_ODDS_URL).mock(return_value=httpx.Response(200, json={}))
 
-    report = await run_enrich(odds_client, session_id, migrated)
+    report = await run_enrich(odds_client, session_id, migrated, now=NOW)
 
     assert route.call_count == 0, "aucun credit ne doit etre depense"
     assert report.finished is True
@@ -240,7 +302,7 @@ async def test_un_evenement_en_echec_n_interrompt_pas_les_autres(
         )
     )
 
-    report = await run_enrich(odds_client, session_id, migrated)
+    report = await run_enrich(odds_client, session_id, migrated, now=NOW)
 
     assert report.done == 2
     assert len(report.failures) == 1
@@ -266,6 +328,7 @@ async def test_progression_rapportee_a_chaque_etape(
         session_id,
         migrated,
         on_progress=lambda report: steps.append((report.done, report.percent, report.finished)),
+        now=NOW,
     )
 
     assert steps == [(1, 100, False), (1, 100, True)]
@@ -284,9 +347,9 @@ async def test_enrichissement_idempotent(
         )
     )
 
-    await run_enrich(odds_client, session_id, migrated)
+    await run_enrich(odds_client, session_id, migrated, now=NOW)
     first = len(db.query("SELECT id FROM odds", settings=migrated))
-    await run_enrich(odds_client, session_id, migrated)
+    await run_enrich(odds_client, session_id, migrated, now=NOW)
     second = len(db.query("SELECT id FROM odds", settings=migrated))
 
     assert first == second
@@ -304,7 +367,7 @@ async def test_reponse_inexploitable_ne_tue_pas_l_enrichissement(
         return_value=httpx.Response(200, json=["forme", "inattendue"], headers=QUOTA_HEADERS)
     )
 
-    report = await run_enrich(odds_client, session_id, migrated)
+    report = await run_enrich(odds_client, session_id, migrated, now=NOW)
 
     assert report.finished is True
     assert len(report.failures) == 1
@@ -340,6 +403,7 @@ async def test_enrichissement_recupere_aussi_le_contexte(
         session_id,
         migrated,
         context_client=APIFootballClient(http_client, migrated),
+        now=NOW,
     )
 
     result = report.results[0]
@@ -375,6 +439,7 @@ async def test_contexte_absent_n_empeche_pas_les_cotes(
         session_id,
         migrated,
         context_client=APIFootballClient(http_client, migrated),
+        now=NOW,
     )
 
     assert report.results[0].ok is True, "l'echec du contexte ne fait pas echouer le match"
@@ -395,7 +460,7 @@ async def test_sans_client_de_contexte_l_enrichissement_reste_possible(
         )
     )
 
-    report = await run_enrich(odds_client, session_id, migrated)
+    report = await run_enrich(odds_client, session_id, migrated, now=NOW)
 
     assert report.results[0].ok is True
     assert report.results[0].context_kinds == []
@@ -430,7 +495,7 @@ def test_estimation_tennis_huit_marches(migrated: Settings) -> None:
     event_id = _tennis_event(migrated)
     session_id = board_service.toggle_selection(event_id, True, migrated)
 
-    estimate = build_estimate(session_id, migrated)
+    estimate = build_estimate(session_id, migrated, NOW)
 
     assert estimate.events == 1
     assert estimate.cost == 8, "8 marches tennis, un bookmaker, donc 8 credits"
@@ -473,7 +538,7 @@ async def test_etage_b_tennis(odds_client: OddsAPIClient, migrated: Settings) ->
         )
     )
 
-    report = await run_enrich(odds_client, session_id, migrated)
+    report = await run_enrich(odds_client, session_id, migrated, now=NOW)
 
     assert report.failures == []
     assert set(route.calls[0].request.url.params["markets"].split(",")) == set(TENNIS_MARKETS)

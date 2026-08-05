@@ -5,52 +5,10 @@
   <h1>Shortlist — {{ view.label }}</h1>
   <div class="actions">
     <a class="button" href="/">← Board</a>
+    <a class="button" href="/session/{{ view.session_id }}/odds">Saisie groupée</a>
     <a class="button primary-link" href="/session/{{ view.session_id }}/prompt">Prompt →</a>
   </div>
 </div>
 
-{% include "_enrich.html" %}
-
-{% if view.count == 0 %}
-  <p class="empty">Aucun match sélectionné. Retourne au board pour en cocher.</p>
-{% endif %}
-
-{% for sport_label, events in view.groups %}
-<section class="group">
-  <h2>{{ sport_label }} <span class="muted">({{ events|length }})</span></h2>
-  <table class="board">
-    <thead>
-      <tr>
-        <th>Heure</th>
-        <th>Compétition</th>
-        <th>Affiche</th>
-        <th>Marchés</th>
-        <th>Note perso</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for event in events %}
-      <tr>
-        <td class="num">{{ event.local_time.strftime('%d/%m %H:%M') }}</td>
-        <td>{{ event.competition }}</td>
-        <td class="affiche">{{ event.affiche }}</td>
-        <td class="num">
-          {% if event.enriched %}
-            <span class="badge ok">{{ event.markets }}</span>
-          {% else %}
-            <span class="badge">{{ event.markets }}</span>
-          {% endif %}
-        </td>
-        <td>
-          <textarea name="note" rows="1" placeholder="injectée telle quelle dans le prompt"
-                    hx-post="/session/{{ view.session_id }}/events/{{ event.event_id }}/note"
-                    hx-trigger="change, keyup changed delay:600ms"
-                    hx-swap="none">{{ event.note }}</textarea>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</section>
-{% endfor %}
+{% include "_shortlist.html" %}
 {% endblock %}

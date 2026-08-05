@@ -5,7 +5,7 @@ Ne fait aucun appel externe : uniquement des lectures et ecritures locales.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -13,8 +13,10 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.oddsapi import PROVIDER as ODDSAPI_PROVIDER
+from .labels import affiche
 from .mapping_ui import pending_count
 from .scan import scan_window
+from .session import has_started
 
 H2H_MARKET = "h2h"
 TOTALS_MARKET = "totals"
@@ -53,8 +55,7 @@ class BoardRow:
 
     @property
     def affiche(self) -> str:
-        # Le cyclisme n'a pas de second participant : pas de tiret orphelin.
-        return f"{self.home} – {self.away}" if self.away else self.home
+        return affiche(self.home, self.away)
 
     @property
     def has_odds(self) -> bool:
@@ -67,10 +68,14 @@ class Banner:
 
     credits_remaining: int | None = None
     last_scan_at: datetime | None = None
+    #: Matchs coches encore a venir : ceux qui iront dans le prompt.
     selected_count: int = 0
     credit_floor: int = 500
     session_id: int | None = None
     mapping_pending: int = 0
+    #: Matchs coches qui ont commence depuis. Affiches a part, jamais comptes
+    #: avec les autres : ils ne seront ni enrichis ni analyses.
+    started_count: int = 0
 
     @property
     def below_floor(self) -> bool:
@@ -142,6 +147,40 @@ def toggle_selection(event_id: int, selected: bool, settings: Settings | None = 
     return session_id
 
 
+def toggle_filtered(
+    filters: Filters | None = None,
+    selected: bool = True,
+    settings: Settings | None = None,
+    now: datetime | None = None,
+) -> int:
+    """Coche ou decoche tous les evenements du filtre courant. Renvoie le nombre touche.
+
+    Porte sur ce que le filtre laisse voir, jamais sur toute la base : selectionner
+    en masse ne doit pas embarquer des matchs que l'utilisateur n'a pas sous les yeux.
+    """
+    settings = settings or get_settings()
+    session_id = current_session(settings)
+    rows = list_rows(filters, settings, now)
+    if not rows:
+        return 0
+
+    ids = [row.event_id for row in rows]
+    placeholders = ",".join("?" * len(ids))
+    with connect(settings) as conn:
+        if selected:
+            conn.executemany(
+                "INSERT INTO session_events (session_id, event_id) VALUES (?, ?) "
+                "ON CONFLICT(session_id, event_id) DO NOTHING",
+                [(session_id, event_id) for event_id in ids],
+            )
+        else:
+            conn.execute(
+                f"DELETE FROM session_events WHERE session_id = ? AND event_id IN ({placeholders})",
+                [session_id, *ids],
+            )
+    return len(ids)
+
+
 def selected_event_ids(settings: Settings | None = None) -> set[int]:
     settings = settings or get_settings()
     session_id = current_session(settings)
@@ -150,6 +189,23 @@ def selected_event_ids(settings: Settings | None = None) -> set[int]:
             "SELECT event_id FROM session_events WHERE session_id = ?", (session_id,)
         ).fetchall()
     return {int(row["event_id"]) for row in rows}
+
+
+def selection_counts(
+    settings: Settings | None = None,
+    now: datetime | None = None,
+) -> tuple[int, int]:
+    """Selection courante : (matchs a venir, matchs deja commences)."""
+    settings = settings or get_settings()
+    session_id = current_session(settings)
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT e.commence_time FROM session_events se "
+            "JOIN events e ON e.id = se.event_id WHERE se.session_id = ?",
+            (session_id,),
+        ).fetchall()
+    started = sum(1 for row in rows if has_started(row["commence_time"], now))
+    return len(rows) - started, started
 
 
 def list_rows(
@@ -242,8 +298,15 @@ def list_rows(
     return rows
 
 
-def filter_options(settings: Settings | None = None) -> dict[str, list[dict[str, Any]]]:
-    """Valeurs proposees dans les listes deroulantes de filtre."""
+def filter_options(
+    settings: Settings | None = None, sport: str = ""
+) -> dict[str, list[dict[str, Any]]]:
+    """Valeurs proposees dans les listes deroulantes de filtre.
+
+    Un sport choisi restreint la liste des competitions : proposer les ligues de
+    football quand on regarde le tennis n'offre que des filtres qui vident le
+    board sans rien expliquer.
+    """
     with connect(settings) as conn:
         sports = [
             dict(row)
@@ -257,10 +320,26 @@ def filter_options(settings: Settings | None = None) -> dict[str, list[dict[str,
                 "ORDER BY c.priority DESC, c.label"
             ).fetchall()
         ]
+    if sport:
+        competitions = [row for row in competitions if row["sport_key"] == sport]
     return {"sports": sports, "competitions": competitions}
 
 
-def banner(settings: Settings | None = None) -> Banner:
+def coherent(filters: Filters, options: dict[str, list[dict[str, Any]]]) -> Filters:
+    """Retire un filtre de competition qui n'appartient pas au sport choisi.
+
+    Sans cela, changer de sport laisse en place une competition devenue
+    invisible dans la liste, et le board se vide sans motif affiche.
+    """
+    if filters.competition_id is None:
+        return filters
+    known = {row["id"] for row in options["competitions"]}
+    if filters.competition_id in known:
+        return filters
+    return replace(filters, competition_id=None)
+
+
+def banner(settings: Settings | None = None, now: datetime | None = None) -> Banner:
     """Etat du bandeau : credits restants, dernier scan, nombre de matchs coches."""
     settings = settings or get_settings()
     state = Banner(credit_floor=settings.odds_api_credit_floor)
@@ -283,7 +362,7 @@ def banner(settings: Settings | None = None) -> Banner:
         state.last_scan_at = _local(last_scan["at"], settings.tz)
 
     state.session_id = current_session(settings)
-    state.selected_count = len(selected_event_ids(settings))
+    state.selected_count, state.started_count = selection_counts(settings, now)
     state.mapping_pending = pending_count(settings)
     return state
 
@@ -309,9 +388,11 @@ def build_view(
 ) -> BoardView:
     settings = settings or get_settings()
     filters = filters or Filters()
+    options = filter_options(settings, filters.sport)
+    filters = coherent(filters, options)
     return BoardView(
         rows=list_rows(filters, settings, now),
-        banner=banner(settings),
-        options=filter_options(settings),
+        banner=banner(settings, now),
+        options=options,
         filters=filters,
     )

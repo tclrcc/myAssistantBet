@@ -69,6 +69,16 @@ class Settings(BaseSettings):
     scan_hour: int = Field(default=7, ge=0, le=23)
     scan_minute: int = Field(default=0, ge=0, le=59)
 
+    #: Bookmakers de repli pour les marches que le principal ne sert pas.
+    #: Interroger jusqu'a dix books coute le meme prix qu'un seul : le cout vaut
+    #: `marches x ceil(books / 10)`. Vide = Betclic seul, comme avant.
+    reference_bookmakers: str = ""
+
+    @property
+    def reference_books(self) -> tuple[str, ...]:
+        """Books de reference, dans l'ordre de priorite."""
+        return tuple(key.strip() for key in self.reference_bookmakers.split(",") if key.strip())
+
     @property
     def player_props_whitelist(self) -> frozenset[str]:
         return frozenset(key.strip() for key in self.player_props_leagues.split(",") if key.strip())

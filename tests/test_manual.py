@@ -15,12 +15,16 @@ from myassistantbet.services import board as board_service
 from myassistantbet.services import session as session_service
 from myassistantbet.services.manual import (
     ManualError,
+    attach_odds,
     build,
+    clear_manual_odds,
     parse_links,
     parse_odds,
     save,
 )
 from myassistantbet.services.prompt import build_prompt
+
+from .helpers import NOW
 
 PARIS = ZoneInfo("Europe/Paris")
 
@@ -198,7 +202,7 @@ def test_bloc_cyclisme(migrated: Settings) -> None:
     event_id = _etape(migrated)
     session_id = board_service.toggle_selection(event_id, True, migrated)
 
-    block = session_service.render_blocks(session_id, migrated)[0]
+    block = session_service.render_blocks(session_id, migrated, NOW)[0]
 
     assert block.splitlines()[0] == (
         "### M1 · CYCLISME · Tour de France · Étape 12 — Briançon > Alpe d'Huez · 04/08 13:15"
@@ -375,7 +379,7 @@ def test_session_mixte_foot_tennis_cyclisme(migrated: Settings) -> None:
     for event_id in (etape, tennis, foot):
         session_id = board_service.toggle_selection(event_id, True, migrated)
 
-    prompt = build_prompt(session_id, settings=migrated)
+    prompt = build_prompt(session_id, settings=migrated, now=NOW)
 
     assert prompt.blocks == 3
     assert "· TENNIS · ATP 250 Gstaad · Moutet – Bergs ·" in prompt.body
@@ -422,8 +426,135 @@ def test_cotes_manuelles_ont_un_libelle_lisible(migrated: Settings) -> None:
     for event_id in (tennis, foot):
         session_id = board_service.toggle_selection(event_id, True, migrated)
 
-    blocks = "\n".join(session_service.render_blocks(session_id, migrated))
+    blocks = "\n".join(session_service.render_blocks(session_id, migrated, NOW))
 
     assert "outright" not in blocks
-    assert "  Vainqueur   Moutet 1.85 | Bergs 1.95" in blocks
+    # `outright` est le marche libre de la saisie manuelle : il porte le meme
+    # libelle dans les deux sports, distinct de celui du vainqueur d'API.
+    assert "  Cotes       Moutet 1.85 | Bergs 1.95" in blocks
     assert "  Cotes       Lyon 2.10 | Nice 3.20" in blocks
+
+
+# -- Cotes saisies sur un evenement deja connu -------------------------------
+
+
+def _match_api(settings: Settings) -> int:
+    """Un match d'API avec ses cotes Betclic. Renvoie son id."""
+    sport = db.query_one("SELECT id FROM sports WHERE key = 'tennis'", settings=settings)
+    db.execute(
+        "INSERT INTO events (sport_id, home, away, commence_time, source, created_at) "
+        "VALUES (?, 'Moutet', 'Bergs', '2026-08-04T15:00:00Z', 'oddsapi', ?)",
+        (sport["id"], db.utcnow()),
+        settings=settings,
+    )
+    event_id = int(db.query_one("SELECT MAX(id) AS id FROM events", settings=settings)["id"])
+    db.execute(
+        "INSERT INTO odds (event_id, bookmaker, market_key, outcome_name, price, fetched_at) "
+        "VALUES (?, 'betclic_fr', 'h2h', 'Moutet', 1.85, ?)",
+        (event_id, db.utcnow()),
+        settings=settings,
+    )
+    return event_id
+
+
+def _manual_odds(settings: Settings, event_id: int) -> list[tuple[str, float]]:
+    rows = db.query(
+        "SELECT outcome_name, price FROM odds WHERE event_id = ? AND bookmaker = 'manual' "
+        "ORDER BY outcome_name",
+        (event_id,),
+        settings=settings,
+    )
+    return [(row["outcome_name"], row["price"]) for row in rows]
+
+
+def test_saisie_sur_evenement_existant(migrated: Settings) -> None:
+    event_id = _match_api(migrated)
+
+    result = attach_odds(event_id, "Vainqueur set 3 1.85\nJeux Over 22.5 1.92", settings=migrated)
+
+    assert result.written == 2
+    assert result.rejected == []
+    assert _manual_odds(migrated, event_id) == [("Jeux Over 22.5", 1.92), ("Vainqueur set 3", 1.85)]
+
+
+def test_la_saisie_n_ecrase_jamais_les_cotes_d_api(migrated: Settings) -> None:
+    """Un releve de marche ne doit pas etre remplace par une frappe au clavier."""
+    event_id = _match_api(migrated)
+
+    attach_odds(event_id, "Moutet 9.99", settings=migrated)
+
+    api = db.query(
+        "SELECT outcome_name, price FROM odds WHERE event_id = ? AND bookmaker = 'betclic_fr'",
+        (event_id,),
+        settings=migrated,
+    )
+    assert [(row["outcome_name"], row["price"]) for row in api] == [("Moutet", 1.85)]
+
+
+def test_ressaisir_un_nom_met_la_cote_a_jour(migrated: Settings) -> None:
+    event_id = _match_api(migrated)
+    attach_odds(event_id, "Vainqueur set 3 1.85", settings=migrated)
+
+    attach_odds(event_id, "Vainqueur set 3 1.95", settings=migrated)
+
+    assert _manual_odds(migrated, event_id) == [("Vainqueur set 3", 1.95)]
+
+
+def test_le_mode_remplacement_vide_les_cotes_manuelles(migrated: Settings) -> None:
+    event_id = _match_api(migrated)
+    attach_odds(event_id, "Ancienne 1.50\nAutre 2.50", settings=migrated)
+
+    result = attach_odds(event_id, "Nouvelle 3.00", replace=True, settings=migrated)
+
+    assert result.removed == 2
+    assert _manual_odds(migrated, event_id) == [("Nouvelle", 3.00)]
+
+
+def test_une_ligne_illisible_est_signalee_pas_ignoree(migrated: Settings) -> None:
+    event_id = _match_api(migrated)
+
+    result = attach_odds(event_id, "Bonne 1.85\nn'importe quoi", settings=migrated)
+
+    assert result.written == 1
+    assert result.rejected == ["n'importe quoi"]
+
+
+def test_une_saisie_sans_cote_lisible_est_refusee(migrated: Settings) -> None:
+    event_id = _match_api(migrated)
+
+    with pytest.raises(ManualError):
+        attach_odds(event_id, "que du texte", settings=migrated)
+
+    assert _manual_odds(migrated, event_id) == []
+
+
+def test_une_saisie_sur_evenement_inconnu_est_refusee(migrated: Settings) -> None:
+    with pytest.raises(ManualError):
+        attach_odds(999_999, "Quelque chose 1.85", settings=migrated)
+
+
+def test_le_retrait_ne_touche_que_les_cotes_manuelles(migrated: Settings) -> None:
+    event_id = _match_api(migrated)
+    attach_odds(event_id, "Manuelle 1.85", settings=migrated)
+
+    removed = clear_manual_odds(event_id, migrated)
+
+    assert removed == 1
+    assert _manual_odds(migrated, event_id) == []
+    remaining = db.query(
+        "SELECT bookmaker FROM odds WHERE event_id = ?", (event_id,), settings=migrated
+    )
+    assert [row["bookmaker"] for row in remaining] == ["betclic_fr"]
+
+
+def test_la_route_de_saisie_affiche_les_lignes_refusees(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    db.run_migrations(isolated_settings)
+    event_id = _match_api(isolated_settings)
+
+    response = client.post(f"/events/{event_id}/odds", data={"odds": "Bonne 1.85\nligne cassee"})
+
+    assert response.status_code == 200
+    assert "1.85" in response.text
+    assert "ligne cassee" in response.text

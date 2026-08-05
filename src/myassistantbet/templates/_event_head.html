@@ -1,0 +1,21 @@
+<div class="page-head" id="event-head">
+  <div>
+    <h1>{{ event.affiche }}</h1>
+    <p class="subtitle">
+      {{ event.sport_label }} · {{ event.competition }} ·
+      {{ event.local_time.strftime('%d/%m %H:%M') }}
+      {% if event.source == 'manual' %}<span class="tag">saisie manuelle</span>{% endif %}
+    </p>
+  </div>
+  <div class="actions">
+    <form hx-post="/events/{{ event.event_id }}/shortlist"
+          hx-target="#event-head"
+          hx-swap="outerHTML">
+      {% if not event.selected %}<input type="hidden" name="selected" value="1">{% endif %}
+      <button type="submit" class="button {% if not event.selected %}primary-link{% endif %}">
+        {% if event.selected %}✓ dans la shortlist{% else %}+ Ajouter à la shortlist{% endif %}
+      </button>
+    </form>
+    <a class="button" href="/">← Board</a>
+  </div>
+</div>
