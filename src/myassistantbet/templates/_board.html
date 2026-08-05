@@ -20,17 +20,22 @@
         hx-target="#board"
         hx-swap="outerHTML"
         hx-trigger="change, submit, keyup from:input[name='text'] delay:300ms">
-    <label>
-      Sport
-      <select name="sport">
-        <option value="">tous</option>
-        {% for sport in options.sports %}
-          <option value="{{ sport.key }}" {% if filters.sport == sport.key %}selected{% endif %}>
-            {{ sport.label }}
-          </option>
-        {% endfor %}
-      </select>
-    </label>
+    {# Trois sports : un menu deroulant demandait trois gestes la ou un bouton
+       en demande un. Le pictogramme se lit d'un coup ; le libelle reste dans
+       `title` et dans le texte accessible. #}
+    <div class="sport-picker" role="group" aria-label="Sport">
+      <input type="radio" name="sport" id="sport-tous" value=""
+             {% if not filters.sport %}checked{% endif %}>
+      <label for="sport-tous" title="Tous les sports">Tous</label>
+      {% for sport in options.sports %}
+        <input type="radio" name="sport" id="sport-{{ sport.key }}" value="{{ sport.key }}"
+               {% if filters.sport == sport.key %}checked{% endif %}>
+        <label for="sport-{{ sport.key }}" title="{{ sport.label }}">
+          <span aria-hidden="true">{{ sport.emoji }}</span>
+          <span class="sport-name">{{ sport.label }}</span>
+        </label>
+      {% endfor %}
+    </div>
 
     <label>
       Compétition
@@ -108,7 +113,12 @@
                  {% if row.selected %}checked{% endif %}>
         </td>
         <td class="num">{{ row.local_time.strftime('%d/%m %H:%M') }}</td>
-        <td><span class="sport sport-{{ row.sport_key }}">{{ row.sport_label }}</span></td>
+        <td class="tight">
+          <span class="sport sport-{{ row.sport_key }}" title="{{ row.sport_label }}">
+            <span aria-hidden="true">{{ row.sport_emoji }}</span>
+            <span class="visually-hidden">{{ row.sport_label }}</span>
+          </span>
+        </td>
         <td>{{ row.competition_label }}</td>
         <td class="affiche">
           <a href="/events/{{ row.event_id }}">{{ row.affiche }}</a>

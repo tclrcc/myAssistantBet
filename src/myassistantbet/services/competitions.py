@@ -18,6 +18,7 @@ from typing import Any
 from ..config import Settings, get_settings
 from ..db import connect
 from ..providers.oddsapi import OddsAPIClient
+from .labels import sport_emoji
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +38,10 @@ class SyncReport:
     created: list[str] = field(default_factory=list)
     updated: list[str] = field(default_factory=list)
     ignored: int = 0
+    #: Competitions que l'API ne sert pas en ce moment — hors saison, ou pas
+    #: encore ouvertes aux paris. Elles existent et peuvent etre activees
+    #: d'avance : le jour ou les cotes arrivent, le scan les prend.
+    dormant: int = 0
 
     @property
     def total(self) -> int:
@@ -55,11 +60,12 @@ def list_all(settings: Settings | None = None) -> list[dict[str, Any]]:
     with connect(settings) as conn:
         rows = conn.execute(
             "SELECT c.id, c.label, c.oddsapi_key, c.apifootball_league_id, c.priority, "
-            "       c.active, c.notes, c.surface, s.key AS sport_key, s.label AS sport_label "
+            "       c.active, c.api_active, c.notes, c.surface, "
+            "       s.key AS sport_key, s.label AS sport_label "
             "FROM competitions c JOIN sports s ON s.id = c.sport_id "
             "ORDER BY c.active DESC, s.id, c.priority DESC, c.label"
         ).fetchall()
-    return [dict(row) for row in rows]
+    return [{**dict(row), "sport_emoji": sport_emoji(row["sport_key"])} for row in rows]
 
 
 def set_active(competition_id: int, active: bool, settings: Settings | None = None) -> None:
@@ -107,15 +113,21 @@ def set_surface(competition_id: int, surface: str, settings: Settings | None = N
 
 
 async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None) -> SyncReport:
-    """Aligne la table `competitions` sur le catalogue de The Odds API.
+    """Aligne la table `competitions` sur le catalogue **complet** de The Odds API.
 
     Gratuit : `/sports` ne consomme aucun credit. N'active jamais rien de
     lui-meme et ne desactive jamais une competition existante.
+
+    `include_inactive` est indispensable : sans lui, seules les competitions
+    que le fournisseur sert a l'instant sont decouvertes. Une phase de
+    qualification europeenne ou un tournoi qui ouvre dans trois jours reste
+    alors introuvable jusqu'a ce que les cotes arrivent — donc trop tard pour
+    l'activer avant les premiers matchs.
     """
     settings = settings or get_settings()
     report = SyncReport()
 
-    sports = await client.get_sports()
+    sports = await client.get_sports(include_inactive=True)
     with connect(settings) as conn:
         sport_ids = {
             row["key"]: int(row["id"]) for row in conn.execute("SELECT id, key FROM sports")
@@ -131,27 +143,37 @@ async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None)
                 report.ignored += 1
                 continue
 
+            served = 1 if entry.get("active") else 0
+            if not served:
+                report.dormant += 1
+
             existing = conn.execute(
-                "SELECT id, label FROM competitions WHERE oddsapi_key = ?", (oddsapi_key,)
+                "SELECT id, label, api_active FROM competitions WHERE oddsapi_key = ?",
+                (oddsapi_key,),
             ).fetchone()
             if existing is None:
                 conn.execute(
-                    "INSERT INTO competitions (sport_id, oddsapi_key, label, priority, active) "
-                    "VALUES (?, ?, ?, 0, 0)",
-                    (sport_ids[sport_key], oddsapi_key, title),
+                    "INSERT INTO competitions (sport_id, oddsapi_key, label, priority, active, "
+                    "                          api_active) VALUES (?, ?, ?, 0, 0, ?)",
+                    (sport_ids[sport_key], oddsapi_key, title, served),
                 )
                 report.created.append(f"{title} ({oddsapi_key})")
-            elif existing["label"] != title:
-                # Le libelle du fournisseur fait foi ; l'etat actif ne bouge pas.
+            elif existing["label"] != title or existing["api_active"] != served:
+                # Le libelle et la disponibilite du fournisseur font foi ;
+                # l'activation choisie par l'utilisateur ne bouge jamais.
                 conn.execute(
-                    "UPDATE competitions SET label = ? WHERE id = ?", (title, existing["id"])
+                    "UPDATE competitions SET label = ?, api_active = ? WHERE id = ?",
+                    (title, served, existing["id"]),
                 )
-                report.updated.append(f"{title} ({oddsapi_key})")
+                if existing["label"] != title:
+                    report.updated.append(f"{title} ({oddsapi_key})")
 
     logger.info(
-        "Synchronisation des competitions : %d creees, %d mises a jour, %d ignorees",
+        "Synchronisation des competitions : %d creees, %d mises a jour, %d ignorees, "
+        "%d non servies actuellement",
         len(report.created),
         len(report.updated),
         report.ignored,
+        report.dormant,
     )
     return report

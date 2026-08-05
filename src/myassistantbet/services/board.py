@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.oddsapi import PROVIDER as ODDSAPI_PROVIDER
-from .labels import affiche
+from .labels import affiche, sport_emoji
 from .mapping_ui import pending_count
 from .scan import scan_window
 from .session import has_started
@@ -56,6 +56,10 @@ class BoardRow:
     @property
     def affiche(self) -> str:
         return affiche(self.home, self.away)
+
+    @property
+    def sport_emoji(self) -> str:
+        return sport_emoji(self.sport_key)
 
     @property
     def has_odds(self) -> bool:
@@ -309,7 +313,7 @@ def filter_options(
     """
     with connect(settings) as conn:
         sports = [
-            dict(row)
+            {**dict(row), "emoji": sport_emoji(row["key"])}
             for row in conn.execute("SELECT key, label FROM sports ORDER BY id").fetchall()
         ]
         competitions = [

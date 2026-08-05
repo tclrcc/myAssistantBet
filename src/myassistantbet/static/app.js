@@ -31,3 +31,25 @@ document.addEventListener("change", (event) => {
   master.checked = cochees === boxes.length;
   master.indeterminate = cochees > 0 && cochees < boxes.length;
 });
+
+/* Filtre de tableau, purement local : le catalogue complet des competitions
+   fait pres de deux cents lignes, et un aller-retour serveur pour masquer des
+   lignes deja rendues serait du gaspillage. */
+document.addEventListener("input", (event) => {
+  const champ = event.target.closest("[data-filter-rows]");
+  if (!champ) return;
+
+  const table = document.querySelector(champ.dataset.filterRows);
+  if (!table) return;
+
+  const terme = champ.value.trim().toLowerCase();
+  let visibles = 0;
+  table.querySelectorAll("tbody tr").forEach((ligne) => {
+    const trouve = !terme || ligne.textContent.toLowerCase().includes(terme);
+    ligne.hidden = !trouve;
+    if (trouve) visibles += 1;
+  });
+
+  const compteur = document.querySelector(champ.dataset.filterCount);
+  if (compteur) compteur.textContent = visibles;
+});

@@ -3,6 +3,13 @@
   <div class="report">
     Synchronisation : {{ report.created|length }} compétition(s) découverte(s),
     {{ report.updated|length }} mise(s) à jour. Aucun crédit consommé.
+    {% if report.dormant %}
+      <br><span class="muted small">
+        {{ report.dormant }} compétition(s) que l'API ne sert pas en ce moment — hors saison
+        ou pas encore ouvertes aux paris. Les activer d'avance ne coûte rien : une réponse
+        vide n'est pas facturée, et le scan les prendra dès que les cotes arriveront.
+      </span>
+    {% endif %}
     {% if report.created %}
       <ul class="failures">
         {% for label in report.created[:12] %}<li>{{ label }}</li>{% endfor %}
@@ -46,6 +53,18 @@
     </form>
   </div>
 
+  <div class="filters">
+    <label class="grow">
+      Rechercher une compétition
+      <input type="search" data-filter-rows="#competitions table.board"
+             data-filter-count="#competitions-count"
+             placeholder="europa, canadian open, ligue 2…" autocomplete="off">
+    </label>
+    <span class="muted small">
+      <b id="competitions-count">{{ competitions | length }}</b> sur {{ competitions | length }} affichée(s)
+    </span>
+  </div>
+
   <div class="enrich-bar">
     <div class="estimate">
       <span class="label">Actives</span>
@@ -68,6 +87,7 @@
         <th>Sport</th>
         <th>Compétition</th>
         <th>Clé Odds API</th>
+        <th>Servie ?</th>
         <th>Ligue API-Football</th>
         <th>Priorité</th>
         <th>Marchés profonds</th>
@@ -85,9 +105,23 @@
                  hx-swap="outerHTML"
                  {% if competition.active %}checked{% endif %}>
         </td>
-        <td><span class="sport sport-{{ competition.sport_key }}">{{ competition.sport_label }}</span></td>
+        <td class="tight">
+          <span class="sport sport-{{ competition.sport_key }}" title="{{ competition.sport_label }}">
+            <span aria-hidden="true">{{ competition.sport_emoji }}</span>
+            <span class="visually-hidden">{{ competition.sport_label }}</span>
+          </span>
+        </td>
         <td class="affiche">{{ competition.label }}</td>
         <td class="muted">{{ competition.oddsapi_key or '—' }}</td>
+        <td class="small">
+          {% if not competition.oddsapi_key %}
+            <span class="muted">manuelle</span>
+          {% elif competition.api_active %}
+            <span class="badge ok" title="L'API sert des cotes en ce moment">oui</span>
+          {% else %}
+            <span class="badge warn" title="Hors saison ou pas encore ouverte : l'activer d'avance ne coûte rien, une réponse vide n'est pas facturée">hors saison</span>
+          {% endif %}
+        </td>
         <td class="num muted">{{ competition.apifootball_league_id or '—' }}</td>
         <td class="num">{{ competition.priority }}</td>
         <td class="small">

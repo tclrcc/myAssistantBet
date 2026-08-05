@@ -181,6 +181,12 @@ Elo de Tennis Abstract comblent ce trou, **gratuitement et sans cle**.
   serait l'heure de la frappe, pas celle d'un releve de marche.
 - `services/competitions.py` : synchronisation depuis `GET /sports`, **gratuit**. Une
   competition decouverte est creee **inactive** — rien ne se met a couter sans decision.
+  L'appel passe `all=true` : sans lui, seules les competitions que le fournisseur sert a
+  l'instant sont decouvertes, et une phase de qualification europeenne reste introuvable
+  jusqu'a ce que les cotes arrivent — donc trop tard pour l'activer avant les premiers
+  matchs. `api_active` distingue les deux etats, sinon une competition active qui ne
+  ramene rien devient un mystere. Activer une competition hors saison ne coute rien :
+  une reponse vide n'est pas facturee.
 
 ## Historique et personnalisation
 

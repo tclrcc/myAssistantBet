@@ -237,3 +237,83 @@ def test_synchronisation_en_echec_ne_casse_pas_la_page(client: TestClient) -> No
     response = client.post("/competitions/sync")
 
     assert response.status_code == 200, "une API HS ne doit jamais empecher de servir la page"
+
+
+# -- Catalogue complet ------------------------------------------------------
+
+
+@respx.mock
+async def test_le_catalogue_complet_est_demande(
+    odds_client: OddsAPIClient, migrated: Settings
+) -> None:
+    """Sans `all=true`, une competition hors saison reste introuvable."""
+    respx.get(f"{BASE_URL}/sports").mock(return_value=httpx.Response(200, json=[]))
+
+    await sync_from_api(odds_client, migrated)
+
+    assert respx.calls.last.request.url.params.get("all") == "true"
+
+
+@respx.mock
+async def test_une_competition_hors_saison_est_creee_et_signalee(
+    odds_client: OddsAPIClient, migrated: Settings
+) -> None:
+    """C'est tout l'interet : l'activer d'avance, avant que les cotes arrivent."""
+    respx.get(f"{BASE_URL}/sports").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {
+                    "key": "soccer_uefa_europa_league",
+                    "title": "UEFA Europa League",
+                    "active": False,
+                },
+                {"key": "soccer_epl", "title": "EPL", "active": True},
+            ],
+        )
+    )
+
+    report = await sync_from_api(odds_client, migrated)
+
+    assert report.dormant == 1
+    par_cle = {row["oddsapi_key"]: row for row in list_all(migrated)}
+    assert par_cle["soccer_uefa_europa_league"]["api_active"] == 0
+    assert par_cle["soccer_epl"]["api_active"] == 1
+    assert par_cle["soccer_uefa_europa_league"]["active"] == 0, "creee inactive, comme toujours"
+
+
+@respx.mock
+async def test_la_disponibilite_suit_le_fournisseur_sans_toucher_a_l_activation(
+    odds_client: OddsAPIClient, migrated: Settings
+) -> None:
+    """Le jour ou les cotes arrivent, la competition deja activee doit scanner."""
+    respx.get(f"{BASE_URL}/sports").mock(
+        return_value=httpx.Response(
+            200, json=[{"key": "soccer_uefa_europa_league", "title": "UEFA EL", "active": False}]
+        )
+    )
+    await sync_from_api(odds_client, migrated)
+    dormante = next(
+        row for row in list_all(migrated) if row["oddsapi_key"] == "soccer_uefa_europa_league"
+    )
+    set_active(int(dormante["id"]), True, migrated)
+
+    respx.get(f"{BASE_URL}/sports").mock(
+        return_value=httpx.Response(
+            200, json=[{"key": "soccer_uefa_europa_league", "title": "UEFA EL", "active": True}]
+        )
+    )
+    await sync_from_api(odds_client, migrated)
+
+    reveillee = next(
+        row for row in list_all(migrated) if row["oddsapi_key"] == "soccer_uefa_europa_league"
+    )
+    assert reveillee["api_active"] == 1
+    assert reveillee["active"] == 1, "l'activation choisie par l'utilisateur n'est jamais touchee"
+
+
+def test_chaque_competition_porte_son_pictogramme(migrated: Settings) -> None:
+    par_sport = {row["sport_key"]: row["sport_emoji"] for row in list_all(migrated)}
+
+    assert par_sport.get("football") == "⚽"
+    assert par_sport.get("tennis") == "🎾"

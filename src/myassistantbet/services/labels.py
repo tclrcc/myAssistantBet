@@ -32,6 +32,16 @@ BOOKMAKER_LABELS = {
 #: saisie manuelle porte l'heure de la frappe, pas celle d'un releve de marche.
 UNTIMED_BOOKMAKERS = frozenset({"manual"})
 
+#: Emoji par sport. Sur un board de vingt lignes, le sport se lit d'un coup
+#: d'oeil sans occuper une colonne entiere de texte. Le libelle reste porte par
+#: l'attribut `title` : un pictogramme seul n'est pas lisible au lecteur d'ecran.
+SPORT_EMOJI = {"football": "⚽", "tennis": "🎾", "cycling": "🚴"}
+
+
+def sport_emoji(key: str | None) -> str:
+    """Pictogramme d'un sport, chaine vide si le sport est inconnu."""
+    return SPORT_EMOJI.get(key or "", "")
+
 
 def affiche(home: str, away: str | None) -> str:
     """Affiche d'un evenement, sans tiret orphelin quand `away` est absent."""

@@ -909,3 +909,61 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
    de cote. Elle ne doit pas se confondre avec les lignes a importer. */
 .import-table tr.is-duplicate td { color: var(--muted); }
 .import-table tr.is-duplicate td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+
+/* --- Choix du sport : un bouton par sport, pas un menu ---------------------- */
+
+/* Trois sports tiennent dans la largeur : un menu deroulant demandait trois
+   gestes (ouvrir, lire, choisir) la ou un bouton en demande un. Les radios
+   sont masquees mais gardees — le clavier et le formulaire continuent de
+   fonctionner sans une ligne de JavaScript. */
+.sport-picker {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel-2);
+  padding: 3px;
+  gap: 2px;
+}
+.sport-picker input { position: absolute; opacity: 0; width: 0; height: 0; }
+.sport-picker label {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  cursor: pointer;
+  font-size: 0.86rem;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+  transition: background 0.14s, color 0.14s;
+  white-space: nowrap;
+}
+.sport-picker label:hover { background: var(--panel-3); color: var(--text); }
+.sport-picker input:checked + label {
+  background: var(--accent-soft);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
+}
+.sport-picker input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* Le pictogramme porte le sens, le libelle reste pour qui lit lentement.
+   Sous 1100px il s'efface : l'emoji suffit, l'info-bulle prend le relais. */
+@media (max-width: 1100px) {
+  .sport-picker .sport-name { display: none; }
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+/* La pastille de sport du tableau ne porte plus que le pictogramme. */
+td .sport { padding: 0.15rem 0.4rem; font-size: 1rem; line-height: 1.2; }
+.badge.warn { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
