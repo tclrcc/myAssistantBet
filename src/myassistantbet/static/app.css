@@ -658,6 +658,25 @@ details.panel .pick-form { margin-bottom: 0; }
 .picks-table tr.is-idle td { color: var(--text-dim); }
 .nowrap { white-space: nowrap; }
 
+/* Rattacher un match : « rattacher » se voit, « changer » ne se voit que si on
+   le cherche. Une selection sans match est un travail a finir ; une selection
+   deja rattachee n'a pas a porter un appel a l'action sur chaque ligne. */
+.link-quiet {
+  background: none;
+  border: 0;
+  padding: 0;
+  margin-left: var(--s2);
+  color: transparent;
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+}
+tr:hover .link-quiet, .link-quiet:focus-visible { color: var(--muted); }
+.link-quiet:hover { color: var(--accent); text-decoration: underline; }
+.pick-match .link-action { margin-left: var(--s2); }
+.pick-event { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+.pick-event select { max-width: 20rem; }
+
 /* Quatre etats, un clic chacun. Un menu deroulant en demandait deux, et la
    saisie des resultats est le geste le plus repete de la page. */
 .segmented { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }

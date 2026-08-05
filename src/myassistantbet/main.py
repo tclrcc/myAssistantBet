@@ -674,7 +674,7 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         "session_id": session_id,
         "session_label": session_service.session_label(session_id, settings),
         "prompts": history_service.list_prompts(session_id, settings),
-        "events": history_service.session_events(session_id, settings),
+        "events": history_service.pickable_groups(session_id, settings),
         "tiers": history_service.tiers(settings),
         "picks": history_service.list_picks(session_id, settings),
         "result_labels": list(history_service.RESULT_LABELS.items()),
@@ -907,6 +907,40 @@ def set_pick_result(
         history_service.set_result(pick_id, result, settings)
     except history_service.HistoryError as exc:
         logger.warning("Resultat refuse : %s", exc)
+    return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
+
+
+@app.get("/picks/{pick_id}/event", response_class=HTMLResponse)
+def edit_pick_event(request: Request, pick_id: int) -> HTMLResponse:
+    """Selecteur de match d'une selection, charge a la demande.
+
+    A la demande justement : la feuille de session porte quinze selections et le
+    menu compte cent matchs. Les rendre tous d'avance alourdirait chaque
+    rafraichissement du plan de travail pour un geste qui se fait une fois.
+    """
+    settings = get_settings()
+    pick = history_service.get_pick(pick_id, settings)
+    if pick is None:
+        raise HTTPException(status_code=404, detail="Pick inconnu")
+    return templates.TemplateResponse(
+        request,
+        "_pick_event.html",
+        {"pick": pick, "events": history_service.pickable_groups(pick.session_id, settings)},
+    )
+
+
+@app.post("/picks/{pick_id}/event", response_class=HTMLResponse)
+def set_pick_event(
+    request: Request, pick_id: int, event_id: str = Form(default="")
+) -> HTMLResponse:
+    """Rattache une selection a un match, ou l'en detache."""
+    session_id = _pick_session(pick_id)
+    try:
+        history_service.set_event(pick_id, event_id, get_settings())
+    except history_service.HistoryError as exc:
+        return templates.TemplateResponse(
+            request, "_worksheet.html", _picks_context(session_id, coupon_error=str(exc))
+        )
     return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
 
 

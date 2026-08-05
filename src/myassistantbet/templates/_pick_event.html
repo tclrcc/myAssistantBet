@@ -1,0 +1,18 @@
+{# Selecteur de match d'une selection deja enregistree. Rendu a la demande dans
+   la cellule, il remplace le libelle par le menu ; valider rend la feuille
+   entiere, car changer de match change aussi le sport d'un coupon. #}
+<form class="pick-event" hx-post="/picks/{{ pick.pick_id }}/event"
+      hx-target="#worksheet" hx-swap="outerHTML">
+  <select name="event_id" aria-label="Match de la sélection {{ pick.selection }}">
+    <option value="">— hors match —</option>
+    {% for group, group_events in events %}
+    <optgroup label="{{ group }}">
+      {% for event in group_events %}
+        <option value="{{ event.event_id }}"
+                {% if event.event_id == pick.event_id %}selected{% endif %}>{{ event.label }}</option>
+      {% endfor %}
+    </optgroup>
+    {% endfor %}
+  </select>
+  <button type="submit" class="link-action">rattacher</button>
+</form>

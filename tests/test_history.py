@@ -19,7 +19,8 @@ from myassistantbet.services.history import (
     delete_pick,
     list_picks,
     list_sessions,
-    session_events,
+    pickable_groups,
+    set_event,
     set_result,
     stats,
 )
@@ -426,17 +427,17 @@ def test_les_matchs_sont_groupes_par_sport_et_competition(migrated: Settings) ->
     )
     board_service.toggle_selection(tennis_event, True, migrated)
 
-    groups = dict(session_events(foot_session, migrated))
+    groups = dict(pickable_groups(foot_session, migrated))
 
     assert "Football · Amical" in groups
     assert "Tennis · ATP Canadian Open" in groups
-    assert [event["label"] for event in groups["Tennis · ATP Canadian Open"]] == ["Moutet – Bergs"]
+    assert [event.label for event in groups["Tennis · ATP Canadian Open"]] == ["Moutet – Bergs"]
 
 
 def test_un_evenement_sans_competition_reste_groupe(migrated: Settings) -> None:
     session_id, _ = _session_avec_match(migrated)
 
-    groups = dict(session_events(session_id, migrated))
+    groups = dict(pickable_groups(session_id, migrated))
 
     assert all(" · " in name for name in groups), "chaque groupe nomme sport et competition"
 
@@ -449,6 +450,147 @@ def test_le_selecteur_de_match_porte_les_groupes(
     response = client.get(f"/history/{session_id}")
 
     assert '<optgroup label="Football · Amical">' in response.text
+
+
+# -- Rattacher une selection a un match hors shortlist ----------------------
+
+
+def _hors_shortlist(settings: Settings) -> int:
+    """Un match connu mais jamais coche : c'est le cas d'un match commence."""
+    return save(
+        build(
+            "tennis",
+            "ATP Canadian Open",
+            "Michelsen",
+            "Cerundolo",
+            "2026-08-04",
+            "22:20",
+            "Michelsen 1.62",
+            "",
+            "",
+            settings=settings,
+        ),
+        settings,
+    )
+
+
+def _fenetre_autour(settings: Settings, session_id: int, moment: str) -> None:
+    """Cale la session sur une date fixe : la fenetre en depend."""
+    db.execute(
+        "UPDATE sessions SET created_at = ? WHERE id = ?", (moment, session_id), settings=settings
+    )
+
+
+def test_un_match_hors_shortlist_reste_proposable(migrated: Settings) -> None:
+    """Un match qui a commence quitte le board : il n'a jamais pu etre coche."""
+    session_id, _ = _session_avec_match(migrated)
+    _fenetre_autour(migrated, session_id, "2026-08-04T12:00:00Z")
+    _hors_shortlist(migrated)
+
+    groups = dict(pickable_groups(session_id, migrated))
+
+    assert "Football · Amical" in groups, "la shortlist reste en tete"
+    hors = groups["Hors sélection — Tennis · ATP Canadian Open"]
+    assert [event.label for event in hors] == ["04/08 22:20 · Michelsen – Cerundolo"], (
+        "l'horaire distingue un match d'un autre jour"
+    )
+
+
+def test_un_match_trop_loin_n_est_pas_propose(migrated: Settings) -> None:
+    """Sinon le menu proposerait le catalogue entier."""
+    session_id, _ = _session_avec_match(migrated)
+    _fenetre_autour(migrated, session_id, "2026-08-01T12:00:00Z")
+    _hors_shortlist(migrated)
+
+    groups = dict(pickable_groups(session_id, migrated))
+
+    assert list(groups) == ["Football · Amical"]
+
+
+def test_rattachement_d_une_selection_a_un_match(migrated: Settings) -> None:
+    """Sans reprise, une selection restait « — hors match — » pour toujours."""
+    session_id, _ = _session_avec_match(migrated)
+    event_id = _hors_shortlist(migrated)
+    pick_id = add_pick(session_id, "safe", "Vainqueur", "Michelsen", settings=migrated)
+    assert list_picks(session_id, migrated)[-1].event_label == "— hors match —"
+
+    set_event(pick_id, str(event_id), migrated)
+
+    pick = list_picks(session_id, migrated)[-1]
+    assert pick.event_id == event_id
+    assert pick.event_label == "Michelsen – Cerundolo"
+
+
+def test_detachement_d_une_selection(migrated: Settings) -> None:
+    session_id, event_id = _session_avec_match(migrated)
+    pick_id = add_pick(session_id, "safe", "O/U", "Over", event_id=str(event_id), settings=migrated)
+
+    set_event(pick_id, "", migrated)
+
+    assert list_picks(session_id, migrated)[0].event_id is None
+
+
+def test_un_match_inconnu_est_refuse(migrated: Settings) -> None:
+    """Ecrire un identifiant absent laisserait un pick pointant sur du vide."""
+    session_id, _ = _session_avec_match(migrated)
+    pick_id = add_pick(session_id, "safe", "O/U", "Over", settings=migrated)
+
+    with pytest.raises(HistoryError):
+        set_event(pick_id, "4242", migrated)
+    with pytest.raises(HistoryError):
+        set_event(pick_id, "pas un nombre", migrated)
+
+
+def test_rattachement_rend_la_selection_visible_par_sport(migrated: Settings) -> None:
+    """Sans match, une selection n'a pas de sport : elle manque aux statistiques."""
+    session_id, _ = _session_avec_match(migrated)
+    event_id = _hors_shortlist(migrated)
+    pick_id = add_pick(session_id, "safe", "Vainqueur", "Michelsen", settings=migrated)
+    set_result(pick_id, "win", migrated)
+
+    assert [row.label for row in analysis(migrated).by_sport] == ["—"]
+
+    set_event(pick_id, str(event_id), migrated)
+
+    assert [row.label for row in analysis(migrated).by_sport] == ["Tennis"]
+
+
+def test_selecteur_de_match_charge_a_la_demande(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Cible d'un echange HTMX : un fragment, jamais la page entiere."""
+    session_id, _ = _session_avec_match(isolated_settings)
+    pick_id = add_pick(session_id, "safe", "O/U", "Over", settings=isolated_settings)
+
+    response = client.get(f"/picks/{pick_id}/event")
+
+    assert response.status_code == 200
+    assert response.text.strip().startswith('<form class="pick-event"')
+    assert '<optgroup label="Football · Amical">' in response.text
+
+
+def test_rattachement_via_htmx(client: TestClient, isolated_settings: Settings) -> None:
+    session_id, event_id = _session_avec_match(isolated_settings)
+    pick_id = add_pick(session_id, "safe", "O/U", "Over", settings=isolated_settings)
+
+    response = client.post(f"/picks/{pick_id}/event", data={"event_id": str(event_id)})
+
+    assert response.status_code == 200
+    assert response.text.strip().startswith('<div id="worksheet">')
+    assert list_picks(session_id, isolated_settings)[0].event_id == event_id
+
+
+def test_rattachement_a_un_match_inconnu_ne_casse_pas_la_page(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    session_id, _ = _session_avec_match(isolated_settings)
+    pick_id = add_pick(session_id, "safe", "O/U", "Over", settings=isolated_settings)
+
+    response = client.post(f"/picks/{pick_id}/event", data={"event_id": "4242"})
+
+    assert response.status_code == 200
+    assert "Match inconnu" in response.text
+    assert list_picks(session_id, isolated_settings)[0].event_id is None
 
 
 # -- Ce que vaut l'analyse --------------------------------------------------

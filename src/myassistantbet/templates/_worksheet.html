@@ -33,7 +33,25 @@
     <tbody>
       {% for pick in picks %}
       <tr class="result-{{ pick.result }}{% if not pick.coupon_id %} is-idle{% endif %}">
-        <td>{{ pick.event_label }}</td>
+        {# Un match qui a commence quitte le board : il n'a jamais pu etre coche,
+           donc l'import n'a rien eu a quoi rattacher la selection. Le menu se
+           charge a la demande — cent matchs sur quinze lignes alourdiraient
+           chaque rafraichissement de la feuille. #}
+        <td class="pick-match">
+          {% if pick.event_id %}
+            {{ pick.event_label }}
+            <button type="button" class="link-quiet"
+                    hx-get="/picks/{{ pick.pick_id }}/event"
+                    hx-target="closest td" hx-swap="innerHTML"
+                    title="Rattacher cette sélection à un autre match">changer</button>
+          {% else %}
+            <span class="muted">{{ pick.event_label }}</span>
+            <button type="button" class="link-action"
+                    hx-get="/picks/{{ pick.pick_id }}/event"
+                    hx-target="closest td" hx-swap="innerHTML"
+                    title="Choisir le match, y compris hors de la shortlist">rattacher</button>
+          {% endif %}
+        </td>
         <td class="nowrap">{{ pick.tier_label }}</td>
         <td class="affiche">
           {{ pick.selection }}

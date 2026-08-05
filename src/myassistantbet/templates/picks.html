@@ -63,11 +63,11 @@
           <td>
             <select name="event_{{ pick.index }}">
               <option value="">— hors match —</option>
-              {% for group, events in events %}
+              {% for group, group_events in events %}
               <optgroup label="{{ group }}">
-                {% for event in events %}
-                  <option value="{{ event.id }}"
-                          {% if event.id == pick.event_id %}selected{% endif %}>{{ event.label }}</option>
+                {% for event in group_events %}
+                  <option value="{{ event.event_id }}"
+                          {% if event.event_id == pick.event_id %}selected{% endif %}>{{ event.label }}</option>
                 {% endfor %}
               </optgroup>
               {% endfor %}
@@ -128,7 +128,7 @@
         {% for group, group_events in events %}
         <optgroup label="{{ group }}">
           {% for event in group_events %}
-            <option value="{{ event.id }}">{{ event.label }}</option>
+            <option value="{{ event.event_id }}">{{ event.label }}</option>
           {% endfor %}
         </optgroup>
         {% endfor %}

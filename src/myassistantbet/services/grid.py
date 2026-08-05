@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Protocol
 from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
@@ -275,6 +277,14 @@ MIN_ANCHOR_SCORE = 0.6
 MIN_ANCHOR_GAP = 0.1
 
 
+class Matchable(Protocol):
+    """Ce dont `anchor` a besoin : un identifiant et deux participants."""
+
+    event_id: int
+    home: str
+    away: str
+
+
 @dataclass
 class PasteResult:
     """Ce qu'un collage a permis de reconnaitre. N'ecrit rien : il pre-remplit."""
@@ -309,17 +319,19 @@ def _anchor_score(line_tokens: set[str], participant: str) -> float:
     return MIN_ANCHOR_SCORE + (1.0 - MIN_ANCHOR_SCORE) * (found / len(others))
 
 
-def anchor(line: str, rows: list[GridRow]) -> GridRow | None:
+def anchor(line: str, rows: Sequence[Matchable]) -> Matchable | None:
     """Le match que designe cette ligne, ou None si le doute subsiste.
 
     Sert au collage de cotes comme a l'import des picks : dans les deux cas on
-    reconnait un match dans du texte ecrit par quelqu'un d'autre.
+    reconnait un match dans du texte ecrit par quelqu'un d'autre. Les lignes
+    proposees ne sont pas toujours celles de la grille — l'import des picks
+    cherche aussi hors de la shortlist — d'ou le protocole plutot que `GridRow`.
     """
     line_tokens = set(normalize(line).split())
     if not line_tokens:
         return None
 
-    scored: list[tuple[float, GridRow]] = []
+    scored: list[tuple[float, Matchable]] = []
     for row in rows:
         score = max(_anchor_score(line_tokens, name) for name in (row.home, row.away or row.home))
         if score >= MIN_ANCHOR_SCORE:

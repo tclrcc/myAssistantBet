@@ -14,12 +14,13 @@ import logging
 import re
 import unicodedata
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
+from .labels import affiche
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,10 @@ def _local(value: str, tz: str) -> datetime:
     if moment.tzinfo is None:
         moment = moment.replace(tzinfo=UTC)
     return moment.astimezone(ZoneInfo(tz))
+
+
+def _iso(moment: datetime) -> str:
+    return moment.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 @dataclass
@@ -182,6 +187,29 @@ def _tier_labels(conn) -> dict[str, str]:
     }
 
 
+def _pick(row: Any, tier_labels: dict[str, str]) -> Pick:
+    # « combine » designe desormais un coupon a plusieurs jambes : laisser ce
+    # mot ici ferait lire un pari la ou il n'y a qu'une selection dont le match
+    # n'a pas ete rapproche.
+    event_label = affiche(row["home"], row["away"]) if row["home"] else "— hors match —"
+    return Pick(
+        pick_id=int(row["id"]),
+        session_id=int(row["session_id"]),
+        event_id=row["event_id"],
+        event_label=event_label,
+        tier=row["tier"],
+        tier_label=tier_labels.get(row["tier"], row["tier"]),
+        market=row["market"],
+        selection=row["selection"],
+        price=row["price"],
+        confidence=row["confidence"],
+        played=bool(row["played"]),
+        stake=row["stake"],
+        result=row["result"] or "pending",
+        coupon_id=row["coupon_id"],
+    )
+
+
 def list_picks(session_id: int, settings: Settings | None = None) -> list[Pick]:
     """Picks enregistres pour une session."""
     with connect(settings) as conn:
@@ -192,69 +220,131 @@ def list_picks(session_id: int, settings: Settings | None = None) -> list[Pick]:
             "WHERE k.session_id = ? ORDER BY k.id",
             (session_id,),
         ).fetchall()
-
-    picks = []
-    for row in rows:
-        if row["home"]:
-            event_label = f"{row['home']} – {row['away']}" if row["away"] else row["home"]
-        else:
-            # « combine » designe desormais un coupon a plusieurs jambes :
-            # laisser ce mot ici ferait lire un pari la ou il n'y a qu'une
-            # selection dont le match n'a pas ete rapproche.
-            event_label = "— hors match —"
-        picks.append(
-            Pick(
-                pick_id=int(row["id"]),
-                session_id=int(row["session_id"]),
-                event_id=row["event_id"],
-                event_label=event_label,
-                tier=row["tier"],
-                tier_label=labels.get(row["tier"], row["tier"]),
-                market=row["market"],
-                selection=row["selection"],
-                price=row["price"],
-                confidence=row["confidence"],
-                played=bool(row["played"]),
-                stake=row["stake"],
-                result=row["result"] or "pending",
-                coupon_id=row["coupon_id"],
-            )
-        )
-    return picks
+    return [_pick(row, labels) for row in rows]
 
 
-def session_events(
-    session_id: int, settings: Settings | None = None
-) -> list[tuple[str, list[dict[str, Any]]]]:
-    """Evenements de la session, groupes par sport et competition.
-
-    Le selecteur du formulaire de pick sert a retrouver un match parmi vingt :
-    une liste a plat obligeait a lire chaque ligne. Le regroupement rend le
-    sport et la competition immediatement visibles, sans second menu ni JS —
-    un `optgroup` fait le travail.
-
-    Le groupement est fait ici et non dans le template : le filtre `groupby` de
-    Jinja retrie par ordre alphabetique, ce qui perdrait l'ordre des sports.
-    """
+def get_pick(pick_id: int, settings: Settings | None = None) -> Pick | None:
+    """Un pick, ou None s'il n'existe pas."""
     with connect(settings) as conn:
+        labels = _tier_labels(conn)
+        row = conn.execute(
+            "SELECT k.*, e.home, e.away FROM picks k "
+            "LEFT JOIN events e ON e.id = k.event_id WHERE k.id = ?",
+            (pick_id,),
+        ).fetchone()
+    return _pick(row, labels) if row is not None else None
+
+
+# -- Matchs proposes au rattachement d'une selection ------------------------
+
+#: Fenetre des matchs proposes autour d'une session, en heures. Une session est
+#: le travail d'une journee : ses paris portent sur les matchs du jour et sur la
+#: nuit qui suit. Au-dela, on proposerait le catalogue entier dans un menu.
+PICKABLE_BEFORE_H = 24
+PICKABLE_AFTER_H = 48
+
+
+@dataclass
+class PickableEvent:
+    """Un match proposable au rattachement d'une selection."""
+
+    event_id: int
+    home: str
+    away: str
+    sport_label: str
+    competition: str
+    local_time: datetime
+    #: Le match fait partie de la shortlist, donc de ce qui a ete analyse.
+    in_session: bool = True
+
+    @property
+    def affiche(self) -> str:
+        return affiche(self.home, self.away)
+
+    @property
+    def group(self) -> str:
+        """Libelle de l'`optgroup`. Sport et competition, toujours."""
+        prefix = "" if self.in_session else "Hors sélection — "
+        return f"{prefix}{self.sport_label} · {self.competition}"
+
+    @property
+    def label(self) -> str:
+        """Un match hors shortlist porte son horaire : il peut etre d'un autre jour."""
+        if self.in_session:
+            return self.affiche
+        return f"{self.local_time:%d/%m %H:%M} · {self.affiche}"
+
+
+def pickable_events(session_id: int, settings: Settings | None = None) -> list[PickableEvent]:
+    """Matchs proposes au rattachement d'une selection, shortlist d'abord.
+
+    La shortlist ne suffit pas. Un match qui a commence quitte le board : il ne
+    peut plus y etre coche, donc il n'entre plus dans aucune shortlist — et la
+    selection qui le vise restait « — hors match — » pour toujours. Sans
+    evenement, elle n'a ni sport ni competition : elle disparait des
+    statistiques par sport sans que rien ne le dise.
+
+    Les matchs voisins de la session sont donc proposes aussi, marques comme
+    tels : ils n'ont pas ete analyses, et l'utilisateur doit le voir.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        session = conn.execute(
+            "SELECT created_at FROM sessions WHERE id = ?", (session_id,)
+        ).fetchone()
+        if session is None:
+            return []
+        created = datetime.fromisoformat(session["created_at"].replace("Z", "+00:00"))
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=UTC)
         rows = conn.execute(
-            "SELECT e.id, e.home, e.away, e.commence_time, s.label AS sport_label, "
-            "       COALESCE(c.label, 'Saisie manuelle') AS competition "
-            "FROM session_events se "
-            "JOIN events e ON e.id = se.event_id "
+            "SELECT e.id, e.home, e.away, e.commence_time, s.id AS sport_id, "
+            "       s.label AS sport_label, "
+            "       COALESCE(c.label, 'Saisie manuelle') AS competition, "
+            "       EXISTS (SELECT 1 FROM session_events se "
+            "               WHERE se.session_id = ? AND se.event_id = e.id) AS in_session "
+            "FROM events e "
             "JOIN sports s ON s.id = e.sport_id "
             "LEFT JOIN competitions c ON c.id = e.competition_id "
-            "WHERE se.session_id = ? "
-            "ORDER BY s.id, competition, e.commence_time",
-            (session_id,),
+            "WHERE (e.commence_time >= ? AND e.commence_time <= ?) "
+            "   OR EXISTS (SELECT 1 FROM session_events se "
+            "              WHERE se.session_id = ? AND se.event_id = e.id) "
+            "ORDER BY in_session DESC, s.id, competition, e.commence_time",
+            (
+                session_id,
+                _iso(created - timedelta(hours=PICKABLE_BEFORE_H)),
+                _iso(created + timedelta(hours=PICKABLE_AFTER_H)),
+                session_id,
+            ),
         ).fetchall()
 
-    groups: dict[str, list[dict[str, Any]]] = {}
-    for row in rows:
-        label = f"{row['home']} – {row['away']}" if row["away"] else row["home"]
-        groups.setdefault(f"{row['sport_label']} · {row['competition']}", []).append(
-            {"id": int(row["id"]), "label": label}
+    return [
+        PickableEvent(
+            event_id=int(row["id"]),
+            home=row["home"],
+            away=row["away"] or "",
+            sport_label=row["sport_label"],
+            competition=row["competition"],
+            local_time=_local(row["commence_time"], settings.tz),
+            in_session=bool(row["in_session"]),
         )
+        for row in rows
+    ]
+
+
+def pickable_groups(
+    session_id: int, settings: Settings | None = None
+) -> list[tuple[str, list[PickableEvent]]]:
+    """Les memes matchs, groupes par sport et competition pour un `optgroup`.
+
+    Retrouver un match parmi cent : une liste a plat oblige a lire chaque
+    ligne. Le groupement est fait ici et non dans le template — le filtre
+    `groupby` de Jinja retrie par ordre alphabetique, ce qui remettrait les
+    matchs hors shortlist devant ceux de la session.
+    """
+    groups: dict[str, list[PickableEvent]] = {}
+    for event in pickable_events(session_id, settings):
+        groups.setdefault(event.group, []).append(event)
     return list(groups.items())
 
 
@@ -356,6 +446,27 @@ def set_result(pick_id: int, result: str, settings: Settings | None = None) -> N
         raise HistoryError(f"Résultat inconnu : {result}")
     with connect(settings) as conn:
         conn.execute("UPDATE picks SET result = ? WHERE id = ?", (result, pick_id))
+
+
+def set_event(pick_id: int, event_id: str = "", settings: Settings | None = None) -> None:
+    """Rattache une selection a un match, ou l'en detache si `event_id` est vide.
+
+    Se corrige apres coup : le rapprochement automatique de l'import refuse de
+    deviner, et la shortlist ne contient pas toujours le match vise. Sans cette
+    reprise, une selection restait « — hors match — » definitivement — donc
+    sans sport ni competition, donc muette dans les statistiques.
+    """
+    identifier = str(event_id).strip()
+    with connect(settings) as conn:
+        if not identifier:
+            conn.execute("UPDATE picks SET event_id = NULL WHERE id = ?", (pick_id,))
+            return
+        if not identifier.isdigit():
+            raise HistoryError(f"Match inconnu : {event_id}")
+        known = conn.execute("SELECT 1 FROM events WHERE id = ?", (int(identifier),)).fetchone()
+        if known is None:
+            raise HistoryError(f"Match inconnu : {event_id}")
+        conn.execute("UPDATE picks SET event_id = ? WHERE id = ?", (int(identifier), pick_id))
 
 
 def delete_pick(pick_id: int, settings: Settings | None = None) -> None:

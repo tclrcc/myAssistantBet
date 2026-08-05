@@ -18,7 +18,7 @@ from typing import Any
 
 from ..config import Settings, get_settings
 from .grid import GridRow, anchor, build_view
-from .history import list_picks
+from .history import PickableEvent, list_picks, pickable_events
 from .history import tiers as load_tiers
 
 #: Une ligne de tableau Markdown : `| a | b | c |`.
@@ -216,6 +216,7 @@ def parse_table(
     rows: list[GridRow],
     tiers: list[dict[str, str]],
     known: set[tuple[Any, ...]] | None = None,
+    nearby: list[PickableEvent] | None = None,
 ) -> ImportPreview:
     """Lit le tableau de selections. Ne rapproche jamais un match au hasard.
 
@@ -223,6 +224,10 @@ def parse_table(
     fait foi. Une ligne qui n'appartient pas au tableau est ignoree en silence
     (c'est de la prose), une ligne du tableau qui pose probleme est conservee
     avec son motif pour que l'utilisateur tranche.
+
+    La shortlist est essayee **avant** le voisinage : c'est elle qui a ete
+    analysee, et l'elargissement ne doit pas rendre ambigu un match qu'elle
+    designait seule. Le voisinage ne sert qu'a ce qu'elle ne contient pas.
     """
     preview = ImportPreview()
     columns: dict[str, int] | None = None
@@ -247,7 +252,9 @@ def parse_table(
             continue
 
         index += 1
-        found = anchor(values["match"], rows) if values["match"] else None
+        found = None
+        if values["match"]:
+            found = anchor(values["match"], rows) or anchor(values["match"], nearby or [])
         event_id = found.event_id if found else None
         signature = _signature(event_id, values["market"], values["selection"])
         preview.picks.append(
@@ -287,4 +294,7 @@ def build_preview(
         _signature(pick.event_id, pick.market, pick.selection)
         for pick in list_picks(session_id, settings)
     }
-    return parse_table(raw, rows, load_tiers(settings), known)
+    # Le voisinage rattrape ce que la shortlist ne contient pas : un match qui a
+    # commence a quitte le board et n'a jamais pu y etre coche.
+    nearby = [event for event in pickable_events(session_id, settings) if not event.in_session]
+    return parse_table(raw, rows, load_tiers(settings), known, nearby)
