@@ -187,12 +187,24 @@ Elo de Tennis Abstract comblent ce trou, **gratuitement et sans cle**.
   matchs. `api_active` distingue les deux etats, sinon une competition active qui ne
   ramene rien devient un mystere. Activer une competition hors saison ne coute rien :
   une reponse vide n'est pas facturee.
-- `board.filter_options()` : le menu des competitions est **groupe par sport puis trie par
-  nom**, accents ignores (`labels.sort_key`). L'ordre par priorite decroissante sert le
-  scan, pas la lecture : sur un catalogue complet il melangeait les sports et ne laissait
-  aucun moyen de deviner ou chercher. La priorite continue de trier les lignes du board,
-  ou elle a un sens. Le groupement est fait en Python et non par le filtre `groupby` de
-  Jinja, qui retrierait les groupes par ordre alphabetique.
+- `board.filter_options()` : le menu des competitions est **groupe par sport puis par
+  niveau**, trie par nom a l'interieur, accents ignores (`labels.sort_key`). L'ordre par
+  priorite decroissante sert le scan, pas la lecture : sur un catalogue complet il
+  melangeait les sports et ne laissait aucun moyen de deviner ou chercher. La priorite
+  continue de trier les lignes du board, ou elle a un sens. Le groupement est fait en
+  Python et non par le filtre `groupby` de Jinja, qui retrierait les groupes par ordre
+  alphabetique et remettrait « ATP/WTA 500 » devant « Grand Chelem ».
+- `competitions.CATEGORIES` : le **niveau** d'un tournoi (Grand Chelem, Masters 1000,
+  500, 250, Challenger, ITF). Meme regle que la surface — **rien n'est deduit d'un
+  libelle a l'execution** : « Masters » vaut pour Monte-Carlo comme pour le tournoi de
+  fin d'annee. Le seed de la migration 013 est en revanche une decision humaine,
+  verifiee tournoi par tournoi contre les calendriers ATP et WTA, cle par cle ; le reste
+  se saisit depuis `/competitions`, et seulement pour le tennis (les valeurs proposees
+  sont celles des circuits ATP et WTA). `masters_1000` couvre les Masters 1000 de l'ATP
+  **et** les WTA 1000 : meme etage de la hierarchie, et le circuit se lit deja dans le
+  libelle — les separer diviserait par deux des echantillons deja courts. Un niveau non
+  renseigne ne produit **aucune ligne** de statistiques : « non renseigne » ne dirait
+  rien sur les matchs, seulement sur la saisie.
 
 ## Historique et personnalisation
 
@@ -209,6 +221,14 @@ Elo de Tennis Abstract comblent ce trou, **gratuitement et sans cle**.
   identifiant inconnu plutot que de laisser un pick pointer sur du vide. L'import des
   picks essaie la shortlist **avant** le voisinage : l'elargissement ne doit pas rendre
   ambigu un match qu'elle designait seule.
+- `worksheet()` : la feuille de session en **deux blocs** — ce qui reste a trancher, puis
+  ce qui l'est deja (un pari annule est tranche : il n'y a plus rien a saisir dessus).
+  Melangees, il fallait relire quinze lignes pour trouver les trois qui attendaient un
+  resultat. Chaque bloc est groupe par competition puis range par heure de coup d'envoi :
+  on relit une journee tournoi par tournoi, pas dans l'ordre ou Claude a rendu son
+  tableau. **Le titre de groupe est un `td`, jamais un `th`** — `table.board th` est
+  `position: sticky`, et un en-tete par competition viendrait recouvrir les lignes en
+  defilant. Un test le verifie.
 - Edition des templates : le corps est **compile avant ecriture**. Un template casse
   briserait toute generation de prompt, donc on refuse plutot que d'ecrire.
 - Nom de template : `^[a-z0-9][a-z0-9_-]*\.md\.j2$`. Pas de traversee de repertoire.
