@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
-from .labels import affiche
+from .labels import affiche, sort_key
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +32,10 @@ RESULT_LABELS = {
     "void": "annulé",
 }
 NO_SPORT = "—"
+#: Titre du bloc des selections qu'aucun match ne porte. Elles existent — un
+#: pari sur un vainqueur de tournoi, une ligne dont le rapprochement a echoue —
+#: et les taire les rendrait introuvables.
+NO_COMPETITION = "Hors compétition"
 
 
 class HistoryError(ValueError):
@@ -84,6 +88,22 @@ class Pick:
     #: ont pas l'usage, ce qui evite une jointure a chaque affichage de pick.
     sport_label: str = ""
     coupon_id: int | None = None
+    #: Renseignes par `list_picks`, qui range les selections par competition.
+    competition: str = ""
+    sport_order: int = 99
+    commence_local: datetime | None = None
+
+    @property
+    def group(self) -> str:
+        """Sport et competition, tels qu'ils titrent un bloc de la feuille."""
+        if not self.competition:
+            return NO_COMPETITION
+        return f"{self.sport_label} · {self.competition}"
+
+    @property
+    def settled(self) -> bool:
+        """Le resultat est connu. Un pari annule l'est : il n'y a plus rien a saisir."""
+        return self.result in ("win", "loss", "void")
 
     @property
     def result_label(self) -> str:
@@ -187,7 +207,7 @@ def _tier_labels(conn) -> dict[str, str]:
     }
 
 
-def _pick(row: Any, tier_labels: dict[str, str]) -> Pick:
+def _pick(row: Any, tier_labels: dict[str, str], tz: str = "") -> Pick:
     # « combine » designe desormais un coupon a plusieurs jambes : laisser ce
     # mot ici ferait lire un pari la ou il n'y a qu'une selection dont le match
     # n'a pas ete rapproche.
@@ -207,32 +227,119 @@ def _pick(row: Any, tier_labels: dict[str, str]) -> Pick:
         stake=row["stake"],
         result=row["result"] or "pending",
         coupon_id=row["coupon_id"],
+        sport_label=_column(row, "sport_label") or "",
+        competition=_column(row, "competition") or "",
+        sport_order=int(_column(row, "sport_order") or 99),
+        commence_local=(
+            _local(row["commence_time"], tz)
+            if tz and _column(row, "commence_time") is not None
+            else None
+        ),
     )
 
 
+def _column(row: Any, name: str) -> Any:
+    """Valeur d'une colonne optionnelle. Toutes les lectures ne joignent pas
+    les memes tables : `sqlite3.Row` leve sur une colonne absente."""
+    try:
+        return row[name]
+    except (IndexError, KeyError):
+        return None
+
+
+#: Colonnes communes aux lectures de picks : le match, sa competition et son
+#: sport. `sports.id` sert a ranger le football avant le tennis, comme partout
+#: ailleurs dans l'application.
+_PICK_JOIN = (
+    "SELECT k.*, e.home, e.away, e.commence_time, s.label AS sport_label, "
+    "       s.id AS sport_order, c.label AS competition FROM picks k "
+    "LEFT JOIN events e ON e.id = k.event_id "
+    "LEFT JOIN sports s ON s.id = e.sport_id "
+    "LEFT JOIN competitions c ON c.id = e.competition_id "
+)
+
+
 def list_picks(session_id: int, settings: Settings | None = None) -> list[Pick]:
-    """Picks enregistres pour une session."""
+    """Picks enregistres pour une session, dans l'ordre de saisie."""
+    settings = settings or get_settings()
     with connect(settings) as conn:
         labels = _tier_labels(conn)
         rows = conn.execute(
-            "SELECT k.*, e.home, e.away FROM picks k "
-            "LEFT JOIN events e ON e.id = k.event_id "
-            "WHERE k.session_id = ? ORDER BY k.id",
-            (session_id,),
+            _PICK_JOIN + "WHERE k.session_id = ? ORDER BY k.id", (session_id,)
         ).fetchall()
-    return [_pick(row, labels) for row in rows]
+    return [_pick(row, labels, settings.tz) for row in rows]
 
 
 def get_pick(pick_id: int, settings: Settings | None = None) -> Pick | None:
     """Un pick, ou None s'il n'existe pas."""
+    settings = settings or get_settings()
     with connect(settings) as conn:
         labels = _tier_labels(conn)
-        row = conn.execute(
-            "SELECT k.*, e.home, e.away FROM picks k "
-            "LEFT JOIN events e ON e.id = k.event_id WHERE k.id = ?",
-            (pick_id,),
-        ).fetchone()
-    return _pick(row, labels) if row is not None else None
+        row = conn.execute(_PICK_JOIN + "WHERE k.id = ?", (pick_id,)).fetchone()
+    return _pick(row, labels, settings.tz) if row is not None else None
+
+
+@dataclass
+class Worksheet:
+    """Les selections d'une session, rangees pour le travail de la journee.
+
+    Deux blocs plutot qu'une liste : **ce qui reste a trancher** et **ce qui
+    l'est deja**. Melanges, la liste ne dit pas ou en est la saisie, et il faut
+    relire quinze lignes pour trouver les trois qui attendent encore un
+    resultat. Chaque bloc est groupe par competition — c'est ainsi qu'on relit
+    une journee, tournoi par tournoi, pas dans l'ordre ou Claude a rendu son
+    tableau.
+    """
+
+    pending: list[tuple[str, list[Pick]]] = field(default_factory=list)
+    settled: list[tuple[str, list[Pick]]] = field(default_factory=list)
+
+    @property
+    def pending_count(self) -> int:
+        return sum(len(picks) for _, picks in self.pending)
+
+    @property
+    def settled_count(self) -> int:
+        return sum(len(picks) for _, picks in self.settled)
+
+    @property
+    def total(self) -> int:
+        return self.pending_count + self.settled_count
+
+    @property
+    def empty(self) -> bool:
+        return self.total == 0
+
+
+def _grouped(picks: list[Pick]) -> list[tuple[str, list[Pick]]]:
+    """Groupe par competition, sport par sport puis par ordre alphabetique.
+
+    Les selections sans match ferment la marche : elles n'appartiennent a aucun
+    tournoi et les mettre en tete decalerait tout le reste.
+    """
+    ordered = sorted(
+        picks,
+        key=lambda pick: (
+            pick.competition == "",
+            pick.sport_order,
+            sort_key(pick.competition),
+            pick.commence_local or datetime.max.replace(tzinfo=UTC),
+            pick.pick_id,
+        ),
+    )
+    groups: dict[str, list[Pick]] = {}
+    for pick in ordered:
+        groups.setdefault(pick.group, []).append(pick)
+    return list(groups.items())
+
+
+def worksheet(session_id: int, settings: Settings | None = None) -> Worksheet:
+    """Feuille de session : ce qui reste a trancher, puis ce qui l'est deja."""
+    picks = list_picks(session_id, settings)
+    return Worksheet(
+        pending=_grouped([pick for pick in picks if not pick.settled]),
+        settled=_grouped([pick for pick in picks if pick.settled]),
+    )
 
 
 # -- Matchs proposes au rattachement d'une selection ------------------------

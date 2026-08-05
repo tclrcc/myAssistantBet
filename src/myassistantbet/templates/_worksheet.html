@@ -1,95 +1,132 @@
+{# Le titre de groupe est un `td`, jamais un `th` : `table.board th` est
+   `position: sticky`, et un en-tete colle par competition viendrait recouvrir
+   les lignes en defilant. #}
+{% macro picks_table(groups, settled) %}
+<table class="board picks-table{% if settled %} is-settled{% endif %}">
+  <thead>
+    <tr>
+      <th>Match</th>
+      <th>Palier</th>
+      <th>Sélection</th>
+      <th class="num">Cote</th>
+      <th class="num">Conf</th>
+      <th>Résultat</th>
+      <th>Pari</th>
+      <th class="tight"></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for competition, picks in groups %}
+    <tr class="group-row">
+      <td class="group-cell" colspan="8">
+        {{ competition }}
+        <span class="muted small">{{ picks | length }} sélection(s)</span>
+      </td>
+    </tr>
+    {% for pick in picks %}
+    <tr class="result-{{ pick.result }}">
+      {# Un match qui a commence quitte le board : il n'a jamais pu etre coche,
+         donc l'import n'a rien eu a quoi rattacher la selection. Le menu se
+         charge a la demande — cent matchs sur quinze lignes alourdiraient
+         chaque rafraichissement de la feuille. #}
+      <td class="pick-match">
+        {% if pick.commence_local %}
+          <span class="pick-hour">{{ pick.commence_local.strftime('%H:%M') }}</span>
+        {% endif %}
+        {% if pick.event_id %}
+          {{ pick.event_label }}
+          <button type="button" class="link-quiet"
+                  hx-get="/picks/{{ pick.pick_id }}/event"
+                  hx-target="closest td" hx-swap="innerHTML"
+                  title="Rattacher cette sélection à un autre match">changer</button>
+        {% else %}
+          <span class="muted">{{ pick.event_label }}</span>
+          <button type="button" class="link-action"
+                  hx-get="/picks/{{ pick.pick_id }}/event"
+                  hx-target="closest td" hx-swap="innerHTML"
+                  title="Choisir le match, y compris hors de la shortlist">rattacher</button>
+        {% endif %}
+      </td>
+      <td class="nowrap">{{ pick.tier_label }}</td>
+      <td class="affiche">
+        {{ pick.selection }}
+        <span class="muted small">{{ pick.market }}</span>
+      </td>
+      <td class="num">{{ '%.2f'|format(pick.price) if pick.price else '·' }}</td>
+      <td class="num muted">{{ pick.confidence or '·' }}</td>
+      <td>
+        <div class="segmented" role="group" aria-label="Résultat">
+          {% for value, symbole, titre in [('win', '✓', 'Gagné'), ('loss', '✗', 'Perdu'), ('void', '∅', 'Annulé'), ('pending', '·', 'En attente')] %}
+          <button type="button" title="{{ titre }}" aria-label="{{ titre }}"
+                  class="seg seg-{{ value }}{% if pick.result == value %} is-on{% endif %}"
+                  hx-post="/picks/{{ pick.pick_id }}/result"
+                  hx-vals='{"result": "{{ value }}"}'
+                  hx-target="#worksheet" hx-swap="outerHTML">{{ symbole }}</button>
+          {% endfor %}
+        </div>
+      </td>
+      <td class="nowrap">
+        {% if pick.coupon_id %}
+          <a class="badge ok" href="#coupon-{{ pick.coupon_id }}">coupon {{ pick.coupon_id }}</a>
+        {% else %}
+          <button type="button" class="link-action"
+                  hx-post="/picks/{{ pick.pick_id }}/play"
+                  hx-target="#worksheet" hx-swap="outerHTML"
+                  title="Enregistre un pari simple sur cette sélection">jouer</button>
+        {% endif %}
+      </td>
+      <td class="tight">
+        <button type="button" class="link-danger"
+                hx-post="/picks/{{ pick.pick_id }}/delete"
+                hx-target="#worksheet" hx-swap="outerHTML"
+                hx-confirm="Supprimer cette sélection ?">✕</button>
+      </td>
+    </tr>
+    {% endfor %}
+    {% endfor %}
+  </tbody>
+</table>
+{% endmacro %}
+
 <div id="worksheet">
   {% if coupon_error %}<div class="report report-warn">{{ coupon_error }}</div>{% endif %}
   {% if coupon_notice %}<div class="report">{{ coupon_notice }}</div>{% endif %}
 
-  <div class="section-head">
-    <h2>Sélections</h2>
-    <span class="muted small">
-      {% set libres = picks | rejectattr('coupon_id') | list | length %}
-      {% if picks %}
-        {{ picks | length }} au total, {{ libres }} pas encore jouée(s)
-      {% endif %}
-    </span>
-  </div>
-
-  {% if not picks %}
+  {% if worksheet.empty %}
+    <div class="section-head"><h2>Sélections</h2></div>
     <p class="empty">
       Aucune sélection. Colle le tableau de Claude ci-dessus, ou ajoute-la à la main.
     </p>
   {% else %}
-  <table class="board picks-table">
-    <thead>
-      <tr>
-        <th>Match</th>
-        <th>Palier</th>
-        <th>Sélection</th>
-        <th class="num">Cote</th>
-        <th class="num">Conf</th>
-        <th>Résultat</th>
-        <th>Pari</th>
-        <th class="tight"></th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for pick in picks %}
-      <tr class="result-{{ pick.result }}{% if not pick.coupon_id %} is-idle{% endif %}">
-        {# Un match qui a commence quitte le board : il n'a jamais pu etre coche,
-           donc l'import n'a rien eu a quoi rattacher la selection. Le menu se
-           charge a la demande — cent matchs sur quinze lignes alourdiraient
-           chaque rafraichissement de la feuille. #}
-        <td class="pick-match">
-          {% if pick.event_id %}
-            {{ pick.event_label }}
-            <button type="button" class="link-quiet"
-                    hx-get="/picks/{{ pick.pick_id }}/event"
-                    hx-target="closest td" hx-swap="innerHTML"
-                    title="Rattacher cette sélection à un autre match">changer</button>
-          {% else %}
-            <span class="muted">{{ pick.event_label }}</span>
-            <button type="button" class="link-action"
-                    hx-get="/picks/{{ pick.pick_id }}/event"
-                    hx-target="closest td" hx-swap="innerHTML"
-                    title="Choisir le match, y compris hors de la shortlist">rattacher</button>
-          {% endif %}
-        </td>
-        <td class="nowrap">{{ pick.tier_label }}</td>
-        <td class="affiche">
-          {{ pick.selection }}
-          <span class="muted small">{{ pick.market }}</span>
-        </td>
-        <td class="num">{{ '%.2f'|format(pick.price) if pick.price else '·' }}</td>
-        <td class="num muted">{{ pick.confidence or '·' }}</td>
-        <td>
-          <div class="segmented" role="group" aria-label="Résultat">
-            {% for value, symbole, titre in [('win', '✓', 'Gagné'), ('loss', '✗', 'Perdu'), ('void', '∅', 'Annulé'), ('pending', '·', 'En attente')] %}
-            <button type="button" title="{{ titre }}" aria-label="{{ titre }}"
-                    class="seg seg-{{ value }}{% if pick.result == value %} is-on{% endif %}"
-                    hx-post="/picks/{{ pick.pick_id }}/result"
-                    hx-vals='{"result": "{{ value }}"}'
-                    hx-target="#worksheet" hx-swap="outerHTML">{{ symbole }}</button>
-            {% endfor %}
-          </div>
-        </td>
-        <td class="nowrap">
-          {% if pick.coupon_id %}
-            <a class="badge ok" href="#coupon-{{ pick.coupon_id }}">coupon {{ pick.coupon_id }}</a>
-          {% else %}
-            <button type="button" class="link-action"
-                    hx-post="/picks/{{ pick.pick_id }}/play"
-                    hx-target="#worksheet" hx-swap="outerHTML"
-                    title="Enregistre un pari simple sur cette sélection">jouer</button>
-          {% endif %}
-        </td>
-        <td class="tight">
-          <button type="button" class="link-danger"
-                  hx-post="/picks/{{ pick.pick_id }}/delete"
-                  hx-target="#worksheet" hx-swap="outerHTML"
-                  hx-confirm="Supprimer cette sélection ?">✕</button>
-        </td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
+
+  {# Deux blocs : ce qui attend encore un resultat, puis ce qui est tranche.
+     Melanges, il fallait relire quinze lignes pour trouver les trois qui
+     restent a saisir. #}
+  <div class="section-head">
+    <h2>À trancher</h2>
+    <span class="muted small">
+      {{ worksheet.pending_count }} sur {{ worksheet.total }} sélection(s)
+      {%- set libres = picks | rejectattr('coupon_id') | list | length %}
+      {%- if libres %} · {{ libres }} pas encore jouée(s){% endif %}
+    </span>
+  </div>
+
+  {% if worksheet.pending %}
+    {{ picks_table(worksheet.pending, false) }}
+  {% else %}
+    <p class="empty">Tout est tranché : les {{ worksheet.total }} sélection(s) ont leur résultat.</p>
+  {% endif %}
+
+  {% if worksheet.settled %}
+  <div class="section-head">
+    <h2>Tranchées</h2>
+    <span class="muted small">
+      {{ worksheet.settled_count }} sélection(s) dont le résultat est connu
+    </span>
+  </div>
+  {{ picks_table(worksheet.settled, true) }}
+  {% endif %}
+
   {% endif %}
 
   <div class="section-head">

@@ -655,8 +655,43 @@ details.panel > *:not(summary) { padding: var(--s4); }
 details.panel .paste-form textarea { width: 100%; margin-bottom: var(--s2); }
 details.panel .pick-form { margin-bottom: 0; }
 
-.picks-table tr.is-idle td { color: var(--text-dim); }
 .nowrap { white-space: nowrap; }
+
+/* Titre de competition a l'interieur du tableau. Volontairement un `td` : un
+   `th` heriterait du `position: sticky` de `table.board th` et viendrait
+   recouvrir les lignes en defilant. */
+.group-row td {
+  padding: var(--s3) var(--s3) var(--s2);
+  border-bottom: 1px solid var(--line);
+  background: var(--panel-2);
+  font-size: 0.72rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+.group-row td span { margin-left: var(--s2); text-transform: none; letter-spacing: 0; }
+.group-row:hover td { background: var(--panel-2); }
+/* Un groupe qui commence juste apres l'en-tete n'a pas besoin d'un second
+   filet : deux traits colles se lisent comme une erreur de rendu. */
+.picks-table tbody tr:first-child.group-row td { border-top: 0; }
+
+/* L'heure du coup d'envoi, devant l'affiche : dans un groupe range par
+   competition, c'est elle qui remet la journee dans l'ordre. */
+.pick-hour {
+  display: inline-block;
+  min-width: 3rem;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Le bloc tranche est du travail fait : il reste consultable et corrigeable,
+   mais il ne dispute plus l'attention aux lignes qui attendent un resultat. */
+.picks-table.is-settled { background: var(--panel-2); }
+.picks-table.is-settled tbody td { color: var(--text-dim); }
+.picks-table.is-settled .group-row td { background: var(--panel-3); }
+tr.result-void td:first-child { box-shadow: inset 3px 0 0 var(--muted); }
 
 /* Rattacher un match : « rattacher » se voit, « changer » ne se voit que si on
    le cherche. Une selection sans match est un travail a finir ; une selection

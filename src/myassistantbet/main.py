@@ -677,6 +677,7 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         "events": history_service.pickable_groups(session_id, settings),
         "tiers": history_service.tiers(settings),
         "picks": history_service.list_picks(session_id, settings),
+        "worksheet": history_service.worksheet(session_id, settings),
         "result_labels": list(history_service.RESULT_LABELS.items()),
         "coupons": coupons_service.list_for_session(session_id, settings),
         "available_picks": coupons_service.available_picks(session_id, settings),

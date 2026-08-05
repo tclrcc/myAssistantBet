@@ -23,6 +23,7 @@ from myassistantbet.services.history import (
     set_event,
     set_result,
     stats,
+    worksheet,
 )
 from myassistantbet.services.manual import build, save
 
@@ -450,6 +451,136 @@ def test_le_selecteur_de_match_porte_les_groupes(
     response = client.get(f"/history/{session_id}")
 
     assert '<optgroup label="Football · Amical">' in response.text
+
+
+# -- Feuille de session : ce qui reste a trancher, puis ce qui l'est ---------
+
+
+def test_la_feuille_separe_le_tranche_de_l_attente(migrated: Settings) -> None:
+    """Melangees, il fallait relire quinze lignes pour trouver les trois qui restent."""
+    session_id, event_id = _session_avec_match(migrated)
+    attente = add_pick(session_id, "safe", "O/U", "Over", event_id=str(event_id), settings=migrated)
+    gagne = add_pick(session_id, "fun", "O/U", "Under", event_id=str(event_id), settings=migrated)
+    set_result(gagne, "win", migrated)
+
+    feuille = worksheet(session_id, migrated)
+
+    assert [pick.pick_id for _, picks in feuille.pending for pick in picks] == [attente]
+    assert [pick.pick_id for _, picks in feuille.settled for pick in picks] == [gagne]
+    assert (feuille.pending_count, feuille.settled_count, feuille.total) == (1, 1, 2)
+
+
+def test_un_pari_annule_est_tranche(migrated: Settings) -> None:
+    """Il n'y a plus rien a saisir dessus : le laisser « a trancher » ment."""
+    session_id, event_id = _session_avec_match(migrated)
+    pick_id = add_pick(session_id, "safe", "O/U", "Over", event_id=str(event_id), settings=migrated)
+    set_result(pick_id, "void", migrated)
+
+    feuille = worksheet(session_id, migrated)
+
+    assert feuille.pending == []
+    assert feuille.settled_count == 1
+
+
+def test_la_feuille_groupe_par_competition(migrated: Settings) -> None:
+    """On relit une journee tournoi par tournoi, pas dans l'ordre du tableau."""
+    session_id, foot = _session_avec_match(migrated)
+    tennis = save(
+        build(
+            "tennis",
+            "ATP Canadian Open",
+            "Moutet",
+            "Bergs",
+            "2026-08-04",
+            "18:00",
+            "Moutet 1.80",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+    # Saisies en alternance : sans regroupement, elles ressortiraient melangees.
+    add_pick(session_id, "safe", "Vainqueur", "Moutet", event_id=str(tennis), settings=migrated)
+    add_pick(session_id, "safe", "O/U", "Over", event_id=str(foot), settings=migrated)
+    add_pick(session_id, "fun", "Vainqueur", "Bergs", event_id=str(tennis), settings=migrated)
+
+    groupes = worksheet(session_id, migrated).pending
+
+    assert [nom for nom, _ in groupes] == ["Football · Amical", "Tennis · ATP Canadian Open"]
+    assert [len(picks) for _, picks in groupes] == [1, 2]
+
+
+def test_une_selection_sans_match_ferme_la_marche(migrated: Settings) -> None:
+    """Elle n'appartient a aucun tournoi ; la mettre en tete decalerait le reste."""
+    session_id, event_id = _session_avec_match(migrated)
+    add_pick(session_id, "safe", "Vainqueur tournoi", "Alcaraz", settings=migrated)
+    add_pick(session_id, "safe", "O/U", "Over", event_id=str(event_id), settings=migrated)
+
+    groupes = worksheet(session_id, migrated).pending
+
+    assert [nom for nom, _ in groupes] == ["Football · Amical", "Hors compétition"]
+
+
+def test_la_feuille_range_par_heure_dans_un_groupe(migrated: Settings) -> None:
+    session_id, _ = _session_avec_match(migrated)
+    tard = save(
+        build(
+            "tennis",
+            "ATP Canadian Open",
+            "Moutet",
+            "Bergs",
+            "2026-08-04",
+            "22:00",
+            "Moutet 1.80",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+    tot = save(
+        build(
+            "tennis",
+            "ATP Canadian Open",
+            "Tabilo",
+            "Popyrin",
+            "2026-08-04",
+            "18:00",
+            "Tabilo 1.90",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+    add_pick(session_id, "safe", "Vainqueur", "Moutet", event_id=str(tard), settings=migrated)
+    add_pick(session_id, "safe", "Vainqueur", "Tabilo", event_id=str(tot), settings=migrated)
+
+    groupes = dict(worksheet(session_id, migrated).pending)
+
+    assert [pick.selection for pick in groupes["Tennis · ATP Canadian Open"]] == [
+        "Tabilo",
+        "Moutet",
+    ]
+
+
+def test_la_feuille_rend_deux_tableaux(client: TestClient, isolated_settings: Settings) -> None:
+    session_id, event_id = _session_avec_match(isolated_settings)
+    add_pick(session_id, "safe", "O/U", "Over", event_id=str(event_id), settings=isolated_settings)
+    tranche = add_pick(
+        session_id, "fun", "O/U", "Under", event_id=str(event_id), settings=isolated_settings
+    )
+    set_result(tranche, "loss", isolated_settings)
+
+    page = client.get(f"/history/{session_id}").text
+
+    assert "À trancher" in page
+    assert "Tranchées" in page
+    assert '<td class="group-cell" colspan="8">' in page
+    assert "<th" not in page.split("group-cell")[1].split("</table>")[0], (
+        "un titre de groupe en `th` heriterait du `position: sticky` de l'en-tete"
+    )
 
 
 # -- Rattacher une selection a un match hors shortlist ----------------------
