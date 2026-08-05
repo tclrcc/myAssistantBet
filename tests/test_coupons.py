@@ -17,7 +17,15 @@ from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services import coupons as coupons_service
-from myassistantbet.services.history import HistoryError, add_pick, list_picks, set_result, stats
+from myassistantbet.services.history import (
+    FEEDBACK_MIN_TOTAL,
+    HistoryError,
+    add_pick,
+    feedback,
+    list_picks,
+    set_result,
+    stats,
+)
 from myassistantbet.services.manual import build, save
 
 #: Un PNG de 1x1 pixel, valide de bout en bout (en-tete, IHDR, IDAT, IEND).
@@ -234,6 +242,52 @@ def test_taux_des_coupons_separes_par_type(migrated: Settings) -> None:
     assert rates["simple"].rate == 1.0
     assert rates["combine"].rate == 0.0
     assert "combine" in rates and "simple" in rates, "les deux ne se melangent pas"
+
+
+# -- « Joue » veut dire pose chez le bookmaker ------------------------------
+
+
+def test_une_selection_non_jouee_ne_compte_pas(migrated: Settings) -> None:
+    """Un pick propose par l'analyse puis ecarte n'a jamais ete confronte au terrain."""
+    session_id, event_id = _session(migrated)
+    pick_id = _pick(migrated, session_id, event_id)
+    set_result(pick_id, "win", migrated)
+
+    assert list_picks(session_id, migrated)[0].played is False
+    assert stats(migrated).empty, "aucun pari joue, donc aucun taux"
+
+
+def test_le_rattachement_fait_entrer_le_pick_dans_les_taux(migrated: Settings) -> None:
+    session_id, event_id = _session(migrated)
+    pick_id = _pick(migrated, session_id, event_id)
+    set_result(pick_id, "win", migrated)
+
+    coupons_service.create(session_id, [pick_id], settings=migrated)
+
+    assert stats(migrated).overall.won == 1
+
+
+def test_supprimer_le_coupon_retire_le_pick_des_taux(migrated: Settings) -> None:
+    """Un coupon saisi par erreur ne doit pas laisser un pick marque joue."""
+    session_id, event_id = _session(migrated)
+    pick_id = _pick(migrated, session_id, event_id)
+    set_result(pick_id, "win", migrated)
+    coupon_id = coupons_service.create(session_id, [pick_id], settings=migrated)
+
+    coupons_service.delete(coupon_id, migrated)
+
+    assert list_picks(session_id, migrated)[0].played is False
+    assert stats(migrated).empty
+
+
+def test_le_retour_d_experience_ignore_les_selections_non_jouees(migrated: Settings) -> None:
+    """Le prompt n'apprend que du terrain, pas des selections ecartees."""
+    session_id, event_id = _session(migrated)
+    for _ in range(FEEDBACK_MIN_TOTAL + 2):
+        pick_id = _pick(migrated, session_id, event_id)
+        set_result(pick_id, "win", migrated)
+
+    assert feedback(migrated).empty
 
 
 # -- Section 9 : aucun indicateur financier ---------------------------------

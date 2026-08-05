@@ -17,6 +17,7 @@ from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services import competitions as competitions_service
+from myassistantbet.services import coupons as coupons_service
 from myassistantbet.services.history import (
     FEEDBACK_MIN_ROWS,
     FEEDBACK_MIN_TOTAL,
@@ -89,6 +90,10 @@ def _regle(
         settings=settings,
     )
     set_result(pick_id, result, settings)
+    # Un pick ne nourrit le retour d'experience que s'il a ete joue, c'est a
+    # dire rattache a un coupon. Le marquer a la main ferait passer le test
+    # sans que le parcours reel fonctionne.
+    coupons_service.create(session_id, [pick_id], settings=settings)
 
 
 # -- Le seuil de publication ------------------------------------------------

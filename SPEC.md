@@ -513,7 +513,8 @@ Le football reçoit forme, classement, absents et H2H ; le tennis n'avait aucune
 ### Phase 10 — Coupons joués
 Un pick est une sélection ; un coupon est ce qui a réellement été posé chez le bookmaker : une mise, une ou plusieurs jambes, un résultat global.
 
-- `services/coupons.py` : un coupon se compose de picks déjà saisis, rien n'est retapé. Rattacher un pick le passe à `played = 1`.
+- `services/coupons.py` : un coupon se compose de picks déjà saisis, rien n'est retapé.
+- **« Joué » veut dire posé chez le bookmaker**, pas proposé par l'analyse : `played` ne passe à vrai qu'au rattachement à un coupon, et repasse à faux si le coupon est supprimé. Une sélection écartée ne pèse donc ni sur les taux de réussite ni sur le retour d'expérience injecté dans le prompt — sinon les indicateurs mélangeraient deux questions distinctes : ce que vaut l'analyse, et ce que valent mes paris.
 - Ni le type ni le résultat ne sont stockés : ils se déduisent des jambes. Une jambe perdue fait tomber le coupon même si d'autres sont en attente ; une jambe annulée est neutre ; tout annulé vaut annulé.
 - **Ce que ça répare** : un combiné s'enregistrait comme un pick sans événement, donc sans sport, et les taux par sport l'ignoraient en silence. Ses jambes portent désormais chacune leur match.
 - Les taux de coupons sont séparés entre simples et combinés — un combiné tombe dès qu'une jambe cède, il ne se compare pas à un pari simple.

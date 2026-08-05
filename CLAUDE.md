@@ -197,7 +197,16 @@ Elo de Tennis Abstract comblent ce trou, **gratuitement et sans cle**.
 
 Un **pick** est une selection ; un **coupon** est ce qui a ete pose chez le bookmaker :
 une mise, une ou plusieurs jambes, un resultat global. Un coupon se compose de picks
-deja saisis — rien n'est retape — et rattacher un pick le passe a `played = 1`.
+deja saisis — rien n'est retape.
+
+- **`played` ne passe a vrai qu'au rattachement a un coupon**, et repasse a faux si le
+  coupon est supprime. C'est la definition : joue = pose chez le book, pas propose par
+  l'analyse. Une selection ecartee ne pese donc ni sur les taux (`stats()`) ni sur le
+  retour d'experience du prompt (`feedback()`) — sans quoi les indicateurs melangeraient
+  deux questions differentes : ce que vaut l'analyse, et ce que valent mes paris.
+  `add_pick()` a donc `played=False` par defaut, et la migration 011 a aligne l'existant.
+- Corollaire a ne pas oublier en test : marquer `played` a la main ferait passer un test
+  sans que le parcours reel fonctionne. Les tests d'agregats passent par un coupon.
 
 - Le type et le resultat ne sont **jamais stockes** : ils se deduisent des jambes. Un
   champ enregistre pourrait contredire les jambes, et il faudrait alors arbitrer.

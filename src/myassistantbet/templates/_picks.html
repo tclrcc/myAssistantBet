@@ -12,6 +12,7 @@
         <th class="num">Cote</th>
         <th class="num">Conf</th>
         <th class="num">Mise</th>
+        <th>Joué ?</th>
         <th>Résultat</th>
         <th></th>
       </tr>
@@ -26,6 +27,13 @@
         <td class="num">{{ '%.2f'|format(pick.price) if pick.price else '·' }}</td>
         <td class="num">{{ pick.confidence or '·' }}</td>
         <td class="num muted">{{ pick.stake or '·' }}</td>
+        <td class="small">
+          {% if pick.coupon_id %}
+            <span class="badge ok">coupon {{ pick.coupon_id }}</span>
+          {% else %}
+            <span class="muted">non joué</span>
+          {% endif %}
+        </td>
         <td>
           <select name="result"
                   hx-post="/picks/{{ pick.pick_id }}/result"

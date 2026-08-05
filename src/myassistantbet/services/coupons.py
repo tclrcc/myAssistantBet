@@ -293,15 +293,19 @@ def create(
 
 
 def delete(coupon_id: int, settings: Settings | None = None) -> None:
-    """Supprime un coupon. Ses jambes redeviennent des picks libres.
+    """Supprime un coupon. Ses jambes redeviennent des picks libres et non joues.
 
     Les picks ne sont jamais supprimes avec le coupon : ils ont ete proposes et
-    analyses, ce qui reste vrai meme si le pari a ete saisi par erreur.
+    analyses, ce qui reste vrai meme si le pari a ete saisi par erreur. Mais ils
+    repassent a `played = 0` — sans quoi un coupon saisi par erreur laisserait
+    derriere lui des picks marques joues que rien ne rattache plus a un pari.
     """
     settings = settings or get_settings()
     path = screenshot_path(coupon_id, settings)
     with connect(settings) as conn:
-        conn.execute("UPDATE picks SET coupon_id = NULL WHERE coupon_id = ?", (coupon_id,))
+        conn.execute(
+            "UPDATE picks SET coupon_id = NULL, played = 0 WHERE coupon_id = ?", (coupon_id,)
+        )
         conn.execute("DELETE FROM coupons WHERE id = ?", (coupon_id,))
     if path is not None and path.is_file():
         path.unlink()

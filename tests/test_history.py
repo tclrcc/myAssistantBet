@@ -9,6 +9,7 @@ from myassistantbet import db
 from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
+from myassistantbet.services import coupons as coupons_service
 from myassistantbet.services.history import (
     HistoryError,
     add_pick,
@@ -160,12 +161,39 @@ def test_suppression(migrated: Settings) -> None:
 # -- Taux de reussite -------------------------------------------------------
 
 
+def _joue(
+    settings: Settings,
+    session_id: int,
+    event_id: int | None,
+    tier: str,
+    result: str,
+    market: str = "O/U",
+    selection: str = "Over",
+    stake: str = "",
+) -> int:
+    """Saisit une selection **et la joue** : un pick ne compte qu'en coupon.
+
+    C'est le chemin reel depuis la phase 10 — `played` ne passe a vrai qu'au
+    rattachement. Marquer le pick a la main ferait passer les tests sans que le
+    parcours fonctionne.
+    """
+    pick_id = add_pick(
+        session_id,
+        tier,
+        market,
+        selection,
+        event_id=str(event_id) if event_id else "",
+        stake=stake,
+        settings=settings,
+    )
+    set_result(pick_id, result, settings)
+    coupons_service.create(session_id, [pick_id], settings=settings)
+    return pick_id
+
+
 def _picks(settings: Settings, session_id: int, event_id: int, results: dict[str, str]) -> None:
     for tier, result in results.items():
-        pick_id = add_pick(
-            session_id, tier, "O/U", "Over", event_id=str(event_id), settings=settings
-        )
-        set_result(pick_id, result, settings)
+        _joue(settings, session_id, event_id, tier, result)
 
 
 def test_taux_par_palier(migrated: Settings) -> None:
@@ -178,10 +206,7 @@ def test_taux_par_palier(migrated: Settings) -> None:
         ("fun", "void"),
         ("ultra_fun", "pending"),
     ]:
-        pick_id = add_pick(
-            session_id, tier, "O/U", "Over", event_id=str(event_id), settings=migrated
-        )
-        set_result(pick_id, result, migrated)
+        _joue(migrated, session_id, event_id, tier, result)
 
     by_tier = {row.key: row for row in stats(migrated).by_tier}
 
@@ -211,10 +236,7 @@ def test_taux_par_sport(migrated: Settings) -> None:
     )
     board_service.toggle_selection(tennis_event, True, migrated)
     _picks(migrated, foot_session, foot_event, {"safe": "win"})
-    pick_id = add_pick(
-        foot_session, "fun", "Vainqueur", "Moutet", event_id=str(tennis_event), settings=migrated
-    )
-    set_result(pick_id, "loss", migrated)
+    _joue(migrated, foot_session, tennis_event, "fun", "loss", "Vainqueur", "Moutet")
 
     by_sport = {row.label: row for row in stats(migrated).by_sport}
 
@@ -224,8 +246,7 @@ def test_taux_par_sport(migrated: Settings) -> None:
 
 def test_pick_sans_match_classe_hors_sport(migrated: Settings) -> None:
     session_id, _ = _session_avec_match(migrated)
-    pick_id = add_pick(session_id, "safe", "Combiné", "3 sélections", settings=migrated)
-    set_result(pick_id, "win", migrated)
+    _joue(migrated, session_id, None, "safe", "win", "Combiné", "3 sélections")
 
     labels = {row.label for row in stats(migrated).by_sport}
 
@@ -235,10 +256,7 @@ def test_pick_sans_match_classe_hors_sport(migrated: Settings) -> None:
 def test_total_general(migrated: Settings) -> None:
     session_id, event_id = _session_avec_match(migrated)
     for tier, result in [("safe", "win"), ("fun", "loss"), ("ultra_fun", "win")]:
-        pick_id = add_pick(
-            session_id, tier, "O/U", "Over", event_id=str(event_id), settings=migrated
-        )
-        set_result(pick_id, result, migrated)
+        _joue(migrated, session_id, event_id, tier, result)
 
     overall = stats(migrated).overall
 
@@ -253,9 +271,7 @@ def test_stats_vides(migrated: Settings) -> None:
 def test_aucun_indicateur_financier(migrated: Settings) -> None:
     """SPEC section 9 : la mise est memorisee, jamais agregee."""
     session_id, event_id = _session_avec_match(migrated)
-    add_pick(
-        session_id, "safe", "O/U", "Over", event_id=str(event_id), stake="100", settings=migrated
-    )
+    _joue(migrated, session_id, event_id, "safe", "win", stake="100")
 
     result = stats(migrated)
 
@@ -364,10 +380,7 @@ def test_pick_inconnu_renvoie_404(client: TestClient) -> None:
 
 def test_taux_affiches_apres_saisie(client: TestClient, isolated_settings: Settings) -> None:
     session_id, event_id = _session_avec_match(isolated_settings)
-    pick_id = add_pick(
-        session_id, "safe", "O/U", "Over", event_id=str(event_id), settings=isolated_settings
-    )
-    set_result(pick_id, "win", isolated_settings)
+    _joue(isolated_settings, session_id, event_id, "safe", "win")
 
     response = client.get("/history")
 

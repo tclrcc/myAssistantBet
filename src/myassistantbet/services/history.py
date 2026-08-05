@@ -70,6 +70,8 @@ class Pick:
     selection: str
     price: float | None
     confidence: int | None
+    #: Vrai uniquement si le pick est rattache a un coupon : « joue » veut dire
+    #: pose chez le bookmaker, pas propose par l'analyse.
     played: bool
     stake: float | None
     result: str
@@ -275,11 +277,19 @@ def add_pick(
     price: str = "",
     confidence: str = "",
     stake: str = "",
-    played: bool = True,
+    played: bool = False,
     result: str = "pending",
     settings: Settings | None = None,
 ) -> int:
-    """Enregistre un pick joue. Renvoie son id."""
+    """Enregistre une selection. Renvoie son id.
+
+    **Elle n'est pas jouee pour autant** : `played` ne passe a vrai qu'au
+    rattachement a un coupon, c'est a dire quand le pari a reellement ete pose
+    chez le bookmaker. Sans cette regle, une selection proposee par Claude puis
+    ecartee comptait dans les taux au meme titre qu'un pari joue, et les
+    indicateurs melangeaient deux questions differentes : ce que vaut l'analyse,
+    et ce que valent mes paris.
+    """
     settings = settings or get_settings()
     if not market.strip():
         raise HistoryError("« Marché » est obligatoire.")
@@ -354,7 +364,11 @@ def _tally(rows: list[Any], key_field: str, labels: dict[str, str]) -> list[Rate
 
 
 def stats(settings: Settings | None = None) -> Stats:
-    """Taux de reussite par palier et par sport, sur les picks joues.
+    """Taux de reussite par palier et par sport, sur les picks **joues**.
+
+    Joue veut dire rattache a un coupon, donc reellement pose chez le
+    bookmaker. Une selection proposee puis ecartee ne compte pas : elle
+    repondrait a une autre question que celle posee ici.
 
     Aucune ponderation par la mise : ce serait un indicateur financier, donc
     hors du perimetre de l'application.
@@ -490,6 +504,10 @@ def feedback(settings: Settings | None = None) -> Feedback:
     resultats sont saisis — et la session suivante sait enfin ce qui a tenu.
     Sans cela l'analyse repart de zero a chaque fois et conseille un palier
     sans jamais apprendre qu'il ne passe pas.
+
+    Ne comptent que les picks reellement joues — rattaches a un coupon. Une
+    selection proposee puis ecartee n'a jamais ete confrontee au terrain : la
+    faire peser sur le retour d'experience apprendrait le mauvais reflexe.
 
     Les paris annules et ceux en attente sont exclus : un pick sans resultat
     n'apprend rien, et le compter au denominateur ferait mentir le taux.
