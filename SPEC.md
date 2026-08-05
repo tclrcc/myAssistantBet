@@ -510,6 +510,19 @@ Le football reçoit forme, classement, absents et H2H ; le tennis n'avait aucune
 
 *Critère d'acceptation :* le bloc d'un match de tennis porte une ligne Elo avec le rating général, celui de la surface du tournoi, le pic de carrière et le classement officiel des deux joueurs — et le prompt interdit explicitement d'en tirer une probabilité.
 
+### Phase 10 — Coupons joués
+Un pick est une sélection ; un coupon est ce qui a réellement été posé chez le bookmaker : une mise, une ou plusieurs jambes, un résultat global.
+
+- `services/coupons.py` : un coupon se compose de picks déjà saisis, rien n'est retapé. Rattacher un pick le passe à `played = 1`.
+- Ni le type ni le résultat ne sont stockés : ils se déduisent des jambes. Une jambe perdue fait tomber le coupon même si d'autres sont en attente ; une jambe annulée est neutre ; tout annulé vaut annulé.
+- **Ce que ça répare** : un combiné s'enregistrait comme un pick sans événement, donc sans sport, et les taux par sport l'ignoraient en silence. Ses jambes portent désormais chacune leur match.
+- Les taux de coupons sont séparés entre simples et combinés — un combiné tombe dès qu'une jambe cède, il ne se compare pas à un pari simple.
+- **Aucun calcul financier** (section 9) : la mise est mémorisée, jamais agrégée, jamais multipliée par une cote, et la cote totale du coupon n'est même pas calculée. La capture jointe la porte déjà.
+- La capture d'écran est une **pièce jointe, pas une source de données** : la machine ne la lit jamais. La lire supposerait un modèle de vision — donc un appel à l'API Anthropic, interdit n°6 — ou un OCR local peu fiable sur une interface sombre de bookmaker.
+- Téléversement : liste blanche de types confirmée par les octets de tête, taille bornée, et le nom fourni par le navigateur n'est jamais utilisé — il est refabriqué, et revalidé avant toute lecture.
+
+*Critère d'acceptation :* j'enregistre un combiné de trois jambes avec sa mise et une capture, je saisis les résultats des jambes, et l'historique affiche le coupon perdu, ses jambes gagnantes comptées dans les taux de leur sport respectif, et aucun montant agrégé nulle part.
+
 ---
 
 ## 11. Exigences de qualité

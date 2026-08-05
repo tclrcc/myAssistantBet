@@ -193,6 +193,37 @@ Elo de Tennis Abstract comblent ce trou, **gratuitement et sans cle**.
   Le template par defaut n'est pas supprimable.
 - Bandes de cotes : bornes controlees avant ecriture (haute > basse, quota max >= min).
 
+## Coupons joues (`services/coupons.py`)
+
+Un **pick** est une selection ; un **coupon** est ce qui a ete pose chez le bookmaker :
+une mise, une ou plusieurs jambes, un resultat global. Un coupon se compose de picks
+deja saisis — rien n'est retape — et rattacher un pick le passe a `played = 1`.
+
+- Le type et le resultat ne sont **jamais stockes** : ils se deduisent des jambes. Un
+  champ enregistre pourrait contredire les jambes, et il faudrait alors arbitrer.
+- Regle du resultat : une jambe perdue fait tomber le coupon, meme si d'autres sont en
+  attente ; une jambe annulee est neutre (le book recalcule la cote sans elle) ; tout
+  annule vaut annule. Chaque cas a son test.
+- Ce que ca repare : un combine s'enregistrait comme un pick sans evenement, donc sans
+  sport, et les taux par sport l'ignoraient en silence. Ses jambes portent desormais
+  chacune leur match.
+- Les taux de coupons sont **separes par type** : un combine tombe des qu'une jambe cede,
+  il ne se compare pas a un pari simple. Les melanger produirait un taux qui ne decrit
+  ni l'un ni l'autre.
+- **Aucun calcul financier** : la mise est memorisee, jamais agregee, jamais multipliee
+  par une cote — et la **cote totale du coupon n'est meme pas calculee**, la capture la
+  porte deja. Un test verifie qu'aucun champ financier n'existe sur `Coupon`.
+- La capture est une **piece jointe, jamais une source de donnees** : la machine ne la lit
+  pas. La lire supposerait un modele de vision (interdit n°6) ou un OCR local peu fiable.
+- Securite du televersement : liste blanche de types **confirmee par les octets de tete**,
+  taille bornee, et **le nom fourni par le navigateur n'est jamais utilise** — il est
+  refabrique (`coupon-{id}-{empreinte}.{ext}`). Le nom relu en base est revalide contre ce
+  motif avant d'ouvrir le fichier : une base modifiee a la main ne doit pas faire servir
+  `../../.env`.
+- Les captures vivent sous `data/`, donc deja couvertes par le `ReadWritePaths` de l'unite
+  systemd et le `.gitignore`. Elles ne sont **pas** dans la sauvegarde, qui ne porte que
+  sur la base.
+
 ## Ce qui nourrit le prompt en dehors des cotes
 
 Trois sources locales, relues a chaque generation : aucun appel reseau, aucun credit,

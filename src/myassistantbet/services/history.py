@@ -73,6 +73,10 @@ class Pick:
     played: bool
     stake: float | None
     result: str
+    #: Renseignes depuis la phase des coupons ; vides sur les lectures qui n'en
+    #: ont pas l'usage, ce qui evite une jointure a chaque affichage de pick.
+    sport_label: str = ""
+    coupon_id: int | None = None
 
     @property
     def result_label(self) -> str:
@@ -208,6 +212,7 @@ def list_picks(session_id: int, settings: Settings | None = None) -> list[Pick]:
                 played=bool(row["played"]),
                 stake=row["stake"],
                 result=row["result"] or "pending",
+                coupon_id=row["coupon_id"],
             )
         )
     return picks

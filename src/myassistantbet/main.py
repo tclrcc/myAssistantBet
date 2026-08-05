@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import FastAPI, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jinja2 import TemplateNotFound
@@ -26,6 +26,7 @@ from .providers.tennisabstract import TennisAbstractClient
 from .scheduler import build_scheduler
 from .services import board as board_service
 from .services import competitions as competitions_service
+from .services import coupons as coupons_service
 from .services import coverage as coverage_service
 from .services import elo as elo_service
 from .services import enrich as enrich_service
@@ -650,6 +651,7 @@ def history_page(request: Request) -> HTMLResponse:
         {
             "sessions": history_service.list_sessions(settings),
             "stats": history_service.stats(settings),
+            "coupon_rates": coupons_service.rates(settings),
         },
     )
 
@@ -664,7 +666,11 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         "tiers": history_service.tiers(settings),
         "picks": history_service.list_picks(session_id, settings),
         "result_labels": list(history_service.RESULT_LABELS.items()),
+        "coupons": coupons_service.list_for_session(session_id, settings),
+        "available_picks": coupons_service.available_picks(session_id, settings),
         "error": error,
+        "coupon_error": None,
+        "coupon_notice": None,
         "preview": None,
         "imported": 0,
         "import_failures": [],
@@ -744,6 +750,108 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
         "picks.html",
         _picks_context(session_id, imported=created, import_failures=failures),
     )
+
+
+# --- Coupons joues ---------------------------------------------------------
+
+
+async def _attach_screenshot(coupon_id: int, upload: object) -> str | None:
+    """Attache une capture si le formulaire en portait une. Renvoie l'erreur eventuelle.
+
+    Une capture refusee n'annule jamais le coupon : le pari a bien ete pose, et
+    le perdre parce que l'image ne convient pas serait absurde.
+    """
+    filename = getattr(upload, "filename", "") or ""
+    if not filename:
+        return None
+    try:
+        content = await upload.read()  # type: ignore[attr-defined]
+    finally:
+        # Starlette adosse chaque envoi a un fichier temporaire : ne pas le
+        # fermer laisse un descripteur ouvert jusqu'au ramasse-miettes.
+        await upload.close()  # type: ignore[attr-defined]
+    try:
+        coupons_service.save_screenshot(
+            coupon_id,
+            filename,
+            content,
+            getattr(upload, "content_type", "") or "",
+            get_settings(),
+        )
+    except history_service.HistoryError as exc:
+        logger.warning("Capture refusee pour le coupon %d : %s", coupon_id, exc)
+        return str(exc)
+    return None
+
+
+@app.post("/history/{session_id}/coupons", response_class=HTMLResponse)
+async def add_coupon(request: Request, session_id: int) -> HTMLResponse:
+    """Enregistre un pari joue a partir de picks deja saisis."""
+    _require_session(session_id)
+    form = await request.form()
+    pick_ids = [int(value) for value in form.getlist("pick_id") if str(value).isdigit()]
+
+    try:
+        coupon_id = coupons_service.create(
+            session_id,
+            pick_ids,
+            stake=str(form.get("stake", "")),
+            date_value=str(form.get("date", "")),
+            time_value=str(form.get("time", "")),
+            bookmaker=str(form.get("bookmaker", coupons_service.DEFAULT_BOOKMAKER)),
+            note=str(form.get("note", "")),
+            settings=get_settings(),
+        )
+    except history_service.HistoryError as exc:
+        return templates.TemplateResponse(
+            request, "picks.html", _picks_context(session_id, coupon_error=str(exc))
+        )
+
+    problem = await _attach_screenshot(coupon_id, form.get("screenshot"))
+    return templates.TemplateResponse(
+        request,
+        "picks.html",
+        _picks_context(
+            session_id,
+            coupon_error=problem,
+            coupon_notice=None if problem else "Coupon enregistré.",
+        ),
+    )
+
+
+@app.post("/coupons/{coupon_id}/screenshot", response_class=HTMLResponse)
+async def add_coupon_screenshot(request: Request, coupon_id: int) -> HTMLResponse:
+    """Ajoute ou remplace la capture d'un coupon deja enregistre."""
+    session_id = _coupon_session(coupon_id)
+    form = await request.form()
+    problem = await _attach_screenshot(coupon_id, form.get("screenshot"))
+    return templates.TemplateResponse(
+        request, "picks.html", _picks_context(session_id, coupon_error=problem)
+    )
+
+
+@app.get("/coupons/{coupon_id}/screenshot")
+def coupon_screenshot(coupon_id: int) -> FileResponse:
+    """Sert la capture d'un coupon. Le nom est revalide avant d'ouvrir le fichier."""
+    path = coupons_service.screenshot_path(coupon_id, get_settings())
+    if path is None or not path.is_file():
+        raise HTTPException(status_code=404, detail="Aucune capture pour ce coupon")
+    return FileResponse(path)
+
+
+@app.post("/coupons/{coupon_id}/delete", response_class=HTMLResponse)
+def remove_coupon(request: Request, coupon_id: int) -> HTMLResponse:
+    """Supprime un coupon. Ses jambes redeviennent des picks libres."""
+    session_id = _coupon_session(coupon_id)
+    coupons_service.delete(coupon_id, get_settings())
+    return templates.TemplateResponse(request, "picks.html", _picks_context(session_id))
+
+
+def _coupon_session(coupon_id: int) -> int:
+    row = db.query_one("SELECT session_id FROM coupons WHERE id = ?", (coupon_id,))
+    if row is None:
+        raise HTTPException(status_code=404, detail="Coupon inconnu")
+    return int(row["session_id"])
 
 
 @app.post("/picks/{pick_id}/result", response_class=HTMLResponse)

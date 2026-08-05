@@ -163,4 +163,67 @@
 </form>
 
 {% include "_picks.html" %}
+
+<h2>Coupons joués</h2>
+<p class="muted small">
+  Ce qui a réellement été posé chez le bookmaker. Un coupon regroupe des picks
+  déjà saisis : rien n'est retapé. Son résultat se déduit de ses jambes — une
+  seule jambe perdue le fait tomber, une jambe annulée est neutre. La mise est
+  mémorisée mais jamais agrégée, et la capture n'est jamais lue par la machine :
+  elle est là pour toi.
+</p>
+
+{% if coupon_error %}<div class="report report-warn">{{ coupon_error }}</div>{% endif %}
+{% if coupon_notice %}<div class="report">{{ coupon_notice }}</div>{% endif %}
+
+{% if available_picks %}
+<form method="post" action="/history/{{ session_id }}/coupons" enctype="multipart/form-data"
+      class="coupon-form">
+  <table class="board">
+    <thead>
+      <tr>
+        <th class="tight"></th>
+        <th>Match</th>
+        <th>Palier</th>
+        <th>Sélection</th>
+        <th class="num">Cote</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for pick in available_picks %}
+      <tr>
+        <td class="tight">
+          <input type="checkbox" name="pick_id" value="{{ pick.pick_id }}"
+                 aria-label="Inclure {{ pick.selection }}">
+        </td>
+        <td>{{ pick.event_label }}</td>
+        <td>{{ pick.tier_label }}</td>
+        <td class="affiche">{{ pick.selection }} <span class="muted">({{ pick.market }})</span></td>
+        <td class="num">{{ '%.2f'|format(pick.price) if pick.price else '·' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="pick-form">
+    <label class="narrow">Mise<input type="text" name="stake" inputmode="decimal" placeholder="5"></label>
+    <label class="narrow">Date<input type="date" name="date"></label>
+    <label class="narrow">Heure<input type="time" name="time"></label>
+    <label class="narrow">Book<input type="text" name="bookmaker" value="betclic"></label>
+    <label>Note<input type="text" name="note" placeholder="cash-out partiel, erreur de saisie…"></label>
+    <label>
+      Capture
+      <input type="file" name="screenshot" accept="image/png,image/jpeg,image/webp">
+    </label>
+    <button type="submit" class="primary">Enregistrer le coupon</button>
+  </div>
+</form>
+{% else %}
+  <p class="empty">
+    Tous les picks de cette session sont déjà rattachés à un coupon — ou il n'y
+    en a aucun à rattacher.
+  </p>
+{% endif %}
+
+{% include "_coupons.html" %}
 {% endblock %}

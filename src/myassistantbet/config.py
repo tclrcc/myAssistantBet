@@ -57,6 +57,14 @@ class Settings(BaseSettings):
     backup_dir: Path = Path("./data/backups")
     backup_keep_days: int = Field(default=7, ge=1, le=365)
 
+    # --- Captures de coupons ------------------------------------------------
+    #: Sous `data/`, donc deja couvert par le `ReadWritePaths` de l'unite
+    #: systemd et par le `.gitignore`.
+    upload_dir: Path = Path("./data/uploads")
+    #: Une capture d'ecran de coupon depasse rarement 1 Mo. Au-dela, c'est une
+    #: erreur de manipulation, et le disque du VPS n'est pas extensible.
+    upload_max_bytes: int = Field(default=5_000_000, ge=10_000)
+
     # --- Developpement -----------------------------------------------------
     dev_cache: bool = False
     dev_cache_dir: Path = Path("./data/dev_cache")
@@ -96,6 +104,13 @@ class Settings(BaseSettings):
         if self.backup_dir.is_absolute():
             return self.backup_dir
         return (PROJECT_ROOT / self.backup_dir).resolve()
+
+    @property
+    def upload_dir_absolute(self) -> Path:
+        """Chemin absolu du dossier des captures, resolu depuis la racine."""
+        if self.upload_dir.is_absolute():
+            return self.upload_dir
+        return (PROJECT_ROOT / self.upload_dir).resolve()
 
     @property
     def migrations_dir(self) -> Path:

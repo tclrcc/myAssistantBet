@@ -18,6 +18,7 @@ EXPECTED_TABLES = {
     "api_usage",
     "competitions",
     "context",
+    "coupons",
     "events",
     "market_coverage",
     "odds",
