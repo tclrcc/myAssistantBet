@@ -16,6 +16,7 @@ from myassistantbet.services.history import (
     delete_pick,
     list_picks,
     list_sessions,
+    session_events,
     set_result,
     stats,
 )
@@ -360,7 +361,7 @@ def test_resultat_via_htmx(client: TestClient, isolated_settings: Settings) -> N
     response = client.post(f"/picks/{pick_id}/result", data={"result": "win"})
 
     assert response.status_code == 200
-    assert response.text.strip().startswith('<div id="picks">')
+    assert response.text.strip().startswith('<div id="worksheet">')
     assert list_picks(session_id, isolated_settings)[0].result == "win"
 
 
@@ -371,7 +372,7 @@ def test_suppression_via_htmx(client: TestClient, isolated_settings: Settings) -
     response = client.post(f"/picks/{pick_id}/delete")
 
     assert response.status_code == 200
-    assert "Aucun pick saisi" in response.text
+    assert "Aucune sélection" in response.text
 
 
 def test_pick_inconnu_renvoie_404(client: TestClient) -> None:
@@ -387,3 +388,51 @@ def test_taux_affiches_apres_saisie(client: TestClient, isolated_settings: Setti
     assert "100 %" in response.text
     assert "🟢 SAFE" in response.text
     assert "Football" in response.text
+
+
+# -- Selecteur de match : sport et competition ------------------------------
+
+
+def test_les_matchs_sont_groupes_par_sport_et_competition(migrated: Settings) -> None:
+    """Retrouver un match parmi vingt : le groupe evite de lire chaque ligne."""
+    foot_session, _ = _session_avec_match(migrated, "football")
+    tennis_event = save(
+        build(
+            "tennis",
+            "ATP Canadian Open",
+            "Moutet",
+            "Bergs",
+            "2026-08-04",
+            "18:00",
+            "Moutet 1.80",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+    board_service.toggle_selection(tennis_event, True, migrated)
+
+    groups = dict(session_events(foot_session, migrated))
+
+    assert "Football · Amical" in groups
+    assert "Tennis · ATP Canadian Open" in groups
+    assert [event["label"] for event in groups["Tennis · ATP Canadian Open"]] == ["Moutet – Bergs"]
+
+
+def test_un_evenement_sans_competition_reste_groupe(migrated: Settings) -> None:
+    session_id, _ = _session_avec_match(migrated)
+
+    groups = dict(session_events(session_id, migrated))
+
+    assert all(" · " in name for name in groups), "chaque groupe nomme sport et competition"
+
+
+def test_le_selecteur_de_match_porte_les_groupes(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    session_id, _ = _session_avec_match(isolated_settings)
+
+    response = client.get(f"/history/{session_id}")
+
+    assert '<optgroup label="Football · Amical">' in response.text

@@ -290,6 +290,98 @@ def test_le_retour_d_experience_ignore_les_selections_non_jouees(migrated: Setti
     assert feedback(migrated).empty
 
 
+# -- Raccourcis de saisie ---------------------------------------------------
+
+
+def test_jouer_une_selection_en_un_geste(migrated: Settings) -> None:
+    session_id, event_id = _session(migrated)
+    pick_id = _pick(migrated, session_id, event_id)
+
+    coupon_id = coupons_service.play_single(pick_id, migrated)
+
+    coupon = coupons_service.list_for_session(session_id, migrated)[0]
+    assert coupon.coupon_id == coupon_id
+    assert coupon.kind == "simple"
+    assert list_picks(session_id, migrated)[0].played is True
+
+
+def test_jouer_une_selection_deja_engagee_est_refuse(migrated: Settings) -> None:
+    session_id, event_id = _session(migrated)
+    pick_id = _pick(migrated, session_id, event_id)
+    coupons_service.play_single(pick_id, migrated)
+
+    with pytest.raises(HistoryError, match="déjà dans un coupon"):
+        coupons_service.play_single(pick_id, migrated)
+
+
+def test_jouer_une_selection_inconnue_est_refuse(migrated: Settings) -> None:
+    with pytest.raises(HistoryError, match="n'existe pas"):
+        coupons_service.play_single(999, migrated)
+
+
+def test_tout_gagne_tranche_les_jambes_en_attente(migrated: Settings) -> None:
+    coupon = _combine(migrated, ["pending", "pending", "pending"])
+
+    touchees = coupons_service.settle_all(coupon.coupon_id, "win", migrated)
+
+    assert touchees == 3
+    assert coupons_service.list_for_session(coupon.session_id, migrated)[0].result == "win"
+
+
+def test_tout_gagne_ne_touche_pas_une_jambe_deja_tranchee(migrated: Settings) -> None:
+    """Corriger une jambe puis cliquer sur le raccourci ne doit pas l'effacer."""
+    coupon = _combine(migrated, ["loss", "pending"])
+
+    touchees = coupons_service.settle_all(coupon.coupon_id, "win", migrated)
+
+    assert touchees == 1, "seule la jambe en attente change"
+    assert coupons_service.list_for_session(coupon.session_id, migrated)[0].result == "loss"
+
+
+def test_un_resultat_inconnu_est_refuse(migrated: Settings) -> None:
+    coupon = _combine(migrated, ["pending"])
+
+    with pytest.raises(HistoryError, match="Résultat inconnu"):
+        coupons_service.settle_all(coupon.coupon_id, "presque", migrated)
+
+
+def test_jouer_via_htmx(client: TestClient, isolated_settings: Settings) -> None:
+    session_id, event_id = _session(isolated_settings)
+    pick_id = _pick(isolated_settings, session_id, event_id)
+
+    response = client.post(f"/picks/{pick_id}/play")
+
+    assert response.status_code == 200
+    assert response.text.strip().startswith('<div id="worksheet">'), (
+        "cible d'un echange HTMX : rendre la page entiere imbriquerait un <html> dans le <div>"
+    )
+    assert len(coupons_service.list_for_session(session_id, isolated_settings)) == 1
+
+
+def test_tout_gagne_via_htmx(client: TestClient, isolated_settings: Settings) -> None:
+    session_id, event_id = _session(isolated_settings)
+    pick_id = _pick(isolated_settings, session_id, event_id)
+    coupon_id = coupons_service.create(session_id, [pick_id], settings=isolated_settings)
+
+    response = client.post(f"/coupons/{coupon_id}/settle", data={"result": "win"})
+
+    assert response.status_code == 200
+    assert response.text.strip().startswith('<div id="worksheet">')
+    assert list_picks(session_id, isolated_settings)[0].result == "win"
+
+
+def test_suppression_de_coupon_via_htmx(client: TestClient, isolated_settings: Settings) -> None:
+    session_id, event_id = _session(isolated_settings)
+    pick_id = _pick(isolated_settings, session_id, event_id)
+    coupon_id = coupons_service.create(session_id, [pick_id], settings=isolated_settings)
+
+    response = client.post(f"/coupons/{coupon_id}/delete")
+
+    assert response.status_code == 200
+    assert response.text.strip().startswith('<div id="worksheet">')
+    assert coupons_service.list_for_session(session_id, isolated_settings) == []
+
+
 # -- Section 9 : aucun indicateur financier ---------------------------------
 
 

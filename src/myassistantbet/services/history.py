@@ -220,22 +220,39 @@ def list_picks(session_id: int, settings: Settings | None = None) -> list[Pick]:
     return picks
 
 
-def session_events(session_id: int, settings: Settings | None = None) -> list[dict[str, Any]]:
-    """Evenements de la session, pour le selecteur du formulaire de pick."""
+def session_events(
+    session_id: int, settings: Settings | None = None
+) -> list[tuple[str, list[dict[str, Any]]]]:
+    """Evenements de la session, groupes par sport et competition.
+
+    Le selecteur du formulaire de pick sert a retrouver un match parmi vingt :
+    une liste a plat obligeait a lire chaque ligne. Le regroupement rend le
+    sport et la competition immediatement visibles, sans second menu ni JS —
+    un `optgroup` fait le travail.
+
+    Le groupement est fait ici et non dans le template : le filtre `groupby` de
+    Jinja retrie par ordre alphabetique, ce qui perdrait l'ordre des sports.
+    """
     with connect(settings) as conn:
         rows = conn.execute(
-            "SELECT e.id, e.home, e.away FROM session_events se "
-            "JOIN events e ON e.id = se.event_id WHERE se.session_id = ? "
-            "ORDER BY e.commence_time",
+            "SELECT e.id, e.home, e.away, e.commence_time, s.label AS sport_label, "
+            "       COALESCE(c.label, 'Saisie manuelle') AS competition "
+            "FROM session_events se "
+            "JOIN events e ON e.id = se.event_id "
+            "JOIN sports s ON s.id = e.sport_id "
+            "LEFT JOIN competitions c ON c.id = e.competition_id "
+            "WHERE se.session_id = ? "
+            "ORDER BY s.id, competition, e.commence_time",
             (session_id,),
         ).fetchall()
-    return [
-        {
-            "id": int(row["id"]),
-            "label": f"{row['home']} – {row['away']}" if row["away"] else row["home"],
-        }
-        for row in rows
-    ]
+
+    groups: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        label = f"{row['home']} – {row['away']}" if row["away"] else row["home"]
+        groups.setdefault(f"{row['sport_label']} · {row['competition']}", []).append(
+            {"id": int(row["id"]), "label": label}
+        )
+    return list(groups.items())
 
 
 def tiers(settings: Settings | None = None) -> list[dict[str, str]]:

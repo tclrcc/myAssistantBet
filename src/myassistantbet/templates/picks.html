@@ -2,237 +2,152 @@
 {% block title %}Picks — MyAssistantBet{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Picks — {{ session_label }}</h1>
+  <div>
+    <h1>{{ session_label }}</h1>
+    <p class="subtitle">
+      {{ picks | length }} sélection(s) · {{ coupons | length }} pari(s) enregistré(s)
+      {%- if prompts %} · {{ prompts | length }} prompt(s), dernier à
+      {{ prompts[0].created_local.strftime('%H:%M') }}{% endif %}
+    </p>
+  </div>
   <div class="actions">
     <a class="button" href="/history">← Historique</a>
-    <a class="button" href="/session/{{ session_id }}/prompt">Prompt</a>
+    <a class="button" href="/session/{{ session_id }}">Shortlist</a>
+    <a class="button primary-link" href="/session/{{ session_id }}/prompt">Prompt</a>
   </div>
 </div>
-
-{% if prompts %}
-<p class="muted small">
-  Prompts générés :
-  {% for prompt in prompts %}
-    {{ prompt.created_local.strftime('%d/%m %H:%M') }} ({{ prompt.template_name }},
-    ~{{ prompt.token_estimate }} tokens){% if not loop.last %} · {% endif %}
-  {% endfor %}
-</p>
-{% endif %}
 
 {% if error %}<div class="report report-warn">{{ error }}</div>{% endif %}
 
 {% if imported %}
   <p class="notice notice-ok">
-    {{ imported }} pick(s) importé(s) depuis le tableau.
-    {% if import_failures %}
-      <br><span class="rejected">{{ import_failures | join(' · ') }}</span>
-    {% endif %}
+    {{ imported }} sélection(s) importée(s) depuis le tableau.
+    {% if import_failures %}<br><span class="rejected">{{ import_failures | join(' · ') }}</span>{% endif %}
   </p>
 {% elif import_failures %}
   <p class="notice notice-warn">
-    Aucun pick importé — <span class="rejected">{{ import_failures | join(' · ') }}</span>
+    Rien d'importé — <span class="rejected">{{ import_failures | join(' · ') }}</span>
   </p>
 {% endif %}
 
-{% if preview %}
-  {% if preview.ignored %}
-    <p class="notice notice-warn">{{ preview.ignored | join(' ') }}</p>
-  {% else %}
-    <p class="notice {% if preview.ready_count == preview.count %}notice-ok{% else %}notice-warn{% endif %}">
-      {{ preview.count }} ligne(s) lue(s), {{ preview.ready_count }} prête(s) à enregistrer.
-      <b>Rien n'est enregistré</b> : corrige ce qu'il faut, décoche ce que tu ne veux pas,
-      puis valide.
-    </p>
+{% if preview and not preview.ignored %}
+  <p class="notice {% if preview.ready_count == preview.count %}notice-ok{% else %}notice-warn{% endif %}">
+    {{ preview.count }} ligne(s) lue(s), {{ preview.ready_count }} prête(s).
+    <b>Rien n'est enregistré</b> : corrige, décoche ce que tu ne veux pas, puis valide.
+  </p>
 
-    <form method="post" action="/history/{{ session_id }}/picks/import">
-      <table class="board import-table">
-        <thead>
-          <tr>
-            <th class="tight"></th>
-            <th>Match</th>
-            <th>Marché</th>
-            <th>Sélection</th>
-            <th class="num">Cote</th>
-            <th>Palier</th>
-            <th class="num">Conf</th>
-            <th>À vérifier</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for pick in preview.picks %}
-          <tr>
-            <td class="tight">
-              <input type="checkbox" name="keep_{{ pick.index }}"
-                     {% if pick.ready %}checked{% endif %}
-                     aria-label="Importer la ligne {{ pick.index }}">
-            </td>
-            <td>
-              <select name="event_{{ pick.index }}">
-                <option value="">combiné / hors match</option>
+  <form method="post" action="/history/{{ session_id }}/picks/import">
+    <table class="board import-table">
+      <thead>
+        <tr>
+          <th class="tight"></th>
+          <th>Match</th>
+          <th>Marché</th>
+          <th>Sélection</th>
+          <th class="num">Cote</th>
+          <th>Palier</th>
+          <th class="num">Conf</th>
+          <th>À vérifier</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for pick in preview.picks %}
+        <tr>
+          <td class="tight">
+            <input type="checkbox" name="keep_{{ pick.index }}" value="1"
+                   {% if pick.ready %}checked{% endif %}>
+          </td>
+          <td>
+            <select name="event_{{ pick.index }}">
+              <option value="">— aucun match —</option>
+              {% for group, events in events %}
+              <optgroup label="{{ group }}">
                 {% for event in events %}
                   <option value="{{ event.id }}"
-                          {% if event.id == pick.event_id %}selected{% endif %}>
-                    {{ event.label }}
-                  </option>
+                          {% if event.id == pick.event_id %}selected{% endif %}>{{ event.label }}</option>
                 {% endfor %}
-              </select>
-            </td>
-            <td><input type="text" name="market_{{ pick.index }}" value="{{ pick.market }}"></td>
-            <td>
-              <input type="text" name="selection_{{ pick.index }}" value="{{ pick.selection }}">
-            </td>
-            <td class="num">
-              <input type="text" class="tiny" name="price_{{ pick.index }}" value="{{ pick.price }}">
-            </td>
-            <td>
-              <select name="tier_{{ pick.index }}">
-                {% for tier in tiers %}
-                  <option value="{{ tier.key }}"
-                          {% if tier.key == pick.tier %}selected{% endif %}>{{ tier.label }}</option>
-                {% endfor %}
-              </select>
-            </td>
-            <td class="num">
-              <input type="text" class="tiny" name="confidence_{{ pick.index }}"
-                     value="{{ pick.confidence }}">
-            </td>
-            <td class="muted small">{{ pick.problems | join(', ') }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-      <div class="grid-foot">
-        <button type="submit" class="primary">Importer les lignes cochées</button>
-      </div>
-    </form>
-  {% endif %}
+              </optgroup>
+              {% endfor %}
+            </select>
+          </td>
+          <td><input type="text" name="market_{{ pick.index }}" value="{{ pick.market }}"></td>
+          <td><input type="text" name="selection_{{ pick.index }}" value="{{ pick.selection }}"></td>
+          <td class="num">
+            <input type="text" class="tiny" name="price_{{ pick.index }}" value="{{ pick.price }}">
+          </td>
+          <td>
+            <select name="tier_{{ pick.index }}">
+              {% for tier in tiers %}
+                <option value="{{ tier.key }}"
+                        {% if tier.key == pick.tier %}selected{% endif %}>{{ tier.label }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td class="num">
+            <input type="text" class="tiny" name="confidence_{{ pick.index }}"
+                   value="{{ pick.confidence }}">
+          </td>
+          <td class="muted small">{{ pick.problems | join(', ') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="grid-foot">
+      <button type="submit" class="primary">Importer les lignes cochées</button>
+    </div>
+  </form>
+{% elif preview and preview.ignored %}
+  <p class="notice notice-warn">{{ preview.ignored | join(' ') }}</p>
 {% endif %}
 
-<form method="post" action="/history/{{ session_id }}/picks/preview" class="paste-form">
-  <label>
+<details class="panel" {% if not picks and not preview %}open{% endif %}>
+  <summary>
     Importer le tableau de Claude
-    <span class="hint">
-      colle la section C du rendu, en-tête compris — les matchs sont rapprochés
-      par leur nom, les paliers par leur emoji ou leur libellé
-    </span>
-    <textarea name="table" rows="4"
+    <span class="muted small">section C du rendu, en-tête compris</span>
+  </summary>
+  <form method="post" action="/history/{{ session_id }}/picks/preview" class="paste-form">
+    <textarea name="table" rows="5"
               placeholder="| # | Match | Marché | Sélection | Cote | Palier | Conf/5 | …"></textarea>
-  </label>
-  <button type="submit" class="button">Lire le tableau</button>
-</form>
+    <button type="submit" class="button">Lire le tableau</button>
+  </form>
+</details>
 
-<form class="pick-form" method="post" action="/history/{{ session_id }}/picks">
-  <label>
-    Match
-    <select name="event_id">
-      <option value="">combiné / hors match</option>
-      {% for event in events %}
-        <option value="{{ event.id }}">{{ event.label }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>
-    Palier
-    <select name="tier" required>
-      {% for tier in tiers %}
-        <option value="{{ tier.key }}">{{ tier.label }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>
-    Marché
-    <input type="text" name="market" required placeholder="O/U 2.5">
-  </label>
-  <label>
-    Sélection
-    <input type="text" name="selection" required placeholder="Over 2.5">
-  </label>
-  <label class="narrow">
-    Cote
-    <input type="text" name="price" inputmode="decimal" placeholder="1.72">
-  </label>
-  <label class="narrow">
-    Conf/5
-    <input type="text" name="confidence" inputmode="numeric" placeholder="3">
-  </label>
-  <label class="narrow">
-    Mise
-    <input type="text" name="stake" inputmode="decimal" placeholder="5">
-  </label>
-  <button type="submit" class="primary">Ajouter</button>
-</form>
-
-<h2>Sélections</h2>
-<p class="muted small">
-  Tout ce qui a été proposé ou envisagé pour cette session. Une sélection ne
-  compte dans les taux de réussite qu'une fois <b>rattachée à un coupon</b> :
-  tant qu'elle ne l'est pas, elle n'a jamais été confrontée au terrain, et la
-  faire peser sur les statistiques mélangerait ce que vaut l'analyse et ce que
-  valent tes paris.
-</p>
-
-{% include "_picks.html" %}
-
-<h2>Coupons joués</h2>
-<p class="muted small">
-  Ce qui a réellement été posé chez le bookmaker. Un coupon regroupe des picks
-  déjà saisis : rien n'est retapé. Son résultat se déduit de ses jambes — une
-  seule jambe perdue le fait tomber, une jambe annulée est neutre. La mise est
-  mémorisée mais jamais agrégée, et la capture n'est jamais lue par la machine :
-  elle est là pour toi.
-</p>
-
-{% if coupon_error %}<div class="report report-warn">{{ coupon_error }}</div>{% endif %}
-{% if coupon_notice %}<div class="report">{{ coupon_notice }}</div>{% endif %}
-
-{% if available_picks %}
-<form method="post" action="/history/{{ session_id }}/coupons" enctype="multipart/form-data"
-      class="coupon-form">
-  <table class="board">
-    <thead>
-      <tr>
-        <th class="tight"></th>
-        <th>Match</th>
-        <th>Palier</th>
-        <th>Sélection</th>
-        <th class="num">Cote</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for pick in available_picks %}
-      <tr>
-        <td class="tight">
-          <input type="checkbox" name="pick_id" value="{{ pick.pick_id }}"
-                 aria-label="Inclure {{ pick.selection }}">
-        </td>
-        <td>{{ pick.event_label }}</td>
-        <td>{{ pick.tier_label }}</td>
-        <td class="affiche">{{ pick.selection }} <span class="muted">({{ pick.market }})</span></td>
-        <td class="num">{{ '%.2f'|format(pick.price) if pick.price else '·' }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  <div class="pick-form">
-    <label class="narrow">Mise<input type="text" name="stake" inputmode="decimal" placeholder="5"></label>
-    <label class="narrow">Date<input type="date" name="date"></label>
-    <label class="narrow">Heure<input type="time" name="time"></label>
-    <label class="narrow">Book<input type="text" name="bookmaker" value="betclic"></label>
-    <label>Note<input type="text" name="note" placeholder="cash-out partiel, erreur de saisie…"></label>
-    <label>
-      Capture
-      <input type="file" name="screenshot" accept="image/png,image/jpeg,image/webp">
+<details class="panel">
+  <summary>
+    Ajouter une sélection à la main
+    <span class="muted small">pour ce que le tableau ne contenait pas</span>
+  </summary>
+  <form class="pick-form" method="post" action="/history/{{ session_id }}/picks">
+    <label class="grow">
+      Match
+      <select name="event_id">
+        <option value="">— aucun match —</option>
+        {% for group, group_events in events %}
+        <optgroup label="{{ group }}">
+          {% for event in group_events %}
+            <option value="{{ event.id }}">{{ event.label }}</option>
+          {% endfor %}
+        </optgroup>
+        {% endfor %}
+      </select>
     </label>
-    <button type="submit" class="primary">Enregistrer le coupon</button>
-  </div>
-</form>
-{% else %}
-  <p class="empty">
-    Tous les picks de cette session sont déjà rattachés à un coupon — ou il n'y
-    en a aucun à rattacher.
-  </p>
-{% endif %}
+    <label>
+      Palier
+      <select name="tier" required>
+        {% for tier in tiers %}
+          <option value="{{ tier.key }}">{{ tier.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="narrow">Marché<input type="text" name="market" required placeholder="O/U 2.5"></label>
+    <label class="grow">Sélection
+      <input type="text" name="selection" required placeholder="Over 2.5"></label>
+    <label class="narrow">Cote<input type="text" name="price" inputmode="decimal" placeholder="1.72"></label>
+    <label class="narrow">Conf/5
+      <input type="text" name="confidence" inputmode="numeric" placeholder="3"></label>
+    <button type="submit" class="primary">Ajouter</button>
+  </form>
+</details>
 
-{% include "_coupons.html" %}
+{% include "_worksheet.html" %}
 {% endblock %}

@@ -839,12 +839,38 @@ def coupon_screenshot(coupon_id: int) -> FileResponse:
     return FileResponse(path)
 
 
+@app.post("/picks/{pick_id}/play", response_class=HTMLResponse)
+def play_pick(request: Request, pick_id: int) -> HTMLResponse:
+    """Transforme une selection en pari simple, en un clic."""
+    session_id = _pick_session(pick_id)
+    try:
+        coupons_service.play_single(pick_id, get_settings())
+    except history_service.HistoryError as exc:
+        return templates.TemplateResponse(
+            request, "_worksheet.html", _picks_context(session_id, coupon_error=str(exc))
+        )
+    return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
+
+
+@app.post("/coupons/{coupon_id}/settle", response_class=HTMLResponse)
+def settle_coupon(request: Request, coupon_id: int, result: str = Form(default="")) -> HTMLResponse:
+    """Applique un resultat aux jambes encore en attente d'un coupon."""
+    session_id = _coupon_session(coupon_id)
+    try:
+        coupons_service.settle_all(coupon_id, result, get_settings())
+    except history_service.HistoryError as exc:
+        return templates.TemplateResponse(
+            request, "_worksheet.html", _picks_context(session_id, coupon_error=str(exc))
+        )
+    return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
+
+
 @app.post("/coupons/{coupon_id}/delete", response_class=HTMLResponse)
 def remove_coupon(request: Request, coupon_id: int) -> HTMLResponse:
     """Supprime un coupon. Ses jambes redeviennent des picks libres."""
     session_id = _coupon_session(coupon_id)
     coupons_service.delete(coupon_id, get_settings())
-    return templates.TemplateResponse(request, "picks.html", _picks_context(session_id))
+    return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
 
 
 def _coupon_session(coupon_id: int) -> int:
@@ -865,14 +891,14 @@ def set_pick_result(
         history_service.set_result(pick_id, result, settings)
     except history_service.HistoryError as exc:
         logger.warning("Resultat refuse : %s", exc)
-    return templates.TemplateResponse(request, "_picks.html", _picks_context(session_id))
+    return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
 
 
 @app.post("/picks/{pick_id}/delete", response_class=HTMLResponse)
 def remove_pick(request: Request, pick_id: int) -> HTMLResponse:
     session_id = _pick_session(pick_id)
     history_service.delete_pick(pick_id, get_settings())
-    return templates.TemplateResponse(request, "_picks.html", _picks_context(session_id))
+    return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
 
 
 def _pick_session(pick_id: int) -> int:

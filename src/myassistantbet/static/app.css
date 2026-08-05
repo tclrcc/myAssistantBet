@@ -574,6 +574,116 @@ table.rates { font-size: 0.9rem; }
 tr.result-win td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
 tr.result-loss td:first-child { box-shadow: inset 3px 0 0 var(--alert); }
 
+/* --- Feuille de session : selections et paris ----------------------------- */
+
+/* Un titre de section porte son compte a droite : la question « combien en
+   reste-t-il a jouer » se pose a chaque fois, autant y repondre sur place. */
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  margin: var(--s6) 0 var(--s2);
+}
+.section-head h2 { font-size: 1rem; font-weight: 650; margin: 0; }
+.section-head span { margin-left: auto; text-align: right; }
+
+/* Ce qui ne sert qu'une fois par session — coller un tableau, ajouter une
+   ligne a la main — se replie. La page s'ouvre sur le travail du jour. */
+details.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  margin-bottom: var(--s4);
+}
+details.panel > summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  padding: var(--s3) var(--s4);
+  cursor: pointer;
+  font-weight: 550;
+  border-radius: var(--radius);
+  transition: background 0.12s;
+}
+details.panel > summary:hover { background: var(--panel-2); }
+details.panel > summary::marker { color: var(--muted); }
+details.panel > summary span { margin-left: auto; text-align: right; font-weight: 400; }
+details.panel[open] > summary { border-bottom: 1px solid var(--line-soft); }
+details.panel > *:not(summary) { padding: var(--s4); }
+details.panel .paste-form textarea { width: 100%; margin-bottom: var(--s2); }
+details.panel .pick-form { margin-bottom: 0; }
+
+.picks-table tr.is-idle td { color: var(--text-dim); }
+.nowrap { white-space: nowrap; }
+
+/* Quatre etats, un clic chacun. Un menu deroulant en demandait deux, et la
+   saisie des resultats est le geste le plus repete de la page. */
+.segmented { display: inline-flex; border: 1px solid var(--line); border-radius: var(--radius-sm); overflow: hidden; }
+.seg {
+  border: 0;
+  border-right: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  line-height: 1;
+  padding: 0.3rem 0.5rem;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.seg:last-child { border-right: 0; }
+.seg:hover { background: var(--panel-3); color: var(--text); }
+.seg.is-on { color: #fff; }
+.seg-win.is-on { background: var(--ok); }
+.seg-loss.is-on { background: var(--alert); }
+.seg-void.is-on { background: var(--panel-3); color: var(--text); }
+.seg-pending.is-on { background: var(--warn); }
+
+/* Un coupon est une carte et non une ligne de tableau : ses jambes sont une
+   liste de longueur variable, qu'une cellule rendrait illisible. */
+.coupons { display: flex; flex-direction: column; gap: var(--s3); }
+.coupon {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--muted);
+  border-radius: var(--radius);
+  padding: var(--s3) var(--s4);
+}
+.coupon.result-win { border-left-color: var(--ok); }
+.coupon.result-loss { border-left-color: var(--alert); }
+.coupon.result-pending { border-left-color: var(--warn); }
+.coupon > header {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-bottom: var(--s2);
+}
+.coupon .push { margin-left: auto; }
+.coupon-result { font-size: 0.9rem; }
+.coupon.result-win .coupon-result { color: var(--ok); }
+.coupon.result-loss .coupon-result { color: var(--alert); }
+
+.legs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s1); }
+.legs li {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  padding: var(--s1) var(--s2);
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  font-size: 0.88rem;
+}
+.legs .leg-pick { font-weight: 550; }
+.legs .leg-result { margin-left: auto; color: var(--muted); font-size: 0.82rem; }
+.legs li.result-win .leg-result { color: var(--ok); }
+.legs li.result-loss .leg-result { color: var(--alert); }
+.shot-form { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
+.coupon-form { margin: 0; }
+.coupon-form .pick-form { margin: var(--s3) 0 0; }
+.pick-form .grow { flex: 1; min-width: 180px; }
+.pick-form .grow input, .pick-form .grow select { width: 100%; }
+
 /* --- Reglages -------------------------------------------------------------- */
 
 .settings-section { margin-bottom: var(--s6); }

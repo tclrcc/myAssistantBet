@@ -275,4 +275,14 @@ donc rien qui puisse manquer un matin.
 
 HTMX est **vendorise** dans `static/htmx.min.js` — aucun CDN, aucun appel reseau depuis la
 page. Les fragments HTMX sont des templates `_*.html` autonomes, inclus par les pages
-completes : `_board.html` porte l'id `#board`, `_banner.html` porte l'id `#banner`.
+completes : `_board.html` porte l'id `#board`, `_banner.html` porte l'id `#banner`,
+`_worksheet.html` porte l'id `#worksheet` (selections + coupons d'une session, qui
+changent ensemble : le resultat d'une jambe modifie celui de son coupon).
+
+**Une route ciblee par HTMX rend le fragment, jamais la page.** Rendre `picks.html` dans
+un `hx-swap="outerHTML"` imbriquerait un `<html>` complet dans le `<div>` remplace. Les
+routes qui recoivent un fichier font exception : le televersement passe par un POST
+classique, qui rend la page entiere. Des tests verifient la forme de la reponse.
+
+Ce qui ne sert qu'une fois par session — coller un tableau, ajouter une ligne a la main —
+vit dans un `<details class="panel">` replie. La page s'ouvre sur le travail du jour.

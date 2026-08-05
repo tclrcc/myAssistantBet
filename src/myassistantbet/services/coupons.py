@@ -29,7 +29,7 @@ from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
-from .history import RESULT_LABELS, HistoryError, Pick, RateRow, _tier_labels
+from .history import RESULT_LABELS, RESULTS, HistoryError, Pick, RateRow, _tier_labels
 
 logger = logging.getLogger(__name__)
 
@@ -290,6 +290,42 @@ def create(
 
     logger.info("Coupon %d enregistre : %d jambe(s)", coupon_id, len(pick_ids))
     return coupon_id
+
+
+def play_single(pick_id: int, settings: Settings | None = None) -> int:
+    """Enregistre un pari simple sur une selection, en un geste. Renvoie l'id du coupon.
+
+    Le cas le plus frequent — une selection, un pari — passait par le formulaire
+    de coupon : cocher, descendre, valider. Ici c'est un clic sur la ligne.
+    La mise se complete apres coup si elle compte.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT session_id, coupon_id FROM picks WHERE id = ?", (pick_id,)
+        ).fetchone()
+    if row is None:
+        raise HistoryError("Cette sélection n'existe pas.")
+    if row["coupon_id"] is not None:
+        raise HistoryError("Cette sélection est déjà dans un coupon.")
+    return create(int(row["session_id"]), [pick_id], settings=settings)
+
+
+def settle_all(coupon_id: int, result: str, settings: Settings | None = None) -> int:
+    """Applique un resultat a **toutes les jambes en attente** d'un coupon.
+
+    Un combine gagnant demande de saisir N fois le meme resultat. Les jambes
+    deja tranchees ne sont pas touchees : corriger une jambe puis cliquer ici
+    ne doit pas effacer la correction.
+    """
+    if result not in RESULTS:
+        raise HistoryError(f"Résultat inconnu : {result}")
+    with connect(settings) as conn:
+        cursor = conn.execute(
+            "UPDATE picks SET result = ? WHERE coupon_id = ? AND (result IS NULL OR result = ?)",
+            (result, coupon_id, "pending"),
+        )
+        return cursor.rowcount
 
 
 def delete(coupon_id: int, settings: Settings | None = None) -> None:
