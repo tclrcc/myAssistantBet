@@ -6,17 +6,25 @@
   <title>{% block title %}MyAssistantBet{% endblock %}</title>
   <link rel="stylesheet" href="/static/app.css">
   <script src="/static/htmx.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
 </head>
 <body>
   <header class="topbar">
     <a class="brand" href="/">MyAssistantBet</a>
     <nav>
-      <a href="/">Board</a>
-      <a href="/history">Historique</a>
-      <a href="/manual">Événement manuel</a>
-      <a href="/competitions">Compétitions</a>
-      <a href="/settings">Réglages</a>
-      <a href="/health">Health</a>
+      {# `is-current` sur la section en cours : une barre de six liens sans
+         reperage oblige a relire l'URL pour savoir ou l'on est. La racine est
+         comparee exactement, les autres par prefixe — /history/2 reste
+         « Historique ». #}
+      {% set chemin = request.url.path %}
+      {% for url, libelle in [
+        ('/', 'Board'), ('/history', 'Historique'), ('/stats', 'Statistiques'),
+        ('/manual', 'Événement manuel'), ('/competitions', 'Compétitions'),
+        ('/settings', 'Réglages'), ('/health', 'Health')] %}
+        <a href="{{ url }}"
+           class="{% if chemin == url or (url != '/' and chemin.startswith(url)) %}is-current{% endif %}"
+        >{{ libelle }}</a>
+      {% endfor %}
     </nav>
   </header>
 

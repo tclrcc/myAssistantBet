@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from dataclasses import fields
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,8 +12,10 @@ from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services import coupons as coupons_service
 from myassistantbet.services.history import (
+    Analysis,
     HistoryError,
     add_pick,
+    analysis,
     delete_pick,
     list_picks,
     list_sessions,
@@ -306,8 +309,8 @@ def test_page_historique(client: TestClient, isolated_settings: Settings) -> Non
     response = client.get("/history")
 
     assert response.status_code == 200
-    assert "Taux de réussite" in response.text
-    assert "Aucun pick enregistré" in response.text
+    assert "Sessions" in response.text
+    assert "Statistiques" in response.text, "les taux ont leur propre page"
 
 
 def test_page_picks(client: TestClient, isolated_settings: Settings) -> None:
@@ -383,11 +386,19 @@ def test_taux_affiches_apres_saisie(client: TestClient, isolated_settings: Setti
     session_id, event_id = _session_avec_match(isolated_settings)
     _joue(isolated_settings, session_id, event_id, "safe", "win")
 
-    response = client.get("/history")
+    response = client.get("/stats")
 
     assert "100 %" in response.text
     assert "🟢 SAFE" in response.text
     assert "Football" in response.text
+    assert "Ce que valent tes paris" in response.text
+
+
+def test_page_de_stats_vide(client: TestClient) -> None:
+    response = client.get("/stats")
+
+    assert response.status_code == 200
+    assert "Rien à mesurer" in response.text
 
 
 # -- Selecteur de match : sport et competition ------------------------------
@@ -436,3 +447,100 @@ def test_le_selecteur_de_match_porte_les_groupes(
     response = client.get(f"/history/{session_id}")
 
     assert '<optgroup label="Football · Amical">' in response.text
+
+
+# -- Ce que vaut l'analyse --------------------------------------------------
+
+
+def _propose(
+    settings: Settings,
+    session_id: int,
+    event_id: int,
+    tier: str,
+    result: str,
+    market: str = "O/U",
+    confidence: str = "",
+) -> int:
+    """Une selection **non jouee** dont on connait le resultat."""
+    pick_id = add_pick(
+        session_id,
+        tier,
+        market,
+        "Over",
+        event_id=str(event_id),
+        confidence=confidence,
+        settings=settings,
+    )
+    set_result(pick_id, result, settings)
+    return pick_id
+
+
+def test_l_analyse_compte_aussi_ce_qui_n_a_pas_ete_joue(migrated: Settings) -> None:
+    """C'est toute la difference avec `stats()`, qui ne mesure que le terrain."""
+    session_id, event_id = _session_avec_match(migrated)
+    _propose(migrated, session_id, event_id, "safe", "win")
+    _joue(migrated, session_id, event_id, "safe", "loss")
+
+    report = analysis(migrated)
+
+    assert report.settled == 2
+    assert stats(migrated).overall.settled == 1, "un seul pari joue"
+
+
+def test_l_analyse_oppose_les_jouees_aux_ecartees(migrated: Settings) -> None:
+    """Si l'ecarte gagne autant que le joue, le tri n'apporte rien."""
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(3):
+        _joue(migrated, session_id, event_id, "safe", "win")
+    _propose(migrated, session_id, event_id, "fun", "loss")
+    _propose(migrated, session_id, event_id, "fun", "loss")
+
+    report = analysis(migrated)
+
+    assert report.played.rate == 1.0
+    assert report.skipped.rate == 0.0
+    assert report.comparable
+
+
+def test_la_comparaison_se_tait_s_il_manque_un_cote(migrated: Settings) -> None:
+    session_id, event_id = _session_avec_match(migrated)
+    _propose(migrated, session_id, event_id, "safe", "win")
+
+    assert not analysis(migrated).comparable, "rien de joue : il n'y a rien a opposer"
+
+
+def test_l_analyse_expose_la_confiance(migrated: Settings) -> None:
+    session_id, event_id = _session_avec_match(migrated)
+    _propose(migrated, session_id, event_id, "safe", "loss", confidence="5")
+    _propose(migrated, session_id, event_id, "safe", "win", confidence="3")
+
+    by_confidence = {row.key: row for row in analysis(migrated).by_confidence}
+
+    assert by_confidence["5"].rate == 0.0
+    assert by_confidence["3"].rate == 1.0
+
+
+def test_les_marches_vus_une_fois_sont_annonces_pas_tus(migrated: Settings) -> None:
+    """Un plafond silencieux se lit « tout est couvert » alors que non."""
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(2):
+        _propose(migrated, session_id, event_id, "safe", "win", market="O/U 2.5")
+    _propose(migrated, session_id, event_id, "safe", "win", market="Score exact")
+
+    report = analysis(migrated)
+
+    assert [row.label for row in report.by_market] == ["O/U 2.5"]
+    assert report.hidden_markets == 1
+
+
+def test_l_analyse_vide(migrated: Settings) -> None:
+    assert analysis(migrated).empty is True
+
+
+def test_aucun_champ_financier_sur_l_analyse() -> None:
+    """Meme garde que partout ailleurs (SPEC.md section 9)."""
+    interdits = {"roi", "profit", "stake", "gain", "solde", "esperance", "ev", "value", "edge"}
+    noms = {item.name for item in fields(Analysis)}
+    noms |= {name for name in dir(Analysis) if not name.startswith("_")}
+
+    assert not (noms & interdits)

@@ -289,8 +289,16 @@ Les événements cochés, regroupés par sport.
 - Bouton « Copier » (Clipboard API), bouton « Télécharger en .md ».
 - Le prompt est sauvegardé en base à chaque génération.
 
-### 6.4 Historique (`/history`)
-Sessions passées, prompts générés, et saisie a posteriori des picks joués avec leur résultat. Affichage simple : taux de réussite par palier et par sport. **Aucun calcul de ROI, de value ou de CLV.**
+### 6.4 Historique (`/history`) et feuille de session (`/history/{id}`)
+Liste des sessions passées. La feuille d'une session porte ses sélections et ses coupons joués : import du tableau de Claude, résultat en un clic, « jouer » qui enregistre un pari simple sans passer par le formulaire de coupon.
+
+### 6.5 Statistiques (`/stats`)
+Deux mesures que l'on aurait tort de confondre :
+
+- **ce que vaut l'analyse** — toutes les sélections dont le résultat est connu, jouées ou non, par palier, par confiance annoncée, par sport et par marché. C'est le seul endroit où une sélection écartée compte, et c'est ce qui permet d'opposer le taux des sélections jouées à celui des écartées : si l'écarté gagne aussi souvent, le tri n'apporte rien ;
+- **ce que valent les paris** — uniquement ce qui a été posé chez le bookmaker, plus les taux de coupons séparés entre simples et combinés.
+
+**Aucun calcul de ROI, de value ou de CLV**, ici comme ailleurs.
 
 ---
 

@@ -250,3 +250,20 @@ def test_telechargement_markdown(client: TestClient, isolated_settings: Settings
     assert response.headers["content-type"].startswith("text/markdown")
     assert f'filename="session-{session_id}.md"' in response.headers["content-disposition"]
     assert response.text.startswith("# SESSION D'ANALYSE")
+
+
+def test_la_page_courante_est_marquee_dans_la_navigation(client: TestClient) -> None:
+    """Sans reperage, six liens obligent a relire l'URL pour savoir ou l'on est."""
+    page = client.get("/competitions").text
+
+    assert '<a href="/competitions"\n           class="is-current"' in page or (
+        'href="/competitions"' in page and "is-current" in page
+    )
+    assert page.count("is-current") == 1, "une seule section a la fois"
+
+
+def test_une_sous_page_reste_marquee(client: TestClient) -> None:
+    """/history/2 appartient toujours a « Historique »."""
+    page = client.get("/history").text
+
+    assert "is-current" in page

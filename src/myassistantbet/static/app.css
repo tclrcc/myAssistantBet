@@ -2,29 +2,31 @@
    Les tokens vivent dans :root ; tout le reste s'y rapporte. */
 
 :root {
-  /* Fonds, du plus profond au plus clair. */
-  --bg: #0f1115;
-  --panel: #171a21;
-  --panel-2: #1e222b;
-  --panel-3: #262b36;
-  --line: #2b3140;
-  --line-soft: #212632;
+  /* Fonds, du plus profond au plus clair. Legerement bleutes : un gris neutre
+     sur un ecran de bureau parait sale a cote des accents colores. */
+  --bg: #0b0d12;
+  --panel: #14171f;
+  --panel-2: #1b1f2a;
+  --panel-3: #242936;
+  --line: #2a3040;
+  --line-soft: #1f242f;
 
   /* Texte. */
-  --text: #e8eaf0;
-  --text-dim: #b3bac7;
-  --muted: #808896;
+  --text: #eceef4;
+  --text-dim: #b6bdcc;
+  --muted: #7c8698;
 
   /* Accents. Un seul bleu porteur d'action, le reste est semantique. */
-  --accent: #5b93f7;
-  --accent-soft: rgba(91, 147, 247, 0.13);
-  --accent-line: rgba(91, 147, 247, 0.4);
-  --alert: #ec6a5e;
-  --alert-soft: rgba(236, 106, 94, 0.12);
-  --ok: #4fb783;
-  --ok-soft: rgba(79, 183, 131, 0.12);
-  --warn: #d9a441;
-  --warn-soft: rgba(217, 164, 65, 0.12);
+  --accent: #5b8cfa;
+  --accent-2: #7c6cf5;
+  --accent-soft: rgba(91, 140, 250, 0.14);
+  --accent-line: rgba(91, 140, 250, 0.45);
+  --alert: #f2726a;
+  --alert-soft: rgba(242, 114, 106, 0.13);
+  --ok: #45c48a;
+  --ok-soft: rgba(69, 196, 138, 0.13);
+  --warn: #e0a63f;
+  --warn-soft: rgba(224, 166, 63, 0.13);
 
   /* Rythme : une echelle, pas des valeurs au hasard. */
   --s1: 0.25rem;
@@ -34,11 +36,14 @@
   --s5: 1.5rem;
   --s6: 2rem;
 
-  --radius: 8px;
-  --radius-sm: 5px;
+  --radius: 12px;
+  --radius-sm: 7px;
   /* Hauteur de la barre de navigation collante : l'en-tete de tableau s'y cale. */
-  --topbar-h: 53px;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 6px 20px rgba(0, 0, 0, 0.22);
+  --topbar-h: 57px;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.26);
+  /* Un liseré clair en haut d'une surface sombre imite la lumiere rasante :
+     c'est ce qui donne du relief sans empiler les ombres. */
+  --edge: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
@@ -52,9 +57,25 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--text);
-  font: 14px/1.5 var(--sans);
+  font: 14px/1.55 var(--sans);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
+
+/* Une seule lueur, tres diffuse, derriere la barre de navigation. Elle donne
+   une direction a la lumiere ; sans elle, un fond plat parait mort. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0 0 auto;
+  height: 420px;
+  background:
+    radial-gradient(60% 100% at 20% 0%, rgba(91, 140, 250, 0.11), transparent 70%),
+    radial-gradient(45% 100% at 80% 0%, rgba(124, 108, 245, 0.08), transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+.topbar, main { position: relative; z-index: 1; }
 
 h1, h2, h3 { line-height: 1.25; }
 
@@ -77,30 +98,39 @@ a:hover { text-decoration: underline; }
   align-items: center;
   gap: var(--s5);
   padding: var(--s3) var(--s5);
-  background: rgba(23, 26, 33, 0.92);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--line);
+  background: rgba(11, 13, 18, 0.72);
+  backdrop-filter: blur(14px) saturate(140%);
+  border-bottom: 1px solid var(--line-soft);
   position: sticky;
   top: 0;
   z-index: 20;
 }
 .brand {
-  font-weight: 650;
+  font-weight: 700;
+  font-size: 0.95rem;
   color: var(--text);
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 .brand:hover { text-decoration: none; }
 .topbar nav { display: flex; gap: var(--s1); flex-wrap: wrap; }
 .topbar nav a {
-  color: var(--text-dim);
-  padding: var(--s1) var(--s2);
-  border-radius: var(--radius-sm);
-  transition: background 0.12s, color 0.12s;
+  color: var(--muted);
+  padding: 0.3rem var(--s3);
+  border-radius: 999px;
+  font-size: 0.88rem;
+  transition: background 0.14s, color 0.14s;
 }
 .topbar nav a:hover {
   background: var(--panel-2);
   color: var(--text);
   text-decoration: none;
+}
+/* La page courante se voit : sans reperage, une barre de six liens oblige a
+   relire l'URL pour savoir ou l'on est. */
+.topbar nav a.is-current {
+  background: var(--accent-soft);
+  color: var(--text);
+  box-shadow: inset 0 0 0 1px var(--accent-line);
 }
 
 main { padding: var(--s5); max-width: 1440px; margin: 0 auto; }
@@ -116,8 +146,9 @@ main { padding: var(--s5); max-width: 1440px; margin: 0 auto; }
   flex-wrap: wrap;
   padding: var(--s3) var(--s4);
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius);
+  box-shadow: var(--edge);
   margin-bottom: var(--s4);
 }
 .banner-item,
@@ -149,19 +180,21 @@ button.primary,
   display: inline-block;
   font: inherit;
   font-size: 0.88rem;
-  padding: 0.42rem 0.85rem;
+  padding: 0.45rem 0.9rem;
   border-radius: var(--radius-sm);
   cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, filter 0.12s;
+  transition: background 0.14s, border-color 0.14s, filter 0.14s, transform 0.1s;
   white-space: nowrap;
 }
 button.primary {
-  background: var(--accent);
+  background: linear-gradient(180deg, var(--accent), #4a7ae8);
   color: #fff;
-  border: 1px solid var(--accent);
-  font-weight: 550;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), var(--edge);
 }
-button.primary:hover { filter: brightness(1.12); }
+button.primary:hover { filter: brightness(1.1); transform: translateY(-1px); }
+button.primary:active { transform: none; filter: brightness(0.95); }
 button.primary:disabled {
   background: var(--panel-2);
   border-color: var(--line);
@@ -176,12 +209,13 @@ button.primary:disabled {
 }
 .button:hover { text-decoration: none; border-color: var(--accent-line); background: var(--panel-3); }
 .primary-link {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: linear-gradient(180deg, var(--accent), #4a7ae8);
+  border-color: rgba(255, 255, 255, 0.14);
   color: #fff;
-  font-weight: 550;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), var(--edge);
 }
-.primary-link:hover { background: var(--accent); filter: brightness(1.12); }
+.primary-link:hover { filter: brightness(1.1); }
 
 .link-action {
   background: none;
@@ -301,37 +335,40 @@ table.board {
   border-collapse: separate;
   border-spacing: 0;
   background: var(--panel);
-  border: 1px solid var(--line);
+  border: 1px solid var(--line-soft);
   border-radius: var(--radius);
-  /* Surtout pas d'`overflow` ici : un ancetre qui rogne devient le conteneur
-     de reference du `position: sticky` de l'en-tete, qui se met alors a glisser
-     a l'interieur du tableau. Les coins sont arrondis cellule par cellule. */
+  box-shadow: var(--edge);
+  overflow: hidden;
+  font-size: 0.9rem;
 }
 table.board th {
-  text-align: left;
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  font-weight: 650;
-  color: var(--muted);
-  padding: var(--s2) var(--s3);
-  background: var(--panel-2);
-  border-bottom: 1px solid var(--line);
   position: sticky;
   top: var(--topbar-h);
-  z-index: 10;
+  z-index: 5;
+  background: var(--panel-2);
+  text-align: left;
+  font-size: 0.7rem;
+  font-weight: 650;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  padding: var(--s3) var(--s3);
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
 }
 table.board thead tr:first-child th:first-child { border-top-left-radius: var(--radius); }
 table.board thead tr:first-child th:last-child { border-top-right-radius: var(--radius); }
 table.board tbody tr:last-child td:first-child { border-bottom-left-radius: var(--radius); }
 table.board tbody tr:last-child td:last-child { border-bottom-right-radius: var(--radius); }
 table.board td {
-  padding: 0.42rem var(--s3);
+  padding: var(--s3);
   border-bottom: 1px solid var(--line-soft);
+  vertical-align: middle;
 }
 table.board tbody tr:last-child td { border-bottom: 0; }
 table.board tbody tr { transition: background 0.1s; }
 table.board tbody tr:hover { background: var(--panel-2); }
+table.board tbody tr:hover .link-action { color: var(--accent); }
 table.board tr.is-selected { background: var(--accent-soft); }
 table.board tr.is-selected:hover { background: rgba(91, 147, 247, 0.18); }
 table.board tr.is-selected td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
@@ -349,11 +386,12 @@ table.board tr.started .affiche a { color: var(--muted); }
 
 .empty {
   color: var(--muted);
-  padding: var(--s6) var(--s4);
+  padding: var(--s5) var(--s4);
   text-align: center;
-  background: var(--panel);
+  background: linear-gradient(180deg, var(--panel), transparent);
   border: 1px dashed var(--line);
   border-radius: var(--radius);
+  font-size: 0.92rem;
 }
 
 .badge {
@@ -393,11 +431,12 @@ a.badge:hover { border-color: var(--accent-line); text-decoration: none; }
   margin-bottom: var(--s4);
 }
 .page-head h1 {
-  font-size: 1.3rem;
+  font-size: 1.55rem;
   margin: 0;
-  font-weight: 650;
-  letter-spacing: -0.015em;
+  font-weight: 700;
+  letter-spacing: -0.025em;
 }
+.page-head { margin-bottom: var(--s5); }
 .page-head .actions { display: flex; gap: var(--s2); align-items: center; flex-shrink: 0; }
 .page-head form { display: inline; }
 
@@ -833,3 +872,35 @@ table.board tbody tr.sportrow-tennis   td:first-child { box-shadow: inset 3px 0 
 table.board tbody tr.sportrow-cycling  td:first-child { box-shadow: inset 3px 0 0 rgba(168, 130, 240, 0.55); }
 /* La selection reprend la main : c'est l'information la plus utile. */
 table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+
+/* --- Cartes de score (page statistiques) ---------------------------------- */
+
+/* Deux chiffres qui ne valent que compares : les mettre cote a cote, gros, est
+   le seul rendu qui force a les lire ensemble plutot que l'un apres l'autre. */
+.scorecards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--s3);
+  margin-bottom: var(--s5);
+}
+.scorecard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  padding: var(--s4);
+  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--edge);
+}
+.scorecard .figure {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.scorecard-note { grid-column: 1 / -1; margin: 0; }
+
+.stats h3 { color: var(--text-dim); }
+.group > h2 { font-size: 1rem; }

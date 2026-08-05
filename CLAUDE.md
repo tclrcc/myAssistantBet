@@ -286,3 +286,25 @@ classique, qui rend la page entiere. Des tests verifient la forme de la reponse.
 
 Ce qui ne sert qu'une fois par session — coller un tableau, ajouter une ligne a la main —
 vit dans un `<details class="panel">` replie. La page s'ouvre sur le travail du jour.
+
+`static/app.js` est le **seul** JavaScript maison : du vanilla, quelques lignes, aucun
+framework ni build step. Il ne porte que ce qu'un aller-retour serveur rendrait absurde —
+aujourd'hui la case « tout cocher ». Tout le reste passe par HTMX.
+
+Les tokens de style vivent dans `:root`. Changer l'apparence se fait la, jamais page par
+page : `--edge` (liseré clair en haut d'une surface) porte le relief, la lueur de `body::before`
+donne une direction a la lumiere.
+
+## Les deux mesures, a ne jamais confondre
+
+- `history.stats()` et `coupons.rates()` : **ce que valent mes paris**. Filtrent sur
+  `played`, donc sur ce qui a ete pose chez le bookmaker.
+- `history.analysis()` : **ce que vaut l'analyse**. Aucun filtre sur `played` — une
+  selection ecartee dont le resultat est connu compte autant qu'une jouee.
+  - `played` et `skipped` s'y lisent **ensemble** : si l'ecarte gagne aussi souvent que le
+    joue, le tri n'apporte rien. C'est la seule mesure de ce que vaut le geste de trier,
+    et elle ne coute qu'un resultat saisi sur une ligne qu'on n'a pas jouee.
+  - `hidden_markets` annonce les marches ecartes faute d'echantillon. Un plafond silencieux
+    se lirait « tout est couvert » alors que non.
+
+Les deux vivent sur `/stats`, jamais melangees, et aucune ne produit d'indicateur financier.

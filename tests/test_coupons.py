@@ -566,7 +566,38 @@ def test_les_taux_de_coupons_apparaissent_dans_l_historique(
     set_result(pick_id, "win", isolated_settings)
     coupons_service.create(session_id, [pick_id], settings=isolated_settings)
 
-    response = client.get("/history")
+    response = client.get("/stats")
 
-    assert "Coupons joués" in response.text
+    assert "Ce que valent tes paris" in response.text
     assert "Paris simples" in response.text
+
+
+# -- Confort de saisie ------------------------------------------------------
+
+
+def test_la_date_et_l_heure_sont_pre_remplies(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Un pari se saisit apres l'avoir pose : l'instant present est le bon defaut."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    session_id, event_id = _session(isolated_settings)
+    _pick(isolated_settings, session_id, event_id)
+    maintenant = datetime.now(ZoneInfo(isolated_settings.tz))
+
+    page = client.get(f"/history/{session_id}").text
+
+    assert f'name="date" value="{maintenant:%Y-%m-%d}"' in page
+    assert f'name="time" value="{maintenant:%H:%M}"' in page
+
+
+def test_une_case_tout_selectionner_est_offerte(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    session_id, event_id = _session(isolated_settings)
+    _pick(isolated_settings, session_id, event_id)
+
+    page = client.get(f"/history/{session_id}").text
+
+    assert 'data-check-all="pick_id"' in page, "composer un coupon de dix jambes une a une"

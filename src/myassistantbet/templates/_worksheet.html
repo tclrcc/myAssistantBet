@@ -95,7 +95,10 @@
       <table class="board">
         <thead>
           <tr>
-            <th class="tight"></th>
+            <th class="tight">
+              <input type="checkbox" data-check-all="pick_id"
+                     aria-label="Tout sélectionner" title="Tout sélectionner">
+            </th>
             <th>Match</th>
             <th>Palier</th>
             <th>Sélection</th>
@@ -122,8 +125,8 @@
       <div class="pick-form">
         <label class="narrow">Mise
           <input type="text" name="stake" inputmode="decimal" placeholder="5"></label>
-        <label class="narrow">Date<input type="date" name="date"></label>
-        <label class="narrow">Heure<input type="time" name="time"></label>
+        <label class="narrow">Date<input type="date" name="date" value="{{ today }}"></label>
+        <label class="narrow">Heure<input type="time" name="time" value="{{ now_hm }}"></label>
         <label class="narrow">Book<input type="text" name="bookmaker" value="betclic"></label>
         <label class="grow">Note
           <input type="text" name="note" placeholder="cash-out, erreur de saisie…"></label>

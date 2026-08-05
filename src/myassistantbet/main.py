@@ -648,8 +648,19 @@ def history_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request,
         "history.html",
+        {"sessions": history_service.list_sessions(settings)},
+    )
+
+
+@app.get("/stats", response_class=HTMLResponse)
+def stats_page(request: Request) -> HTMLResponse:
+    """Deux mesures distinctes : ce que vaut l'analyse, ce que valent les paris."""
+    settings = get_settings()
+    return templates.TemplateResponse(
+        request,
+        "stats.html",
         {
-            "sessions": history_service.list_sessions(settings),
+            "analysis": history_service.analysis(settings),
             "stats": history_service.stats(settings),
             "coupon_rates": coupons_service.rates(settings),
         },
@@ -658,6 +669,7 @@ def history_page(request: Request) -> HTMLResponse:
 
 def _picks_context(session_id: int, error: str | None = None, **extra: object) -> dict[str, object]:
     settings = get_settings()
+    now = datetime.now(ZoneInfo(settings.tz))
     return {
         "session_id": session_id,
         "session_label": session_service.session_label(session_id, settings),
@@ -668,6 +680,10 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         "result_labels": list(history_service.RESULT_LABELS.items()),
         "coupons": coupons_service.list_for_session(session_id, settings),
         "available_picks": coupons_service.available_picks(session_id, settings),
+        # Un pari se saisit apres l'avoir pose : l'instant present est le bon
+        # defaut, et le corriger reste possible.
+        "today": now.strftime("%Y-%m-%d"),
+        "now_hm": now.strftime("%H:%M"),
         "error": error,
         "coupon_error": None,
         "coupon_notice": None,

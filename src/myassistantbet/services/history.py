@@ -418,6 +418,146 @@ def stats(settings: Settings | None = None) -> Stats:
     return Stats(by_tier=by_tier, by_sport=by_sport, overall=overall)
 
 
+# -- Ce que vaut l'analyse --------------------------------------------------
+
+#: Sous ce nombre de paris tranches, un marche n'est pas liste : la longue
+#: traine des libelles vus une fois noierait les marches qui comptent.
+ANALYSIS_MIN_MARKET = 2
+
+
+@dataclass
+class Analysis:
+    """Ce que vaut l'analyse, jouee ou non.
+
+    Distincte de `stats()`, qui ne mesure que les paris reellement poses. Ici
+    on juge la **selection** : avait-elle raison ? Une selection ecartee dont
+    le resultat est connu compte donc autant qu'une selection jouee.
+
+    `played` et `skipped` se lisent ensemble : si les selections ecartees
+    gagnent aussi souvent que celles jouees, le tri n'apporte rien. C'est la
+    seule facon de mesurer ce que vaut le geste de trier, et elle ne coute
+    qu'un resultat saisi sur une ligne qu'on n'a pas jouee.
+    """
+
+    settled: int = 0
+    by_tier: list[RateRow] = field(default_factory=list)
+    by_confidence: list[RateRow] = field(default_factory=list)
+    by_sport: list[RateRow] = field(default_factory=list)
+    by_market: list[RateRow] = field(default_factory=list)
+    played: RateRow = field(default_factory=lambda: RateRow("played", "Jouées"))
+    skipped: RateRow = field(default_factory=lambda: RateRow("skipped", "Écartées"))
+    #: Marches ecartes faute d'echantillon. Annonce plutot que tue en silence.
+    hidden_markets: int = 0
+
+    @property
+    def empty(self) -> bool:
+        return self.settled == 0
+
+    @property
+    def comparable(self) -> bool:
+        """Vrai si les deux cotes de la comparaison ont de quoi etre lues."""
+        return self.played.settled > 0 and self.skipped.settled > 0
+
+
+def _rate_tally(entries: list[tuple[str, str, str]], minimum: int = 1) -> list[RateRow]:
+    """Agrege des triplets (cle, libelle, resultat) en lignes de taux."""
+    grouped: dict[str, RateRow] = {}
+    for key, label, result in entries:
+        row = grouped.setdefault(key, RateRow(key=key, label=label))
+        if result == "win":
+            row.won += 1
+        elif result == "loss":
+            row.lost += 1
+        elif result == "void":
+            row.void += 1
+        else:
+            row.pending += 1
+    return [row for row in grouped.values() if row.settled >= minimum]
+
+
+def analysis(settings: Settings | None = None) -> Analysis:
+    """Taux de reussite de **toutes** les selections, jouees ou non.
+
+    Aucun filtre sur `played` : c'est precisement ce qui distingue cette vue de
+    `stats()`. Aucun montant n'y entre non plus.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        tier_order = [row["key"] for row in conn.execute("SELECT key FROM tiers ORDER BY position")]
+        tier_labels = _tier_labels(conn)
+        sport_labels = {
+            row["key"]: row["label"] for row in conn.execute("SELECT key, label FROM sports")
+        }
+        rows = conn.execute(
+            "SELECT k.tier, k.result, k.market, k.confidence, k.played, "
+            "       s.key AS sport_key FROM picks k "
+            "LEFT JOIN events e ON e.id = k.event_id "
+            "LEFT JOIN sports s ON s.id = e.sport_id"
+        ).fetchall()
+
+    report = Analysis()
+    if not rows:
+        return report
+
+    results = [(row["result"] or "pending") for row in rows]
+    report.settled = sum(1 for result in results if result in ("win", "loss"))
+
+    report.by_tier = _rate_tally(
+        [
+            (row["tier"], tier_labels.get(row["tier"], row["tier"]), result)
+            for row, result in zip(rows, results, strict=True)
+        ]
+    )
+    report.by_tier.sort(
+        key=lambda item: tier_order.index(item.key) if item.key in tier_order else 99
+    )
+
+    report.by_confidence = sorted(
+        _rate_tally(
+            [
+                (str(row["confidence"]), f"confiance {row['confidence']}", result)
+                for row, result in zip(rows, results, strict=True)
+                if row["confidence"] is not None
+            ]
+        ),
+        key=lambda item: item.key,
+        reverse=True,
+    )
+
+    report.by_sport = sorted(
+        _rate_tally(
+            [
+                (row["sport_key"] or NO_SPORT, sport_labels.get(row["sport_key"], NO_SPORT), result)
+                for row, result in zip(rows, results, strict=True)
+            ]
+        ),
+        key=lambda item: item.label,
+    )
+
+    markets = [
+        (_market_key(row["market"]), (row["market"] or "").strip(), result)
+        for row, result in zip(rows, results, strict=True)
+        if _market_key(row["market"])
+    ]
+    report.by_market = sorted(
+        _rate_tally(markets, ANALYSIS_MIN_MARKET), key=lambda item: (-item.settled, item.label)
+    )
+    report.hidden_markets = len(_rate_tally(markets)) - len(report.by_market)
+
+    for row, result in zip(rows, results, strict=True):
+        entry = report.played if row["played"] else report.skipped
+        if result == "win":
+            entry.won += 1
+        elif result == "loss":
+            entry.lost += 1
+        elif result == "void":
+            entry.void += 1
+        else:
+            entry.pending += 1
+
+    return report
+
+
 # -- Retour d'experience, pour le prompt ------------------------------------
 
 #: Fenetre du retour : les N derniers picks tranches. Au-dela on parlerait

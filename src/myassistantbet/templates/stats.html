@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Statistiques — MyAssistantBet{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Statistiques</h1>
+    <p class="subtitle">
+      Deux questions distinctes : ce que vaut l'analyse, et ce que valent tes paris.
+    </p>
+  </div>
+  <div class="actions">
+    <a class="button" href="/history">Sessions</a>
+    <a class="button" href="/">← Board</a>
+  </div>
+</div>
+
+{% if analysis.empty and stats.empty %}
+  <p class="empty">
+    Rien à mesurer pour l'instant. Saisis le résultat de quelques sélections —
+    y compris de celles que tu n'as pas jouées, elles disent si l'analyse voyait juste.
+  </p>
+{% else %}
+
+{% if not analysis.empty %}
+<section class="group">
+  <div class="section-head">
+    <h2>Ce que vaut l'analyse</h2>
+    <span class="muted small">
+      toutes les sélections dont le résultat est connu, jouées ou non —
+      {{ analysis.settled }} tranchée(s)
+    </span>
+  </div>
+
+  {% if analysis.comparable %}
+  <div class="scorecards">
+    <div class="scorecard">
+      <span class="label">Sélections jouées</span>
+      <b class="figure">{{ analysis.played.rate_label }}</b>
+      <span class="muted small">{{ analysis.played.won }} / {{ analysis.played.settled }}</span>
+    </div>
+    <div class="scorecard">
+      <span class="label">Sélections écartées</span>
+      <b class="figure">{{ analysis.skipped.rate_label }}</b>
+      <span class="muted small">{{ analysis.skipped.won }} / {{ analysis.skipped.settled }}</span>
+    </div>
+    <p class="scorecard-note muted small">
+      Ces deux chiffres se lisent ensemble : si ce que tu écartes gagne aussi
+      souvent que ce que tu joues, le tri n'apporte rien. C'est la seule mesure
+      de ce que vaut ton filtre — et elle ne coûte qu'un résultat saisi sur une
+      ligne que tu n'as pas jouée.
+    </p>
+  </div>
+  {% endif %}
+
+  <div class="stats">
+    <div>
+      <h3>Par confiance annoncée</h3>
+      {% with rows = analysis.by_confidence, heading = "Confiance" %}
+        {% include "_rates.html" %}
+      {% endwith %}
+      <p class="muted small">
+        L'écart entre la confiance annoncée et le taux constaté dit que la
+        notation dérive. Une confiance 5 doit passer plus souvent qu'une 3.
+      </p>
+    </div>
+    <div>
+      <h3>Par palier</h3>
+      {% with rows = analysis.by_tier, heading = "Palier" %}
+        {% include "_rates.html" %}
+      {% endwith %}
+    </div>
+    <div>
+      <h3>Par sport</h3>
+      {% with rows = analysis.by_sport, heading = "Sport" %}
+        {% include "_rates.html" %}
+      {% endwith %}
+    </div>
+    {% if analysis.by_market %}
+    <div>
+      <h3>Par marché</h3>
+      {% with rows = analysis.by_market, heading = "Marché" %}
+        {% include "_rates.html" %}
+      {% endwith %}
+      {% if analysis.hidden_markets %}
+      <p class="muted small">
+        {{ analysis.hidden_markets }} marché(s) vu(s) une seule fois ne sont pas listés.
+      </p>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+{% if not stats.empty %}
+<section class="group">
+  <div class="section-head">
+    <h2>Ce que valent tes paris</h2>
+    <span class="muted small">uniquement ce qui a été posé chez le bookmaker</span>
+  </div>
+  <div class="stats">
+    <div>
+      <h3>Par palier</h3>
+      {% with rows = stats.by_tier, heading = "Palier" %}
+        {% include "_rates.html" %}
+      {% endwith %}
+    </div>
+    <div>
+      <h3>Par sport</h3>
+      {% with rows = stats.by_sport, heading = "Sport" %}
+        {% include "_rates.html" %}
+      {% endwith %}
+    </div>
+    <div>
+      <h3>Total</h3>
+      {% with rows = [stats.overall], heading = "Ensemble" %}
+        {% include "_rates.html" %}
+      {% endwith %}
+    </div>
+    {% if coupon_rates %}
+    <div>
+      <h3>Coupons</h3>
+      {% with rows = coupon_rates, heading = "Type" %}
+        {% include "_rates.html" %}
+      {% endwith %}
+      <p class="muted small">
+        Un combiné tombe dès qu'une jambe cède : il ne se compare pas à un
+        pari simple, et les deux ne sont donc jamais additionnés.
+      </p>
+    </div>
+    {% endif %}
+  </div>
+</section>
+{% endif %}
+
+<p class="muted small">
+  Taux = gagnés / (gagnés + perdus). Les paris annulés et ceux en attente sont exclus
+  du dénominateur. Aucun indicateur financier n'est produit — ni gain, ni solde, ni
+  espérance — et c'est volontaire.
+</p>
+{% endif %}
+{% endblock %}

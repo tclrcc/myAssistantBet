@@ -3,55 +3,11 @@
 {% block content %}
 <div class="page-head">
   <h1>Historique</h1>
-  <div class="actions"><a class="button" href="/">← Board</a></div>
-</div>
-
-<section class="group">
-  <h2>Taux de réussite</h2>
-  {% if stats.empty %}
-    <p class="empty">Aucun pick enregistré. Ouvre une session pour en saisir.</p>
-  {% else %}
-  <div class="stats">
-    <div>
-      <h3>Par palier</h3>
-      {% with rows = stats.by_tier, heading = "Palier" %}
-        {% include "_rates.html" %}
-      {% endwith %}
-    </div>
-    <div>
-      <h3>Par sport</h3>
-      {% with rows = stats.by_sport, heading = "Sport" %}
-        {% include "_rates.html" %}
-      {% endwith %}
-    </div>
-    <div>
-      <h3>Total</h3>
-      {% with rows = [stats.overall], heading = "Ensemble" %}
-        {% include "_rates.html" %}
-      {% endwith %}
-    </div>
-    {% if coupon_rates %}
-    <div>
-      <h3>Coupons joués</h3>
-      {% with rows = coupon_rates, heading = "Type" %}
-        {% include "_rates.html" %}
-      {% endwith %}
-    </div>
-    {% endif %}
+  <div class="actions">
+    <a class="button primary-link" href="/stats">Statistiques</a>
+    <a class="button" href="/">← Board</a>
   </div>
-  {% if coupon_rates %}
-  <p class="muted small">
-    Les deux colonnes ne mesurent pas la même chose : à gauche les sélections une
-    par une, à droite les paris réellement posés. Un combiné tombe dès qu'une
-    jambe cède, il ne se compare donc pas à un pari simple.
-  </p>
-  {% endif %}
-  <p class="muted small">
-    Taux = gagnés / (gagnés + perdus). Les paris annulés et en attente sont exclus du
-    dénominateur. Aucun calcul financier n'est produit, volontairement.
-  </p>
-  {% endif %}
-</section>
+</div>
 
 <section class="group">
   <h2>Sessions</h2>
