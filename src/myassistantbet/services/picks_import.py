@@ -12,10 +12,13 @@ proposition que l'utilisateur valide, corrige ou rejette ligne par ligne.
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass, field
+from typing import Any
 
 from ..config import Settings, get_settings
 from .grid import GridRow, anchor, build_view
+from .history import list_picks
 from .history import tiers as load_tiers
 
 #: Une ligne de tableau Markdown : `| a | b | c |`.
@@ -54,11 +57,20 @@ class ParsedPick:
     tier: str = ""
     tier_text: str = ""
     confidence: str = ""
+    #: Une selection identique existe deja dans la session, ou plus haut dans
+    #: le meme tableau. Elle reste proposee — c'est peut-etre voulu — mais
+    #: decochee : coller deux fois le meme rendu ne doit pas doubler l'historique.
+    duplicate: bool = False
 
     @property
     def ready(self) -> bool:
         """Vrai si la ligne peut etre enregistree sans correction humaine."""
         return bool(self.market and self.selection and self.tier)
+
+    @property
+    def keep(self) -> bool:
+        """Vrai si la ligne est cochee par defaut dans le formulaire."""
+        return self.ready and not self.duplicate
 
     @property
     def problems(self) -> list[str]:
@@ -71,6 +83,8 @@ class ParsedPick:
             issues.append(f"palier non reconnu ({self.tier_text or 'vide'})")
         if self.event_id is None and self.match_text:
             issues.append("match non rapproché")
+        if self.duplicate:
+            issues.append("déjà présente")
         return issues
 
 
@@ -88,6 +102,26 @@ class ImportPreview:
     @property
     def ready_count(self) -> int:
         return sum(1 for pick in self.picks if pick.ready)
+
+    @property
+    def duplicate_count(self) -> int:
+        return sum(1 for pick in self.picks if pick.duplicate)
+
+
+def _signature(event_id: int | None, market: str, selection: str) -> tuple[Any, ...]:
+    """Ce qui fait qu'une selection est « la meme » qu'une autre.
+
+    Le match compte : la meme cote sur deux affiches differentes sont deux
+    paris. Les accents et la casse ne comptent pas — « Plíšková » recopie a la
+    main ne doit pas passer pour une seconde selection.
+    """
+    return (event_id, _fold(market), _fold(selection))
+
+
+def _fold(text: str) -> str:
+    decomposed = unicodedata.normalize("NFKD", text or "")
+    stripped = "".join(char for char in decomposed if not unicodedata.combining(char))
+    return " ".join(re.sub(r"[^a-z0-9]+", " ", stripped.lower()).split())
 
 
 def _normalize_header(text: str) -> str:
@@ -181,6 +215,7 @@ def parse_table(
     raw: str,
     rows: list[GridRow],
     tiers: list[dict[str, str]],
+    known: set[tuple[Any, ...]] | None = None,
 ) -> ImportPreview:
     """Lit le tableau de selections. Ne rapproche jamais un match au hasard.
 
@@ -192,6 +227,9 @@ def parse_table(
     preview = ImportPreview()
     columns: dict[str, int] | None = None
     index = 0
+    # Les doublons se cherchent contre la session **et** contre le tableau
+    # lui-meme : un rendu recopie deux fois se repete a l'interieur.
+    seen = set(known or ())
 
     for line in (raw or "").splitlines():
         cells = _cells(line)
@@ -210,11 +248,13 @@ def parse_table(
 
         index += 1
         found = anchor(values["match"], rows) if values["match"] else None
+        event_id = found.event_id if found else None
+        signature = _signature(event_id, values["market"], values["selection"])
         preview.picks.append(
             ParsedPick(
                 index=index,
                 match_text=values["match"],
-                event_id=found.event_id if found else None,
+                event_id=event_id,
                 event_label=found.affiche if found else "",
                 market=values["market"],
                 selection=values["selection"],
@@ -222,8 +262,10 @@ def parse_table(
                 tier=_resolve_tier(values["tier"], tiers),
                 tier_text=values["tier"],
                 confidence=_confidence(values["confidence"]),
+                duplicate=signature in seen,
             )
         )
+        seen.add(signature)
 
     if columns is None:
         preview.ignored.append(
@@ -241,4 +283,8 @@ def build_preview(
     """Proposition d'import pour une session, matchs rapproches par leur nom."""
     settings = settings or get_settings()
     rows = build_view(session_id, settings).rows
-    return parse_table(raw, rows, load_tiers(settings))
+    known = {
+        _signature(pick.event_id, pick.market, pick.selection)
+        for pick in list_picks(session_id, settings)
+    }
+    return parse_table(raw, rows, load_tiers(settings), known)

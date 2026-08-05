@@ -81,14 +81,16 @@ def test_ajout_d_un_pick(migrated: Settings) -> None:
     assert picks[0].event_label == "Lyon – Nice"
 
 
-def test_pick_sans_match_est_un_combine(migrated: Settings) -> None:
+def test_pick_sans_match_est_hors_match(migrated: Settings) -> None:
     session_id, _ = _session_avec_match(migrated)
 
     add_pick(session_id, "safe", "Combiné", "3 sélections", settings=migrated)
 
     pick = list_picks(session_id, migrated)[0]
     assert pick.event_id is None
-    assert pick.event_label == "combiné / hors match"
+    assert pick.event_label == "— hors match —", (
+        "« combiné » designe un coupon a plusieurs jambes depuis la phase 10"
+    )
 
 
 def test_marche_et_selection_obligatoires(migrated: Settings) -> None:

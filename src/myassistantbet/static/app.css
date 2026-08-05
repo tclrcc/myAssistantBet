@@ -104,6 +104,7 @@ a:hover { text-decoration: underline; }
   position: sticky;
   top: 0;
   z-index: 20;
+  min-height: var(--topbar-h);
 }
 .brand {
   font-weight: 700;
@@ -338,7 +339,6 @@ table.board {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   box-shadow: var(--edge);
-  overflow: hidden;
   font-size: 0.9rem;
 }
 table.board th {
@@ -904,3 +904,8 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
 
 .stats h3 { color: var(--text-dim); }
 .group > h2 { font-size: 1rem; }
+
+/* Une ligne deja presente dans la session : proposee, mais visiblement mise
+   de cote. Elle ne doit pas se confondre avec les lignes a importer. */
+.import-table tr.is-duplicate td { color: var(--muted); }
+.import-table tr.is-duplicate td:first-child { box-shadow: inset 3px 0 0 var(--warn); }

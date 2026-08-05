@@ -33,6 +33,9 @@
 {% if preview and not preview.ignored %}
   <p class="notice {% if preview.ready_count == preview.count %}notice-ok{% else %}notice-warn{% endif %}">
     {{ preview.count }} ligne(s) lue(s), {{ preview.ready_count }} prête(s).
+    {%- if preview.duplicate_count %}
+      {{ preview.duplicate_count }} déjà présente(s) dans la session, décochée(s) d'office.
+    {%- endif %}
     <b>Rien n'est enregistré</b> : corrige, décoche ce que tu ne veux pas, puis valide.
   </p>
 
@@ -52,14 +55,14 @@
       </thead>
       <tbody>
         {% for pick in preview.picks %}
-        <tr>
+        <tr class="{% if pick.duplicate %}is-duplicate{% endif %}">
           <td class="tight">
             <input type="checkbox" name="keep_{{ pick.index }}" value="1"
-                   {% if pick.ready %}checked{% endif %}>
+                   {% if pick.keep %}checked{% endif %}>
           </td>
           <td>
             <select name="event_{{ pick.index }}">
-              <option value="">— aucun match —</option>
+              <option value="">— hors match —</option>
               {% for group, events in events %}
               <optgroup label="{{ group }}">
                 {% for event in events %}
@@ -121,7 +124,7 @@
     <label class="grow">
       Match
       <select name="event_id">
-        <option value="">— aucun match —</option>
+        <option value="">— hors match —</option>
         {% for group, group_events in events %}
         <optgroup label="{{ group }}">
           {% for event in group_events %}

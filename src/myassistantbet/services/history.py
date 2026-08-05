@@ -198,7 +198,10 @@ def list_picks(session_id: int, settings: Settings | None = None) -> list[Pick]:
         if row["home"]:
             event_label = f"{row['home']} – {row['away']}" if row["away"] else row["home"]
         else:
-            event_label = "combiné / hors match"
+            # « combine » designe desormais un coupon a plusieurs jambes :
+            # laisser ce mot ici ferait lire un pari la ou il n'y a qu'une
+            # selection dont le match n'a pas ete rapproche.
+            event_label = "— hors match —"
         picks.append(
             Pick(
                 pick_id=int(row["id"]),

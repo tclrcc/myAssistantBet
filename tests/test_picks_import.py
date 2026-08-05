@@ -314,3 +314,71 @@ def test_les_deux_formats_donnent_le_meme_resultat(migrated: Settings) -> None:
         depuis_tab.price,
         depuis_tab.tier,
     )
+
+
+# -- Doublons ---------------------------------------------------------------
+
+UNE_LIGNE = (
+    "| # | Match | Marché | Sélection | Cote | Palier | Conf/5 |\n"
+    "|---|---|---|---|---|---|---|\n"
+    "| 1 | Hurkacz – Giron | Vainqueur | Hubert Hurkacz | 1.55 | 🟢 SAFE | 4 |\n"
+)
+
+
+def test_une_selection_deja_dans_la_session_est_decochee(migrated: Settings) -> None:
+    """Coller deux fois le meme rendu ne doit pas doubler l'historique."""
+    session_id, hurkacz, _ = _session(migrated)
+    history_service.add_pick(
+        session_id, "safe", "Vainqueur", "Hubert Hurkacz", event_id=str(hurkacz), settings=migrated
+    )
+
+    preview = picks_import.build_preview(session_id, UNE_LIGNE, migrated)
+
+    pick = preview.picks[0]
+    assert pick.duplicate
+    assert pick.ready, "elle reste enregistrable — c'est peut-etre voulu"
+    assert not pick.keep, "mais elle n'est pas cochee d'office"
+    assert "déjà présente" in pick.problems
+    assert preview.duplicate_count == 1
+
+
+def test_un_tableau_qui_se_repete_est_detecte(migrated: Settings) -> None:
+    """Un rendu recopie deux fois se repete a l'interieur du meme collage."""
+    session_id, _, _ = _session(migrated)
+    repete = UNE_LIGNE + UNE_LIGNE.splitlines()[-1] + "\n"
+
+    preview = picks_import.build_preview(session_id, repete, migrated)
+
+    assert [pick.duplicate for pick in preview.picks] == [False, True]
+
+
+def test_la_casse_et_les_accents_ne_creent_pas_de_faux_doublon(migrated: Settings) -> None:
+    session_id, hurkacz, _ = _session(migrated)
+    history_service.add_pick(
+        session_id, "safe", "Hand. jeux", "Plíšková +5", event_id=str(hurkacz), settings=migrated
+    )
+    tableau = (
+        "| # | Match | Marché | Sélection | Cote | Palier | Conf/5 |\n"
+        "|---|---|---|---|---|---|---|\n"
+        "| 1 | Hurkacz – Giron | hand.  JEUX | PLISKOVA  +5 | 1.98 | 🔵 FUN | 3 |\n"
+    )
+
+    assert picks_import.build_preview(session_id, tableau, migrated).picks[0].duplicate
+
+
+def test_la_meme_cote_sur_deux_affiches_n_est_pas_un_doublon(migrated: Settings) -> None:
+    """Le match fait partie de l'identite d'une selection."""
+    session_id, _, chan = _session(migrated)
+    history_service.add_pick(
+        session_id, "safe", "Vainqueur", "Hubert Hurkacz", event_id=str(chan), settings=migrated
+    )
+
+    assert not picks_import.build_preview(session_id, UNE_LIGNE, migrated).picks[0].duplicate
+
+
+def test_une_ligne_neuve_reste_cochee(migrated: Settings) -> None:
+    session_id, _, _ = _session(migrated)
+
+    pick = picks_import.build_preview(session_id, UNE_LIGNE, migrated).picks[0]
+
+    assert pick.keep and not pick.duplicate

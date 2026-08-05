@@ -295,6 +295,14 @@ Les tokens de style vivent dans `:root`. Changer l'apparence se fait la, jamais 
 page : `--edge` (liseré clair en haut d'une surface) porte le relief, la lueur de `body::before`
 donne une direction a la lumiere.
 
+**Piege verifie, a ne pas reintroduire** : jamais d'`overflow` sur `table.board`. Il en fait
+un conteneur de defilement, l'en-tete `position: sticky` s'y ancre au lieu de la fenetre,
+glisse vers le bas et **recouvre la premiere ligne** — une session entiere disparaissait de
+l'historique sans qu'aucune requete soit en cause. Les coins arrondis sont deja obtenus par
+les regles de rayon cellule par cellule. Et `--topbar-h` doit rester la hauteur reelle de la
+barre : elle est verrouillee par un `min-height` sur `.topbar`, sinon les deux valeurs
+divergent et l'en-tete colle trop haut ou trop bas.
+
 ## Les deux mesures, a ne jamais confondre
 
 - `history.stats()` et `coupons.rates()` : **ce que valent mes paris**. Filtrent sur
