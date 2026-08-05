@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
+from .competitions import category_label, category_rank
 from .labels import affiche, sort_key
 
 logger = logging.getLogger(__name__)
@@ -664,6 +665,9 @@ class Analysis:
     by_tier: list[RateRow] = field(default_factory=list)
     by_confidence: list[RateRow] = field(default_factory=list)
     by_sport: list[RateRow] = field(default_factory=list)
+    #: Niveau de tournoi. Un Grand Chelem et un 250 ne se jouent ni sur le meme
+    #: format ni contre les memes joueurs : leurs taux ne se melangent pas.
+    by_category: list[RateRow] = field(default_factory=list)
     by_market: list[RateRow] = field(default_factory=list)
     played: RateRow = field(default_factory=lambda: RateRow("played", "Jouées"))
     skipped: RateRow = field(default_factory=lambda: RateRow("skipped", "Écartées"))
@@ -727,9 +731,10 @@ def analysis(settings: Settings | None = None) -> Analysis:
         }
         rows = conn.execute(
             "SELECT k.tier, k.result, k.market, k.confidence, k.played, "
-            "       s.key AS sport_key FROM picks k "
+            "       s.key AS sport_key, c.category FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
-            "LEFT JOIN sports s ON s.id = e.sport_id"
+            "LEFT JOIN sports s ON s.id = e.sport_id "
+            "LEFT JOIN competitions c ON c.id = e.competition_id"
         ).fetchall()
 
     report = Analysis()
@@ -769,6 +774,19 @@ def analysis(settings: Settings | None = None) -> Analysis:
             ]
         ),
         key=lambda item: item.label,
+    )
+
+    # Le niveau de tournoi n'existe que la ou il a ete renseigne : une ligne
+    # « non renseigne » ne dirait rien sur les matchs, seulement sur la saisie.
+    report.by_category = sorted(
+        _rate_tally(
+            [
+                (row["category"], category_label(row["category"]), result)
+                for row, result in zip(rows, results, strict=True)
+                if row["category"]
+            ]
+        ),
+        key=lambda item: category_rank(item.key),
     )
 
     markets = [
@@ -858,6 +876,9 @@ class Feedback:
     by_tier: list[FeedbackRow] = field(default_factory=list)
     by_confidence: list[FeedbackRow] = field(default_factory=list)
     by_sport: list[FeedbackRow] = field(default_factory=list)
+    #: Niveau de tournoi. Plus fourni que la competition — quatre Masters 1000
+    #: font un echantillon la ou chacun pris seul n'en fait aucun.
+    by_category: list[FeedbackRow] = field(default_factory=list)
     by_competition: list[FeedbackRow] = field(default_factory=list)
     by_market: list[FeedbackRow] = field(default_factory=list)
 
@@ -927,7 +948,7 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
         }
         rows = conn.execute(
             "SELECT k.tier, k.result, k.market, k.confidence, s.key AS sport_key, "
-            "       COALESCE(c.label, '') AS competition FROM picks k "
+            "       c.category, COALESCE(c.label, '') AS competition FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
             "LEFT JOIN competitions c ON c.id = e.competition_id "
@@ -982,6 +1003,20 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
             ]
         ),
         key=lambda item: (-item.settled, item.label),
+    )
+
+    # Par niveau de tournoi : entre le sport et la competition. « Tennis » est
+    # trop large, « ATP Canadian Open » trop etroit pour tenir un echantillon —
+    # les Masters 1000 pris ensemble en font un.
+    report.by_category = sorted(
+        _feedback_tally(
+            [
+                (row["category"], category_label(row["category"]), row["result"])
+                for row in rows
+                if row["category"]
+            ]
+        ),
+        key=lambda item: category_rank(item.key),
     )
 
     # Par competition : c'est la reponse a « quel type de match ». Un taux par

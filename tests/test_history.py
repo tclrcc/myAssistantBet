@@ -860,6 +860,32 @@ def test_le_taux_ne_s_affiche_jamais_sans_son_compte(
     assert '<span class="bar-count">1/1</span>' in response.text
 
 
+def test_le_taux_par_niveau_de_tournoi(client: TestClient, isolated_settings: Settings) -> None:
+    """Un Grand Chelem et un 250 ne se jouent ni au meme format ni contre les memes."""
+    session_id, event_id = _session_avec_match(isolated_settings, "tennis")
+    db.execute(
+        "UPDATE competitions SET category = 'grand_slam' WHERE label = 'Amical'",
+        settings=isolated_settings,
+    )
+    _propose(isolated_settings, session_id, event_id, "safe", "win")
+
+    report = analysis(isolated_settings)
+
+    assert [row.label for row in report.by_category] == ["Grand Chelem"]
+    assert "Par niveau de tournoi" in client.get("/stats").text
+
+
+def test_un_niveau_absent_ne_produit_pas_de_ligne(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """« Non renseigne » ne dirait rien sur les matchs, seulement sur la saisie."""
+    session_id, event_id = _session_avec_match(isolated_settings)
+    _propose(isolated_settings, session_id, event_id, "safe", "win")
+
+    assert analysis(isolated_settings).by_category == []
+    assert "Par niveau de tournoi" not in client.get("/stats").text
+
+
 def test_la_page_de_stats_porte_l_interdiction(
     client: TestClient, isolated_settings: Settings
 ) -> None:

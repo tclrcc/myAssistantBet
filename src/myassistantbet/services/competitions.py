@@ -18,7 +18,7 @@ from typing import Any
 from ..config import Settings, get_settings
 from ..db import connect
 from ..providers.oddsapi import OddsAPIClient
-from .labels import sport_emoji
+from .labels import sort_key, sport_emoji
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,38 @@ SPORT_PREFIXES = {"soccer_": "football", "tennis_": "tennis"}
 #: bloc CONTEXTE ; laissee vide, seul l'Elo general apparait. Aucune deduction
 #: automatique depuis le libelle du tournoi : ce serait une invention.
 SURFACES = {"hard": "Dur", "clay": "Terre battue", "grass": "Gazon"}
+
+#: Niveaux de tournoi, du plus releve au plus modeste. Un Grand Chelem se joue
+#: au meilleur des cinq manches chez les hommes sur un tableau de 128 ; un 250
+#: se joue en deux manches gagnantes sur un tableau de 28. Melanger leurs taux
+#: de reussite produit un chiffre qui ne decrit ni l'un ni l'autre.
+#:
+#: `masters_1000` couvre les Masters 1000 de l'ATP **et** les WTA 1000 : c'est
+#: le meme etage de la hierarchie, et le circuit se lit deja dans le libelle.
+#: Les separer diviserait par deux des echantillons deja courts.
+CATEGORIES = {
+    "grand_slam": "Grand Chelem",
+    "finals": "Masters de fin d'année",
+    "masters_1000": "Masters 1000",
+    "level_500": "ATP/WTA 500",
+    "level_250": "ATP/WTA 250",
+    "challenger": "Challenger / WTA 125",
+    "itf": "ITF",
+}
+
+#: Rang d'affichage d'un niveau. Une competition sans niveau ferme la marche
+#: plutot que de s'intercaler au hasard.
+CATEGORY_ORDER = {key: index for index, key in enumerate(CATEGORIES)}
+
+
+def category_label(key: str | None) -> str:
+    """Libelle d'un niveau, chaine vide s'il n'est pas renseigne."""
+    return CATEGORIES.get(key or "", "")
+
+
+def category_rank(key: str | None) -> int:
+    """Rang de tri d'un niveau. Les non renseignes passent en dernier."""
+    return CATEGORY_ORDER.get(key or "", len(CATEGORIES))
 
 
 @dataclass
@@ -56,16 +88,37 @@ def _sport_key_for(oddsapi_key: str) -> str | None:
 
 
 def list_all(settings: Settings | None = None) -> list[dict[str, Any]]:
-    """Toutes les competitions, actives d'abord, pour l'ecran de gestion."""
+    """Toutes les competitions, actives d'abord, pour l'ecran de gestion.
+
+    Rangees ensuite par sport puis **par niveau** : les Grands Chelems avant les
+    Masters 1000, avant les 500. Sur quarante tournois de tennis, l'ordre
+    alphabetique melangeait un Grand Chelem et un 500 sans que rien ne le dise.
+    """
     with connect(settings) as conn:
         rows = conn.execute(
             "SELECT c.id, c.label, c.oddsapi_key, c.apifootball_league_id, c.priority, "
-            "       c.active, c.api_active, c.notes, c.surface, "
-            "       s.key AS sport_key, s.label AS sport_label "
-            "FROM competitions c JOIN sports s ON s.id = c.sport_id "
-            "ORDER BY c.active DESC, s.id, c.priority DESC, c.label"
+            "       c.active, c.api_active, c.notes, c.surface, c.category, "
+            "       s.id AS sport_order, s.key AS sport_key, s.label AS sport_label "
+            "FROM competitions c JOIN sports s ON s.id = c.sport_id"
         ).fetchall()
-    return [{**dict(row), "sport_emoji": sport_emoji(row["sport_key"])} for row in rows]
+    competitions = [
+        {
+            **dict(row),
+            "sport_emoji": sport_emoji(row["sport_key"]),
+            "category_label": category_label(row["category"]),
+        }
+        for row in rows
+    ]
+    competitions.sort(
+        key=lambda row: (
+            not row["active"],
+            row["sport_order"],
+            category_rank(row["category"]),
+            -row["priority"],
+            sort_key(row["label"]),
+        )
+    )
+    return competitions
 
 
 def set_active(competition_id: int, active: bool, settings: Settings | None = None) -> None:
@@ -110,6 +163,23 @@ def set_surface(competition_id: int, surface: str, settings: Settings | None = N
             (value if value in SURFACES else None, competition_id),
         )
     logger.info("Surface de la competition %d : %s", competition_id, value or "non renseignee")
+
+
+def set_category(competition_id: int, category: str, settings: Settings | None = None) -> None:
+    """Fixe le niveau d'une competition.
+
+    Comme la surface, elle se saisit a la main : deduire « Masters 1000 » du mot
+    « Masters » dans un libelle marcherait pour Monte-Carlo et se tromperait sur
+    le Masters de fin d'annee. Une valeur inconnue vaut « non renseigne » plutot
+    qu'une erreur : le seul effet est une ligne de moins dans les statistiques.
+    """
+    value = (category or "").strip().lower()
+    with connect(settings) as conn:
+        conn.execute(
+            "UPDATE competitions SET category = ? WHERE id = ?",
+            (value if value in CATEGORIES else None, competition_id),
+        )
+    logger.info("Niveau de la competition %d : %s", competition_id, value or "non renseigne")
 
 
 async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None) -> SyncReport:

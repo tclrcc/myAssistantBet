@@ -477,6 +477,7 @@ def _competitions_context(
         "report": report,
         "elo_report": elo_report,
         "surfaces": competitions_service.SURFACES,
+        "categories": competitions_service.CATEGORIES,
         "elo_state": elo_service.state(settings),
     }
 
@@ -527,6 +528,15 @@ def competition_surface(
 ) -> HTMLResponse:
     """Fixe la surface d'une competition : elle decide quel Elo de surface est rendu."""
     competitions_service.set_surface(competition_id, surface, get_settings())
+    return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
+
+
+@app.post("/competitions/{competition_id}/category", response_class=HTMLResponse)
+def competition_category(
+    request: Request, competition_id: int, category: str = Form(default="")
+) -> HTMLResponse:
+    """Fixe le niveau d'une competition : Grand Chelem, Masters 1000, 500…"""
+    competitions_service.set_category(competition_id, category, get_settings())
     return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
 
 

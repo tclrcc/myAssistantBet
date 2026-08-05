@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.oddsapi import PROVIDER as ODDSAPI_PROVIDER
+from .competitions import category_label, category_rank
 from .labels import affiche, sort_key, sport_emoji
 from .mapping_ui import pending_count
 from .scan import scan_window
@@ -311,11 +312,11 @@ def filter_options(
     football quand on regarde le tennis n'offre que des filtres qui vident le
     board sans rien expliquer.
 
-    Les competitions sont **groupees par sport puis triees alphabetiquement**.
-    L'ordre par priorite decroissante servait le scan, pas la lecture : dans la
-    liste il melangeait les sports et ne laissait aucun moyen de deviner ou
-    chercher « ATP Canadian Open » parmi cent entrees. La priorite continue de
-    trier les lignes du board, ou elle a un sens.
+    Les competitions sont **groupees par sport puis par niveau**, et triees
+    alphabetiquement a l'interieur. L'ordre par priorite decroissante servait le
+    scan, pas la lecture : dans la liste il melangeait les sports et ne laissait
+    aucun moyen de deviner ou chercher « ATP Canadian Open » parmi cent entrees.
+    La priorite continue de trier les lignes du board, ou elle a un sens.
     """
     with connect(settings) as conn:
         sports = [
@@ -325,36 +326,46 @@ def filter_options(
         competitions = [
             dict(row)
             for row in conn.execute(
-                "SELECT c.id, c.label, s.key AS sport_key, s.label AS sport_label "
-                "FROM competitions c JOIN sports s ON s.id = c.sport_id WHERE c.active = 1 "
-                "ORDER BY s.id"
+                "SELECT c.id, c.label, c.category, s.key AS sport_key, s.label AS sport_label "
+                "FROM competitions c JOIN sports s ON s.id = c.sport_id WHERE c.active = 1"
             ).fetchall()
         ]
     if sport:
         competitions = [row for row in competitions if row["sport_key"] == sport]
 
     order = {row["key"]: index for index, row in enumerate(sports)}
-    competitions.sort(key=lambda row: (order.get(row["sport_key"], 99), sort_key(row["label"])))
+    competitions.sort(
+        key=lambda row: (
+            order.get(row["sport_key"], 99),
+            category_rank(row["category"]),
+            sort_key(row["label"]),
+        )
+    )
     return {
         "sports": sports,
         "competitions": competitions,
-        "competition_groups": _by_sport(competitions),
+        "competition_groups": _grouped(competitions),
     }
 
 
-def _by_sport(competitions: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Competitions regroupees par sport, dans l'ordre ou elles arrivent.
+def _grouped(competitions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Competitions regroupees par sport et par niveau, dans l'ordre recu.
+
+    Un Grand Chelem et un ATP 250 ne se cherchent pas au meme endroit : le
+    niveau est ce qui distingue quarante tournois de tennis les uns des autres,
+    bien plus que leur ville. Les competitions sans niveau (le football, un
+    tournoi pas encore renseigne) gardent le sport seul pour titre.
 
     Le groupement est fait ici et non dans le template : le filtre `groupby` de
-    Jinja retrie par ordre alphabetique, ce qui remettrait le tennis avant le
-    football et defaireait l'ordre voulu.
+    Jinja retrie par ordre alphabetique, ce qui remettrait « ATP/WTA 500 » avant
+    « Grand Chelem » et defaireait l'ordre voulu.
     """
     groups: list[dict[str, Any]] = []
     for row in competitions:
-        if not groups or groups[-1]["label"] != row["sport_label"]:
-            groups.append(
-                {"key": row["sport_key"], "label": row["sport_label"], "competitions": []}
-            )
+        niveau = category_label(row["category"])
+        label = f"{row['sport_label']} · {niveau}" if niveau else row["sport_label"]
+        if not groups or groups[-1]["label"] != label:
+            groups.append({"key": row["sport_key"], "label": label, "competitions": []})
         groups[-1]["competitions"].append(row)
     return groups
 

@@ -93,6 +93,7 @@
         <th>Sport</th>
         <th>Compétition</th>
         <th>Clé Odds API</th>
+        <th>Niveau</th>
         <th>Servie ?</th>
         <th>Ligue API-Football</th>
         <th>Priorité</th>
@@ -119,6 +120,25 @@
         </td>
         <td class="affiche">{{ competition.label }}</td>
         <td class="muted">{{ competition.oddsapi_key or '—' }}</td>
+        {# Le niveau ne se deduit pas d'un libelle : « Masters » vaut pour
+           Monte-Carlo comme pour le Masters de fin d'annee. Il se saisit, comme
+           la surface. Reserve au tennis : les valeurs proposees sont celles des
+           circuits ATP et WTA, et « ATP/WTA 500 » sur une Ligue 1 n'aurait
+           aucun sens. #}
+        <td class="small">
+          {% if competition.sport_key == 'tennis' %}
+          <select class="niveau" name="category" aria-label="Niveau de {{ competition.label }}"
+                  hx-trigger="change" hx-post="/competitions/{{ competition.id }}/category"
+                  hx-target="#competitions" hx-swap="outerHTML">
+            <option value="">Niveau —</option>
+            {% for key, label in categories.items() %}
+            <option value="{{ key }}" {% if competition.category == key %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
         <td class="small">
           {% if not competition.oddsapi_key %}
             <span class="muted">manuelle</span>

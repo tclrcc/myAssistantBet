@@ -11,7 +11,12 @@ from myassistantbet import db
 from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.providers.oddsapi import BASE_URL, OddsAPIClient
-from myassistantbet.services.competitions import list_all, set_active, sync_from_api
+from myassistantbet.services.competitions import (
+    list_all,
+    set_active,
+    set_category,
+    sync_from_api,
+)
 from myassistantbet.services.scan import active_competitions
 
 from .helpers import QUOTA_HEADERS
@@ -317,3 +322,83 @@ def test_chaque_competition_porte_son_pictogramme(migrated: Settings) -> None:
 
     assert par_sport.get("football") == "⚽"
     assert par_sport.get("tennis") == "🎾"
+
+
+# -- Niveau de tournoi ------------------------------------------------------
+
+
+def test_les_grands_chelems_sont_seedes_avec_leur_niveau(migrated: Settings) -> None:
+    """Les cles The Odds API designent un tournoi identifie : le seed est une
+    decision humaine, verifiee tournoi par tournoi — pas une deduction."""
+    par_cle = {
+        row["oddsapi_key"]: row["category"]
+        for row in db.query("SELECT oddsapi_key, category FROM competitions", settings=migrated)
+    }
+
+    assert par_cle["tennis_atp_wimbledon"] == "grand_slam"
+    assert par_cle["tennis_wta_us_open"] == "grand_slam"
+    assert par_cle["soccer_epl"] is None, "le niveau ne concerne que le tennis pour l'instant"
+
+
+def test_le_niveau_se_saisit_et_se_retire(migrated: Settings) -> None:
+    competition = next(row for row in list_all(migrated) if row["sport_key"] == "tennis")
+
+    set_category(competition["id"], "masters_1000", migrated)
+    assert _category(migrated, competition["id"]) == "masters_1000"
+
+    set_category(competition["id"], "", migrated)
+    assert _category(migrated, competition["id"]) is None
+
+
+def test_un_niveau_inconnu_vaut_non_renseigne(migrated: Settings) -> None:
+    """Comme la surface : le seul effet est une ligne de moins en statistiques."""
+    competition = next(row for row in list_all(migrated) if row["sport_key"] == "tennis")
+    set_category(competition["id"], "masters_1000", migrated)
+
+    set_category(competition["id"], "super_masters", migrated)
+
+    assert _category(migrated, competition["id"]) is None
+
+
+def test_les_competitions_sont_rangees_par_niveau(migrated: Settings) -> None:
+    """Sur quarante tournois, l'alphabet melange un Grand Chelem et un 500."""
+    tennis = [row["id"] for row in list_all(migrated) if row["sport_key"] == "tennis"]
+    set_category(tennis[0], "level_250", migrated)
+
+    ordre = [row["category"] for row in list_all(migrated) if row["sport_key"] == "tennis"]
+
+    assert ordre.index("grand_slam") < ordre.index("level_250")
+
+
+def test_le_selecteur_de_niveau_ne_sert_qu_au_tennis(client: TestClient) -> None:
+    """« ATP/WTA 500 » sur une Ligue 1 n'aurait aucun sens."""
+    page = client.get("/competitions").text
+
+    assert 'name="category"' in page
+    assert "Masters 1000" in page
+    assert (
+        page.count('name="category"')
+        == db.query_one(
+            "SELECT COUNT(*) AS n FROM competitions c JOIN sports s ON s.id = c.sport_id "
+            "WHERE s.key = 'tennis'"
+        )["n"]
+    )
+
+
+def test_niveau_via_htmx(client: TestClient, isolated_settings: Settings) -> None:
+    competition = next(row for row in list_all(isolated_settings) if row["sport_key"] == "tennis")
+
+    response = client.post(
+        f"/competitions/{competition['id']}/category", data={"category": "level_500"}
+    )
+
+    assert response.status_code == 200
+    assert response.text.strip().startswith('<div id="competitions">')
+    assert _category(isolated_settings, competition["id"]) == "level_500"
+
+
+def _category(settings: Settings, competition_id: int) -> str | None:
+    row = db.query_one(
+        "SELECT category FROM competitions WHERE id = ?", (competition_id,), settings=settings
+    )
+    return row["category"] if row else None

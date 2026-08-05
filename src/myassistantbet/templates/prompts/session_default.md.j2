@@ -177,6 +177,12 @@ Par sport :
   {{ row.line }}
 {%- endfor %}
 {% endif %}
+{%- if feedback.by_category %}
+Par niveau de tournoi :
+{%- for row in feedback.by_category %}
+  {{ row.line }}
+{%- endfor %}
+{% endif %}
 {%- if feedback.by_competition %}
 Par compétition :
 {%- for row in feedback.by_competition %}

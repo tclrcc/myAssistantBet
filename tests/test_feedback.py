@@ -13,6 +13,7 @@ from dataclasses import fields
 import pytest
 from fastapi.testclient import TestClient
 
+from myassistantbet import db
 from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
@@ -393,6 +394,34 @@ def test_le_taux_par_competition_est_expose(migrated: Settings) -> None:
     par_competition = {row.label: row for row in feedback(migrated).by_competition}
 
     assert par_competition["Ligue 1"].rate == 1.0
+
+
+def test_le_taux_par_niveau_de_tournoi_est_expose(migrated: Settings) -> None:
+    """Entre le sport et la competition : « tennis » est trop large, un tournoi
+    pris seul trop etroit pour tenir un echantillon."""
+    session_id, event_id = _session_avec_match(
+        migrated, sport="tennis", competition="ATP Canadian Open"
+    )
+    db.execute(
+        "UPDATE competitions SET category = 'masters_1000' WHERE label = 'ATP Canadian Open'",
+        settings=migrated,
+    )
+    for _ in range(FEEDBACK_MIN_TOTAL):
+        _regle(migrated, session_id, event_id, "safe", "win")
+
+    par_niveau = {row.label: row for row in feedback(migrated).by_category}
+
+    assert par_niveau["Masters 1000"].rate == 1.0
+    assert "Par niveau de tournoi" in build_prompt(session_id, settings=migrated, now=NOW).body
+
+
+def test_un_tournoi_sans_niveau_ne_produit_pas_de_ligne(migrated: Settings) -> None:
+    """« Non renseigne » ne dirait rien sur les matchs, seulement sur la saisie."""
+    session_id, event_id = _session_avec_match(migrated, competition="Amical")
+    for _ in range(FEEDBACK_MIN_TOTAL):
+        _regle(migrated, session_id, event_id, "safe", "win")
+
+    assert feedback(migrated).by_category == []
 
 
 def test_le_prompt_oriente_sans_devenir_un_argument(migrated: Settings) -> None:

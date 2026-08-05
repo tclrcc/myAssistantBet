@@ -172,7 +172,9 @@ def test_les_competitions_sont_groupees_par_sport_et_triees(migrated: Settings) 
     options = board_service.filter_options(migrated)
 
     groups = options["competition_groups"]
-    assert [group["label"] for group in groups] == ["Football", "Tennis"]
+    # Le football n'a pas de niveau : le sport seul titre son groupe. Les
+    # tournois de tennis livres par les migrations sont tous des Grands Chelems.
+    assert [group["label"] for group in groups] == ["Football", "Tennis · Grand Chelem"]
     # Les groupes suivent l'ordre des sports, les competitions l'alphabet.
     for group in groups:
         labels = [row["label"] for row in group["competitions"]]
@@ -180,6 +182,33 @@ def test_les_competitions_sont_groupees_par_sport_et_triees(migrated: Settings) 
     # La liste a plat reste servie : `coherent()` s'en sert pour ecarter un
     # filtre devenu invisible.
     assert len(options["competitions"]) == sum(len(group["competitions"]) for group in groups)
+
+
+def test_les_tournois_sont_groupes_par_niveau(migrated: Settings) -> None:
+    """Un Grand Chelem et un 250 ne se cherchent pas au meme endroit."""
+    db.execute(
+        "UPDATE competitions SET active = 1 WHERE oddsapi_key = 'tennis_atp_french_open'",
+        settings=migrated,
+    )
+    db.execute(
+        "UPDATE competitions SET active = 1, category = 'level_500' "
+        "WHERE oddsapi_key = 'tennis_atp_us_open'",
+        settings=migrated,
+    )
+    db.execute(
+        "UPDATE competitions SET active = 1, category = NULL "
+        "WHERE oddsapi_key = 'tennis_atp_wimbledon'",
+        settings=migrated,
+    )
+
+    groups = [
+        group["label"]
+        for group in board_service.filter_options(migrated, "tennis")["competition_groups"]
+    ]
+
+    # L'ordre suit la hierarchie, pas l'alphabet — sinon « ATP/WTA 500 »
+    # passerait devant « Grand Chelem ». Le tournoi sans niveau ferme la marche.
+    assert groups == ["Tennis · Grand Chelem", "Tennis · ATP/WTA 500", "Tennis"]
 
 
 def test_le_tri_des_competitions_ignore_les_accents(migrated: Settings) -> None:
