@@ -151,10 +151,14 @@ pas des angles : dis ce qu'ils changent sur un match précis, ou ne les cite pas
 
 {% if not feedback.empty %}## CE QUE L'HISTORIQUE DIT
 {% if feedback.enough %}
-Taux de réussite de mes {{ feedback.settled }} derniers paris tranchés :
-gagnés / (gagnés + perdus). Les paris annulés et ceux encore en attente sont
-exclus du dénominateur. Les regroupements de moins de quatre paris ne sont pas
-listés — ils ne mesureraient que le hasard.
+Taux de réussite de mes {{ feedback.settled }} dernières sélections tranchées,
+jouées ou non : gagnées / (gagnées + perdues). Les annulées et celles encore en
+attente sont exclues du dénominateur. Les regroupements de moins de quatre
+sélections ne sont pas listés — ils ne mesureraient que le hasard.
+
+Ce sont **tes propres analyses passées**, confrontées au terrain. Elles ne
+disent pas ce qui va gagner aujourd'hui ; elles disent où ton jugement a porté
+et où il a glissé.
 {% if feedback.by_tier %}
 Par palier :
 {%- for row in feedback.by_tier %}
@@ -173,32 +177,46 @@ Par sport :
   {{ row.line }}
 {%- endfor %}
 {% endif %}
+{%- if feedback.by_competition %}
+Par compétition :
+{%- for row in feedback.by_competition %}
+  {{ row.line }}
+{%- endfor %}
+{% endif %}
 {%- if feedback.by_market %}
 Par marché :
 {%- for row in feedback.by_market %}
   {{ row.line }}
 {%- endfor %}
 {% endif %}
-Ce bloc est une observation sur mes paris passés, pas un modèle. Il sert à
-**une seule chose** : relever le niveau d'exigence là où le passé est mauvais.
+Ce bloc est une observation sur mes analyses passées, pas un modèle. Il sert à
+**deux choses, et à rien d'autre** :
 
-Ce qu'il ne fait pas, sans exception :
+  1. **Où chercher en priorité.** Un marché, une compétition ou un sport où le
+     passé est bon mérite que tu y consacres ta recherche d'abord. C'est un
+     ordre de passage, pas un argument : une sélection s'y prend toujours parce
+     qu'un angle sportif la porte, jamais parce que la catégorie a bien marché.
+  2. **Où relever le niveau d'exigence.** Là où le passé est mauvais, une
+     sélection à confiance 3 ne suffit plus : il en faut une à 4 ou 5, ou rien.
+
+Ce qu'il ne fait **jamais**, sans exception :
+  · il ne se compare **jamais** à une cote. Rapprocher un taux de réussite d'un
+    prix, c'est calculer une espérance ; c'est interdit ici, et le fait que le
+    chiffre vienne de mon propre historique n'y change rien ;
   · il ne redéfinit aucun palier — un palier reste une bande de cote, et la
     règle d'arbitrage de la section C ne bouge pas d'un pouce ;
-  · il ne se compare **jamais** à une cote. Rapprocher un taux de réussite
-    d'un prix, c'est calculer une espérance ; c'est interdit ici, et le fait
-    que le chiffre vienne de mon propre historique n'y change rien ;
-  · il ne dit rien sur les matchs d'aujourd'hui. Un palier à 20 % ne rend
-    aucune affiche de ce lot plus ou moins probable.
+  · il ne dit rien sur l'issue des matchs d'aujourd'hui. Un marché à 70 % ne
+    rend aucune affiche de ce lot plus probable, et un marché à 20 % ne
+    disqualifie aucun angle qui tient debout par ailleurs ;
+  · il ne remplace pas un angle manquant. Si aucun match ne porte de sélection
+    solide dans une catégorie qui réussit d'habitude, la réponse reste PASSE.
 
-Un taux bas ne signifie pas « ne joue plus ça ». Il signifie : sur cette
-catégorie, une sélection à confiance 3 ne suffit plus — il en faut une à 4 ou
-5, ou rien. Un écart net entre la confiance annoncée et le taux constaté est le
-signal le plus utile de tout ce bloc : il dit que ma notation de confiance
-dérive, et c'est à toi de la resserrer dès la section C.
+Le signal le plus utile de tout le bloc est l'écart entre la confiance annoncée
+et le taux constaté : il dit que ma notation de confiance dérive, et c'est à toi
+de la resserrer dès la section C.
 {% else %}
-Trop peu de recul : {{ feedback.settled }} pari(s) tranché(s) enregistré(s), là
-où il en faudrait au moins {{ feedback.minimum }} pour qu'un taux veuille dire
+Trop peu de recul : {{ feedback.settled }} sélection(s) tranchée(s) enregistrée(s),
+là où il en faudrait au moins {{ feedback.minimum }} pour qu'un taux veuille dire
 quelque chose. N'en tire aucune tendance, et n'écris rien à ce sujet.
 {% endif %}
 {% endif %}## SORTIE ATTENDUE

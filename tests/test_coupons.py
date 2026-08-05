@@ -280,14 +280,20 @@ def test_supprimer_le_coupon_retire_le_pick_des_taux(migrated: Settings) -> None
     assert stats(migrated).empty
 
 
-def test_le_retour_d_experience_ignore_les_selections_non_jouees(migrated: Settings) -> None:
-    """Le prompt n'apprend que du terrain, pas des selections ecartees."""
+def test_le_retour_d_experience_juge_l_analyse_pas_la_mise(migrated: Settings) -> None:
+    """Le bloc du prompt compte toutes les selections tranchees, jouees ou non.
+
+    Une selection ecartee dont on connait le resultat dit tout autant si
+    l'angle etait bon. Restreinte aux paris poses, elle mesurerait la
+    discipline de mise — ce que fait `stats()`, et c'est une autre question.
+    """
     session_id, event_id = _session(migrated)
     for _ in range(FEEDBACK_MIN_TOTAL + 2):
         pick_id = _pick(migrated, session_id, event_id)
         set_result(pick_id, "win", migrated)
 
-    assert feedback(migrated).empty
+    assert not feedback(migrated).empty
+    assert feedback(migrated, played_only=True).empty, "aucune n'a ete jouee"
 
 
 # -- Raccourcis de saisie ---------------------------------------------------

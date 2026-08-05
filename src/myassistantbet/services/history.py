@@ -592,12 +592,21 @@ class FeedbackRow:
     def rate(self) -> float | None:
         return None if self.settled == 0 else self.won / self.settled
 
+    #: Largeur du libelle dans le prompt. Un nom de competition depasse volontiers
+    #: la largeur d'un palier : sans troncature, une seule ligne longue casse
+    #: l'alignement de tout le bloc et le rend penible a lire.
+    LABEL_WIDTH = 20
+
     @property
     def line(self) -> str:
-        """`🔴 GIGA FUN     2/14    14 %`, aligne comme le reste du prompt."""
+        """`🔴 GIGA FUN         2/14    14 %`, aligne comme le reste du prompt."""
         if self.rate is None:
             return self.label
-        return f"{self.label:<16} {f'{self.won}/{self.settled}':<7} {self.rate * 100:.0f} %"
+        label = self.label
+        if len(label) > self.LABEL_WIDTH:
+            label = label[: self.LABEL_WIDTH - 1] + "…"
+        compte = f"{self.won}/{self.settled}"
+        return f"{label:<{self.LABEL_WIDTH}} {compte:<7} {self.rate * 100:.0f} %"
 
 
 @dataclass
@@ -615,6 +624,7 @@ class Feedback:
     by_tier: list[FeedbackRow] = field(default_factory=list)
     by_confidence: list[FeedbackRow] = field(default_factory=list)
     by_sport: list[FeedbackRow] = field(default_factory=list)
+    by_competition: list[FeedbackRow] = field(default_factory=list)
     by_market: list[FeedbackRow] = field(default_factory=list)
 
     @property
@@ -657,20 +667,22 @@ def _feedback_tally(entries: list[tuple[str, str, str]]) -> list[FeedbackRow]:
     return [row for row in grouped.values() if row.settled >= FEEDBACK_MIN_ROWS]
 
 
-def feedback(settings: Settings | None = None) -> Feedback:
-    """Taux de reussite des derniers picks tranches, pour nourrir le prompt.
+def feedback(settings: Settings | None = None, played_only: bool = False) -> Feedback:
+    """Taux de reussite des dernieres selections tranchees, pour nourrir le prompt.
 
     Ferme la boucle du parcours : le prompt part, les picks reviennent, leurs
     resultats sont saisis — et la session suivante sait enfin ce qui a tenu.
-    Sans cela l'analyse repart de zero a chaque fois et conseille un palier
+    Sans cela l'analyse repart de zero a chaque fois et conseille un marche
     sans jamais apprendre qu'il ne passe pas.
 
-    Ne comptent que les picks reellement joues — rattaches a un coupon. Une
-    selection proposee puis ecartee n'a jamais ete confrontee au terrain : la
-    faire peser sur le retour d'experience apprendrait le mauvais reflexe.
+    Par defaut, **toutes** les selections tranchees comptent, jouees ou non :
+    ce bloc juge l'analyse, pas la discipline de mise. Une selection proposee
+    puis ecartee dont on connait le resultat dit tout autant si l'angle etait
+    bon. `played_only` restreint aux paris reellement poses, ce que mesure
+    `stats()`.
 
-    Les paris annules et ceux en attente sont exclus : un pick sans resultat
-    n'apprend rien, et le compter au denominateur ferait mentir le taux.
+    Les paris annules et ceux en attente sont exclus : une selection sans
+    resultat n'apprend rien, et la compter au denominateur ferait mentir le taux.
     """
     settings = settings or get_settings()
     with connect(settings) as conn:
@@ -680,11 +692,14 @@ def feedback(settings: Settings | None = None) -> Feedback:
             row["key"]: row["label"] for row in conn.execute("SELECT key, label FROM sports")
         }
         rows = conn.execute(
-            "SELECT k.tier, k.result, k.market, k.confidence, s.key AS sport_key FROM picks k "
+            "SELECT k.tier, k.result, k.market, k.confidence, s.key AS sport_key, "
+            "       COALESCE(c.label, '') AS competition FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
-            "WHERE k.played = 1 AND k.result IN ('win', 'loss') "
-            "ORDER BY k.created_at DESC, k.id DESC LIMIT ?",
+            "LEFT JOIN competitions c ON c.id = e.competition_id "
+            "WHERE k.result IN ('win', 'loss') "
+            + ("AND k.played = 1 " if played_only else "")
+            + "ORDER BY k.created_at DESC, k.id DESC LIMIT ?",
             (FEEDBACK_WINDOW,),
         ).fetchall()
 
@@ -730,6 +745,19 @@ def feedback(settings: Settings | None = None) -> Feedback:
                 (_market_key(row["market"]), (row["market"] or "").strip(), row["result"])
                 for row in rows
                 if _market_key(row["market"])
+            ]
+        ),
+        key=lambda item: (-item.settled, item.label),
+    )
+
+    # Par competition : c'est la reponse a « quel type de match ». Un taux par
+    # sport melange une Ligue 1 lisible et un championnat scandinave d'ete.
+    report.by_competition = sorted(
+        _feedback_tally(
+            [
+                (row["competition"], row["competition"], row["result"])
+                for row in rows
+                if row["competition"]
             ]
         ),
         key=lambda item: (-item.settled, item.label),

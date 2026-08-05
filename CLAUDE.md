@@ -246,8 +246,17 @@ donc rien qui puisse manquer un matin.
 
 - `history.feedback()` ferme la boucle du parcours : le prompt part, les picks reviennent,
   leurs resultats sont saisis, et la session suivante sait enfin ce qui a tenu. Taux par
-  palier, par confiance annoncee, par sport et par marche, sur les `FEEDBACK_WINDOW`
-  derniers paris **tranches** — annules et en attente hors denominateur.
+  palier, par confiance annoncee, par sport, **par competition** et par marche, sur les
+  `FEEDBACK_WINDOW` dernieres selections **tranchees** — annulees et en attente hors
+  denominateur.
+  - **Toutes les selections comptent, jouees ou non** (`played_only=False` par defaut) : ce
+    bloc juge l'analyse, pas la discipline de mise. Une selection ecartee dont on connait le
+    resultat dit tout autant si l'angle etait bon. C'est `stats()` qui mesure les paris poses.
+  - Le bloc **oriente autant qu'il freine** : il dit ou chercher en premier et ou relever
+    l'exigence. Le template precise que c'est un **ordre de passage, pas un argument** — une
+    selection se prend parce qu'un angle sportif la porte, jamais parce que la categorie a
+    bien marche — et qu'il ne remplace pas un angle manquant : sans angle, la reponse reste
+    PASSE.
   - Sous `FEEDBACK_MIN_TOTAL`, **aucun detail n'est publie** : le prompt dit qu'il manque
     du recul. Un 2/3 lu « 67 % » ferait plus de degats que le silence.
   - Sous `FEEDBACK_MIN_ROWS`, un regroupement est tu pour la meme raison.

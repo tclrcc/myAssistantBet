@@ -66,11 +66,17 @@
   </div>
 
   <div class="enrich-bar">
+    {% set actives = competitions | selectattr('active') | list %}
+    {% set servies = actives | selectattr('api_active') | list %}
     <div class="estimate">
       <span class="label">Actives</span>
-      <span class="value">{{ competitions | selectattr('active') | list | length }}</span>
+      <span class="value">{{ actives | length }}</span>
       <span class="muted">
-        sur {{ competitions|length }} — un scan coûte 2 crédits par compétition active
+        sur {{ competitions | length }} — un scan coûte
+        <b>{{ servies | length * 2 }} crédits</b>
+        {%- if actives | length > servies | length %},
+          les {{ actives | length - servies | length }} hors saison ne sont pas facturées
+          tant qu'elles ne servent rien{% endif %}.
       </span>
     </div>
     <form hx-post="/competitions/sync" hx-target="#competitions" hx-swap="outerHTML"
@@ -154,12 +160,18 @@
             </select>
           </form>
           {% endif %}
+          {% if competition.active %}
           <form class="notes-form" hx-post="/competitions/{{ competition.id }}/notes"
                 hx-target="#competitions" hx-swap="outerHTML">
             <textarea name="notes" rows="2" spellcheck="false"
                       placeholder="Format, phase, enjeu, particularités…">{{ competition.notes or '' }}</textarea>
             <button type="submit" class="link-action">enregistrer</button>
           </form>
+          {% elif competition.notes %}
+            <span class="muted">{{ competition.notes | truncate(60) }}</span>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
         </td>
       </tr>
       {% endfor %}

@@ -366,3 +366,58 @@ def test_enregistrement_d_une_fiche_via_htmx(
 
     assert response.status_code == 200
     assert "Aller-retour." in response.text
+
+
+# -- Orientation : vers quoi se tourner -------------------------------------
+
+
+def test_le_retour_compte_les_selections_non_jouees(migrated: Settings) -> None:
+    """Le bloc juge l'analyse : une selection ecartee dit autant si l'angle etait bon."""
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(FEEDBACK_MIN_TOTAL):
+        pick_id = add_pick(
+            session_id, "safe", "O/U 2.5", "Over", event_id=str(event_id), settings=migrated
+        )
+        set_result(pick_id, "win", migrated)
+
+    assert feedback(migrated).settled == FEEDBACK_MIN_TOTAL
+    assert feedback(migrated, played_only=True).empty
+
+
+def test_le_taux_par_competition_est_expose(migrated: Settings) -> None:
+    """« Quel type de match » se lit par competition, pas par sport."""
+    session_id, event_id = _session_avec_match(migrated, competition="Ligue 1")
+    for _ in range(FEEDBACK_MIN_TOTAL):
+        _regle(migrated, session_id, event_id, "safe", "win")
+
+    par_competition = {row.label: row for row in feedback(migrated).by_competition}
+
+    assert par_competition["Ligue 1"].rate == 1.0
+
+
+def test_le_prompt_oriente_sans_devenir_un_argument(migrated: Settings) -> None:
+    """Un taux dit ou chercher en premier, jamais pourquoi selectionner."""
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(12):
+        _regle(migrated, session_id, event_id, "safe", "win")
+
+    bloc = (
+        build_prompt(session_id, settings=migrated, now=NOW)
+        .body.split("CE QUE L'HISTORIQUE DIT")[1]
+        .split("## SORTIE")[0]
+    )
+
+    assert "Par compétition" in bloc
+    assert "ordre de passage, pas un argument" in bloc
+    assert "ne remplace pas un angle manquant" in bloc
+    assert "PASSE" in bloc, "sans angle, la reponse reste PASSE"
+    # Le garde-fou de la section 9 survit a l'ajout de l'orientation.
+    assert "jamais" in bloc and "cote" in bloc and "espérance" in bloc
+
+
+def test_un_libelle_long_ne_casse_pas_l_alignement(migrated: Settings) -> None:
+    """Un nom de competition depasse volontiers la largeur d'un palier."""
+    ligne = FeedbackRow(key="x", label="Championnat de Belgique deuxieme division", won=3, lost=1)
+
+    assert ligne.line.startswith("Championnat de Belg…")
+    assert len(ligne.line.split("3/4")[0]) == FeedbackRow.LABEL_WIDTH + 1

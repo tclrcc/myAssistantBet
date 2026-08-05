@@ -967,3 +967,13 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
 /* La pastille de sport du tableau ne porte plus que le pictogramme. */
 td .sport { padding: 0.15rem 0.4rem; font-size: 1rem; line-height: 1.2; }
 .badge.warn { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
+
+/* Un pictogramme n'a pas besoin de la pastille coloree qui habillait le
+   libelle : le cadre autour d'un seul caractere fait tache plus qu'il n'aide. */
+td .sport {
+  border: 0;
+  background: none;
+  padding: 0;
+  font-size: 1.15rem;
+  line-height: 1;
+}
