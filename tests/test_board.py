@@ -162,6 +162,41 @@ def test_options_de_filtre(migrated: Settings) -> None:
     assert len(options["competitions"]) == 7
 
 
+def test_les_competitions_sont_groupees_par_sport_et_triees(migrated: Settings) -> None:
+    """Un ordre de priorite melangeant les sports ne dit pas ou chercher."""
+    db.execute(
+        "UPDATE competitions SET active = 1 "
+        "WHERE sport_id = (SELECT id FROM sports WHERE key = 'tennis')",
+        settings=migrated,
+    )
+    options = board_service.filter_options(migrated)
+
+    groups = options["competition_groups"]
+    assert [group["label"] for group in groups] == ["Football", "Tennis"]
+    # Les groupes suivent l'ordre des sports, les competitions l'alphabet.
+    for group in groups:
+        labels = [row["label"] for row in group["competitions"]]
+        assert labels == sorted(labels, key=str.casefold)
+    # La liste a plat reste servie : `coherent()` s'en sert pour ecarter un
+    # filtre devenu invisible.
+    assert len(options["competitions"]) == sum(len(group["competitions"]) for group in groups)
+
+
+def test_le_tri_des_competitions_ignore_les_accents(migrated: Settings) -> None:
+    """Sans cela « Série A » tomberait apres « Super Lig », a la fin de la liste."""
+    db.execute(
+        "INSERT INTO competitions (sport_id, oddsapi_key, label, priority, active) "
+        "SELECT id, 'soccer_italy_serie_a', 'Série A', 10, 1 FROM sports WHERE key = 'football'",
+        settings=migrated,
+    )
+
+    labels = [
+        row["label"] for row in board_service.filter_options(migrated, "football")["competitions"]
+    ]
+
+    assert labels.index("Série A") < labels.index("Super Lig")
+
+
 @respx.mock
 async def test_selection_en_masse_suit_le_filtre(
     odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any

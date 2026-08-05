@@ -7,6 +7,7 @@ la garde et d'afficher un tiret orphelin : elle vit ici, une seule fois.
 
 from __future__ import annotations
 
+import unicodedata
 from collections.abc import Sequence
 
 from ..providers.oddsapi import DEFAULT_BOOKMAKER
@@ -41,6 +42,18 @@ SPORT_EMOJI = {"football": "⚽", "tennis": "🎾", "cycling": "🚴"}
 def sport_emoji(key: str | None) -> str:
     """Pictogramme d'un sport, chaine vide si le sport est inconnu."""
     return SPORT_EMOJI.get(key or "", "")
+
+
+def sort_key(text: str | None) -> str:
+    """Cle de tri d'un libelle affiche : sans accent, sans casse.
+
+    Un tri brut place « Serie A » avant « Série A » et « Ligue 2 » apres
+    « Ligue 1 » mais aussi apres « ligue des champions » : dans une liste
+    deroulante de cent competitions, l'oeil cesse de suivre. Les accents et la
+    casse ne doivent pas peser sur l'ordre alphabetique.
+    """
+    decomposed = unicodedata.normalize("NFKD", text or "")
+    return "".join(char for char in decomposed if not unicodedata.combining(char)).casefold()
 
 
 def affiche(home: str, away: str | None) -> str:

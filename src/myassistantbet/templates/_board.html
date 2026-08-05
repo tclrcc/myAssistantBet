@@ -37,15 +37,22 @@
       {% endfor %}
     </div>
 
+    {# Groupees par sport et triees par nom : sur cent competitions, un ordre de
+       priorite melangeant les sports ne laisse aucun moyen de deviner ou
+       chercher. #}
     <label>
       Compétition
-      <select name="competition_id">
+      <select name="competition_id" class="competition-picker">
         <option value="">toutes</option>
-        {% for competition in options.competitions %}
-          <option value="{{ competition.id }}"
-                  {% if filters.competition_id == competition.id %}selected{% endif %}>
-            {{ competition.label }}
-          </option>
+        {% for group in options.competition_groups %}
+        <optgroup label="{{ group.label }}">
+          {% for competition in group.competitions %}
+            <option value="{{ competition.id }}"
+                    {% if filters.competition_id == competition.id %}selected{% endif %}>
+              {{ competition.label }}
+            </option>
+          {% endfor %}
+        </optgroup>
         {% endfor %}
       </select>
     </label>

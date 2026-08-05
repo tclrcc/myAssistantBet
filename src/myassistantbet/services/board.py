@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.oddsapi import PROVIDER as ODDSAPI_PROVIDER
-from .labels import affiche, sport_emoji
+from .labels import affiche, sort_key, sport_emoji
 from .mapping_ui import pending_count
 from .scan import scan_window
 from .session import has_started
@@ -310,6 +310,12 @@ def filter_options(
     Un sport choisi restreint la liste des competitions : proposer les ligues de
     football quand on regarde le tennis n'offre que des filtres qui vident le
     board sans rien expliquer.
+
+    Les competitions sont **groupees par sport puis triees alphabetiquement**.
+    L'ordre par priorite decroissante servait le scan, pas la lecture : dans la
+    liste il melangeait les sports et ne laissait aucun moyen de deviner ou
+    chercher « ATP Canadian Open » parmi cent entrees. La priorite continue de
+    trier les lignes du board, ou elle a un sens.
     """
     with connect(settings) as conn:
         sports = [
@@ -319,14 +325,38 @@ def filter_options(
         competitions = [
             dict(row)
             for row in conn.execute(
-                "SELECT c.id, c.label, s.key AS sport_key FROM competitions c "
-                "JOIN sports s ON s.id = c.sport_id WHERE c.active = 1 "
-                "ORDER BY c.priority DESC, c.label"
+                "SELECT c.id, c.label, s.key AS sport_key, s.label AS sport_label "
+                "FROM competitions c JOIN sports s ON s.id = c.sport_id WHERE c.active = 1 "
+                "ORDER BY s.id"
             ).fetchall()
         ]
     if sport:
         competitions = [row for row in competitions if row["sport_key"] == sport]
-    return {"sports": sports, "competitions": competitions}
+
+    order = {row["key"]: index for index, row in enumerate(sports)}
+    competitions.sort(key=lambda row: (order.get(row["sport_key"], 99), sort_key(row["label"])))
+    return {
+        "sports": sports,
+        "competitions": competitions,
+        "competition_groups": _by_sport(competitions),
+    }
+
+
+def _by_sport(competitions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Competitions regroupees par sport, dans l'ordre ou elles arrivent.
+
+    Le groupement est fait ici et non dans le template : le filtre `groupby` de
+    Jinja retrie par ordre alphabetique, ce qui remettrait le tennis avant le
+    football et defaireait l'ordre voulu.
+    """
+    groups: list[dict[str, Any]] = []
+    for row in competitions:
+        if not groups or groups[-1]["label"] != row["sport_label"]:
+            groups.append(
+                {"key": row["sport_key"], "label": row["sport_label"], "competitions": []}
+            )
+        groups[-1]["competitions"].append(row)
+    return groups
 
 
 def coherent(filters: Filters, options: dict[str, list[dict[str, Any]]]) -> Filters:
