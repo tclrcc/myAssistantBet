@@ -688,3 +688,56 @@ def test_aucun_champ_financier_sur_l_analyse() -> None:
     noms |= {name for name in dir(Analysis) if not name.startswith("_")}
 
     assert not (noms & interdits)
+
+
+def test_le_taux_global_reunit_joue_et_ecarte(migrated: Settings) -> None:
+    """Deduit des deux populations : deux comptages du meme ensemble divergent."""
+    session_id, event_id = _session_avec_match(migrated)
+    _joue(migrated, session_id, event_id, "safe", "win")
+    _propose(migrated, session_id, event_id, "fun", "loss")
+
+    report = analysis(migrated)
+
+    assert (report.overall.won, report.overall.lost) == (1, 1)
+    assert report.overall.won == report.played.won + report.skipped.won
+
+
+# -- Graphiques de la page statistiques -------------------------------------
+
+
+def test_la_barre_a_la_largeur_du_taux(client: TestClient, isolated_settings: Settings) -> None:
+    """Une barre est une part de 100 % : l'echelle est fixe, rien a normaliser."""
+    session_id, event_id = _session_avec_match(isolated_settings)
+    for resultat in ("win", "win", "win", "loss"):
+        _propose(isolated_settings, session_id, event_id, "safe", resultat)
+
+    response = client.get("/stats")
+
+    assert "75 %" in response.text
+    assert 'style="width: 75.0%"' in response.text
+
+
+def test_le_taux_ne_s_affiche_jamais_sans_son_compte(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """« 100 % » sur un pari et « 100 % » sur quarante ne disent pas la meme chose."""
+    session_id, event_id = _session_avec_match(isolated_settings)
+    _propose(isolated_settings, session_id, event_id, "safe", "win")
+
+    response = client.get("/stats")
+
+    assert '<span class="bar-count">1/1</span>' in response.text
+
+
+def test_la_page_de_stats_porte_l_interdiction(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Le garde-fou compte autant que le chiffre : un taux ne se rapproche
+    jamais d'une cote, ce serait calculer une esperance (SPEC.md section 9)."""
+    session_id, event_id = _session_avec_match(isolated_settings)
+    _joue(isolated_settings, session_id, event_id, "safe", "win")
+
+    page = client.get("/stats").text
+
+    assert "Aucun indicateur financier n'est produit" in page
+    assert "espérance" in page

@@ -572,6 +572,22 @@ class Analysis:
         """Vrai si les deux cotes de la comparaison ont de quoi etre lues."""
         return self.played.settled > 0 and self.skipped.settled > 0
 
+    @property
+    def overall(self) -> RateRow:
+        """Les deux populations reunies : le taux de l'analyse, tous picks confondus.
+
+        Deduit de `played` et `skipped` plutot que compte a part : deux
+        comptages du meme ensemble finiraient par diverger, et il faudrait
+        alors arbitrer lequel dit vrai.
+        """
+        total = RateRow(key="all", label="Toutes")
+        for entry in (self.played, self.skipped):
+            total.won += entry.won
+            total.lost += entry.lost
+            total.void += entry.void
+            total.pending += entry.pending
+        return total
+
 
 def _rate_tally(entries: list[tuple[str, str, str]], minimum: int = 1) -> list[RateRow]:
     """Agrege des triplets (cle, libelle, resultat) en lignes de taux."""

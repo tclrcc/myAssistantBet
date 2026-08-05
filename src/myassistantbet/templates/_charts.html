@@ -1,0 +1,76 @@
+{# Graphiques de la page statistiques. Du HTML et du CSS, aucun SVG a calculer
+   et aucune bibliotheque : une barre est une boite dont la largeur vaut le
+   taux. Un taux est une part de 100 %, donc l'echelle est fixe — pas de
+   maximum a chercher, pas de valeur a normaliser.
+
+   Une seule teinte porte les donnees. Les taux mesurent tous la meme chose :
+   les distinguer par la couleur inventerait des categories la ou il n'y a
+   qu'une grandeur, et brulerait le seul canal libre pour ce que la longueur
+   des barres dit deja. #}
+
+{% macro meter(row) %}
+  {# La piste porte l'echelle (0, 25, 50, 75, 100 %) en filets discrets. Aucun
+     seuil n'y est marque : un repere « rentabilite » serait un calcul
+     d'esperance, interdit par la section 9 de SPEC.md. #}
+  <span class="track" aria-hidden="true">
+    {% if row.rate is not none %}
+      <span class="fill{% if row.settled < 4 %} is-thin{% endif %}"
+            style="width: {{ '%.1f'|format(row.rate * 100) }}%"></span>
+    {% endif %}
+  </span>
+{% endmacro %}
+
+{% macro bars(rows, empty="Rien de tranché sur ce regroupement.") %}
+  {% if rows %}
+  <div class="bars">
+    {% for row in rows %}
+    <div class="bar-row{% if row.rate is none %} is-void{% endif %}"
+         title="{{ row.label }} — {{ row.won }} gagné(s), {{ row.lost }} perdu(s){% if row.void %}, {{ row.void }} annulé(s){% endif %}{% if row.pending %}, {{ row.pending }} en attente{% endif %}">
+      <span class="bar-label">{{ row.label }}</span>
+      {{ meter(row) }}
+      <b class="bar-value">{{ row.rate_label }}</b>
+      {# Le compte accompagne toujours le taux : « 100 % » sur un pari et
+         « 100 % » sur quarante ne disent pas la meme chose. #}
+      <span class="bar-count">{{ row.won }}/{{ row.settled }}</span>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="chart-empty">{{ empty }}</p>
+  {% endif %}
+{% endmacro %}
+
+{% macro card(title, rows, note="", empty="Rien de tranché sur ce regroupement.") %}
+  <article class="chart-card">
+    <h3>{{ title }}</h3>
+    {{ bars(rows, empty) }}
+    {% if note %}<p class="chart-note">{{ note }}</p>{% endif %}
+  </article>
+{% endmacro %}
+
+{% macro tile(row, label, note="") %}
+  <div class="tile">
+    <span class="label">{{ label }}</span>
+    <b class="tile-figure">{{ row.rate_label }}</b>
+    {{ meter(row) }}
+    <span class="tile-detail">
+      {{ row.won }} gagnée(s) sur {{ row.settled }} tranchée(s)
+      {%- if row.pending %} · {{ row.pending }} en attente{% endif %}
+    </span>
+    {% if note %}<span class="muted small">{{ note }}</span>{% endif %}
+  </div>
+{% endmacro %}
+
+{% macro hero(row, label, note="") %}
+  <div class="tile tile-hero">
+    <span class="label">{{ label }}</span>
+    <b class="hero-figure">{{ row.rate_label }}</b>
+    {{ meter(row) }}
+    <span class="tile-detail">
+      {{ row.won }} gagné(s), {{ row.lost }} perdu(s) — {{ row.settled }} tranché(s)
+      {%- if row.void %} · {{ row.void }} annulé(s){% endif %}
+      {%- if row.pending %} · {{ row.pending }} en attente{% endif %}
+    </span>
+    {% if note %}<span class="muted small">{{ note }}</span>{% endif %}
+  </div>
+{% endmacro %}

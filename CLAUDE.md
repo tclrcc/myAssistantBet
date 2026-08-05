@@ -187,12 +187,28 @@ Elo de Tennis Abstract comblent ce trou, **gratuitement et sans cle**.
   matchs. `api_active` distingue les deux etats, sinon une competition active qui ne
   ramene rien devient un mystere. Activer une competition hors saison ne coute rien :
   une reponse vide n'est pas facturee.
+- `board.filter_options()` : le menu des competitions est **groupe par sport puis trie par
+  nom**, accents ignores (`labels.sort_key`). L'ordre par priorite decroissante sert le
+  scan, pas la lecture : sur un catalogue complet il melangeait les sports et ne laissait
+  aucun moyen de deviner ou chercher. La priorite continue de trier les lignes du board,
+  ou elle a un sens. Le groupement est fait en Python et non par le filtre `groupby` de
+  Jinja, qui retrierait les groupes par ordre alphabetique.
 
 ## Historique et personnalisation
 
 - `services/history.py` : **aucun calcul financier**, jamais. Le seul indicateur est
   `gagnes / (gagnes + perdus)`. La mise est enregistree mais **jamais agregee** — un test
   verifie qu'aucun champ `roi`, `profit` ou `stake` n'apparait sur les agregats.
+- `pickable_events()` : les matchs proposes au rattachement d'une selection. La shortlist
+  d'abord — c'est ce qui a ete analyse — puis les matchs voisins de la session
+  (`PICKABLE_BEFORE_H` / `PICKABLE_AFTER_H` autour de son `created_at`), marques
+  « hors selection » et horodates. **Sans ce second groupe, un match commence etait
+  irrattachable** : il a quitte le board, il n'a donc jamais pu etre coche, et la
+  selection qui le visait restait « — hors match — » — donc sans sport ni competition,
+  donc muette dans les statistiques. `set_event()` corrige apres coup, et refuse un
+  identifiant inconnu plutot que de laisser un pick pointer sur du vide. L'import des
+  picks essaie la shortlist **avant** le voisinage : l'elargissement ne doit pas rendre
+  ambigu un match qu'elle designait seule.
 - Edition des templates : le corps est **compile avant ecriture**. Un template casse
   briserait toute generation de prompt, donc on refuse plutot que d'ecrire.
 - Nom de template : `^[a-z0-9][a-z0-9_-]*\.md\.j2$`. Pas de traversee de repertoire.
@@ -310,6 +326,12 @@ Les tokens de style vivent dans `:root`. Changer l'apparence se fait la, jamais 
 page : `--edge` (liseré clair en haut d'une surface) porte le relief, la lueur de `body::before`
 donne une direction a la lumiere.
 
+**Piege verifie, a ne pas reintroduire** : `.filters label` empile ses enfants en colonne
+(c'est ce qui met le libelle au-dessus de son champ). Toute pastille placee dans la barre
+de filtres doit donc reposer son `flex-direction: row` — sans quoi le pictogramme du
+selecteur de sport passait au-dessus du nom, et « Tous », qui n'en a pas, paraissait
+desaligne.
+
 **Piege verifie, a ne pas reintroduire** : jamais d'`overflow` sur `table.board`. Il en fait
 un conteneur de defilement, l'en-tete `position: sticky` s'y ancre au lieu de la fenetre,
 glisse vers le bas et **recouvre la premiere ligne** — une session entiere disparaissait de
@@ -329,5 +351,30 @@ divergent et l'en-tete colle trop haut ou trop bas.
     et elle ne coute qu'un resultat saisi sur une ligne qu'on n'a pas jouee.
   - `hidden_markets` annonce les marches ecartes faute d'echantillon. Un plafond silencieux
     se lirait « tout est couvert » alors que non.
+  - `Analysis.overall` est **deduit** de `played` et `skipped`, jamais compte a part :
+    deux comptages du meme ensemble finiraient par diverger.
 
 Les deux vivent sur `/stats`, jamais melangees, et aucune ne produit d'indicateur financier.
+
+### Les graphiques (`templates/_charts.html`)
+
+Du HTML et du CSS, aucun SVG a calculer, aucune bibliotheque : une barre est une boite
+dont la largeur vaut le taux. Un taux est une part de 100 %, donc l'echelle est fixe —
+rien a normaliser, aucun maximum a chercher.
+
+- **Une seule teinte porte les donnees.** Les taux mesurent tous la meme chose : les
+  distinguer par la couleur inventerait des categories la ou il n'y a qu'une grandeur.
+  Le degrade du remplissage est **vertical** ; horizontal, il ferait varier la couleur
+  avec la longueur et encoderait deux fois la meme valeur.
+- **Aucun seuil n'est trace sur la piste.** Les graduations (25 / 50 / 75 %) sont une
+  echelle. Marquer une « rentabilite » serait rapprocher un taux d'une cote, c'est a dire
+  calculer une esperance — interdit n°1. Un test verifie que la page porte cette
+  interdiction en toutes lettres.
+- **Le compte accompagne toujours le taux** : « 100 % » sur un pari et « 100 % » sur
+  quarante ne disent pas la meme chose. Il reste affiche jusque sur petit ecran — c'est le
+  libelle qui cede la place. Sous quatre paris tranches la barre est visiblement moins
+  affirmee (`.fill.is-thin`), affichee mais pas assenee.
+- Deux cartes par rangee au plus : sur trois colonnes, il ne reste a la barre que quelques
+  pixels et le graphique n'ajoute plus rien au pourcentage ecrit a cote.
+- Le tableau chiffre complet (annules, en attente) reste accessible sous chaque bloc, dans
+  un `<details>`. Un graphique ne remplace pas les nombres, il les ordonne.

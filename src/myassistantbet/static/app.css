@@ -895,37 +895,197 @@ table.board tbody tr.sportrow-cycling  td:first-child { box-shadow: inset 3px 0 
 /* La selection reprend la main : c'est l'information la plus utile. */
 table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 
-/* --- Cartes de score (page statistiques) ---------------------------------- */
+/* --- Page statistiques ----------------------------------------------------- */
 
-/* Deux chiffres qui ne valent que compares : les mettre cote a cote, gros, est
-   le seul rendu qui force a les lire ensemble plutot que l'un apres l'autre. */
-.scorecards {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+/* Les deux mesures ne se melangent jamais : chacune est un bloc, avec son
+   titre, ses chiffres de tete et ses graphiques. Melangees, on ne saurait plus
+   laquelle repond a « ce que vaut l'analyse » et laquelle a « ce que valent mes
+   paris ». */
+.stats-block { margin-bottom: var(--s6); }
+.block-head {
+  display: flex;
+  align-items: baseline;
   gap: var(--s3);
-  margin-bottom: var(--s5);
+  flex-wrap: wrap;
+  padding-bottom: var(--s2);
+  margin-bottom: var(--s4);
+  border-bottom: 1px solid var(--line-soft);
 }
-.scorecard {
+.block-head h2 { font-size: 1.05rem; font-weight: 650; margin: 0; }
+.block-head span { margin-left: auto; text-align: right; }
+.block-note {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  max-width: 62ch;
+  margin: 0 0 var(--s5);
+}
+
+/* Chiffres de tete. Une seule figure « heros » par page : au-dela, plus rien
+   ne dit par ou commencer. */
+.kpi {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+}
+/* Seule, la figure de tete n'a pas a s'etaler sur toute la largeur : un chiffre
+   perdu au milieu d'une carte de 1400 px se lit moins bien, pas mieux. */
+.kpi > .tile:only-child { max-width: 26rem; }
+.tile {
   display: flex;
   flex-direction: column;
-  gap: var(--s1);
+  gap: var(--s2);
   padding: var(--s4);
   background: linear-gradient(180deg, var(--panel-2), var(--panel));
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   box-shadow: var(--edge);
 }
-.scorecard .figure {
-  font-size: 2rem;
+.tile .track { margin: var(--s1) 0; }
+.tile-detail { color: var(--muted); font-size: 0.8rem; }
+/* Chiffres proportionnels : en gros corps, `tabular-nums` donne a chaque
+   chiffre la largeur d'un zero et « 12 % » parait tenu a distance. */
+.tile-figure,
+.hero-figure {
   font-weight: 700;
   letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
-  line-height: 1.1;
+  line-height: 1;
+  color: var(--text);
 }
-.scorecard-note { grid-column: 1 / -1; margin: 0; }
+.tile-figure { font-size: 2rem; }
+.hero-figure { font-size: 3rem; }
+.tile-hero {
+  background:
+    radial-gradient(120% 140% at 0% 0%, var(--accent-soft), transparent 60%),
+    linear-gradient(180deg, var(--panel-2), var(--panel));
+  border-color: var(--accent-line);
+}
+
+/* Une barre est une part de 100 % : l'echelle est fixe, il n'y a rien a
+   normaliser. La piste porte les graduations en filets d'un pas au-dessus du
+   fond — recessifs, jamais en pointilles. Aucun seuil n'y figure : marquer une
+   « rentabilite » serait un calcul d'esperance (SPEC.md section 9). */
+.track {
+  position: relative;
+  display: block;
+  height: 10px;
+  border-radius: 3px;
+  background-color: var(--panel-3);
+  background-image: repeating-linear-gradient(
+    90deg,
+    transparent 0 calc(25% - 1px),
+    var(--line) calc(25% - 1px) 25%
+  );
+  overflow: hidden;
+}
+/* Extremite arrondie du cote de la valeur, carree sur la ligne de depart : la
+   barre pousse depuis une base, elle n'est pas une pilule posee la. */
+.fill {
+  display: block;
+  height: 100%;
+  border-radius: 0 3px 3px 0;
+  /* Un degrade **vertical** : une seule teinte, un simple relief. Horizontal,
+     il ferait varier la couleur avec la longueur et encoderait deux fois la
+     meme grandeur. */
+  background: linear-gradient(180deg, #7ba4fb, var(--accent));
+}
+/* Sous quatre paris tranches, le taux mesure surtout le hasard. La barre reste
+   affichee — la taire cacherait une information — mais elle est visiblement
+   moins affirmee, et le compte a cote dit pourquoi. */
+.fill.is-thin { opacity: 0.42; }
+
+/* Deux cartes par rangee, jamais trois : la barre est ce que la carte a a dire,
+   et sur trois colonnes il ne lui reste que quelques pixels — le graphique
+   n'ajoute alors plus rien au pourcentage ecrit a cote. Deux colonnes rangent
+   aussi les quatre graphiques de l'analyse en un carre plein, sans la carte
+   orpheline qu'un `auto-fit` laisse en fin de grille.
+   `align-items: start` laisse chaque carte a sa hauteur : etirer « par sport »
+   (deux lignes) a la hauteur de « par confiance » (cinq) ne remplit qu'avec du
+   vide. */
+.charts {
+  display: grid;
+  grid-template-columns: 1fr;
+  align-items: start;
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+}
+@media (min-width: 900px) {
+  .charts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.chart-card {
+  padding: var(--s4);
+  background: var(--panel);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  box-shadow: var(--edge);
+}
+.chart-card h3 {
+  margin: 0 0 var(--s3);
+  font-size: 0.75rem;
+  font-weight: 650;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.chart-note {
+  margin: var(--s3) 0 0;
+  padding-top: var(--s3);
+  border-top: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+.chart-empty { margin: 0; color: var(--muted); font-size: 0.85rem; }
+
+.bars { display: flex; flex-direction: column; gap: var(--s2); }
+.bar-row {
+  display: grid;
+  grid-template-columns: minmax(4.5rem, 7.5rem) 1fr 3.4rem 3.1rem;
+  align-items: center;
+  gap: var(--s3);
+  padding: 0.15rem var(--s2);
+  margin: 0 calc(-1 * var(--s2));
+  border-radius: var(--radius-sm);
+  transition: background 0.12s;
+}
+.bar-row:hover { background: var(--panel-2); }
+/* Le libelle d'un marche est ecrit a la main : il peut etre long. Il se coupe
+   plutot que de pousser la barre hors de la carte, et l'info-bulle le rend
+   entier. */
+.bar-label {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* `nowrap` et une colonne assez large pour « 100 % » : sans cela le taux passe
+   a la ligne des qu'il atteint trois chiffres, et la seule valeur pleine du
+   graphique est celle qui se lit le plus mal. */
+.bar-value {
+  text-align: right;
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bar-count {
+  text-align: right;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.bar-row.is-void .bar-value { color: var(--muted); }
 
 .stats h3 { color: var(--text-dim); }
 .group > h2 { font-size: 1rem; }
+
+/* Le compte reste affiche jusqu'en bas : « 100 % » sur un pari et « 100 % » sur
+   quarante ne disent pas la meme chose, et le masquer sur petit ecran serait
+   masquer precisement ce qui empeche de se tromper. C'est le libelle qui cede. */
+@media (max-width: 720px) {
+  .bar-row { grid-template-columns: minmax(3.5rem, 5.5rem) 1fr 3.2rem 2.9rem; gap: var(--s2); }
+  .hero-figure { font-size: 2.4rem; }
+}
 
 /* Une ligne deja presente dans la session : proposee, mais visiblement mise
    de cote. Elle ne doit pas se confondre avec les lignes a importer. */
