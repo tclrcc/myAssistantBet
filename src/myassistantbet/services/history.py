@@ -821,10 +821,16 @@ FEEDBACK_WINDOW = 60
 
 #: Sous ce total, aucun taux n'est publie. Un 2/3 se lit « 67 % » et n'apprend
 #: rien ; dire qu'il manque du recul est en revanche une information juste.
-FEEDBACK_MIN_TOTAL = 10
+#:
+#: Releve a 40 apres coup : a 17 selections tranchees, le bloc publiait un
+#: 2/6 en ATP contre 5/7 en WTA qui ne reposait que sur treize matchs d'un
+#: seul tournoi, joues la meme nuit. Ce n'est pas « je lis mieux la WTA »,
+#: c'est « une soiree s'est mal passee », et le prompt le presentait comme un
+#: ordre de passage. Un chiffre faux oriente plus surement que pas de chiffre.
+FEEDBACK_MIN_TOTAL = 40
 
-#: Meme regle a l'echelle d'une ligne : un palier vu trois fois reste tu.
-FEEDBACK_MIN_ROWS = 4
+#: Meme regle a l'echelle d'une ligne : un regroupement vu sept fois reste tu.
+FEEDBACK_MIN_ROWS = 8
 
 
 @dataclass

@@ -329,9 +329,15 @@ donc rien qui puisse manquer un matin.
     selection se prend parce qu'un angle sportif la porte, jamais parce que la categorie a
     bien marche — et qu'il ne remplace pas un angle manquant : sans angle, la reponse reste
     PASSE.
-  - Sous `FEEDBACK_MIN_TOTAL`, **aucun detail n'est publie** : le prompt dit qu'il manque
-    du recul. Un 2/3 lu « 67 % » ferait plus de degats que le silence.
-  - Sous `FEEDBACK_MIN_ROWS`, un regroupement est tu pour la meme raison.
+  - Sous `FEEDBACK_MIN_TOTAL` (**40**), **aucun detail n'est publie** : le prompt dit qu'il
+    manque du recul. Un 2/3 lu « 67 % » ferait plus de degats que le silence.
+  - Sous `FEEDBACK_MIN_ROWS` (**8**), un regroupement est tu pour la meme raison.
+  - Ces deux seuils ont ete releves de 10 et 4 apres observation : a 17 selections
+    tranchees, le bloc publiait « ATP 2/6 contre WTA 5/7 » — treize matchs d'un seul
+    tournoi, joues la meme nuit. Ce n'est pas « je lis mieux la WTA », c'est « une soiree
+    s'est mal passee ». Presente comme un ordre de passage, **un chiffre faux oriente plus
+    surement que pas de chiffre du tout** : c'est pourquoi le seuil se regle haut, et
+    `by_competition` est le regroupement qui en souffre le plus.
   - **Le garde-fou compte autant que le chiffre.** Le template interdit explicitement de
     rapprocher un taux d'une cote : ce serait calculer une esperance, et le fait que le
     chiffre vienne de l'historique de l'utilisateur n'y change rien (section 9). Un test

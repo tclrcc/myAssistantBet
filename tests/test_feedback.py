@@ -138,17 +138,18 @@ def test_un_regroupement_trop_maigre_est_ecarte(migrated: Settings) -> None:
 
 def test_les_annules_et_les_attentes_sortent_du_denominateur(migrated: Settings) -> None:
     session_id, event_id = _session_avec_match(migrated)
-    for _ in range(6):
+    moitie = FEEDBACK_MIN_TOTAL // 2
+    for _ in range(moitie):
         _regle(migrated, session_id, event_id, "safe", "win")
-    for _ in range(6):
+    for _ in range(moitie):
         _regle(migrated, session_id, event_id, "safe", "loss")
     _regle(migrated, session_id, event_id, "safe", "void")
     _regle(migrated, session_id, event_id, "safe", "pending")
 
     row = next(row for row in feedback(migrated).by_tier if row.key == "safe")
 
-    assert (row.won, row.lost) == (6, 6)
-    assert row.settled == 12, "ni l'annule ni l'attente n'entrent au denominateur"
+    assert (row.won, row.lost) == (moitie, moitie)
+    assert row.settled == 2 * moitie, "ni l'annule ni l'attente n'entrent au denominateur"
     assert row.rate == 0.5
 
 
@@ -163,23 +164,36 @@ def test_la_fenetre_ne_retient_que_les_derniers(migrated: Settings) -> None:
 def test_les_libelles_de_marche_sont_regroupes(migrated: Settings) -> None:
     """`Over 2.5 buts` et `over 2,5 Buts` sont le meme marche, ecrit deux fois."""
     session_id, event_id = _session_avec_match(migrated)
-    for market in ("Over 2.5 buts", "over 2,5  Buts", "OVER 2.5 BUTS", "Over 2.5 buts"):
-        _regle(migrated, session_id, event_id, "safe", "win", market=market)
-    for _ in range(FEEDBACK_MIN_TOTAL - 4):
+    # Le groupe doit survivre au minimum par ligne : on repete les orthographes
+    # jusqu'a l'atteindre, sinon le test mesurerait le seuil et non le regroupement.
+    orthographes = ("Over 2.5 buts", "over 2,5  Buts", "OVER 2.5 BUTS", "Over 2.5 buts")
+    for index in range(FEEDBACK_MIN_ROWS):
+        _regle(
+            migrated,
+            session_id,
+            event_id,
+            "safe",
+            "win",
+            market=orthographes[index % len(orthographes)],
+        )
+    for _ in range(FEEDBACK_MIN_TOTAL - FEEDBACK_MIN_ROWS):
         _regle(migrated, session_id, event_id, "fun", "loss", market="Score exact")
 
     markets = {row.key: row for row in feedback(migrated).by_market}
 
     assert set(markets) == {"over 2 5 buts", "score exact"}
-    assert markets["over 2 5 buts"].settled == 4, "quatre orthographes, un seul marche"
+    assert markets["over 2 5 buts"].settled == FEEDBACK_MIN_ROWS, (
+        "quatre orthographes, un seul marche"
+    )
 
 
 def test_le_taux_par_confiance_est_expose(migrated: Settings) -> None:
     """L'ecart entre confiance annoncee et taux constate est le signal utile."""
     session_id, event_id = _session_avec_match(migrated)
-    for _ in range(6):
+    moitie = FEEDBACK_MIN_TOTAL // 2
+    for _ in range(moitie):
         _regle(migrated, session_id, event_id, "safe", "loss", confidence="5")
-    for _ in range(6):
+    for _ in range(moitie):
         _regle(migrated, session_id, event_id, "fun", "win", confidence="3")
 
     by_confidence = {row.key: row for row in feedback(migrated).by_confidence}
@@ -225,9 +239,9 @@ def test_le_prompt_annonce_le_manque_de_recul(migrated: Settings) -> None:
 
 def test_le_prompt_publie_les_taux_et_interdit_la_comparaison(migrated: Settings) -> None:
     session_id, event_id = _session_avec_match(migrated)
-    for _ in range(4):
+    for _ in range(FEEDBACK_MIN_ROWS):
         _regle(migrated, session_id, event_id, "safe", "win")
-    for _ in range(8):
+    for _ in range(FEEDBACK_MIN_TOTAL - FEEDBACK_MIN_ROWS):
         _regle(migrated, session_id, event_id, "giga_fun", "loss")
 
     body = build_prompt(session_id, settings=migrated, now=NOW).body
@@ -427,7 +441,7 @@ def test_un_tournoi_sans_niveau_ne_produit_pas_de_ligne(migrated: Settings) -> N
 def test_le_prompt_oriente_sans_devenir_un_argument(migrated: Settings) -> None:
     """Un taux dit ou chercher en premier, jamais pourquoi selectionner."""
     session_id, event_id = _session_avec_match(migrated)
-    for _ in range(12):
+    for _ in range(FEEDBACK_MIN_TOTAL):
         _regle(migrated, session_id, event_id, "safe", "win")
 
     bloc = (
