@@ -323,6 +323,37 @@ de fois qu'elle joue.
   chaque lecture. Volontairement **absent de `report.kinds`** : ce n'est pas un contexte
   recupere, c'est le moyen d'en chercher d'autres. Un evenement dont le rapprochement est
   reste incertain n'a rien ici, et le dossier **ne devine pas**.
+- **Historique de saison** (`/fixtures?team=&season=`, `KIND_SEASON`, scope = l'annee) : un
+  seul appel rend toute la saison d'une equipe, **toutes competitions**, avec les scores a
+  la pause et les matchs a venir. C'est ce qui repare l'angle mort de `/teams/statistics`,
+  scope a une seule competition : Motherwell y compte 2 matchs de Conference League quand
+  sa saison domestique en porte 47. Trois lignes en sortent, calculees localement :
+  `Total buts`, `Serie`, `Calendrier`.
+  - **Score a 90 minutes** (`score.fulltime`), jamais `goals` : sur un match decide en
+    prolongation, `goals` porte le total prolongation comprise, alors qu'un marche O/U se
+    regle sur le temps reglementaire. Les deux champs sont identiques ailleurs, donc le
+    choix ne coute rien.
+  - **Amicaux exclus** (`FRIENDLY_LEAGUES`, 667 releve en reel), et reports, annulations et
+    forfaits avec eux (`PLAYED_STATUSES`). En juillet les amicaux sont les seuls matchs
+    joues : les compter donnerait « >2.5 dans 4/4 » a une equipe qui n'a rien joue.
+    L'identifiant est la regle, le libelle un filet — il ne classe rien, il rattrape une
+    ligue amicale non listee.
+  - **La saison N-1 ne se demande que si N ne dit rien encore**, et l'annee est alors
+    **ecrite** (`23/36 (2025)`). En debut de saison c'est la regle. La taire laisserait lire
+    la saison passee comme la forme du moment. Sa peremption est longue : elle ne changera
+    plus, et `ttl_for()` la lit sur le **perimetre** du releve, pas sur son type.
+  - **Le match analyse n'est pas son propre prochain match** : il figure dans l'historique
+    de sa propre equipe, et l'heure du fournisseur peut etre posterieure de peu a celle de
+    l'evenement. Sans le garde `days >= 1`, la ligne annoncait « dans 0j » — constate en
+    reel. Seul un match `NS` est une echeance : un report n'en est pas une.
+  - `Total buts` compte les buts **du match**, `Buts marq.` (phase 11) ceux de **l'equipe**.
+    Deux lignes voisines et deux grandeurs differentes : le template les separe
+    explicitement, et un test le verifie.
+  - `Serie` est la serie **en cours**. `biggest.streak` de `/teams/statistics` donne le
+    record de la saison, ce qui se lit comme la serie en cours et dit l'inverse.
+  - **La charge utile n'est pas stockee brute** — seule exception du module : 43 ko pour 41
+    matchs, soit une base dix fois plus grosse pour des logos. `_summarize()` garde de quoi
+    tout recalculer.
 - **Entraineur** (`/coachs`, orthographe du fournisseur, la corriger donne un 404) : le
   fournisseur peut rendre **plusieurs** entraineurs pour une equipe, le predecesseur y
   figurant avec sa date de fin. Le poste en cours est celui dont l'etape de carriere

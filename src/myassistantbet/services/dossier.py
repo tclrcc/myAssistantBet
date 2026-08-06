@@ -2,9 +2,13 @@
 
 Meme decoupage en deux temps que `services/context.py`, et pour la meme raison :
 
-- `refresh_event()` appelle API-Football et **persiste les charges utiles brutes**
-  dans `team_context` ;
+- `refresh_event()` appelle API-Football et **persiste** dans `team_context` ;
 - `dossier_lines()` relit la base et produit les lignes du bloc CONTEXTE.
+
+L'entraineur est stocke brut. Une saison de matchs, non : sa charge utile pese
+43 ko pour 41 matchs, soit une base dix fois plus grosse — et des sauvegardes
+avec — pour des logos et des drapeaux. `_summarize()` n'en garde que de quoi
+tout recalculer, ce qui reste la seule interpretation faite a la collecte.
 
 Ce qui change par rapport au contexte, c'est la cle de memorisation. Le contexte
 est indexe par evenement, ce qui convient aux absents d'un match ou a une
@@ -35,6 +39,7 @@ from .context import load as load_context
 logger = logging.getLogger(__name__)
 
 KIND_COACH = "coach"
+KIND_SEASON = "season"
 
 #: Peremption par type, en heures. Elle se regle sur la vitesse a laquelle la
 #: donnee change, bornee par ce qu'elle coute.
@@ -46,12 +51,47 @@ KIND_COACH = "coach"
 #: vingtaine par lot analyse. Allonger economiserait une misere et laisserait un
 #: entraineur parti sur la fiche ; raccourcir n'apporterait rien de plus, la
 #: nomination etant de toute facon cherchee par la recherche web du prompt.
-TTL_HOURS = {KIND_COACH: 24 * 7}
+#:
+#: L'historique d'une saison en cours change des qu'un match est joue : douze
+#: heures suffisent a ce qu'une journee de championnat entre dans les comptes.
+TTL_HOURS = {KIND_COACH: 24 * 7, KIND_SEASON: 12}
+
+#: Peremption d'une saison **terminee**. Elle ne changera plus jamais : la
+#: rafraichir toutes les douze heures paierait un appel par equipe pour reecrire
+#: les memes lignes. Une valeur longue et non infinie laisse une porte a une
+#: correction tardive du fournisseur — il en fait.
+PAST_SEASON_TTL_HOURS = 24 * 30
 
 #: Sous cette anciennete, l'arrivee est un fait de la saison en cours et pas une
 #: ligne d'etat civil : trois mois, soit le delai au-dela duquel une equipe n'est
 #: plus « celle du nouvel entraineur ».
 COACH_RECENT_DAYS = 90
+
+#: Statuts d'un match dont le score fait foi. Tout le reste — reporte, annule,
+#: interrompu, donne sur tapis vert — ne s'est pas joue, et un 3-0 de forfait
+#: fausserait autant les buts que la serie en cours.
+PLAYED_STATUSES = frozenset({"FT", "AET", "PEN"})
+
+#: Amicaux, exclus de tous les comptes. Une victoire 4-3 en preparation ne dit
+#: rien de la saison, et en juillet ce sont les seuls matchs joues : les compter
+#: donnerait « >2.5 dans 4/4 » a une equipe qui n'a pas encore joue un match
+#: officiel. L'identifiant est la regle — 667 releve sur charge utile reelle — et
+#: le libelle un filet de securite. Le projet interdit de **classer** d'apres un
+#: libelle ; ici il ne classe rien, il rattrape une ligue amicale non listee, et
+#: le seul faux positif possible serait une competition officielle nommee
+#: « Friendlies ».
+FRIENDLY_LEAGUES = frozenset({10, 667})
+
+#: Sous ce nombre de matchs officiels joues, l'historique d'une saison ne dit
+#: rien et on se replie sur la precedente. Meme seuil que les statistiques de
+#: saison, et pour la meme raison — sauf qu'ici il existe un repli.
+SEASON_MIN_MATCHES = 5
+
+#: Une serie de un match n'est pas une serie.
+STREAK_MIN = 2
+
+#: Au-dela, le prochain match n'est plus un facteur de rotation d'effectif.
+NEXT_MATCH_MAX_DAYS = 10
 
 
 @dataclass
@@ -124,6 +164,19 @@ def _parse(moment: str | None) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
+def ttl_for(kind: str, scope: str = "", current_season: int | None = None) -> int:
+    """Peremption applicable, en heures.
+
+    Une saison terminee ne changera plus : la traiter comme la saison en cours
+    paierait un appel par equipe toutes les douze heures pour reecrire les memes
+    lignes. C'est le perimetre du releve, et non son type, qui le dit.
+    """
+    past = kind == KIND_SEASON and scope and current_season is not None
+    if past and scope != str(current_season):
+        return PAST_SEASON_TTL_HOURS
+    return TTL_HOURS.get(kind, 0)
+
+
 def is_fresh(
     kind: str, fetched_at: str | None, now: datetime | None = None, ttl_hours: int | None = None
 ) -> bool:
@@ -154,6 +207,86 @@ def teams_of(event_id: int, settings: Settings | None = None) -> dict[str, Any]:
     return payload if isinstance(payload, dict) else {}
 
 
+def _score_90(fixture: dict[str, Any]) -> tuple[int, int] | None:
+    """Score a **90 minutes**, du point de vue domicile. None si non joue.
+
+    `score.fulltime` et non `goals` : sur un match decide en prolongation, `goals`
+    porte le total prolongation comprise, alors que le marche O/U d'un bookmaker
+    se regle sur les 90 minutes. Compter la prolongation gonflerait la frequence
+    des « plus de 2.5 » sur toutes les coupes. Les deux champs sont identiques
+    sur un match ordinaire, donc ce choix ne coute rien ailleurs.
+    """
+    score = (fixture.get("score") or {}).get("fulltime") or {}
+    home, away = score.get("home"), score.get("away")
+    if home is None or away is None:
+        # Repli sur `goals` : certains matchs anciens n'ont que celui-la.
+        goals = fixture.get("goals") or {}
+        home, away = goals.get("home"), goals.get("away")
+    if home is None or away is None:
+        return None
+    return int(home), int(away)
+
+
+def _is_friendly(league: dict[str, Any]) -> bool:
+    if int(league.get("id") or 0) in FRIENDLY_LEAGUES:
+        return True
+    return "friendl" in str(league.get("name") or "").casefold()
+
+
+def _summarize(fixtures: list[dict[str, Any]], team_id: int) -> list[dict[str, Any]]:
+    """Reduit une saison de matchs a ce qu'un angle sportif utilise.
+
+    C'est la seule interpretation faite a la collecte, et elle est assumee : la
+    charge utile brute pese 43 ko pour 41 matchs — soit une base dix fois plus
+    grosse, et des sauvegardes avec, pour des logos et des drapeaux. Ce qui est
+    garde permet de tout recalculer : date, competition, cote, score a 90
+    minutes, score a la pause, statut.
+    """
+    summary = []
+    for fixture in fixtures:
+        info = fixture.get("fixture") or {}
+        league = fixture.get("league") or {}
+        teams = fixture.get("teams") or {}
+        home_id = (teams.get("home") or {}).get("id")
+        if not info.get("date") or home_id is None:
+            continue
+        score = _score_90(fixture)
+        halftime = (fixture.get("score") or {}).get("halftime") or {}
+        summary.append(
+            {
+                "date": info["date"],
+                "status": ((info.get("status") or {}).get("short")),
+                "league_id": league.get("id"),
+                "league": league.get("name"),
+                "friendly": _is_friendly(league),
+                "at_home": int(home_id) == team_id,
+                "goals": list(score) if score else None,
+                "halftime": [halftime.get("home"), halftime.get("away")]
+                if halftime.get("home") is not None
+                else None,
+            }
+        )
+    return sorted(summary, key=lambda item: item["date"])
+
+
+def _played(matches: Any) -> list[dict[str, Any]]:
+    """Matchs officiels effectivement joues, dans l'ordre chronologique.
+
+    Un amical, un report, une annulation et un forfait sur tapis vert n'ont rien
+    a dire d'une equipe : les compter fausserait autant les buts que la serie.
+    """
+    if not isinstance(matches, list):
+        return []
+    return [
+        match
+        for match in matches
+        if isinstance(match, dict)
+        and not match.get("friendly")
+        and match.get("status") in PLAYED_STATUSES
+        and match.get("goals")
+    ]
+
+
 def _budget(planned: int, settings: Settings) -> str | None:
     """Motif de blocage si le plancher d'appels ne laisse pas passer, sinon None.
 
@@ -182,6 +315,11 @@ async def refresh_event(
 
     Ne recupere que ce qui est perime : deux matchs d'une meme equipe dans la
     semaine ne paient qu'une fois, et regenerer un prompt ne paie jamais.
+
+    L'historique de la saison precedente n'est demande **que** si celle en cours
+    ne dit rien encore. En aout, c'est la regle et non l'exception : une equipe y
+    a joue quatre matchs, tous amicaux, et sa saison n'existe que dans la
+    precedente.
     """
     settings = settings or get_settings()
     report = DossierReport()
@@ -190,47 +328,100 @@ async def refresh_event(
     team_ids = [int(teams[side]) for side in ("home", "away") if teams.get(side)]
     if not team_ids:
         return report
+    season = int(teams["season"]) if teams.get("season") else None
 
-    stale = [
-        team_id
-        for team_id in team_ids
-        if not _is_cached(team_id, KIND_COACH, report, settings, now)
-    ]
-    if not stale:
+    todo: list[tuple[int, str, str]] = []
+    for team_id in team_ids:
+        if not _is_cached(team_id, KIND_COACH, "", report, settings, now, season):
+            todo.append((team_id, KIND_COACH, ""))
+        if season and not _is_cached(
+            team_id, KIND_SEASON, str(season), report, settings, now, season
+        ):
+            todo.append((team_id, KIND_SEASON, str(season)))
+
+    if not await _run(client, todo, report, settings, now):
         return report
 
-    blocked = _budget(len(stale) * CALL_COST, settings)
+    # La saison precedente ne se demande qu'une fois la courante connue : c'est
+    # son contenu qui dit si elle suffit, et le savoir avant aurait demande
+    # l'appel qu'on cherche justement a eviter.
+    if season is None:
+        return report
+    fallback = [
+        (team_id, KIND_SEASON, str(season - 1))
+        for team_id in team_ids
+        if _too_thin(team_id, season, settings)
+        and not _is_cached(team_id, KIND_SEASON, str(season - 1), report, settings, now, season)
+    ]
+    await _run(client, fallback, report, settings, now)
+    return report
+
+
+async def _run(
+    client: APIFootballClient,
+    todo: list[tuple[int, str, str]],
+    report: DossierReport,
+    settings: Settings,
+    now: datetime | None,
+) -> bool:
+    """Execute des releves perimes. Faux si le plancher d'appels les a retenus.
+
+    Le plancher se juge sur le total a payer et non type par type : deux moities
+    sous le plancher passeraient chacune leur tour et le franchiraient ensemble.
+    """
+    if not todo:
+        return True
+    blocked = _budget(len(todo) * CALL_COST, settings)
     if blocked:
         report.blocked_reason = blocked
         logger.warning(blocked)
-        return report
+        return False
 
-    for team_id in stale:
+    for team_id, kind, scope in todo:
         try:
-            payload = await client.coachs(team_id)
+            payload = await _fetch_kind(client, team_id, kind, scope)
         except ProviderError as exc:
-            report.errors.append(f"entraineur : {exc}")
+            report.errors.append(f"{kind} : {exc}")
             continue
-        store(team_id, KIND_COACH, payload, settings=settings, now=now)
-        if KIND_COACH not in report.kinds:
-            report.kinds.append(KIND_COACH)
-    return report
+        store(team_id, kind, payload, scope, settings, now)
+        if kind not in report.kinds:
+            report.kinds.append(kind)
+    return True
+
+
+async def _fetch_kind(client: APIFootballClient, team_id: int, kind: str, scope: str) -> Any:
+    """Recupere un type de releve, et le reduit s'il y a lieu."""
+    if kind == KIND_COACH:
+        return await client.coachs(team_id)
+    if kind == KIND_SEASON:
+        return _summarize(await client.team_fixtures(team_id, int(scope)), team_id)
+    raise ValueError(f"type de dossier inconnu : {kind}")
 
 
 def _is_cached(
     team_id: int,
     kind: str,
+    scope: str,
     report: DossierReport,
     settings: Settings,
     now: datetime | None,
+    current_season: int | None = None,
 ) -> bool:
     """Vrai si le releve de cette equipe est encore frais. Le note au rapport."""
-    known = load(team_id, kind, settings=settings)
-    if known is None or not is_fresh(kind, known[1], now):
+    known = load(team_id, kind, scope, settings)
+    if known is None or not is_fresh(kind, known[1], now, ttl_for(kind, scope, current_season)):
         return False
     if kind not in report.cached:
         report.cached.append(kind)
     return True
+
+
+def _too_thin(team_id: int, season: int, settings: Settings) -> bool:
+    """Vrai si la saison en cours ne porte pas assez de matchs officiels joues."""
+    known = load(team_id, KIND_SEASON, str(season), settings)
+    if known is None:
+        return False
+    return len(_played(known[0])) < SEASON_MIN_MATCHES
 
 
 # -- Rendu ------------------------------------------------------------------
@@ -300,6 +491,133 @@ def _coach_fragment(
     return f"{team} {post['name']} ({tenure})" if tenure else f"{team} {post['name']}"
 
 
+def _history(
+    team_id: int | None, season: int | None, settings: Settings
+) -> tuple[list[dict[str, Any]], int] | None:
+    """Historique retenu pour une equipe : ses matchs joues et la saison d'ou ils
+    viennent.
+
+    La saison en cours prime, la precedente sert de repli quand elle ne dit rien
+    encore — le cas de tout le mois d'aout. La saison est rendue avec les matchs
+    parce qu'elle doit etre **ecrite** : « 18/34 » sur la saison passee et sur la
+    saison en cours ne se lisent pas pareil, et taire laquelle c'est laisser
+    croire a la seconde.
+    """
+    if not team_id or season is None:
+        return None
+    for candidate in (season, season - 1):
+        known = load(int(team_id), KIND_SEASON, str(candidate), settings)
+        if known is None:
+            continue
+        matches = _played(known[0])
+        if len(matches) >= SEASON_MIN_MATCHES:
+            return matches, candidate
+    return None
+
+
+def _outcome(match: dict[str, Any]) -> str:
+    """`V`, `N` ou `D` a 90 minutes, du point de vue de l'equipe du dossier."""
+    home, away = match["goals"]
+    ours, theirs = (home, away) if match.get("at_home") else (away, home)
+    return "V" if ours > theirs else "D" if ours < theirs else "N"
+
+
+def _goals_fragment(
+    team: str, history: tuple[list[dict[str, Any]], int] | None, season: int
+) -> str:
+    """`Estoril >2.5 18/34, BTTS 20/34` — les deux plus gros marches achetes.
+
+    Ce sont ici les buts **du match**, les deux equipes confondues, contrairement
+    a la ligne « Buts marq. » qui ne compte que ceux de l'equipe. Deux lignes
+    voisines et deux grandeurs differentes : le libelle doit les separer, et le
+    template le dit.
+    """
+    if history is None:
+        return ""
+    matches, from_season = history
+    over = sum(1 for match in matches if sum(match["goals"]) > 2.5)
+    btts = sum(1 for match in matches if min(match["goals"]) >= 1)
+    total = len(matches)
+    fragment = f"{team} >2.5 {over}/{total}, BTTS {btts}/{total}"
+    return fragment if from_season == season else f"{fragment} ({from_season})"
+
+
+def _streak_fragment(team: str, history: tuple[list[dict[str, Any]], int] | None) -> str:
+    """`Estoril 3V` — la serie **en cours**, et non le record de la saison.
+
+    `biggest.streak` de `/teams/satistics` donne le record, ce qui se lit comme la
+    serie en cours et dit l'inverse : une equipe qui a gagne quatre fois en mars
+    et perd depuis un mois y afficherait « 4 ».
+    """
+    if history is None:
+        return ""
+    matches, _ = history
+    if not matches:
+        return ""
+    last = _outcome(matches[-1])
+    length = 0
+    for match in reversed(matches):
+        if _outcome(match) != last:
+            break
+        length += 1
+    return f"{team} {length}{last}" if length >= STREAK_MIN else ""
+
+
+def _next_fragment(
+    team: str,
+    team_id: int | None,
+    season: int | None,
+    league_id: int | None,
+    commence: datetime | None,
+    settings: Settings,
+) -> str:
+    """`Estoril dans 3j (Taca de Portugal)` — le prochain match, donc la rotation.
+
+    C'est une des verifications que le prompt demande et que l'analyse allait
+    chercher a la main, match par match. La competition n'est nommee que si elle
+    differe de celle du jour : c'est le cas interessant — une coupe entre deux
+    journees de championnat — et la repeter partout couterait des tokens pour ne
+    rien apprendre.
+    """
+    if not team_id or season is None or commence is None:
+        return ""
+    known = load(int(team_id), KIND_SEASON, str(season), settings)
+    if known is None or not isinstance(known[0], list):
+        return ""
+    later = sorted(
+        (
+            match
+            for match in known[0]
+            if isinstance(match, dict)
+            and not match.get("friendly")
+            # Un match reporte ou annule n'est pas une echeance a preparer, et un
+            # match deja joue n'a rien a faire ici.
+            and match.get("status") == "NS"
+            and (_parse(match.get("date")) or commence) > commence
+        ),
+        key=lambda match: match["date"],
+    )
+    if not later:
+        return ""
+    upcoming = later[0]
+    when = _parse(upcoming["date"])
+    if when is None:
+        return ""
+    days = (when.date() - commence.date()).days
+    # Le match analyse figure dans l'historique de sa propre equipe : sans ce
+    # test il devient son propre « prochain match », annonce « dans 0j ».
+    # Constate en reel sur une qualification europeenne, ou l'heure stockee par
+    # le fournisseur etait posterieure de peu a celle de l'evenement. Aucune
+    # equipe ne joue deux fois le meme jour : un ecart nul est toujours ce
+    # doublon, jamais une echeance.
+    if days < 1 or days > NEXT_MATCH_MAX_DAYS:
+        return ""
+    detail = ""
+    if upcoming.get("league_id") and league_id and int(upcoming["league_id"]) != int(league_id):
+        detail = f" ({upcoming.get('league') or ''})".replace(" ()", "")
+    return f"{team} dans {days}j{detail}"
+
+
 def dossier_lines(
     event_id: int,
     home: str,
@@ -319,9 +637,38 @@ def dossier_lines(
         return []
 
     reference = _parse(commence_time)
-    fragments = [
-        _coach_fragment(home, teams.get("home"), reference, settings),
-        _coach_fragment(away, teams.get("away"), reference, settings),
-    ]
-    rendered = " | ".join(fragment for fragment in fragments if fragment)
-    return [("Entraineur", rendered)] if rendered else []
+    season = int(teams["season"]) if teams.get("season") else None
+    league_id = teams.get("league")
+    home_id, away_id = teams.get("home"), teams.get("away")
+    home_history = _history(home_id, season, settings)
+    away_history = _history(away_id, season, settings)
+
+    lines: list[tuple[str, str]] = []
+    for label, fragments in (
+        (
+            "Entraineur",
+            (
+                _coach_fragment(home, home_id, reference, settings),
+                _coach_fragment(away, away_id, reference, settings),
+            ),
+        ),
+        (
+            "Total buts",
+            (
+                _goals_fragment(home, home_history, season or 0),
+                _goals_fragment(away, away_history, season or 0),
+            ),
+        ),
+        ("Serie", (_streak_fragment(home, home_history), _streak_fragment(away, away_history))),
+        (
+            "Calendrier",
+            (
+                _next_fragment(home, home_id, season, league_id, reference, settings),
+                _next_fragment(away, away_id, season, league_id, reference, settings),
+            ),
+        ),
+    ):
+        rendered = " | ".join(fragment for fragment in fragments if fragment)
+        if rendered:
+            lines.append((label, rendered))
+    return lines

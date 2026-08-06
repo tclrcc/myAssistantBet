@@ -1,0 +1,2434 @@
+{
+ "get": "fixtures",
+ "parameters": {
+  "team": "376",
+  "season": "2025"
+ },
+ "errors": [],
+ "results": 41,
+ "paging": {
+  "current": 1,
+  "total": 1
+ },
+ "response": [
+  {
+   "fixture": {
+    "id": 1396241,
+    "timezone": "UTC",
+    "date": "2025-08-11T17:45:00+00:00",
+    "timestamp": 1754934300,
+    "venue": {
+     "id": 1274,
+     "name": "Estádio António Coimbra da Mota",
+     "city": "Estoril"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 9
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 1"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": null
+    },
+    "away": {
+     "id": 15130,
+     "name": "Estrela",
+     "winner": null
+    }
+   },
+   "goals": {
+    "home": 1,
+    "away": 1
+   },
+   "score": {
+    "halftime": {
+     "home": 1,
+     "away": 0
+    },
+    "fulltime": {
+     "home": 1,
+     "away": 1
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396254,
+    "timezone": "UTC",
+    "date": "2025-08-16T17:00:00+00:00",
+    "timestamp": 1755363600,
+    "venue": {
+     "id": 1295,
+     "name": "Estádio Dom Afonso Henriques",
+     "city": "Guimarães"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 11
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 2"
+   },
+   "teams": {
+    "home": {
+     "id": 224,
+     "name": "Guimaraes",
+     "winner": true
+    },
+    "away": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    }
+   },
+   "goals": {
+    "home": 3,
+    "away": 2
+   },
+   "score": {
+    "halftime": {
+     "home": 1,
+     "away": 1
+    },
+    "fulltime": {
+     "home": 3,
+     "away": 2
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396258,
+    "timezone": "UTC",
+    "date": "2025-09-06T19:30:00+00:00",
+    "timestamp": 1757187000,
+    "venue": {
+     "id": 1274,
+     "name": "Estádio António Coimbra da Mota",
+     "city": "Estoril"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 8
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 3"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    },
+    "away": {
+     "id": 227,
+     "name": "Santa Clara",
+     "winner": true
+    }
+   },
+   "goals": {
+    "home": 0,
+    "away": 1
+   },
+   "score": {
+    "halftime": {
+     "home": 0,
+     "away": 0
+    },
+    "fulltime": {
+     "home": 0,
+     "away": 1
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396271,
+    "timezone": "UTC",
+    "date": "2025-08-31T14:30:00+00:00",
+    "timestamp": 1756650600,
+    "venue": {
+     "id": 1271,
+     "name": "Estádio João Cardoso",
+     "city": "Tondela"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": null
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 4"
+   },
+   "teams": {
+    "home": {
+     "id": 218,
+     "name": "Tondela",
+     "winner": null
+    },
+    "away": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": null
+    }
+   },
+   "goals": {
+    "home": 2,
+    "away": 2
+   },
+   "score": {
+    "halftime": {
+     "home": 0,
+     "away": 1
+    },
+    "fulltime": {
+     "home": 2,
+     "away": 2
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396277,
+    "timezone": "UTC",
+    "date": "2025-09-13T14:30:00+00:00",
+    "timestamp": 1757773800,
+    "venue": {
+     "id": 1274,
+     "name": "Estádio António Coimbra da Mota",
+     "city": "Estoril"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": null
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 5"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": true
+    },
+    "away": {
+     "id": 21595,
+     "name": "AVS",
+     "winner": false
+    }
+   },
+   "goals": {
+    "home": 3,
+    "away": 1
+   },
+   "score": {
+    "halftime": {
+     "home": 2,
+     "away": 0
+    },
+    "fulltime": {
+     "home": 3,
+     "away": 1
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396284,
+    "timezone": "UTC",
+    "date": "2025-09-21T17:00:00+00:00",
+    "timestamp": 1758474000,
+    "venue": {
+     "id": 2811,
+     "name": "Estádio Cidade de Barcelos",
+     "city": "Barcelos"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 4
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 6"
+   },
+   "teams": {
+    "home": {
+     "id": 762,
+     "name": "GIL Vicente",
+     "winner": true
+    },
+    "away": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    }
+   },
+   "goals": {
+    "home": 2,
+    "away": 0
+   },
+   "score": {
+    "halftime": {
+     "home": 1,
+     "away": 0
+    },
+    "fulltime": {
+     "home": 2,
+     "away": 0
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396295,
+    "timezone": "UTC",
+    "date": "2025-09-27T19:30:00+00:00",
+    "timestamp": 1759001400,
+    "venue": {
+     "id": 1274,
+     "name": "Estádio António Coimbra da Mota",
+     "city": "Estoril"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 5
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 7"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    },
+    "away": {
+     "id": 228,
+     "name": "Sporting CP",
+     "winner": true
+    }
+   },
+   "goals": {
+    "home": 0,
+    "away": 1
+   },
+   "score": {
+    "halftime": {
+     "home": 0,
+     "away": 1
+    },
+    "fulltime": {
+     "home": 0,
+     "away": 1
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396302,
+    "timezone": "UTC",
+    "date": "2025-10-03T19:15:00+00:00",
+    "timestamp": 1759518900,
+    "venue": {
+     "id": 3565,
+     "name": "Estádio Municipal de Rio Maior",
+     "city": "Rio Maior"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 4
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 8"
+   },
+   "teams": {
+    "home": {
+     "id": 4716,
+     "name": "Casa Pia",
+     "winner": null
+    },
+    "away": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": null
+    }
+   },
+   "goals": {
+    "home": 2,
+    "away": 2
+   },
+   "score": {
+    "halftime": {
+     "home": 2,
+     "away": 1
+    },
+    "fulltime": {
+     "home": 2,
+     "away": 2
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396312,
+    "timezone": "UTC",
+    "date": "2025-10-26T15:30:00+00:00",
+    "timestamp": 1761492600,
+    "venue": {
+     "id": 1274,
+     "name": "Estádio António Coimbra da Mota",
+     "city": "Estoril"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 9
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 9"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": null
+    },
+    "away": {
+     "id": 225,
+     "name": "Nacional",
+     "winner": null
+    }
+   },
+   "goals": {
+    "home": 1,
+    "away": 1
+   },
+   "score": {
+    "halftime": {
+     "home": 0,
+     "away": 1
+    },
+    "fulltime": {
+     "home": 1,
+     "away": 1
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396324,
+    "timezone": "UTC",
+    "date": "2025-11-01T18:00:00+00:00",
+    "timestamp": 1762020000,
+    "venue": {
+     "id": 1288,
+     "name": "Estádio do Rio Ave Futebol Clube",
+     "city": "Vila do Conde"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 4
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 10"
+   },
+   "teams": {
+    "home": {
+     "id": 226,
+     "name": "Rio Ave",
+     "winner": false
+    },
+    "away": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": true
+    }
+   },
+   "goals": {
+    "home": 0,
+    "away": 4
+   },
+   "score": {
+    "halftime": {
+     "home": 0,
+     "away": 2
+    },
+    "fulltime": {
+     "home": 0,
+     "away": 4
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396331,
+    "timezone": "UTC",
+    "date": "2025-11-07T20:15:00+00:00",
+    "timestamp": 1762546500,
+    "venue": {
+     "id": 1274,
+     "name": "Estádio António Coimbra da Mota",
+     "city": "Estoril"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 5
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 11"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": true
+    },
+    "away": {
+     "id": 240,
+     "name": "Arouca",
+     "winner": false
+    }
+   },
+   "goals": {
+    "home": 4,
+    "away": 3
+   },
+   "score": {
+    "halftime": {
+     "home": 2,
+     "away": 2
+    },
+    "fulltime": {
+     "home": 4,
+     "away": 3
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396338,
+    "timezone": "UTC",
+    "date": "2025-11-30T20:30:00+00:00",
+    "timestamp": 1764534600,
+    "venue": {
+     "id": 1286,
+     "name": "Estádio Do Dragão",
+     "city": "Porto"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 5
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 12"
+   },
+   "teams": {
+    "home": {
+     "id": 212,
+     "name": "FC Porto",
+     "winner": true
+    },
+    "away": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    }
+   },
+   "goals": {
+    "home": 1,
+    "away": 0
+   },
+   "score": {
+    "halftime": {
+     "home": 1,
+     "away": 0
+    },
+    "fulltime": {
+     "home": 1,
+     "away": 0
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396348,
+    "timezone": "UTC",
+    "date": "2025-12-07T15:30:00+00:00",
+    "timestamp": 1765121400,
+    "venue": {
+     "id": 1274,
+     "name": "Estádio António Coimbra da Mota",
+     "city": "Estoril"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 6
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 13"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": null
+    },
+    "away": {
+     "id": 215,
+     "name": "Moreirense",
+     "winner": null
+    }
+   },
+   "goals": {
+    "home": 3,
+    "away": 3
+   },
+   "score": {
+    "halftime": {
+     "home": 1,
+     "away": 1
+    },
+    "fulltime": {
+     "home": 3,
+     "away": 3
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396357,
+    "timezone": "UTC",
+    "date": "2025-12-14T15:30:00+00:00",
+    "timestamp": 1765726200,
+    "venue": {
+     "id": null,
+     "name": "Estadio Municipal de Famalicao",
+     "city": "Vila Nova de Famalicao"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 3
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 14"
+   },
+   "teams": {
+    "home": {
+     "id": 242,
+     "name": "Famalicao",
+     "winner": true
+    },
+    "away": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    }
+   },
+   "goals": {
+    "home": 4,
+    "away": 0
+   },
+   "score": {
+    "halftime": {
+     "home": 2,
+     "away": 0
+    },
+    "fulltime": {
+     "home": 4,
+     "away": 0
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396371,
+    "timezone": "UTC",
+    "date": "2025-12-19T20:15:00+00:00",
+    "timestamp": 1766175300,
+    "venue": {
+     "id": 1274,
+     "name": "Estádio António Coimbra da Mota",
+     "city": "Estoril"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 6
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 15"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": true
+    },
+    "away": {
+     "id": 217,
+     "name": "SC Braga",
+     "winner": false
+    }
+   },
+   "goals": {
+    "home": 1,
+    "away": 0
+   },
+   "score": {
+    "halftime": {
+     "home": 1,
+     "away": 0
+    },
+    "fulltime": {
+     "home": 1,
+     "away": 0
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396375,
+    "timezone": "UTC",
+    "date": "2025-12-27T20:30:00+00:00",
+    "timestamp": 1766867400,
+    "venue": {
+     "id": 1274,
+     "name": "Estádio António Coimbra da Mota",
+     "city": "Estoril"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 3
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 16"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": true
+    },
+    "away": {
+     "id": 4724,
+     "name": "Alverca",
+     "winner": false
+    }
+   },
+   "goals": {
+    "home": 4,
+    "away": 1
+   },
+   "score": {
+    "halftime": {
+     "home": 2,
+     "away": 0
+    },
+    "fulltime": {
+     "home": 4,
+     "away": 1
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396383,
+    "timezone": "UTC",
+    "date": "2026-01-03T18:00:00+00:00",
+    "timestamp": 1767463200,
+    "venue": {
+     "id": 1293,
+     "name": "Estádio da Luz",
+     "city": "Lisbon"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 4
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 17"
+   },
+   "teams": {
+    "home": {
+     "id": 211,
+     "name": "Benfica",
+     "winner": true
+    },
+    "away": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    }
+   },
+   "goals": {
+    "home": 3,
+    "away": 1
+   },
+   "score": {
+    "halftime": {
+     "home": 2,
+     "away": 1
+    },
+    "fulltime": {
+     "home": 3,
+     "away": 1
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396392,
+    "timezone": "UTC",
+    "date": "2026-01-19T20:15:00+00:00",
+    "timestamp": 1768853700,
+    "venue": {
+     "id": 19187,
+     "name": "Estádio José Gomes",
+     "city": "Amadora"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 4
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 18"
+   },
+   "teams": {
+    "home": {
+     "id": 15130,
+     "name": "Estrela",
+     "winner": false
+    },
+    "away": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": true
+    }
+   },
+   "goals": {
+    "home": 0,
+    "away": 5
+   },
+   "score": {
+    "halftime": {
+     "home": 0,
+     "away": 1
+    },
+    "fulltime": {
+     "home": 0,
+     "away": 5
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396403,
+    "timezone": "UTC",
+    "date": "2026-01-24T20:30:00+00:00",
+    "timestamp": 1769286600,
+    "venue": {
+     "id": 1274,
+     "name": "Estádio António Coimbra da Mota",
+     "city": "Estoril"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 4
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 19"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": true
+    },
+    "away": {
+     "id": 224,
+     "name": "Guimaraes",
+     "winner": false
+    }
+   },
+   "goals": {
+    "home": 4,
+    "away": 2
+   },
+   "score": {
+    "halftime": {
+     "home": 1,
+     "away": 2
+    },
+    "fulltime": {
+     "home": 4,
+     "away": 2
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396413,
+    "timezone": "UTC",
+    "date": "2026-01-31T15:30:00+00:00",
+    "timestamp": 1769873400,
+    "venue": {
+     "id": 1289,
+     "name": "Estádio de São Miguel",
+     "city": "Ponta Delgada"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 8
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 20"
+   },
+   "teams": {
+    "home": {
+     "id": 227,
+     "name": "Santa Clara",
+     "winner": false
+    },
+    "away": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": true
+    }
+   },
+   "goals": {
+    "home": 2,
+    "away": 4
+   },
+   "score": {
+    "halftime": {
+     "home": 0,
+     "away": 2
+    },
+    "fulltime": {
+     "home": 2,
+     "away": 4
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396420,
+    "timezone": "UTC",
+    "date": "2026-02-07T18:00:00+00:00",
+    "timestamp": 1770487200,
+    "venue": {
+     "id": 1274,
+     "name": "Estádio António Coimbra da Mota",
+     "city": "Estoril"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 5
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 21"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": null
+    },
+    "away": {
+     "id": 218,
+     "name": "Tondela",
+     "winner": null
+    }
+   },
+   "goals": {
+    "home": 2,
+    "away": 2
+   },
+   "score": {
+    "halftime": {
+     "home": 2,
+     "away": 2
+    },
+    "fulltime": {
+     "home": 2,
+     "away": 2
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396426,
+    "timezone": "UTC",
+    "date": "2026-02-15T18:00:00+00:00",
+    "timestamp": 1771178400,
+    "venue": {
+     "id": 1272,
+     "name": "Estádio Clube Desportivo das Aves",
+     "city": "Vila das Aves"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 9
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 22"
+   },
+   "teams": {
+    "home": {
+     "id": 21595,
+     "name": "AVS",
+     "winner": true
+    },
+    "away": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    }
+   },
+   "goals": {
+    "home": 3,
+    "away": 0
+   },
+   "score": {
+    "halftime": {
+     "home": 0,
+     "away": 0
+    },
+    "fulltime": {
+     "home": 3,
+     "away": 0
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396439,
+    "timezone": "UTC",
+    "date": "2026-02-22T18:00:00+00:00",
+    "timestamp": 1771783200,
+    "venue": {
+     "id": 1274,
+     "name": "Estádio António Coimbra da Mota",
+     "city": "Estoril"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 7
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 23"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": true
+    },
+    "away": {
+     "id": 762,
+     "name": "GIL Vicente",
+     "winner": false
+    }
+   },
+   "goals": {
+    "home": 3,
+    "away": 1
+   },
+   "score": {
+    "halftime": {
+     "home": 1,
+     "away": 1
+    },
+    "fulltime": {
+     "home": 3,
+     "away": 1
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396450,
+    "timezone": "UTC",
+    "date": "2026-02-27T20:45:00+00:00",
+    "timestamp": 1772225100,
+    "venue": {
+     "id": 1293,
+     "name": "Estádio José Alvalade",
+     "city": "Lisbon"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 6
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 24"
+   },
+   "teams": {
+    "home": {
+     "id": 228,
+     "name": "Sporting CP",
+     "winner": true
+    },
+    "away": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    }
+   },
+   "goals": {
+    "home": 3,
+    "away": 0
+   },
+   "score": {
+    "halftime": {
+     "home": 2,
+     "away": 0
+    },
+    "fulltime": {
+     "home": 3,
+     "away": 0
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396456,
+    "timezone": "UTC",
+    "date": "2026-03-07T20:30:00+00:00",
+    "timestamp": 1772915400,
+    "venue": {
+     "id": 1274,
+     "name": "Estádio António Coimbra da Mota",
+     "city": "Estoril"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 4
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 25"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": null
+    },
+    "away": {
+     "id": 4716,
+     "name": "Casa Pia",
+     "winner": null
+    }
+   },
+   "goals": {
+    "home": 0,
+    "away": 0
+   },
+   "score": {
+    "halftime": {
+     "home": 0,
+     "away": 0
+    },
+    "fulltime": {
+     "home": 0,
+     "away": 0
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396467,
+    "timezone": "UTC",
+    "date": "2026-03-15T15:30:00+00:00",
+    "timestamp": 1773588600,
+    "venue": {
+     "id": null,
+     "name": "Estádio da Madeira",
+     "city": "Funchal"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 8
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 26"
+   },
+   "teams": {
+    "home": {
+     "id": 225,
+     "name": "Nacional",
+     "winner": false
+    },
+    "away": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": true
+    }
+   },
+   "goals": {
+    "home": 0,
+    "away": 1
+   },
+   "score": {
+    "halftime": {
+     "home": 0,
+     "away": 1
+    },
+    "fulltime": {
+     "home": 0,
+     "away": 1
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396474,
+    "timezone": "UTC",
+    "date": "2026-03-22T15:30:00+00:00",
+    "timestamp": 1774193400,
+    "venue": {
+     "id": 1274,
+     "name": "Estádio António Coimbra da Mota",
+     "city": "Estoril"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 9
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 27"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    },
+    "away": {
+     "id": 226,
+     "name": "Rio Ave",
+     "winner": true
+    }
+   },
+   "goals": {
+    "home": 1,
+    "away": 2
+   },
+   "score": {
+    "halftime": {
+     "home": 1,
+     "away": 0
+    },
+    "fulltime": {
+     "home": 1,
+     "away": 2
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396480,
+    "timezone": "UTC",
+    "date": "2026-04-06T17:45:00+00:00",
+    "timestamp": 1775497500,
+    "venue": {
+     "id": 1275,
+     "name": "Estádio Municipal de Arouca",
+     "city": "Arouca"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 9
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 28"
+   },
+   "teams": {
+    "home": {
+     "id": 240,
+     "name": "Arouca",
+     "winner": true
+    },
+    "away": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    }
+   },
+   "goals": {
+    "home": 3,
+    "away": 2
+   },
+   "score": {
+    "halftime": {
+     "home": 2,
+     "away": 2
+    },
+    "fulltime": {
+     "home": 3,
+     "away": 2
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396493,
+    "timezone": "UTC",
+    "date": "2026-04-12T19:30:00+00:00",
+    "timestamp": 1776022200,
+    "venue": {
+     "id": 1274,
+     "name": "Estádio António Coimbra da Mota",
+     "city": "Estoril"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 6
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 29"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    },
+    "away": {
+     "id": 212,
+     "name": "FC Porto",
+     "winner": true
+    }
+   },
+   "goals": {
+    "home": 1,
+    "away": 3
+   },
+   "score": {
+    "halftime": {
+     "home": 0,
+     "away": 2
+    },
+    "fulltime": {
+     "home": 1,
+     "away": 3
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396503,
+    "timezone": "UTC",
+    "date": "2026-04-20T19:15:00+00:00",
+    "timestamp": 1776712500,
+    "venue": {
+     "id": null,
+     "name": "Parque Joaquim de Almeida Freitas",
+     "city": "Moreira de Conegos"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 5
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 30"
+   },
+   "teams": {
+    "home": {
+     "id": 215,
+     "name": "Moreirense",
+     "winner": true
+    },
+    "away": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    }
+   },
+   "goals": {
+    "home": 1,
+    "away": 0
+   },
+   "score": {
+    "halftime": {
+     "home": 1,
+     "away": 0
+    },
+    "fulltime": {
+     "home": 1,
+     "away": 0
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396510,
+    "timezone": "UTC",
+    "date": "2026-04-26T14:30:00+00:00",
+    "timestamp": 1777213800,
+    "venue": {
+     "id": 1274,
+     "name": "Estádio António Coimbra da Mota",
+     "city": "Estoril"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 6
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 31"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    },
+    "away": {
+     "id": 242,
+     "name": "Famalicao",
+     "winner": true
+    }
+   },
+   "goals": {
+    "home": 0,
+    "away": 1
+   },
+   "score": {
+    "halftime": {
+     "home": 0,
+     "away": 0
+    },
+    "fulltime": {
+     "home": 0,
+     "away": 1
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396517,
+    "timezone": "UTC",
+    "date": "2026-05-03T17:00:00+00:00",
+    "timestamp": 1777827600,
+    "venue": {
+     "id": 1291,
+     "name": "Estádio Municipal de Braga",
+     "city": "Braga"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 5
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 32"
+   },
+   "teams": {
+    "home": {
+     "id": 217,
+     "name": "SC Braga",
+     "winner": null
+    },
+    "away": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": null
+    }
+   },
+   "goals": {
+    "home": 1,
+    "away": 1
+   },
+   "score": {
+    "halftime": {
+     "home": 1,
+     "away": 0
+    },
+    "fulltime": {
+     "home": 1,
+     "away": 1
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396526,
+    "timezone": "UTC",
+    "date": "2026-05-10T19:30:00+00:00",
+    "timestamp": 1778441400,
+    "venue": {
+     "id": 3572,
+     "name": "FC Alverca Sports Complex",
+     "city": "Alverca do Ribatejo"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 6
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 33"
+   },
+   "teams": {
+    "home": {
+     "id": 4724,
+     "name": "Alverca",
+     "winner": null
+    },
+    "away": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": null
+    }
+   },
+   "goals": {
+    "home": 1,
+    "away": 1
+   },
+   "score": {
+    "halftime": {
+     "home": 1,
+     "away": 0
+    },
+    "fulltime": {
+     "home": 1,
+     "away": 1
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1396537,
+    "timezone": "UTC",
+    "date": "2026-05-16T19:30:00+00:00",
+    "timestamp": 1778959800,
+    "venue": {
+     "id": 1274,
+     "name": "Estadio Antonio Coimbra da Mota",
+     "city": "Estoril"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 3
+    }
+   },
+   "league": {
+    "id": 113,
+    "name": "Allsvenskan",
+    "season": 2025,
+    "round": "Regular Season - 34"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    },
+    "away": {
+     "id": 211,
+     "name": "Benfica",
+     "winner": true
+    }
+   },
+   "goals": {
+    "home": 1,
+    "away": 3
+   },
+   "score": {
+    "halftime": {
+     "home": 0,
+     "away": 3
+    },
+    "fulltime": {
+     "home": 1,
+     "away": 3
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1403131,
+    "timezone": "UTC",
+    "date": "2025-07-16T10:00:00+00:00",
+    "timestamp": 1752660000,
+    "venue": {
+     "id": null,
+     "name": null,
+     "city": null
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": null
+    }
+   },
+   "league": {
+    "id": 667,
+    "name": "Friendlies Clubs",
+    "season": 2025,
+    "round": "Club Friendlies 5"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    },
+    "away": {
+     "id": 21208,
+     "name": "Marítimo",
+     "winner": true
+    }
+   },
+   "goals": {
+    "home": 2,
+    "away": 3
+   },
+   "score": {
+    "halftime": {
+     "home": null,
+     "away": null
+    },
+    "fulltime": {
+     "home": 2,
+     "away": 3
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1403328,
+    "timezone": "UTC",
+    "date": "2025-07-19T12:00:00+00:00",
+    "timestamp": 1752926400,
+    "venue": {
+     "id": null,
+     "name": null,
+     "city": null
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": null
+    }
+   },
+   "league": {
+    "id": 667,
+    "name": "Friendlies Clubs",
+    "season": 2025,
+    "round": "Club Friendlies 5"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    },
+    "away": {
+     "id": 4724,
+     "name": "Alverca",
+     "winner": true
+    }
+   },
+   "goals": {
+    "home": 1,
+    "away": 2
+   },
+   "score": {
+    "halftime": {
+     "home": null,
+     "away": null
+    },
+    "fulltime": {
+     "home": 1,
+     "away": 2
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1411482,
+    "timezone": "UTC",
+    "date": "2025-07-23T09:00:00+00:00",
+    "timestamp": 1753261200,
+    "venue": {
+     "id": null,
+     "name": null,
+     "city": null
+    },
+    "status": {
+     "long": "Match Cancelled",
+     "short": "CANC",
+     "elapsed": null,
+     "extra": null
+    }
+   },
+   "league": {
+    "id": 667,
+    "name": "Friendlies Clubs",
+    "season": 2025,
+    "round": "Club Friendlies 5"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": null
+    },
+    "away": {
+     "id": 245,
+     "name": "Mafra",
+     "winner": null
+    }
+   },
+   "goals": {
+    "home": null,
+    "away": null
+   },
+   "score": {
+    "halftime": {
+     "home": null,
+     "away": null
+    },
+    "fulltime": {
+     "home": null,
+     "away": null
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1411658,
+    "timezone": "UTC",
+    "date": "2025-07-26T12:00:00+00:00",
+    "timestamp": 1753531200,
+    "venue": {
+     "id": null,
+     "name": null,
+     "city": null
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": null
+    }
+   },
+   "league": {
+    "id": 667,
+    "name": "Friendlies Clubs",
+    "season": 2025,
+    "round": "Club Friendlies 5"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    },
+    "away": {
+     "id": 761,
+     "name": "Sporting CP B",
+     "winner": true
+    }
+   },
+   "goals": {
+    "home": 2,
+    "away": 3
+   },
+   "score": {
+    "halftime": {
+     "home": 0,
+     "away": 0
+    },
+    "fulltime": {
+     "home": 2,
+     "away": 3
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1421296,
+    "timezone": "UTC",
+    "date": "2025-08-02T12:00:00+00:00",
+    "timestamp": 1754136000,
+    "venue": {
+     "id": null,
+     "name": null,
+     "city": null
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 2
+    }
+   },
+   "league": {
+    "id": 667,
+    "name": "Friendlies Clubs",
+    "season": 2025,
+    "round": "Club Friendlies 5"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    },
+    "away": {
+     "id": 58,
+     "name": "Millwall",
+     "winner": true
+    }
+   },
+   "goals": {
+    "home": 0,
+    "away": 3
+   },
+   "score": {
+    "halftime": {
+     "home": 0,
+     "away": 3
+    },
+    "fulltime": {
+     "home": 0,
+     "away": 3
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1479475,
+    "timezone": "UTC",
+    "date": "2025-10-19T17:00:00+00:00",
+    "timestamp": 1760893200,
+    "venue": {
+     "id": 0,
+     "name": null,
+     "city": "Lisbon"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 9
+    }
+   },
+   "league": {
+    "id": 96,
+    "name": "Svenska Cupen",
+    "season": 2025,
+    "round": "Round of 64"
+   },
+   "teams": {
+    "home": {
+     "id": 17692,
+     "name": "CF Os Belenenses",
+     "winner": false
+    },
+    "away": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": true
+    }
+   },
+   "goals": {
+    "home": 1,
+    "away": 2
+   },
+   "score": {
+    "halftime": {
+     "home": 0,
+     "away": 1
+    },
+    "fulltime": {
+     "home": 1,
+     "away": 2
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  },
+  {
+   "fixture": {
+    "id": 1482545,
+    "timezone": "UTC",
+    "date": "2025-11-22T18:00:00+00:00",
+    "timestamp": 1763834400,
+    "venue": {
+     "id": null,
+     "name": null,
+     "city": "Estoril"
+    },
+    "status": {
+     "long": "Match Finished",
+     "short": "FT",
+     "elapsed": 90,
+     "extra": 7
+    }
+   },
+   "league": {
+    "id": 96,
+    "name": "Svenska Cupen",
+    "season": 2025,
+    "round": "Round of 32"
+   },
+   "teams": {
+    "home": {
+     "id": 376,
+     "name": "BK Hacken",
+     "winner": false
+    },
+    "away": {
+     "id": 242,
+     "name": "Famalicao",
+     "winner": true
+    }
+   },
+   "goals": {
+    "home": 1,
+    "away": 2
+   },
+   "score": {
+    "halftime": {
+     "home": 0,
+     "away": 1
+    },
+    "fulltime": {
+     "home": 1,
+     "away": 2
+    },
+    "extratime": {
+     "home": null,
+     "away": null
+    },
+    "penalty": {
+     "home": null,
+     "away": null
+    }
+   }
+  }
+ ]
+}

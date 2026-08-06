@@ -555,6 +555,18 @@ Ce qui vaut pour une **équipe** et non pour une rencontre a besoin d'une autre 
 
 *Critère d'acceptation :* j'enrichis une session, le bloc porte « Entraîneur » avec la date de prise de fonction et l'ancienneté des deux équipes ; un second enrichissement le même jour ne redépense aucun appel ; sous le plancher, le dossier est suspendu, le contexte passe quand même, et l'UI dit lequel des deux a manqué.
 
+### Phase 13 — L'historique de saison
+`/fixtures?team=&season=` rend en **un appel** toute la saison d'une équipe, toutes compétitions confondues, avec les scores à la pause et les matchs à venir. C'est ce qui répare l'angle mort de `/teams/statistics`, scopé à une seule compétition : Motherwell y compte 2 matchs de Conference League, alors que sa saison domestique en porte 47.
+
+- Trois lignes de plus, calculées **localement** à partir du relevé stocké : **« Total buts »** (buts du match et BTTS → `alternate_totals`, `btts`), **« Série »** (série en cours), **« Calendrier »** (prochain match, donc la rotation d'effectif que la fiche de vérification réclame et que l'analyse allait chercher à la main).
+- **Les scores retenus sont ceux à 90 minutes** (`score.fulltime`, jamais `goals`) : sur un match décidé en prolongation, `goals` porte le total prolongation comprise, alors qu'un marché O/U se règle sur le temps réglementaire. Compter la prolongation gonflerait la fréquence des « plus de 2.5 » sur toutes les coupes.
+- **Les amicaux n'entrent dans aucun compte**, ni les reports, annulations et forfaits sur tapis vert. En juillet les amicaux sont les seuls matchs joués : les compter donnerait « >2.5 dans 4/4 » à une équipe qui n'a pas encore joué un match officiel.
+- **La saison précédente n'est demandée que si celle en cours ne dit rien encore**, et l'année est alors **écrite** — `23/36 (2025)`. En début de saison c'est la règle et non l'exception. La taire laisserait lire la saison passée comme la forme du moment. Une saison terminée ne change plus : sa péremption est longue, là où la saison en cours se rafraîchit toutes les douze heures.
+- **Le match analysé n'est pas son propre « prochain match ».** Il figure dans l'historique de sa propre équipe, et l'heure du fournisseur peut être postérieure de peu à celle de l'événement : sans garde, la ligne annonçait « dans 0j ». Constaté en réel.
+- La charge utile n'est pas stockée brute : 43 ko pour 41 matchs, soit une base dix fois plus grosse — et des sauvegardes avec — pour des logos et des drapeaux. Le résumé garde de quoi tout recalculer, et c'est la seule interprétation faite à la collecte.
+
+*Critère d'acceptation :* sur une qualification européenne dont la compétition ne porte que deux matchs, le bloc affiche les buts, la série et le calendrier tirés de la saison domestique, avec l'année de la saison quand c'est la précédente — et un second enrichissement ne redemande pas la saison terminée.
+
 ---
 
 ## 11. Exigences de qualité

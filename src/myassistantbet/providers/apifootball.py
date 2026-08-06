@@ -202,6 +202,20 @@ class APIFootballClient(BaseHTTPClient):
         rows = await self._fetch("/teams", {"id": team_id})
         return rows[0] if rows else None
 
+    async def team_fixtures(self, team_id: int, season: int) -> list[dict[str, Any]]:
+        """Tous les matchs d'une equipe sur une saison, **toutes competitions**.
+
+        Un seul appel rend le championnat, les coupes, l'Europe et les amicaux,
+        avec les scores a la pause et les matchs a venir. C'est ce qui repare
+        l'angle mort de `/teams/statistics`, scope a une seule competition : une
+        equipe entrant en qualification europeenne y a zero match joue, alors que
+        sa saison domestique est renseignee.
+
+        Contrairement a `fixtures_by_date`, `league` n'est pas passe : c'est
+        justement en couvrant toutes les competitions que l'appel est rentable.
+        """
+        return await self._fetch("/fixtures", {"team": team_id, "season": season})
+
     async def coachs(self, team_id: int) -> list[dict[str, Any]]:
         """Entraineurs rattaches a une equipe, avec leur carriere complete.
 

@@ -60,15 +60,30 @@ def _seed_event(settings: Settings, *, rapproche: bool = True) -> None:
         )
 
 
-def _mock_coachs(load_fixture: Any) -> dict[str, respx.Route]:
-    def _mock(fichier: str, team: str) -> respx.Route:
-        return respx.get(f"{BASE_URL}/coachs", params__contains={"team": team}).mock(
+def _mock_dossier(load_fixture: Any) -> dict[str, respx.Route]:
+    """Repond a tout ce que le dossier peut demander.
+
+    Les fixtures de saison viennent d'une charge utile reelle : la saison en cours
+    ne porte que des amicaux joues et des matchs a venir — la situation reelle
+    d'un mois d'aout — et la precedente porte une saison complete. C'est ce qui
+    fait du repli sur N-1 le cas normal et non un cas limite.
+    """
+
+    def _mock(chemin: str, fichier: str, **selecteurs: Any) -> respx.Route:
+        return respx.get(f"{BASE_URL}{chemin}", **selecteurs).mock(
             return_value=httpx.Response(200, json=load_fixture(fichier), headers=RATE_HEADERS)
         )
 
+    def _saison(fichier: str, team: str, season: str) -> respx.Route:
+        return _mock("/fixtures", fichier, params__contains={"team": team, "season": season})
+
     return {
-        "home": _mock("apifootball_coachs_home.json", "376"),
-        "away": _mock("apifootball_coachs_away.json", "377"),
+        "home": _mock("/coachs", "apifootball_coachs_home.json", params__contains={"team": "376"}),
+        "away": _mock("/coachs", "apifootball_coachs_away.json", params__contains={"team": "377"}),
+        "season_home": _saison("apifootball_fixtures_season_home.json", "376", "2026"),
+        "season_away": _saison("apifootball_fixtures_season_away.json", "377", "2026"),
+        "season_home_prev": _saison("apifootball_fixtures_season_home_prev.json", "376", "2025"),
+        "season_away_prev": _saison("apifootball_fixtures_season_away_prev.json", "377", "2025"),
     }
 
 
@@ -88,7 +103,7 @@ async def test_le_dossier_porte_l_entraineur_et_son_anciennete(
     d'entraineur il y a six semaines ne se lit pas comme celle qui garde le sien
     depuis trois ans. La date situe, la duree se lit d'un coup d'oeil."""
     _seed_event(migrated)
-    _mock_coachs(load_fixture)
+    _mock_dossier(load_fixture)
 
     await dossier.refresh_event(api_client, 1, migrated, now=NOW)
 
@@ -108,7 +123,7 @@ async def test_un_entraineur_parti_n_est_jamais_nomme_en_poste(
     l'etape de carriere dans cette equipe n'est pas refermee — prendre le premier
     de la liste nommerait un entraineur parti, affirme comme un fait."""
     _seed_event(migrated)
-    _mock_coachs(load_fixture)
+    _mock_dossier(load_fixture)
 
     await dossier.refresh_event(api_client, 1, migrated, now=NOW)
 
@@ -125,7 +140,7 @@ async def test_l_anciennete_se_compte_dans_l_equipe_du_match_pas_dans_la_precede
     """La carriere porte aussi les clubs precedents : compter depuis le premier
     poste donnerait « depuis 02/2024 » pour une arrivee de juin 2026."""
     _seed_event(migrated)
-    _mock_coachs(load_fixture)
+    _mock_dossier(load_fixture)
 
     await dossier.refresh_event(api_client, 1, migrated, now=NOW)
 
@@ -142,7 +157,7 @@ async def test_un_releve_frais_n_est_pas_repaye(
     equipe est le meme dans les deux affiches ou elle apparait cette semaine.
     Memorise par match, il se paierait autant de fois qu'elle joue."""
     _seed_event(migrated)
-    routes = _mock_coachs(load_fixture)
+    routes = _mock_dossier(load_fixture)
 
     await dossier.refresh_event(api_client, 1, migrated, now=NOW)
     rapport = await dossier.refresh_event(api_client, 1, migrated, now=NOW)
@@ -161,7 +176,7 @@ async def test_un_releve_perime_est_rafraichi(
     """Un entraineur limoge doit entrer dans le bloc, et pas dans un mois : la
     peremption est ce qui distingue un cache d'un oubli."""
     _seed_event(migrated)
-    routes = _mock_coachs(load_fixture)
+    routes = _mock_dossier(load_fixture)
 
     await dossier.refresh_event(api_client, 1, migrated, now=NOW)
     plus_tard = NOW + timedelta(hours=dossier.TTL_HOURS[dossier.KIND_COACH] + 1)
@@ -178,7 +193,7 @@ async def test_une_date_de_releve_illisible_vaut_perimee(
     """Mieux vaut un appel de trop qu'une donnee dont on ne sait plus quand elle
     a ete prise."""
     _seed_event(migrated)
-    routes = _mock_coachs(load_fixture)
+    routes = _mock_dossier(load_fixture)
     dossier.store(376, dossier.KIND_COACH, [], settings=migrated)
     db.execute(
         "UPDATE team_context SET fetched_at = 'jamais' WHERE team_id = 376", settings=migrated
@@ -196,13 +211,17 @@ async def test_le_stockage_est_idempotent(
 ) -> None:
     """Cle naturelle `(equipe, type, perimetre)` : relancer ne duplique rien."""
     _seed_event(migrated)
-    _mock_coachs(load_fixture)
+    _mock_dossier(load_fixture)
 
     await dossier.refresh_event(api_client, 1, migrated, now=NOW)
     plus_tard = NOW + timedelta(hours=dossier.TTL_HOURS[dossier.KIND_COACH] + 1)
     await dossier.refresh_event(api_client, 1, migrated, now=plus_tard)
 
-    lignes = db.query("SELECT team_id FROM team_context WHERE team_id = 376", settings=migrated)
+    lignes = db.query(
+        "SELECT team_id FROM team_context WHERE team_id = 376 AND kind = ?",
+        (dossier.KIND_COACH,),
+        settings=migrated,
+    )
     assert len(lignes) == 1
 
 
@@ -218,7 +237,7 @@ async def test_sans_rapprochement_aucun_appel_et_aucune_ligne(
     identifiant d'equipe. Interroger au hasard attribuerait l'entraineur d'un
     autre club, ce qui serait pire qu'une ligne absente."""
     _seed_event(migrated, rapproche=False)
-    routes = _mock_coachs(load_fixture)
+    routes = _mock_dossier(load_fixture)
 
     rapport = await dossier.refresh_event(api_client, 1, migrated, now=NOW)
 
@@ -235,7 +254,7 @@ async def test_une_equipe_sans_entraineur_servi_ne_produit_aucune_ligne(
     """Base vierge de ce cote : aucune ligne, jamais « inconnu » — qui se lirait
     comme un fait sur l'equipe. L'autre equipe garde la sienne."""
     _seed_event(migrated)
-    routes = _mock_coachs(load_fixture)
+    routes = _mock_dossier(load_fixture)
     routes["away"].mock(
         return_value=httpx.Response(200, json={"errors": [], "response": []}, headers=RATE_HEADERS)
     )
@@ -255,7 +274,7 @@ async def test_une_prise_de_fonction_posterieure_au_match_ne_rend_aucune_duree(
     """Une anciennete negative presentee comme une duree serait une absurdite
     affichee. La date reste, elle est verifiable."""
     _seed_event(migrated)
-    routes = _mock_coachs(load_fixture)
+    routes = _mock_dossier(load_fixture)
     futur = load_fixture("apifootball_coachs_home.json")
     futur["response"][0]["career"][0]["start"] = "2027-01-05"
     routes["home"].mock(return_value=httpx.Response(200, json=futur, headers=RATE_HEADERS))
@@ -278,7 +297,7 @@ async def test_le_plancher_d_appels_suspend_le_dossier_et_le_dit(
     pas une panne, mais le taire ferait chercher une erreur de rapprochement la
     ou il n'y a qu'un quota bas."""
     _seed_event(migrated)
-    routes = _mock_coachs(load_fixture)
+    routes = _mock_dossier(load_fixture)
     record_api_usage(PROVIDER, "/fixtures", 1, migrated.apifootball_call_floor, migrated)
 
     rapport = await dossier.refresh_event(api_client, 1, migrated, now=NOW)
@@ -298,7 +317,7 @@ async def test_un_quota_inconnu_laisse_partir(
     appel renseignera le compteur, et bloquer par principe empecherait de
     demarrer."""
     _seed_event(migrated)
-    routes = _mock_coachs(load_fixture)
+    routes = _mock_dossier(load_fixture)
 
     rapport = await dossier.refresh_event(api_client, 1, migrated, now=NOW)
 
@@ -362,3 +381,303 @@ async def test_relire_le_dossier_ne_declenche_aucun_appel(migrated: Settings) ->
 
     for _ in range(3):
         assert "P. Gustafsson" in _lines(migrated)["Entraineur"]
+
+
+# -- Historique de saison ----------------------------------------------------
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_l_historique_donne_les_buts_du_match_et_le_btts(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Les deux plus gros marches achetes a l'etage B — `alternate_totals` et
+    `btts` — n'avaient aucun angle sportif en face : le bloc portait les cotes
+    et rien de ce que les equipes produisent."""
+    _seed_event(migrated)
+    _mock_dossier(load_fixture)
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert _lines(migrated)["Total buts"] == (
+        "BK Hacken >2.5 23/36, BTTS 22/36 (2025) | Djurgardens IF >2.5 19/28, BTTS 16/28 (2025)"
+    )
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_la_saison_de_repli_est_ecrite_et_non_tue(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """« 18/34 » sur la saison passee et sur la saison en cours ne se lisent pas
+    pareil. Taire laquelle c'est laisser croire a la seconde — et en aout c'est
+    toujours la premiere : la saison en cours ne porte que des amicaux."""
+    _seed_event(migrated)
+    _mock_dossier(load_fixture)
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert "(2025)" in _lines(migrated)["Total buts"]
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_la_saison_precedente_n_est_demandee_que_si_la_courante_ne_dit_rien(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Un appel par equipe et par saison : le demander d'office doublerait la
+    facture d'une soiree de championnat, ou la saison en cours suffit."""
+    _seed_event(migrated)
+    routes = _mock_dossier(load_fixture)
+    pleine = load_fixture("apifootball_fixtures_season_home_prev.json")
+    routes["season_home"].mock(return_value=httpx.Response(200, json=pleine, headers=RATE_HEADERS))
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert routes["season_home_prev"].call_count == 0, "la saison en cours suffisait"
+    assert routes["season_away_prev"].call_count == 1, "l'autre equipe, non"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_les_amicaux_n_entrent_dans_aucun_compte(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Une victoire 4-3 en preparation ne dit rien de la saison. En juillet ce
+    sont les seuls matchs joues : les compter donnerait « >2.5 dans 4/4 » a une
+    equipe qui n'a pas encore joue un match officiel."""
+    _seed_event(migrated)
+    _mock_dossier(load_fixture)
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    courante = dossier.load(376, dossier.KIND_SEASON, "2026", migrated)
+    assert courante is not None
+    joues = [match for match in courante[0] if match["status"] == "FT"]
+    assert joues and all(match["friendly"] for match in joues), (
+        "la saison en cours de la fixture reelle ne porte que des amicaux joues"
+    )
+    # Quatre matchs joues et pourtant un repli : c'est qu'aucun n'a compte.
+    assert "(2025)" in _lines(migrated)["Total buts"]
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_un_match_annule_ou_reporte_ne_compte_pas(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Un match qui ne s'est pas joue n'a rien a dire, et un 3-0 sur tapis vert
+    fausserait autant les buts que la serie. La fixture reelle porte bien un
+    `CANC`, mais c'est un amical : le report se teste sur un match officiel,
+    sinon l'autre regle suffirait a faire passer le test."""
+    _seed_event(migrated)
+    routes = _mock_dossier(load_fixture)
+    saison = load_fixture("apifootball_fixtures_season_home_prev.json")
+    officiel = next(
+        match
+        for match in saison["response"]
+        if match["league"]["id"] == 113 and match["fixture"]["status"]["short"] == "FT"
+    )
+    officiel["fixture"]["status"]["short"] = "PST"
+    routes["season_home_prev"].mock(
+        return_value=httpx.Response(200, json=saison, headers=RATE_HEADERS)
+    )
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    # 36 officiels joues dans la fixture intacte, 35 des qu'un est reporte — et
+    # le match retire etait un BTTS a moins de 2.5 buts, d'ou 22 puis 21.
+    assert "BK Hacken >2.5 23/35, BTTS 21/35" in _lines(migrated)["Total buts"]
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_la_serie_en_cours_n_est_pas_le_record_de_la_saison(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """`biggest.streak` de `/teams/statistics` donne le record, ce qui se lit
+    comme la serie en cours et dit l'inverse : une equipe qui a gagne quatre fois
+    en mars et perd depuis un mois y afficherait « 4 »."""
+    _seed_event(migrated)
+    _mock_dossier(load_fixture)
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert _lines(migrated)["Serie"] == "Djurgardens IF 2D"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_serie_de_un_match_n_est_pas_une_serie(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """L'equipe a domicile sort d'une seule defaite : ecrire « 1D » habillerait
+    un resultat isole en tendance."""
+    _seed_event(migrated)
+    _mock_dossier(load_fixture)
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert HOME not in _lines(migrated)["Serie"]
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_calendrier_annonce_le_prochain_match(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """« match 3 jours apres » est une des verifications que le prompt demande, et
+    l'analyse allait la chercher a la main, match par match. Les matchs a venir
+    sont dans la meme charge utile que l'historique : aucun appel de plus."""
+    _seed_event(migrated)
+    _mock_dossier(load_fixture)
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert _lines(migrated)["Calendrier"] == "BK Hacken dans 4j | Djurgardens IF dans 4j"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_calendrier_nomme_la_competition_seulement_si_elle_change(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Une coupe entre deux journees de championnat est le cas interessant. Le
+    repeter sous chaque affiche de championnat couterait des tokens pour ne rien
+    apprendre."""
+    _seed_event(migrated)
+    routes = _mock_dossier(load_fixture)
+    saison = load_fixture("apifootball_fixtures_season_home.json")
+    for match in saison["response"]:
+        if match["fixture"]["status"]["short"] == "NS":
+            match["league"] = {"id": 96, "name": "Svenska Cupen", "season": 2026, "round": "1/8"}
+            break
+    routes["season_home"].mock(return_value=httpx.Response(200, json=saison, headers=RATE_HEADERS))
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    lignes = _lines(migrated)
+    assert "BK Hacken dans 4j (Svenska Cupen)" in lignes["Calendrier"]
+    assert "Djurgardens IF dans 4j" in lignes["Calendrier"], "meme competition : pas de nom"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_prolongation_ne_compte_que_les_90_minutes(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Le marche O/U d'un bookmaker se regle sur les 90 minutes. `goals` porte le
+    total prolongation comprise, `score.fulltime` le score a 90 : compter le
+    premier gonflerait la frequence des « plus de 2.5 » sur toutes les coupes.
+
+    Le cas est construit d'apres la semantique documentee des deux champs — aucun
+    match de prolongation ne figurait dans l'echantillon releve."""
+    _seed_event(migrated)
+    routes = _mock_dossier(load_fixture)
+    saison = load_fixture("apifootball_fixtures_season_home_prev.json")
+    joues = [f for f in saison["response"] if f["fixture"]["status"]["short"] == "FT"]
+    prolongation = joues[0]
+    prolongation["fixture"]["status"]["short"] = "AET"
+    prolongation["score"]["fulltime"] = {"home": 1, "away": 1}
+    prolongation["score"]["extratime"] = {"home": 2, "away": 1}
+    prolongation["goals"] = {"home": 3, "away": 2}
+    routes["season_home_prev"].mock(
+        return_value=httpx.Response(200, json=saison, headers=RATE_HEADERS)
+    )
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    passee = dossier.load(376, dossier.KIND_SEASON, "2025", migrated)
+    assert passee is not None
+    retenu = next(match for match in passee[0] if match["status"] == "AET")
+    assert retenu["goals"] == [1, 1], "le score a 90 minutes, pas le 3-2 final"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_saison_terminee_n_est_pas_rafraichie_toutes_les_douze_heures(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Elle ne changera plus : lui appliquer la peremption de la saison en cours
+    paierait un appel par equipe deux fois par jour pour reecrire les memes
+    lignes."""
+    _seed_event(migrated)
+    routes = _mock_dossier(load_fixture)
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+    lendemain = NOW + timedelta(hours=24)
+    await dossier.refresh_event(api_client, 1, migrated, now=lendemain)
+
+    assert routes["season_home"].call_count == 2, "la saison en cours, oui"
+    assert routes["season_home_prev"].call_count == 1, "la saison terminee, non"
+
+
+def test_la_peremption_depend_du_perimetre_et_non_du_seul_type() -> None:
+    assert dossier.ttl_for(dossier.KIND_SEASON, "2026", 2026) == dossier.TTL_HOURS["season"]
+    assert dossier.ttl_for(dossier.KIND_SEASON, "2025", 2026) == dossier.PAST_SEASON_TTL_HOURS
+
+
+def test_le_prompt_distingue_les_buts_du_match_de_ceux_de_l_equipe(
+    migrated: Settings,
+) -> None:
+    """Deux lignes voisines, deux grandeurs differentes : « Buts marq. » ne compte
+    que les buts de l'equipe, « Total buts » ceux du match. Les confondre ferait
+    lire un O/U de rencontre sur une distribution par equipe."""
+    from myassistantbet.services.prompt import build_prompt
+
+    db.execute(
+        "INSERT INTO sessions (id, label, created_at) VALUES (1, 'test', ?)",
+        (db.utcnow(),),
+        settings=migrated,
+    )
+
+    body = build_prompt(1, settings=migrated).body
+
+    assert "les buts **du match, les deux équipes réunies**" in body
+    assert "à 90 minutes" in body, "une prolongation de coupe n'entre pas dans un O/U"
+    assert "saison précédente" in body, "l'annee entre parentheses doit etre expliquee"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_match_analyse_n_est_pas_son_propre_prochain_match(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Bug constate en reel sur une qualification europeenne : « Motherwell dans
+    0j ». Le match analyse figure dans l'historique de sa propre equipe, et
+    l'heure stockee par le fournisseur etait posterieure de peu a celle de
+    l'evenement — il devenait donc sa propre echeance."""
+    _seed_event(migrated)
+    routes = _mock_dossier(load_fixture)
+    saison = load_fixture("apifootball_fixtures_season_home.json")
+    a_venir = next(f for f in saison["response"] if f["fixture"]["status"]["short"] == "NS")
+    # Le match du jour, tel que le fournisseur le date : une heure plus tard.
+    a_venir["fixture"]["date"] = "2026-08-03T16:30:00+00:00"
+    routes["season_home"].mock(return_value=httpx.Response(200, json=saison, headers=RATE_HEADERS))
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert "dans 0j" not in _lines(migrated)["Calendrier"]
+    assert HOME not in _lines(migrated)["Calendrier"], "son prochain match est celui-la meme"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_un_match_reporte_n_est_pas_une_echeance_a_preparer(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Annoncer « dans 3j » sur un match reporte ferait chercher une rotation
+    d'effectif pour une rencontre qui n'aura pas lieu a cette date."""
+    _seed_event(migrated)
+    routes = _mock_dossier(load_fixture)
+    saison = load_fixture("apifootball_fixtures_season_home.json")
+    for match in sorted(saison["response"], key=lambda f: f["fixture"]["date"]):
+        if match["fixture"]["status"]["short"] == "NS":
+            match["fixture"]["status"]["short"] = "PST"
+            break
+    routes["season_home"].mock(return_value=httpx.Response(200, json=saison, headers=RATE_HEADERS))
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    # Le suivant est au-dela de la fenetre : plus aucune echeance pour cette equipe.
+    assert HOME not in _lines(migrated)["Calendrier"]
