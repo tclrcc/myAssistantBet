@@ -511,3 +511,41 @@ async def test_une_reponse_saturee_n_est_jamais_mise_en_cache(
         list(migrated.dev_cache_dir.rglob("*.json")) if migrated.dev_cache_dir.exists() else []
     )
     assert len(fichiers) == 1, "seule la reponse servie est cachee"
+
+
+# -- Formes d'enveloppe : liste ou objet selon l'endpoint ---------------------
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_les_statistiques_d_equipe_arrivent_en_objet_pas_en_liste(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """`/teams/statistics` met un objet dans `response`. Le lire comme une liste
+    renvoyait toujours `None` : les lignes « Forme 5 » et « Dom/Ext » n'ont
+    jamais ete rendues alors que leur code existait et etait teste — la fixture
+    enveloppait l'objet dans un tableau, ce que le fournisseur ne fait pas."""
+    _mock_all(load_fixture)
+
+    stats = await api_client.team_statistics(113, 2026, 376)
+
+    assert stats is not None, (
+        "une forme d'enveloppe non prevue ne fait pas de bruit, elle fait un trou"
+    )
+    assert stats["form"] == "WLDWWWWDLW"
+    assert stats["fixtures"]["wins"]["home"] == 6
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_bloc_porte_la_forme_et_le_bilan_domicile_exterieur(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    lignes = _lines(migrated)
+    assert "Forme 5" in lignes
+    assert "Dom/Ext" in lignes

@@ -85,8 +85,8 @@ class APIFootballClient(BaseHTTPClient):
             response.duration_ms,
         )
 
-    async def _fetch(self, endpoint: str, params: dict[str, Any]) -> list[dict[str, Any]]:
-        """Appelle un endpoint et renvoie la liste `response` de l'enveloppe."""
+    async def _envelope(self, endpoint: str, params: dict[str, Any]) -> dict[str, Any]:
+        """Appelle un endpoint, comptabilise le quota et rend l'enveloppe validee."""
         result = await self._get(endpoint, params=params, headers=self._headers())
         self._account(endpoint, result)
 
@@ -100,9 +100,24 @@ class APIFootballClient(BaseHTTPClient):
         if errors:
             detail = "; ".join(f"{key}: {value}" if key else value for key, value in errors)
             raise ProviderError(PROVIDER, endpoint, f"erreur applicative : {detail}")
+        return payload
 
-        response = payload.get("response")
+    async def _fetch(self, endpoint: str, params: dict[str, Any]) -> list[dict[str, Any]]:
+        """Endpoint dont `response` est une liste — le cas courant."""
+        response = (await self._envelope(endpoint, params)).get("response")
         return response if isinstance(response, list) else []
+
+    async def _fetch_one(self, endpoint: str, params: dict[str, Any]) -> dict[str, Any] | None:
+        """Endpoint dont `response` est un **objet** et non une liste.
+
+        `/teams/statistics` est dans ce cas. Le lire avec `_fetch` renvoyait une
+        liste vide, donc `None`, donc aucune ligne de forme : le bloc CONTEXTE
+        n'a jamais porte « Forme 5 » ni « Dom/Ext », alors que leur rendu etait
+        ecrit et teste. Une forme d'enveloppe non prevue ne fait pas de bruit,
+        elle fait un trou.
+        """
+        response = (await self._envelope(endpoint, params)).get("response")
+        return response if isinstance(response, dict) else None
 
     async def current_season(self, league_id: int) -> int:
         """Saison en cours d'une ligue, telle que le fournisseur la declare.
@@ -138,15 +153,15 @@ class APIFootballClient(BaseHTTPClient):
     async def team_statistics(
         self, league_id: int, season: int, team_id: int
     ) -> dict[str, Any] | None:
-        """Forme et statistiques d'une equipe sur la saison."""
-        rows = await self._fetch(
+        """Forme et statistiques d'une equipe sur la saison.
+
+        `response` est ici un objet, d'ou `_fetch_one` : le lire comme une liste
+        renvoyait toujours `None`, et les lignes « Forme 5 » et « Dom/Ext »
+        n'ont jamais ete rendues alors que leur code existait.
+        """
+        return await self._fetch_one(
             "/teams/statistics", {"league": league_id, "season": season, "team": team_id}
         )
-        # Cet endpoint renvoie un objet, que l'enveloppe encapsule differemment
-        # selon les versions : on tolere les deux formes.
-        if rows:
-            return rows[0] if isinstance(rows[0], dict) else None
-        return None
 
     async def injuries(self, fixture_id: int) -> list[dict[str, Any]]:
         """Blesses et suspendus declares pour un match."""
