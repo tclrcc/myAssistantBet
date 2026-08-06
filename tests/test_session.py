@@ -19,6 +19,7 @@ from myassistantbet.services import board as board_service
 from myassistantbet.services import coverage
 from myassistantbet.services import session as session_service
 from myassistantbet.services.prompt import build_prompt
+from myassistantbet.services.session import render_blocks
 
 from .helpers import NOW
 
@@ -228,3 +229,116 @@ def test_un_marche_abandonne_ailleurs_ne_deteint_pas_sur_ce_match(
     block = session_service.render_blocks(session_id, isolated_settings, NOW)[0]
 
     assert "Non servis" not in block
+
+
+# -- Non servis : la couverture est par competition, le service par match -----
+
+
+def _tennis_event(settings: Settings, home: str, away: str) -> tuple[int, int]:
+    """Un match de tennis dans une session, sans aucune cote."""
+    competition = db.query_one(
+        "SELECT id, sport_id FROM competitions WHERE oddsapi_key = 'tennis_atp_us_open'",
+        settings=settings,
+    )
+    db.execute(
+        "INSERT INTO events (sport_id, competition_id, home, away, commence_time, source, "
+        "created_at) VALUES (?, ?, ?, ?, '2026-08-07T18:00:00Z', 'api', ?)",
+        (competition["sport_id"], competition["id"], home, away, db.utcnow()),
+        settings=settings,
+    )
+    event = db.query_one("SELECT id FROM events WHERE home = ?", (home,), settings=settings)
+    db.execute(
+        "INSERT INTO sessions (label, created_at) VALUES ('x', ?)",
+        (db.utcnow(),),
+        settings=settings,
+    )
+    session = db.query_one("SELECT id FROM sessions ORDER BY id DESC LIMIT 1", settings=settings)
+    db.execute(
+        "INSERT INTO session_events (session_id, event_id) VALUES (?, ?)",
+        (session["id"], event["id"]),
+        settings=settings,
+    )
+    return int(session["id"]), int(event["id"])
+
+
+def _odds(settings: Settings, event_id: int, market: str, name: str = "A") -> None:
+    db.execute(
+        "INSERT INTO odds (event_id, bookmaker, market_key, outcome_name, price, fetched_at) "
+        "VALUES (?, 'betclic_fr', ?, ?, 1.90, ?)",
+        (event_id, market, name, db.utcnow()),
+        settings=settings,
+    )
+
+
+def test_un_marche_demande_et_absent_sur_ce_match_est_annonce(migrated: Settings) -> None:
+    """`coverage` raisonne par competition quand le service se fait par match :
+    un handicap jeux servi sur une affiche et pas sur l'autre produisait un
+    silence sur la seconde, indiscernable d'un marche jamais reclame."""
+    session_id, event_id = _tennis_event(migrated, "Fils", "Navone")
+    _odds(migrated, event_id, "h2h", "Fils")
+    _odds(migrated, event_id, "totals", "Over")
+    _odds(migrated, event_id, "h2h_s1", "Fils")  # marche profond : l'etage B a tourne
+
+    bloc = render_blocks(session_id, migrated, now=NOW)[0]
+
+    assert "Non servis" in bloc
+    assert "Hand. jeux" in bloc, "le handicap demande et non revenu est nomme"
+
+
+def test_un_evenement_d_etage_a_n_annonce_pas_les_marches_profonds(
+    migrated: Settings,
+) -> None:
+    """Ils n'ont pas ete reclames : les lister ferait chercher une panne la ou
+    il n'y a qu'un enrichissement jamais lance."""
+    session_id, event_id = _tennis_event(migrated, "Fils", "Navone")
+    _odds(migrated, event_id, "h2h", "Fils")
+    _odds(migrated, event_id, "totals", "Over")
+
+    bloc = render_blocks(session_id, migrated, now=NOW)[0]
+
+    assert "Non servis" not in bloc
+
+
+# -- Generer un prompt par competition ----------------------------------------
+
+
+def test_le_prompt_se_restreint_a_une_competition(migrated: Settings) -> None:
+    """Sur une soiree a trente matchs la recherche par match s'etiole, et
+    decocher pour scinder ferait perdre le rattachement des picks."""
+    session_id, _ = _tennis_event(migrated, "Fils", "Navone")
+    autre = db.query_one(
+        "SELECT id, sport_id FROM competitions WHERE oddsapi_key = 'tennis_wta_us_open'",
+        settings=migrated,
+    )
+    db.execute(
+        "INSERT INTO events (sport_id, competition_id, home, away, commence_time, source, "
+        "created_at) VALUES (?, ?, 'Swiatek', 'Golubic', '2026-08-07T19:00:00Z', 'api', ?)",
+        (autre["sport_id"], autre["id"], db.utcnow()),
+        settings=migrated,
+    )
+    event = db.query_one("SELECT id FROM events WHERE home = 'Swiatek'", settings=migrated)
+    db.execute(
+        "INSERT INTO session_events (session_id, event_id) VALUES (?, ?)",
+        (session_id, event["id"]),
+        settings=migrated,
+    )
+
+    complet = build_prompt(session_id, settings=migrated, now=NOW)
+    restreint = build_prompt(
+        session_id, settings=migrated, now=NOW, competition_id=int(autre["id"])
+    )
+
+    assert complet.blocks == 2
+    assert restreint.blocks == 1
+    assert "Swiatek" in restreint.body
+    assert "Navone" not in restreint.body
+
+
+def test_les_competitions_de_la_session_sont_listees(migrated: Settings) -> None:
+    """Le selecteur ne propose que ce que la session contient, avec le compte
+    qui permet de juger si un lot merite d'etre coupe."""
+    session_id, _ = _tennis_event(migrated, "Fils", "Navone")
+
+    lots = session_service.competitions_of(session_id, migrated)
+
+    assert [(lot["label"], lot["total"]) for lot in lots] == [("ATP — US Open", 1)]

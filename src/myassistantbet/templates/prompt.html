@@ -18,10 +18,29 @@
     </select>
   </label>
 
+  {# Restreindre le lot sans toucher a la shortlist : sur une soiree a trente
+     matchs, la recherche par match s'etiole, et decocher pour scinder ferait
+     perdre le rattachement des picks. Le compte par competition permet de
+     juger d'un coup d'oeil si un lot merite d'etre coupe. #}
+  {% if competitions | length > 1 %}
+  <label>
+    Lot
+    <select name="competition_id" onchange="this.form.submit()">
+      <option value="">toute la session — {{ competitions | sum(attribute='total') }} match(s)</option>
+      {% for competition in competitions %}
+        <option value="{{ competition.id }}"
+                {% if competition.id == competition_id %}selected{% endif %}>
+          {{ competition.label }} — {{ competition.total }} match(s)
+        </option>
+      {% endfor %}
+    </select>
+  </label>
+  {% endif %}
+
   <div class="prompt-actions">
     <span class="muted">~{{ token_estimate }} tokens · {{ blocks }} match(s)</span>
     <button type="button" class="primary" id="copy">Copier</button>
-    <a class="button" href="/session/{{ session_id }}/prompt.md?template={{ template_name }}">
+    <a class="button" href="/session/{{ session_id }}/prompt.md?template={{ template_name }}{% if competition_id %}&competition_id={{ competition_id }}{% endif %}">
       Télécharger .md
     </a>
   </div>

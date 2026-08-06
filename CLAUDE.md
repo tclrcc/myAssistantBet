@@ -129,7 +129,17 @@ non negociables, toutes couvertes par des tests :
   deviner quelle cote etait jouable et laquelle ne faisait que situer le marche ;
 - les marches demandes a l'API et jamais servis deviennent une ligne `Non servis` : une
   absence constatee est une information, et la taire fait chercher un handicap jeux qui
-  n'existe pas.
+  n'existe pas. **Trois causes distinctes**, portees par `session._unserved_for` :
+  `coverage` pour ce que le book a refuse sur la competition ; la difference entre demande
+  et recu **pour ce match** quand l'etage B a tourne — `coverage` raisonne par competition
+  quand le service se fait par match, et un handicap jeux servi sur une affiche et pas sur
+  l'autre produisait un silence sur la seconde ; et l'offre du book de substitution quand
+  The Odds API ne connait pas la rencontre. Un evenement d'etage A n'annonce rien de
+  profond : ces marches n'ont pas ete reclames, et les lister ferait chercher une panne la
+  ou il n'y a qu'un enrichissement jamais lance.
+- `services/markets.py` detient la liste des marches demandes, parce que `enrich` et
+  `session` en ont besoin tous les deux. La copier des deux cotes les aurait fait diverger,
+  et le prompt aurait annonce `Non servis` sur un marche que l'outil ne demande plus.
 
 Ajouter un marche : une entree dans `MARKET_ORDER`, un rendu dedie si sa forme le merite,
 et un test. Sans rendu dedie, le repli generique s'applique — c'est acceptable, pas une
@@ -333,6 +343,19 @@ scannes les jours d'avant. Aucun appel, aucune cle, aucun quota.
   libelle — les separer diviserait par deux des echantillons deja courts. Un niveau non
   renseigne ne produit **aucune ligne** de statistiques : « non renseigne » ne dirait
   rien sur les matchs, seulement sur la saisie.
+
+## Generer un prompt par competition
+
+`build_prompt(..., competition_id=...)` restreint le lot **sans toucher a la shortlist**.
+Sur une soiree a trente matchs, la recherche par match s'etiole : constate en comparant deux
+analyses reelles — la colonne « effectif / absences » etait renseignee sur 8 matchs sur 8
+dans un lot de tennis, et sur 7 sur 27 dans un lot de qualifications europeennes. Huit a
+douze matchs par prompt est le volume ou l'analyse reste dense.
+
+Decocher pour scinder aurait marche, mais ferait perdre le rattachement des picks : la
+shortlist reste entiere, seul le rendu est filtre. Le selecteur n'apparait qu'a partir de
+deux competitions, et affiche le compte de chacune — de quoi juger d'un coup d'oeil si un
+lot merite d'etre coupe.
 
 ## Historique et personnalisation
 

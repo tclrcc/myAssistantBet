@@ -676,21 +676,35 @@ def _parse_choice(raw: str) -> tuple[str, int, str]:
 # --- Prompt ----------------------------------------------------------------
 
 
-def _build_prompt(session_id: int, template_name: str | None) -> prompt_service.RenderedPrompt:
+def _build_prompt(
+    session_id: int, template_name: str | None, competition_id: int | None = None
+) -> prompt_service.RenderedPrompt:
     settings = get_settings()
     name = template_name or prompt_service.DEFAULT_TEMPLATE
     try:
-        return prompt_service.build_prompt(session_id, name, settings)
+        return prompt_service.build_prompt(
+            session_id, name, settings, competition_id=competition_id
+        )
     except TemplateNotFound as exc:
         raise HTTPException(status_code=404, detail=f"Template inconnu : {name}") from exc
 
 
 @app.get("/session/{session_id}/prompt", response_class=HTMLResponse)
-def prompt_page(request: Request, session_id: int, template: str | None = None) -> HTMLResponse:
-    """Prompt rendu, sauvegarde en base a chaque generation."""
+def prompt_page(
+    request: Request,
+    session_id: int,
+    template: str | None = None,
+    competition_id: int | None = None,
+) -> HTMLResponse:
+    """Prompt rendu, sauvegarde en base a chaque generation.
+
+    `competition_id` restreint le lot sans toucher a la shortlist : sur une
+    soiree a trente matchs, l'analyse s'etiole faute de pouvoir chercher autant
+    par match, et decocher pour scinder ferait perdre le rattachement des picks.
+    """
     _require_session(session_id)
     settings = get_settings()
-    rendered = _build_prompt(session_id, template)
+    rendered = _build_prompt(session_id, template, competition_id)
     prompt_service.save_prompt(session_id, rendered, settings)
 
     return templates.TemplateResponse(
@@ -705,16 +719,21 @@ def prompt_page(request: Request, session_id: int, template: str | None = None) 
             "token_estimate": rendered.token_estimate,
             "blocks": rendered.blocks,
             "started": rendered.started,
+            "competitions": session_service.competitions_of(session_id, settings),
+            "competition_id": competition_id,
         },
     )
 
 
 @app.get("/session/{session_id}/prompt.md")
-def prompt_download(session_id: int, template: str | None = None) -> PlainTextResponse:
+def prompt_download(
+    session_id: int, template: str | None = None, competition_id: int | None = None
+) -> PlainTextResponse:
     """Le meme prompt, en telechargement Markdown."""
     _require_session(session_id)
-    rendered = _build_prompt(session_id, template)
-    filename = f"session-{session_id}.md"
+    rendered = _build_prompt(session_id, template, competition_id)
+    suffix = f"-competition-{competition_id}" if competition_id else ""
+    filename = f"session-{session_id}{suffix}.md"
     return PlainTextResponse(
         rendered.body,
         media_type="text/markdown; charset=utf-8",

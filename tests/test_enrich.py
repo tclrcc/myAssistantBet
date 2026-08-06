@@ -12,12 +12,14 @@ from myassistantbet.config import Settings
 from myassistantbet.providers.oddsapi import BASE_URL, OddsAPIClient
 from myassistantbet.services import board as board_service
 from myassistantbet.services.enrich import (
+    build_estimate,
+    run_enrich,
+)
+from myassistantbet.services.markets import (
     FOOTBALL_MARKETS,
     PLAYER_PROP_MARKETS,
     TENNIS_MARKETS,
-    build_estimate,
     markets_for,
-    run_enrich,
 )
 from myassistantbet.services.scan import active_competitions, run_scan
 

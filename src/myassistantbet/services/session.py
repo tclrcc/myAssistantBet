@@ -12,10 +12,11 @@ from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
 from ..db import connect
-from ..providers.oddsapi import DEFAULT_BOOKMAKER
+from ..providers.oddsapi import DEFAULT_BOOKMAKER, SCAN_MARKETS
 from . import coverage, elo, tennis_load
 from .context import context_lines
 from .labels import UNTIMED_BOOKMAKERS, affiche, bookmaker_label, primary_book
+from .markets import markets_for
 from .render import (
     MARKET_ORDER,
     MARKET_ORDER_BY_SPORT,
@@ -158,6 +159,7 @@ def started_labels(
     session_id: int,
     settings: Settings | None = None,
     now: datetime | None = None,
+    competition_id: int | None = None,
 ) -> list[str]:
     """Affiches des matchs ecartes parce qu'ils ont commence.
 
@@ -171,8 +173,9 @@ def started_labels(
             "FROM session_events se "
             "JOIN events e ON e.id = se.event_id "
             "WHERE se.session_id = ? "
-            "ORDER BY e.commence_time",
-            (session_id,),
+            + ("AND e.competition_id = ? " if competition_id else "")
+            + "ORDER BY e.commence_time",
+            (session_id, competition_id) if competition_id else (session_id,),
         ).fetchall()
     return [
         affiche(row["home"], row["away"]) for row in rows if has_started(row["commence_time"], now)
@@ -265,33 +268,63 @@ def _is_substitute(primary: str) -> bool:
     return bool(primary) and primary not in {DEFAULT_BOOKMAKER, *UNTIMED_BOOKMAKERS}
 
 
+def _is_enriched(sport_key: str, present: set[str]) -> bool:
+    """Vrai si l'etage B a tourne sur cet evenement.
+
+    Signe : un marche hors du couple de l'etage A. S'il n'en restait aucun,
+    c'est que le book n'a rien servi de profond — et ce constat-la est deja
+    memorise au niveau de la competition par `coverage`.
+    """
+    return bool(present - set(SCAN_MARKETS)) and sport_key in MARKET_ORDER_BY_SPORT
+
+
 def _unserved_for(
-    row: Any, present: set[str], primary: str, unserved: dict[int, set[str]]
+    row: Any,
+    present: set[str],
+    primary: str,
+    unserved: dict[int, set[str]],
+    settings: Settings,
 ) -> list[str]:
     """Marches modelises absents du bloc, et pour la bonne raison.
 
-    Sur un evenement servi par The Odds API, la reponse vient de `coverage` :
-    ce que le book a deja refuse de servir sur cette competition. Sur un
-    evenement releve chez un book de substitution, il n'y a aucun constat a
-    consulter — le marche manque parce que ce book ne l'offre pas ici. Sans
-    cette ligne, l'absence d'un handicap se lisait comme un oubli de l'outil,
-    et rien ne permettait de trancher.
+    Trois cas, trois causes qu'il ne faut pas confondre :
+
+    - **book de substitution** : The Odds API ne connait pas la rencontre, il
+      n'y a aucun constat a consulter et le marche manque parce que ce book ne
+      l'offre pas ici ;
+    - **evenement enrichi** : ce qui a ete demande pour ce match et n'est pas
+      revenu. `coverage` raisonne par competition quand le service se fait par
+      match — un handicap jeux servi sur une affiche et pas sur l'autre
+      produisait un silence sur la seconde, et l'analyse ne pouvait pas
+      distinguer « pas servi ici » de « jamais demande » ;
+    - **evenement d'etage A** : seuls les constats de competition s'appliquent,
+      le reste n'a simplement pas ete reclame.
     """
-    if not _is_substitute(primary):
-        return sorted(unserved.get(row["competition_id"], set()))
-    order = MARKET_ORDER_BY_SPORT.get(row["sport_key"], MARKET_ORDER)
-    return [key for key, _ in order if key not in present and key != "outright"]
+    barren = set(unserved.get(row["competition_id"], set()))
+    if _is_substitute(primary):
+        order = MARKET_ORDER_BY_SPORT.get(row["sport_key"], MARKET_ORDER)
+        return [key for key, _ in order if key not in present and key != "outright"]
+    if _is_enriched(row["sport_key"], present):
+        requested = markets_for(row["sport_key"], row["oddsapi_key"] or "", settings)
+        useful = coverage.useful(row["competition_id"], requested, settings)
+        barren |= {key for key in useful if key not in present}
+    return sorted(barren)
 
 
 def renderable_events(
     session_id: int,
     settings: Settings | None = None,
     now: datetime | None = None,
+    competition_id: int | None = None,
 ) -> list[RenderableEvent]:
     """Blocs de rendu de la session, dans l'ordre chronologique.
 
     Les matchs deja commences sont ecartes : les faire analyser reviendrait a
     demander un pari sur un resultat en partie connu.
+
+    `competition_id` restreint le rendu sans toucher a la shortlist : sur une
+    soiree a trente matchs, l'analyse s'etiole faute de pouvoir chercher autant
+    par match, et decocher pour scinder ferait perdre le rattachement des picks.
     """
     settings = settings or get_settings()
     with connect(settings) as conn:
@@ -304,8 +337,9 @@ def renderable_events(
             "JOIN sports s ON s.id = e.sport_id "
             "LEFT JOIN competitions c ON c.id = e.competition_id "
             "WHERE se.session_id = ? "
-            "ORDER BY e.commence_time, e.id",
-            (session_id,),
+            + ("AND e.competition_id = ? " if competition_id else "")
+            + "ORDER BY e.commence_time, e.id",
+            (session_id, competition_id) if competition_id else (session_id,),
         ).fetchall()
 
     upcoming = [row for row in rows if not has_started(row["commence_time"], now)]
@@ -365,7 +399,7 @@ def renderable_events(
                     # jouable et laquelle ne faisait que situer le marche.
                     bookmaker_label=bookmaker_label(primary) if primary else "—",
                     primary_book=primary,
-                    unserved=_unserved_for(row, set(markets), primary, unserved),
+                    unserved=_unserved_for(row, set(markets), primary, unserved, settings),
                     substitute=_is_substitute(primary),
                     # `fetched` n'a ete alimente que par les bookmakers relevables :
                     # l'heure d'une saisie est celle de la frappe, pas celle d'un
@@ -380,6 +414,31 @@ def render_blocks(
     session_id: int,
     settings: Settings | None = None,
     now: datetime | None = None,
+    competition_id: int | None = None,
 ) -> list[str]:
     """Blocs texte compacts de la session, prets pour le template de prompt."""
-    return [render_event(event) for event in renderable_events(session_id, settings, now)]
+    return [
+        render_event(event)
+        for event in renderable_events(session_id, settings, now, competition_id)
+    ]
+
+
+def competitions_of(session_id: int, settings: Settings | None = None) -> list[dict[str, Any]]:
+    """Competitions representees dans une session, avec leur nombre de matchs.
+
+    Sert le selecteur de la page prompt : on ne propose que ce que la session
+    contient, et le compte permet de juger d'un coup d'oeil si un lot merite
+    d'etre scinde.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT c.id, c.label, s.key AS sport_key, COUNT(*) AS total "
+            "FROM session_events se "
+            "JOIN events e ON e.id = se.event_id "
+            "JOIN sports s ON s.id = e.sport_id "
+            "JOIN competitions c ON c.id = e.competition_id "
+            "WHERE se.session_id = ? GROUP BY c.id ORDER BY s.key, c.label",
+            (session_id,),
+        ).fetchall()
+    return [dict(row) for row in rows]

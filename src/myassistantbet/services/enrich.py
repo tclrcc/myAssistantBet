@@ -22,48 +22,16 @@ from ..providers.tennisabstract import TennisAbstractClient
 from . import coverage, elo, fixtures, reference
 from .context import fetch_context
 from .labels import affiche
+from .markets import (
+    markets_for,
+)
 from .scan import replace_odds  # meme regle de remplacement qu'a l'etage A
 from .session import has_started
 
 logger = logging.getLogger(__name__)
 
+
 #: Marches profonds football (SPEC.md section 4).
-FOOTBALL_MARKETS: tuple[str, ...] = (
-    "correct_score",
-    "correct_score_h1",
-    "totals_h1",
-    "alternate_totals",
-    "btts",
-    "btts_h1",
-    "double_chance",
-    "halftime_fulltime",
-    "team_totals",
-    "alternate_team_totals",
-    "alternate_totals_corners",
-    "alternate_totals_cards",
-    "corners_1x2",
-    "alternate_spreads",
-)
-
-#: Marches profonds tennis (SPEC.md section 4).
-TENNIS_MARKETS: tuple[str, ...] = (
-    "h2h",
-    "spreads",
-    "totals",
-    "h2h_s1",
-    "h2h_s2",
-    "spreads_s1",
-    "totals_s1",
-    "alternate_totals_s1",
-)
-
-#: Props buteurs : servies uniquement sur quelques competitions (liste blanche).
-PLAYER_PROP_MARKETS: tuple[str, ...] = (
-    "player_goal_scorer_anytime",
-    "player_first_goal_scorer",
-)
-
-
 @dataclass
 class EnrichTarget:
     """Un evenement a enrichir, et le detail de ce qu'il va couter."""
@@ -248,17 +216,6 @@ class EnrichReport:
     @property
     def percent(self) -> int:
         return 100 if self.finished else int(100 * self.done / self.total) if self.total else 0
-
-
-def markets_for(sport_key: str, oddsapi_sport_key: str, settings: Settings) -> tuple[str, ...]:
-    """Marches a demander pour cet evenement, props incluses si la ligue y donne droit."""
-    if sport_key == "tennis":
-        return TENNIS_MARKETS
-    if sport_key != "football":
-        return ()
-    if oddsapi_sport_key in settings.player_props_whitelist:
-        return FOOTBALL_MARKETS + PLAYER_PROP_MARKETS
-    return FOOTBALL_MARKETS
 
 
 def build_estimate(

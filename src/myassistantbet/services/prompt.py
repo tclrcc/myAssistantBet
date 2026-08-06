@@ -266,6 +266,7 @@ def build_prompt(
     template_name: str = DEFAULT_TEMPLATE,
     settings: Settings | None = None,
     now: datetime | None = None,
+    competition_id: int | None = None,
 ) -> RenderedPrompt:
     """Rend le prompt d'une session. Ne touche ni au reseau ni a la base d'ecriture."""
     settings = settings or get_settings()
@@ -273,7 +274,7 @@ def build_prompt(
         raise TemplateNotFound(template_name)
 
     moment = (now or datetime.now(ZoneInfo(settings.tz))).astimezone(ZoneInfo(settings.tz))
-    events = renderable_events(session_id, settings, moment)
+    events = renderable_events(session_id, settings, moment, competition_id)
     blocks = [render_event(event) for event in events]
 
     body = (
@@ -303,7 +304,7 @@ def build_prompt(
         template_name=template_name,
         body=body,
         blocks=len(blocks),
-        started=started_labels(session_id, settings, moment),
+        started=started_labels(session_id, settings, moment, competition_id),
     )
 
 

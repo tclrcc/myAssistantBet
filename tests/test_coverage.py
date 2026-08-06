@@ -146,7 +146,8 @@ def test_une_reponse_vide_ne_casse_rien(migrated: Settings, payload: dict[str, A
 def test_un_evenement_sans_marche_servi_est_ecarte_du_cout(migrated: Settings) -> None:
     """Il est couvert par l'API : le motif differe d'un evenement manuel."""
     from myassistantbet.services import board as board_service
-    from myassistantbet.services.enrich import TENNIS_MARKETS, build_estimate
+    from myassistantbet.services.enrich import build_estimate
+    from myassistantbet.services.markets import TENNIS_MARKETS
 
     competition = _competition(migrated)
     db.execute("UPDATE competitions SET active = 1 WHERE id = ?", (competition,), settings=migrated)
@@ -177,7 +178,8 @@ def test_un_evenement_sans_marche_servi_est_ecarte_du_cout(migrated: Settings) -
 def test_le_motif_de_blocage_ne_ment_pas(migrated: Settings) -> None:
     """Dire « rien de coche » alors que des matchs le sont egare le diagnostic."""
     from myassistantbet.services import board as board_service
-    from myassistantbet.services.enrich import TENNIS_MARKETS, build_estimate
+    from myassistantbet.services.enrich import build_estimate
+    from myassistantbet.services.markets import TENNIS_MARKETS
 
     competition = _competition(migrated)
     sport = db.query_one("SELECT id FROM sports WHERE key = 'tennis'", settings=migrated)
