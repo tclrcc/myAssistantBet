@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from ..db import connect
 from ..providers.oddsapi import DEFAULT_BOOKMAKER, SCAN_MARKETS
-from . import coverage, dossier, elo, tennis_load
+from . import coverage, dossier, elo, tennis_history, tennis_load
 from .context import context_lines
 from .labels import UNTIMED_BOOKMAKERS, affiche, bookmaker_label, primary_book
 from .markets import markets_for
@@ -261,6 +261,11 @@ def _context_for(row: Any, settings: Settings) -> list[tuple[str, str]]:
         # cle — et c'est l'information que l'analyse allait chercher a la main.
         lines += tennis_load.lines(
             row["home"], row["away"], row["competition_id"], row["commence_time"], settings
+        )
+        # L'historique des matchs joues : confrontations directes, forme, bilan de
+        # surface et abandons. Relu en base, aucun telechargement.
+        lines += tennis_history.lines(
+            row["home"], row["away"], row["surface"], row["commence_time"], settings
         )
     return lines
 

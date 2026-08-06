@@ -34,6 +34,8 @@ EXPECTED_TABLES = {
     "team_aliases",
     "team_context",
     "tennis_elo",
+    "tennis_history_state",
+    "tennis_matches",
     "tiers",
 }
 

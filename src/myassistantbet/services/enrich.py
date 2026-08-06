@@ -19,7 +19,8 @@ from ..providers.apifootball import APIFootballClient
 from ..providers.base import ProviderError, last_known_quota
 from ..providers.oddsapi import DEFAULT_BOOKMAKER, PROVIDER, OddsAPIClient, expected_cost
 from ..providers.tennisabstract import TennisAbstractClient
-from . import coverage, dossier, elo, fixtures, reference
+from ..providers.tennisdata import TennisDataClient
+from . import coverage, dossier, elo, fixtures, reference, tennis_history
 from .context import fetch_context
 from .labels import affiche
 from .markets import (
@@ -409,6 +410,28 @@ async def _refresh_elo(
         logger.exception("Rafraichissement Elo impossible : %s", exc)
 
 
+async def _refresh_tennis_history(
+    history_client: TennisDataClient,
+    session_id: int,
+    settings: Settings,
+    now: datetime | None,
+) -> None:
+    """Met a jour l'historique des matchs de tennis si la session en a l'usage.
+
+    Meme regime que l'Elo : gratuit, sans quota, avant tout garde-fou de credit,
+    et un echec ne coute que des lignes. Seule la saison en cours se retelecharge,
+    une fois par semaine.
+    """
+    if not has_tennis(session_id, settings):
+        return
+    try:
+        report = await tennis_history.refresh(history_client, settings, now=now)
+        if report.errors:
+            logger.warning("Historique tennis partiel : %s", " ; ".join(report.errors))
+    except Exception as exc:  # noqa: BLE001 — l'historique est un bonus, jamais bloquant
+        logger.exception("Historique tennis indisponible : %s", exc)
+
+
 async def run_enrich(
     client: OddsAPIClient,
     session_id: int,
@@ -417,6 +440,7 @@ async def run_enrich(
     context_client: APIFootballClient | None = None,
     now: datetime | None = None,
     elo_client: TennisAbstractClient | None = None,
+    history_client: TennisDataClient | None = None,
 ) -> EnrichReport:
     """Enrichit tous les evenements d'une session : marches profonds puis contexte.
 
@@ -429,6 +453,8 @@ async def run_enrich(
     # quand il n'y a plus un seul marche a acheter qu'il faut le recuperer.
     if elo_client is not None:
         await _refresh_elo(elo_client, session_id, settings, now)
+    if history_client is not None:
+        await _refresh_tennis_history(history_client, session_id, settings, now)
 
     estimate = build_estimate(session_id, settings, now)
     report = EnrichReport(total=estimate.total_events)

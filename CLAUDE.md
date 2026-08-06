@@ -432,6 +432,51 @@ Elo de Tennis Abstract comblent ce trou, **gratuitement et sans cle**.
   d'une cote, est exactement le calcul d'esperance qu'interdit la section 9. Le template
   de prompt porte cette interdiction, et un test verifie qu'elle y est.
 
+## Historique des matchs de tennis (`providers/tennisdata.py`, `services/tennis_history.py`)
+
+Le tennis n'avait aucune source de resultats : `tennis_load.py` date les apparitions,
+mais ni vainqueur, ni score, ni surface n'etaient stockes. D'ou l'impossibilite de dire
+si deux joueurs se sont deja affrontes, ou ce qu'un joueur vaut sur terre.
+
+- Source : **tennis-data.co.uk**, un classeur `.xlsx` par saison et par circuit,
+  `SEASONS_KEPT` (3) saisons, ATP et WTA. Gratuit, sans cle, **sans quota** : rien dans
+  `api_usage`, meme regle que l'Elo. Trois faits verifies : `robots.txt` n'interdit que
+  `/stuff/` et 2000-2005 ; **HTTPS ne repond pas**, seul `http://` sert le fichier ; le
+  circuit feminin ajoute un `w` a l'annee (`/2026w/2026.xlsx`).
+- **Les huit colonnes de cotes de cloture sont ecartees a la lecture** (`COLUMNS` ne les
+  contient pas), jamais au rendu : ce sont les prix de fermeture du marche, donc la matiere
+  premiere d'un calcul de CLV et de value. `ODDS_COLUMNS` existe pour etre citee par le
+  test qui verifie qu'aucune n'atteint la base.
+- Les colonnes sont rapprochees **par libelle d'en-tete**, jamais par position : la source a
+  deja ajoute des colonnes de books au fil des ans.
+- **Le rapprochement des noms est le coeur du risque.** Le fichier publie
+  « Etcheverry T. M. », The Odds API dit « Tomas Martin Etcheverry » : ni le prenom entier
+  ni le decoupage prenom/nom ne sont donnes. `resolve()` essaie **tous** les decoupages et
+  n'accepte qu'une identite unique.
+  - Deux orthographes du meme joueur sont **reunies** (`Etcheverry T.` et
+    `Etcheverry T. M.`, neuf paires de ce genre en reel) : nom identique **et** initiales en
+    chaine de prefixes. Les separer couperait son historique en deux.
+  - Des initiales qui **divergent** font refuser — les freres Zverev. Aucune resolution
+    manuelle n'existe ici : attribuer a un joueur l'historique d'un autre serait pire
+    qu'une ligne absente, meme regle que l'Elo.
+  - Mesure sur 31 290 apparitions reelles : 879 cles, **aucune collision**, 141 des 143
+    joueurs de la base rapproches. Les 2 refus sont de vraies absences du fichier.
+- **Un tapis vert n'est pas un match joue** : ni forme, ni bilan de surface, ni H2H. Il
+  reste une information sur la disponibilite, portee par la ligne `Abandons`.
+- **La collecte est datee meme quand elle ne ramene rien** (`tennis_history_state`).
+  Deduire la peremption du `MAX(fetched_at)` des matchs — comme le fait `tennis_elo` —
+  tombe des qu'une saison est vide : sans ligne, pas de date, donc « jamais telecharge »,
+  donc redemandee a chaque enrichissement, sans fin. En janvier, le fichier de la saison
+  qui commence est justement vide. Trouve en ecrivant le test.
+- Une saison **terminee** n'est jamais retelechargee ; la saison en cours l'est une fois
+  par semaine, cadence de mise a jour du fichier.
+- Les dates n'ont pas le meme format selon la ligne, et c'est voulu : `%m/%y` pour une
+  confrontation directe — sur trois saisons, « 12/04 » ne situe rien — et `%d/%m` pour un
+  abandon recent, ou le jour compte.
+- `as_bytes` a ete ajoute au client de base pour ce fichier. Il n'est **jamais** mis en
+  cache disque : le cache de developpement est un cache JSON, y ecrire des octets bruts le
+  corromprait.
+
 ## Repos et charge au tennis (`services/tennis_load.py`)
 
 Le football recoit onze types de lignes d'API-Football ; le tennis n'avait que l'Elo, et

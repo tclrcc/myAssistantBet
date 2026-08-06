@@ -161,6 +161,7 @@ class BaseHTTPClient:
         params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
         as_text: bool = False,
+        as_bytes: bool = False,
     ) -> ProviderResponse:
         """GET avec retry sur 429/5xx et sur les erreurs reseau.
 
@@ -169,13 +170,19 @@ class BaseHTTPClient:
         `as_text` rend le corps brut au lieu de le decoder en JSON : toutes les
         sources ne sont pas des APIs, et une page publiee en HTML se traverse
         avec le meme retry, le meme timeout et le meme cache que le reste.
+
+        `as_bytes` va un cran plus loin, pour un corps qui n'est pas du texte —
+        un classeur publie en telechargement. Il n'est jamais mis en cache
+        disque : le cache de developpement est un cache **JSON**, et y ecrire des
+        octets bruts le corromprait.
         """
         params = params or {}
         url = f"{self.base_url}{path}"
 
-        cached = self._cache_read(path, params)
-        if cached is not None:
-            return ProviderResponse(data=cached, from_cache=True)
+        if not as_bytes:
+            cached = self._cache_read(path, params)
+            if cached is not None:
+                return ProviderResponse(data=cached, from_cache=True)
 
         last_error: str = "aucune tentative"
         last_status: int | None = None
@@ -192,10 +199,14 @@ class BaseHTTPClient:
                 last_status = None
             else:
                 if response.status_code < 400:
-                    data = response.text if as_text else response.json()
+                    if as_bytes:
+                        data: Any = response.content
+                    else:
+                        data = response.text if as_text else response.json()
                     transient = self._transient_payload_error(data)
                     if transient is None:
-                        self._cache_write(path, params, data)
+                        if not as_bytes:
+                            self._cache_write(path, params, data)
                         return ProviderResponse(
                             data=data,
                             headers=dict(response.headers),

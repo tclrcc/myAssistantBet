@@ -589,6 +589,18 @@ Les props buteurs étaient achetées sur six compétitions sans qu'aucune ligne 
 
 *Critère d'acceptation :* sur un match de Premier League dont un buteur est déclaré indisponible, le bloc porte son nom et la date de début ; un buteur revenu de blessure n'y figure pas ; et aucun appel n'est émis pour un joueur que le bloc ne nomme pas.
 
+### Phase 16 — L'historique des matchs de tennis
+Le tennis n'avait **aucune** source de résultats : `tennis_load.py` date les apparitions d'un joueur à partir de nos propres scans, mais la base ne stockait ni vainqueur, ni score, ni surface. On ne pouvait donc pas dire si deux joueurs s'étaient déjà affrontés, ni ce qu'un joueur vaut sur terre battue.
+
+- Source : **tennis-data.co.uk**, un classeur par saison et par circuit, trois saisons, ATP et WTA. Gratuit, sans clé, sans quota — donc rien dans `api_usage`, même règle que les classements Elo. `robots.txt` vérifié : seuls `/stuff/` et les saisons 2000-2005 sont interdits. HTTPS ne répond pas, seul `http://` sert le fichier ; aucun secret ne transite.
+- **Les huit colonnes de cotes de clôture du fichier sont écartées à la lecture**, pas au rendu : ce sont les prix de fermeture du marché, donc la matière première d'un calcul de CLV et de value (interdit n°1). Ce qui n'entre pas en base ne peut pas ressortir, et un test le vérifie sur une fixture qui les contient.
+- Le point dur est le **rapprochement des noms** : le fichier publie « Etcheverry T. M. » là où The Odds API dit « Tomas Martin Etcheverry ». Ni le prénom entier ni le découpage prénom/nom ne sont donnés. La règle ne devine rien : tous les découpages sont essayés, et **une seule identité est acceptée**. Deux orthographes du même joueur sont réunies quand le nom est identique et les initiales en chaîne de préfixes ; des initiales qui divergent — les frères Zverev — font refuser. Mesuré sur 31 290 apparitions réelles : 879 clés, **aucune collision entre deux joueurs**, et 141 des 143 joueurs de la base rapprochés, les 2 autres étant réellement absents du fichier.
+- Quatre lignes : **H2H** (bilan `V-D`, puis les trois plus récentes avec mois, surface et score en sets, `ab.` sur un match interrompu), **Forme** (dix derniers matchs, même sens de lecture que « Forme 5 »), **Surface** (bilan sur douze mois, muette sans surface renseignée sur la compétition), **Abandons** (six mois, seul celui qui a abandonné est compté).
+- Un match donné sur **tapis vert n'est pas un match joué** : il n'entre ni dans la forme, ni dans un bilan, ni dans un H2H. Il reste une information sur la disponibilité, portée par sa propre ligne.
+- **La collecte est datée même quand elle ne ramène rien.** Déduire la péremption du `MAX(fetched_at)` des matchs tombe dès qu'une saison est vide : sans ligne, pas de date, donc « jamais téléchargé », donc redemandée à chaque enrichissement — sans fin. En janvier, le fichier de la saison qui commence est justement vide.
+
+*Critère d'acceptation :* sur un match ATP, le bloc porte les confrontations directes avec leurs scores en sets, la forme sur dix matchs, le bilan sur la surface du tournoi et les abandons récents ; un joueur dont l'identité est ambiguë ne produit aucune ligne ; aucune cote du fichier source n'existe en base ; et un second enrichissement ne retélécharge que la saison en cours.
+
 ---
 
 ## 11. Exigences de qualité

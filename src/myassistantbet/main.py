@@ -23,6 +23,7 @@ from .providers.apifootball import APIFootballClient
 from .providers.base import ProviderError
 from .providers.oddsapi import OddsAPIClient
 from .providers.tennisabstract import TennisAbstractClient
+from .providers.tennisdata import TennisDataClient
 from .scheduler import build_scheduler
 from .services import board as board_service
 from .services import competitions as competitions_service
@@ -454,6 +455,7 @@ async def start_enrich(request: Request, session_id: int) -> HTMLResponse:
                 # Gratuit et sans cle : toujours branche, contrairement au
                 # contexte football qui depend d'un abonnement.
                 elo_client=TennisAbstractClient(request.app.state.http, settings),
+                history_client=TennisDataClient(request.app.state.http, settings),
             )
 
         task = asyncio.create_task(_run())

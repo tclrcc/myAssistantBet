@@ -1,0 +1,424 @@
+"""Historique des matchs de tennis : source, rapprochement des noms, rendu.
+
+Ce qui est verifie ici et qui n'allait pas de soi : les cotes de cloture du
+fichier source ne doivent **jamais** entrer en base, le rapprochement des noms ne
+doit jamais attribuer a un joueur l'historique d'un autre, et un match donne sur
+tapis vert n'est pas un match joue.
+"""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
+
+import httpx
+import pytest
+import respx
+
+from myassistantbet import db
+from myassistantbet.config import Settings
+from myassistantbet.providers.tennisdata import (
+    BASE_URL,
+    ODDS_COLUMNS,
+    TennisDataClient,
+    parse_workbook,
+)
+from myassistantbet.services import tennis_history
+
+FIXTURE = Path(__file__).parent / "fixtures" / "tennisdata_atp_2026.xlsx"
+NOW = datetime(2026, 8, 6, tzinfo=UTC)
+COMMENCE = "2026-08-10T13:00:00Z"
+
+
+@pytest.fixture
+def classeur() -> bytes:
+    return FIXTURE.read_bytes()
+
+
+@pytest.fixture
+def api_client(http_client: httpx.AsyncClient, migrated: Settings) -> TennisDataClient:
+    return TennisDataClient(http_client, migrated)
+
+
+def _empty_workbook() -> bytes:
+    """Un classeur valide sans aucun match : en-tetes seuls.
+
+    Un match appartient a un seul circuit et a une seule saison, et les fichiers
+    de la source ne se recouvrent pas. Servir la fixture pour les six couples
+    circuit/saison mettrait donc six copies du meme match en base — le bilan des
+    confrontations directes vaudrait alors « 6V-0D » sur une seule rencontre.
+    """
+    from io import BytesIO
+
+    from openpyxl import Workbook, load_workbook
+
+    modele = load_workbook(FIXTURE, read_only=True).active
+    vide = Workbook()
+    assert vide.active is not None and modele is not None
+    vide.active.append([cell.value for cell in next(modele.iter_rows(max_row=1))])
+    tampon = BytesIO()
+    vide.save(tampon)
+    return tampon.getvalue()
+
+
+def _mock_seasons(classeur: bytes) -> list[respx.Route]:
+    """La fixture pour l'ATP 2026, un classeur vide pour les cinq autres.
+
+    Rend les deux routes : ce qui se compte est la somme de leurs appels, la
+    premiere ne servant qu'un seul des six couples circuit/saison.
+    """
+    precise = respx.get(f"{BASE_URL}/2026/2026.xlsx").mock(
+        return_value=httpx.Response(
+            200,
+            content=classeur,
+            headers={"content-type": "application/vnd.openxmlformats-officedocument"},
+        )
+    )
+    generale = respx.get(url__regex=rf"{BASE_URL}/\d{{4}}w?/\d{{4}}\.xlsx").mock(
+        return_value=httpx.Response(200, content=_empty_workbook())
+    )
+    return [precise, generale]
+
+
+def _downloads(routes: list[respx.Route]) -> int:
+    """Classeurs telecharges, toutes routes confondues."""
+    return sum(route.call_count for route in routes)
+
+
+def _lines(
+    settings: Settings, home: str, away: str, surface: str | None = "clay"
+) -> dict[str, str]:
+    return dict(tennis_history.lines(home, away, surface, COMMENCE, settings))
+
+
+# -- Lecture du classeur -----------------------------------------------------
+
+
+def test_les_cotes_de_cloture_n_entrent_jamais_en_base(classeur: bytes, migrated: Settings) -> None:
+    """Interdit n°1 de SPEC.md. Le fichier porte huit colonnes de cotes de
+    fermeture — B365, Pinnacle, Max, Avg, Betfair — soit la matiere premiere d'un
+    calcul de CLV et de value. Elles sont ecartees **a la lecture** et non au
+    rendu : ce qui n'entre pas en base ne peut pas ressortir par accident."""
+    matchs = parse_workbook(classeur)
+    tennis_history.store("atp", 2026, matchs, migrated, NOW)
+
+    colonnes = {
+        row["name"] for row in db.query("PRAGMA table_info(tennis_matches)", settings=migrated)
+    }
+    assert not colonnes & ODDS_COLUMNS, "aucune colonne de cotes dans le schema"
+    champs = {champ for match in matchs for champ in vars(match)}
+    assert not champs & {colonne.casefold() for colonne in ODDS_COLUMNS}
+    # Et aucune valeur de cote ne doit s'etre glissee dans un champ texte.
+    lignes = db.query("SELECT * FROM tennis_matches LIMIT 5", settings=migrated)
+    assert lignes and all("1.9" not in str(dict(ligne)) for ligne in lignes)
+
+
+def test_une_ligne_sans_date_ni_joueurs_est_ignoree(classeur: bytes) -> None:
+    """Le classeur porte une ligne de pied de tableau. La compter creerait un
+    match fantome, avec un vainqueur vide."""
+    matchs = parse_workbook(classeur)
+
+    assert all(match.played_on and match.winner and match.loser for match in matchs)
+
+
+def test_le_score_est_reconstruit_des_colonnes_de_sets(classeur: bytes) -> None:
+    """Les sets vivent dans dix colonnes ; un match en deux sets n'en remplit que
+    quatre, et les colonnes vides ne doivent pas produire de tirets orphelins."""
+    matchs = {(m.winner, m.loser): m for m in parse_workbook(classeur)}
+
+    finale = matchs[("Etcheverry T.", "Zverev A.")]
+    assert finale.score == "7-5 6-4"
+    abandon = matchs[("Etcheverry T. M.", "Sinner J.")]
+    assert abandon.score == "6-3", "un seul set joue avant l'abandon"
+    forfait = matchs[("Bautista Agut R.", "Alcaraz C.")]
+    assert forfait.score == "", "un forfait n'a pas de score"
+
+
+# -- Rapprochement des noms --------------------------------------------------
+
+
+def test_une_identite_publiee_devient_une_cle(classeur: bytes) -> None:
+    """« Bautista Agut R. » a un nom de famille en deux mots : le decouper sur le
+    premier espace en ferait « agut|br »."""
+    assert tennis_history.published_key("Bautista Agut R.") == "bautista agut|r"
+    assert tennis_history.published_key("Etcheverry T. M.") == "etcheverry|tm"
+    assert tennis_history.published_key("Sinner J.") == "sinner|j"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_decoupage_prenom_nom_n_est_jamais_devine(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """« Alex de Minaur » a pour nom « de Minaur », « Juan Manuel Cerundolo » a
+    pour prenoms « Juan Manuel » : rien dans la chaine ne dit lequel des deux cas
+    on lit. Tous les decoupages sont essayes, et un seul resultat est accepte."""
+    _mock_seasons(classeur)
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+    index = tennis_history.known_keys(migrated)
+
+    assert tennis_history.resolve("Alex de Minaur", index) == ("de minaur|a",)
+    assert tennis_history.resolve("Roberto Bautista Agut", index) == ("bautista agut|r",)
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_deux_orthographes_du_meme_joueur_sont_reunies(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """Neuf paires de ce genre existent dans les donnees reelles :
+    « Etcheverry T. » et « Etcheverry T. M. » sont la meme personne. Les separer
+    couperait son historique en deux ; les confondre avec un homonyme serait pire.
+    Le critere est le nom identique **et** des initiales en chaine de prefixes."""
+    _mock_seasons(classeur)
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+    index = tennis_history.known_keys(migrated)
+
+    assert tennis_history.resolve("Tomas Martin Etcheverry", index) == (
+        "etcheverry|t",
+        "etcheverry|tm",
+    )
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_deux_joueurs_de_meme_nom_ne_partagent_jamais_leur_historique(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """Le piege des freres Zverev. Des initiales qui divergent — `a` et `m` — ne
+    forment pas une chaine de prefixes : le doute vaut silence, et il n'existe
+    ici aucune resolution manuelle pour rattraper une erreur."""
+    _mock_seasons(classeur)
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+    index = dict(tennis_history.known_keys(migrated))
+    index["zverev"] = {"zverev|a", "zverev|m"}
+
+    assert tennis_history.resolve("Sacha Zverev", index) == (), "deux joueurs : on refuse"
+    assert tennis_history.resolve("Alexander Zverev", index) == ("zverev|a",), (
+        "un seul : on accepte"
+    )
+
+
+def test_un_joueur_inconnu_ne_produit_aucune_ligne(migrated: Settings) -> None:
+    """Base vierge : ecrire « aucun match connu » ferait chercher un probleme de
+    rapprochement la ou il n'y a qu'une collecte jamais lancee."""
+    assert tennis_history.lines("Jannik Sinner", "Carlos Alcaraz", "hard", COMMENCE, migrated) == []
+
+
+# -- Collecte ----------------------------------------------------------------
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_la_collecte_est_idempotente(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """Relancer ne duplique rien : cle naturelle (circuit, saison, date, joueurs)."""
+    _mock_seasons(classeur)
+
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+    avant = db.query_one("SELECT count(*) AS n FROM tennis_matches", settings=migrated)["n"]
+    await tennis_history.refresh(api_client, migrated, now=NOW, force=True)
+    apres = db.query_one("SELECT count(*) AS n FROM tennis_matches", settings=migrated)["n"]
+
+    assert avant == apres > 0
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_saison_terminee_n_est_jamais_retelechargee(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """Elle ne changera plus. Seule la saison en cours se rafraichit, a la cadence
+    de mise a jour du fichier — une fois par semaine."""
+    routes = _mock_seasons(classeur)
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+    premier = _downloads(routes)
+
+    plus_tard = NOW + timedelta(hours=tennis_history.CURRENT_SEASON_TTL_HOURS + 1)
+    rapport = await tennis_history.refresh(api_client, migrated, now=plus_tard)
+
+    assert premier == 6, "trois saisons, deux circuits"
+    assert _downloads(routes) == premier + 2, "seule la saison en cours des deux circuits"
+    assert rapport.seasons == ["atp 2026", "wta 2026"]
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_un_circuit_en_echec_n_empeche_pas_l_autre(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """Une source indisponible ne coute que des lignes, jamais la collecte."""
+    # Enregistree **avant** les autres : respx retient la premiere route qui
+    # correspond, et l'inverse ne declencherait jamais le 404.
+    respx.get(url__regex=rf"{BASE_URL}/\d{{4}}w/\d{{4}}\.xlsx").mock(
+        return_value=httpx.Response(404, text="absent")
+    )
+    _mock_seasons(classeur)
+
+    rapport = await tennis_history.refresh(api_client, migrated, now=NOW)
+
+    assert not rapport.ok
+    assert rapport.seasons == ["atp 2026", "atp 2025", "atp 2024"]
+    assert len(rapport.errors) == 3
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_aucun_credit_n_est_comptabilise(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """Gratuit et sans cle : `api_usage` ne compte que des credits, et y ecrire un
+    telechargement libre fausserait le bandeau."""
+    _mock_seasons(classeur)
+
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+
+    assert db.query("SELECT * FROM api_usage", settings=migrated) == []
+
+
+# -- Rendu -------------------------------------------------------------------
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_bloc_porte_les_confrontations_directes_avec_leurs_scores(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """Un 3V-1D dont les trois victoires tiennent en trois sets serres ne decrit
+    pas le meme rapport de forces qu'un 3V-1D en deux sets secs. Le bilan s'ecrit
+    `V-D` comme partout ailleurs dans le projet, jamais `3-1` — qui se lirait
+    comme un score."""
+    _mock_seasons(classeur)
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+
+    lignes = _lines(migrated, "Tomas Martin Etcheverry", "Alexander Zverev")
+    h2h = next(value for label, value in lignes.items() if label.startswith("H2H"))
+    assert "Tomas Martin Etcheverry 1V-0D" in h2h
+    assert "07/26 terre 7-5 6-4" in h2h, "la date porte l'annee : trois saisons se melangeraient"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_un_abandon_est_dit_dans_le_score(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """« 6-3 » seul sur une confrontation directe passerait pour une donnee
+    tronquee. C'est un match interrompu, et ca se lit."""
+    _mock_seasons(classeur)
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+
+    lignes = _lines(migrated, "Tomas Martin Etcheverry", "Jannik Sinner")
+    h2h = next(value for label, value in lignes.items() if label.startswith("H2H"))
+    assert "6-3 ab." in h2h
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_un_forfait_n_est_pas_un_match_joue(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """Personne n'est entre sur le court : le compter en confrontation directe
+    donnerait un rapport de forces sur un match qui n'a pas eu lieu. Il reste une
+    information sur la disponibilite, portee par la ligne « Abandons »."""
+    _mock_seasons(classeur)
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+
+    lignes = _lines(migrated, "Roberto Bautista Agut", "Carlos Alcaraz")
+    assert not any(label.startswith("H2H") for label in lignes), "le forfait etait leur seul match"
+    assert "forfait" in lignes["Abandons"]
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_bilan_de_surface_porte_sa_fenetre(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """« 8V-3D » sur un an et sur trois ans ne disent pas la meme chose — meme
+    regle que le compte a cote d'une moyenne."""
+    _mock_seasons(classeur)
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+
+    surface = _lines(migrated, "Jannik Sinner", "Carlos Alcaraz")["Surface"]
+    assert "terre" in surface
+    assert "/12m" in surface
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_aucune_ligne_de_surface_sans_surface_renseignee(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """La surface est saisie a la main sur la competition. La deduire du libelle
+    d'un tournoi serait une invention — meme regle que pour l'Elo."""
+    _mock_seasons(classeur)
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+
+    lignes = _lines(migrated, "Jannik Sinner", "Carlos Alcaraz", surface=None)
+    assert "Surface" not in lignes
+    assert "Forme" in lignes, "le reste du bloc n'en depend pas"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_la_forme_se_lit_dans_le_meme_sens_qu_au_football(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """La derniere lettre est le dernier match, comme « Forme 5 ». Inverser le
+    sens sur un seul des deux sports serait un piege a coup sur."""
+    _mock_seasons(classeur)
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+
+    forme = _lines(migrated, "Jannik Sinner", "Carlos Alcaraz")["Forme"]
+    lettres = forme.split("Jannik Sinner ")[1].split("/")[0]
+    assert set(lettres) <= {"V", "D"}
+    dernier = db.query_one(
+        "SELECT winner_key FROM tennis_matches WHERE winner_key LIKE 'sinner|%' "
+        "OR loser_key LIKE 'sinner|%' ORDER BY played_on DESC LIMIT 1",
+        settings=migrated,
+    )
+    attendu = "V" if str(dernier["winner_key"]).startswith("sinner|") else "D"
+    assert lettres[-1] == attendu
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_saison_sans_aucun_match_n_est_pas_redemandee_sans_fin(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """Piege trouve en ecrivant le test precedent : la peremption etait deduite du
+    `MAX(fetched_at)` des matchs, donc une saison vide n'avait pas de date, donc
+    elle passait pour jamais telechargee. En janvier, le fichier de la saison qui
+    commence est justement vide : la collecte se serait relancee a chaque
+    enrichissement, sans fin et sans que rien ne le dise."""
+    routes = _mock_seasons(classeur)
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+    premier = _downloads(routes)
+
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+
+    assert _downloads(routes) == premier, "rien n'est frais a redemander"
+    vides = db.query(
+        "SELECT tour, season FROM tennis_history_state WHERE matches = 0", settings=migrated
+    )
+    assert len(vides) == 5, "cinq couples circuit/saison sans match, tous memorises"
+
+
+def test_le_prompt_encadre_les_bilans_de_tennis(migrated: Settings) -> None:
+    """Le garde-fou compte autant que la donnee. Un bilan de confrontations est une
+    frequence passee, comme les fractions du football : jamais rapprochee d'une
+    cote. Et une ligne absente n'est pas un joueur sans passe."""
+    from myassistantbet.services.prompt import build_prompt
+
+    db.execute(
+        "INSERT INTO sessions (id, label, created_at) VALUES (1, 'test', ?)",
+        (db.utcnow(),),
+        settings=migrated,
+    )
+
+    body = build_prompt(1, settings=migrated).body
+
+    assert "ne les rapproche jamais d'une cote" in body
+    assert "tapis vert n'entre dans aucun de ces comptes" in body
+    assert "n'est pas un joueur sans passé" in body
+    assert "même sens de lecture que « Forme 5 »" in body
