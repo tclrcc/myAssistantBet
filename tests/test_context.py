@@ -420,3 +420,94 @@ async def test_la_saison_n_est_payee_qu_une_fois_par_ligue(
     await fetch_context(api_client, {**EVENT, "id": 2}, migrated, cache)
 
     assert leagues.call_count == 1
+
+
+# -- Debit : une saturation annoncee en HTTP 200 ------------------------------
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_saturation_de_debit_est_retentee(
+    http_client: httpx.AsyncClient, migrated: Settings
+) -> None:
+    """API-Football annonce ses depassements de debit en HTTP 200, comme ses
+    erreurs applicatives : `RETRY_STATUSES` ne les voit pas. Sans ce crochet,
+    une seconde d'attente manquante laissait un trou definitif dans le contexte
+    d'une session — verifie en reel sur une rafale d'enrichissement."""
+    sature = httpx.Response(
+        200,
+        json={"errors": {"rateLimit": "Too many requests. You have exceeded the limit."}},
+        headers=RATE_HEADERS,
+    )
+    servi = httpx.Response(
+        200, json={"errors": [], "response": [{"ok": True}]}, headers=RATE_HEADERS
+    )
+    route = respx.get(f"{BASE_URL}/injuries").mock(side_effect=[sature, servi])
+    client = APIFootballClient(http_client, migrated, backoff_base=0)
+    client.payload_retry_delay = 0
+
+    assert await client.injuries(1) == [{"ok": True}]
+    assert route.call_count == 2
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_cle_invalide_echoue_sans_insister(
+    http_client: httpx.AsyncClient, migrated: Settings
+) -> None:
+    """La distinction est tout l'interet : un debit depasse se retente, une cle
+    invalide non — insister ne la rendrait pas valide et brulerait du quota."""
+    route = respx.get(f"{BASE_URL}/standings").mock(
+        return_value=httpx.Response(
+            200, json={"errors": {"token": "Invalid API key"}, "response": []}
+        )
+    )
+    client = APIFootballClient(http_client, migrated, backoff_base=0)
+
+    with pytest.raises(ProviderError, match="Invalid API key"):
+        await client.standings(113, 2026)
+    assert route.call_count == 1
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_saturation_persistante_finit_par_echouer_visiblement(
+    http_client: httpx.AsyncClient, migrated: Settings
+) -> None:
+    """Retenter n'est pas taire : apres les tentatives, l'erreur remonte."""
+    respx.get(f"{BASE_URL}/injuries").mock(
+        return_value=httpx.Response(
+            200, json={"errors": ["rateLimit: Too many requests."]}, headers=RATE_HEADERS
+        )
+    )
+    client = APIFootballClient(http_client, migrated, backoff_base=0)
+    client.payload_retry_delay = 0
+
+    with pytest.raises(ProviderError, match="debit depasse"):
+        await client.injuries(1)
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_reponse_saturee_n_est_jamais_mise_en_cache(
+    http_client: httpx.AsyncClient, migrated: Settings, tmp_path: Any
+) -> None:
+    """Une saturation n'est pas une reponse : la cacher ferait servir l'erreur
+    a toutes les generations suivantes, sans plus jamais appeler l'API."""
+    migrated.dev_cache = True
+    migrated.dev_cache_dir = tmp_path / "cache"
+    respx.get(f"{BASE_URL}/injuries").mock(
+        side_effect=[
+            httpx.Response(200, json={"errors": {"rateLimit": "Too many requests."}}),
+            httpx.Response(200, json={"errors": [], "response": [{"ok": True}]}),
+        ]
+    )
+    client = APIFootballClient(http_client, migrated, backoff_base=0)
+    client.payload_retry_delay = 0
+
+    await client.injuries(1)
+
+    fichiers = (
+        list(migrated.dev_cache_dir.rglob("*.json")) if migrated.dev_cache_dir.exists() else []
+    )
+    assert len(fichiers) == 1, "seule la reponse servie est cachee"

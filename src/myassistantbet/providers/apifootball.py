@@ -21,12 +21,51 @@ BASE_URL = "https://v3.football.api-sports.io"
 #: Chaque appel compte pour une unite du quota journalier.
 CALL_COST = 1
 
+#: Cles d'erreur d'enveloppe qui designent une saturation, donc un echec
+#: passager : le meme appel aboutit une fois le compteur retombe.
+TRANSIENT_ERROR_KEYS = frozenset({"ratelimit"})
+
+
+def _envelope_errors(payload: Any) -> list[tuple[str, str]]:
+    """Erreurs de l'enveloppe, en paires (cle, message).
+
+    `errors` est tantot un dictionnaire, tantot une liste : les deux formes
+    existent selon l'endpoint, et une seule des deux serait une source de bug.
+    """
+    if not isinstance(payload, dict):
+        return []
+    errors = payload.get("errors")
+    if isinstance(errors, dict):
+        return [(str(key), str(value)) for key, value in errors.items()]
+    if isinstance(errors, list):
+        return [("", str(item)) for item in errors]
+    return []
+
 
 class APIFootballClient(BaseHTTPClient):
     """Acces en lecture au contexte sportif : forme, classement, blessures, H2H."""
 
     provider_name = PROVIDER
     base_url = BASE_URL
+
+    #: Le plafond est par minute : un backoff de une puis deux secondes ne
+    #: laisserait pas le compteur retomber, et le retry ne servirait a rien.
+    payload_retry_delay = 5.0
+
+    def _transient_payload_error(self, data: Any) -> str | None:
+        """Reconnait une saturation de debit, annoncee en HTTP 200.
+
+        C'est le meme piege que les erreurs applicatives, avec une consequence
+        differente : une cle invalide doit echouer tout de suite, un debit
+        depasse doit etre retente. Sans cette distinction, un enrichissement
+        d'une journee de championnat — quelques dizaines d'appels en rafale —
+        laisse des trous definitifs dans le contexte la ou une seconde
+        d'attente aurait suffi.
+        """
+        for key, message in _envelope_errors(data):
+            if key.lower() in TRANSIENT_ERROR_KEYS or "too many requests" in message.lower():
+                return f"debit depasse : {message}"
+        return None
 
     def _headers(self) -> dict[str, str]:
         return {"x-apisports-key": self._settings.apifootball_key}
@@ -57,14 +96,9 @@ class APIFootballClient(BaseHTTPClient):
                 PROVIDER, endpoint, f"enveloppe inattendue : {type(payload).__name__}"
             )
 
-        errors = payload.get("errors")
+        errors = _envelope_errors(payload)
         if errors:
-            # `errors` est tantot une liste, tantot un dictionnaire.
-            detail = (
-                "; ".join(f"{key}: {value}" for key, value in errors.items())
-                if isinstance(errors, dict)
-                else "; ".join(str(item) for item in errors)
-            )
+            detail = "; ".join(f"{key}: {value}" if key else value for key, value in errors)
             raise ProviderError(PROVIDER, endpoint, f"erreur applicative : {detail}")
 
         response = payload.get("response")

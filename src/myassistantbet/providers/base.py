@@ -92,6 +92,22 @@ class BaseHTTPClient:
     provider_name: str = "base"
     base_url: str = ""
 
+    #: Delai plancher avant de retenter une erreur transitoire cachee dans un
+    #: corps HTTP 200. Le backoff ordinaire (1s, 2s) convient a une coupure
+    #: reseau, pas a un quota par minute, qui ne se libere pas en deux secondes.
+    payload_retry_delay: float = 0.0
+
+    def _transient_payload_error(self, data: Any) -> str | None:
+        """Erreur transitoire portee par le corps d'une reponse HTTP 200.
+
+        Certains fournisseurs repondent 200 en placant l'erreur dans
+        l'enveloppe : le code de statut ne dit alors rien, `RETRY_STATUSES` ne
+        voit jamais rien, et une saturation passagere devient un echec
+        definitif. Un client qui connait la forme de son enveloppe redefinit ce
+        crochet ; par defaut aucune reponse 200 n'est suspecte.
+        """
+        return None
+
     def __init__(
         self,
         client: httpx.AsyncClient,
@@ -163,8 +179,10 @@ class BaseHTTPClient:
 
         last_error: str = "aucune tentative"
         last_status: int | None = None
+        floor_delay = 0.0
 
         for attempt in range(1, MAX_ATTEMPTS + 1):
+            floor_delay = 0.0
             try:
                 response = await self._client.get(
                     url, params=params, headers=headers, timeout=DEFAULT_TIMEOUT
@@ -175,19 +193,26 @@ class BaseHTTPClient:
             else:
                 if response.status_code < 400:
                     data = response.text if as_text else response.json()
-                    self._cache_write(path, params, data)
-                    return ProviderResponse(
-                        data=data,
-                        headers=dict(response.headers),
-                        duration_ms=int(response.elapsed.total_seconds() * 1000),
-                    )
-                last_status = response.status_code
-                last_error = f"HTTP {response.status_code} — {response.text[:200]}"
-                if response.status_code not in RETRY_STATUSES:
-                    break
+                    transient = self._transient_payload_error(data)
+                    if transient is None:
+                        self._cache_write(path, params, data)
+                        return ProviderResponse(
+                            data=data,
+                            headers=dict(response.headers),
+                            duration_ms=int(response.elapsed.total_seconds() * 1000),
+                        )
+                    # Rien n'est mis en cache : une saturation n'est pas une reponse.
+                    last_error = transient
+                    last_status = None
+                    floor_delay = self.payload_retry_delay
+                else:
+                    last_status = response.status_code
+                    last_error = f"HTTP {response.status_code} — {response.text[:200]}"
+                    if response.status_code not in RETRY_STATUSES:
+                        break
 
             if attempt < MAX_ATTEMPTS:
-                delay = self._backoff_base * (2 ** (attempt - 1))
+                delay = max(self._backoff_base * (2 ** (attempt - 1)), floor_delay)
                 logger.warning(
                     "%s %s echec (%s), nouvelle tentative %d/%d dans %.1fs",
                     self.provider_name,
