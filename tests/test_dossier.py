@@ -112,6 +112,13 @@ def _mock_dossier(load_fixture: Any) -> dict[str, respx.Route]:
             "apifootball_topscorers.json",
             params__contains={"league": str(PROPS_LEAGUE)},
         ),
+        # Un appel par joueur : la route repond vide par defaut, et les tests qui
+        # veulent une absence la posent eux-memes.
+        "sidelined": respx.get(f"{BASE_URL}/sidelined").mock(
+            return_value=httpx.Response(
+                200, json={"errors": [], "response": []}, headers=RATE_HEADERS
+            )
+        ),
     }
 
 
@@ -989,3 +996,171 @@ def test_la_fiche_affiche_les_lignes_du_dossier(client: TestClient, migrated: Se
 
     assert "Entraineur" in page.text
     assert "P. Gustafsson" in page.text
+
+
+# -- Absences longue duree ----------------------------------------------------
+
+
+#: Historique d'indisponibilite, de la forme reelle relevee sur le fournisseur :
+#: des dizaines d'entrees couvrant toute la carriere, dont au plus une ouverte.
+def _indispo(entrees: list[dict[str, Any]]) -> dict[str, Any]:
+    return {"errors": [], "response": entrees}
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_un_buteur_indisponible_est_dit_avec_sa_date(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """La date accompagne toujours l'absence. Ce que le fournisseur publie est un
+    historique de carriere : une periode sans date de fin dit qu'il ne l'a pas
+    refermee, ce qui n'est pas tout a fait une absence en cours. Datee, la ligne
+    se verifie en une recherche ; seche, « absent » serait une affirmation qu'on
+    ne peut pas gager."""
+    _seed_event(migrated, league=PROPS_LEAGUE)
+    routes = _mock_dossier(load_fixture)
+    routes["sidelined"].mock(
+        return_value=httpx.Response(
+            200,
+            json=_indispo(
+                [
+                    {"type": "Ankle Injury", "start": "2024-03-02", "end": "2024-04-01"},
+                    {"type": "Knee Injury", "start": "2026-07-12", "end": None},
+                ]
+            ),
+            headers=RATE_HEADERS,
+        )
+    )
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert "L. Suárez absent depuis 12/07" in _lines(migrated)["Buteur abs."]
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_indisponibilite_refermee_avant_le_match_ne_produit_rien(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Le joueur est revenu : l'annoncer absent serait faux, et c'est le piege
+    d'un historique de carriere lu comme un etat du jour."""
+    _seed_event(migrated, league=PROPS_LEAGUE)
+    routes = _mock_dossier(load_fixture)
+    routes["sidelined"].mock(
+        return_value=httpx.Response(
+            200,
+            json=_indispo([{"type": "Knee Injury", "start": "2026-05-02", "end": "2026-06-30"}]),
+            headers=RATE_HEADERS,
+        )
+    )
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert "Buteur abs." not in _lines(migrated)
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_indisponibilite_posterieure_au_match_ne_produit_rien(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Une periode qui commence apres le match ne dit rien de ce match-la."""
+    _seed_event(migrated, league=PROPS_LEAGUE)
+    routes = _mock_dossier(load_fixture)
+    routes["sidelined"].mock(
+        return_value=httpx.Response(
+            200,
+            json=_indispo([{"type": "Knee Injury", "start": "2026-09-01", "end": None}]),
+            headers=RATE_HEADERS,
+        )
+    )
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert "Buteur abs." not in _lines(migrated)
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_l_indisponibilite_n_est_demandee_que_pour_les_buteurs_rendus(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Un appel par joueur : payer l'absence d'un joueur que le bloc ne nomme pas
+    serait acheter une donnee que rien ne lira. Trois buteurs par equipe rendus,
+    donc six appels au plus — pas les trente-six joueurs d'un effectif."""
+    _seed_event(migrated, league=PROPS_LEAGUE)
+    routes = _mock_dossier(load_fixture)
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    # Trois buteurs a domicile, deux a l'exterieur dans la fixture.
+    assert routes["sidelined"].call_count == 5
+    demandes = {int(appel.request.url.params["player"]) for appel in routes["sidelined"].calls}
+    rendus = _lines(migrated)["Buteurs"]
+    assert len(demandes) == 5
+    assert all(str(joueur) not in rendus for joueur in demandes), "des identifiants, pas des noms"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_aucune_indisponibilite_demandee_hors_des_competitions_a_props(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Sans buteurs identifies, aucun joueur a interroger. C'est la portee reelle
+    de cette donnee : verifie en reel, `/sidelined` repond pour n'importe quel
+    joueur mais ne rend aucune entree hors des competitions dont le fournisseur
+    couvre les blessures."""
+    _seed_event(migrated, league=LEAGUE)
+    routes = _mock_dossier(load_fixture)
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert routes["sidelined"].call_count == 0
+    assert "Buteur abs." not in _lines(migrated)
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_la_periode_la_plus_recente_prime(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Un historique de carriere en compte des dizaines, et une ancienne periode
+    jamais refermee par le fournisseur ne doit pas masquer la blessure du mois."""
+    _seed_event(migrated, league=PROPS_LEAGUE)
+    routes = _mock_dossier(load_fixture)
+    routes["sidelined"].mock(
+        return_value=httpx.Response(
+            200,
+            json=_indispo(
+                [
+                    {"type": "Groin Injury", "start": "2019-02-01", "end": None},
+                    {"type": "Calf Injury", "start": "2026-07-20", "end": None},
+                ]
+            ),
+            headers=RATE_HEADERS,
+        )
+    )
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert "absent depuis 20/07" in _lines(migrated)["Buteur abs."]
+
+
+def test_le_prompt_traite_une_absence_comme_une_piste_datee(migrated: Settings) -> None:
+    """Le garde-fou compte autant que la donnee. Une periode sans date de fin dit
+    que le fournisseur ne l'a pas refermee, pas qu'un joueur est forcement absent
+    aujourd'hui — et la recherche doit pouvoir la contredire."""
+    from myassistantbet.services.prompt import build_prompt
+
+    db.execute(
+        "INSERT INTO sessions (id, label, created_at) VALUES (1, 'test', ?)",
+        (db.utcnow(),),
+        settings=migrated,
+    )
+
+    body = build_prompt(1, settings=migrated).body
+
+    assert "Buteur abs." in body
+    assert "datée à confirmer, pas comme un fait" in body
+    assert "c'est ta recherche qui gagne" in body
+    assert "L'absence de cette ligne ne prouve rien" in body

@@ -215,6 +215,19 @@ class APIFootballClient(BaseHTTPClient):
         """
         return await self._fetch("/players/topscorers", {"league": league_id, "season": season})
 
+    async def sidelined(self, player_id: int) -> list[dict[str, Any]]:
+        """Historique d'indisponibilite d'un joueur : type, debut, fin.
+
+        Attention a ce que c'est : un **historique de carriere**, pas un etat du
+        jour. Une entree sans date de fin dit que le fournisseur n'a pas referme
+        la periode, ce qui n'est pas exactement la meme chose qu'une absence en
+        cours. Le metier en tire une date, jamais une affirmation seche.
+
+        Verifie : l'endpoint repond pour n'importe quel joueur, mais ne rend
+        aucune entree hors des competitions dont les blessures sont couvertes.
+        """
+        return await self._fetch("/sidelined", {"player": player_id})
+
     async def squad(self, team_id: int) -> list[dict[str, Any]]:
         """Effectif actuel d'une equipe : identifiants, postes, ages, numeros.
 

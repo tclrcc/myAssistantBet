@@ -46,8 +46,12 @@ KIND_SEASON = "season"
 KIND_SCORERS = "scorers"
 #: Effectif nominatif. Collecte, **jamais rendu** : sans statistique, une liste de
 #: vingt-six noms serait du bruit dans un prompt. Il sert a rattacher un nom a un
-#: identifiant de joueur, ce dont la phase suivante a besoin.
+#: identifiant de joueur.
 KIND_SQUAD = "squad"
+#: Indisponibilites d'un **joueur**, troisieme echelle du dossier. Un appel par
+#: joueur : demande pour les seuls buteurs deja identifies, jamais pour un
+#: effectif entier — trente-six joueurs feraient soixante-douze appels par affiche.
+KIND_SIDELINED = "sidelined"
 
 #: Peremption par type, en heures. Elle se regle sur la vitesse a laquelle la
 #: donnee change, bornee par ce qu'elle coute.
@@ -65,7 +69,16 @@ KIND_SQUAD = "squad"
 #: Les buteurs suivent la meme cadence, pour un appel par ligue et non par
 #: equipe. Un effectif ne bouge qu'au mercato : un mois suffit, et le raccourcir
 #: paierait un appel par equipe pour reecrire les memes noms.
-TTL_HOURS = {KIND_COACH: 24 * 7, KIND_SEASON: 12, KIND_SCORERS: 12, KIND_SQUAD: 24 * 30}
+#: Une indisponibilite se declare et se leve d'un jour a l'autre, et c'est
+#: exactement le fait qui decide d'une props : vingt-quatre heures, soit un appel
+#: par buteur et par jour, six au plus par affiche.
+TTL_HOURS = {
+    KIND_COACH: 24 * 7,
+    KIND_SEASON: 12,
+    KIND_SCORERS: 12,
+    KIND_SQUAD: 24 * 30,
+    KIND_SIDELINED: 24,
+}
 
 #: Peremption d'une saison **terminee**. Elle ne changera plus jamais : la
 #: rafraichir toutes les douze heures paierait un appel par equipe pour reecrire
@@ -205,6 +218,41 @@ def load_league(
             "SELECT payload_json, fetched_at FROM league_context "
             "WHERE league_id = ? AND kind = ? AND scope = ?",
             (league_id, kind, scope),
+        ).fetchone()
+    if row is None:
+        return None
+    return json.loads(row["payload_json"]), row["fetched_at"]
+
+
+def store_player(
+    player_id: int,
+    kind: str,
+    payload: Any,
+    scope: str = "",
+    settings: Settings | None = None,
+    now: datetime | None = None,
+) -> None:
+    """Remplace un releve de joueur. Meme regle d'idempotence et d'horloge."""
+    stamp = now.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ") if now else utcnow()
+    with connect(settings) as conn:
+        conn.execute(
+            "INSERT INTO player_context (player_id, kind, scope, payload_json, fetched_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT (player_id, kind, scope) DO UPDATE SET "
+            "payload_json = excluded.payload_json, fetched_at = excluded.fetched_at",
+            (player_id, kind, scope, json.dumps(payload, ensure_ascii=False), stamp),
+        )
+
+
+def load_player(
+    player_id: int, kind: str, scope: str = "", settings: Settings | None = None
+) -> tuple[Any, str] | None:
+    """Charge utile et date de releve d'un joueur, ou None."""
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT payload_json, fetched_at FROM player_context "
+            "WHERE player_id = ? AND kind = ? AND scope = ?",
+            (player_id, kind, scope),
         ).fetchone()
     if row is None:
         return None
@@ -478,7 +526,34 @@ async def refresh_event(
         and not _is_cached(team_id, KIND_SEASON, str(season - 1), report, settings, now, season)
     ]
     await _run(client, fallback, report, settings, now)
+
+    # Les indisponibilites se demandent **joueur par joueur**. Elles ne sont donc
+    # cherchees que pour les buteurs effectivement rendus : au plus trois par
+    # equipe, soit six appels par affiche, et jamais un effectif entier — les
+    # trente-six joueurs d'une equipe en feraient soixante-douze.
+    scorers = _scorers_of(event_id, league_id, season, settings)
+    absents = [
+        (player_id, KIND_SIDELINED, "")
+        for player_id in _rendered_scorer_ids(scorers, team_ids)
+        if not _is_cached(player_id, KIND_SIDELINED, "", report, settings, now, season)
+    ]
+    await _run(client, absents, report, settings, now)
     return report
+
+
+def _rendered_scorer_ids(scorers: list[Any], team_ids: list[int]) -> list[int]:
+    """Identifiants des buteurs que le bloc affiche, et d'eux seuls.
+
+    Payer une indisponibilite pour un joueur qu'on ne nomme pas serait acheter une
+    donnee que rien ne lira. Le classement est celui du rendu, une seule fois
+    ecrit, pour que les deux ne puissent pas diverger.
+    """
+    return [
+        int(player["id"])
+        for team_id in team_ids
+        for player in _ranked_scorers(scorers, team_id)
+        if player.get("id")
+    ]
 
 
 async def _run(
@@ -513,10 +588,11 @@ async def _run(
     return True
 
 
-#: Types dont le sujet est une **competition** et non une equipe. C'est le type
-#: qui dit ou le releve se range : porter la distinction dans la liste des taches
-#: l'aurait fait oublier a chaque nouvel appelant.
+#: Types dont le sujet n'est **pas** une equipe. C'est le type qui dit ou le
+#: releve se range : porter la distinction dans la liste des taches l'aurait fait
+#: oublier a chaque nouvel appelant.
 LEAGUE_KINDS = frozenset({KIND_SCORERS})
+PLAYER_KINDS = frozenset({KIND_SIDELINED})
 
 
 def _store_any(
@@ -529,6 +605,8 @@ def _store_any(
 ) -> None:
     if kind in LEAGUE_KINDS:
         store_league(subject_id, kind, payload, scope, settings, now)
+    elif kind in PLAYER_KINDS:
+        store_player(subject_id, kind, payload, scope, settings, now)
     else:
         store(subject_id, kind, payload, scope, settings, now)
 
@@ -536,6 +614,8 @@ def _store_any(
 def _load_any(subject_id: int, kind: str, scope: str, settings: Settings) -> tuple[Any, str] | None:
     if kind in LEAGUE_KINDS:
         return load_league(subject_id, kind, scope, settings)
+    if kind in PLAYER_KINDS:
+        return load_player(subject_id, kind, scope, settings)
     return load(subject_id, kind, scope, settings)
 
 
@@ -549,6 +629,8 @@ async def _fetch_kind(client: APIFootballClient, subject_id: int, kind: str, sco
         return _summarize_scorers(await client.top_scorers(subject_id, int(scope)))
     if kind == KIND_SQUAD:
         return _summarize_squad(await client.squad(subject_id))
+    if kind == KIND_SIDELINED:
+        return await client.sidelined(subject_id)
     raise ValueError(f"type de dossier inconnu : {kind}")
 
 
@@ -788,6 +870,79 @@ def _next_fragment(
     return f"{team} dans {days}j{detail}"
 
 
+def _ranked_scorers(scorers: list[Any], team_id: int | None) -> list[dict[str, Any]]:
+    """Buteurs d'une equipe retenus pour le rendu, du meilleur au moins bon.
+
+    Ecrit une seule fois : le rendu et la recherche d'indisponibilite s'appuient
+    dessus, et deux classements paralleles auraient fini par diverger — on aurait
+    paye l'absence d'un joueur que le bloc ne nomme pas.
+    """
+    if not team_id:
+        return []
+    return sorted(
+        (
+            item
+            for item in scorers
+            if isinstance(item, dict)
+            and int(item.get("team_id") or 0) == int(team_id)
+            and int(item.get("goals") or 0) >= SCORERS_MIN_GOALS
+        ),
+        key=lambda item: int(item.get("goals") or 0),
+        reverse=True,
+    )[:SCORERS_KEEP]
+
+
+def _sidelined_fragment(
+    team: str,
+    team_id: int | None,
+    scorers: list[Any],
+    commence: datetime | None,
+    settings: Settings,
+) -> str:
+    """`BK Hacken L. Suárez absent depuis 12/07` — un buteur indisponible.
+
+    **La date accompagne toujours l'absence, et jamais l'inverse.** Ce que le
+    fournisseur publie est un historique de carriere : une periode sans date de
+    fin dit qu'il ne l'a pas refermee, ce qui n'est pas tout a fait une absence
+    en cours. Datee, la ligne se verifie — « depuis 12/07 » se recoupe en une
+    recherche ; seche, « absent » serait une affirmation qu'on ne peut pas gager.
+
+    Une periode refermee avant le match ne produit rien : le joueur est revenu.
+    """
+    if not team_id or commence is None:
+        return ""
+    absents = []
+    for player in _ranked_scorers(scorers, team_id):
+        known = load_player(int(player["id"]), KIND_SIDELINED, settings=settings)
+        if known is None or not isinstance(known[0], list):
+            continue
+        started = _current_absence(known[0], commence)
+        if started:
+            absents.append(f"{player.get('name') or '?'} absent depuis {started}")
+    return f"{team} {', '.join(absents)}" if absents else ""
+
+
+def _current_absence(entries: list[Any], commence: datetime) -> str:
+    """Date de debut de l'indisponibilite en cours au moment du match, sinon vide.
+
+    En cours veut dire commencee avant le match et non refermee avant lui. La plus
+    recente prime : un historique de carriere en compte des dizaines.
+    """
+    best: datetime | None = None
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        start = _parse(entry.get("start"))
+        if start is None or start.date() > commence.date():
+            continue
+        end = _parse(entry.get("end"))
+        if end is not None and end.date() < commence.date():
+            continue
+        if best is None or start > best:
+            best = start
+    return best.strftime("%d/%m") if best else ""
+
+
 def _scorers_fragment(
     team: str,
     team_id: int | None,
@@ -807,16 +962,7 @@ def _scorers_fragment(
     """
     if not team_id:
         return ""
-    ranked = sorted(
-        (
-            item
-            for item in scorers
-            if int(item.get("team_id") or 0) == int(team_id)
-            and int(item.get("goals") or 0) >= SCORERS_MIN_GOALS
-        ),
-        key=lambda item: int(item.get("goals") or 0),
-        reverse=True,
-    )[:SCORERS_KEEP]
+    ranked = _ranked_scorers(scorers, team_id)
     if not ranked:
         return ""
     listed = []
@@ -885,6 +1031,13 @@ def dossier_lines(
             (
                 _scorers_fragment(home, home_id, scorers),
                 _scorers_fragment(away, away_id, scorers),
+            ),
+        ),
+        (
+            "Buteur abs.",
+            (
+                _sidelined_fragment(home, home_id, scorers, reference, settings),
+                _sidelined_fragment(away, away_id, scorers, reference, settings),
             ),
         ),
         (

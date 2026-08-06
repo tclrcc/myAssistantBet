@@ -579,6 +579,16 @@ Les props buteurs étaient achetées sur six compétitions sans qu'aucune ligne 
 
 *Critère d'acceptation :* sur un match de Premier League, le bloc porte les trois meilleurs buteurs de chaque équipe avec leur part de penaltys ; sur un match d'Allsvenskan, la ligne n'existe pas et aucun appel n'a été émis ; et deux matchs de la même compétition ne paient la liste qu'une fois.
 
+### Phase 15 — Les absences longue durée
+`/sidelined` est le seul endpoint dont le sujet soit un **joueur**, et il coûte un appel par joueur. `player_context` est la troisième et dernière échelle du dossier, après l'équipe (015) et la compétition (016).
+
+- **Il n'est demandé que pour les buteurs effectivement rendus** — au plus trois par équipe, six par affiche. Payer l'absence d'un joueur que le bloc ne nomme pas serait acheter une donnée que rien ne lira, et un effectif entier ferait soixante-douze appels. Le classement est celui du rendu, écrit une seule fois : deux classements parallèles auraient fini par diverger.
+- **La date accompagne toujours l'absence, et jamais l'inverse.** Ce que le fournisseur publie est un historique de carrière : une période sans date de fin dit qu'il ne l'a pas refermée, ce qui n'est pas tout à fait une absence en cours. Datée, la ligne se vérifie en une recherche ; sèche, « absent » serait une affirmation qu'on ne peut pas gager. Le template la présente comme une piste datée à confirmer, et dit explicitement que la recherche gagne.
+- Une période refermée avant le match ne produit rien — le joueur est revenu. Une période commençant après ne dit rien de ce match. La plus récente prime : un historique de carrière en compte des dizaines, et une vieille période jamais refermée masquerait la blessure du mois.
+- **Portée réelle, vérifiée avant d'écrire la table** : l'endpoint répond pour n'importe quel joueur mais ne rend **aucune entrée** hors des compétitions dont le fournisseur couvre les blessures. Sur un board de 41 matchs, 38 n'avaient aucune couverture d'absents. Cette donnée vaut donc pour les grandes ligues, exactement là où les buteurs sont identifiés — et le template dit que l'absence de la ligne ne prouve rien.
+
+*Critère d'acceptation :* sur un match de Premier League dont un buteur est déclaré indisponible, le bloc porte son nom et la date de début ; un buteur revenu de blessure n'y figure pas ; et aucun appel n'est émis pour un joueur que le bloc ne nomme pas.
+
 ---
 
 ## 11. Exigences de qualité

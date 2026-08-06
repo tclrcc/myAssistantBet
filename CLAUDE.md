@@ -346,7 +346,26 @@ de fois qu'elle joue.
 - **Effectif** (`/players/squads`, `KIND_SQUAD`) : **collecte, jamais rendu**. Sans une
   statistique, vingt-six noms sont du bruit dans un prompt. Il sert a rattacher un nom a un
   identifiant de joueur. Le garder sans lecteur est assume et delimite : si rien ne le lit
-  a terme, il se retire en supprimant son type.
+  a terme, il se retire en supprimant son type. La phase 15 **ne s'en sert pas** — les
+  identifiants des buteurs viennent de `KIND_SCORERS`.
+- **Absences longue duree** (`/sidelined`, `KIND_SIDELINED`, table `player_context`) : seule
+  echelle **par joueur**, et un appel par joueur.
+  - **Demande pour les seuls buteurs rendus**, au plus trois par equipe. Payer l'absence
+    d'un joueur que le bloc ne nomme pas serait acheter une donnee que rien ne lira, et un
+    effectif entier ferait soixante-douze appels par affiche. `_ranked_scorers()` est ecrit
+    **une seule fois** et sert au rendu comme a la recherche : deux classements paralleles
+    auraient fini par diverger.
+  - **La date accompagne toujours l'absence, et jamais l'inverse.** Le fournisseur publie un
+    historique de **carriere** : une periode sans date de fin dit qu'il ne l'a pas refermee,
+    ce qui n'est pas tout a fait une absence en cours. Datee, la ligne se verifie en une
+    recherche ; seche, « absent » serait une affirmation qu'on ne peut pas gager. Le template
+    la presente comme une piste a confirmer et dit que la recherche gagne.
+  - Refermee avant le match : rien, le joueur est revenu. Commencant apres : rien. La plus
+    recente prime — une vieille periode jamais refermee masquerait la blessure du mois.
+  - **Portee reelle, verifiee avant d'ecrire la table** : l'endpoint repond pour n'importe
+    quel joueur mais ne rend **aucune entree** hors des competitions dont les blessures sont
+    couvertes. Sur un board de 41 matchs, 38 n'avaient aucune couverture d'absents. Le
+    template dit donc que l'absence de la ligne ne prouve rien.
 - **Historique de saison** (`/fixtures?team=&season=`, `KIND_SEASON`, scope = l'annee) : un
   seul appel rend toute la saison d'une equipe, **toutes competitions**, avec les scores a
   la pause et les matchs a venir. C'est ce qui repare l'angle mort de `/teams/statistics`,
