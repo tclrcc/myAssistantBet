@@ -167,6 +167,14 @@ class APIFootballClient(BaseHTTPClient):
         """Blesses et suspendus declares pour un match."""
         return await self._fetch("/injuries", {"fixture": fixture_id})
 
+    async def fixture_statistics(self, fixture_id: int) -> list[dict[str, Any]]:
+        """Statistiques d'un match joue : corners, cartons, tirs, possession.
+
+        Un seul appel rend les deux equipes, ce qui donne du meme coup le
+        « concede » : les corners d'une equipe sont ceux que l'autre a pris.
+        """
+        return await self._fetch("/fixtures/statistics", {"fixture": fixture_id})
+
     async def head_to_head(self, home_id: int, away_id: int, last: int = 5) -> list[dict[str, Any]]:
         """Confrontations directes recentes."""
         return await self._fetch(

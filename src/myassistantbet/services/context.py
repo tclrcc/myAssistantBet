@@ -31,6 +31,18 @@ H2H_LAST = 5
 RECENT_LAST = 5
 FORM_LENGTH = 5
 
+#: Matchs profiles pour les corners et les cartons. Un appel par rencontre,
+#: donc au plus 2 x PROFILE_LAST par affiche — moins des que les deux equipes
+#: se sont croisees. Cinq matchs disent une tendance ; trois diraient un hasard.
+PROFILE_LAST = 5
+
+#: Sous ce nombre de matchs effectivement profiles, aucune ligne. La couverture
+#: statistique est irreguliere : en debut de saison ou sur une petite
+#: competition, un seul des cinq derniers matchs revient renseigne. « 2.0
+#: corners pris 9.0 » sur une rencontre se lit comme une tendance alors que
+#: c'est une soiree — meme raison que le seuil du retour d'experience.
+PROFILE_MIN_MATCHES = 3
+
 #: Lettres API-Football -> lettres francaises. Attention au piege : « D » cote
 #: API signifie Draw (nul), et « L » signifie Loss (defaite).
 FORM_LETTERS = {"W": "V", "D": "N", "L": "D"}
@@ -40,6 +52,7 @@ KIND_FORM = "form"
 KIND_INJURIES = "injuries"
 KIND_H2H = "h2h"
 KIND_RECENT = "recent"
+KIND_PROFILE = "profile"
 KIND_MAPPING = "mapping_pending"
 KIND_MANUAL_NOTE = "manual_note"
 
@@ -262,6 +275,92 @@ def _recent_summary(fixtures: list[dict[str, Any]], team_id: int) -> dict[str, A
     }
 
 
+#: Libelles du fournisseur -> cles du profil. Rapproches **par libelle**, jamais
+#: par position : l'ordre de la liste `statistics` varie d'un match a l'autre.
+PROFILE_STATS = {
+    "Corner Kicks": "corners",
+    "Yellow Cards": "yellow",
+    "Red Cards": "red",
+    "Total Shots": "shots",
+    "Shots on Goal": "shots_on",
+}
+
+
+def _stat_value(entry: dict[str, Any]) -> float | None:
+    """Valeur numerique d'une statistique. `null` et « 52% » sont geres."""
+    raw = entry.get("value")
+    if raw is None:
+        return None
+    if isinstance(raw, int | float):
+        return float(raw)
+    text = str(raw).strip().rstrip("%")
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _profile_from_fixtures(
+    stats_by_fixture: dict[int, list[dict[str, Any]]], team_id: int
+) -> dict[str, Any]:
+    """Moyennes de corners, cartons et tirs sur les matchs profiles.
+
+    Le « concede » vient de l'adversaire du meme match : un seul appel par
+    rencontre donne les deux cotes. Un match dont la statistique manque n'entre
+    pas au denominateur — la moyenne porte sur ce qui a ete observe, pas sur ce
+    qu'on aurait voulu observer.
+    """
+    totals: dict[str, float] = {}
+    counts: dict[str, int] = {}
+
+    for entries in stats_by_fixture.values():
+        for entry in entries:
+            side = "" if (entry.get("team") or {}).get("id") == team_id else "_against"
+            if side and len(entries) < 2:
+                continue
+            for item in entry.get("statistics") or []:
+                key = PROFILE_STATS.get(str(item.get("type")))
+                value = _stat_value(item) if key else None
+                if key is None or value is None:
+                    continue
+                name = f"{key}{side}"
+                totals[name] = totals.get(name, 0.0) + value
+                counts[name] = counts.get(name, 0) + 1
+
+    profile = {name: round(total / counts[name], 1) for name, total in totals.items()}
+    profile["matches"] = len(stats_by_fixture)
+    return profile
+
+
+async def _fetch_profile(
+    client: APIFootballClient,
+    cache: dict[str, Any],
+    fixtures: list[dict[str, Any]],
+    team_id: int,
+) -> dict[str, Any]:
+    """Profil d'une equipe sur ses derniers matchs joues.
+
+    Memorise par match et non par equipe : deux adversaires qui se sont
+    rencontres recemment partagent la rencontre, et elle n'est payee qu'une
+    fois. Un match dont les statistiques manquent est simplement absent.
+    """
+    stats_by_fixture: dict[int, list[dict[str, Any]]] = {}
+    for fixture in fixtures[:PROFILE_LAST]:
+        fixture_id = (fixture.get("fixture") or {}).get("id")
+        if not fixture_id:
+            continue
+        entries = await _memoized(
+            cache,
+            f"stats:{fixture_id}",
+            lambda fid=int(fixture_id): client.fixture_statistics(fid),
+        )
+        if entries:
+            stats_by_fixture[int(fixture_id)] = entries
+    if not stats_by_fixture:
+        return {}
+    return _profile_from_fixtures(stats_by_fixture, team_id)
+
+
 async def fetch_context(
     client: APIFootballClient,
     event: dict[str, Any],
@@ -335,10 +434,30 @@ async def fetch_context(
     except ProviderError as exc:
         report.errors.append(f"matchs recents : {exc}")
 
+    # Profil corners et cartons, sur les memes matchs recents. Le prompt
+    # proposait des lignes de corners sans rien savoir de ce qu'une equipe en
+    # produit ou en concede : le marche etait rendu, l'angle sportif absent.
+    try:
+        profile = {}
+        for side, team_id in (("home", mapping.home_id), ("away", mapping.away_id)):
+            fixtures = await _memo(
+                f"recent:{team_id}", lambda tid=team_id: client.last_fixtures(tid, RECENT_LAST)
+            )
+            profile[side] = await _fetch_profile(client, cache, fixtures, team_id)
+        if any(profile.values()):
+            store(report.event_id, KIND_PROFILE, profile, settings)
+            report.kinds.append(KIND_PROFILE)
+    except ProviderError as exc:
+        report.errors.append(f"profil corners/cartons : {exc}")
+
     # Blesses et suspendus — couverture irreguliere selon les ligues.
     try:
         rows = await client.injuries(mapping.fixture_id)
         payload = {"available": True, "home": [], "away": []}
+        # Le fournisseur renvoie chaque joueur deux fois — constate en reel :
+        # 14 lignes pour 7 absents. Sans dedoublonnage la ligne « Absents »
+        # liste tout le monde en double, ce qui fait douter de la donnee entiere.
+        seen: set[tuple[Any, ...]] = set()
         for row in rows:
             team_id = (row.get("team") or {}).get("id")
             side = (
@@ -351,13 +470,16 @@ async def fetch_context(
             if side is None:
                 continue
             player = row.get("player") or {}
-            payload[side].append(
-                {
-                    "name": player.get("name"),
-                    "reason": player.get("reason"),
-                    "type": player.get("type"),
-                }
-            )
+            entry = {
+                "name": player.get("name"),
+                "reason": player.get("reason"),
+                "type": player.get("type"),
+            }
+            marker = (side, entry["name"], entry["type"], entry["reason"])
+            if marker in seen:
+                continue
+            seen.add(marker)
+            payload[side].append(entry)
         store(report.event_id, KIND_INJURIES, payload, settings)
         report.kinds.append(KIND_INJURIES)
     except ProviderError as exc:
@@ -513,6 +635,25 @@ def context_lines(
     if sides:
         lines.append(("Dom/Ext", sides))
 
+    profile = data.get(KIND_PROFILE) or {}
+    corners = _pair(
+        _corner_fragment(home, profile.get("home")), _corner_fragment(away, profile.get("away"))
+    )
+    if corners:
+        lines.append(("Corners", corners))
+
+    cards = _pair(
+        _card_fragment(home, profile.get("home")), _card_fragment(away, profile.get("away"))
+    )
+    if cards:
+        lines.append(("Cartons", cards))
+
+    shots = _pair(
+        _shot_fragment(home, profile.get("home")), _shot_fragment(away, profile.get("away"))
+    )
+    if shots:
+        lines.append(("Tirs", shots))
+
     injuries = data.get(KIND_INJURIES)
     if injuries is not None:
         if not injuries.get("available"):
@@ -561,6 +702,51 @@ def _rank_fragment(team: str, entry: dict[str, Any] | None) -> str:
         if part
     )
     return f"{team} {rank}{suffix} ({detail})" if detail else f"{team} {rank}{suffix}"
+
+
+def _profile_suffix(profile: dict[str, Any]) -> str:
+    """« /5 » : sur combien de matchs la moyenne porte.
+
+    Le compte accompagne toujours la moyenne, comme le taux accompagne le
+    nombre de paris dans les statistiques : « 6.0 corners » sur deux matchs et
+    sur cinq ne disent pas la meme chose.
+    """
+    matches = profile.get("matches")
+    return f"/{matches}" if matches else ""
+
+
+def _profiled(profile: dict[str, Any] | None, key: str) -> bool:
+    """Vrai si la moyenne repose sur assez de matchs pour etre publiee."""
+    if not profile or profile.get(key) is None:
+        return False
+    return int(profile.get("matches") or 0) >= PROFILE_MIN_MATCHES
+
+
+def _corner_fragment(team: str, profile: dict[str, Any] | None) -> str:
+    """`Estoril 5.2 pris 6.4/5` — corners tires, puis concedes."""
+    if not _profiled(profile, "corners"):
+        return ""
+    against = profile.get("corners_against")
+    tail = f" pris {against}" if against is not None else ""
+    return f"{team} {profile['corners']}{tail}{_profile_suffix(profile)}"
+
+
+def _card_fragment(team: str, profile: dict[str, Any] | None) -> str:
+    """`Estoril 2.4j 0.2r/5` — jaunes et rouges par match."""
+    if not _profiled(profile, "yellow"):
+        return ""
+    red = profile.get("red")
+    tail = f" {red}r" if red else ""
+    return f"{team} {profile['yellow']}j{tail}{_profile_suffix(profile)}"
+
+
+def _shot_fragment(team: str, profile: dict[str, Any] | None) -> str:
+    """`Estoril 12.4 dont 4.6 cadres/5`."""
+    if not _profiled(profile, "shots"):
+        return ""
+    on_target = profile.get("shots_on")
+    tail = f" dont {on_target} cadres" if on_target is not None else ""
+    return f"{team} {profile['shots']}{tail}{_profile_suffix(profile)}"
 
 
 def _form_fragment(team: str, stats: dict[str, Any] | None, recent: dict[str, Any] | None) -> str:

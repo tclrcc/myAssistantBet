@@ -14,6 +14,7 @@ from myassistantbet.services.context import (
     KIND_H2H,
     KIND_INJURIES,
     KIND_MAPPING,
+    KIND_PROFILE,
     context_lines,
     fetch_context,
     load,
@@ -57,55 +58,43 @@ def _seed_event(settings: Settings) -> None:
     )
 
 
-def _mock_all(load_fixture: Any) -> None:
-    """Repond a tous les endpoints API-Football avec les fixtures capturees."""
-    respx.get(f"{BASE_URL}/fixtures", params__contains={"date": "2026-08-03"}).mock(
-        return_value=httpx.Response(
-            200, json=load_fixture("apifootball_fixtures_date.json"), headers=RATE_HEADERS
+def _mock_all(load_fixture: Any) -> dict[str, respx.Route]:
+    """Repond a tous les endpoints API-Football avec les fixtures capturees.
+
+    Rend les routes **par nom** et non par position : les designer par
+    `respx.routes[1]` cassait chaque test des qu'un appel etait ajoute, ce qui
+    poussait a inserer les nouveaux mocks a la fin pour de mauvaises raisons.
+    """
+
+    def _mock(chemin: str, fichier: str, **selecteurs: Any) -> respx.Route:
+        return respx.get(f"{BASE_URL}{chemin}", **selecteurs).mock(
+            return_value=httpx.Response(200, json=load_fixture(fichier), headers=RATE_HEADERS)
         )
-    )
-    respx.get(f"{BASE_URL}/standings").mock(
-        return_value=httpx.Response(
-            200, json=load_fixture("apifootball_standings.json"), headers=RATE_HEADERS
-        )
-    )
-    respx.get(f"{BASE_URL}/teams/statistics", params__contains={"team": "376"}).mock(
-        return_value=httpx.Response(
-            200, json=load_fixture("apifootball_stats_home.json"), headers=RATE_HEADERS
-        )
-    )
-    respx.get(f"{BASE_URL}/teams/statistics", params__contains={"team": "377"}).mock(
-        return_value=httpx.Response(
-            200, json=load_fixture("apifootball_stats_away.json"), headers=RATE_HEADERS
-        )
-    )
-    respx.get(f"{BASE_URL}/fixtures", params__contains={"team": "376"}).mock(
-        return_value=httpx.Response(
-            200, json=load_fixture("apifootball_recent_home.json"), headers=RATE_HEADERS
-        )
-    )
-    respx.get(f"{BASE_URL}/fixtures", params__contains={"team": "377"}).mock(
-        return_value=httpx.Response(
-            200, json=load_fixture("apifootball_recent_away.json"), headers=RATE_HEADERS
-        )
-    )
-    respx.get(f"{BASE_URL}/injuries").mock(
-        return_value=httpx.Response(
-            200, json=load_fixture("apifootball_injuries.json"), headers=RATE_HEADERS
-        )
-    )
-    respx.get(f"{BASE_URL}/fixtures/headtohead").mock(
-        return_value=httpx.Response(
-            200, json=load_fixture("apifootball_h2h.json"), headers=RATE_HEADERS
-        )
-    )
-    # Ajoute en dernier a dessein : plusieurs tests designent une route par son
-    # index (`respx.routes[1]`), qu'une insertion en tete decalerait.
-    respx.get(f"{BASE_URL}/leagues").mock(
-        return_value=httpx.Response(
-            200, json=load_fixture("apifootball_leagues.json"), headers=RATE_HEADERS
-        )
-    )
+
+    return {
+        "fixtures_date": _mock(
+            "/fixtures",
+            "apifootball_fixtures_date.json",
+            params__contains={"date": "2026-08-03"},
+        ),
+        "standings": _mock("/standings", "apifootball_standings.json"),
+        "stats_home": _mock(
+            "/teams/statistics", "apifootball_stats_home.json", params__contains={"team": "376"}
+        ),
+        "stats_away": _mock(
+            "/teams/statistics", "apifootball_stats_away.json", params__contains={"team": "377"}
+        ),
+        "recent_home": _mock(
+            "/fixtures", "apifootball_recent_home.json", params__contains={"team": "376"}
+        ),
+        "recent_away": _mock(
+            "/fixtures", "apifootball_recent_away.json", params__contains={"team": "377"}
+        ),
+        "injuries": _mock("/injuries", "apifootball_injuries.json"),
+        "h2h": _mock("/fixtures/headtohead", "apifootball_h2h.json"),
+        "leagues": _mock("/leagues", "apifootball_leagues.json"),
+        "fixture_stats": _mock("/fixtures/statistics", "apifootball_fixture_statistics.json"),
+    }
 
 
 def _lines(settings: Settings) -> dict[str, str]:
@@ -188,9 +177,9 @@ async def test_mapping_incertain_ne_declenche_aucun_autre_appel(
     api_client: APIFootballClient, migrated: Settings, load_fixture: Any
 ) -> None:
     _seed_event(migrated)
-    _mock_all(load_fixture)
+    routes = _mock_all(load_fixture)
     inconnu = {**EVENT, "home": "Racing Club de Nulle Part"}
-    standings = respx.routes[1]
+    standings = routes["standings"]
 
     report = await fetch_context(api_client, inconnu, migrated)
 
@@ -342,8 +331,8 @@ async def test_cache_partage_entre_matchs_de_la_meme_ligue(
         "home, away, commence_time, 'api', created_at FROM events WHERE id = 1",
         settings=migrated,
     )
-    _mock_all(load_fixture)
-    standings = respx.routes[1]
+    routes = _mock_all(load_fixture)
+    standings = routes["standings"]
     cache: dict[str, object] = {}
 
     await fetch_context(api_client, EVENT, migrated, cache)
@@ -412,8 +401,8 @@ async def test_la_saison_n_est_payee_qu_une_fois_par_ligue(
         "home, away, commence_time, 'api', created_at FROM events WHERE id = 1",
         settings=migrated,
     )
-    _mock_all(load_fixture)
-    leagues = respx.routes[-1]
+    routes = _mock_all(load_fixture)
+    leagues = routes["leagues"]
     cache: dict[str, object] = {}
 
     await fetch_context(api_client, EVENT, migrated, cache)
@@ -549,3 +538,143 @@ async def test_le_bloc_porte_la_forme_et_le_bilan_domicile_exterieur(
     lignes = _lines(migrated)
     assert "Forme 5" in lignes
     assert "Dom/Ext" in lignes
+
+
+# -- Profil corners et cartons ------------------------------------------------
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_bloc_porte_le_profil_corners_cartons_et_tirs(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Le prompt proposait des lignes de corners sans rien savoir de ce qu'une
+    equipe en produit ou en concede : le marche etait rendu, l'angle absent."""
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    lignes = _lines(migrated)
+    assert "Corners" in lignes
+    assert "Cartons" in lignes
+    assert "Tirs" in lignes
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_profil_donne_le_concede_par_l_adversaire_du_meme_match(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Un seul appel par rencontre rend les deux equipes : les corners concedes
+    par l'une sont ceux tires par l'autre, sans appel supplementaire."""
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    profil = load(1, migrated)[KIND_PROFILE]["home"]
+    assert profil["corners"] == 8.0, "corners tires par l'equipe a domicile"
+    assert profil["corners_against"] == 6.0, "ceux de l'adversaire, dans le meme match"
+    assert profil["yellow"] == 0.0
+    assert profil["shots"] == 24.0
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_la_moyenne_porte_le_nombre_de_matchs(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """« 6.0 corners » sur deux matchs et sur cinq ne disent pas la meme chose :
+    le compte accompagne la moyenne, comme il accompagne un taux."""
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert "/" in _lines(migrated)["Corners"]
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_un_match_sans_statistiques_ne_produit_aucune_ligne(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Couverture irreguliere selon les competitions : une ligne sans donnee est
+    omise, jamais rendue a zero — « 0.0 corners » serait une affirmation fausse."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    routes["fixture_stats"].mock(
+        return_value=httpx.Response(200, json={"errors": [], "response": []}, headers=RATE_HEADERS)
+    )
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    lignes = _lines(migrated)
+    assert "Corners" not in lignes
+    assert "Cartons" not in lignes
+    assert "Classement" in lignes, "le reste du bloc n'est pas affecte"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_rencontre_partagee_n_est_payee_qu_une_fois(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Memorisation par match et non par equipe : deux adversaires qui se sont
+    croises recemment partagent la rencontre."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    appels = {call.request.url.params["fixture"] for call in routes["fixture_stats"].calls}
+    assert routes["fixture_stats"].call_count == len(appels), "aucun match interroge deux fois"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_moyenne_sur_trop_peu_de_matchs_n_est_pas_publiee(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """En debut de saison, un seul des cinq derniers matchs revient renseigne.
+    « 2.0 corners pris 9.0 » sur une rencontre se lit comme une tendance alors
+    que c'est une soiree — meme raison que le seuil du retour d'experience."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    servi = load_fixture("apifootball_fixture_statistics.json")
+    vide = {"errors": [], "response": []}
+    appels = {"n": 0}
+
+    def _un_seul_match(request: httpx.Request) -> httpx.Response:
+        appels["n"] += 1
+        return httpx.Response(200, json=servi if appels["n"] == 1 else vide, headers=RATE_HEADERS)
+
+    routes["fixture_stats"].mock(side_effect=_un_seul_match)
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    profil = load(1, migrated)[KIND_PROFILE]["home"]
+    assert profil["matches"] == 1, "la donnee est bien collectee et persistee"
+    assert "Corners" not in _lines(migrated), "mais elle n'est pas publiee sous le seuil"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_un_absent_annonce_deux_fois_n_est_liste_qu_une_fois(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Constate en reel : le fournisseur rend 14 lignes pour 7 absents. Sans
+    dedoublonnage la ligne liste tout le monde en double, ce qui fait douter de
+    la donnee entiere."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    servi = load_fixture("apifootball_injuries.json")
+    double = {**servi, "response": list(servi["response"]) + list(servi["response"])}
+    routes["injuries"].mock(return_value=httpx.Response(200, json=double, headers=RATE_HEADERS))
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    absents = load(1, migrated)[KIND_INJURIES]
+    noms = [entry["name"] for entry in absents["home"] + absents["away"]]
+    assert len(noms) == len(set(noms)), f"chaque absent une seule fois : {noms}"

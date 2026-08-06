@@ -160,6 +160,23 @@ regression.
   (180) pour l'anglaise (40), la Bundesliga (78) pour la 2. Bundesliga (79) et la Coupe de
   Malaisie (499) pour la MLS (253), le tout avec un score maximal. Trois tests gardent ces
   trois pieges.
+- **Profil corners / cartons / tirs** (`KIND_PROFILE`) : moyennes sur les `PROFILE_LAST`
+  derniers matchs, via `/fixtures/statistics`. Un appel rend **les deux equipes**, donc le
+  « concede » vient de l'adversaire du meme match sans appel supplementaire. La
+  memorisation est **par rencontre et non par equipe** : deux adversaires qui se sont
+  croises recemment la partagent. Rapprochement **par libelle** (`PROFILE_STATS`), jamais
+  par position : l'ordre de la liste `statistics` varie d'un match a l'autre.
+  - Sous `PROFILE_MIN_MATCHES` (3) matchs effectivement renseignes, **aucune ligne**. La
+    couverture est irreguliere : en debut de saison, un seul des cinq derniers matchs
+    revient rempli, et « 2.0 corners pris 9.0 » sur une rencontre se lit comme une
+    tendance alors que c'est une soiree. La donnee est quand meme persistee — c'est la
+    publication qui attend, pas la collecte.
+  - Le compte accompagne toujours la moyenne (`5.2 pris 6.4/5`), meme regle que le nombre
+    de paris a cote d'un taux.
+- **Les absents arrivent en double** : `/injuries` rend chaque joueur deux fois — constate
+  en reel, 14 lignes pour 7 absents. Le dedoublonnage se fait a la collecte, sur
+  (cote, nom, type, raison). Sans lui la ligne liste tout le monde deux fois, ce qui fait
+  douter de la donnee entiere.
 - Les competitions UEFA **couvrent leurs tours preliminaires** (`round =
   "3rd Qualifying Round"`) : il n'existe pas d'identifiant de qualification distinct, la ou
   The Odds API en a une cle separee. `soccer_uefa_champs_league_qualification` pointe donc
