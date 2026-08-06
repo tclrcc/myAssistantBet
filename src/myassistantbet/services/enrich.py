@@ -134,6 +134,16 @@ class Estimate:
         return len(self.targets)
 
     @property
+    def total_events(self) -> int:
+        """Evenements que l'enrichissement va traiter, achetes ou releves.
+
+        Distinct de `events`, qui ne compte que ce qui coute des credits : la
+        barre de progression affichait « 0/0 » sur une selection entiere de
+        qualifications europeennes, ou rien ne s'achete mais ou tout se releve.
+        """
+        return len(self.targets) + len(self.substitutes)
+
+    @property
     def cost(self) -> int:
         return sum(target.cost for target in self.targets)
 
@@ -427,7 +437,7 @@ async def run_enrich(
         await _refresh_elo(elo_client, session_id, settings, now)
 
     estimate = build_estimate(session_id, settings, now)
-    report = EnrichReport(total=estimate.events + len(estimate.substitutes))
+    report = EnrichReport(total=estimate.total_events)
 
     if not estimate.allowed:
         report.finished = True

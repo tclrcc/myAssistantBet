@@ -474,3 +474,15 @@ async def test_sans_client_api_football_le_substitut_le_dit(
 
     assert report.results[0].error is not None
     assert "API-Football" in report.results[0].error
+
+
+def test_la_progression_compte_les_substituts(migrated: Settings) -> None:
+    """Sur une selection entiere de qualifications europeennes, rien ne
+    s'achete mais tout se releve : la barre affichait « 0/0 »."""
+    event_id = _event_avec_fixture(migrated)
+    session_id = _shortlist(migrated, event_id)
+
+    estimate = build_estimate(session_id, migrated, now=NOW)
+
+    assert estimate.events == 0, "aucun credit en jeu"
+    assert estimate.total_events == 1, "mais bien un evenement a traiter"
