@@ -601,6 +601,17 @@ Le tennis n'avait **aucune** source de résultats : `tennis_load.py` date les ap
 
 *Critère d'acceptation :* sur un match ATP, le bloc porte les confrontations directes avec leurs scores en sets, la forme sur dix matchs, le bilan sur la surface du tournoi et les abandons récents ; un joueur dont l'identité est ambiguë ne produit aucune ligne ; aucune cote du fichier source n'existe en base ; et un second enrichissement ne retélécharge que la saison en cours.
 
+### Phase 17 — Ce tournoi précisément, et un seul assembleur de bloc
+Deux lignes de plus, et la fin d'une divergence.
+
+- **La correspondance des tournois est vérifiée à la main** (`TENNISDATA_TOURNAMENTS`, seed de la migration 020), comme `APIFOOTBALL_LEAGUES`. Ni la ville ni le nom ne suffisent, et la mesure le montre : Paris héberge le BNP Paribas Masters **et** Roland-Garros, le Canadian Open change de ville chaque année, et onze villes portent plusieurs noms de tournoi. Le circuit, lui, se lit dans la clé et départage Cincinnati et Stuttgart. Le champ accepte **plusieurs noms** séparés par `|` : un sponsor qui change renomme le tournoi sans que ce soit un autre tournoi — la source porte déjà deux orthographes pour l'épreuve de Houston. Saisissable depuis `/competitions`, et la synchronisation comble un manque sans jamais écraser une saisie.
+- **« H2H ici »** — leurs confrontations dans ce tournoi, avec le tour : un huitième et une finale ne se valent pas.
+- **« Palmarès »** — le meilleur résultat atteint ici et son année, puis le bilan sur place. `vainqueur 2025, 14V-0D` contre `1er tour 2025, 0V-2D`. Une finale **gagnée** vaut « vainqueur », **perdue** « finaliste » : le rang du tour ne le dit pas, et les confondre serait l'erreur la plus visible de la ligne.
+- Sans rattachement, **aucune des deux lignes n'existe** — et le template précise que leur absence ne dit rien du passé des joueurs sur place : elle dit que le rattachement manque.
+- **Un seul assembleur de bloc** (`session.context_block`), partagé par le prompt et la fiche d'un match. Deux assemblages parallèles avaient divergé deux fois : la fiche d'un match de football restait sans dossier d'équipe, et celle d'un match de tennis affichait un bloc **vide** — ni Elo, ni repos, ni historique, alors que le prompt les portait. Un test compare désormais les deux rendus.
+
+*Critère d'acceptation :* sur un Roland-Garros, le bloc dit qui a gagné ici et en quelle année, leurs confrontations sur place avec le tour, et la fiche du match affiche exactement le même bloc que le prompt.
+
 ---
 
 ## 11. Exigences de qualité

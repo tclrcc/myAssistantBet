@@ -476,6 +476,33 @@ si deux joueurs se sont deja affrontes, ou ce qu'un joueur vaut sur terre.
 - `as_bytes` a ete ajoute au client de base pour ce fichier. Il n'est **jamais** mis en
   cache disque : le cache de developpement est un cache JSON, y ecrire des octets bruts le
   corromprait.
+- **Le rapprochement des tournois est une table verifiee a la main**
+  (`competitions.TENNISDATA_TOURNAMENTS`, seed migration 020), exactement comme
+  `APIFOOTBALL_LEAGUES`, et pour une raison mesuree : ni la **ville** ni le **nom** ne
+  suffisent. Paris heberge le BNP Paribas Masters *et* Roland-Garros ; le Canadian Open
+  change de ville chaque annee ; onze villes portent plusieurs noms de tournoi. Le circuit
+  se lit dans la cle (`tennis_atp_…`) et departage Cincinnati et Stuttgart, ou les epreuves
+  masculine et feminine ont des noms differents dans la meme ville.
+  - Le champ accepte **plusieurs noms** separes par `|` : un sponsor qui change renomme le
+    tournoi sans que ce soit un autre tournoi. La source porte deja
+    « U.S. Men's Clay Court Championships » et « U.S.Men's Clay Court Championships ».
+  - Non renseigne, `H2H ici` et `Palmares` **n'existent pas**, et le template dit que leur
+    absence ne parle pas du passe des joueurs mais du rattachement manquant.
+  - Une finale **gagnee** vaut « vainqueur », **perdue** « finaliste ». Le rang du tour ne
+    le dit pas, et les confondre serait l'erreur la plus visible de la ligne.
+
+## Un seul assembleur de bloc CONTEXTE (`session.context_block`)
+
+Le prompt et la fiche d'un match portent le **meme** bloc, par le meme appel. Deux
+assemblages paralleles ont diverge **deux fois** : la fiche d'un match de football est
+restee sans dossier d'equipe apres la phase 12, et celle d'un match de tennis affichait un
+bloc entierement **vide** — ni Elo, ni repos, ni historique — alors que le prompt les
+portait depuis des mois. Ajouter une source a un seul des deux endroits est une erreur
+invisible : elle ne casse rien, elle fait disparaitre.
+
+`main._event_context` et `session._context_for` sont deux adaptateurs de la meme fonction.
+Un test compare les deux rendus ligne par ligne. Toute nouvelle source de contexte se
+branche **la**, et nulle part ailleurs.
 
 ## Repos et charge au tennis (`services/tennis_load.py`)
 

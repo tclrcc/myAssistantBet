@@ -98,6 +98,7 @@ def list_all(settings: Settings | None = None) -> list[dict[str, Any]]:
         rows = conn.execute(
             "SELECT c.id, c.label, c.oddsapi_key, c.apifootball_league_id, c.priority, "
             "       c.active, c.api_active, c.notes, c.surface, c.category, "
+            "       c.tennisdata_tournaments, "
             "       s.id AS sport_order, s.key AS sport_key, s.label AS sport_label "
             "FROM competitions c JOIN sports s ON s.id = c.sport_id"
         ).fetchall()
@@ -163,6 +164,32 @@ def set_surface(competition_id: int, surface: str, settings: Settings | None = N
             (value if value in SURFACES else None, competition_id),
         )
     logger.info("Surface de la competition %d : %s", competition_id, value or "non renseignee")
+
+
+def set_tennisdata_tournaments(
+    competition_id: int, tournaments: str, settings: Settings | None = None
+) -> None:
+    """Rattache une competition de tennis a son ou ses noms dans le jeu de donnees.
+
+    La source nomme les tournois par leur sponsor, nous par leur ville ou leur nom
+    usuel : rien ne se deduit d'un libelle, la saisie est manuelle. Plusieurs noms
+    se separent par `|` — un sponsor qui change renomme le tournoi sans que ce
+    soit un autre tournoi.
+
+    Vide efface la correspondance : les lignes « ici » disparaissent alors, ce qui
+    vaut mieux qu'un palmares emprunte a un autre tournoi.
+    """
+    names = [name.strip() for name in (tournaments or "").split("|") if name.strip()]
+    with connect(settings) as conn:
+        conn.execute(
+            "UPDATE competitions SET tennisdata_tournaments = ? WHERE id = ?",
+            ("|".join(names) or None, competition_id),
+        )
+    logger.info(
+        "Tournois du jeu de donnees pour la competition %d : %s",
+        competition_id,
+        ", ".join(names) or "aucun",
+    )
 
 
 def set_category(competition_id: int, category: str, settings: Settings | None = None) -> None:
@@ -236,6 +263,69 @@ APIFOOTBALL_LEAGUES: dict[str, int] = {
 }
 
 
+#: Nom de chaque tournoi de tennis dans le jeu de donnees de resultats
+#: (tennis-data.co.uk). Plusieurs noms se separent par `|` : un sponsor qui change
+#: renomme le tournoi sans que ce soit un autre tournoi.
+#:
+#: Meme regle que `APIFOOTBALL_LEAGUES` : **rien ne se deduit d'un libelle**, et la
+#: table est verifiee a la main tournoi par tournoi, contre la ville et le niveau
+#: publies par la source. La mesure justifie cette severite — la **ville** ne
+#: suffit pas (Paris heberge le BNP Paribas Masters *et* Roland-Garros), le **nom**
+#: non plus (le Canadian Open change de ville chaque annee), et onze villes portent
+#: plusieurs noms de tournoi. Le circuit, lui, se lit dans la cle et departage
+#: Cincinnati et Stuttgart, ou les epreuves masculine et feminine ont des noms
+#: differents dans la meme ville.
+#:
+#: Le seed de la migration 020 applique cette table a l'existant ; la
+#: synchronisation la reapplique a ce qui se cree ensuite, sans jamais ecraser une
+#: saisie manuelle.
+TENNISDATA_TOURNAMENTS: dict[str, str] = {
+    "tennis_atp_aus_open_singles": "Australian Open",
+    "tennis_atp_barcelona_open": "Barcelona Open",
+    "tennis_atp_canadian_open": "Canadian Open",
+    "tennis_atp_china_open": "China Open",
+    "tennis_atp_cincinnati_open": "Western & Southern Financial Group Masters",
+    "tennis_atp_dubai": "Dubai Tennis Championships",
+    "tennis_atp_french_open": "French Open",
+    "tennis_atp_halle_open": "Halle Open",
+    "tennis_atp_hamburg_open": "Hamburg Open",
+    "tennis_atp_indian_wells": "BNP Paribas Open",
+    "tennis_atp_italian_open": "Internazionali BNL d'Italia",
+    "tennis_atp_madrid_open": "Mutua Madrid Open",
+    "tennis_atp_miami_open": "Miami Open",
+    "tennis_atp_monte_carlo_masters": "Monte Carlo Masters",
+    "tennis_atp_munich": "BMW Open",
+    "tennis_atp_paris_masters": "BNP Paribas Masters",
+    "tennis_atp_qatar_open": "Qatar Exxon Mobil Open",
+    "tennis_atp_queens_club_champ": "Queen's Club Championships",
+    "tennis_atp_shanghai_masters": "Shanghai Masters",
+    "tennis_atp_us_open": "US Open",
+    "tennis_atp_washington_open": "Citi Open",
+    "tennis_atp_wimbledon": "Wimbledon",
+    "tennis_wta_aus_open_singles": "Australian Open",
+    "tennis_wta_bad_homburg_open": "Bad Homburg Open",
+    "tennis_wta_canadian_open": "Canadian Open",
+    "tennis_wta_charleston_open": "Charleston Open",
+    "tennis_wta_china_open": "China Open",
+    "tennis_wta_cincinnati_open": "Western & Southern Financial Group Women's Open",
+    "tennis_wta_dubai": "Dubai Duty Free Tennis Championships",
+    "tennis_wta_french_open": "French Open",
+    "tennis_wta_german_open": "German Open",
+    "tennis_wta_indian_wells": "BNP Paribas Open",
+    "tennis_wta_italian_open": "Internazionali BNL d'Italia",
+    "tennis_wta_madrid_open": "Mutua Madrid Open",
+    "tennis_wta_miami_open": "Miami Open",
+    "tennis_wta_qatar_open": "Qatar Open",
+    "tennis_wta_queens_club_champ": "Queen's Club Championships",
+    "tennis_wta_strasbourg": "Internationaux de Strasbourg",
+    "tennis_wta_stuttgart_open": "Porsche Tennis Grand Prix",
+    "tennis_wta_us_open": "US Open",
+    "tennis_wta_washington_open": "Citi Open",
+    "tennis_wta_wimbledon": "Wimbledon",
+    "tennis_wta_wuhan_open": "Wuhan Open",
+}
+
+
 def set_apifootball_league(
     competition_id: int, league_id: str, settings: Settings | None = None
 ) -> None:
@@ -302,17 +392,19 @@ async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None)
                 report.dormant += 1
 
             league_id = APIFOOTBALL_LEAGUES.get(oddsapi_key)
+            tournaments = TENNISDATA_TOURNAMENTS.get(oddsapi_key)
             existing = conn.execute(
-                "SELECT id, label, api_active, apifootball_league_id FROM competitions "
-                "WHERE oddsapi_key = ?",
+                "SELECT id, label, api_active, apifootball_league_id, tennisdata_tournaments "
+                "FROM competitions WHERE oddsapi_key = ?",
                 (oddsapi_key,),
             ).fetchone()
             if existing is None:
                 conn.execute(
                     "INSERT INTO competitions (sport_id, oddsapi_key, label, priority, active, "
-                    "                          api_active, apifootball_league_id) "
-                    "VALUES (?, ?, ?, 0, 0, ?, ?)",
-                    (sport_ids[sport_key], oddsapi_key, title, served, league_id),
+                    "                          api_active, apifootball_league_id, "
+                    "                          tennisdata_tournaments) "
+                    "VALUES (?, ?, ?, 0, 0, ?, ?, ?)",
+                    (sport_ids[sport_key], oddsapi_key, title, served, league_id, tournaments),
                 )
                 report.created.append(f"{title} ({oddsapi_key})")
                 continue
@@ -323,6 +415,14 @@ async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None)
                 conn.execute(
                     "UPDATE competitions SET apifootball_league_id = ? WHERE id = ?",
                     (league_id, existing["id"]),
+                )
+
+            if tournaments is not None and existing["tennisdata_tournaments"] is None:
+                # Meme regle que le rattachement de ligue : comble un manque,
+                # n'ecrase jamais une saisie.
+                conn.execute(
+                    "UPDATE competitions SET tennisdata_tournaments = ? WHERE id = ?",
+                    (tournaments, existing["id"]),
                 )
 
             if existing["label"] != title or existing["api_active"] != served:

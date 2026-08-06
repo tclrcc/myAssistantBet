@@ -240,34 +240,59 @@ def _market_counts(event_ids: list[int], settings: Settings) -> dict[int, tuple[
     return counts
 
 
-def _context_for(row: Any, settings: Settings) -> list[tuple[str, str]]:
+def context_block(
+    event_id: int,
+    home: str,
+    away: str,
+    commence_time: str,
+    sport_key: str,
+    *,
+    oddsapi_key: str | None = None,
+    surface: str | None = None,
+    competition_id: int | None = None,
+    settings: Settings | None = None,
+) -> list[tuple[str, str]]:
     """Lignes du bloc CONTEXTE, toutes sources confondues.
 
-    Le contexte football vient d'API-Football, le tennis de son classement Elo :
-    deux sources disjointes, assemblees ici plutot que dans `context.py`, qui
-    n'a pas a connaitre le tennis.
+    **Seul assembleur.** Le prompt et la fiche d'un match doivent porter le meme
+    bloc : deux assemblages paralleles ont diverge deux fois — la fiche d'un match
+    de football est restee sans dossier d'equipe, et celle d'un match de tennis
+    sans Elo ni repos, alors que le prompt les portait. Ce qui n'est appele qu'ici
+    ne peut plus manquer d'un cote seulement.
+
+    Aucun appel reseau : tout est relu en base, quelle que soit la source.
     """
-    lines = context_lines(int(row["id"]), row["home"], row["away"], row["commence_time"], settings)
-    if row["sport_key"] == "football":
+    settings = settings or get_settings()
+    lines = context_lines(event_id, home, away, commence_time, settings)
+    if sport_key == "football":
         # Le dossier d'equipe se memorise par equipe et non par match : il est
         # relu ici, comme le reste, sans un appel.
-        lines += dossier.dossier_lines(
-            int(row["id"]), row["home"], row["away"], row["commence_time"], settings
-        )
-    if row["sport_key"] == "tennis":
-        lines += elo.lines(row["home"], row["away"], row["oddsapi_key"], row["surface"], settings)
+        lines += dossier.dossier_lines(event_id, home, away, commence_time, settings)
+    if sport_key == "tennis":
+        lines += elo.lines(home, away, oddsapi_key, surface, settings)
         # Repos et charge sortent de nos propres lignes : les tours precedents
         # du meme tournoi ont ete scannes les jours d'avant. Aucun appel, aucune
         # cle — et c'est l'information que l'analyse allait chercher a la main.
-        lines += tennis_load.lines(
-            row["home"], row["away"], row["competition_id"], row["commence_time"], settings
-        )
-        # L'historique des matchs joues : confrontations directes, forme, bilan de
-        # surface et abandons. Relu en base, aucun telechargement.
-        lines += tennis_history.lines(
-            row["home"], row["away"], row["surface"], row["commence_time"], settings
-        )
+        lines += tennis_load.lines(home, away, competition_id, commence_time, settings)
+        # L'historique des matchs joues : confrontations directes, palmares dans
+        # ce tournoi, forme, bilan de surface et abandons.
+        lines += tennis_history.lines(home, away, surface, commence_time, settings, competition_id)
     return lines
+
+
+def _context_for(row: Any, settings: Settings) -> list[tuple[str, str]]:
+    """Adaptateur pour une ligne de la requete de session."""
+    return context_block(
+        int(row["id"]),
+        row["home"],
+        row["away"],
+        row["commence_time"],
+        row["sport_key"],
+        oddsapi_key=row["oddsapi_key"],
+        surface=row["surface"],
+        competition_id=row["competition_id"],
+        settings=settings,
+    )
 
 
 def _is_substitute(row: Any, primary: str) -> bool:

@@ -66,6 +66,35 @@ H2H_DETAIL = 3
 WALKOVER = "walkover"
 RETIRED = "retired"
 
+#: Profondeur d'un tour, pour savoir jusqu'ou un joueur est alle. « Round Robin »
+#: est la phase de poules du Masters : elle precede les demi-finales sans etre un
+#: huitieme, d'ou le meme rang et un libelle distinct.
+ROUND_RANKS = {
+    "1st round": 1,
+    "2nd round": 2,
+    "3rd round": 3,
+    "4th round": 4,
+    "round robin": 4,
+    "quarterfinals": 5,
+    "semifinals": 6,
+    "the final": 7,
+}
+
+#: Libelles francais des tours. La finale en a un — une confrontation directe se
+#: situe dans le tableau — mais le palmares ne s'en sert pas : il rend
+#: « vainqueur » ou « finaliste » selon l'issue, ce qu'un nom de tour ne dit pas.
+ROUND_LABELS = {
+    "1st round": "1er tour",
+    "2nd round": "2e tour",
+    "3rd round": "3e tour",
+    "4th round": "1/8",
+    "round robin": "poules",
+    "quarterfinals": "1/4",
+    "semifinals": "1/2",
+    "the final": "finale",
+}
+FINAL = "the final"
+
 
 @dataclass
 class HistoryReport:
@@ -507,6 +536,7 @@ def lines(
     surface: str | None,
     commence_time: str,
     settings: Settings | None = None,
+    competition_id: int | None = None,
 ) -> list[tuple[str, str]]:
     """Lignes d'historique tennis, pretes pour `render_event`.
 
@@ -531,37 +561,54 @@ def lines(
     until = _iso(start)
 
     home_keys, away_keys = resolve(home, index), resolve(away, index)
-    windows = {
-        "form": _iso(start - timedelta(days=SURFACE_DAYS)),
-        "surface": _iso(start - timedelta(days=SURFACE_DAYS)),
-        "retired": _iso(start - timedelta(days=RETIRED_DAYS)),
+    # Une seule requete par joueur, puis des fenetres decoupees en Python : les
+    # lignes « ici » portent sur toutes les saisons collectees, la surface sur
+    # douze mois et les abandons sur six. Trois requetes ne diraient rien de plus.
+    everything = {
+        home: _matches_of(home_keys, "", until, settings),
+        away: _matches_of(away_keys, "", until, settings),
     }
-    season = {
-        home: _matches_of(home_keys, windows["surface"], until, settings),
-        away: _matches_of(away_keys, windows["surface"], until, settings),
+    since_surface = _iso(start - timedelta(days=SURFACE_DAYS))
+    since_retired = _iso(start - timedelta(days=RETIRED_DAYS))
+    recent = {
+        player: [match for match in matches if match.played_on >= since_surface]
+        for player, matches in everything.items()
     }
 
     rendered: list[tuple[str, str]] = []
-    meeting_line = _h2h_line(home, away, _meetings(home_keys, away_keys, until, settings))
+    meetings = _meetings(home_keys, away_keys, until, settings)
+    meeting_line = _h2h_line(home, away, meetings)
     if meeting_line:
         rendered.append(meeting_line)
 
-    form = _pair(_form_fragment(home, season[home]), _form_fragment(away, season[away]))
+    names = tournament_names(competition_id, settings)
+    if names:
+        here = _h2h_here_fragment(home, away, _here(meetings, names))
+        if here:
+            rendered.append(("H2H ici", here))
+        record = _pair(
+            _record_here_fragment(home, _here(everything[home], names)),
+            _record_here_fragment(away, _here(everything[away], names)),
+        )
+        if record:
+            rendered.append(("Palmares", record))
+
+    form = _pair(_form_fragment(home, recent[home]), _form_fragment(away, recent[away]))
     if form:
         rendered.append(("Forme", form))
 
     on_surface = _pair(
-        _surface_fragment(home, season[home], surface or ""),
-        _surface_fragment(away, season[away], surface or ""),
+        _surface_fragment(home, recent[home], surface or ""),
+        _surface_fragment(away, recent[away], surface or ""),
     )
     if on_surface:
         rendered.append(("Surface", on_surface))
 
-    recent = {
-        player: [match for match in matches if match.played_on >= windows["retired"]]
-        for player, matches in season.items()
+    since = {
+        player: [match for match in matches if match.played_on >= since_retired]
+        for player, matches in recent.items()
     }
-    quits = _pair(_retired_fragment(home, recent[home]), _retired_fragment(away, recent[away]))
+    quits = _pair(_retired_fragment(home, since[home]), _retired_fragment(away, since[away]))
     if quits:
         rendered.append(("Abandons", quits))
     return rendered
@@ -569,3 +616,82 @@ def lines(
 
 def _pair(home: str, away: str) -> str:
     return " | ".join(part for part in (home, away) if part)
+
+
+# -- Ce qui s'est passe dans ce tournoi --------------------------------------
+
+
+def tournament_names(competition_id: int | None, settings: Settings) -> tuple[str, ...]:
+    """Noms du tournoi dans le jeu de donnees, pour cette competition.
+
+    Vide quand la correspondance n'est pas renseignee : la source nomme les
+    tournois par leur sponsor, et rien ne se deduit d'un libelle. Aucune ligne
+    « ici » n'est alors rendue — plutot que d'en rendre une fausse.
+    """
+    if not competition_id:
+        return ()
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT tennisdata_tournaments AS names FROM competitions WHERE id = ?",
+            (competition_id,),
+        ).fetchone()
+    raw = (row["names"] if row else None) or ""
+    return tuple(name.strip() for name in raw.split("|") if name.strip())
+
+
+def _here(matches: list[Match], names: tuple[str, ...]) -> list[Match]:
+    """Matchs joues dans ce tournoi, toutes editions confondues."""
+    wanted = {_flat(name) for name in names}
+    return [match for match in _played(matches) if _flat(match.tournament) in wanted]
+
+
+def _best_result(matches: list[Match]) -> str:
+    """`vainqueur 2025` ou `1er tour 2024` — le meilleur resultat et son annee.
+
+    Le tour le plus profond atteint, par edition. Une finale gagnee vaut
+    « vainqueur », perdue « finaliste » : le rang du tour ne suffit pas a le dire,
+    et confondre les deux serait l'erreur la plus visible de la ligne.
+    """
+    best: tuple[int, str, bool, str] | None = None
+    for match in matches:
+        key = _flat(match.round)
+        rank = ROUND_RANKS.get(key)
+        if rank is None:
+            continue
+        season = match.played_on[:4]
+        candidate = (rank, key, match.won, season)
+        if best is None or candidate[0] > best[0] or (candidate[0] == best[0] and season > best[3]):
+            best = candidate
+    if best is None:
+        return ""
+    _, key, won, season = best
+    if key == FINAL:
+        return f"{'vainqueur' if won else 'finaliste'} {season}"
+    return f"{ROUND_LABELS.get(key, key)} {season}"
+
+
+def _record_here_fragment(player: str, matches: list[Match]) -> str:
+    """`Sinner vainqueur 2025, 12V-2D` — le palmares, puis le bilan sur place."""
+    if not matches:
+        return ""
+    wins = sum(1 for match in matches if match.won)
+    best = _best_result(matches)
+    bilan = f"{wins}V-{len(matches) - wins}D"
+    return f"{player} {best}, {bilan}" if best else f"{player} {bilan}"
+
+
+def _h2h_here_fragment(home: str, away: str, meetings: list[Match]) -> str:
+    """`Sinner 1V-0D · 07/25 1/2` — se sont-ils deja croises **ici**.
+
+    Le tour accompagne la date : un huitieme de finale et une finale dans le meme
+    tournoi ne se valent pas, et c'est ce que la question « ici » cherche.
+    """
+    if not meetings:
+        return ""
+    wins = sum(1 for match in meetings if match.won)
+    fragments = [f"{home} {wins}V-{len(meetings) - wins}D"]
+    for match in reversed(meetings[-H2H_DETAIL:]):
+        tour = ROUND_LABELS.get(_flat(match.round), match.round)
+        winner = home if match.won else away
+        fragments.append(f"{_month(match.played_on)} {tour} ({winner})")
+    return " · ".join(fragments)

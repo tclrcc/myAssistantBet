@@ -189,17 +189,21 @@ def _event_context(event_id: int, **extra: object) -> dict[str, object]:
     if view is None:
         raise HTTPException(status_code=404, detail="Evenement inconnu")
     # Le contexte se relit en base, sans aucun appel reseau : la fiche montre
-    # ce que le prompt dirait, sans avoir a le generer pour le savoir.
-    lines = context_service.context_lines(
-        event_id, view.home, view.away, view.commence_utc, settings
+    # ce que le prompt dirait, sans avoir a le generer pour le savoir. C'est
+    # **le meme assembleur** que celui du prompt : deux assemblages paralleles
+    # ont diverge deux fois, laissant la fiche sans dossier d'equipe puis sans
+    # historique tennis.
+    lines = session_service.context_block(
+        event_id,
+        view.home,
+        view.away,
+        view.commence_utc,
+        view.sport_key,
+        oddsapi_key=view.oddsapi_key,
+        surface=view.surface,
+        competition_id=view.competition_id,
+        settings=settings,
     )
-    if view.sport_key == "football":
-        # Meme assemblage que `session._context_for` : sans lui, l'entraineur et
-        # l'historique de saison n'existeraient que dans le prompt genere, donc
-        # invisibles tant qu'une session n'a pas ete montee.
-        lines += dossier_service.dossier_lines(
-            event_id, view.home, view.away, view.commence_utc, settings
-        )
     return {
         "event": view,
         "context_lines": lines,
@@ -612,6 +616,17 @@ async def competition_import_fixtures(request: Request, competition_id: int) -> 
     return templates.TemplateResponse(
         request, "_competitions.html", _competitions_context(import_report=report)
     )
+
+
+@app.post("/competitions/{competition_id}/tennisdata", response_class=HTMLResponse)
+def competition_tennisdata(
+    request: Request, competition_id: int, tennisdata_tournaments: str = Form(default="")
+) -> HTMLResponse:
+    """Rattache un tournoi de tennis a son nom dans le jeu de donnees de resultats."""
+    competitions_service.set_tennisdata_tournaments(
+        competition_id, tennisdata_tournaments, get_settings()
+    )
+    return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
 
 
 @app.post("/competitions/{competition_id}/apifootball", response_class=HTMLResponse)

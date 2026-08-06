@@ -52,10 +52,16 @@ def _empty_workbook() -> bytes:
 
     from openpyxl import Workbook, load_workbook
 
-    modele = load_workbook(FIXTURE, read_only=True).active
+    source = load_workbook(FIXTURE, read_only=True)
+    try:
+        modele = source.active
+        assert modele is not None
+        entetes = [cell.value for cell in next(modele.iter_rows(max_row=1))]
+    finally:
+        source.close()
     vide = Workbook()
-    assert vide.active is not None and modele is not None
-    vide.active.append([cell.value for cell in next(modele.iter_rows(max_row=1))])
+    assert vide.active is not None
+    vide.active.append(entetes)
     tampon = BytesIO()
     vide.save(tampon)
     return tampon.getvalue()
@@ -422,3 +428,197 @@ def test_le_prompt_encadre_les_bilans_de_tennis(migrated: Settings) -> None:
     assert "tapis vert n'entre dans aucun de ces comptes" in body
     assert "n'est pas un joueur sans passé" in body
     assert "même sens de lecture que « Forme 5 »" in body
+
+
+# -- Ce qui s'est passe dans ce tournoi --------------------------------------
+
+
+def _competition(settings: Settings, cle: str, tournois: str | None) -> int:
+    """Renseigne la correspondance d'un tournoi et rend son identifiant."""
+    row = db.query_one(
+        "SELECT id FROM competitions WHERE oddsapi_key = ?", (cle,), settings=settings
+    )
+    assert row is not None
+    db.execute(
+        "UPDATE competitions SET tennisdata_tournaments = ? WHERE id = ?",
+        (tournois, row["id"]),
+        settings=settings,
+    )
+    return int(row["id"])
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_palmares_distingue_une_finale_gagnee_d_une_finale_perdue(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """C'est l'erreur la plus visible que la ligne pourrait commettre : le rang du
+    tour ne dit pas l'issue. Une finale gagnee vaut « vainqueur », perdue
+    « finaliste »."""
+    _mock_seasons(classeur)
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+    competition = _competition(migrated, "tennis_atp_french_open", "Generali Open")
+
+    lignes = dict(
+        tennis_history.lines(
+            "Tomas Martin Etcheverry", "Alexander Zverev", None, COMMENCE, migrated, competition
+        )
+    )
+
+    assert "Tomas Martin Etcheverry vainqueur 2026" in lignes["Palmares"]
+    assert "Alexander Zverev finaliste 2026" in lignes["Palmares"]
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_les_confrontations_dans_ce_tournoi_portent_leur_tour(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """Un huitieme de finale et une finale dans le meme tournoi ne se valent pas,
+    et c'est precisement ce que la question « ici » cherche."""
+    _mock_seasons(classeur)
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+    competition = _competition(migrated, "tennis_atp_french_open", "Generali Open")
+
+    lignes = dict(
+        tennis_history.lines(
+            "Tomas Martin Etcheverry", "Alexander Zverev", None, COMMENCE, migrated, competition
+        )
+    )
+
+    assert lignes["H2H ici"] == (
+        "Tomas Martin Etcheverry 1V-0D · 07/26 finale (Tomas Martin Etcheverry)"
+    )
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_sans_correspondance_de_tournoi_aucune_ligne_ici(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """La source nomme les tournois par leur sponsor : « ABN AMRO World Tennis
+    Tournament » pour Rotterdam. Rien ne se deduit d'un libelle, et un palmares
+    emprunte a un autre tournoi serait pire qu'une ligne absente."""
+    _mock_seasons(classeur)
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+    competition = _competition(migrated, "tennis_atp_french_open", None)
+
+    lignes = dict(
+        tennis_history.lines(
+            "Tomas Martin Etcheverry", "Alexander Zverev", None, COMMENCE, migrated, competition
+        )
+    )
+
+    assert "Palmares" not in lignes
+    assert "H2H ici" not in lignes
+    assert "Forme" in lignes, "le reste du bloc n'en depend pas"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_un_tournoi_renomme_par_son_sponsor_reste_le_meme_tournoi(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """La source porte deja deux orthographes pour l'epreuve de Houston. Plusieurs
+    noms se separent par `|` : les separer couperait un palmares en deux."""
+    _mock_seasons(classeur)
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+    seul = _competition(migrated, "tennis_atp_french_open", "Generali Open")
+    un_nom = dict(
+        tennis_history.lines(
+            "Tomas Martin Etcheverry", "Alexander Zverev", None, COMMENCE, migrated, seul
+        )
+    )
+    _competition(migrated, "tennis_atp_french_open", "Generali Open|Nordea Open")
+    deux_noms = dict(
+        tennis_history.lines(
+            "Tomas Martin Etcheverry", "Alexander Zverev", None, COMMENCE, migrated, seul
+        )
+    )
+
+    # Le Generali Open porte sa finale, le Nordea Open sa victoire sur abandon.
+    assert "Tomas Martin Etcheverry vainqueur 2026, 1V-0D" in un_nom["Palmares"]
+    assert "Tomas Martin Etcheverry vainqueur 2026, 2V-0D" in deux_noms["Palmares"]
+
+
+def test_la_table_de_correspondance_couvre_nos_tournois(migrated: Settings) -> None:
+    """Le seed de la migration 020 et la table appliquee a la synchronisation
+    doivent dire la meme chose : deux sources de verite finiraient par diverger."""
+    from myassistantbet.services.competitions import TENNISDATA_TOURNAMENTS
+
+    rows = db.query(
+        "SELECT c.oddsapi_key, c.tennisdata_tournaments AS noms FROM competitions c "
+        "JOIN sports s ON s.id = c.sport_id WHERE s.key = 'tennis'",
+        settings=migrated,
+    )
+    assert rows, "le seed cree bien des competitions de tennis"
+    for row in rows:
+        attendu = TENNISDATA_TOURNAMENTS.get(row["oddsapi_key"])
+        assert row["noms"] == attendu, row["oddsapi_key"]
+
+
+def test_le_prompt_dit_ce_que_l_absence_des_lignes_ici_signifie(migrated: Settings) -> None:
+    """Leur absence ne dit rien du passe des joueurs sur place : elle dit que le
+    rattachement du tournoi manque. Confondre les deux ferait conclure d'un
+    silence."""
+    from myassistantbet.services.prompt import build_prompt
+
+    db.execute(
+        "INSERT INTO sessions (id, label, created_at) VALUES (1, 'test', ?)",
+        (db.utcnow(),),
+        settings=migrated,
+    )
+
+    body = build_prompt(1, settings=migrated).body
+
+    assert "« finaliste » veut dire finale" in body
+    assert "elle dit que le rattachement manque" in body
+
+
+# -- Un seul assembleur de bloc ----------------------------------------------
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_la_fiche_d_un_match_de_tennis_porte_le_meme_bloc_que_le_prompt(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """La fiche d'un match de tennis affichait un bloc CONTEXTE **vide** : l'Elo,
+    le repos et l'historique n'existaient que dans le prompt. Deux assemblages
+    paralleles ont diverge deux fois — c'est desormais le meme appel des deux
+    cotes, et ce test compare les deux resultats."""
+    from fastapi.testclient import TestClient
+
+    from myassistantbet.main import app
+    from myassistantbet.services import session as session_service
+
+    _mock_seasons(classeur)
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+    competition = _competition(migrated, "tennis_atp_french_open", "Generali Open")
+    db.execute(
+        "INSERT INTO events (id, sport_id, competition_id, home, away, commence_time, source, "
+        "created_at) SELECT 1, sport_id, ?, 'Tomas Martin Etcheverry', 'Alexander Zverev', ?, "
+        "'api', ? FROM competitions WHERE id = ?",
+        (competition, COMMENCE, db.utcnow(), competition),
+        settings=migrated,
+    )
+
+    attendu = session_service.context_block(
+        1,
+        "Tomas Martin Etcheverry",
+        "Alexander Zverev",
+        COMMENCE,
+        "tennis",
+        oddsapi_key="tennis_atp_french_open",
+        surface=None,
+        competition_id=competition,
+        settings=migrated,
+    )
+    assert any(label == "Palmares" for label, _ in attendu), "le bloc porte bien des lignes"
+
+    with TestClient(app) as client:
+        page = client.get("/events/1")
+
+    for label, value in attendu:
+        assert label in page.text, f"la fiche doit porter la ligne « {label} »"
+        assert value.split(" · ")[0] in page.text

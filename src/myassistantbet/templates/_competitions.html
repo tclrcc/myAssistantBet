@@ -237,6 +237,18 @@
               {% endfor %}
             </select>
           </form>
+          {# Le jeu de donnees de resultats nomme les tournois par leur sponsor —
+             « ABN AMRO World Tennis Tournament » pour Rotterdam. Rien ne se deduit
+             d'un libelle : sans cette saisie, aucune ligne « ici » n'est rendue.
+             Plusieurs noms se separent par « | », pour un sponsor qui change. #}
+          <form class="notes-form" hx-post="/competitions/{{ competition.id }}/tennisdata"
+                hx-target="#competitions" hx-swap="outerHTML">
+            <input type="text" name="tennisdata_tournaments" spellcheck="false"
+                   aria-label="Nom du tournoi dans l'historique, pour {{ competition.label }}"
+                   placeholder="Nom dans l'historique des matchs…"
+                   value="{{ competition.tennisdata_tournaments or '' }}">
+            <button type="submit" class="link-action">rattacher</button>
+          </form>
           {% endif %}
           {% if competition.active %}
           <form class="notes-form" hx-post="/competitions/{{ competition.id }}/notes"

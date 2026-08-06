@@ -88,6 +88,12 @@ class EventOdds:
     #: Match API-Football rattache. Sans lui, ni contexte ni cotes de
     #: substitution : la fiche le dit plutot que de proposer un bouton inerte.
     apifootball_fixture_id: int | None = None
+    #: De quoi assembler le bloc CONTEXTE comme le fait le prompt : la
+    #: competition porte la surface et sa correspondance de tournoi, et sa cle
+    #: The Odds API sert au rapprochement Elo.
+    competition_id: int | None = None
+    oddsapi_key: str | None = None
+    surface: str | None = None
     blocks: list[MarketBlock] = field(default_factory=list)
     bookmakers: list[str] = field(default_factory=list)
     fetched_local: datetime | None = None
@@ -163,7 +169,8 @@ def build(event_id: int, settings: Settings | None = None) -> EventOdds | None:
         row = conn.execute(
             "SELECT e.id, e.home, e.away, e.commence_time, e.source, e.apifootball_fixture_id, "
             "       s.key AS sport_key, s.label AS sport_label, "
-            "       COALESCE(c.label, '—') AS competition "
+            "       COALESCE(c.label, '—') AS competition, "
+            "       e.competition_id, c.oddsapi_key, c.surface "
             "FROM events e "
             "JOIN sports s ON s.id = e.sport_id "
             "LEFT JOIN competitions c ON c.id = e.competition_id "
@@ -229,6 +236,9 @@ def build(event_id: int, settings: Settings | None = None) -> EventOdds | None:
         selected=selection is not None,
         source=row["source"] or "",
         apifootball_fixture_id=row["apifootball_fixture_id"],
+        competition_id=row["competition_id"],
+        oddsapi_key=row["oddsapi_key"],
+        surface=row["surface"],
         blocks=blocks,
         bookmakers=[bookmaker_label(book) for book in books],
         # Une cote saisie a la main porte l'heure de la frappe, pas celle d'un
