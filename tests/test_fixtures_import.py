@@ -15,7 +15,13 @@ from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.providers.apifootball import BASE_URL, APIFootballClient
 from myassistantbet.services.competitions import set_active
-from myassistantbet.services.fixtures import SOURCE, import_competition
+from myassistantbet.services.fixtures import (
+    SOURCE,
+    _book_key,
+    import_competition,
+    import_odds,
+)
+from myassistantbet.services.labels import bookmaker_label
 
 NOW = datetime(2026, 8, 6, 9, 0, tzinfo=UTC)
 
@@ -180,3 +186,198 @@ def test_import_via_htmx(client: TestClient, isolated_settings: Settings) -> Non
     assert response.status_code == 200
     assert "<html" not in response.text, "une route ciblee par HTMX rend le fragment"
     assert "Import des matchs" in response.text
+
+
+# -- Cotes de substitution ----------------------------------------------------
+
+ODDS = {
+    "errors": [],
+    "response": [
+        {
+            "bookmakers": [
+                {
+                    "id": 11,
+                    "name": "1xBet",
+                    "bets": [
+                        {
+                            "name": "Match Winner",
+                            "values": [
+                                {"value": "Home", "odd": "9.99"},
+                                {"value": "Away", "odd": "9.99"},
+                            ],
+                        }
+                    ],
+                },
+                {
+                    "id": 21,
+                    "name": "888Sport",
+                    "bets": [
+                        {
+                            "name": "Match Winner",
+                            "values": [
+                                {"value": "Home", "odd": "1.85"},
+                                {"value": "Draw", "odd": "3.40"},
+                                {"value": "Away", "odd": "4.20"},
+                            ],
+                        },
+                        {
+                            "name": "Goals Over/Under",
+                            "values": [
+                                {"value": "Over 2.5", "odd": "2.05"},
+                                {"value": "Under 2.5", "odd": "1.75"},
+                            ],
+                        },
+                        {"name": "Marche inconnu", "values": [{"value": "X", "odd": "1.50"}]},
+                    ],
+                },
+            ]
+        }
+    ],
+}
+
+
+def _event_avec_fixture(settings: Settings) -> int:
+    competition_id = _europa(settings)
+    sport = db.query_one("SELECT id FROM sports WHERE key = 'football'", settings=settings)
+    db.execute(
+        "INSERT INTO events (sport_id, competition_id, apifootball_fixture_id, home, away, "
+        "commence_time, source, created_at) VALUES (?, ?, 900001, 'KuPS', 'U Craiova', "
+        "'2026-08-06T18:00:00Z', ?, ?)",
+        (sport["id"], competition_id, SOURCE, db.utcnow()),
+        settings=settings,
+    )
+    row = db.query_one(
+        "SELECT id FROM events WHERE apifootball_fixture_id = 900001", settings=settings
+    )
+    return int(row["id"])
+
+
+@respx.mock
+async def test_le_book_le_plus_proche_de_betclic_est_prefere(
+    http_client: httpx.AsyncClient, migrated: Settings
+) -> None:
+    """Prendre le premier book venu ferait passer pour jouable un prix dont
+    l'ecart a Betclic n'a jamais ete mesure. L'ordre de preference decide."""
+    event_id = _event_avec_fixture(migrated)
+    respx.get(f"{BASE_URL}/odds").mock(return_value=httpx.Response(200, json=ODDS))
+
+    report = await import_odds(APIFootballClient(http_client, migrated), event_id, migrated)
+
+    assert report.bookmaker == "888Sport", "1xBet est present mais bien plus loin de Betclic"
+    prix = {
+        row["outcome_name"]: row["price"]
+        for row in db.query(
+            "SELECT outcome_name, price FROM odds WHERE event_id = ? AND market_key = 'h2h'",
+            (event_id,),
+            settings=migrated,
+        )
+    }
+    assert prix == {"KuPS": 1.85, "Draw": 3.40, "U Craiova": 4.20}
+
+
+@respx.mock
+async def test_les_issues_sont_traduites_vers_le_format_de_l_application(
+    http_client: httpx.AsyncClient, migrated: Settings
+) -> None:
+    """Le fournisseur ecrit « Over 2.5 » la ou l'app stocke un nom et une ligne
+    separee : sans traduction, ces cotes ne rejoindraient jamais celles de
+    The Odds API dans le rendu."""
+    event_id = _event_avec_fixture(migrated)
+    respx.get(f"{BASE_URL}/odds").mock(return_value=httpx.Response(200, json=ODDS))
+
+    await import_odds(APIFootballClient(http_client, migrated), event_id, migrated)
+
+    totals = db.query(
+        "SELECT outcome_name, point, price FROM odds WHERE event_id = ? AND market_key = 'totals' "
+        "ORDER BY outcome_name",
+        (event_id,),
+        settings=migrated,
+    )
+    assert [(r["outcome_name"], r["point"]) for r in totals] == [("Over", 2.5), ("Under", 2.5)]
+
+
+@respx.mock
+async def test_un_marche_non_modelise_est_compte_et_annonce(
+    http_client: httpx.AsyncClient, migrated: Settings
+) -> None:
+    event_id = _event_avec_fixture(migrated)
+    respx.get(f"{BASE_URL}/odds").mock(return_value=httpx.Response(200, json=ODDS))
+
+    report = await import_odds(APIFootballClient(http_client, migrated), event_id, migrated)
+
+    assert report.ignored == 1
+    assert "non modelise" in report.note
+
+
+@respx.mock
+async def test_aucun_book_retenu_ne_sert_le_match(
+    http_client: httpx.AsyncClient, migrated: Settings
+) -> None:
+    """Une absence constatee est une information : pas de repli sur un book
+    quelconque, qui ferait passer pour jouable un prix jamais mesure."""
+    event_id = _event_avec_fixture(migrated)
+    sans = {"errors": [], "response": [{"bookmakers": [ODDS["response"][0]["bookmakers"][0]]}]}
+    migrated.apifootball_bookmakers = "888Sport,BetVictor"
+    respx.get(f"{BASE_URL}/odds").mock(return_value=httpx.Response(200, json=sans))
+
+    report = await import_odds(APIFootballClient(http_client, migrated), event_id, migrated)
+
+    assert report.outcomes == 0
+    assert "aucune cote" in report.note
+    assert db.query_one("SELECT COUNT(*) AS n FROM odds", settings=migrated)["n"] == 0
+
+
+@respx.mock
+async def test_le_releve_n_ecrase_jamais_une_cote_d_un_autre_book(
+    http_client: httpx.AsyncClient, migrated: Settings
+) -> None:
+    """Relancer remplace le seul book releve : ni Betclic ni la saisie manuelle."""
+    event_id = _event_avec_fixture(migrated)
+    db.execute(
+        "INSERT INTO odds (event_id, bookmaker, market_key, outcome_name, price, fetched_at) "
+        "VALUES (?, 'manual', 'outright', 'Qualification', 1.44, ?)",
+        (event_id, db.utcnow()),
+        settings=migrated,
+    )
+    respx.get(f"{BASE_URL}/odds").mock(return_value=httpx.Response(200, json=ODDS))
+    client = APIFootballClient(http_client, migrated)
+
+    await import_odds(client, event_id, migrated)
+    await import_odds(client, event_id, migrated)
+
+    books = db.query(
+        "SELECT bookmaker, COUNT(*) AS n FROM odds WHERE event_id = ? GROUP BY bookmaker",
+        (event_id,),
+        settings=migrated,
+    )
+    compte = {row["bookmaker"]: row["n"] for row in books}
+    assert compte["manual"] == 1, "la saisie manuelle survit au relevé"
+    assert compte["888sport"] == 5, "5 issues, pas 10 : le relevé remplace, il n'ajoute pas"
+
+
+@respx.mock
+async def test_un_match_sans_fixture_rattache_le_dit(
+    http_client: httpx.AsyncClient, migrated: Settings
+) -> None:
+    competition_id = _europa(migrated)
+    sport = db.query_one("SELECT id FROM sports WHERE key = 'football'", settings=migrated)
+    db.execute(
+        "INSERT INTO events (sport_id, competition_id, home, away, commence_time, source, "
+        "created_at) VALUES (?, ?, 'A', 'B', '2026-08-06T18:00:00Z', 'api', ?)",
+        (sport["id"], competition_id, db.utcnow()),
+        settings=migrated,
+    )
+    row = db.query_one("SELECT id FROM events WHERE home = 'A'", settings=migrated)
+
+    report = await import_odds(APIFootballClient(http_client, migrated), int(row["id"]), migrated)
+
+    assert report.error is not None
+    assert "rattache" in report.note
+
+
+def test_les_substituts_portent_le_marqueur_de_reference() -> None:
+    """Betclic n'est pas au catalogue d'API-Football : ces prix ne sont jamais
+    jouables tels quels, et le suffixe le dit jusque dans le prompt."""
+    for name in Settings().apifootball_books:
+        libelle = bookmaker_label(_book_key(name))
+        assert libelle.endswith("(ref.)"), f"{name} rendu « {libelle} » sans marqueur"

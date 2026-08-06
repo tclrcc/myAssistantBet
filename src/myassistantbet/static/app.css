@@ -1215,3 +1215,12 @@ td .sport {
   font-size: 1.15rem;
   line-height: 1;
 }
+
+/* --- Contexte sportif sur la fiche d'un match ------------------------------ */
+
+/* Les valeurs multi-lignes (absents des deux equipes) gardent leurs retours a
+   la ligne : les aplatir collerait deux equipes bout a bout. */
+.context-table .context-value { white-space: pre-line; }
+.context-table .outcome { white-space: nowrap; color: var(--muted); }
+.event-context { margin-top: var(--s4); }
+.event-context h2 { margin-bottom: var(--s2); }

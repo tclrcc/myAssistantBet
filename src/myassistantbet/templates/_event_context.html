@@ -1,0 +1,62 @@
+{# Contexte sportif d'un match, tel qu'il partira dans le prompt.
+
+   Relu en base, jamais recalcule : afficher ce bloc ne declenche aucun appel
+   reseau et ne coute aucun credit. Sans lui, tout ce qui a ete recupere —
+   classement, forme, absents, profil corners — n'existait que dans le prompt
+   genere, donc invisible tant qu'une session n'avait pas ete montee. #}
+<div id="event-context">
+  <section class="event-context">
+    <h2>Contexte sportif</h2>
+
+    {% if context_report %}
+      <div class="report {% if not context_report.ok %}report-warn{% endif %}">
+        {% if context_report.mapping_pending %}
+          Rapprochement incertain avec API-Football : à résoudre depuis
+          <a href="/mapping">la page de correspondances</a>. Rien n'est deviné —
+          attribuer les statistiques d'une autre équipe serait pire qu'une ligne absente.
+        {% elif context_report.kinds %}
+          {{ context_report.kinds | length }} type(s) de contexte récupéré(s). Aucun crédit
+          Odds API consommé.
+        {% else %}
+          Rien n'a pu être récupéré.
+        {% endif %}
+        {% if context_report.errors %}
+          <ul class="failures">
+            {% for error in context_report.errors %}<li>{{ error }}</li>{% endfor %}
+          </ul>
+        {% endif %}
+      </div>
+    {% endif %}
+
+    {% if context_lines %}
+      <table class="odds context-table">
+        <tbody>
+          {% for label, value in context_lines %}
+          <tr>
+            <td class="outcome">{{ label }}</td>
+            {# Les valeurs multi-lignes (absents des deux equipes) gardent leur
+               retour a la ligne : les aplatir collerait deux equipes bout a bout. #}
+            <td class="context-value">{{ value }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="empty">
+        Aucun contexte récupéré pour ce match. L'enrichissement d'une session le récupère
+        automatiquement ; le bouton ci-dessous le fait pour ce match seul.
+      </p>
+    {% endif %}
+
+    {% if event.sport_key == 'football' %}
+      <form hx-post="/events/{{ event.event_id }}/context"
+            hx-target="#event-context" hx-swap="outerHTML" hx-indicator="#ctx-spinner">
+        <button type="submit" class="button">
+          {% if context_lines %}Rafraîchir le contexte{% else %}Récupérer le contexte{% endif %}
+        </button>
+        <span id="ctx-spinner" class="htmx-indicator">récupération…</span>
+        <span class="muted small">gratuit en crédits Odds API</span>
+      </form>
+    {% endif %}
+  </section>
+</div>

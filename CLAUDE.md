@@ -185,6 +185,23 @@ regression.
     report d'horaire met la ligne a jour au lieu d'en creer une seconde.
   - `source = 'apifootball'`, distincte de `api` et de `manual` : savoir d'ou vient un
     match explique pourquoi il n'a pas de cotes, et evite de chercher une panne de scan.
+- **Cotes de substitution** (`import_odds`) : pour un match sans aucune cote, un releve
+  chez un book proche de Betclic. **Betclic n'est pas au catalogue d'API-Football** — il
+  faut donc un substitut, et « proche » se mesure au lieu de se supposer. Sur des matchs
+  servis par les deux fournisseurs, l'ecart moyen absolu au prix Betclic valait 3.0 % pour
+  BetVictor, 3.4 % pour William Hill et 888Sport, contre 5.4 % pour Unibet, 6.0 % pour
+  Pinnacle et 6.8 % pour 1xBet : **l'intuition « un book francais sera le plus proche »
+  etait fausse**. L'ordre se regle par `APIFOOTBALL_BOOKMAKERS`, l'echantillon etant court.
+  - **Aucun repli sur un book hors liste** : prendre le premier venu ferait passer pour
+    jouable un prix dont l'ecart n'a jamais ete mesure. Une absence constatee est dite.
+  - Ces prix portent le suffixe `(ref.)` comme les autres books de reference : ils situent
+    le marche, ils ne sont pas jouables tels quels.
+  - Le releve remplace **le seul book releve** : ni Betclic, ni la saisie manuelle.
+  - Le bouton n'apparait que sur un evenement sans aucune cote. Ailleurs il n'ajouterait
+    qu'un prix non jouable a cote d'un prix jouable.
+- La **fiche d'un match** affiche le bloc CONTEXTE (`_event_context.html`), relu en base et
+  sans aucun appel reseau. Sans lui, tout ce qui etait recupere n'existait que dans le
+  prompt genere — donc invisible tant qu'une session n'avait pas ete montee.
 - **Les absents arrivent en double** : `/injuries` rend chaque joueur deux fois — constate
   en reel, 14 lignes pour 7 absents. Le dedoublonnage se fait a la collecte, sur
   (cote, nom, type, raison). Sans lui la ligne liste tout le monde deux fois, ce qui fait

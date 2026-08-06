@@ -26,6 +26,7 @@ from .providers.tennisabstract import TennisAbstractClient
 from .scheduler import build_scheduler
 from .services import board as board_service
 from .services import competitions as competitions_service
+from .services import context as context_service
 from .services import coupons as coupons_service
 from .services import coverage as coverage_service
 from .services import elo as elo_service
@@ -177,10 +178,42 @@ async def select_all(request: Request) -> HTMLResponse:
 
 
 def _event_context(event_id: int, **extra: object) -> dict[str, object]:
-    view = odds_view_service.build(event_id, get_settings())
+    settings = get_settings()
+    view = odds_view_service.build(event_id, settings)
     if view is None:
         raise HTTPException(status_code=404, detail="Evenement inconnu")
-    return {"event": view, "error": None, "result": None, **extra}
+    # Le contexte se relit en base, sans aucun appel reseau : la fiche montre
+    # ce que le prompt dirait, sans avoir a le generer pour le savoir.
+    lines = context_service.context_lines(
+        event_id, view.home, view.away, view.commence_utc, settings
+    )
+    return {
+        "event": view,
+        "context_lines": lines,
+        "error": None,
+        "result": None,
+        **extra,
+    }
+
+
+@app.post("/events/{event_id}/context", response_class=HTMLResponse)
+async def fetch_event_context(request: Request, event_id: int) -> HTMLResponse:
+    """Recupere le contexte sportif d'un match. Aucun credit The Odds API."""
+    settings = get_settings()
+    with db.connect(settings) as conn:
+        row = conn.execute(
+            "SELECT e.id, e.home, e.away, e.commence_time, c.apifootball_league_id "
+            "FROM events e LEFT JOIN competitions c ON c.id = e.competition_id "
+            "WHERE e.id = ?",
+            (event_id,),
+        ).fetchone()
+    if row is None:
+        raise HTTPException(status_code=404, detail="Evenement inconnu")
+    client = APIFootballClient(request.app.state.http, settings)
+    report = await context_service.fetch_context(client, dict(row), settings)
+    return templates.TemplateResponse(
+        request, "_event_context.html", _event_context(event_id, context_report=report)
+    )
 
 
 @app.get("/events/{event_id}", response_class=HTMLResponse)
@@ -196,6 +229,17 @@ def toggle_event_shortlist(
     """Coche ou decoche depuis la fiche, et re-rend son en-tete."""
     board_service.toggle_selection(event_id, selected is not None, get_settings())
     return templates.TemplateResponse(request, "_event_head.html", _event_context(event_id))
+
+
+@app.post("/events/{event_id}/odds/apifootball", response_class=HTMLResponse)
+async def fetch_substitute_odds(request: Request, event_id: int) -> HTMLResponse:
+    """Releve des cotes chez un substitut de Betclic, pour un match qui n'en a pas."""
+    settings = get_settings()
+    client = APIFootballClient(request.app.state.http, settings)
+    report = await fixtures_service.import_odds(client, event_id, settings)
+    return templates.TemplateResponse(
+        request, "_event_odds.html", _event_context(event_id, odds_report=report)
+    )
 
 
 @app.post("/events/{event_id}/odds", response_class=HTMLResponse)

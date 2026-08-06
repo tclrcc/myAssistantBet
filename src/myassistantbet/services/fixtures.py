@@ -19,6 +19,7 @@ du seuil de rapprochement automatique.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -178,4 +179,172 @@ async def import_competition(
         report.updated,
         len(rows),
     )
+    return report
+
+
+# -- Cotes de substitution ----------------------------------------------------
+
+#: Libelles de marches du fournisseur -> cles de l'application. Rapproches par
+#: libelle, comme partout ailleurs. Un marche absent d'ici est ignore : il n'est
+#: pas paye a l'unite, un seul appel les rend tous.
+BET_MARKETS = {
+    "Match Winner": "h2h",
+    "Double Chance": "double_chance",
+    "Asian Handicap": "spreads",
+    "Goals Over/Under": "totals",
+    "Goals Over/Under First Half": "totals_h1",
+    "Both Teams Score": "btts",
+    "Both Teams Score - First Half": "btts_h1",
+    "Exact Score": "correct_score",
+    "Corners Over Under": "alternate_totals_corners",
+    "Cards Over/Under": "alternate_totals_cards",
+}
+
+
+def _book_key(name: str) -> str:
+    """`888Sport` -> `888sport`. Cle stable pour la colonne `bookmaker`."""
+    return re.sub(r"[^a-z0-9]+", "_", (name or "").lower()).strip("_")
+
+
+def _outcome(market: str, value: str, home: str, away: str) -> tuple[str, float | None] | None:
+    """Traduit une issue du fournisseur vers (nom, ligne) de l'application.
+
+    Le fournisseur ecrit « Home », « Over 2.5 » ou « Home -0.5 » la ou l'app
+    stocke un nom d'equipe et une ligne separee : sans cette traduction, les
+    cotes existeraient en base sans jamais rejoindre celles de The Odds API
+    dans le rendu.
+    """
+    text = (value or "").strip()
+    if not text:
+        return None
+    if market in {"h2h", "spreads"}:
+        parts = text.rsplit(" ", 1)
+        side, point = (parts[0], parts[1]) if len(parts) == 2 else (text, None)
+        name = {"home": home, "away": away, "draw": "Draw"}.get(side.lower(), side)
+        try:
+            return name, float(point) if point is not None else None
+        except ValueError:
+            return {"home": home, "away": away, "draw": "Draw"}.get(text.lower(), text), None
+    if market in {"totals", "totals_h1", "alternate_totals_corners", "alternate_totals_cards"}:
+        parts = text.split()
+        if len(parts) == 2:
+            try:
+                return parts[0], float(parts[1])
+            except ValueError:
+                return text, None
+        return text, None
+    return text, None
+
+
+@dataclass
+class OddsReport:
+    """Ce qu'un import de cotes a produit, et chez qui."""
+
+    label: str
+    bookmaker: str | None = None
+    markets: int = 0
+    outcomes: int = 0
+    ignored: int = 0
+    error: str | None = None
+
+    @property
+    def note(self) -> str:
+        if self.error:
+            return f"{self.label} : {self.error}"
+        if not self.outcomes:
+            return f"{self.label} : aucune cote servie par les books retenus."
+        detail = f"{self.label} : {self.outcomes} cote(s) sur {self.markets} marche(s)"
+        detail += f", relevees chez {self.bookmaker}."
+        if self.ignored:
+            detail += f" {self.ignored} marche(s) non modelise(s) ignore(s)."
+        return detail
+
+
+def _pick_bookmaker(
+    entries: list[dict[str, Any]], wanted: tuple[str, ...]
+) -> dict[str, Any] | None:
+    """Premier book de la liste de preference effectivement present.
+
+    Aucun repli sur un book quelconque : prendre le premier venu ferait passer
+    pour jouable un prix releve chez un book dont l'ecart a Betclic n'a jamais
+    ete mesure. Une absence constatee est une information, pas un probleme.
+    """
+    available = {}
+    for entry in entries:
+        for book in entry.get("bookmakers") or []:
+            available[_book_key(str(book.get("name")))] = book
+    for name in wanted:
+        book = available.get(_book_key(name))
+        if book:
+            return book
+    return None
+
+
+async def import_odds(
+    client: APIFootballClient,
+    event_id: int,
+    settings: Settings | None = None,
+) -> OddsReport:
+    """Releve des cotes chez un substitut de Betclic, pour un match qui n'en a pas.
+
+    Ne touche jamais aux cotes existantes d'un autre book : elles sont
+    remplacees pour ce book seulement, donc relancer ne duplique rien et
+    n'ecrase pas un releve Betclic ni une saisie manuelle.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT id, home, away, apifootball_fixture_id FROM events WHERE id = ?",
+            (event_id,),
+        ).fetchone()
+    if row is None:
+        return OddsReport(label=str(event_id), error="evenement inconnu")
+
+    label = f"{row['home']} – {row['away']}"
+    if not row["apifootball_fixture_id"]:
+        return OddsReport(
+            label=label,
+            error="aucun match API-Football rattache — enrichir d'abord, ou resoudre le mapping",
+        )
+
+    try:
+        entries = await client.odds(int(row["apifootball_fixture_id"]))
+    except ProviderError as exc:
+        logger.warning("Cotes de substitution indisponibles pour %s : %s", label, exc)
+        return OddsReport(label=label, error=str(exc))
+
+    book = _pick_bookmaker(entries, settings.apifootball_books)
+    if book is None:
+        return OddsReport(label=label)
+
+    key = _book_key(str(book.get("name")))
+    report = OddsReport(label=label, bookmaker=str(book.get("name")))
+    stamp = utcnow()
+    with connect(settings) as conn:
+        conn.execute("DELETE FROM odds WHERE event_id = ? AND bookmaker = ?", (event_id, key))
+        for bet in book.get("bets") or []:
+            market = BET_MARKETS.get(str(bet.get("name")))
+            if market is None:
+                report.ignored += 1
+                continue
+            written = 0
+            for value in bet.get("values") or []:
+                outcome = _outcome(market, str(value.get("value")), row["home"], row["away"])
+                try:
+                    price = float(value.get("odd"))
+                except (TypeError, ValueError):
+                    continue
+                if outcome is None:
+                    continue
+                conn.execute(
+                    "INSERT INTO odds (event_id, bookmaker, market_key, outcome_name, point, "
+                    "                  price, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    (event_id, key, market, outcome[0], outcome[1], price, stamp),
+                )
+                written += 1
+            if written:
+                report.markets += 1
+                report.outcomes += written
+
+    logger.info("Cotes de substitution pour %s : %d cote(s) chez %s", label, report.outcomes, key)
     return report

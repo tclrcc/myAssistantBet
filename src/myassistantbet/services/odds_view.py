@@ -79,8 +79,15 @@ class EventOdds:
     sport_label: str
     competition: str
     local_time: datetime
+    #: Heure de coup d'envoi en UTC, telle que stockee. Le contexte la relit
+    #: pour calculer les jours de repos : l'heure locale d'affichage ne le
+    #: permettrait pas sans reconversion.
+    commence_utc: str = ""
     selected: bool = False
     source: str = ""
+    #: Match API-Football rattache. Sans lui, ni contexte ni cotes de
+    #: substitution : la fiche le dit plutot que de proposer un bouton inerte.
+    apifootball_fixture_id: int | None = None
     blocks: list[MarketBlock] = field(default_factory=list)
     bookmakers: list[str] = field(default_factory=list)
     fetched_local: datetime | None = None
@@ -154,7 +161,7 @@ def build(event_id: int, settings: Settings | None = None) -> EventOdds | None:
 
     with connect(settings) as conn:
         row = conn.execute(
-            "SELECT e.id, e.home, e.away, e.commence_time, e.source, "
+            "SELECT e.id, e.home, e.away, e.commence_time, e.source, e.apifootball_fixture_id, "
             "       s.key AS sport_key, s.label AS sport_label, "
             "       COALESCE(c.label, '—') AS competition "
             "FROM events e "
@@ -218,8 +225,10 @@ def build(event_id: int, settings: Settings | None = None) -> EventOdds | None:
         sport_label=row["sport_label"],
         competition=row["competition"],
         local_time=_local(row["commence_time"], settings.tz),
+        commence_utc=row["commence_time"],
         selected=selection is not None,
         source=row["source"] or "",
+        apifootball_fixture_id=row["apifootball_fixture_id"],
         blocks=blocks,
         bookmakers=[bookmaker_label(book) for book in books],
         # Une cote saisie a la main porte l'heure de la frappe, pas celle d'un

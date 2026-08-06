@@ -24,11 +24,38 @@
     {% endif %}
   </div>
 
+  {% if odds_report %}
+    <div class="report {% if odds_report.error or not odds_report.outcomes %}report-warn{% endif %}">
+      {{ odds_report.note }}
+      {% if odds_report.outcomes %}
+        <br><span class="muted small">
+          Betclic n'est pas au catalogue d'API-Football : ces cotes situent le marché, elles
+          ne sont pas jouables telles quelles. Chaque ligne porte son bookmaker.
+        </span>
+      {% endif %}
+    </div>
+  {% endif %}
+
   {% if event.is_empty %}
     <p class="empty">
       Aucune cote pour cet événement. Enrichis-le depuis la shortlist, ou saisis
       des cotes à la main ci-dessous.
     </p>
+    {# Le seul cas ou le releve de substitution a un sens : rien a comparer, donc
+       rien a ecraser. Sur un match deja servi par Betclic, il n'apporterait
+       qu'une cote non jouable a cote d'une cote jouable. #}
+    {% if event.apifootball_fixture_id %}
+      <form hx-post="/events/{{ event.event_id }}/odds/apifootball"
+            hx-target="#event-odds" hx-swap="outerHTML" hx-indicator="#sub-spinner">
+        <button type="submit" class="button">Relever des cotes chez un book proche de Betclic</button>
+        <span id="sub-spinner" class="htmx-indicator">relevé…</span>
+      </form>
+    {% else %}
+      <p class="muted small">
+        Aucun match API-Football rattaché : le relevé de substitution demande d'abord
+        l'enrichissement, ou une résolution manuelle du rapprochement.
+      </p>
+    {% endif %}
   {% else %}
     <div class="markets">
       {% for block in event.blocks %}

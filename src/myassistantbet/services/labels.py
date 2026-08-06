@@ -27,6 +27,16 @@ BOOKMAKER_LABELS = {
     "gtbets": "GTbets (ref.)",
     "nordicbet": "NordicBet (ref.)",
     "pmu_fr": "PMU (ref.)",
+    # Substituts releves chez API-Football, pour les matchs que The Odds API ne
+    # sert pas du tout. Betclic n'est pas au catalogue de ce fournisseur : ces
+    # prix ne sont donc jamais jouables, d'ou le meme suffixe. L'ordre de
+    # preference est mesure (`Settings.apifootball_bookmakers`).
+    "888sport": "888Sport (ref.)",
+    "william_hill": "William Hill (ref.)",
+    "betvictor": "BetVictor (ref.)",
+    "10bet": "10Bet (ref.)",
+    "bet365": "Bet365 (ref.)",
+    "superbet": "Superbet (ref.)",
 }
 
 #: Bookmakers pour lesquels un horodatage de releve n'aurait aucun sens : la

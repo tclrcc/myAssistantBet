@@ -181,6 +181,15 @@ class APIFootballClient(BaseHTTPClient):
         """Blesses et suspendus declares pour un match."""
         return await self._fetch("/injuries", {"fixture": fixture_id})
 
+    async def odds(self, fixture_id: int) -> list[dict[str, Any]]:
+        """Cotes d'avant-match, tous books et tous marches en un appel.
+
+        Betclic n'est pas au catalogue de ce fournisseur : ces cotes ne sont
+        donc jamais jouables telles quelles, elles situent le marche pour les
+        rencontres que The Odds API ne sert pas du tout.
+        """
+        return await self._fetch("/odds", {"fixture": fixture_id})
+
     async def fixture_statistics(self, fixture_id: int) -> list[dict[str, Any]]:
         """Statistiques d'un match joue : corners, cartons, tirs, possession.
 

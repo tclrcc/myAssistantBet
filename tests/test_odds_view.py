@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from myassistantbet import db
 from myassistantbet.config import Settings
 from myassistantbet.main import app
-from myassistantbet.services import odds_view
+from myassistantbet.services import context, odds_view
 
 
 @pytest.fixture
@@ -185,3 +185,33 @@ def test_une_fiche_inconnue_renvoie_404(client: TestClient, isolated_settings: S
     db.run_migrations(isolated_settings)
 
     assert client.get("/events/999999").status_code == 404
+
+
+def test_la_fiche_montre_le_contexte_sportif(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Sans ce bloc, tout ce qui est recupere — classement, forme, absents,
+    profil corners — n'existait que dans le prompt genere, donc invisible tant
+    qu'une session n'avait pas ete montee."""
+    event_id = _event(isolated_settings)
+    context.store(
+        event_id,
+        context.KIND_STANDINGS,
+        {"home": {"rank": 3, "points": 40, "played": 20}, "away": None},
+        isolated_settings,
+    )
+
+    page = client.get(f"/events/{event_id}").text
+
+    assert "Contexte sportif" in page
+    assert "Classement" in page
+
+
+def test_la_fiche_annonce_un_contexte_absent_sans_le_taire(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    event_id = _event(isolated_settings)
+
+    page = client.get(f"/events/{event_id}").text
+
+    assert "Aucun contexte récupéré" in page
