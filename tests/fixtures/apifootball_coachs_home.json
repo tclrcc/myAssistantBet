@@ -1,0 +1,25 @@
+{
+  "get": "coachs",
+  "parameters": { "team": "376" },
+  "errors": [],
+  "results": 1,
+  "paging": { "current": 1, "total": 1 },
+  "response": [
+    {
+      "id": 6336,
+      "name": "P. Gustafsson",
+      "firstname": "Per",
+      "lastname": "Gustafsson",
+      "age": 52,
+      "birth": { "date": "1974-02-11", "place": "Goteborg", "country": "Sweden" },
+      "nationality": "Sweden",
+      "height": null,
+      "weight": null,
+      "team": { "id": 376, "name": "BK Hacken" },
+      "career": [
+        { "team": { "id": 376, "name": "BK Hacken" }, "start": "2023-06-15", "end": null },
+        { "team": { "id": 2070, "name": "Viborg" }, "start": "2020-01-01", "end": "2023-05-30" }
+      ]
+    }
+  ]
+}

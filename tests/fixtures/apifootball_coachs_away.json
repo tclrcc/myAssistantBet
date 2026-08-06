@@ -1,0 +1,40 @@
+{
+  "get": "coachs",
+  "parameters": { "team": "377" },
+  "errors": [],
+  "results": 2,
+  "paging": { "current": 1, "total": 1 },
+  "response": [
+    {
+      "id": 4411,
+      "name": "M. Lindqvist",
+      "firstname": "Mikael",
+      "lastname": "Lindqvist",
+      "age": 47,
+      "birth": { "date": "1979-09-03", "place": "Stockholm", "country": "Sweden" },
+      "nationality": "Sweden",
+      "height": null,
+      "weight": null,
+      "team": { "id": 377, "name": "Djurgardens IF" },
+      "career": [
+        { "team": { "id": 377, "name": "Djurgardens IF" }, "start": "2026-06-20", "end": null },
+        { "team": { "id": 332, "name": "Sandefjord" }, "start": "2024-02-01", "end": "2026-06-10" }
+      ]
+    },
+    {
+      "id": 3120,
+      "name": "T. Kalmar",
+      "firstname": "Tomas",
+      "lastname": "Kalmar",
+      "age": 61,
+      "birth": { "date": "1965-04-22", "place": "Malmo", "country": "Sweden" },
+      "nationality": "Sweden",
+      "height": null,
+      "weight": null,
+      "team": { "id": 377, "name": "Djurgardens IF" },
+      "career": [
+        { "team": { "id": 377, "name": "Djurgardens IF" }, "start": "2022-11-01", "end": "2026-06-18" }
+      ]
+    }
+  ]
+}

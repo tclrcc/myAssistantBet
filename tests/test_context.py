@@ -94,6 +94,15 @@ def _mock_all(load_fixture: Any) -> dict[str, respx.Route]:
         "injuries": _mock("/injuries", "apifootball_injuries.json"),
         "h2h": _mock("/fixtures/headtohead", "apifootball_h2h.json"),
         "leagues": _mock("/leagues", "apifootball_leagues.json"),
+        # Le dossier d'equipe fait partie d'un enrichissement complet depuis
+        # qu'il existe : sans ces deux routes, tout test qui enrichit tomberait
+        # sur un appel non simule.
+        "coachs_home": _mock(
+            "/coachs", "apifootball_coachs_home.json", params__contains={"team": "376"}
+        ),
+        "coachs_away": _mock(
+            "/coachs", "apifootball_coachs_away.json", params__contains={"team": "377"}
+        ),
         "fixture_stats": _mock("/fixtures/statistics", "apifootball_fixture_statistics.json"),
         "team": _mock("/teams", "apifootball_team.json"),
     }

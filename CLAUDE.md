@@ -288,6 +288,49 @@ regression.
 Un contexte manquant n'empeche jamais les cotes d'etre recuperees, et n'est jamais tu : il
 devient une ligne explicite dans le bloc, ou une mention dans le rapport d'enrichissement.
 
+## Le dossier d'equipe (`services/dossier.py`)
+
+Ce qui vaut pour une **equipe** et non pour une rencontre. La table `context` est
+indexee par evenement, ce qui convient aux absents d'un match ou a une confrontation
+directe ; l'entraineur d'une equipe est le meme dans les deux affiches ou elle apparait
+cette semaine, et le meme la semaine prochaine. Stocke par match, il se paierait autant
+de fois qu'elle joue.
+
+- `team_context(team_id, kind, scope, payload_json, fetched_at)`, cle naturelle **et**
+  primaire. `scope` distingue les releves d'un meme type portant sur des perimetres
+  differents — rien pour l'entraineur, une saison pour un historique. L'ajouter plus tard
+  aurait demande de recreer la table.
+- **Deux temps separes, comme `context.py`** : `refresh_event()` appelle et persiste,
+  `dossier_lines()` relit. Regenerer un prompt ne declenche aucun appel, et le test le
+  verifie **sans simuler la moindre route** — le moindre appel le ferait echouer.
+- **Peremption par type** (`TTL_HOURS`), reglee sur la vitesse a laquelle la donnee change
+  et bornee par ce qu'elle coute. Une date de releve illisible vaut perimee : mieux vaut un
+  appel de trop qu'une donnee dont on ne sait plus quand elle a ete prise.
+- `now` va **jusqu'a l'ecriture** (`store(..., now=)`), comme dans `elo.store`. La
+  peremption compare une date de releve a une date de lecture : les prendre sur deux
+  horloges differentes rend le calcul faux, donc intestable — constate en ecrivant le test.
+- **Le plancher `APIFOOTBALL_CALL_FLOOR` ne bloque que le dossier.** Le contexte d'un match
+  reste la fonction premiere de l'outil ; l'interrompre faute de credits pour un bonus
+  serait le mauvais arbitrage. Un quota inconnu laisse partir — c'est l'etat d'une
+  installation qui n'a jamais appele le fournisseur.
+- **Deux causes distinctes, deux mentions distinctes** : `EnrichResult.dossier_note` est
+  tenu a part de `context_note`. Un plancher franchi ne rend pas le contexte partiel — il
+  est complet — et l'annoncer sous ce nom enverrait chercher un probleme de rapprochement
+  la ou il n'y a qu'un compteur bas. L'UI les liste au meme endroit (`result.notes`) :
+  pour l'oeil, ce qui compte est qu'il manque quelque chose sur ce match.
+- Les identifiants d'equipe viennent de `context.KIND_TEAMS`, memorise au rapprochement.
+  Sans lui, le dossier devrait refaire la resolution de noms, donc repayer `/fixtures` a
+  chaque lecture. Volontairement **absent de `report.kinds`** : ce n'est pas un contexte
+  recupere, c'est le moyen d'en chercher d'autres. Un evenement dont le rapprochement est
+  reste incertain n'a rien ici, et le dossier **ne devine pas**.
+- **Entraineur** (`/coachs`, orthographe du fournisseur, la corriger donne un 404) : le
+  fournisseur peut rendre **plusieurs** entraineurs pour une equipe, le predecesseur y
+  figurant avec sa date de fin. Le poste en cours est celui dont l'etape de carriere
+  **dans cette equipe** n'est pas refermee ; prendre le premier de la liste nommerait un
+  entraineur parti, affirme comme un fait. L'anciennete se compte dans l'equipe du match
+  et jamais depuis le premier poste de la carriere, et une prise de fonction posterieure
+  au match ne rend aucune duree — un nombre negatif presente comme une anciennete.
+
 ## Elo tennis (`providers/tennisabstract.py`, `services/elo.py`)
 
 Le football recoit son contexte d'API-Football ; le tennis n'avait rien. Les classements

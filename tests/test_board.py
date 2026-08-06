@@ -134,6 +134,42 @@ def test_bandeau_sans_aucun_appel(migrated: Settings) -> None:
     assert state.below_floor is False, "un quota inconnu n'est pas un quota epuise"
 
 
+def test_le_bandeau_porte_le_quota_du_fournisseur_de_contexte(migrated: Settings) -> None:
+    """Ce quota n'etait surveille nulle part : il ne servait qu'au contexte,
+    quelques dizaines d'appels par soiree. Le dossier d'equipe en consomme assez
+    pour qu'une journee chargee le vide sans que rien ne l'annonce."""
+    db.execute(
+        "INSERT INTO api_usage (provider, endpoint, cost, remaining, called_at) "
+        "VALUES ('apifootball', '/coachs', 1, 4300, '2026-08-03T06:00:00Z')",
+        settings=migrated,
+    )
+
+    state = board_service.banner(migrated)
+
+    assert state.context_calls_remaining == 4300
+    assert state.context_below_floor is False
+    assert state.credits_remaining is None, "les deux quotas ne se melangent jamais"
+
+
+def test_le_bandeau_signale_le_plancher_de_contexte_franchi(migrated: Settings) -> None:
+    db.execute(
+        "INSERT INTO api_usage (provider, endpoint, cost, remaining, called_at) "
+        "VALUES ('apifootball', '/coachs', 1, 90, '2026-08-03T06:00:00Z')",
+        settings=migrated,
+    )
+
+    state = board_service.banner(migrated)
+
+    assert state.context_below_floor is True
+
+
+def test_bandeau_sans_appel_de_contexte(migrated: Settings) -> None:
+    state = board_service.banner(migrated)
+
+    assert state.context_calls_remaining is None
+    assert state.context_below_floor is False, "un quota inconnu n'est pas un quota epuise"
+
+
 def test_bandeau_sous_le_plancher(migrated: Settings) -> None:
     db.execute(
         "INSERT INTO api_usage (provider, endpoint, cost, remaining, called_at) "

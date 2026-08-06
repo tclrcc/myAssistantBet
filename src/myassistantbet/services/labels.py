@@ -50,6 +50,7 @@ CONTEXT_ICONS = {
     "Classement": "🏆",
     "Forme 5": "📈",
     "Dom/Ext": "🏟️",
+    "Entraineur": "🧑‍🏫",
     "Buts marq.": "⚽",
     "Clean sheet": "🧱",
     "1re MT": "⏱️",

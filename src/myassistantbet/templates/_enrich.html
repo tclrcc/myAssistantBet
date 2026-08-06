@@ -20,8 +20,10 @@
         {% endif %}
         {% if progress.context_notes %}
         <ul class="failures">
-          {% for note in progress.context_notes %}
-            <li>{{ note.label }} — {{ note.context_note }}</li>
+          {% for result in progress.context_notes %}
+            {% for note in result.notes %}
+            <li>{{ result.label }} — {{ note }}</li>
+            {% endfor %}
           {% endfor %}
         </ul>
         {% endif %}

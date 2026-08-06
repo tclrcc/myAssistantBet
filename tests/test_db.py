@@ -30,6 +30,7 @@ EXPECTED_TABLES = {
     "sessions",
     "sports",
     "team_aliases",
+    "team_context",
     "tennis_elo",
     "tiers",
 }

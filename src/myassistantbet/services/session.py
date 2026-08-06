@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from ..db import connect
 from ..providers.oddsapi import DEFAULT_BOOKMAKER, SCAN_MARKETS
-from . import coverage, elo, tennis_load
+from . import coverage, dossier, elo, tennis_load
 from .context import context_lines
 from .labels import UNTIMED_BOOKMAKERS, affiche, bookmaker_label, primary_book
 from .markets import markets_for
@@ -248,6 +248,12 @@ def _context_for(row: Any, settings: Settings) -> list[tuple[str, str]]:
     n'a pas a connaitre le tennis.
     """
     lines = context_lines(int(row["id"]), row["home"], row["away"], row["commence_time"], settings)
+    if row["sport_key"] == "football":
+        # Le dossier d'equipe se memorise par equipe et non par match : il est
+        # relu ici, comme le reste, sans un appel.
+        lines += dossier.dossier_lines(
+            int(row["id"]), row["home"], row["away"], row["commence_time"], settings
+        )
     if row["sport_key"] == "tennis":
         lines += elo.lines(row["home"], row["away"], row["oddsapi_key"], row["surface"], settings)
         # Repos et charge sortent de nos propres lignes : les tours precedents

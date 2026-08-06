@@ -549,3 +549,90 @@ async def test_etage_b_tennis(odds_client: OddsAPIClient, migrated: Settings) ->
         for row in db.query("SELECT DISTINCT market_key FROM odds", settings=migrated)
     }
     assert markets == {"h2h", "totals_s1"}
+
+
+@respx.mock
+async def test_l_enrichissement_recupere_aussi_le_dossier_d_equipe(
+    odds_client: OddsAPIClient,
+    http_client: httpx.AsyncClient,
+    migrated: Settings,
+    load_fixture: Any,
+) -> None:
+    """Le dossier entre dans le parcours normal : cocher, enrichir, generer. Une
+    donnee qui vaut pour une equipe et non pour une rencontre y arrive comme le
+    reste, et sa ligne part dans le prompt sans autre geste."""
+    from myassistantbet.providers.apifootball import APIFootballClient
+    from myassistantbet.services.dossier import KIND_COACH
+    from myassistantbet.services.session import renderable_events
+
+    from .test_context import _mock_all
+
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    respx.get(EVENT_ODDS_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("oddsapi_event_odds_football.json"), headers=QUOTA_HEADERS
+        )
+    )
+    _mock_all(load_fixture)
+    # Le quota simule des fixtures est celui d'un plan d'essai (82 restants) :
+    # sous le plancher par defaut, le dossier serait suspendu a juste titre.
+    permissif = migrated.model_copy(update={"apifootball_call_floor": 50})
+
+    report = await run_enrich(
+        odds_client,
+        session_id,
+        permissif,
+        context_client=APIFootballClient(http_client, permissif),
+        now=NOW,
+    )
+
+    result = report.results[0]
+    assert KIND_COACH in result.context_kinds
+    assert result.dossier_note == ""
+    lignes = dict(renderable_events(session_id, permissif, NOW)[0].context_lines)
+    assert lignes["Entraineur"] == (
+        "BK Hacken P. Gustafsson (depuis 06/2023, 3 ans) | "
+        "Djurgardens IF M. Lindqvist (depuis 06/2026, 1 mois)"
+    )
+
+
+@respx.mock
+async def test_un_plancher_d_appels_franchi_ne_dit_pas_le_contexte_partiel(
+    odds_client: OddsAPIClient,
+    http_client: httpx.AsyncClient,
+    migrated: Settings,
+    load_fixture: Any,
+) -> None:
+    """Deux causes distinctes, deux mentions distinctes. Le contexte de ce match
+    est complet ; c'est le dossier qui n'est pas parti, faute de quota. L'annoncer
+    comme un « contexte partiel » enverrait chercher un probleme de rapprochement
+    la ou il n'y a qu'un compteur bas — et le taire serait pire."""
+    from myassistantbet.providers.apifootball import APIFootballClient
+
+    from .test_context import _mock_all
+
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    respx.get(EVENT_ODDS_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("oddsapi_event_odds_football.json"), headers=QUOTA_HEADERS
+        )
+    )
+    routes = _mock_all(load_fixture)
+
+    report = await run_enrich(
+        odds_client,
+        session_id,
+        migrated,
+        context_client=APIFootballClient(http_client, migrated),
+        now=NOW,
+    )
+
+    result = report.results[0]
+    assert routes["coachs_home"].call_count == 0, "le plancher a retenu l'appel"
+    assert result.context_note == "", "le contexte, lui, est complet"
+    assert "plancher" in result.dossier_note
+    assert result.notes == [result.dossier_note], "et l'UI le liste quand meme"

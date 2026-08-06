@@ -19,7 +19,7 @@ from ..providers.apifootball import APIFootballClient
 from ..providers.base import ProviderError, last_known_quota
 from ..providers.oddsapi import DEFAULT_BOOKMAKER, PROVIDER, OddsAPIClient, expected_cost
 from ..providers.tennisabstract import TennisAbstractClient
-from . import coverage, elo, fixtures, reference
+from . import coverage, dossier, elo, fixtures, reference
 from .context import fetch_context
 from .labels import affiche
 from .markets import (
@@ -176,6 +176,10 @@ class EnrichResult:
     #: Marches obtenus d'un book de reference : {marche: book}. Ils disent ou
     #: se situe le marche, pas le prix qu'on obtiendra chez le principal.
     borrowed: dict[str, str] = field(default_factory=dict)
+    #: Ce qui a manque au dossier d'equipe, tenu a part du contexte. Un plancher
+    #: d'appels franchi ne rend pas le contexte partiel — il est complet — et
+    #: l'annoncer sous ce nom enverrait chercher un probleme de rapprochement.
+    dossier_errors: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -189,6 +193,16 @@ class EnrichResult:
         if self.context_errors:
             return "contexte partiel : " + " ; ".join(self.context_errors)
         return ""
+
+    @property
+    def dossier_note(self) -> str:
+        """Ce qui manque au dossier d'equipe. Vide si tout va bien."""
+        return " ; ".join(self.dossier_errors)
+
+    @property
+    def notes(self) -> list[str]:
+        """Tout ce qui merite une mention visible pour ce match."""
+        return [note for note in (self.context_note, self.dossier_note) if note]
 
 
 @dataclass
@@ -210,8 +224,14 @@ class EnrichReport:
 
     @property
     def context_notes(self) -> list[EnrichResult]:
-        """Matchs dont le contexte est incomplet, a signaler visiblement dans l'UI."""
-        return [result for result in self.results if result.context_note]
+        """Matchs dont le contexte ou le dossier est incomplet, a signaler dans l'UI.
+
+        Les deux causes sont portees separement par le resultat — un plancher
+        d'appels franchi ne rend pas le contexte partiel — mais l'UI les liste
+        au meme endroit : ce qui compte pour l'oeil, c'est qu'il manque quelque
+        chose sur ce match.
+        """
+        return [result for result in self.results if result.notes]
 
     @property
     def percent(self) -> int:
@@ -333,6 +353,23 @@ async def _add_context(
     result.context_kinds = report.kinds
     result.context_errors = report.errors
     result.mapping_pending = report.mapping_pending
+
+    if report.mapping_pending:
+        # Sans rapprochement sur, aucun identifiant d'equipe : le dossier n'a
+        # rien a interroger, et deviner l'equipe serait pire que l'absence.
+        return
+    try:
+        dossier_report = await dossier.refresh_event(context_client, target.event_id, settings)
+    except Exception as exc:  # noqa: BLE001 — le dossier est un bonus, jamais bloquant
+        result.dossier_errors.append(f"dossier : {type(exc).__name__}: {exc}")
+        logger.exception("Dossier d'equipe indisponible pour %s", target.label)
+        return
+    result.context_kinds += dossier_report.kinds
+    result.dossier_errors += dossier_report.errors
+    if dossier_report.blocked_reason:
+        # Un plancher franchi n'est pas une panne, mais le taire ferait chercher
+        # une erreur de rapprochement la ou il n'y a qu'un quota bas.
+        result.dossier_errors.append(dossier_report.blocked_reason)
 
 
 def has_tennis(session_id: int, settings: Settings) -> bool:

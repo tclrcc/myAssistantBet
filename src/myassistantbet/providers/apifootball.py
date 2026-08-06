@@ -202,6 +202,19 @@ class APIFootballClient(BaseHTTPClient):
         rows = await self._fetch("/teams", {"id": team_id})
         return rows[0] if rows else None
 
+    async def coachs(self, team_id: int) -> list[dict[str, Any]]:
+        """Entraineurs rattaches a une equipe, avec leur carriere complete.
+
+        La liste est rendue telle quelle : savoir lequel est en poste se lit dans
+        `career` — l'entree de cette equipe dont la date de fin est absente — et
+        c'est une regle metier, pas une affaire de client HTTP. Le fournisseur
+        peut en rendre plusieurs, un interimaire n'effacant pas son predecesseur.
+
+        L'endpoint s'ecrit bien `/coachs` : c'est la faute d'orthographe du
+        fournisseur, pas la notre, et la corriger donne un 404.
+        """
+        return await self._fetch("/coachs", {"team": team_id})
+
     async def odds(self, fixture_id: int) -> list[dict[str, Any]]:
         """Cotes d'avant-match, tous books et tous marches en un appel.
 

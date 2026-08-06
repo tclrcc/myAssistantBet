@@ -11,6 +11,18 @@
     {% endif %}
   </div>
 
+  {# Le quota API-Football n'apparait que s'il a deja ete appele : sur une
+     installation sans cle, une ligne « inconnu » de plus n'apprendrait rien. #}
+  {% if banner.context_calls_remaining is not none %}
+  <div class="banner-item">
+    <span class="label">Appels contexte</span>
+    <span class="value {% if banner.context_below_floor %}alert{% endif %}">
+      {{ banner.context_calls_remaining }}
+    </span>
+    <span class="muted">plancher {{ banner.context_call_floor }}</span>
+  </div>
+  {% endif %}
+
   <div class="banner-item">
     <span class="label">Dernier scan</span>
     {% if banner.last_scan_at %}

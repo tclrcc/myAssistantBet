@@ -92,6 +92,12 @@ KIND_VENUE = "venue"
 KIND_MAPPING = "mapping_pending"
 KIND_MANUAL_NOTE = "manual_note"
 
+#: Identifiants API-Football du match, memorises au rapprochement. Ce n'est pas
+#: une ligne de contexte — rien ne le rend — mais le point d'entree de tout ce
+#: qui se recupere par equipe : sans lui, le dossier d'equipe devrait refaire le
+#: rapprochement de noms, donc repayer `/fixtures` a chaque lecture.
+KIND_TEAMS = "teams"
+
 
 @dataclass
 class ContextReport:
@@ -237,7 +243,7 @@ async def resolve_fixture(
             (int(fixture["fixture"]["id"]), event["id"]),
         )
 
-    return FixtureMapping(
+    mapping = FixtureMapping(
         fixture_id=int(fixture["fixture"]["id"]),
         league_id=league_id,
         # La saison portee par le match prime — c'est la sienne. Celle de la
@@ -248,6 +254,21 @@ async def resolve_fixture(
         coverage=coverage,
         venue=(fixture.get("fixture") or {}).get("venue") or {},
     )
+    # Memorise pour tout ce qui se recupere par equipe. Volontairement absent de
+    # `report.kinds` : ce n'est pas un contexte recupere, c'est le moyen d'en
+    # chercher d'autres, et le compter ferait annoncer un type de plus a l'UI.
+    store(
+        int(event["id"]),
+        KIND_TEAMS,
+        {
+            "home": mapping.home_id,
+            "away": mapping.away_id,
+            "league": mapping.league_id,
+            "season": mapping.season,
+        },
+        settings,
+    )
+    return mapping
 
 
 def _record_pending(

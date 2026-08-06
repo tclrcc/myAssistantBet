@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     # --- Garde-fous quota --------------------------------------------------
     odds_api_credit_floor: int = 500
 
+    #: Plancher d'appels API-Football sous lequel le dossier d'equipe ne part
+    #: plus. Il ne bloque **que** le dossier : le contexte d'un match reste la
+    #: fonction premiere, et l'arreter faute de quota pour un bonus serait le
+    #: mauvais arbitrage. Le quota est journalier, donc un plancher franchi se
+    #: reouvre de lui-meme le lendemain.
+    apifootball_call_floor: int = 500
+
     # --- Etage B -----------------------------------------------------------
     #: Competitions (cles The Odds API) pour lesquelles demander les props buteurs.
     #: Ailleurs, ces marches ne sont servis par aucun bookmaker : ne pas depenser
@@ -137,6 +144,7 @@ class Settings(BaseSettings):
             "db_path": str(self.db_path_absolute),
             "tz": self.tz,
             "odds_api_credit_floor": self.odds_api_credit_floor,
+            "apifootball_call_floor": self.apifootball_call_floor,
             "scan_window_days": self.scan_window_days,
             "scheduler_enabled": self.scheduler_enabled,
             "scan_at": f"{self.scan_hour:02d}:{self.scan_minute:02d}",

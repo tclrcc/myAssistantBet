@@ -12,6 +12,8 @@ from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
+from ..providers.apifootball import PROVIDER as APIFOOTBALL_PROVIDER
+from ..providers.base import last_known_quota
 from ..providers.oddsapi import PROVIDER as ODDSAPI_PROVIDER
 from .competitions import category_label, category_rank
 from .labels import affiche, sort_key, sport_emoji
@@ -81,10 +83,23 @@ class Banner:
     #: Matchs coches qui ont commence depuis. Affiches a part, jamais comptes
     #: avec les autres : ils ne seront ni enrichis ni analyses.
     started_count: int = 0
+    #: Appels API-Football restants sur la journee, et leur plancher. Ce quota
+    #: n'etait surveille nulle part : il ne servait qu'au contexte, quelques
+    #: dizaines d'appels par soiree. Le dossier d'equipe en consomme assez pour
+    #: qu'une journee chargee le vide sans que rien ne l'annonce.
+    context_calls_remaining: int | None = None
+    context_call_floor: int = 500
 
     @property
     def below_floor(self) -> bool:
         return self.credits_remaining is not None and self.credits_remaining < self.credit_floor
+
+    @property
+    def context_below_floor(self) -> bool:
+        return (
+            self.context_calls_remaining is not None
+            and self.context_calls_remaining < self.context_call_floor
+        )
 
 
 def _local(value: str, tz: str) -> datetime:
@@ -387,7 +402,14 @@ def coherent(filters: Filters, options: dict[str, list[dict[str, Any]]]) -> Filt
 def banner(settings: Settings | None = None, now: datetime | None = None) -> Banner:
     """Etat du bandeau : credits restants, dernier scan, nombre de matchs coches."""
     settings = settings or get_settings()
-    state = Banner(credit_floor=settings.odds_api_credit_floor)
+    state = Banner(
+        credit_floor=settings.odds_api_credit_floor,
+        context_call_floor=settings.apifootball_call_floor,
+    )
+
+    context_quota = last_known_quota(APIFOOTBALL_PROVIDER, settings)
+    if context_quota and context_quota["remaining"] is not None:
+        state.context_calls_remaining = int(context_quota["remaining"])
 
     with connect(settings) as conn:
         row = conn.execute(

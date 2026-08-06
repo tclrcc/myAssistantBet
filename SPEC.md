@@ -543,6 +543,18 @@ Un pick est une sélection ; un coupon est ce qui a réellement été posé chez
 
 *Critère d'acceptation :* sur un match de championnat déjà enrichi, le bloc porte les cinq lignes sans qu'un seul crédit ait été dépensé ; sur une qualification européenne où l'équipe n'a rien joué, aucune de ces lignes n'apparaît ; et le prompt interdit explicitement de rapprocher une fréquence d'une cote.
 
+### Phase 12 — Le dossier d'équipe : le socle
+Ce qui vaut pour une **équipe** et non pour une rencontre a besoin d'une autre clé de mémorisation que la table `context`, indexée par événement. L'entraîneur d'une équipe est le même dans les deux affiches où elle apparaît cette semaine, et le même la semaine prochaine : stocké par match, il se paierait autant de fois qu'elle joue.
+
+- `team_context(team_id, kind, scope, payload_json, fetched_at)`, clé naturelle et donc primaire — `scope` distingue les relevés d'un même type portant sur des périmètres différents (rien pour l'entraîneur, une saison pour un historique) et l'ajouter plus tard aurait demandé de recréer la table.
+- `services/dossier.py`, **deux temps séparés comme `context.py`** : `refresh_event()` appelle et persiste, `dossier_lines()` relit. Régénérer un prompt ne déclenche aucun appel, et un test le vérifie sans simuler la moindre route.
+- **Péremption par type** (`TTL_HOURS`) : réglée sur la vitesse à laquelle la donnée change, bornée par ce qu'elle coûte. Sept jours pour un entraîneur — un limogeage entre dans le bloc dans la semaine, pour un appel par équipe. Une date de relevé illisible vaut périmée : mieux vaut un appel de trop qu'une donnée dont on ne sait plus quand elle a été prise.
+- **Plancher `APIFOOTBALL_CALL_FLOOR` et bandeau.** Ce quota n'était surveillé nulle part : il ne servait qu'au contexte, quelques dizaines d'appels par soirée. Le plancher ne bloque **que** le dossier — le contexte d'un match reste la fonction première, l'arrêter pour un bonus serait le mauvais arbitrage. Un plancher franchi est **dit**, et dit comme tel : le contexte n'est pas « partiel », c'est le dossier qui n'est pas parti, et confondre les deux enverrait chercher un problème de rapprochement là où il n'y a qu'un compteur bas.
+- Les identifiants d'équipe sont mémorisés au rapprochement (`context.KIND_TEAMS`) : sans eux le dossier devrait refaire la résolution de noms, donc repayer `/fixtures` à chaque lecture. Un événement dont le rapprochement est resté incertain n'a aucun identifiant, et le dossier **ne devine pas**.
+- Validé sur un seul type, `/coachs` : le fournisseur peut rendre plusieurs entraîneurs pour une équipe, et le poste en cours est celui dont l'étape de carrière **dans cette équipe** n'est pas refermée. Prendre le premier de la liste nommerait un entraîneur parti, affirmé comme un fait. L'ancienneté se compte dans l'équipe du match, jamais depuis le premier poste de la carrière.
+
+*Critère d'acceptation :* j'enrichis une session, le bloc porte « Entraîneur » avec la date de prise de fonction et l'ancienneté des deux équipes ; un second enrichissement le même jour ne redépense aucun appel ; sous le plancher, le dossier est suspendu, le contexte passe quand même, et l'UI dit lequel des deux a manqué.
+
 ---
 
 ## 11. Exigences de qualité
