@@ -1,0 +1,56 @@
+{# Derniers matchs joues par chaque joueur, en detail.
+
+   Ce que la ligne « Forme » ne peut pas dire. `VVDVDDVVVD` se lit comme un joueur
+   irregulier ; le detail montre que les defaites viennent d'une finale perdue sur
+   une autre surface la semaine derniere — donc un joueur en confiance qui change
+   de surface. L'agregat inversait la lecture.
+
+   Sur l'ecran et non dans le prompt : dix rencontres par joueur avec adversaire,
+   score, tournoi, surface et tour couteraient cinq cents caracteres par bloc, et
+   le prompt compte ses tokens. La fiche, elle, n'a pas de budget.
+
+   Replie par defaut, comme tout ce qui sert a verifier un point precis plutot
+   qu'a lire la journee. #}
+{% if recent_matches %}
+<details class="panel">
+  <summary>
+    Derniers matchs joués
+    <span>historique local, aucun appel réseau</span>
+  </summary>
+  <div class="recent-matches">
+    {% for player, matches in recent_matches %}
+    <section>
+      <h3>{{ player }}</h3>
+      {% if matches %}
+      <table class="board">
+        <thead>
+          <tr>
+            <th>Date</th><th></th><th>Adversaire</th><th>Score</th><th>Tournoi</th><th>Tour</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for match in matches %}
+          <tr>
+            <td class="nowrap">{{ match.played_on[8:] }}/{{ match.played_on[5:7] }}</td>
+            {# La lettre porte le resultat, comme la ligne « Forme » du bloc. #}
+            <td>{{ 'V' if match.won else 'D' }}</td>
+            <td>{{ match.opponent }}</td>
+            <td class="nowrap">
+              {{ match.score }}{% if match.retired %} <span class="muted">ab.</span>{% endif %}
+            </td>
+            <td>{{ match.tournament }} <span class="muted">{{ match.surface }}</span></td>
+            <td>{{ match.round }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      {# Un joueur que le rapprochement refuse, ou absent du jeu de donnees : le
+         dire ici, sans quoi l'absence de tableau passerait pour une panne. #}
+      <p class="empty">Aucun match dans l'historique collecté pour ce joueur.</p>
+      {% endif %}
+    </section>
+    {% endfor %}
+  </div>
+</details>
+{% endif %}

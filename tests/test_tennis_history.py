@@ -624,3 +624,76 @@ async def test_la_fiche_d_un_match_de_tennis_porte_le_meme_bloc_que_le_prompt(
     for label, value in attendu:
         assert label in page.text, f"la fiche doit porter la ligne « {label} »"
         assert value.split(" · ")[0] in page.text
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_la_fiche_montre_le_detail_que_la_ligne_forme_ne_peut_pas_dire(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """`VVDVDDVVVD` se lit comme un joueur irregulier ; le detail montre d'ou
+    viennent les defaites. Sur l'ecran et non dans le prompt : dix rencontres par
+    joueur avec adversaire, score, tournoi et tour couteraient cinq cents
+    caracteres par bloc."""
+    from fastapi.testclient import TestClient
+
+    from myassistantbet.main import app
+
+    _mock_seasons(classeur)
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+    competition = _competition(migrated, "tennis_atp_french_open", "Generali Open")
+    db.execute(
+        "INSERT INTO events (id, sport_id, competition_id, home, away, commence_time, source, "
+        "created_at) SELECT 1, sport_id, ?, 'Tomas Martin Etcheverry', 'Alexander Zverev', ?, "
+        "'api', ? FROM competitions WHERE id = ?",
+        (competition, COMMENCE, db.utcnow(), competition),
+        settings=migrated,
+    )
+
+    with TestClient(app) as client:
+        page = client.get("/events/1").text
+
+    assert "Derniers matchs joués" in page
+    # Le detail : adversaire, score, tournoi et tour, pas seulement une lettre.
+    assert "Zverev A." in page
+    assert "7-5 6-4" in page
+    assert "The Final" in page
+    # Et le prompt, lui, n'en porte rien : son budget est en tokens.
+    from myassistantbet.services.prompt import build_prompt
+
+    db.execute(
+        "INSERT INTO sessions (id, label, created_at) VALUES (9, 'test', ?)",
+        (db.utcnow(),),
+        settings=migrated,
+    )
+    db.execute("INSERT INTO session_events (session_id, event_id) VALUES (9, 1)", settings=migrated)
+    corps = build_prompt(9, settings=migrated).body
+    assert "7-5 6-4" in corps, "le score figure dans la ligne H2H ici"
+    assert "Derniers matchs" not in corps, "mais pas la liste detaillee"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_un_joueur_non_rapproche_le_dit_sur_la_fiche(
+    api_client: TennisDataClient, migrated: Settings, classeur: bytes
+) -> None:
+    """Sans ce message, l'absence de tableau passerait pour une panne."""
+    from fastapi.testclient import TestClient
+
+    from myassistantbet.main import app
+
+    _mock_seasons(classeur)
+    await tennis_history.refresh(api_client, migrated, now=NOW)
+    competition = _competition(migrated, "tennis_atp_french_open", "Generali Open")
+    db.execute(
+        "INSERT INTO events (id, sport_id, competition_id, home, away, commence_time, source, "
+        "created_at) SELECT 1, sport_id, ?, 'Tomas Martin Etcheverry', 'Joueur Inconnu', ?, "
+        "'api', ? FROM competitions WHERE id = ?",
+        (competition, COMMENCE, db.utcnow(), competition),
+        settings=migrated,
+    )
+
+    with TestClient(app) as client:
+        page = client.get("/events/1").text
+
+    assert "Aucun match dans l'historique collecté pour ce joueur." in page

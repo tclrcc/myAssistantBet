@@ -473,6 +473,33 @@ si deux joueurs se sont deja affrontes, ou ce qu'un joueur vaut sur terre.
 - Les dates n'ont pas le meme format selon la ligne, et c'est voulu : `%m/%y` pour une
   confrontation directe — sur trois saisons, « 12/04 » ne situe rien — et `%d/%m` pour un
   abandon recent, ou le jour compte.
+- **Les deux variantes « alternate » sont demandees** (`markets.TENNIS_MARKETS`) : `spreads`
+  et `totals` ne servent que la ligne principale, leurs variantes toute l'echelle. Verifie
+  en reel — Pinnacle rend dix cotes de chaque, la ou le bloc n'en affichait que deux et
+  deux. Les marches par **set** ne sont servis par aucun book europeen (verifie avec
+  `regions=eu`) mais restent demandes : la ligne « Non servis » tire son sens de la
+  difference entre demande et recu.
+- Le **handicap jeux se rend en echelle** (`render._render_spread_ladder`), pas en une ligne
+  par joueur comme au football : au tennis c'est un continuum, comme un total. Et son signe
+  est celui du **premier joueur nomme**, jamais celui du favori — groupe sur la valeur
+  absolue, « -2.5 » designait le second joueur quand il etait favori et le premier sinon,
+  d'un bloc a l'autre. Les prix restaient justes, mais une selection lue a l'envers est
+  l'erreur la plus couteuse que ce bloc puisse produire. Le template porte la convention.
+- Tout marche demande doit avoir une entree dans `MARKET_ORDER_BY_SPORT`, **meme fusionne** :
+  sans elle `ordered_labels` rend la **cle brute**, et `alternate_totals` s'est affiche tel
+  quel dans la liste des marches en tete de prompt.
+- `H2H` dit « aucun match joue depuis <annee> » quand les deux joueurs sont rapproches sans
+  passe commun. Omettre la ligne rendait l'absence indiscernable d'un rapprochement rate.
+  « aucun match joue » et non « jamais rencontres » : le second serait faux quand leur seule
+  rencontre a ete un forfait.
+- `Precedent` donne le tournoi joue **avant celui-ci** et le resultat atteint. C'est ce que
+  la ligne `Forme` detruit : Blockx affiche « dur 2V-3D/12m », ce qui se lit comme un joueur
+  faible, alors qu'il sort d'une finale sur terre. Le tournoi en cours est exclu — sinon la
+  ligne repeterait « 1er tour » — ce qui la rend dependante du rattachement, comme « ici ».
+- Le **detail des derniers matchs** (`recent_matches()`, `_event_matches.html`) vit sur la
+  fiche et **pas dans le prompt** : dix rencontres par joueur avec adversaire, score, tournoi
+  et tour couteraient cinq cents caracteres par bloc. L'ecran n'a pas de budget de tokens,
+  et c'est la que dix lettres V/D montrent leur limite.
 - `as_bytes` a ete ajoute au client de base pour ce fichier. Il n'est **jamais** mis en
   cache disque : le cache de developpement est un cache JSON, y ecrire des octets bruts le
   corromprait.

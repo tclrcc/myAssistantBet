@@ -43,6 +43,7 @@ from .services import odds_view as odds_view_service
 from .services import picks_import as picks_import_service
 from .services import prompt as prompt_service
 from .services import session as session_service
+from .services import tennis_history as tennis_history_service
 from .services.scan import run_scan
 
 logging.basicConfig(
@@ -207,6 +208,16 @@ def _event_context(event_id: int, **extra: object) -> dict[str, object]:
     return {
         "event": view,
         "context_lines": lines,
+        # Le detail des derniers matchs ne va pas dans le prompt — dix rencontres
+        # par joueur y couteraient cinq cents caracteres — mais l'ecran n'a pas de
+        # budget, et c'est la que la ligne « Forme » montre sa limite.
+        "recent_matches": (
+            tennis_history_service.recent_matches(
+                view.home, view.away, view.commence_utc, settings
+            )
+            if view.sport_key == "tennis"
+            else []
+        ),
         "error": None,
         "result": None,
         **extra,

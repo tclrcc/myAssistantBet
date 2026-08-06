@@ -1277,3 +1277,25 @@ td .sport {
 @media (max-width: 720px) {
   .context-head { flex-direction: column; align-items: stretch; }
 }
+
+/* Derniers matchs joues, sur la fiche d'un match de tennis. Deux tableaux cote a
+   cote sur large ecran, l'un sous l'autre en dessous : chacun tient dans une
+   colonne etroite, et les mettre en trois colonnes rendrait les scores illisibles.
+
+   Pas d'`overflow` sur ces tableaux : `table.board th` est `position: sticky`, et
+   un conteneur de defilement l'ancrerait sur lui-meme au lieu de la fenetre — il
+   glisserait vers le bas et recouvrirait la premiere ligne. Le piege est deja
+   documente pour le board, il vaut ici aussi. */
+.recent-matches {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr));
+  gap: var(--s4);
+}
+.recent-matches h3 {
+  margin: 0 0 var(--s2);
+  font-size: 0.85rem;
+  font-weight: 650;
+  color: var(--text-dim);
+}
+.recent-matches table { font-size: 0.8rem; }
+.recent-matches .empty { margin: 0; }
