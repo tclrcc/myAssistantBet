@@ -331,7 +331,9 @@ async def test_un_forfait_n_est_pas_un_match_joue(
     await tennis_history.refresh(api_client, migrated, now=NOW)
 
     lignes = _lines(migrated, "Roberto Bautista Agut", "Carlos Alcaraz")
-    assert not any(label.startswith("H2H") for label in lignes), "le forfait etait leur seul match"
+    # Le forfait etait leur seul match : il ne compte pas comme une rencontre, et
+    # la ligne le dit sans pretendre qu'ils n'ont jamais ete tires ensemble.
+    assert lignes["H2H"] == "aucun match joue depuis 2024"
     assert "forfait" in lignes["Abandons"]
 
 

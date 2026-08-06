@@ -267,6 +267,49 @@ def _render_spreads(
     return [line(label, " | ".join(fragments))] if fragments else []
 
 
+def _render_spread_ladder(event: RenderableEvent, outcomes: list[Outcome], label: str) -> list[str]:
+    """`-3.5: 1.65/2.30 | -2.5: 1.88/2.01 | …` — l'echelle des handicaps jeux.
+
+    Au tennis, le handicap jeux est un continuum comme un total, et le book en
+    sert une dizaine de lignes. N'en montrer que la plus serree — ce que fait
+    `_render_spreads` pour le football, ou un handicap buts est une ligne et non
+    une echelle — jetait neuf cotes sur dix.
+
+    Les lignes sont vues du **premier joueur nomme**, celui de gauche dans
+    l'affiche : lister les deux cotes sous un seul signe evite d'avoir a se
+    demander a qui « +2.5 » se rapporte.
+    """
+    by_point: dict[float, dict[str, float]] = {}
+    # La cle est le handicap **du premier joueur nomme**, signe compris. Regrouper
+    # sur la valeur absolue faisait suivre le signe au favori : « -2.5 » designait
+    # le second joueur quand il etait favori, le premier sinon. Les prix restaient
+    # justes, mais rien ne disait de quel cote etait le handicap — et une selection
+    # lue a l'envers est l'erreur la plus couteuse que ce bloc puisse produire.
+    for outcome in outcomes:
+        if outcome.point is None:
+            continue
+        anchor = outcome.point if outcome.name == event.home else -outcome.point
+        by_point.setdefault(anchor, {})[outcome.name] = outcome.price
+
+    reference = min(by_point, key=abs) if by_point else None
+    if reference is None:
+        return _render_spreads(event, outcomes, label)
+
+    retained = sorted(by_point, key=lambda point: (abs(point - reference), point))[:TOTALS_KEEP]
+    fragments = []
+    for point in sorted(retained):
+        prices = by_point[point]
+        home, away = prices.get(event.home), prices.get(event.away)
+        if home is None and away is None:
+            continue
+        both = f"{price(home) if home else '·'}/{price(away) if away else '·'}"
+        sign = "+" if point > 0 else ""
+        fragments.append(f"{sign}{_point(point)}: {both}")
+    if not fragments:
+        return _render_spreads(event, outcomes, label)
+    return [line(label, " | ".join(fragments))]
+
+
 def _render_generic(label: str, outcomes: list[Outcome]) -> list[str]:
     """Repli pour un marche paye mais non modelise : on l'affiche plutot que le perdre."""
     chunks = []
@@ -306,8 +349,16 @@ MARKET_ORDER: list[tuple[str, str]] = [
 #: Tennis : pas de nul, et tout se compte en sets et en jeux.
 TENNIS_MARKET_ORDER: list[tuple[str, str]] = [
     ("h2h", "Vainqueur"),
+    # `alternate_spreads` doit figurer ici : `MERGED_MARKETS` fait de lui la cible
+    # de `spreads`, et sans entree dans cet ordre il tombait dans le repli
+    # generique — rendu sous sa cle brute, en fin de bloc.
+    ("alternate_spreads", "Hand. jeux"),
     ("spreads", "Hand. jeux"),
     ("totals", "Jeux O/U"),
+    # Sans cette entree, `ordered_labels` ne trouvait pas le marche et rendait sa
+    # **cle brute** — « alternate_totals » s'affichait tel quel dans la liste des
+    # marches demandes en tete de prompt.
+    ("alternate_totals", "Jeux O/U"),
     ("h2h_s1", "Set 1"),
     ("h2h_s2", "Set 2"),
     ("spreads_s1", "Hand. S1"),
@@ -371,6 +422,10 @@ def _render_one(
     if target == "double_chance":
         return _render_double_chance(event, outcomes)
     if target in {"alternate_spreads", "spreads_s1"}:
+        # Le tennis compte en jeux, donc en echelle ; le football en buts, donc en
+        # une ligne par equipe. Meme marche, deux formes de marche.
+        if event.sport_key == "tennis":
+            return _render_spread_ladder(event, outcomes, label)
         return _render_spreads(event, outcomes, label)
     if target in {"totals", "totals_h1", "totals_s1"}:
         return _render_totals(label, outcomes)

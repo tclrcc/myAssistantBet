@@ -426,6 +426,19 @@ def _iso(moment: datetime) -> str:
     return moment.date().isoformat()
 
 
+def _start(commence_time: str) -> datetime | None:
+    """Coup d'envoi en UTC, ou None si la date est illisible.
+
+    Toutes les fenetres se comptent depuis lui — jamais depuis « maintenant » :
+    relire une fiche demain ne doit pas changer ce que le bloc disait.
+    """
+    try:
+        moment = datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
 def _played(matches: list[Match]) -> list[Match]:
     """Matchs reellement joues : un tapis vert n'en est pas un."""
     return [match for match in matches if not match.walkover]
@@ -552,12 +565,9 @@ def lines(
         # ou il n'y a qu'une collecte jamais lancee.
         return []
 
-    try:
-        start = datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
-    except ValueError:
+    start = _start(commence_time)
+    if start is None:
         return []
-    if start.tzinfo is None:
-        start = start.replace(tzinfo=UTC)
     until = _iso(start)
 
     home_keys, away_keys = resolve(home, index), resolve(away, index)
@@ -580,6 +590,17 @@ def lines(
     meeting_line = _h2h_line(home, away, meetings)
     if meeting_line:
         rendered.append(meeting_line)
+    elif home_keys and away_keys:
+        # Deux joueurs rapproches sans aucun match joue : **le dire**. Omettre la
+        # ligne rend l'absence indiscernable d'un rapprochement rate, et envoie
+        # chercher un H2H qui n'existe pas.
+        #
+        # « aucun match joue » et non « jamais rencontres » : le second serait faux
+        # quand leur seule rencontre a ete un forfait — ils ont bien ete tires l'un
+        # contre l'autre, personne n'est entre sur le court. Et la periode est
+        # ecrite parce que nos donnees commencent trois saisons en arriere : sans
+        # elle, la ligne affirmerait quelque chose sur toute leur carriere.
+        rendered.append(("H2H", f"aucun match joue depuis {min(seasons_for(start))}"))
 
     names = tournament_names(competition_id, settings)
     if names:
@@ -596,6 +617,14 @@ def lines(
     form = _pair(_form_fragment(home, recent[home]), _form_fragment(away, recent[away]))
     if form:
         rendered.append(("Forme", form))
+
+    if names:
+        last = _pair(
+            _last_tournament_fragment(home, recent[home], names),
+            _last_tournament_fragment(away, recent[away], names),
+        )
+        if last:
+            rendered.append(("Precedent", last))
 
     on_surface = _pair(
         _surface_fragment(home, recent[home], surface or ""),
@@ -680,6 +709,36 @@ def _record_here_fragment(player: str, matches: list[Match]) -> str:
     return f"{player} {best}, {bilan}" if best else f"{player} {bilan}"
 
 
+def _last_tournament_fragment(player: str, matches: list[Match], exclude: tuple[str, ...]) -> str:
+    """`Blockx finaliste Estoril Open (terre, 26/07)` — le tournoi d'avant.
+
+    C'est le fait que la ligne « Forme » detruit. Blockx affiche `dur 2V-3D/12m`,
+    ce qui se lit comme un joueur faible ; il sort en realite d'une **finale sur
+    terre battue** la semaine derniere, et arrive donc en confiance sur une surface
+    qui n'est pas la sienne. Dix lettres V/D ne peuvent pas dire cela.
+
+    Le tournoi en cours est **exclu** : sur un match de deuxieme tour, le dernier
+    tournoi joue est celui-la meme, et la ligne repeterait « 1er tour » sans rien
+    apprendre. C'est pourquoi elle depend du rattachement du tournoi, comme les
+    lignes « ici ».
+    """
+    ignores = {_flat(name) for name in exclude}
+    passes = [match for match in matches if _flat(match.tournament) not in ignores]
+    if not passes:
+        return ""
+    dernier = passes[-1].tournament
+    lot = [match for match in passes if match.tournament == dernier]
+    resultat = _best_result(lot)
+    if not resultat:
+        return ""
+    # `_best_result` porte l'annee ; ici le tournoi est recent, la date parle mieux.
+    resultat = resultat.rsplit(" ", 1)[0]
+    surface = SURFACE_LABELS.get(_flat(lot[-1].surface), lot[-1].surface)
+    quand = _short(lot[-1].played_on)
+    detail = ", ".join(part for part in (surface, quand) if part)
+    return f"{player} {resultat} {dernier} ({detail})"
+
+
 def _h2h_here_fragment(home: str, away: str, meetings: list[Match]) -> str:
     """`Sinner 1V-0D · 07/25 1/2` — se sont-ils deja croises **ici**.
 
@@ -695,3 +754,34 @@ def _h2h_here_fragment(home: str, away: str, meetings: list[Match]) -> str:
         winner = home if match.won else away
         fragments.append(f"{_month(match.played_on)} {tour} ({winner})")
     return " · ".join(fragments)
+
+
+def recent_matches(
+    home: str,
+    away: str,
+    commence_time: str,
+    settings: Settings | None = None,
+    limit: int = FORM_LAST,
+) -> list[tuple[str, list[Match]]]:
+    """Derniers matchs joues par chaque joueur, du plus recent au plus ancien.
+
+    Pour la **fiche** d'un match, pas pour le prompt : dix rencontres par joueur
+    avec adversaire, score, tournoi, surface et tour coutent cinq cents caracteres
+    par bloc, et le prompt compte ses tokens. L'ecran, lui, n'a pas de budget — et
+    c'est la que la ligne « Forme » montre sa limite : `VVDVDDVVVD` ne dit pas que
+    les trois defaites viennent d'une finale perdue sur une autre surface.
+
+    Un joueur non rapproche rend une liste vide, jamais une erreur.
+    """
+    settings = settings or get_settings()
+    index = known_keys(settings)
+    if not index:
+        return []
+    start = _start(commence_time)
+    if start is None:
+        return []
+    until = _iso(start)
+    return [
+        (player, _played(_matches_of(resolve(player, index), "", until, settings))[-limit:][::-1])
+        for player in (home, away)
+    ]

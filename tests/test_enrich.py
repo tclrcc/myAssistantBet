@@ -493,14 +493,17 @@ def _tennis_event(settings: Settings) -> int:
     return int(row["id"])
 
 
-def test_estimation_tennis_huit_marches(migrated: Settings) -> None:
+def test_estimation_tennis_dix_marches(migrated: Settings) -> None:
+    """Dix depuis que les deux variantes « alternate » y sont : `spreads` et
+    `totals` ne servent que la ligne principale, leurs variantes toute l'echelle.
+    Verifie en reel — Pinnacle rend dix cotes de chaque cote."""
     event_id = _tennis_event(migrated)
     session_id = board_service.toggle_selection(event_id, True, migrated)
 
     estimate = build_estimate(session_id, migrated, NOW)
 
     assert estimate.events == 1
-    assert estimate.cost == 8, "8 marches tennis, un bookmaker, donc 8 credits"
+    assert estimate.cost == 10, "10 marches tennis, un bookmaker, donc 10 credits"
     assert estimate.targets[0].markets == TENNIS_MARKETS
 
 

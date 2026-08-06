@@ -9,6 +9,7 @@ from myassistantbet.services.render import (
     Outcome,
     RenderableEvent,
     estimate_tokens,
+    ordered_labels,
     render_event,
 )
 
@@ -413,6 +414,9 @@ def test_tennis_sets() -> None:
 
 
 def test_tennis_handicap_en_jeux() -> None:
+    """Au tennis le handicap jeux est un continuum, comme un total : il se rend en
+    echelle et non en une ligne par joueur. Le book en sert une dizaine, et la
+    forme du football — la ligne la plus serree de chaque cote — en jetait neuf."""
     event = _tennis(
         markets={
             "spreads": [
@@ -422,7 +426,7 @@ def test_tennis_handicap_en_jeux() -> None:
         }
     )
 
-    assert _lines(event)["Hand. jeux"] == "Alcaraz -3.5 1.85 | Sinner +3.5 1.95"
+    assert _lines(event)["Hand. jeux"] == "-3.5: 1.85/1.95"
 
 
 def test_tennis_jeux_du_premier_set_fusionnes() -> None:
@@ -495,7 +499,7 @@ def test_une_ligne_de_reference_nomme_sa_source() -> None:
     lignes = _lines(event)
 
     assert lignes["Vainqueur"] == "1.40 / 2.95"
-    assert lignes["Hand. jeux"] == "Alcaraz -3.5 1.85 | Sinner +3.5 1.95  [Pinnacle (ref.)]"
+    assert lignes["Hand. jeux"] == "-3.5: 1.85/1.95  [Pinnacle (ref.)]"
 
 
 def test_une_ligne_fusionnee_dit_ce_qu_elle_melange() -> None:
@@ -578,3 +582,54 @@ def test_un_evenement_sans_cote_dit_quand_meme_ce_qui_manque() -> None:
 
     assert "MARCHES" in rendered
     assert "Hand. jeux — aucun book interroge" in rendered
+
+
+def test_le_handicap_jeux_est_signe_du_point_de_vue_du_premier_joueur() -> None:
+    """Constate sur un prompt reel : regroupe sur la valeur absolue, le signe
+    suivait le **favori**. « -2.5 » designait le second joueur quand il etait
+    favori, le premier sinon — d'un bloc a l'autre, sans que rien le dise. Les
+    prix restaient justes, mais une selection lue a l'envers est l'erreur la plus
+    couteuse que ce bloc puisse produire."""
+    # Le second joueur est le favori : c'est lui qui donne les jeux.
+    event = _tennis(
+        markets={
+            "spreads": [
+                Outcome("Bartunkova", 2.22, 2.5),
+                Outcome("Anisimova", 1.71, -2.5),
+            ]
+        },
+        home="Bartunkova",
+        away="Anisimova",
+    )
+
+    assert _lines(event)["Hand. jeux"] == "+2.5: 2.22/1.71"
+
+
+def test_le_handicap_jeux_garde_le_signe_quand_le_premier_joueur_est_favori() -> None:
+    """L'autre moitie du meme piege : la forme ne doit pas changer selon qui est
+    favori, sinon les deux blocs d'un meme lot ne se lisent pas pareil."""
+    event = _tennis(
+        markets={
+            "spreads": [
+                Outcome("Lehecka", 1.64, -1.5),
+                Outcome("Blockx", 2.36, 1.5),
+            ]
+        },
+        home="Lehecka",
+        away="Blockx",
+    )
+
+    assert _lines(event)["Hand. jeux"] == "-1.5: 1.64/2.36"
+
+
+def test_les_marches_tennis_demandes_ont_tous_un_libelle() -> None:
+    """`alternate_totals` fuyait en cle brute dans la liste des marches demandes,
+    en tete de prompt : il manquait a l'ordre d'affichage du tennis alors que
+    `MERGED_MARKETS` en fait la cible de `totals`."""
+    from myassistantbet.services.markets import TENNIS_MARKETS
+
+    libelles = ordered_labels("tennis", TENNIS_MARKETS)
+
+    assert not any("_" in libelle for libelle in libelles), libelles
+    assert "Jeux O/U" in libelles
+    assert "Hand. jeux" in libelles
