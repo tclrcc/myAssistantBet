@@ -29,6 +29,7 @@ from .services import competitions as competitions_service
 from .services import context as context_service
 from .services import coupons as coupons_service
 from .services import coverage as coverage_service
+from .services import dossier as dossier_service
 from .services import elo as elo_service
 from .services import enrich as enrich_service
 from .services import fixtures as fixtures_service
@@ -191,6 +192,13 @@ def _event_context(event_id: int, **extra: object) -> dict[str, object]:
     lines = context_service.context_lines(
         event_id, view.home, view.away, view.commence_utc, settings
     )
+    if view.sport_key == "football":
+        # Meme assemblage que `session._context_for` : sans lui, l'entraineur et
+        # l'historique de saison n'existeraient que dans le prompt genere, donc
+        # invisibles tant qu'une session n'a pas ete montee.
+        lines += dossier_service.dossier_lines(
+            event_id, view.home, view.away, view.commence_utc, settings
+        )
     return {
         "event": view,
         "context_lines": lines,
@@ -215,6 +223,16 @@ async def fetch_event_context(request: Request, event_id: int) -> HTMLResponse:
         raise HTTPException(status_code=404, detail="Evenement inconnu")
     client = APIFootballClient(request.app.state.http, settings)
     report = await context_service.fetch_context(client, dict(row), settings)
+    # Le dossier d'equipe fait partie du contexte sportif du point de vue de
+    # l'utilisateur : sans cet appel, ce bouton et l'enrichissement d'une session
+    # ne recuperaient pas la meme chose, et la fiche resterait sans entraineur ni
+    # historique sans que rien ne l'explique.
+    if not report.mapping_pending:
+        dossier_report = await dossier_service.refresh_event(client, event_id, settings)
+        report.kinds += dossier_report.kinds
+        report.errors += dossier_report.errors
+        if dossier_report.blocked_reason:
+            report.errors.append(dossier_report.blocked_reason)
     return templates.TemplateResponse(
         request, "_event_context.html", _event_context(event_id, context_report=report)
     )

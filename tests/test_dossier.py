@@ -8,15 +8,18 @@ se dire au lieu de ressembler a une panne de rapprochement.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
 import pytest
 import respx
+from fastapi.testclient import TestClient
 
 from myassistantbet import db
 from myassistantbet.config import Settings
+from myassistantbet.main import app
 from myassistantbet.providers.apifootball import BASE_URL, PROVIDER, APIFootballClient
 from myassistantbet.providers.base import record_api_usage
 from myassistantbet.services import dossier
@@ -922,3 +925,67 @@ def test_le_prompt_dit_ce_que_la_ligne_buteurs_ne_dit_pas(migrated: Settings) ->
     assert "n'est pas une équipe sans buteur" in body
     assert "elle ne dit pas qui est disponible" in body
     assert "part inscrite sur penalty" in body
+
+
+# -- Ce que la fiche d'un match doit faire ------------------------------------
+
+
+@pytest.fixture
+def client(migrated: Settings) -> Iterator[TestClient]:
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+@respx.mock
+def test_le_bouton_de_la_fiche_recupere_aussi_le_dossier(
+    client: TestClient,
+    migrated: Settings,
+    load_fixture: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Constate en reel : « Rafraichir » sur la fiche d'un match ne recuperait que
+    le contexte, jamais le dossier. Ce bouton et l'enrichissement d'une session
+    doivent recuperer la meme chose, sinon la fiche reste sans entraineur ni
+    historique sans que rien ne l'explique.
+
+    Le plancher est abaisse parce que les fixtures de contexte simulent un quota
+    d'essai — 82 appels restants — sous lequel le dossier serait suspendu a juste
+    titre. Ce qui est teste ici est le branchement, pas le garde-fou.
+    """
+    from myassistantbet.config import get_settings
+
+    from .test_context import _mock_all
+
+    monkeypatch.setenv("APIFOOTBALL_CALL_FLOOR", "0")
+    get_settings.cache_clear()
+    _seed_event(migrated, rapproche=False)
+    _mock_all(load_fixture)
+    _mock_dossier(load_fixture)
+
+    reponse = client.post("/events/1/context")
+
+    assert reponse.status_code == 200
+    assert dossier.load(376, dossier.KIND_COACH, settings=migrated) is not None
+    assert "P. Gustafsson" in reponse.text, "et la fiche affiche la ligne"
+
+
+def test_la_fiche_affiche_les_lignes_du_dossier(client: TestClient, migrated: Settings) -> None:
+    """Sans ce rendu, tout ce qui est collecte n'existerait que dans le prompt —
+    donc invisible tant qu'une session n'a pas ete montee."""
+    _seed_event(migrated)
+    dossier.store(
+        376,
+        dossier.KIND_COACH,
+        [
+            {
+                "name": "P. Gustafsson",
+                "career": [{"team": {"id": 376}, "start": "2023-06-15", "end": None}],
+            }
+        ],
+        settings=migrated,
+    )
+
+    page = client.get("/events/1")
+
+    assert "Entraineur" in page.text
+    assert "P. Gustafsson" in page.text

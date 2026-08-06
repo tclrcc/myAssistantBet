@@ -265,13 +265,25 @@ def _context_for(row: Any, settings: Settings) -> list[tuple[str, str]]:
     return lines
 
 
-def _is_substitute(primary: str) -> bool:
-    """Vrai si la source principale est un book de repli, pas le fournisseur.
+def _is_substitute(row: Any, primary: str) -> bool:
+    """Vrai si la rencontre n'est pas servie par The Odds API du tout.
 
-    Sur ces matchs, The Odds API ne connait pas la rencontre : rien ne lui a
-    ete demande, donc `coverage` n'a aucun constat a offrir.
+    Sur ces matchs, rien ne lui a ete demande, donc `coverage` n'a aucun constat
+    a offrir et le marche manque parce que le book de substitution ne l'offre pas.
+
+    **Le book principal ne suffit pas a le dire** : un match que The Odds API sert
+    mais que Betclic ignore — un championnat chinois, une Veikkausliiga — a pour
+    source principale un book de reference, sans qu'aucun releve de substitution
+    ne soit intervenu. Le confondre avec un substitut faisait annoncer « non
+    servis par le book de substitution » sur un match ou il n'y en avait pas, et
+    surtout listait tout l'ordre des marches au lieu des seuls marches demandes :
+    « Handicap » et « O/U » se retrouvaient annonces absents **alors qu'ils
+    etaient affiches juste au-dessus**. C'est `oddsapi_event_id` qui tranche,
+    exactement comme dans `enrich.build_estimate`.
     """
-    return bool(primary) and primary not in {DEFAULT_BOOKMAKER, *UNTIMED_BOOKMAKERS}
+    if not primary or primary in {DEFAULT_BOOKMAKER, *UNTIMED_BOOKMAKERS}:
+        return False
+    return not row["oddsapi_event_id"]
 
 
 def _is_enriched(sport_key: str, present: set[str]) -> bool:
@@ -307,7 +319,7 @@ def _unserved_for(
       le reste n'a simplement pas ete reclame.
     """
     barren = set(unserved.get(row["competition_id"], set()))
-    if _is_substitute(primary):
+    if _is_substitute(row, primary):
         order = MARKET_ORDER_BY_SPORT.get(row["sport_key"], MARKET_ORDER)
         return [key for key, _ in order if key not in present and key != "outright"]
     if _is_enriched(row["sport_key"], present):
@@ -336,6 +348,7 @@ def renderable_events(
     with connect(settings) as conn:
         rows = conn.execute(
             "SELECT e.id, e.home, e.away, e.commence_time, e.competition_id, se.note, "
+            "       e.oddsapi_event_id, "
             "       s.key AS sport_key, COALESCE(c.label, '—') AS competition, "
             "       c.oddsapi_key, c.surface "
             "FROM session_events se "
@@ -406,7 +419,7 @@ def renderable_events(
                     bookmaker_label=bookmaker_label(primary) if primary else "—",
                     primary_book=primary,
                     unserved=_unserved_for(row, set(markets), primary, unserved, settings),
-                    substitute=_is_substitute(primary),
+                    substitute=_is_substitute(row, primary),
                     # `fetched` n'a ete alimente que par les bookmakers relevables :
                     # l'heure d'une saisie est celle de la frappe, pas celle d'un
                     # releve de marche, et l'afficher tromperait sur la fraicheur.

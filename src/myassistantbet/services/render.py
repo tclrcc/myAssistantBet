@@ -445,7 +445,12 @@ def _unserved_line(event: RenderableEvent) -> list[str]:
     Les taire laisserait chercher un handicap jeux qui n'existe pas, ou croire
     a une collecte incomplete la ou l'API a repondu tout ce qu'elle avait.
     """
-    absent = (key for key in event.unserved if key not in event.markets)
+    # Le rapprochement se fait sur le marche **fusionne**, pas sur la cle brute :
+    # `spreads` et `alternate_spreads` partagent une ligne et un libelle, et
+    # comparer les cles laissait annoncer « Handicap non servi » juste sous une
+    # ligne de handicap affichee. Constate en reel sur un match de Super League.
+    served = set(event.markets) | {MERGED_MARKETS.get(key, key) for key in event.markets}
+    absent = (key for key in event.unserved if MERGED_MARKETS.get(key, key) not in served)
     labels = ordered_labels(event.sport_key, absent)
     note = UNSERVED_NOTE_SUBSTITUTE if event.substitute else UNSERVED_NOTE
     return [line(UNSERVED_LABEL, f"{', '.join(labels)} — {note}")] if labels else []
