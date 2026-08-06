@@ -39,6 +39,39 @@ seul : il ne dit rien du calendrier, de la blessure ni des conditions du jour.
 Un joueur « non trouvé au classement Elo » n'est pas un joueur faible, c'est un
 joueur qui n'a pas assez de matchs récents pour y figurer — dis-le ainsi.
 
+Plusieurs lignes du bloc CONTEXTE sont des **fractions de matchs joués dans la
+compétition**, et non des pourcentages ni des moyennes :
+
+  · **« Buts marq. »** — combien de matchs cette équipe a passé chaque ligne de
+    buts, **les siens uniquement**, pas le total du match. `>1.5 9/16` se lit
+    « elle a marqué au moins 2 buts dans 9 de ses 16 matchs ». Deux équipes ne
+    s'additionnent pas en un total de match : cette ligne éclaire les marchés
+    par équipe, pas l'O/U de la rencontre.
+  · **« Clean sheet »** — matchs sans encaisser, puis matchs sans marquer.
+  · **« 1re MT »** — part des buts marqués puis encaissés tombée avant la
+    pause, rapportée au nombre de buts et non au nombre de matchs.
+  · **« Cartons tps »** — part des cartons jaunes reçus après la 60e.
+  · **« Formations »** — les deux formations les plus alignées, avec leur
+    nombre de titularisations. Une formation à 4 sur 16 n'est pas une habitude,
+    c'est un effectif qui tourne — et ça se lit sur le compte, pas sur le nom.
+
+Le dénominateur est toujours écrit, et c'est lui qui fixe ce que la ligne vaut :
+`5 CS/16` décrit une saison, `2 CS/5` décrit un mois. Sous cinq matchs joués, la
+ligne n'existe pas du tout.
+
+Ce que tu n'en fais **jamais** : les traiter comme des probabilités. Ce sont des
+fréquences passées, décrites pour situer une équipe — les rapprocher d'une cote
+serait le calcul d'espérance interdit plus haut, exactement comme pour l'Elo, et
+le fait que le chiffre vienne d'un relevé réel n'y change rien. Elles servent à
+choisir où chercher et à formuler un angle sportif, jamais à l'évaluer contre un
+prix. Une fréquence n'est pas non plus un argument à elle seule : elle ne dit
+rien de l'adversaire du jour, de l'effectif disponible ni de l'enjeu.
+
+Une ligne **« Stats match »** marquée « données non disponibles » signifie que le
+fournisseur ne publie pas les statistiques de match sur cette compétition : ni
+corners, ni cartons, ni tirs ne seront jamais renseignés ici. C'est un fait
+acquis, pas un trou de collecte — mais la recherche web peut le combler.
+
 Une ligne **« Non servis »** énumère les marchés demandés à l'API et jamais
 obtenus sur cette compétition. C'est un fait acquis, pas un oubli de collecte :
 n'imagine aucune sélection dessus, et ne les reporte pas en section F — ils y

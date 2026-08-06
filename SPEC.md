@@ -532,6 +532,17 @@ Un pick est une sélection ; un coupon est ce qui a réellement été posé chez
 
 *Critère d'acceptation :* j'enregistre un combiné de trois jambes avec sa mise et une capture, je saisis les résultats des jambes, et l'historique affiche le coupon perdu, ses jambes gagnantes comptées dans les taux de leur sport respectif, et aucun montant agrégé nulle part.
 
+### Phase 11 — Le dossier d'équipe, premier temps : ce qui était déjà payé
+`/teams/statistics` est appelé à chaque enrichissement et sa charge utile est persistée **entière**. Seuls `form` et le bilan domicile/extérieur en étaient tirés : le reste dormait en base alors que les marchés correspondants étaient achetés à l'étage B. Aucun appel, aucune migration.
+
+- Cinq lignes de plus au bloc CONTEXTE, chacune adossée à un marché réellement acheté : **« Buts marq. »** (distribution des buts de l'équipe → `team_totals`), **« Clean sheet »** (→ `btts`), **« 1re MT »** (répartition des buts avant la pause → `totals_h1`, `btts_h1`, `halftime_fulltime`), **« Cartons tps »** (→ `alternate_totals_cards`), **« Formations »**.
+- **Des fractions, jamais des pourcentages.** Une fréquence observée décrit le passé, ce qui reste permis ; écrite « 56 % », elle invite à la diviser par une cote — le calcul d'espérance qu'interdit la section 9. `9/16` porte la même information, avec son compte. Le template porte l'interdiction, un test la vérifie.
+- Le dénominateur est toujours écrit, et **sous cinq matchs joués aucune ligne n'existe** : le fournisseur répond des zéros partout pour une équipe qui n'a rien joué dans la compétition — le cas de toute équipe entrant en qualification européenne.
+- « Buts marq. » porte les buts **de l'équipe seule**, pas le total du match : deux distributions d'équipes ne s'additionnent pas en un O/U de rencontre. Celui-là viendra de l'historique des matchs.
+- **Garde-fou de couverture sur `/fixtures/statistics`** : le drapeau `statistics_fixtures` vit dans le sous-objet `coverage.fixtures`, là où `standings` et `injuries` sont à la racine. Sans le lire, jusqu'à dix appels par match étaient payés pour rien — la Primeira Liga 2026 l'annonce à `false` — et les trois lignes du profil disparaissaient sans un mot. Une seule ligne « Stats match » le dit désormais, plutôt que trois absences à expliquer une par une.
+
+*Critère d'acceptation :* sur un match de championnat déjà enrichi, le bloc porte les cinq lignes sans qu'un seul crédit ait été dépensé ; sur une qualification européenne où l'équipe n'a rien joué, aucune de ces lignes n'apparaît ; et le prompt interdit explicitement de rapprocher une fréquence d'une cote.
+
 ---
 
 ## 11. Exigences de qualité

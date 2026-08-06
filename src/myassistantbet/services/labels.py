@@ -50,9 +50,18 @@ CONTEXT_ICONS = {
     "Classement": "🏆",
     "Forme 5": "📈",
     "Dom/Ext": "🏟️",
+    "Buts marq.": "⚽",
+    "Clean sheet": "🧱",
+    "1re MT": "⏱️",
+    "Formations": "🧩",
     "Corners": "🚩",
     "Cartons": "🟨",
+    # Le rapprochement se fait sur le premier mot : « Cartons tps » heriterait
+    # sinon du pictogramme de « Cartons », alors que la ligne dit *quand* ils
+    # tombent et non combien.
+    "Cartons tps": "🕐",
     "Tirs": "🎯",
+    "Stats match": "🚫",
     "Absents": "🩹",
     "H2H": "⚔️",
     "Repos": "🛌",

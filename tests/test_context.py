@@ -20,6 +20,7 @@ from myassistantbet.services.context import (
     load,
 )
 from myassistantbet.services.matching import save_alias
+from myassistantbet.services.prompt import build_prompt
 from myassistantbet.services.render import UNAVAILABLE
 
 RATE_HEADERS = {"x-ratelimit-requests-remaining": "82", "x-ratelimit-requests-limit": "100"}
@@ -945,3 +946,230 @@ async def test_un_nom_de_stade_proche_ne_masque_pas_une_delocalisation(
     await fetch_context(api_client, EVENT, migrated)
 
     assert _lines(migrated)["Lieu"] == "Bravida Stadium, Ploiesti — hors de Goteborg"
+
+
+# -- Statistiques de saison : deja payees, longtemps jetees --------------------
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_les_lignes_de_saison_ne_coutent_aucun_appel_de_plus(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """`/teams/statistics` etait deja appele et sa charge utile persistee
+    entiere : seuls `form` et le bilan dom/ext en etaient tires. Le reste — buts
+    par match, clean sheets, tranches horaires, formations — dormait en base
+    alors que les marches correspondants etaient achetes."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    lignes = _lines(migrated)
+    assert lignes["Buts marq."] == (
+        "BK Hacken >0.5 14/16 >1.5 9/16 >2.5 4/16 | Djurgardens IF >0.5 15/16 >1.5 8/16 >2.5 4/16"
+    )
+    assert lignes["Clean sheet"] == (
+        "BK Hacken 5 CS, 2 sans marquer/16 | Djurgardens IF 4 CS, 1 sans marquer/16"
+    )
+    assert lignes["1re MT"] == (
+        "BK Hacken 12/28 marq. 8/20 pris | Djurgardens IF 15/28 marq. 11/20 pris"
+    )
+    assert routes["stats_home"].call_count == 1, "un seul appel sert la forme et ces lignes"
+    assert routes["stats_away"].call_count == 1
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_frequence_de_saison_ne_devient_jamais_un_pourcentage(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Garde-fou de la section 9. Une frequence observee decrit le passe, ce qui
+    reste permis ; ecrite « 56 % », elle invite a la diviser par une cote, et
+    c'est le calcul d'esperance interdit. La fraction porte la meme information
+    avec son compte, comme « 5.2 pris 6.4/5 » pour les corners."""
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    lignes = _lines(migrated)
+    for label in ("Buts marq.", "Clean sheet", "1re MT", "Cartons tps"):
+        assert "%" not in lignes[label], f"la ligne « {label} » ne doit porter aucun pourcentage"
+        assert "/" in lignes[label], f"la ligne « {label} » doit porter son denominateur"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_un_carton_sans_minute_compte_au_total_mais_a_aucune_mi_temps(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Piege verifie sur charge utile reelle : `cards.yellow` porte une tranche
+    de libelle **vide** — un carton dont la minute est inconnue. L'omettre du
+    denominateur ferait passer 19 cartons tardifs sur 34 pour 19 sur 33, donc
+    surestimerait la part des cartons tardifs."""
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    # 2+3+4+5+7+9+3 tranches connues, plus 1 de minute inconnue.
+    assert _lines(migrated)["Cartons tps"] == (
+        "BK Hacken 19/34 apres 60e | Djurgardens IF 11/20 apres 60e"
+    )
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_compte_des_formations_distingue_une_equipe_stable_d_un_effectif_tournant(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Sans le compte, « 4-3-3 » se lirait comme la formation habituelle alors
+    qu'elle peut ne couvrir que quatre matchs sur seize : c'est alors un
+    effectif tournant, soit l'information inverse."""
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert _lines(migrated)["Formations"] == (
+        "BK Hacken 4-2-3-1 (11), 4-3-3 (5)/16 | Djurgardens IF 4-3-3 (4), 4-4-2 (4)/16"
+    )
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_aucune_ligne_de_saison_sans_match_joue_dans_la_competition(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Le cas reel des qualifications europeennes : le fournisseur repond des
+    zeros partout pour une equipe qui n'a encore rien joue dans la competition.
+    « >0.5 0/0 » et « 0 CS/0 » ne decrivent personne."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    vierge = load_fixture("apifootball_stats_home.json")
+    vierge["response"]["fixtures"]["played"] = {"home": 0, "away": 0, "total": 0}
+    routes["stats_home"].mock(return_value=httpx.Response(200, json=vierge, headers=RATE_HEADERS))
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    lignes = _lines(migrated)
+    for label in ("Buts marq.", "Clean sheet", "1re MT", "Formations", "Cartons tps"):
+        assert "BK Hacken" not in lignes.get(label, ""), (
+            f"la ligne « {label} » ne doit rien affirmer sur une equipe sans match joue"
+        )
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_aucune_ligne_de_saison_sous_le_seuil_de_matchs(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Meme raison que le seuil du profil et celui du retour d'experience :
+    « >1.5 dans 3/4 » se lit comme une tendance alors que c'est un mois d'aout."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    debut = load_fixture("apifootball_stats_home.json")
+    debut["response"]["fixtures"]["played"] = {"home": 2, "away": 2, "total": 4}
+    routes["stats_home"].mock(return_value=httpx.Response(200, json=debut, headers=RATE_HEADERS))
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert "BK Hacken" not in _lines(migrated).get("Buts marq.", "")
+    assert "Djurgardens IF" in _lines(migrated)["Buts marq."], "l'autre equipe garde la sienne"
+
+
+# -- Statistiques de match non couvertes : ne pas payer pour du vide ----------
+
+#: Couverture d'une competition ou le fournisseur ne sert pas les statistiques
+#: de match. Constate en reel sur la Primeira Liga 2026. Le drapeau vit dans un
+#: **sous-objet**, la ou `standings` et `injuries` sont a la racine.
+LEAGUES_SANS_STATS_DE_MATCH = {
+    "errors": [],
+    "response": [
+        {
+            "league": {"id": 113, "name": "Allsvenskan", "type": "League"},
+            "seasons": [
+                {
+                    "year": 2026,
+                    "current": True,
+                    "coverage": {
+                        "fixtures": {"events": True, "statistics_fixtures": False},
+                        "standings": True,
+                        "injuries": True,
+                    },
+                }
+            ],
+        }
+    ],
+}
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_des_statistiques_de_match_non_couvertes_ne_sont_pas_appelees(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Jusqu'a dix appels par match etaient payes pour rien : la Primeira Liga
+    2026 annonce `statistics_fixtures: false`, chaque `/fixtures/statistics`
+    revient vide, et les trois lignes du profil disparaissaient sans un mot."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    routes["leagues"].mock(
+        return_value=httpx.Response(200, json=LEAGUES_SANS_STATS_DE_MATCH, headers=RATE_HEADERS)
+    )
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert routes["fixture_stats"].call_count == 0
+    lignes = _lines(migrated)
+    assert lignes["Stats match"] == UNAVAILABLE
+    assert "Corners" not in lignes, "une absence declaree se dit une fois, pas trois"
+    assert "Tirs" not in lignes
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_couverture_de_statistiques_absente_du_sous_objet_ne_bloque_rien(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Meme regle qu'a la racine : un champ que le fournisseur omet vaut
+    couvert, sinon on ferait disparaitre des donnees qui arrivaient hier."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    sans_sous_objet = {
+        "errors": [],
+        "response": [
+            {
+                "league": {"id": 113, "name": "Allsvenskan", "type": "League"},
+                "seasons": [{"year": 2026, "current": True, "coverage": {"standings": True}}],
+            }
+        ],
+    }
+    routes["leagues"].mock(
+        return_value=httpx.Response(200, json=sans_sous_objet, headers=RATE_HEADERS)
+    )
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert routes["fixture_stats"].call_count > 0
+    assert "Corners" in _lines(migrated)
+
+
+def test_le_prompt_interdit_de_rapprocher_une_frequence_d_une_cote(migrated: Settings) -> None:
+    """Le garde-fou compte autant que la donnee (SPEC.md section 9). Une
+    frequence passee rapprochee d'une cote est un calcul d'esperance, et le fait
+    qu'elle vienne d'un releve reel n'y change rien — meme regle que pour l'Elo
+    et pour le retour d'experience."""
+    db.execute(
+        "INSERT INTO sessions (id, label, created_at) VALUES (1, 'test', ?)",
+        (db.utcnow(),),
+        settings=migrated,
+    )
+
+    body = build_prompt(1, settings=migrated).body
+
+    assert "Buts marq." in body
+    assert "jamais** : les traiter comme des probabilités" in body
+    assert "espérance" in body
+    assert "les siens uniquement" in body, "le sens de la ligne doit etre sans ambiguite"

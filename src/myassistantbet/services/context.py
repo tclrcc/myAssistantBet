@@ -53,6 +53,31 @@ PROFILE_LAST = 5
 #: c'est une soiree — meme raison que le seuil du retour d'experience.
 PROFILE_MIN_MATCHES = 3
 
+#: Sous ce nombre de matchs joues dans la competition, aucune ligne de saison.
+#: Meme raison que ci-dessus, appliquee aux fractions : « >1.5 dans 3/3 » se lit
+#: comme une tendance alors que c'est un mois d'aout. Le fournisseur repond par
+#: ailleurs des zeros partout sur une equipe qui n'a encore rien joue dans la
+#: competition — le cas de toute equipe entrant en qualification europeenne.
+SEASON_MIN_MATCHES = 5
+
+#: Lignes de buts d'equipe rendues, dans l'ordre. Ce sont celles que le book
+#: propose sur `team_totals` : au-dela de 2.5, une equipe seule n'y va presque
+#: jamais, et la fraction serait nulle sur toute la ligue.
+TEAM_TOTAL_LINES = ("0.5", "1.5", "2.5")
+
+#: Tranches de quinze minutes, telles que le fournisseur les nomme. Deux pieges
+#: verifies sur charge utile reelle : une tranche vide vaut `null` et non zero,
+#: et il existe une tranche de libelle **vide** — un carton dont la minute n'est
+#: pas connue. Elle n'appartient a aucune mi-temps mais compte au total : l'omettre
+#: du denominateur surestimerait la part des cartons tardifs.
+FIRST_HALF_BANDS = ("0-15", "16-30", "31-45")
+LATE_BANDS = ("61-75", "76-90", "91-105")
+
+#: Formations rendues au plus. Deux suffisent a dire « une equipe stable » ou
+#: « un effectif tournant » ; les sept que le fournisseur peut lister ne
+#: diraient rien de plus pour sept fois le cout en tokens.
+FORMATIONS_KEEP = 2
+
 #: Lettres API-Football -> lettres francaises. Attention au piege : « D » cote
 #: API signifie Draw (nul), et « L » signifie Loss (defaite).
 FORM_LETTERS = {"W": "V", "D": "N", "L": "D"}
@@ -354,6 +379,20 @@ def _profile_from_fixtures(
     return profile
 
 
+def _covers_fixture_statistics(coverage: dict[str, Any]) -> bool:
+    """Vrai si le fournisseur declare servir les statistiques de match.
+
+    Le drapeau vit dans un **sous-objet** (`coverage.fixtures.statistics_fixtures`),
+    la ou `standings` et `injuries` sont a la racine : le lire comme les autres
+    renvoyait toujours l'absence. Un champ manquant vaut couvert, meme regle
+    qu'ailleurs — on ne fait pas disparaitre des donnees qui arrivaient hier.
+    """
+    fixtures = coverage.get("fixtures")
+    if not isinstance(fixtures, dict):
+        return True
+    return bool(fixtures.get("statistics_fixtures", True))
+
+
 async def _fetch_profile(
     client: APIFootballClient,
     cache: dict[str, Any],
@@ -489,6 +528,15 @@ async def fetch_context(
     # proposait des lignes de corners sans rien savoir de ce qu'une equipe en
     # produit ou en concede : le marche etait rendu, l'angle sportif absent.
     try:
+        if not _covers_fixture_statistics(mapping.coverage):
+            # Meme regle que le classement et les absents, appliquee au sous-objet
+            # `coverage.fixtures`. Sans elle, jusqu'a dix appels par match sont
+            # payes pour rien : la Primeira Liga 2026 annonce
+            # `statistics_fixtures: false`, chaque `/fixtures/statistics` revient
+            # vide, et les trois lignes du profil disparaissent sans un mot.
+            store(report.event_id, KIND_PROFILE, {"available": False}, settings)
+            report.kinds.append(KIND_PROFILE)
+            raise _NotCovered
         profile = {}
         for side, team_id in (("home", mapping.home_id), ("away", mapping.away_id)):
             fixtures = await _memo(
@@ -498,6 +546,8 @@ async def fetch_context(
         if any(profile.values()):
             store(report.event_id, KIND_PROFILE, profile, settings)
             report.kinds.append(KIND_PROFILE)
+    except _NotCovered:
+        pass
     except ProviderError as exc:
         report.errors.append(f"profil corners/cartons : {exc}")
 
@@ -617,6 +667,157 @@ def _pair(home: str, away: str) -> str:
     return " | ".join(parts)
 
 
+# -- Statistiques de saison : deja payees, longtemps jetees -------------------
+#
+# `/teams/statistics` est appele a chaque enrichissement et sa charge utile est
+# persistee entiere. Seuls `form` et le bilan dom/ext en etaient tires : le
+# reste — distribution des buts par match, clean sheets, tranches horaires,
+# cartons, formations — dormait en base alors que les marches correspondants
+# etaient achetes. Ces lignes ne coutent pas un appel.
+#
+# Toutes rendent des **fractions** et jamais des pourcentages. Une frequence
+# observee decrit le passe, ce qui reste permis ; ecrite « 56 % », elle invite a
+# la diviser par une cote, et c'est le calcul d'esperance qu'interdit la
+# section 9. « 9/16 » porte la meme information et le meme compte que les
+# moyennes du profil.
+
+
+def _played_total(stats: dict[str, Any] | None) -> int:
+    """Matchs joues dans la competition, seul denominateur legitime ici."""
+    if not stats:
+        return 0
+    played = ((stats.get("fixtures") or {}).get("played") or {}).get("total")
+    return int(played or 0)
+
+
+def _season_ready(stats: dict[str, Any] | None) -> int:
+    """Nombre de matchs joues s'il autorise une ligne de saison, sinon 0."""
+    played = _played_total(stats)
+    return played if played >= SEASON_MIN_MATCHES else 0
+
+
+def _band_total(block: dict[str, Any] | None, band: str) -> int:
+    """Total d'une tranche horaire. `null` vaut zero, jamais une erreur."""
+    if not isinstance(block, dict):
+        return 0
+    return int(((block.get(band) or {}).get("total")) or 0)
+
+
+def _bands_total(block: dict[str, Any] | None, bands: tuple[str, ...]) -> int:
+    return sum(_band_total(block, band) for band in bands)
+
+
+def _all_bands_total(block: dict[str, Any] | None) -> int:
+    """Total toutes tranches confondues, y compris celle de libelle vide.
+
+    Cette tranche existe : un carton dont la minute n'est pas connue. L'omettre
+    du denominateur ferait passer 26 cartons tardifs sur 38 pour 26 sur 37.
+    """
+    if not isinstance(block, dict):
+        return 0
+    return sum(int((entry or {}).get("total") or 0) for entry in block.values())
+
+
+def _team_goals_fragment(team: str, stats: dict[str, Any] | None) -> str:
+    """`BK Hacken >0.5 14/16 >1.5 9/16 >2.5 4/16` — buts de l'equipe par match.
+
+    Attention au sens : ce sont les buts **de cette equipe**, pas le total du
+    match. La distribution sert donc `team_totals`, et deux distributions
+    d'equipes ne se somment pas en un total de match — celui-la viendra de
+    l'historique des rencontres, pas d'ici.
+    """
+    played = _season_ready(stats)
+    if not played:
+        return ""
+    under_over = ((stats or {}).get("goals") or {}).get("for") or {}
+    lines = under_over.get("under_over")
+    if not isinstance(lines, dict):
+        return ""
+    fragments = []
+    for key in TEAM_TOTAL_LINES:
+        entry = lines.get(key)
+        if not isinstance(entry, dict) or entry.get("over") is None:
+            continue
+        fragments.append(f">{key} {entry['over']}/{played}")
+    return f"{team} {' '.join(fragments)}" if fragments else ""
+
+
+def _clean_sheet_fragment(team: str, stats: dict[str, Any] | None) -> str:
+    """`BK Hacken 5 CS, 2 sans marquer/16` — l'angle des deux equipes marquent."""
+    played = _season_ready(stats)
+    if not played:
+        return ""
+    clean = ((stats or {}).get("clean_sheet") or {}).get("total")
+    failed = ((stats or {}).get("failed_to_score") or {}).get("total")
+    if clean is None and failed is None:
+        return ""
+    parts = []
+    if clean is not None:
+        parts.append(f"{clean} CS")
+    if failed is not None:
+        parts.append(f"{failed} sans marquer")
+    return f"{team} {', '.join(parts)}/{played}"
+
+
+def _half_fragment(team: str, stats: dict[str, Any] | None) -> str:
+    """`BK Hacken 12/28 marq. 8/20 pris` — part des buts tombes en 1re mi-temps.
+
+    Le denominateur est le nombre de buts, pas le nombre de matchs : c'est une
+    repartition dans le temps. Une equipe qui n'a ni marque ni encaisse ne
+    produit aucune ligne — `0/0` ne dit rien.
+    """
+    if not _season_ready(stats):
+        return ""
+    goals = (stats or {}).get("goals") or {}
+    parts = []
+    for side, label in (("for", "marq."), ("against", "pris")):
+        block = (goals.get(side) or {}).get("minute")
+        total = _all_bands_total(block)
+        if not total:
+            continue
+        parts.append(f"{_bands_total(block, FIRST_HALF_BANDS)}/{total} {label}")
+    return f"{team} {' '.join(parts)}" if parts else ""
+
+
+def _card_timing_fragment(team: str, stats: dict[str, Any] | None) -> str:
+    """`BK Hacken 19/34 apres 60e` — les cartons tardifs sont un angle a eux.
+
+    Complete la ligne « Cartons », qui donne une moyenne par match sur les cinq
+    derniers : celle-ci dit *quand* ils tombent, sur toute la competition.
+    """
+    if not _season_ready(stats):
+        return ""
+    yellow = ((stats or {}).get("cards") or {}).get("yellow")
+    total = _all_bands_total(yellow)
+    if not total:
+        return ""
+    return f"{team} {_bands_total(yellow, LATE_BANDS)}/{total} apres 60e"
+
+
+def _formation_fragment(team: str, stats: dict[str, Any] | None) -> str:
+    """`BK Hacken 4-2-3-1 (11), 4-3-3 (5)/16` — le compte dit la stabilite.
+
+    Sans lui, « 4-3-3 » se lirait comme la formation habituelle alors qu'elle
+    peut ne couvrir que trois matchs sur quinze : c'est alors un effectif
+    tournant, ce qui est l'information inverse.
+    """
+    played = _season_ready(stats)
+    if not played:
+        return ""
+    lineups = (stats or {}).get("lineups")
+    if not isinstance(lineups, list) or not lineups:
+        return ""
+    ranked = sorted(
+        (item for item in lineups if isinstance(item, dict) and item.get("formation")),
+        key=lambda item: int(item.get("played") or 0),
+        reverse=True,
+    )[:FORMATIONS_KEEP]
+    if not ranked:
+        return ""
+    listed = ", ".join(f"{item['formation']} ({int(item.get('played') or 0)})" for item in ranked)
+    return f"{team} {listed}/{played}"
+
+
 def _injuries_for(entries: list[dict[str, Any]], team: str) -> str:
     if not entries:
         return f"{team} — aucun signale"
@@ -713,6 +914,18 @@ def context_lines(
     if sides:
         lines.append(("Dom/Ext", sides))
 
+    # Statistiques de saison, deja payees avec la forme. Chacune sert un marche
+    # que l'etage B achete : buts d'equipe, BTTS, premiere mi-temps, cartons.
+    for label, fragment in (
+        ("Buts marq.", _team_goals_fragment),
+        ("Clean sheet", _clean_sheet_fragment),
+        ("1re MT", _half_fragment),
+        ("Formations", _formation_fragment),
+    ):
+        rendered = _pair(fragment(home, form.get("home")), fragment(away, form.get("away")))
+        if rendered:
+            lines.append((label, rendered))
+
     venue = data.get(KIND_VENUE) or {}
     if venue:
         # Le lieu n'est rendu que s'il surprend : ecrire « joue chez lui » sous
@@ -725,6 +938,12 @@ def context_lines(
             lines.append(("Pelouse", SURFACE_LABELS.get(surface, surface)))
 
     profile = data.get(KIND_PROFILE) or {}
+    if profile and not profile.get("available", True):
+        # Le fournisseur ne sert pas les statistiques de match sur cette
+        # competition. Une seule ligne le dit, plutot que trois absences
+        # (corners, cartons, tirs) qu'on chercherait a expliquer une par une.
+        lines.append(("Stats match", UNAVAILABLE))
+        profile = {}
     corners = _pair(
         _corner_fragment(home, profile.get("home")), _corner_fragment(away, profile.get("away"))
     )
@@ -736,6 +955,14 @@ def context_lines(
     )
     if cards:
         lines.append(("Cartons", cards))
+
+    # Juste apres la moyenne par match : meme sujet, autre grandeur.
+    card_timing = _pair(
+        _card_timing_fragment(home, form.get("home")),
+        _card_timing_fragment(away, form.get("away")),
+    )
+    if card_timing:
+        lines.append(("Cartons tps", card_timing))
 
     shots = _pair(
         _shot_fragment(home, profile.get("home")), _shot_fragment(away, profile.get("away"))

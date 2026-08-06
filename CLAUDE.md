@@ -170,12 +170,39 @@ regression.
   (180) pour l'anglaise (40), la Bundesliga (78) pour la 2. Bundesliga (79) et la Coupe de
   Malaisie (499) pour la MLS (253), le tout avec un score maximal. Trois tests gardent ces
   trois pieges.
+- **Statistiques de saison** (`KIND_FORM`, cinq lignes) : `/teams/statistics` est appele
+  pour la forme, et sa charge utile est persistee **entiere**. Longtemps seuls `form` et
+  `Dom/Ext` en etaient tires ; le reste dormait en base alors que les marches
+  correspondants etaient achetes. Ces lignes ne coutent **aucun appel** : `Buts marq.`
+  (`goals.for.under_over` → `team_totals`), `Clean sheet` (→ `btts`), `1re MT`
+  (`goals.*.minute` → `totals_h1`, `halftime_fulltime`), `Cartons tps` (→
+  `alternate_totals_cards`), `Formations`.
+  - **Des fractions, jamais des pourcentages.** Une frequence observee decrit le passe,
+    ce qui reste permis ; ecrite « 56 % », elle invite a la diviser par une cote, et c'est
+    le calcul d'esperance de la section 9. `9/16` porte la meme information et le meme
+    compte que les moyennes du profil. Le template porte l'interdit, un test le verifie.
+  - `Buts marq.` porte les buts **de l'equipe seule**, jamais le total du match : deux
+    distributions d'equipes ne s'additionnent pas en un O/U de rencontre.
+  - Sous `SEASON_MIN_MATCHES` (5) matchs joues, **aucune ligne**. Le fournisseur repond des
+    zeros partout pour une equipe qui n'a rien joue dans la competition — le cas de toute
+    equipe entrant en qualification europeenne, ou « >0.5 0/0 » ne decrirait personne.
+  - `cards.yellow` porte une tranche de libelle **vide** : un carton dont la minute est
+    inconnue. Elle compte au total mais a aucune mi-temps — l'omettre du denominateur
+    surestimerait la part des cartons tardifs.
+  - `biggest.streak` est le **record de la saison**, pas la serie en cours : il n'est pas
+    rendu, ce serait l'inverse de ce qu'on croit lire.
 - **Profil corners / cartons / tirs** (`KIND_PROFILE`) : moyennes sur les `PROFILE_LAST`
   derniers matchs, via `/fixtures/statistics`. Un appel rend **les deux equipes**, donc le
   « concede » vient de l'adversaire du meme match sans appel supplementaire. La
   memorisation est **par rencontre et non par equipe** : deux adversaires qui se sont
   croises recemment la partagent. Rapprochement **par libelle** (`PROFILE_STATS`), jamais
   par position : l'ordre de la liste `statistics` varie d'un match a l'autre.
+  - **Le drapeau de couverture vit dans un sous-objet** : `coverage.fixtures.
+    statistics_fixtures`, la ou `standings` et `injuries` sont a la racine. Le lire comme
+    les autres renvoyait toujours l'absence, et sans lui jusqu'a dix appels par match
+    etaient payes pour rien — la Primeira Liga 2026 l'annonce a `false`, chaque appel
+    revient vide et les trois lignes disparaissaient en silence. Non couvert, une seule
+    ligne `Stats match` le dit : trois absences separees se feraient expliquer une par une.
   - Sous `PROFILE_MIN_MATCHES` (3) matchs effectivement renseignes, **aucune ligne**. La
     couverture est irreguliere : en debut de saison, un seul des cinq derniers matchs
     revient rempli, et « 2.0 corners pris 9.0 » sur une rencontre se lit comme une
