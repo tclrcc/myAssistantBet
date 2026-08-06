@@ -236,7 +236,7 @@ async def test_bloc_contexte_complet(
     assert lines["Classement"] == "BK Hacken 4e (34pts, 16j) | Djurgardens IF 2e (39pts, 16j)"
     assert lines["Forme 5"] == "BK Hacken VVNDV (9-4) | Djurgardens IF VVVND (11-3)"
     assert lines["Dom/Ext"] == (
-        "BK Hacken dom 6V-1N-1D 2.1 bpm | Djurgardens IF ext 4V-2N-2D 1.4 bpm"
+        "BK Hacken dom 6V-1N-1D 2.1 bpm/8j | Djurgardens IF ext 4V-2N-2D 1.4 bpm/8j"
     )
     assert lines["H2H (3)"] == "1-1 · 0-2 D · 2-2"
     assert "Rygaard" in lines["Absents"]
@@ -678,3 +678,123 @@ async def test_un_absent_annonce_deux_fois_n_est_liste_qu_une_fois(
     absents = load(1, migrated)[KIND_INJURIES]
     noms = [entry["name"] for entry in absents["home"] + absents["away"]]
     assert len(noms) == len(set(noms)), f"chaque absent une seule fois : {noms}"
+
+
+# -- Ce que le fournisseur declare ne pas couvrir -----------------------------
+
+#: Couverture d'une competition ou le fournisseur n'a ni classement ni absents.
+#: Constate en reel sur la Conference League 2026.
+LEAGUES_SANS_COUVERTURE = {
+    "errors": [],
+    "response": [
+        {
+            "league": {"id": 113, "name": "Allsvenskan", "type": "League"},
+            "seasons": [
+                {
+                    "year": 2026,
+                    "current": True,
+                    "coverage": {"standings": False, "injuries": False},
+                }
+            ],
+        }
+    ],
+}
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_donnee_non_couverte_est_dite_et_non_affirmee_absente(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Le piege repare : une liste d'absents vide se rendait « aucun signale »,
+    soit l'affirmation inverse de la verite. Constate en reel sur les qualifs
+    europeennes, ou six absents annonces par la presse etaient nies par le bloc."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    routes["leagues"].mock(
+        return_value=httpx.Response(200, json=LEAGUES_SANS_COUVERTURE, headers=RATE_HEADERS)
+    )
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    lignes = _lines(migrated)
+    assert lignes["Absents"] == UNAVAILABLE
+    assert "aucun signale" not in lignes["Absents"]
+    assert lignes["Classement"] == UNAVAILABLE, "une absence declaree se dit, elle ne s'omet pas"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_donnee_non_couverte_n_est_pas_appelee(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Rien n'a echoue : il n'y a rien a chercher. Autant ne pas depenser
+    l'appel — le quota par minute est la vraie contrainte sur une grosse soiree."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    routes["leagues"].mock(
+        return_value=httpx.Response(200, json=LEAGUES_SANS_COUVERTURE, headers=RATE_HEADERS)
+    )
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert routes["injuries"].call_count == 0
+    assert routes["standings"].call_count == 0
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_couverture_absente_de_la_reponse_ne_bloque_rien(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Le fournisseur peut omettre le champ : on suppose alors couvert plutot
+    que de faire disparaitre des donnees qui arrivaient hier."""
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    report = await fetch_context(api_client, EVENT, migrated)
+
+    assert KIND_INJURIES in report.kinds
+    assert "aucun signale" in _lines(migrated)["Absents"]
+
+
+# -- Dom/Ext : ne rien affirmer sur zero match --------------------------------
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_aucun_bilan_domicile_exterieur_sans_match_joue(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Le fournisseur repond `0V-0N-0D` et `0.0` de moyenne quand rien n'a ete
+    joue : indiscernable d'une equipe qui ne gagne ni ne marque. La ligne
+    apparaissait neuf fois dans un prompt de vingt-sept matchs."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    vierge = load_fixture("apifootball_stats_home.json")
+    vierge["response"] = {
+        **vierge["response"],
+        "fixtures": {"played": {"home": 0, "away": 0, "total": 0}},
+        "goals": {"for": {"average": {"home": "0.0", "away": "0.0", "total": "0.0"}}},
+    }
+    routes["stats_home"].mock(return_value=httpx.Response(200, json=vierge, headers=RATE_HEADERS))
+    routes["stats_away"].mock(return_value=httpx.Response(200, json=vierge, headers=RATE_HEADERS))
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert "Dom/Ext" not in _lines(migrated)
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_bilan_porte_son_nombre_de_matchs(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """« 0.0 bpm » sur deux matchs et sur vingt ne disent pas la meme chose, et
+    la statistique porte sur cette competition, pas sur toute la saison."""
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert "/8j" in _lines(migrated)["Dom/Ext"]

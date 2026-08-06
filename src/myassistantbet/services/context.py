@@ -27,6 +27,15 @@ from .render import UNAVAILABLE
 
 logger = logging.getLogger(__name__)
 
+
+class _NotCovered(Exception):
+    """Le fournisseur declare ne pas couvrir cette donnee pour la competition.
+
+    Distincte d'une erreur : rien n'a echoue, il n'y a simplement rien a
+    chercher. La ligne existe quand meme, avec la mention « non disponible ».
+    """
+
+
 H2H_LAST = 5
 RECENT_LAST = 5
 FORM_LENGTH = 5
@@ -135,6 +144,10 @@ class FixtureMapping:
     season: int
     home_id: int
     away_id: int
+    #: Ce que le fournisseur declare couvrir pour cette competition. Une liste
+    #: vide ne dit rien tant qu'on ignore si la donnee existe : `injuries:
+    #: false` transforme « aucun absent » en « donnee non disponible ».
+    coverage: dict[str, Any] = field(default_factory=dict)
 
 
 async def _memoized(cache: dict[str, Any], key: str, coroutine_factory: Any) -> Any:
@@ -164,7 +177,9 @@ async def resolve_fixture(
     league_id = event["apifootball_league_id"]
     date_iso = event["commence_time"][:10]
 
-    season = await _memoized(cache, f"season:{league_id}", lambda: client.current_season(league_id))
+    season, coverage = await _memoized(
+        cache, f"season:{league_id}", lambda: client.season_coverage(league_id)
+    )
     fixtures = await client.fixtures_by_date(date_iso, league_id, season)
     teams = _teams_from_fixtures(fixtures)
 
@@ -200,6 +215,7 @@ async def resolve_fixture(
         season=int((fixture.get("league") or {}).get("season") or season),
         home_id=home.matched.apifootball_id,
         away_id=away.matched.apifootball_id,
+        coverage=coverage,
     )
 
 
@@ -393,6 +409,13 @@ async def fetch_context(
 
     # Classement — partage par toutes les rencontres de la ligue.
     try:
+        if not mapping.coverage.get("standings", True):
+            # Le fournisseur annonce qu'il n'a pas de classement ici : ne pas
+            # l'appeler, et surtout ne pas laisser la ligne disparaitre en
+            # silence — une absence declaree est une information.
+            store(report.event_id, KIND_STANDINGS, {"available": False}, settings)
+            report.kinds.append(KIND_STANDINGS)
+            raise _NotCovered
         standings = await _memo(
             f"standings:{mapping.league_id}:{mapping.season}",
             lambda: client.standings(mapping.league_id, mapping.season),
@@ -404,6 +427,8 @@ async def fetch_context(
         if payload["home"] or payload["away"]:
             store(report.event_id, KIND_STANDINGS, payload, settings)
             report.kinds.append(KIND_STANDINGS)
+    except _NotCovered:
+        pass
     except ProviderError as exc:
         report.errors.append(f"classement : {exc}")
 
@@ -452,6 +477,14 @@ async def fetch_context(
 
     # Blesses et suspendus — couverture irreguliere selon les ligues.
     try:
+        if not mapping.coverage.get("injuries", True):
+            # Sans ce test, une liste vide se rendait « aucun signale » — soit
+            # l'affirmation inverse de la verite. Constate en reel sur les
+            # qualifications europeennes, ou six absents annonces par la presse
+            # etaient rendus « aucun signale » des deux cotes.
+            store(report.event_id, KIND_INJURIES, {"available": False}, settings)
+            report.kinds.append(KIND_INJURIES)
+            raise _NotCovered
         rows = await client.injuries(mapping.fixture_id)
         payload = {"available": True, "home": [], "away": []}
         # Le fournisseur renvoie chaque joueur deux fois — constate en reel :
@@ -482,6 +515,8 @@ async def fetch_context(
             payload[side].append(entry)
         store(report.event_id, KIND_INJURIES, payload, settings)
         report.kinds.append(KIND_INJURIES)
+    except _NotCovered:
+        pass
     except ProviderError as exc:
         store(report.event_id, KIND_INJURIES, {"available": False}, settings)
         report.errors.append(f"absents : {exc}")
@@ -521,19 +556,33 @@ def _form_letters(form: str | None) -> str:
 
 
 def _side_record(stats: dict[str, Any] | None, side: str) -> str:
-    """`dom 6V-1N-1D 2.1 bpm` a partir des statistiques de saison."""
+    """`dom 6V-1N-1D 2.1 bpm/8j` a partir des statistiques de la competition.
+
+    Rien n'est rendu tant qu'aucun match n'a ete joue : le fournisseur repond
+    alors `0V-0N-0D` et une moyenne de `0.0`, indiscernables d'une equipe qui
+    ne gagne ni ne marque. En debut de saison — ou sur une competition ou
+    l'equipe entre en qualification — c'est le cas de tout le monde.
+
+    Le nombre de matchs accompagne la ligne pour la meme raison que le compte
+    accompagne un taux : `0.0 bpm` sur deux matchs et sur vingt ne disent pas
+    la meme chose, et la statistique porte sur cette competition-la, pas sur
+    toute la saison de l'equipe.
+    """
     if not stats:
         return ""
     fixtures = stats.get("fixtures") or {}
+    played = (fixtures.get("played") or {}).get(side)
+    if not played:
+        return ""
     wins = (fixtures.get("wins") or {}).get(side)
     draws = (fixtures.get("draws") or {}).get(side)
     loses = (fixtures.get("loses") or {}).get(side)
-    if wins is None and draws is None and loses is None:
-        return ""
     average = (((stats.get("goals") or {}).get("for") or {}).get("average") or {}).get(side)
     label = "dom" if side == "home" else "ext"
     record = f"{label} {wins or 0}V-{draws or 0}N-{loses or 0}D"
-    return f"{record} {average} bpm" if average else record
+    if average:
+        record = f"{record} {average} bpm"
+    return f"{record}/{played}j"
 
 
 def _pair(home: str, away: str) -> str:
@@ -613,6 +662,9 @@ def context_lines(
         lines.append(("References", " ".join(manual["links"])))
 
     standings = data.get(KIND_STANDINGS) or {}
+    if standings and not standings.get("available", True):
+        lines.append(("Classement", UNAVAILABLE))
+        standings = {}
     ranked = _pair(
         _rank_fragment(home, standings.get("home")), _rank_fragment(away, standings.get("away"))
     )

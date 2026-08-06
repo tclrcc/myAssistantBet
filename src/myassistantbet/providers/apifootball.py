@@ -119,22 +119,33 @@ class APIFootballClient(BaseHTTPClient):
         response = (await self._envelope(endpoint, params)).get("response")
         return response if isinstance(response, dict) else None
 
-    async def current_season(self, league_id: int) -> int:
-        """Saison en cours d'une ligue, telle que le fournisseur la declare.
+    async def season_coverage(self, league_id: int) -> tuple[int, dict[str, Any]]:
+        """Saison en cours d'une ligue et ce que le fournisseur y couvre.
 
-        La deduire de la date serait faux une fois sur deux : une Ligue 1 d'aout
-        2026 est la saison 2026, mais un championnat qui se joue en annee civile
-        (MLS, Bresil, Norvege) l'est aussi, et une Ligue 1 de fevrier 2027 est
-        encore la saison 2026. Le fournisseur publie l'information, on la lit.
+        La saison ne se deduit pas de la date : elle serait fausse une fois sur
+        deux — un championnat joue en annee civile (MLS, Bresil, Norvege) et une
+        Ligue 1 de fevrier 2027, encore saison 2026. Le fournisseur la publie.
+
+        La couverture vient de la meme reponse, donc du meme appel. Elle dit
+        quelles donnees existent pour cette competition : la Conference League
+        annonce `injuries: false` et `standings: false`. Sans la lire, une liste
+        d'absents vide se rendait « aucun signale », ce qui affirme le contraire
+        de la verite — et la ligne de classement disparaissait sans un mot.
         """
         rows = await self._fetch("/leagues", {"id": league_id})
         for row in rows:
             for season in row.get("seasons") or []:
                 if season.get("current"):
-                    return int(season["year"])
+                    coverage = season.get("coverage") or {}
+                    return int(season["year"]), coverage
         raise ProviderError(
             PROVIDER, "/leagues", f"aucune saison en cours pour la ligue {league_id}"
         )
+
+    async def current_season(self, league_id: int) -> int:
+        """Saison en cours d'une ligue. Voir `season_coverage`."""
+        year, _ = await self.season_coverage(league_id)
+        return year
 
     async def fixtures_by_date(
         self, date_iso: str, league_id: int, season: int
