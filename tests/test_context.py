@@ -99,6 +99,13 @@ def _mock_all(load_fixture: Any) -> None:
             200, json=load_fixture("apifootball_h2h.json"), headers=RATE_HEADERS
         )
     )
+    # Ajoute en dernier a dessein : plusieurs tests designent une route par son
+    # index (`respx.routes[1]`), qu'une insertion en tete decalerait.
+    respx.get(f"{BASE_URL}/leagues").mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("apifootball_leagues.json"), headers=RATE_HEADERS
+        )
+    )
 
 
 def _lines(settings: Settings) -> dict[str, str]:
@@ -353,3 +360,63 @@ def test_url_de_production() -> None:
     # Meme verrou que pour The Odds API : les mocks respx suivent BASE_URL et ne
     # detecteraient pas une URL de test laissee en place.
     assert BASE_URL == "https://v3.football.api-sports.io"
+
+
+# -- Saison : le piege qui rendait tout le contexte muet ----------------------
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_la_saison_accompagne_toujours_la_recherche_de_match(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Sans `season`, l'API repond « The Season field is required » et le
+    contexte disparaissait en silence — ce qui se lisait comme un probleme de
+    rapprochement de noms alors que l'appel n'avait jamais abouti."""
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    recherche = next(
+        call.request
+        for call in respx.calls
+        if call.request.url.path.endswith("/fixtures") and "date" in call.request.url.params
+    )
+    assert recherche.url.params["season"] == "2026"
+    assert recherche.url.params["league"] == "113"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_la_saison_est_lue_chez_le_fournisseur_jamais_deduite_de_la_date(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Deduire la saison du mois se tromperait sur tout championnat joue en
+    annee civile (MLS, Bresil, Norvege) comme sur un match de fevrier."""
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    assert await api_client.current_season(113) == 2026
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_la_saison_n_est_payee_qu_une_fois_par_ligue(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    _seed_event(migrated)
+    db.execute(
+        "INSERT INTO events (id, sport_id, competition_id, oddsapi_event_id, home, away, "
+        "commence_time, source, created_at) SELECT 2, sport_id, competition_id, 'evt-2', "
+        "home, away, commence_time, 'api', created_at FROM events WHERE id = 1",
+        settings=migrated,
+    )
+    _mock_all(load_fixture)
+    leagues = respx.routes[-1]
+    cache: dict[str, object] = {}
+
+    await fetch_context(api_client, EVENT, migrated, cache)
+    await fetch_context(api_client, {**EVENT, "id": 2}, migrated, cache)
+
+    assert leagues.call_count == 1

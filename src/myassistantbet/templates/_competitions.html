@@ -148,7 +148,24 @@
             <span class="badge warn" title="Hors saison ou pas encore ouverte : l'activer d'avance ne coûte rien, une réponse vide n'est pas facturée">hors saison</span>
           {% endif %}
         </td>
-        <td class="num muted">{{ competition.apifootball_league_id or '—' }}</td>
+        {# Sans identifiant de ligue, aucun contexte n'est demande et la
+           competition reste muette sans que rien ne le dise. La synchronisation
+           depuis /sports n'en pose aucun : il faut donc pouvoir le saisir, sinon
+           chaque competition decouverte apres coup exige une migration.
+           Football seulement : le tennis recoit son contexte de Tennis Abstract. #}
+        <td class="num">
+          {% if competition.sport_key == 'football' %}
+          <form class="ligue-form" hx-post="/competitions/{{ competition.id }}/apifootball"
+                hx-target="#competitions" hx-swap="outerHTML">
+            <input type="text" inputmode="numeric" name="apifootball_league_id"
+                   value="{{ competition.apifootball_league_id or '' }}" placeholder="—"
+                   aria-label="Ligue API-Football de {{ competition.label }}">
+            <button type="submit" class="link-action">ok</button>
+          </form>
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
         <td class="num">{{ competition.priority }}</td>
         <td class="small">
           {% set seen = coverage.get(competition.id) %}

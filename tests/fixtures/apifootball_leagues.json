@@ -1,0 +1,18 @@
+{
+  "get": "leagues",
+  "parameters": { "id": "113" },
+  "errors": [],
+  "results": 1,
+  "paging": { "current": 1, "total": 1 },
+  "response": [
+    {
+      "league": { "id": 113, "name": "Allsvenskan", "type": "League" },
+      "country": { "name": "Sweden", "code": "SE" },
+      "seasons": [
+        { "year": 2024, "start": "2024-03-30", "end": "2024-11-10", "current": false },
+        { "year": 2025, "start": "2025-03-29", "end": "2025-11-09", "current": false },
+        { "year": 2026, "start": "2026-03-28", "end": "2026-11-08", "current": true }
+      ]
+    }
+  ]
+}

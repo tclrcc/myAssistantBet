@@ -531,6 +531,17 @@ def competition_surface(
     return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
 
 
+@app.post("/competitions/{competition_id}/apifootball", response_class=HTMLResponse)
+def competition_apifootball(
+    request: Request, competition_id: int, apifootball_league_id: str = Form(default="")
+) -> HTMLResponse:
+    """Rattache une competition football a sa ligue API-Football (contexte)."""
+    competitions_service.set_apifootball_league(
+        competition_id, apifootball_league_id, get_settings()
+    )
+    return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
+
+
 @app.post("/competitions/{competition_id}/category", response_class=HTMLResponse)
 def competition_category(
     request: Request, competition_id: int, category: str = Form(default="")

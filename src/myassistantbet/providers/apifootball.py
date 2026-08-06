@@ -70,9 +70,36 @@ class APIFootballClient(BaseHTTPClient):
         response = payload.get("response")
         return response if isinstance(response, list) else []
 
-    async def fixtures_by_date(self, date_iso: str, league_id: int) -> list[dict[str, Any]]:
-        """Matchs d'une ligue a une date donnee. Sert aussi a etablir le mapping."""
-        return await self._fetch("/fixtures", {"date": date_iso, "league": league_id})
+    async def current_season(self, league_id: int) -> int:
+        """Saison en cours d'une ligue, telle que le fournisseur la declare.
+
+        La deduire de la date serait faux une fois sur deux : une Ligue 1 d'aout
+        2026 est la saison 2026, mais un championnat qui se joue en annee civile
+        (MLS, Bresil, Norvege) l'est aussi, et une Ligue 1 de fevrier 2027 est
+        encore la saison 2026. Le fournisseur publie l'information, on la lit.
+        """
+        rows = await self._fetch("/leagues", {"id": league_id})
+        for row in rows:
+            for season in row.get("seasons") or []:
+                if season.get("current"):
+                    return int(season["year"])
+        raise ProviderError(
+            PROVIDER, "/leagues", f"aucune saison en cours pour la ligue {league_id}"
+        )
+
+    async def fixtures_by_date(
+        self, date_iso: str, league_id: int, season: int
+    ) -> list[dict[str, Any]]:
+        """Matchs d'une ligue a une date donnee. Sert aussi a etablir le mapping.
+
+        `season` n'est pas optionnel : interroger `/fixtures` avec une ligue mais
+        sans saison fait repondre « season: The Season field is required », et
+        l'absence de contexte qui en resultait passait pour un probleme de
+        rapprochement de noms.
+        """
+        return await self._fetch(
+            "/fixtures", {"date": date_iso, "league": league_id, "season": season}
+        )
 
     async def team_statistics(
         self, league_id: int, season: int, team_id: int

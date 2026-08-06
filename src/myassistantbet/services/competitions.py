@@ -182,6 +182,90 @@ def set_category(competition_id: int, category: str, settings: Settings | None =
     logger.info("Niveau de la competition %d : %s", competition_id, value or "non renseigne")
 
 
+#: Correspondance entre une cle The Odds API et une ligue API-Football.
+#:
+#: Sans elle, une competition decouverte par la synchronisation arrive sans
+#: identifiant de ligue, `enrich.context_possible` est faux, et elle reste
+#: muette sans que rien ne le signale — c'est exactement ce qui s'est produit
+#: pour les qualifications europeennes.
+#:
+#: Chaque valeur a ete relevee dans le catalogue `/leagues` du fournisseur,
+#: filtre par pays, et verifiee ligne a ligne. Le rapprochement automatique par
+#: libelle a ete essaye et rejete : il proposait la Championship ecossaise (180)
+#: pour l'anglaise (40), la Bundesliga (78) pour la 2. Bundesliga (79) et la
+#: Coupe de Malaisie (499) pour la MLS (253), le tout avec un score maximal.
+#: Une cle absente d'ici n'est pas devinee : elle se saisit depuis /competitions.
+#:
+#: Les competitions UEFA couvrent leurs tours preliminaires (`round =
+#: "3rd Qualifying Round"`) : il n'existe pas d'identifiant distinct pour la
+#: qualification, la ou The Odds API en a une cle separee.
+APIFOOTBALL_LEAGUES: dict[str, int] = {
+    "soccer_austria_bundesliga": 218,
+    "soccer_belgium_first_div": 144,
+    "soccer_brazil_campeonato": 71,
+    "soccer_china_superleague": 169,
+    "soccer_denmark_superliga": 119,
+    "soccer_efl_champ": 40,
+    "soccer_epl": 39,
+    "soccer_finland_veikkausliiga": 244,
+    "soccer_france_ligue_one": 61,
+    "soccer_france_ligue_two": 62,
+    "soccer_germany_bundesliga": 78,
+    "soccer_germany_bundesliga2": 79,
+    "soccer_germany_liga3": 80,
+    "soccer_greece_super_league": 197,
+    "soccer_italy_serie_a": 135,
+    "soccer_italy_serie_b": 136,
+    "soccer_netherlands_eredivisie": 88,
+    "soccer_norway_eliteserien": 103,
+    "soccer_poland_ekstraklasa": 106,
+    "soccer_portugal_primeira_liga": 94,
+    "soccer_spain_la_liga": 140,
+    "soccer_spain_segunda_division": 141,
+    "soccer_spl": 179,
+    "soccer_sweden_allsvenskan": 113,
+    "soccer_sweden_superettan": 114,
+    "soccer_switzerland_superleague": 207,
+    "soccer_turkey_super_league": 203,
+    "soccer_uefa_champs_league": 2,
+    "soccer_uefa_champs_league_qualification": 2,
+    "soccer_uefa_europa_conference_league": 848,
+    "soccer_uefa_europa_league": 3,
+    "soccer_uefa_nations_league": 5,
+    "soccer_usa_mls": 253,
+}
+
+
+def set_apifootball_league(
+    competition_id: int, league_id: str, settings: Settings | None = None
+) -> None:
+    """Rattache une competition de football a une ligue API-Football.
+
+    Sans ce rattachement aucun contexte n'est demande, et la competition reste
+    muette sans que rien ne le signale. La synchronisation depuis /sports cree
+    les competitions sans identifiant : il faut donc pouvoir le saisir ici,
+    sinon toute competition decouverte apres coup exige une migration.
+
+    Une saisie illisible vaut « non rattachee » plutot qu'une erreur : l'effet
+    est une ligne de contexte absente, jamais une donnee fausse. En revanche un
+    identifiant n'est **jamais devine** a partir du libelle — un rapprochement
+    automatique donne la Championship ecossaise pour l'anglaise avec le meme
+    aplomb que la bonne reponse.
+    """
+    raw = (league_id or "").strip()
+    value: int | None = None
+    if raw.isdigit() and int(raw) > 0:
+        value = int(raw)
+    with connect(settings) as conn:
+        conn.execute(
+            "UPDATE competitions SET apifootball_league_id = ? WHERE id = ?",
+            (value, competition_id),
+        )
+    logger.info(
+        "Ligue API-Football de la competition %d : %s", competition_id, value or "non rattachee"
+    )
+
+
 async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None) -> SyncReport:
     """Aligne la table `competitions` sur le catalogue **complet** de The Odds API.
 
@@ -217,18 +301,31 @@ async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None)
             if not served:
                 report.dormant += 1
 
+            league_id = APIFOOTBALL_LEAGUES.get(oddsapi_key)
             existing = conn.execute(
-                "SELECT id, label, api_active FROM competitions WHERE oddsapi_key = ?",
+                "SELECT id, label, api_active, apifootball_league_id FROM competitions "
+                "WHERE oddsapi_key = ?",
                 (oddsapi_key,),
             ).fetchone()
             if existing is None:
                 conn.execute(
                     "INSERT INTO competitions (sport_id, oddsapi_key, label, priority, active, "
-                    "                          api_active) VALUES (?, ?, ?, 0, 0, ?)",
-                    (sport_ids[sport_key], oddsapi_key, title, served),
+                    "                          api_active, apifootball_league_id) "
+                    "VALUES (?, ?, ?, 0, 0, ?, ?)",
+                    (sport_ids[sport_key], oddsapi_key, title, served, league_id),
                 )
                 report.created.append(f"{title} ({oddsapi_key})")
-            elif existing["label"] != title or existing["api_active"] != served:
+                continue
+
+            if league_id is not None and existing["apifootball_league_id"] is None:
+                # Comble un manque, n'ecrase jamais une saisie : un rattachement
+                # corrige a la main prime pour toujours, comme un alias d'equipe.
+                conn.execute(
+                    "UPDATE competitions SET apifootball_league_id = ? WHERE id = ?",
+                    (league_id, existing["id"]),
+                )
+
+            if existing["label"] != title or existing["api_active"] != served:
                 # Le libelle et la disponibilite du fournisseur font foi ;
                 # l'activation choisie par l'utilisateur ne bouge jamais.
                 conn.execute(

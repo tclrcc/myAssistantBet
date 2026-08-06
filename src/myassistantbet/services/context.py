@@ -124,10 +124,22 @@ class FixtureMapping:
     away_id: int
 
 
+async def _memoized(cache: dict[str, Any], key: str, coroutine_factory: Any) -> Any:
+    """Appelle `coroutine_factory` une seule fois par cle, le temps d'un cache.
+
+    Partage entre le rapprochement et le contexte : deux matchs d'une meme ligue
+    ne paient ni la saison, ni le classement, ni les statistiques deux fois.
+    """
+    if key not in cache:
+        cache[key] = await coroutine_factory()
+    return cache[key]
+
+
 async def resolve_fixture(
     client: APIFootballClient,
     event: dict[str, Any],
     settings: Settings | None = None,
+    cache: dict[str, Any] | None = None,
 ) -> FixtureMapping | None:
     """Etablit la correspondance entre un evenement et un match API-Football.
 
@@ -135,10 +147,12 @@ async def resolve_fixture(
     memorise les candidats pour le formulaire de resolution manuelle.
     """
     settings = settings or get_settings()
+    cache = cache if cache is not None else {}
     league_id = event["apifootball_league_id"]
     date_iso = event["commence_time"][:10]
 
-    fixtures = await client.fixtures_by_date(date_iso, league_id)
+    season = await _memoized(cache, f"season:{league_id}", lambda: client.current_season(league_id))
+    fixtures = await client.fixtures_by_date(date_iso, league_id, season)
     teams = _teams_from_fixtures(fixtures)
 
     home = resolve_team(event["home"], teams, settings)
@@ -168,7 +182,9 @@ async def resolve_fixture(
     return FixtureMapping(
         fixture_id=int(fixture["fixture"]["id"]),
         league_id=league_id,
-        season=int((fixture.get("league") or {}).get("season") or 0),
+        # La saison portee par le match prime — c'est la sienne. Celle de la
+        # ligue ne sert que si le fournisseur l'omet.
+        season=int((fixture.get("league") or {}).get("season") or season),
         home_id=home.matched.apifootball_id,
         away_id=away.matched.apifootball_id,
     )
@@ -264,7 +280,7 @@ async def fetch_context(
     report = ContextReport(event_id=int(event["id"]), label=f"{event['home']} – {event['away']}")
 
     try:
-        mapping = await resolve_fixture(client, event, settings)
+        mapping = await resolve_fixture(client, event, settings, cache)
     except ProviderError as exc:
         report.errors.append(str(exc))
         return report
@@ -274,9 +290,7 @@ async def fetch_context(
         return report
 
     async def _memo(key: str, coroutine_factory: Any) -> Any:
-        if key not in cache:
-            cache[key] = await coroutine_factory()
-        return cache[key]
+        return await _memoized(cache, key, coroutine_factory)
 
     # Classement — partage par toutes les rencontres de la ligue.
     try:

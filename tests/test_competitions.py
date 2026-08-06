@@ -12,8 +12,10 @@ from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.providers.oddsapi import BASE_URL, OddsAPIClient
 from myassistantbet.services.competitions import (
+    APIFOOTBALL_LEAGUES,
     list_all,
     set_active,
+    set_apifootball_league,
     set_category,
     sync_from_api,
 )
@@ -402,3 +404,121 @@ def _category(settings: Settings, competition_id: int) -> str | None:
         "SELECT category FROM competitions WHERE id = ?", (competition_id,), settings=settings
     )
     return row["category"] if row else None
+
+
+# -- Rattachement a une ligue API-Football ------------------------------------
+
+
+def _league(settings: Settings, competition_id: int) -> int | None:
+    row = db.query_one(
+        "SELECT apifootball_league_id FROM competitions WHERE id = ?",
+        (competition_id,),
+        settings=settings,
+    )
+    return row["apifootball_league_id"] if row else None
+
+
+def test_la_correspondance_evite_les_pieges_du_rapprochement_par_libelle() -> None:
+    """Sans identifiant de ligue, `enrich.context_possible` est faux et aucun
+    contexte n'est jamais demande. Ces trois-la, un rapprochement automatique
+    les donne faux avec un score maximal — d'ou une table verifiee a la main."""
+    assert APIFOOTBALL_LEAGUES["soccer_efl_champ"] == 40, "l'anglaise, pas l'ecossaise (180)"
+    assert APIFOOTBALL_LEAGUES["soccer_germany_bundesliga2"] == 79, "pas la Bundesliga (78)"
+    assert APIFOOTBALL_LEAGUES["soccer_usa_mls"] == 253, "pas la Coupe de Malaisie (499)"
+
+
+def test_les_qualifications_europeennes_pointent_sur_leur_competition() -> None:
+    """API-Football sert les tours preliminaires sous la competition elle-meme
+    (`round = "3rd Qualifying Round"`) : il n'existe pas d'identifiant distinct
+    pour la qualification, contrairement a The Odds API qui en a une cle."""
+    assert APIFOOTBALL_LEAGUES["soccer_uefa_champs_league_qualification"] == 2
+    assert APIFOOTBALL_LEAGUES["soccer_uefa_europa_league"] == 3
+    assert APIFOOTBALL_LEAGUES["soccer_uefa_europa_conference_league"] == 848
+
+
+@respx.mock
+async def test_une_competition_decouverte_arrive_deja_rattachee(
+    odds_client: OddsAPIClient, migrated: Settings
+) -> None:
+    """Le defaut repare : la synchronisation creait des competitions sans ligue,
+    donc muettes, et il fallait une migration pour chaque nouvelle."""
+    respx.get(f"{BASE_URL}/sports").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"key": "soccer_italy_serie_a", "group": "Soccer", "title": "Serie A - Italy"}],
+            headers=QUOTA_HEADERS,
+        )
+    )
+
+    await sync_from_api(odds_client, migrated)
+
+    row = db.query_one(
+        "SELECT apifootball_league_id FROM competitions WHERE oddsapi_key = 'soccer_italy_serie_a'",
+        settings=migrated,
+    )
+    assert row["apifootball_league_id"] == 135
+
+
+@respx.mock
+async def test_la_synchronisation_comble_un_manque_sans_ecraser_une_saisie(
+    odds_client: OddsAPIClient, migrated: Settings
+) -> None:
+    """Un rattachement corrige a la main prime pour toujours, comme un alias."""
+    respx.get(f"{BASE_URL}/sports").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"key": "soccer_italy_serie_a", "group": "Soccer", "title": "Serie A - Italy"}],
+            headers=QUOTA_HEADERS,
+        )
+    )
+    await sync_from_api(odds_client, migrated)
+    competition = db.query_one(
+        "SELECT id FROM competitions WHERE oddsapi_key = 'soccer_italy_serie_a'", settings=migrated
+    )
+    set_apifootball_league(competition["id"], "999", migrated)
+
+    await sync_from_api(odds_client, migrated)
+
+    assert _league(migrated, competition["id"]) == 999
+
+
+def test_le_rattachement_se_saisit_et_se_retire(migrated: Settings) -> None:
+    competition = next(row for row in list_all(migrated) if row["sport_key"] == "football")
+
+    set_apifootball_league(competition["id"], "140", migrated)
+    assert _league(migrated, competition["id"]) == 140
+
+    set_apifootball_league(competition["id"], "", migrated)
+    assert _league(migrated, competition["id"]) is None
+
+
+def test_un_rattachement_illisible_vaut_non_rattache(migrated: Settings) -> None:
+    """L'effet est une ligne de contexte absente, jamais une donnee fausse."""
+    competition = next(row for row in list_all(migrated) if row["sport_key"] == "football")
+    set_apifootball_league(competition["id"], "140", migrated)
+
+    set_apifootball_league(competition["id"], "la liga", migrated)
+
+    assert _league(migrated, competition["id"]) is None
+
+
+def test_rattachement_via_htmx(client: TestClient, isolated_settings: Settings) -> None:
+    competition = next(row for row in list_all(isolated_settings) if row["sport_key"] == "football")
+
+    response = client.post(
+        f"/competitions/{competition['id']}/apifootball",
+        data={"apifootball_league_id": "61"},
+    )
+
+    assert response.status_code == 200
+    assert "<html" not in response.text, "une route ciblee par HTMX rend le fragment, pas la page"
+    assert _league(isolated_settings, competition["id"]) == 61
+
+
+def test_le_champ_de_ligue_ne_sert_qu_au_football(client: TestClient) -> None:
+    """Le tennis recoit son contexte de Tennis Abstract, pas d'API-Football."""
+    page = client.get("/competitions").text
+
+    assert 'name="apifootball_league_id"' in page
+    tennis = [ligne for ligne in page.splitlines() if "Wimbledon" in ligne]
+    assert tennis and all("apifootball_league_id" not in ligne for ligne in tennis)

@@ -139,6 +139,31 @@ regression.
 
 - `providers/apifootball.py` : piege du fournisseur, **les erreurs applicatives arrivent en
   HTTP 200** dans le champ `errors` de l'enveloppe. Le client les convertit en `ProviderError`.
+  Corollaire non traite a ce jour : une erreur de **debit** (`rateLimit`) arrive par le meme
+  chemin, donc en HTTP 200, et `RETRY_STATUSES` ne la voit pas. Le backoff ne se declenche
+  pas sur une erreur pourtant transitoire.
+- **`/fixtures` exige `season` des qu'on passe `league`**, sinon l'API repond
+  « season: The Season field is required ». L'appel echouait donc toujours, et l'absence de
+  contexte qui en resultait se lisait comme un probleme de rapprochement de noms.
+- La saison **se lit chez le fournisseur** (`current_season()`, champ `current` de
+  `/leagues`), elle ne se deduit pas de la date : un championnat joue en annee civile (MLS,
+  Bresil, Norvege) et un match de fevrier donneraient tous deux un resultat faux. Elle est
+  memorisee par ligue le temps d'un enrichissement.
+- `competitions.APIFOOTBALL_LEAGUES` : la correspondance entre une cle The Odds API et une
+  ligue API-Football. **Sans identifiant de ligue, `enrich.context_possible` est faux et
+  aucun contexte n'est jamais demande** — la competition reste muette sans que rien ne le
+  signale. La synchronisation applique la table aux competitions creees et comble un manque
+  sur les existantes, mais **n'ecrase jamais une saisie manuelle**. Une cle absente de la
+  table se rattache depuis `/competitions`.
+  Meme regle que la surface et le niveau : **rien ne se deduit d'un libelle**. Le
+  rapprochement automatique a ete essaye et rejete — il donnait la Championship ecossaise
+  (180) pour l'anglaise (40), la Bundesliga (78) pour la 2. Bundesliga (79) et la Coupe de
+  Malaisie (499) pour la MLS (253), le tout avec un score maximal. Trois tests gardent ces
+  trois pieges.
+- Les competitions UEFA **couvrent leurs tours preliminaires** (`round =
+  "3rd Qualifying Round"`) : il n'existe pas d'identifiant de qualification distinct, la ou
+  The Odds API en a une cle separee. `soccer_uefa_champs_league_qualification` pointe donc
+  sur la Ligue des champions elle-meme.
 - `services/context.py` : `fetch_context()` appelle et **persiste les charges utiles brutes**
   dans la table `context` ; `context_lines()` relit la base. Regenerer un prompt ne declenche
   donc aucun appel reseau.
