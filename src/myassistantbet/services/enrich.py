@@ -19,7 +19,7 @@ from ..providers.apifootball import APIFootballClient
 from ..providers.base import ProviderError, last_known_quota
 from ..providers.oddsapi import DEFAULT_BOOKMAKER, PROVIDER, OddsAPIClient, expected_cost
 from ..providers.tennisabstract import TennisAbstractClient
-from . import coverage, elo, reference
+from . import coverage, elo, fixtures, reference
 from .context import fetch_context
 from .labels import affiche
 from .scan import replace_odds  # meme regle de remplacement qu'a l'etage A
@@ -119,6 +119,12 @@ class Estimate:
     #: marche profond sur leur competition. Distinct de `skipped` : ceux-la
     #: sont couverts par l'API, il n'y a simplement rien de plus a acheter.
     barren: list[str] = field(default_factory=list)
+    #: Evenements qu'aucun credit ne peut servir — The Odds API ne les connait
+    #: pas — mais qu'API-Football couvre : qualifications europeennes importees,
+    #: matchs dont le fournisseur de cotes ignore la competition. Ils recoivent
+    #: un releve de substitution et leur contexte, gratuitement. Sans eux, une
+    #: shortlist entiere de qualifs Europa produisait un prompt vide.
+    substitutes: list[EnrichTarget] = field(default_factory=list)
     #: Evenements de la shortlist, quel que soit leur sort. Sans ce compteur,
     #: « rien a enrichir » et « rien de coche » seraient indiscernables.
     considered: int = 0
@@ -138,7 +144,8 @@ class Estimate:
     @property
     def allowed(self) -> bool:
         if not self.targets:
-            return False
+            # Rien a acheter, mais peut-etre quelque chose a relever gratuitement.
+            return bool(self.substitutes)
         if self.remaining is None:
             # Quota inconnu : on n'a jamais appele l'API. On laisse partir, le
             # plancher sera verifiable des le premier appel.
@@ -151,6 +158,8 @@ class Estimate:
         coche » alors que des matchs le sont enverrait chercher le probleme au
         mauvais endroit."""
         if not self.targets:
+            if self.substitutes:
+                return None
             if not self.considered:
                 return "Aucun evenement selectionne."
             if self.started and not self.skipped and not self.barren:
@@ -178,6 +187,9 @@ class EnrichResult:
     label: str
     markets_received: int = 0
     odds_rows: int = 0
+    #: Book chez qui les cotes ont ete relevees faute de Betclic. Non jouable
+    #: tel quel : le dire ici evite de le decouvrir dans le prompt.
+    substitute_book: str | None = None
     cost: int = 0
     error: str | None = None
     context_kinds: list[str] = field(default_factory=list)
@@ -273,6 +285,27 @@ def build_estimate(
             estimate.started.append(label)
             continue
         if not row["oddsapi_event_id"] or not row["competition_key"]:
+            # The Odds API ne connait pas ce match. API-Football, peut-etre :
+            # c'est le cas des qualifications europeennes importees. Le releve
+            # de substitution et le contexte sont gratuits en credits.
+            if row["sport_key"] == "football" and row["apifootball_league_id"]:
+                estimate.substitutes.append(
+                    EnrichTarget(
+                        event_id=int(row["id"]),
+                        oddsapi_event_id="",
+                        sport_key=row["sport_key"],
+                        oddsapi_sport_key="",
+                        label=label,
+                        markets=(),
+                        bookmakers=(),
+                        competition_id=row["competition_id"],
+                        apifootball_league_id=row["apifootball_league_id"],
+                        home=row["home"],
+                        away=row["away"],
+                        commence_time=row["commence_time"],
+                    )
+                )
+                continue
             # Evenement manuel (cyclisme, ATP 250) : aucun appel possible.
             estimate.skipped.append(label)
             continue
@@ -394,7 +427,7 @@ async def run_enrich(
         await _refresh_elo(elo_client, session_id, settings, now)
 
     estimate = build_estimate(session_id, settings, now)
-    report = EnrichReport(total=estimate.events)
+    report = EnrichReport(total=estimate.events + len(estimate.substitutes))
 
     if not estimate.allowed:
         report.finished = True
@@ -437,6 +470,37 @@ async def run_enrich(
             # autres matchs, ni mourir en silence dans une tache de fond.
             result.error = f"reponse inexploitable : {type(exc).__name__}: {exc}"
             logger.exception("Reponse inexploitable pour %s", target.label)
+
+        if context_client is not None and target.context_possible:
+            await _add_context(context_client, target, result, settings, context_cache)
+
+        report.results.append(result)
+        report.done += 1
+        if on_progress:
+            on_progress(report)
+
+    # Matchs que The Odds API ne connait pas : releve de substitution puis
+    # contexte. Aucun credit n'est en jeu, donc ce bloc passe apres le garde-fou
+    # sans avoir a le consulter — c'est justement quand il n'y a plus rien a
+    # acheter que ces matchs sont tout ce qui reste.
+    for target in estimate.substitutes:
+        result = EnrichResult(label=target.label)
+        if context_client is None:
+            result.error = "aucun client API-Football : ni cotes de substitution ni contexte"
+            report.results.append(result)
+            report.done += 1
+            continue
+        try:
+            odds_report = await fixtures.import_odds(context_client, target.event_id, settings)
+            if odds_report.error:
+                result.error = odds_report.error
+            else:
+                result.markets_received = odds_report.markets
+                result.odds_rows = odds_report.outcomes
+                result.substitute_book = odds_report.bookmaker
+        except ProviderError as exc:
+            result.error = str(exc)
+            logger.warning("Releve de substitution echoue pour %s : %s", target.label, exc)
 
         if context_client is not None and target.context_possible:
             await _add_context(context_client, target, result, settings, context_cache)

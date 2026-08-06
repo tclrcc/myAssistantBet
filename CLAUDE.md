@@ -199,6 +199,13 @@ regression.
   - Le releve remplace **le seul book releve** : ni Betclic, ni la saisie manuelle.
   - Le bouton n'apparait que sur un evenement sans aucune cote. Ailleurs il n'ajouterait
     qu'un prix non jouable a cote d'un prix jouable.
+  - **`run_enrich` les prend en charge** (`Estimate.substitutes`) : un match que The Odds
+    API ne connait pas etait auparavant classe « aucun appel possible » et ressortait sans
+    cotes **ni contexte**, si bien qu'une shortlist entiere de qualifs Europa produisait un
+    prompt vide. Il recoit desormais son releve de substitution et son contexte dans le
+    parcours normal — cocher, enrichir, generer. Le garde-fou de credit ne s'y applique
+    pas : rien ne s'achete, et bloquer un releve gratuit parce que le quota est bas serait
+    un refus sans objet.
 - La **fiche d'un match** affiche le bloc CONTEXTE (`_event_context.html`), relu en base et
   sans aucun appel reseau. Sans lui, tout ce qui etait recupere n'existait que dans le
   prompt genere — donc invisible tant qu'une session n'avait pas ete montee.

@@ -43,6 +43,37 @@ BOOKMAKER_LABELS = {
 #: saisie manuelle porte l'heure de la frappe, pas celle d'un releve de marche.
 UNTIMED_BOOKMAKERS = frozenset({"manual"})
 
+#: Pictogramme de chaque ligne du bloc CONTEXTE, pour la fiche d'un match.
+#: Purement decoratif : le libelle reste ecrit a cote, et le prompt genere ne
+#: porte aucun de ces caracteres — il compte ses tokens.
+CONTEXT_ICONS = {
+    "Classement": "🏆",
+    "Forme 5": "📈",
+    "Dom/Ext": "🏟️",
+    "Corners": "🚩",
+    "Cartons": "🟨",
+    "Tirs": "🎯",
+    "Absents": "🩹",
+    "H2H": "⚔️",
+    "Repos": "🛌",
+    "Elo": "♟️",
+    "Profil": "🗺️",
+    "Startlist": "📋",
+    "References": "🔗",
+    "Infos": "📝",
+}
+
+
+def context_icon(label: str) -> str:
+    """Pictogramme d'une ligne de contexte, vide si elle n'en a pas.
+
+    Le rapprochement se fait sur le debut du libelle : « H2H (5) » porte son
+    nombre de confrontations, qui varie d'un match a l'autre.
+    """
+    head = (label or "").split(" ")[0]
+    return CONTEXT_ICONS.get(label) or CONTEXT_ICONS.get(head, "")
+
+
 #: Emoji par sport. Sur un board de vingt lignes, le sport se lit d'un coup
 #: d'oeil sans occuper une colonne entiere de texte. Le libelle reste porte par
 #: l'attribut `title` : un pictogramme seul n'est pas lisible au lecteur d'ecran.

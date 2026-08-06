@@ -34,6 +34,7 @@ from .services import enrich as enrich_service
 from .services import fixtures as fixtures_service
 from .services import grid as grid_service
 from .services import history as history_service
+from .services import labels as labels_service
 from .services import manual as manual_service
 from .services import mapping_ui as mapping_service
 from .services import odds_view as odds_view_service
@@ -49,6 +50,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 templates = Jinja2Templates(directory=PACKAGE_DIR / "templates")
+# Pictogrammes du bloc CONTEXTE : purement decoratifs, definis avec les autres
+# libelles d'affichage plutot que dans le gabarit, pour rester testables.
+templates.env.filters["context_icon"] = labels_service.context_icon
 
 
 @asynccontextmanager

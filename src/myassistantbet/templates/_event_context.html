@@ -3,10 +3,25 @@
    Relu en base, jamais recalcule : afficher ce bloc ne declenche aucun appel
    reseau et ne coute aucun credit. Sans lui, tout ce qui a ete recupere —
    classement, forme, absents, profil corners — n'existait que dans le prompt
-   genere, donc invisible tant qu'une session n'avait pas ete montee. #}
+   genere, donc invisible tant qu'une session n'avait pas ete montee.
+
+   Rendu en cartes et non en tableau : chaque ligne est une grandeur autonome,
+   sans colonne commune a aligner. Les pictogrammes sont decoratifs, le libelle
+   reste ecrit — et le prompt genere n'en porte aucun, il compte ses tokens. #}
 <div id="event-context">
   <section class="event-context">
-    <h2>Contexte sportif</h2>
+    <div class="context-head">
+      <h2>Contexte sportif</h2>
+      {% if event.sport_key == 'football' %}
+        <form hx-post="/events/{{ event.event_id }}/context"
+              hx-target="#event-context" hx-swap="outerHTML" hx-indicator="#ctx-spinner">
+          <button type="submit" class="button">
+            {% if context_lines %}Rafraîchir{% else %}Récupérer le contexte{% endif %}
+          </button>
+          <span id="ctx-spinner" class="htmx-indicator">récupération…</span>
+        </form>
+      {% endif %}
+    </div>
 
     {% if context_report %}
       <div class="report {% if not context_report.ok %}report-warn{% endif %}">
@@ -15,8 +30,8 @@
           <a href="/mapping">la page de correspondances</a>. Rien n'est deviné —
           attribuer les statistiques d'une autre équipe serait pire qu'une ligne absente.
         {% elif context_report.kinds %}
-          {{ context_report.kinds | length }} type(s) de contexte récupéré(s). Aucun crédit
-          Odds API consommé.
+          {{ context_report.kinds | length }} type(s) de contexte récupéré(s), sans aucun
+          crédit Odds API.
         {% else %}
           Rien n'a pu être récupéré.
         {% endif %}
@@ -29,34 +44,29 @@
     {% endif %}
 
     {% if context_lines %}
-      <table class="odds context-table">
-        <tbody>
-          {% for label, value in context_lines %}
-          <tr>
-            <td class="outcome">{{ label }}</td>
-            {# Les valeurs multi-lignes (absents des deux equipes) gardent leur
-               retour a la ligne : les aplatir collerait deux equipes bout a bout. #}
-            <td class="context-value">{{ value }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+      <div class="context-grid">
+        {% for label, value in context_lines %}
+        {% set icon = label | context_icon %}
+        <article class="context-card">
+          <header>
+            {% if icon %}<span class="context-icon" aria-hidden="true">{{ icon }}</span>{% endif %}
+            <span class="context-label">{{ label }}</span>
+          </header>
+          {# `pre-line` : les valeurs a deux equipes gardent leur retour a la
+             ligne, les aplatir collerait deux equipes bout a bout. #}
+          <p class="context-value">{{ value }}</p>
+        </article>
+        {% endfor %}
+      </div>
+      <p class="muted small context-foot">
+        Ces lignes sont celles qui partiront dans le prompt. Une donnée absente n'y produit
+        aucune ligne plutôt qu'un « N/A ».
+      </p>
     {% else %}
       <p class="empty">
         Aucun contexte récupéré pour ce match. L'enrichissement d'une session le récupère
-        automatiquement ; le bouton ci-dessous le fait pour ce match seul.
+        automatiquement ; le bouton ci-dessus le fait pour ce match seul, gratuitement.
       </p>
-    {% endif %}
-
-    {% if event.sport_key == 'football' %}
-      <form hx-post="/events/{{ event.event_id }}/context"
-            hx-target="#event-context" hx-swap="outerHTML" hx-indicator="#ctx-spinner">
-        <button type="submit" class="button">
-          {% if context_lines %}Rafraîchir le contexte{% else %}Récupérer le contexte{% endif %}
-        </button>
-        <span id="ctx-spinner" class="htmx-indicator">récupération…</span>
-        <span class="muted small">gratuit en crédits Odds API</span>
-      </form>
     {% endif %}
   </section>
 </div>

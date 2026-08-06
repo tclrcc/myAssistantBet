@@ -215,3 +215,44 @@ def test_la_fiche_annonce_un_contexte_absent_sans_le_taire(
     page = client.get(f"/events/{event_id}").text
 
     assert "Aucun contexte récupéré" in page
+
+
+def test_la_saisie_manuelle_est_repliee(client: TestClient, isolated_settings: Settings) -> None:
+    """Elle ne sert qu'une fois sur une fiche : dépliée, elle poussait les cotes
+    et le contexte hors de l'écran. Même convention que les panneaux du board."""
+    event_id = _event(isolated_settings)
+
+    page = client.get(f"/events/{event_id}").text
+
+    assert '<details class="panel manual-odds"' in page
+    assert "<summary>Ajouter des cotes à la main</summary>" in page
+
+
+def test_une_saisie_refusee_laisse_le_panneau_ouvert(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Sinon le texte retapé disparaîtrait de la vue avec le message d'erreur."""
+    event_id = _event(isolated_settings)
+
+    page = client.post(f"/events/{event_id}/odds", data={"odds": "ligne illisible"}).text
+
+    assert 'class="panel manual-odds" open' in page
+
+
+def test_chaque_ligne_de_contexte_porte_son_pictogramme(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Décoratif : le libellé reste écrit à côté, et le prompt généré n'en porte
+    aucun — il compte ses tokens."""
+    event_id = _event(isolated_settings)
+    context.store(
+        event_id,
+        context.KIND_STANDINGS,
+        {"home": {"rank": 3, "points": 40, "played": 20}, "away": None},
+        isolated_settings,
+    )
+
+    page = client.get(f"/events/{event_id}").text
+
+    assert "🏆" in page
+    assert "Classement" in page

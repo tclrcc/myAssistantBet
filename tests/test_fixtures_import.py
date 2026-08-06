@@ -14,7 +14,9 @@ from myassistantbet import db
 from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.providers.apifootball import BASE_URL, APIFootballClient
+from myassistantbet.providers.oddsapi import OddsAPIClient
 from myassistantbet.services.competitions import set_active
+from myassistantbet.services.enrich import build_estimate, run_enrich
 from myassistantbet.services.fixtures import (
     SOURCE,
     _book_key,
@@ -381,3 +383,94 @@ def test_les_substituts_portent_le_marqueur_de_reference() -> None:
     for name in Settings().apifootball_books:
         libelle = bookmaker_label(_book_key(name))
         assert libelle.endswith("(ref.)"), f"{name} rendu « {libelle} » sans marqueur"
+
+
+# -- L'enrichissement prend en charge ces matchs ------------------------------
+
+
+def _shortlist(settings: Settings, event_id: int) -> int:
+    """Met un evenement dans une session, comme le ferait une coche du board."""
+    db.execute("INSERT INTO sessions (created_at) VALUES (?)", (db.utcnow(),), settings=settings)
+    session = db.query_one("SELECT id FROM sessions ORDER BY id DESC LIMIT 1", settings=settings)
+    db.execute(
+        "INSERT INTO session_events (session_id, event_id) VALUES (?, ?)",
+        (int(session["id"]), event_id),
+        settings=settings,
+    )
+    return int(session["id"])
+
+
+def test_un_match_hors_odds_api_devient_un_substitut_et_non_un_ecarte(
+    migrated: Settings,
+) -> None:
+    """Sans cet aiguillage, une shortlist entiere de qualifs Europa produisait
+    un prompt vide : « aucun de ces evenements n'est servi par l'API »."""
+    event_id = _event_avec_fixture(migrated)
+    session_id = _shortlist(migrated, event_id)
+
+    estimate = build_estimate(session_id, migrated, now=NOW)
+
+    assert estimate.skipped == []
+    assert [t.label for t in estimate.substitutes] == ["KuPS – U Craiova"]
+    assert estimate.cost == 0, "un releve de substitution ne coute aucun credit Odds API"
+
+
+def test_une_selection_de_substituts_n_est_pas_bloquee(migrated: Settings) -> None:
+    """Le garde-fou de credit porte sur ce qui s'achete. Bloquer un relevé
+    gratuit parce que le quota est bas serait un refus sans objet."""
+    event_id = _event_avec_fixture(migrated)
+    session_id = _shortlist(migrated, event_id)
+
+    estimate = build_estimate(session_id, migrated, now=NOW)
+    estimate.remaining = 0
+
+    assert estimate.allowed is True
+    assert estimate.blocked_reason is None
+
+
+@respx.mock
+async def test_enrichir_releve_les_cotes_et_le_contexte_d_un_substitut(
+    http_client: httpx.AsyncClient, odds_client: OddsAPIClient, migrated: Settings
+) -> None:
+    """Le parcours normal : cocher, enrichir, generer — sans passer match par
+    match sur la fiche."""
+    event_id = _event_avec_fixture(migrated)
+    session_id = _shortlist(migrated, event_id)
+    respx.get(f"{BASE_URL}/odds").mock(return_value=httpx.Response(200, json=ODDS))
+    respx.get(f"{BASE_URL}/leagues").mock(return_value=httpx.Response(200, json=LEAGUES))
+    respx.get(f"{BASE_URL}/fixtures").mock(return_value=httpx.Response(200, json=FIXTURES))
+    respx.get(url__regex=rf"{BASE_URL}/.*").mock(
+        return_value=httpx.Response(200, json={"errors": [], "response": []})
+    )
+
+    report = await run_enrich(
+        odds_client,
+        session_id,
+        migrated,
+        context_client=APIFootballClient(http_client, migrated),
+        now=NOW,
+    )
+
+    resultat = report.results[0]
+    assert resultat.odds_rows == 5
+    assert resultat.substitute_book == "888Sport"
+    assert (
+        db.query_one(
+            "SELECT COUNT(*) AS n FROM odds WHERE event_id = ?", (event_id,), settings=migrated
+        )["n"]
+        == 5
+    )
+
+
+@respx.mock
+async def test_sans_client_api_football_le_substitut_le_dit(
+    odds_client: OddsAPIClient, migrated: Settings
+) -> None:
+    """Jamais de silence : un match qui ne peut rien recevoir doit le porter."""
+    event_id = _event_avec_fixture(migrated)
+    session_id = _shortlist(migrated, event_id)
+
+    report = await run_enrich(odds_client, session_id, migrated, now=NOW)
+
+    assert report.results[0].error is not None
+    assert "API-Football" in report.results[0].error

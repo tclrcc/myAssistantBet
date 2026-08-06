@@ -537,15 +537,11 @@ table.odds .outcome { color: var(--text-dim); }
 table.odds .price { font-variant-numeric: tabular-nums; font-weight: 600; width: 4rem; }
 table.odds .line { width: 3rem; font-size: 0.82rem; }
 
-.manual-odds {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-  padding: var(--s4);
-  max-width: 720px;
-}
-.manual-odds h2 { font-size: 1rem; margin: 0 0 var(--s2); font-weight: 650; }
-.manual-odds .hint { color: var(--muted); font-size: 0.85rem; margin: 0 0 var(--s3); }
+/* La saisie manuelle est un `details.panel` : elle herite du fond, de la
+   bordure et du rembourrage communs. Ne pas les redeclarer ici, sinon le
+   panneau se retrouve avec deux cadres imbriques. */
+.manual-odds { max-width: 720px; }
+.manual-odds .hint { color: var(--muted); font-size: 0.85rem; margin: 0 0 var(--s3); padding-bottom: 0; }
 .manual-odds textarea { width: 100%; }
 .manual-odds-actions {
   display: flex;
@@ -1218,9 +1214,66 @@ td .sport {
 
 /* --- Contexte sportif sur la fiche d'un match ------------------------------ */
 
-/* Les valeurs multi-lignes (absents des deux equipes) gardent leurs retours a
-   la ligne : les aplatir collerait deux equipes bout a bout. */
-.context-table .context-value { white-space: pre-line; }
-.context-table .outcome { white-space: nowrap; color: var(--muted); }
 .event-context { margin-top: var(--s4); }
-.event-context h2 { margin-bottom: var(--s2); }
+
+.context-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-bottom: var(--s3);
+}
+.context-head h2 { margin: 0; }
+
+/* Chaque ligne est une grandeur autonome, sans colonne commune a aligner : une
+   grille de cartes lit mieux qu'un tableau a deux colonnes dont la premiere ne
+   porte qu'un mot. `auto-fill` garde une seule colonne sur telephone. */
+.context-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr));
+  gap: var(--s2);
+}
+
+.context-card {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: var(--s2) var(--s3);
+  /* `--edge` est une ombre interne, pas une couleur : c'est elle qui porte le
+     relief de toutes les surfaces du site. */
+  box-shadow: var(--edge);
+}
+
+.context-card header {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin-bottom: 0.35rem;
+}
+
+/* Le pictogramme accompagne le libelle, il ne le remplace pas : seul, il
+   faudrait le deviner, et un lecteur d'ecran n'en dirait rien d'utile. */
+.context-icon { font-size: 1.05rem; line-height: 1; }
+
+.context-label {
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* `pre-line` : les valeurs a deux equipes gardent leur retour a la ligne,
+   les aplatir collerait deux equipes bout a bout. */
+.context-value {
+  margin: 0;
+  white-space: pre-line;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.45;
+}
+
+.context-foot { margin-top: var(--s2); }
+
+@media (max-width: 720px) {
+  .context-head { flex-direction: column; align-items: stretch; }
+}

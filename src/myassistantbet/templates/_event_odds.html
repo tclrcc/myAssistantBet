@@ -86,8 +86,12 @@
     </div>
   {% endif %}
 
-  <section class="manual-odds">
-    <h2>Ajouter des cotes à la main</h2>
+  {# Replie par defaut : la saisie a la main ne sert qu'une fois sur une fiche,
+     et depliee elle poussait les cotes et le contexte hors de l'ecran. Meme
+     convention que les panneaux du board. Reste ouverte si une saisie vient
+     d'etre refusee — sinon le texte retape disparaitrait de la vue. #}
+  <details class="panel manual-odds" {% if error or typed %}open{% endif %}>
+    <summary>Ajouter des cotes à la main</summary>
     <p class="hint">
       Pour ce que l'API ne sert pas — une cote relevée à l'écran, un marché absent
       de Betclic. Une par ligne, au format <code>Nom 2.50</code>. Ces cotes portent
@@ -112,5 +116,5 @@
           hx-confirm="Retirer toutes les cotes saisies à la main pour cet événement ?">
       <button type="submit" class="link-danger">Retirer toutes les cotes manuelles</button>
     </form>
-  </section>
+  </details>
 </div>
