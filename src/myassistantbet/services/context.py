@@ -265,6 +265,10 @@ async def resolve_fixture(
             "away": mapping.away_id,
             "league": mapping.league_id,
             "season": mapping.season,
+            # La couverture vient du meme appel et repond a « ai-je le droit
+            # d'appeler ? ». La memoriser evite au dossier d'equipe de repayer
+            # `/leagues` pour une reponse deja obtenue.
+            "coverage": mapping.coverage,
         },
         settings,
     )

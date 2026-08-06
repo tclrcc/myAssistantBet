@@ -1,0 +1,204 @@
+{
+ "get": "players/squads",
+ "parameters": {
+  "team": "376"
+ },
+ "errors": [],
+ "results": 1,
+ "paging": {
+  "current": 1,
+  "total": 1
+ },
+ "response": [
+  {
+   "team": {
+    "id": 376,
+    "name": "BK Hacken"
+   },
+   "players": [
+    {
+     "id": 427374,
+     "name": "Diogo Dias",
+     "age": 22,
+     "number": 31,
+     "position": "Goalkeeper"
+    },
+    {
+     "id": 1558,
+     "name": "Joel Robles",
+     "age": 35,
+     "number": 1,
+     "position": "Goalkeeper"
+    },
+    {
+     "id": 289513,
+     "name": "M. Turk",
+     "age": 22,
+     "number": 16,
+     "position": "Goalkeeper"
+    },
+    {
+     "id": 521997,
+     "name": "L. Bimai",
+     "age": 19,
+     "number": 57,
+     "position": "Defender"
+    },
+    {
+     "id": 477119,
+     "name": "Diogo Brasido",
+     "age": 22,
+     "number": 20,
+     "position": "Defender"
+    },
+    {
+     "id": 381619,
+     "name": "Pedro Carvalho",
+     "age": 22,
+     "number": 22,
+     "position": "Defender"
+    },
+    {
+     "id": 163614,
+     "name": "Gonçalo Costa",
+     "age": 25,
+     "number": 20,
+     "position": "Defender"
+    },
+    {
+     "id": 566,
+     "name": "Ferro",
+     "age": 28,
+     "number": 4,
+     "position": "Defender"
+    },
+    {
+     "id": 162495,
+     "name": "Fernando Medrano",
+     "age": 25,
+     "number": 3,
+     "position": "Defender"
+    },
+    {
+     "id": 642592,
+     "name": "Jan Montes",
+     "age": 19,
+     "number": 91,
+     "position": "Defender"
+    },
+    {
+     "id": 393929,
+     "name": "Tiago Parreira Parente",
+     "age": 21,
+     "number": 5,
+     "position": "Defender"
+    },
+    {
+     "id": 162889,
+     "name": "Ricard Sánchez",
+     "age": 25,
+     "number": 2,
+     "position": "Defender"
+    },
+    {
+     "id": 330443,
+     "name": "Isma Sierra",
+     "age": 22,
+     "number": 4,
+     "position": "Defender"
+    },
+    {
+     "id": 138874,
+     "name": "A. Tsoungui",
+     "age": 23,
+     "number": 5,
+     "position": "Defender"
+    },
+    {
+     "id": 415244,
+     "name": "Tiago Brito",
+     "age": 21,
+     "number": 90,
+     "position": "Midfielder"
+    },
+    {
+     "id": 19296,
+     "name": "João Carvalho",
+     "age": 28,
+     "number": 12,
+     "position": "Midfielder"
+    },
+    {
+     "id": 430775,
+     "name": "Luís Maria Viegas Abreu Campos Gomes",
+     "age": 21,
+     "number": 97,
+     "position": "Midfielder"
+    },
+    {
+     "id": 129728,
+     "name": "J. Holsgrove",
+     "age": 26,
+     "number": 10,
+     "position": "Midfielder"
+    },
+    {
+     "id": 162474,
+     "name": "Jandro Orellana",
+     "age": 25,
+     "number": 6,
+     "position": "Midfielder"
+    },
+    {
+     "id": 279274,
+     "name": "Bernardo Lourenço",
+     "age": 23,
+     "number": 79,
+     "position": "Midfielder"
+    },
+    {
+     "id": 22228,
+     "name": "Xeka",
+     "age": 31,
+     "number": 8,
+     "position": "Midfielder"
+    },
+    {
+     "id": 20867,
+     "name": "Y. Begraoui",
+     "age": 24,
+     "number": 14,
+     "position": "Attacker"
+    },
+    {
+     "id": 284062,
+     "name": "K. Edwards",
+     "age": 22,
+     "number": 11,
+     "position": "Attacker"
+    },
+    {
+     "id": 2209,
+     "name": "R. Guitane",
+     "age": 26,
+     "number": 99,
+     "position": "Attacker"
+    },
+    {
+     "id": 313958,
+     "name": "André Lacximicant",
+     "age": 24,
+     "number": 19,
+     "position": "Attacker"
+    },
+    {
+     "id": 427375,
+     "name": "Peixinho",
+     "age": 21,
+     "number": 70,
+     "position": "Attacker"
+    }
+   ]
+  }
+ ]
+}

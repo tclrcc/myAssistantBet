@@ -20,6 +20,7 @@ EXPECTED_TABLES = {
     "context",
     "coupons",
     "events",
+    "league_context",
     "market_coverage",
     "odds",
     "picks",

@@ -36,10 +36,19 @@ def api_client(http_client: httpx.AsyncClient, migrated: Settings) -> APIFootbal
     return APIFootballClient(http_client, migrated)
 
 
-def _seed_event(settings: Settings, *, rapproche: bool = True) -> None:
-    """Un match rattache a l'Allsvenskan, dont le rapprochement a deja eu lieu."""
+#: Ligue par defaut des tests. L'Allsvenskan **n'est pas** une competition a props
+#: buteurs : c'est le cas majoritaire, et celui ou la ligne « Buteurs » ne doit
+#: rien couter. `PROPS_LEAGUE` sert aux tests qui la veulent.
+LEAGUE = 113
+PROPS_LEAGUE = 39
+
+
+def _seed_event(settings: Settings, *, rapproche: bool = True, league: int = LEAGUE) -> None:
+    """Un match rattache a une competition, dont le rapprochement a deja eu lieu."""
     competition = db.query_one(
-        "SELECT id, sport_id FROM competitions WHERE apifootball_league_id = 113", settings=settings
+        "SELECT id, sport_id FROM competitions WHERE apifootball_league_id = ?",
+        (league,),
+        settings=settings,
     )
     db.execute(
         "INSERT INTO events (id, sport_id, competition_id, oddsapi_event_id, home, away, "
@@ -56,7 +65,10 @@ def _seed_event(settings: Settings, *, rapproche: bool = True) -> None:
     )
     if rapproche:
         store_context(
-            1, KIND_TEAMS, {"home": 376, "away": 377, "league": 113, "season": 2026}, settings
+            1,
+            KIND_TEAMS,
+            {"home": 376, "away": 377, "league": league, "season": 2026},
+            settings,
         )
 
 
@@ -84,6 +96,19 @@ def _mock_dossier(load_fixture: Any) -> dict[str, respx.Route]:
         "season_away": _saison("apifootball_fixtures_season_away.json", "377", "2026"),
         "season_home_prev": _saison("apifootball_fixtures_season_home_prev.json", "376", "2025"),
         "season_away_prev": _saison("apifootball_fixtures_season_away_prev.json", "377", "2025"),
+        "squad_home": _mock(
+            "/players/squads", "apifootball_squad_home.json", params__contains={"team": "376"}
+        ),
+        "squad_away": _mock(
+            "/players/squads", "apifootball_squad_away.json", params__contains={"team": "377"}
+        ),
+        # Un seul appel pour toute la competition : c'est ce qui fait de cet
+        # endpoint le seul dont le cout ne croit pas avec la taille du lot.
+        "scorers": _mock(
+            "/players/topscorers",
+            "apifootball_topscorers.json",
+            params__contains={"league": str(PROPS_LEAGUE)},
+        ),
     }
 
 
@@ -681,3 +706,219 @@ async def test_un_match_reporte_n_est_pas_une_echeance_a_preparer(
 
     # Le suivant est au-dela de la fenetre : plus aucune echeance pour cette equipe.
     assert HOME not in _lines(migrated)["Calendrier"]
+
+
+# -- Buteurs et effectif ------------------------------------------------------
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_les_buteurs_portent_les_buts_et_la_part_de_penaltys(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Les props buteurs etaient achetees sur six competitions sans qu'aucune
+    ligne ne dise qui marque dans ces equipes. La part de penaltys est dite parce
+    qu'elle change la nature du pari : douze buts dont dix sur penalty ne se
+    parient pas comme douze buts dans le jeu."""
+    _seed_event(migrated, league=PROPS_LEAGUE)
+    _mock_dossier(load_fixture)
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert _lines(migrated)["Buteurs"] == (
+        "BK Hacken L. Suárez 28b (4 pen), V. Pavlidis 23b (10 pen), Y. Begraoui 20b (5 pen) | "
+        "Djurgardens IF C. Ramírez 18b (6 pen), R. Zalazar 16b (10 pen)"
+    )
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_les_buteurs_ne_sont_pas_payes_hors_des_competitions_a_props(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """C'est le garde-fou principal de la phase. Ailleurs que sur les six
+    competitions de `PLAYER_PROPS_LEAGUES`, aucun bookmaker ne sert de props :
+    la ligne n'aurait aucun marche en face, et l'appel serait paye pour des
+    tokens en pure perte."""
+    _seed_event(migrated, league=LEAGUE)
+    routes = _mock_dossier(load_fixture)
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert routes["scorers"].call_count == 0
+    assert "Buteurs" not in _lines(migrated)
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_les_buteurs_ne_sont_payes_qu_une_fois_pour_toute_la_competition(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Le releve est range par competition et non par equipe : c'est ce qui fait
+    que le cout ne croit pas avec la taille du lot. Ranger la meme liste sous
+    chaque equipe la stockerait vingt fois et la paierait vingt fois."""
+    _seed_event(migrated, league=PROPS_LEAGUE)
+    routes = _mock_dossier(load_fixture)
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+    # Un second match de la meme competition, un autre jour.
+    db.execute(
+        "INSERT INTO events (id, sport_id, competition_id, home, away, commence_time, source, "
+        "created_at) SELECT 2, sport_id, competition_id, home, away, commence_time, source, "
+        "created_at FROM events WHERE id = 1",
+        settings=migrated,
+    )
+    store_context(
+        2, KIND_TEAMS, {"home": 376, "away": 377, "league": PROPS_LEAGUE, "season": 2026}, migrated
+    )
+    await dossier.refresh_event(api_client, 2, migrated, now=NOW)
+
+    assert routes["scorers"].call_count == 1
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_equipe_sans_buteur_classe_ne_produit_aucune_ligne(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Limite assumee de l'endpoint : il ne rend que les vingt meilleurs de la
+    competition. Nommer une equipe sans buteur ferait croire qu'elle n'en a pas,
+    alors qu'aucun des siens n'est dans les vingt premiers."""
+    _seed_event(migrated, league=PROPS_LEAGUE)
+    routes = _mock_dossier(load_fixture)
+    buteurs = load_fixture("apifootball_topscorers.json")
+    for row in buteurs["response"]:
+        # Tous les buteurs appartiennent a des equipes tierces.
+        row["statistics"][0]["team"] = {"id": 999, "name": "Autre club"}
+    routes["scorers"].mock(return_value=httpx.Response(200, json=buteurs, headers=RATE_HEADERS))
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert "Buteurs" not in _lines(migrated)
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_les_buteurs_non_couverts_ne_sont_pas_appeles(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Meme regle que le classement et les absents, appliquee au drapeau
+    `top_scorers` : la couverture est deja en main, memorisee au rapprochement,
+    donc le garde-fou ne coute pas un appel."""
+    _seed_event(migrated, league=PROPS_LEAGUE)
+    routes = _mock_dossier(load_fixture)
+    store_context(
+        1,
+        KIND_TEAMS,
+        {
+            "home": 376,
+            "away": 377,
+            "league": PROPS_LEAGUE,
+            "season": 2026,
+            "coverage": {"top_scorers": False, "players": False},
+        },
+        migrated,
+    )
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert routes["scorers"].call_count == 0
+    assert routes["squad_home"].call_count == 0, "meme regle pour l'effectif"
+    assert "Buteurs" not in _lines(migrated)
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_couverture_absente_du_releve_ne_bloque_rien(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Les rapprochements faits avant que la couverture soit memorisee n'en
+    portent pas. Un champ absent vaut couvert, sinon la mise a jour ferait
+    disparaitre des lignes qui arrivaient hier."""
+    _seed_event(migrated, league=PROPS_LEAGUE)
+    routes = _mock_dossier(load_fixture)
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert routes["scorers"].call_count == 1
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_l_effectif_est_collecte_sans_etre_rendu(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Une liste de vingt-six noms sans une statistique serait du bruit dans un
+    prompt. Elle est collectee pour rattacher un nom a un identifiant de joueur —
+    ce dont la suite a besoin — et rien de plus."""
+    _seed_event(migrated)
+    _mock_dossier(load_fixture)
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    effectif = dossier.load(376, dossier.KIND_SQUAD, settings=migrated)
+    assert effectif is not None
+    assert len(effectif[0]) == 26
+    assert all(joueur["id"] and joueur["name"] for joueur in effectif[0])
+    lignes = " ".join(_lines(migrated).values())
+    assert effectif[0][0]["name"] not in lignes, "aucun nom d'effectif dans le bloc"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_aucun_buteur_rendu_en_debut_de_saison(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Verifie en reel : en aout l'endpoint rend une liste **vide** — aucune
+    journee jouee — puis, des septembre, vingt joueurs a un ou deux buts. Les
+    lister ferait passer un classement de coincidences pour une hierarchie de
+    buteurs, et « 1b » se lirait comme une reference."""
+    _seed_event(migrated, league=PROPS_LEAGUE)
+    routes = _mock_dossier(load_fixture)
+    debut = load_fixture("apifootball_topscorers.json")
+    for row in debut["response"]:
+        row["statistics"][0]["goals"]["total"] = 2
+    routes["scorers"].mock(return_value=httpx.Response(200, json=debut, headers=RATE_HEADERS))
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert "Buteurs" not in _lines(migrated)
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_liste_de_buteurs_vide_n_est_pas_redemandee_pendant_sa_duree(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """La reponse d'aout est vide, et c'est une reponse : la memoriser evite de
+    repayer l'appel a chaque enrichissement de la journee."""
+    _seed_event(migrated, league=PROPS_LEAGUE)
+    routes = _mock_dossier(load_fixture)
+    routes["scorers"].mock(
+        return_value=httpx.Response(200, json={"errors": [], "response": []}, headers=RATE_HEADERS)
+    )
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    assert routes["scorers"].call_count == 1
+    assert "Buteurs" not in _lines(migrated)
+
+
+def test_le_prompt_dit_ce_que_la_ligne_buteurs_ne_dit_pas(migrated: Settings) -> None:
+    """Le garde-fou compte autant que la donnee. Une equipe absente de la ligne
+    n'est pas une equipe sans buteur, et un total de saison ne dit ni la
+    disponibilite ni la forme du moment."""
+    from myassistantbet.services.prompt import build_prompt
+
+    db.execute(
+        "INSERT INTO sessions (id, label, created_at) VALUES (1, 'test', ?)",
+        (db.utcnow(),),
+        settings=migrated,
+    )
+
+    body = build_prompt(1, settings=migrated).body
+
+    assert "n'est pas une équipe sans buteur" in body
+    assert "elle ne dit pas qui est disponible" in body
+    assert "part inscrite sur penalty" in body

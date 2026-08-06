@@ -336,7 +336,9 @@ async def test_absents_des_deux_equipes_sur_deux_lignes_alignees(
     )
 
     rows = build_prompt(session_id, settings=migrated, now=NOW).body.splitlines()
-    absents = next(index for index, row in enumerate(rows) if "Absents" in row)
+    # La ligne **rendue**, reconnue a son indentation de deux espaces : le mot
+    # apparait aussi dans les consignes du template, qui n'ont pas cette forme.
+    absents = next(index for index, row in enumerate(rows) if row.startswith("  Absents"))
 
     assert rows[absents].startswith("  Absents     BK Hacken — ")
     assert rows[absents + 1] == "              Djurgardens IF — aucun signale"

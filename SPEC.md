@@ -567,6 +567,18 @@ Ce qui vaut pour une **équipe** et non pour une rencontre a besoin d'une autre 
 
 *Critère d'acceptation :* sur une qualification européenne dont la compétition ne porte que deux matchs, le bloc affiche les buts, la série et le calendrier tirés de la saison domestique, avec l'année de la saison quand c'est la précédente — et un second enrichissement ne redemande pas la saison terminée.
 
+### Phase 14 — Les buteurs
+Les props buteurs étaient achetées sur six compétitions sans qu'aucune ligne ne dise qui marque dans ces équipes : le marché était rendu, l'angle sportif absent. `/players/topscorers` rend les vingt meilleurs de toute une compétition en **un appel**, ce qui en fait le seul endpoint de joueurs dont le coût ne croît pas avec la taille du lot.
+
+- `league_context(league_id, kind, scope, …)` : le relevé est rangé par **compétition** et non par équipe. Le ranger par équipe stockerait la même liste vingt fois et la paierait vingt fois. La table n'existait pas encore — une table sans lecteur est une avance prise sur un besoin qu'on ne connaît pas.
+- La ligne n'est ni payée ni rendue **hors des compétitions de `PLAYER_PROPS_LEAGUES`** : ailleurs aucun bookmaker ne sert de props, et la ligne coûterait des tokens sans marché en face. Second garde-fou, gratuit : `coverage.top_scorers`, mémorisé au rapprochement avec les identifiants d'équipe.
+- **La part de penaltys est dite** : un attaquant à 23 buts dont 10 sur penalty ne se parie pas comme celui qui en met 23 dans le jeu. Constaté en réel sur Pavlidis.
+- **Sous trois buts, aucun joueur n'est rendu.** Vérifié en réel : en août l'endpoint renvoie une liste vide, puis dès septembre vingt joueurs à un ou deux buts — les lister ferait passer un classement de coïncidences pour une hiérarchie de buteurs. La réponse vide est mémorisée comme les autres : c'est une réponse, et la repayer à chaque enrichissement de la journée n'apprendrait rien.
+- **Le prompt dit ce que la ligne ne dit pas** : une équipe absente n'est pas une équipe sans buteur (l'endpoint s'arrête aux vingt premiers), un total de saison ne dit ni la disponibilité — « Absents » et la recherche priment — ni la forme du moment.
+- L'effectif (`/players/squads`) est **collecté et jamais rendu** : sans statistique, vingt-six noms sont du bruit dans un prompt. Il sert à rattacher un nom à un identifiant de joueur, ce dont la phase suivante a besoin.
+
+*Critère d'acceptation :* sur un match de Premier League, le bloc porte les trois meilleurs buteurs de chaque équipe avec leur part de penaltys ; sur un match d'Allsvenskan, la ligne n'existe pas et aucun appel n'a été émis ; et deux matchs de la même compétition ne paient la liste qu'une fois.
+
 ---
 
 ## 11. Exigences de qualité

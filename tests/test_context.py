@@ -103,6 +103,12 @@ def _mock_all(load_fixture: Any) -> dict[str, respx.Route]:
         "coachs_away": _mock(
             "/coachs", "apifootball_coachs_away.json", params__contains={"team": "377"}
         ),
+        "squad_home": _mock(
+            "/players/squads", "apifootball_squad_home.json", params__contains={"team": "376"}
+        ),
+        "squad_away": _mock(
+            "/players/squads", "apifootball_squad_away.json", params__contains={"team": "377"}
+        ),
         "fixture_stats": _mock("/fixtures/statistics", "apifootball_fixture_statistics.json"),
         "team": _mock("/teams", "apifootball_team.json"),
     }

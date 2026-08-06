@@ -1,0 +1,1835 @@
+{
+ "get": "players/topscorers",
+ "parameters": {
+  "league": "39",
+  "season": "2026"
+ },
+ "errors": [],
+ "results": 20,
+ "paging": {
+  "current": 1,
+  "total": 1
+ },
+ "response": [
+  {
+   "player": {
+    "id": 47237,
+    "name": "L. Suárez",
+    "firstname": "Luis Javier",
+    "lastname": "Suárez Charris",
+    "age": 28,
+    "birth": {
+     "date": "1997-12-02",
+     "place": "Santa Marta",
+     "country": "Colombia"
+    },
+    "nationality": "Colombia",
+    "height": "185",
+    "weight": "74",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 376,
+      "name": "BK Hacken"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 32,
+      "lineups": 31,
+      "minutes": 2697,
+      "number": 97,
+      "position": "Attacker",
+      "rating": "7.42",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 1,
+      "out": 12,
+      "bench": 1
+     },
+     "shots": {
+      "total": 111,
+      "on": 60
+     },
+     "goals": {
+      "total": 28,
+      "conceded": 0,
+      "assists": 6,
+      "saves": null
+     },
+     "passes": {
+      "total": 593,
+      "key": 46,
+      "accuracy": 75
+     },
+     "tackles": {
+      "total": 15,
+      "blocks": 2,
+      "interceptions": 2
+     },
+     "duels": {
+      "total": 284,
+      "won": 132
+     },
+     "dribbles": {
+      "attempts": 72,
+      "success": 37,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 53,
+      "committed": 43
+     },
+     "cards": {
+      "yellow": 7,
+      "yellowred": 0,
+      "red": 0
+     },
+     "penalty": {
+      "won": 1,
+      "commited": null,
+      "scored": 4,
+      "missed": 2,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 36798,
+    "name": "V. Pavlidis",
+    "firstname": "Vangelis",
+    "lastname": "Pavlidis",
+    "age": 27,
+    "birth": {
+     "date": "1998-11-21",
+     "place": "Thessaloniki",
+     "country": "Greece"
+    },
+    "nationality": "Greece",
+    "height": "186",
+    "weight": "82",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 376,
+      "name": "BK Hacken"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 33,
+      "lineups": 30,
+      "minutes": 2666,
+      "number": 14,
+      "position": "Attacker",
+      "rating": "6.98",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 3,
+      "out": 15,
+      "bench": 4
+     },
+     "shots": {
+      "total": 78,
+      "on": 48
+     },
+     "goals": {
+      "total": 23,
+      "conceded": 0,
+      "assists": 4,
+      "saves": null
+     },
+     "passes": {
+      "total": 637,
+      "key": 35,
+      "accuracy": 70
+     },
+     "tackles": {
+      "total": 18,
+      "blocks": 1,
+      "interceptions": 2
+     },
+     "duels": {
+      "total": 324,
+      "won": 135
+     },
+     "dribbles": {
+      "attempts": 46,
+      "success": 13,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 40,
+      "committed": 15
+     },
+     "cards": {
+      "yellow": 3,
+      "yellowred": 0,
+      "red": 0
+     },
+     "penalty": {
+      "won": null,
+      "commited": null,
+      "scored": 10,
+      "missed": 1,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 20867,
+    "name": "Y. Begraoui",
+    "firstname": "Yanis Redha",
+    "lastname": "Begraoui",
+    "age": 24,
+    "birth": {
+     "date": "2001-07-04",
+     "place": "Étampes",
+     "country": "France"
+    },
+    "nationality": "Morocco",
+    "height": "179",
+    "weight": "72",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 376,
+      "name": "BK Hacken"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 34,
+      "lineups": 31,
+      "minutes": 2725,
+      "number": 14,
+      "position": "Attacker",
+      "rating": "6.9",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 3,
+      "out": 9,
+      "bench": 3
+     },
+     "shots": {
+      "total": 62,
+      "on": 35
+     },
+     "goals": {
+      "total": 20,
+      "conceded": 0,
+      "assists": 1,
+      "saves": null
+     },
+     "passes": {
+      "total": 606,
+      "key": 19,
+      "accuracy": 78
+     },
+     "tackles": {
+      "total": 12,
+      "blocks": 2,
+      "interceptions": 8
+     },
+     "duels": {
+      "total": 238,
+      "won": 89
+     },
+     "dribbles": {
+      "attempts": 61,
+      "success": 25,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 32,
+      "committed": 24
+     },
+     "cards": {
+      "yellow": 1,
+      "yellowred": 0,
+      "red": 0
+     },
+     "penalty": {
+      "won": null,
+      "commited": 1,
+      "scored": 5,
+      "missed": 0,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 103958,
+    "name": "C. Ramírez",
+    "firstname": "Jesús Andrés",
+    "lastname": "Ramírez Díaz",
+    "age": 27,
+    "birth": {
+     "date": "1998-05-04",
+     "place": "Tovar",
+     "country": "Venezuela"
+    },
+    "nationality": "Venezuela",
+    "height": "187",
+    "weight": "83",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 377,
+      "name": "Djurgardens IF"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 33,
+      "lineups": 33,
+      "minutes": 2892,
+      "number": 9,
+      "position": "Attacker",
+      "rating": "7.01",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 0,
+      "out": 11,
+      "bench": 0
+     },
+     "shots": {
+      "total": 84,
+      "on": 45
+     },
+     "goals": {
+      "total": 18,
+      "conceded": 0,
+      "assists": 0,
+      "saves": null
+     },
+     "passes": {
+      "total": 604,
+      "key": 25,
+      "accuracy": 68
+     },
+     "tackles": {
+      "total": 14,
+      "blocks": 6,
+      "interceptions": 4
+     },
+     "duels": {
+      "total": 477,
+      "won": 211
+     },
+     "dribbles": {
+      "attempts": 40,
+      "success": 22,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 42,
+      "committed": 45
+     },
+     "cards": {
+      "yellow": 6,
+      "yellowred": 0,
+      "red": 0
+     },
+     "penalty": {
+      "won": 2,
+      "commited": null,
+      "scored": 6,
+      "missed": 1,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 108563,
+    "name": "R. Zalazar",
+    "firstname": "Rodrigo",
+    "lastname": "Zalazar Martínez",
+    "age": 26,
+    "birth": {
+     "date": "1999-08-12",
+     "place": "Albacete",
+     "country": "Spain"
+    },
+    "nationality": "Uruguay",
+    "height": "178",
+    "weight": "72",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 377,
+      "name": "Djurgardens IF"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 28,
+      "lineups": 22,
+      "minutes": 1944,
+      "number": 10,
+      "position": "Midfielder",
+      "rating": "7.31",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 6,
+      "out": 10,
+      "bench": 7
+     },
+     "shots": {
+      "total": 50,
+      "on": 27
+     },
+     "goals": {
+      "total": 16,
+      "conceded": 0,
+      "assists": 5,
+      "saves": null
+     },
+     "passes": {
+      "total": 1000,
+      "key": 37,
+      "accuracy": 81
+     },
+     "tackles": {
+      "total": 21,
+      "blocks": null,
+      "interceptions": 5
+     },
+     "duels": {
+      "total": 328,
+      "won": 154
+     },
+     "dribbles": {
+      "attempts": 107,
+      "success": 49,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 49,
+      "committed": 17
+     },
+     "cards": {
+      "yellow": 6,
+      "yellowred": 0,
+      "red": 0
+     },
+     "penalty": {
+      "won": null,
+      "commited": null,
+      "scored": 10,
+      "missed": 0,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 41103,
+    "name": "Ricardo Horta",
+    "firstname": "Ricardo Jorge",
+    "lastname": "da Luz Horta",
+    "age": 31,
+    "birth": {
+     "date": "1994-09-15",
+     "place": "Almada",
+     "country": "Portugal"
+    },
+    "nationality": "Portugal",
+    "height": "173",
+    "weight": "66",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 217,
+      "name": "SC Braga"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 28,
+      "lineups": 25,
+      "minutes": 2149,
+      "number": 21,
+      "position": "Attacker",
+      "rating": "7.25",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 3,
+      "out": 10,
+      "bench": 3
+     },
+     "shots": {
+      "total": 50,
+      "on": 31
+     },
+     "goals": {
+      "total": 14,
+      "conceded": 0,
+      "assists": 4,
+      "saves": null
+     },
+     "passes": {
+      "total": 1139,
+      "key": 50,
+      "accuracy": 88
+     },
+     "tackles": {
+      "total": 32,
+      "blocks": 2,
+      "interceptions": 10
+     },
+     "duels": {
+      "total": 143,
+      "won": 64
+     },
+     "dribbles": {
+      "attempts": 23,
+      "success": 9,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 17,
+      "committed": 25
+     },
+     "cards": {
+      "yellow": 4,
+      "yellowred": 1,
+      "red": 0
+     },
+     "penalty": {
+      "won": 1,
+      "commited": null,
+      "scored": 3,
+      "missed": 1,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 18748,
+    "name": "Pote",
+    "firstname": "Pedro António",
+    "lastname": "Pereira Gonçalves",
+    "age": 27,
+    "birth": {
+     "date": "1998-06-28",
+     "place": "Chaves",
+     "country": "Portugal"
+    },
+    "nationality": "Portugal",
+    "height": "173",
+    "weight": "70",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 228,
+      "name": "Sporting CP"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 27,
+      "lineups": 25,
+      "minutes": 1993,
+      "number": 8,
+      "position": "Midfielder",
+      "rating": "7.15",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 2,
+      "out": 22,
+      "bench": 3
+     },
+     "shots": {
+      "total": 64,
+      "on": 36
+     },
+     "goals": {
+      "total": 13,
+      "conceded": 0,
+      "assists": 8,
+      "saves": null
+     },
+     "passes": {
+      "total": 914,
+      "key": 55,
+      "accuracy": 80
+     },
+     "tackles": {
+      "total": 15,
+      "blocks": 2,
+      "interceptions": 7
+     },
+     "duels": {
+      "total": 156,
+      "won": 69
+     },
+     "dribbles": {
+      "attempts": 57,
+      "success": 25,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 22,
+      "committed": 11
+     },
+     "cards": {
+      "yellow": 5,
+      "yellowred": 0,
+      "red": 0
+     },
+     "penalty": {
+      "won": null,
+      "commited": null,
+      "scored": 2,
+      "missed": 0,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 358628,
+    "name": "Samu",
+    "firstname": "Samuel",
+    "lastname": "Omorodion Aghehowa",
+    "age": 21,
+    "birth": {
+     "date": "2004-05-05",
+     "place": "Melilla",
+     "country": "Spain"
+    },
+    "nationality": "Spain",
+    "height": "193",
+    "weight": "90",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 212,
+      "name": "FC Porto"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 20,
+      "lineups": 19,
+      "minutes": 1414,
+      "number": 9,
+      "position": "Attacker",
+      "rating": "6.84",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 1,
+      "out": 15,
+      "bench": 1
+     },
+     "shots": {
+      "total": 43,
+      "on": 32
+     },
+     "goals": {
+      "total": 12,
+      "conceded": 0,
+      "assists": 1,
+      "saves": null
+     },
+     "passes": {
+      "total": 242,
+      "key": 10,
+      "accuracy": 72
+     },
+     "tackles": {
+      "total": 3,
+      "blocks": null,
+      "interceptions": 3
+     },
+     "duels": {
+      "total": 159,
+      "won": 69
+     },
+     "dribbles": {
+      "attempts": 43,
+      "success": 19,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 27,
+      "committed": 18
+     },
+     "cards": {
+      "yellow": 2,
+      "yellowred": 0,
+      "red": 0
+     },
+     "penalty": {
+      "won": 1,
+      "commited": null,
+      "scored": 5,
+      "missed": 1,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 41110,
+    "name": "Murilo",
+    "firstname": "Murilo",
+    "lastname": "de Souza Costa",
+    "age": 31,
+    "birth": {
+     "date": "1994-10-31",
+     "place": "São José do Norte",
+     "country": "Brazil"
+    },
+    "nationality": "Brazil",
+    "height": "177",
+    "weight": "68",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 762,
+      "name": "GIL Vicente"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 32,
+      "lineups": 30,
+      "minutes": 2590,
+      "number": 77,
+      "position": "Attacker",
+      "rating": "6.93",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 2,
+      "out": 18,
+      "bench": 2
+     },
+     "shots": {
+      "total": 58,
+      "on": 32
+     },
+     "goals": {
+      "total": 11,
+      "conceded": 0,
+      "assists": 4,
+      "saves": null
+     },
+     "passes": {
+      "total": 753,
+      "key": 40,
+      "accuracy": 79
+     },
+     "tackles": {
+      "total": 32,
+      "blocks": 2,
+      "interceptions": 9
+     },
+     "duels": {
+      "total": 233,
+      "won": 105
+     },
+     "dribbles": {
+      "attempts": 76,
+      "success": 36,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 25,
+      "committed": 12
+     },
+     "cards": {
+      "yellow": 3,
+      "yellowred": 0,
+      "red": 0
+     },
+     "penalty": {
+      "won": null,
+      "commited": 1,
+      "scored": 6,
+      "missed": 0,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 263530,
+    "name": "Pau Victor",
+    "firstname": "Pau",
+    "lastname": "Victor Delgado",
+    "age": 24,
+    "birth": {
+     "date": "2001-11-26",
+     "place": "San Cugat del Vallès",
+     "country": "Spain"
+    },
+    "nationality": "Spain",
+    "height": "184",
+    "weight": "77",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 217,
+      "name": "SC Braga"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 32,
+      "lineups": 27,
+      "minutes": 2269,
+      "number": 18,
+      "position": "Attacker",
+      "rating": "6.93",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 5,
+      "out": 17,
+      "bench": 6
+     },
+     "shots": {
+      "total": 36,
+      "on": 23
+     },
+     "goals": {
+      "total": 10,
+      "conceded": 0,
+      "assists": 4,
+      "saves": null
+     },
+     "passes": {
+      "total": 909,
+      "key": 20,
+      "accuracy": 85
+     },
+     "tackles": {
+      "total": 26,
+      "blocks": 3,
+      "interceptions": 8
+     },
+     "duels": {
+      "total": 249,
+      "won": 112
+     },
+     "dribbles": {
+      "attempts": 67,
+      "success": 36,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 32,
+      "committed": 31
+     },
+     "cards": {
+      "yellow": 5,
+      "yellowred": 0,
+      "red": 0
+     },
+     "penalty": {
+      "won": null,
+      "commited": null,
+      "scored": 1,
+      "missed": 0,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 195580,
+    "name": "Clayton",
+    "firstname": "Clayton",
+    "lastname": "Fernandes Silva",
+    "age": 26,
+    "birth": {
+     "date": "1999-01-11",
+     "place": "Belo Horizonte",
+     "country": "Brazil"
+    },
+    "nationality": "Brazil",
+    "height": "184",
+    "weight": "80",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 226,
+      "name": "Rio Ave"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 19,
+      "lineups": 18,
+      "minutes": 1600,
+      "number": 9,
+      "position": "Attacker",
+      "rating": "7.17",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 1,
+      "out": 7,
+      "bench": 1
+     },
+     "shots": {
+      "total": 32,
+      "on": 23
+     },
+     "goals": {
+      "total": 10,
+      "conceded": 0,
+      "assists": 4,
+      "saves": null
+     },
+     "passes": {
+      "total": 218,
+      "key": 11,
+      "accuracy": 79
+     },
+     "tackles": {
+      "total": 3,
+      "blocks": 5,
+      "interceptions": 1
+     },
+     "duels": {
+      "total": 221,
+      "won": 89
+     },
+     "dribbles": {
+      "attempts": 29,
+      "success": 6,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 58,
+      "committed": 42
+     },
+     "cards": {
+      "yellow": 7,
+      "yellowred": 1,
+      "red": 0
+     },
+     "penalty": {
+      "won": 1,
+      "commited": null,
+      "scored": 2,
+      "missed": 1,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 301187,
+    "name": "Pablo",
+    "firstname": "Pablo Felipe",
+    "lastname": "Pereira de Jesus",
+    "age": 21,
+    "birth": {
+     "date": "2004-01-02",
+     "place": "Braga",
+     "country": "Portugal"
+    },
+    "nationality": "Portugal",
+    "height": "184",
+    "weight": "74",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 762,
+      "name": "GIL Vicente"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 13,
+      "lineups": 12,
+      "minutes": 955,
+      "number": 9,
+      "position": "Attacker",
+      "rating": "7.31",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 1,
+      "out": 10,
+      "bench": 1
+     },
+     "shots": {
+      "total": 17,
+      "on": 13
+     },
+     "goals": {
+      "total": 10,
+      "conceded": 0,
+      "assists": 1,
+      "saves": null
+     },
+     "passes": {
+      "total": 163,
+      "key": 14,
+      "accuracy": 72
+     },
+     "tackles": {
+      "total": 13,
+      "blocks": 1,
+      "interceptions": 3
+     },
+     "duels": {
+      "total": 179,
+      "won": 84
+     },
+     "dribbles": {
+      "attempts": 14,
+      "success": 9,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 30,
+      "committed": 24
+     },
+     "cards": {
+      "yellow": 4,
+      "yellowred": 0,
+      "red": 0
+     },
+     "penalty": {
+      "won": null,
+      "commited": null,
+      "scored": 2,
+      "missed": 1,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 195513,
+    "name": "A. Trezza",
+    "firstname": "Alfonso",
+    "lastname": "Trezza Hernández",
+    "age": 26,
+    "birth": {
+     "date": "1999-06-22",
+     "place": "Florida",
+     "country": "Uruguay"
+    },
+    "nationality": "Uruguay",
+    "height": "166",
+    "weight": "59",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 240,
+      "name": "Arouca"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 32,
+      "lineups": 27,
+      "minutes": 2329,
+      "number": 19,
+      "position": "Midfielder",
+      "rating": "6.69",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 5,
+      "out": 15,
+      "bench": 5
+     },
+     "shots": {
+      "total": 35,
+      "on": 19
+     },
+     "goals": {
+      "total": 9,
+      "conceded": 0,
+      "assists": 2,
+      "saves": null
+     },
+     "passes": {
+      "total": 376,
+      "key": 23,
+      "accuracy": 70
+     },
+     "tackles": {
+      "total": 34,
+      "blocks": 2,
+      "interceptions": 8
+     },
+     "duels": {
+      "total": 247,
+      "won": 87
+     },
+     "dribbles": {
+      "attempts": 40,
+      "success": 17,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 26,
+      "committed": 36
+     },
+     "cards": {
+      "yellow": 2,
+      "yellowred": 0,
+      "red": 1
+     },
+     "penalty": {
+      "won": null,
+      "commited": 1,
+      "scored": 0,
+      "missed": 0,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 41223,
+    "name": "Guilherme Schettine",
+    "firstname": "Guilherme",
+    "lastname": "Schettine Guimarães",
+    "age": 30,
+    "birth": {
+     "date": "1995-10-10",
+     "place": "Brasília",
+     "country": "Brazil"
+    },
+    "nationality": "Brazil",
+    "height": "180",
+    "weight": "82",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 215,
+      "name": "Moreirense"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 15,
+      "lineups": 14,
+      "minutes": 995,
+      "number": 95,
+      "position": "Attacker",
+      "rating": "7.05",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 1,
+      "out": 13,
+      "bench": 1
+     },
+     "shots": {
+      "total": 24,
+      "on": 17
+     },
+     "goals": {
+      "total": 9,
+      "conceded": 0,
+      "assists": 1,
+      "saves": null
+     },
+     "passes": {
+      "total": 216,
+      "key": 7,
+      "accuracy": 71
+     },
+     "tackles": {
+      "total": 7,
+      "blocks": null,
+      "interceptions": 2
+     },
+     "duels": {
+      "total": 142,
+      "won": 56
+     },
+     "dribbles": {
+      "attempts": 17,
+      "success": 8,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 19,
+      "committed": 22
+     },
+     "cards": {
+      "yellow": 1,
+      "yellowred": 0,
+      "red": 0
+     },
+     "penalty": {
+      "won": null,
+      "commited": null,
+      "scored": 0,
+      "missed": 0,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 312650,
+    "name": "M. Milovanović",
+    "firstname": "Marko",
+    "lastname": "Milovanović",
+    "age": 22,
+    "birth": {
+     "date": "2003-08-04",
+     "place": "Smederevo",
+     "country": "Serbia"
+    },
+    "nationality": "Serbia",
+    "height": "197",
+    "weight": "88",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 4724,
+      "name": "Alverca"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 31,
+      "lineups": 18,
+      "minutes": 1536,
+      "number": 9,
+      "position": "Attacker",
+      "rating": "6.72",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 13,
+      "out": 17,
+      "bench": 13
+     },
+     "shots": {
+      "total": 31,
+      "on": 21
+     },
+     "goals": {
+      "total": 9,
+      "conceded": 0,
+      "assists": 2,
+      "saves": null
+     },
+     "passes": {
+      "total": 258,
+      "key": 7,
+      "accuracy": 67
+     },
+     "tackles": {
+      "total": 6,
+      "blocks": 4,
+      "interceptions": null
+     },
+     "duels": {
+      "total": 227,
+      "won": 94
+     },
+     "dribbles": {
+      "attempts": 26,
+      "success": 7,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 27,
+      "committed": 32
+     },
+     "cards": {
+      "yellow": 3,
+      "yellowred": 0,
+      "red": 0
+     },
+     "penalty": {
+      "won": null,
+      "commited": null,
+      "scored": 3,
+      "missed": 0,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 46669,
+    "name": "Barbero",
+    "firstname": "Iván",
+    "lastname": "Martínez Gonzálvez",
+    "age": 27,
+    "birth": {
+     "date": "1998-08-17",
+     "place": "Roquetas de Mar",
+     "country": "Spain"
+    },
+    "nationality": "Spain",
+    "height": "186",
+    "weight": "78",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 240,
+      "name": "Arouca"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 31,
+      "lineups": 24,
+      "minutes": 1914,
+      "number": 17,
+      "position": "Attacker",
+      "rating": "6.52",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 7,
+      "out": 20,
+      "bench": 9
+     },
+     "shots": {
+      "total": 42,
+      "on": 20
+     },
+     "goals": {
+      "total": 8,
+      "conceded": 0,
+      "assists": 2,
+      "saves": null
+     },
+     "passes": {
+      "total": 328,
+      "key": 19,
+      "accuracy": 73
+     },
+     "tackles": {
+      "total": 25,
+      "blocks": 4,
+      "interceptions": 14
+     },
+     "duels": {
+      "total": 242,
+      "won": 81
+     },
+     "dribbles": {
+      "attempts": 16,
+      "success": 3,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 16,
+      "committed": 52
+     },
+     "cards": {
+      "yellow": 5,
+      "yellowred": 0,
+      "red": 0
+     },
+     "penalty": {
+      "won": null,
+      "commited": null,
+      "scored": 1,
+      "missed": 1,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 449243,
+    "name": "William",
+    "firstname": "William",
+    "lastname": "Gomes Carvalho Santos",
+    "age": 19,
+    "birth": {
+     "date": "2006-03-15",
+     "place": null,
+     "country": "Brazil"
+    },
+    "nationality": "Brazil",
+    "height": "172",
+    "weight": "64",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 212,
+      "name": "FC Porto"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 28,
+      "lineups": 9,
+      "minutes": 1168,
+      "number": 7,
+      "position": "Attacker",
+      "rating": "6.97",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 19,
+      "out": 7,
+      "bench": 22
+     },
+     "shots": {
+      "total": 30,
+      "on": 18
+     },
+     "goals": {
+      "total": 8,
+      "conceded": 0,
+      "assists": 1,
+      "saves": null
+     },
+     "passes": {
+      "total": 302,
+      "key": 13,
+      "accuracy": 69
+     },
+     "tackles": {
+      "total": 26,
+      "blocks": 1,
+      "interceptions": 5
+     },
+     "duels": {
+      "total": 191,
+      "won": 72
+     },
+     "dribbles": {
+      "attempts": 54,
+      "success": 20,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 21,
+      "committed": 31
+     },
+     "cards": {
+      "yellow": 5,
+      "yellowred": 0,
+      "red": 1
+     },
+     "penalty": {
+      "won": null,
+      "commited": null,
+      "scored": 1,
+      "missed": 0,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 41112,
+    "name": "Trincão",
+    "firstname": "Francisco António",
+    "lastname": "Machado Mota de Castro Trincão",
+    "age": 26,
+    "birth": {
+     "date": "1999-12-29",
+     "place": "Viana do Castelo",
+     "country": "Portugal"
+    },
+    "nationality": "Portugal",
+    "height": "184",
+    "weight": "76",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 228,
+      "name": "Sporting CP"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 34,
+      "lineups": 32,
+      "minutes": 2850,
+      "number": 17,
+      "position": "Midfielder",
+      "rating": "7.16",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 2,
+      "out": 12,
+      "bench": 2
+     },
+     "shots": {
+      "total": 47,
+      "on": 24
+     },
+     "goals": {
+      "total": 7,
+      "conceded": 0,
+      "assists": 11,
+      "saves": null
+     },
+     "passes": {
+      "total": 1352,
+      "key": 85,
+      "accuracy": 86
+     },
+     "tackles": {
+      "total": 35,
+      "blocks": 1,
+      "interceptions": 10
+     },
+     "duels": {
+      "total": 241,
+      "won": 105
+     },
+     "dribbles": {
+      "attempts": 103,
+      "success": 41,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 21,
+      "committed": 22
+     },
+     "cards": {
+      "yellow": 1,
+      "yellowred": 0,
+      "red": 0
+     },
+     "penalty": {
+      "won": 3,
+      "commited": null,
+      "scored": 0,
+      "missed": 0,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 325717,
+    "name": "André Luiz",
+    "firstname": "André Luiz",
+    "lastname": "Inácio da Silva",
+    "age": 23,
+    "birth": {
+     "date": "2002-02-23",
+     "place": "Rio de Janeiro",
+     "country": "Brazil"
+    },
+    "nationality": "Brazil",
+    "height": "185",
+    "weight": "77",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 226,
+      "name": "Rio Ave"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 19,
+      "lineups": 17,
+      "minutes": 1500,
+      "number": 11,
+      "position": "Attacker",
+      "rating": "7.44",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 2,
+      "out": 11,
+      "bench": 2
+     },
+     "shots": {
+      "total": 34,
+      "on": 19
+     },
+     "goals": {
+      "total": 7,
+      "conceded": 0,
+      "assists": 5,
+      "saves": null
+     },
+     "passes": {
+      "total": 270,
+      "key": 22,
+      "accuracy": 78
+     },
+     "tackles": {
+      "total": 25,
+      "blocks": 3,
+      "interceptions": 1
+     },
+     "duels": {
+      "total": 234,
+      "won": 111
+     },
+     "dribbles": {
+      "attempts": 84,
+      "success": 30,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 49,
+      "committed": 11
+     },
+     "cards": {
+      "yellow": 3,
+      "yellowred": 0,
+      "red": 0
+     },
+     "penalty": {
+      "won": 2,
+      "commited": null,
+      "scored": 0,
+      "missed": 0,
+      "saved": null
+     }
+    }
+   ]
+  },
+  {
+   "player": {
+    "id": 355171,
+    "name": "Lee Hyun-Ju",
+    "firstname": "Hyun-Ju",
+    "lastname": "Lee",
+    "age": 22,
+    "birth": {
+     "date": "2003-02-07",
+     "place": "Ansan",
+     "country": "Korea Republic"
+    },
+    "nationality": "Korea Republic",
+    "height": "171",
+    "weight": "68",
+    "injured": false
+   },
+   "statistics": [
+    {
+     "team": {
+      "id": 240,
+      "name": "Arouca"
+     },
+     "league": {
+      "id": 39,
+      "name": "Premier League",
+      "country": "Portugal",
+      "season": 2025
+     },
+     "games": {
+      "appearences": 30,
+      "lineups": 24,
+      "minutes": 2068,
+      "number": 14,
+      "position": "Midfielder",
+      "rating": "6.65",
+      "captain": false
+     },
+     "substitutes": {
+      "in": 6,
+      "out": 18,
+      "bench": 6
+     },
+     "shots": {
+      "total": 22,
+      "on": 11
+     },
+     "goals": {
+      "total": 7,
+      "conceded": 0,
+      "assists": 3,
+      "saves": null
+     },
+     "passes": {
+      "total": 643,
+      "key": 12,
+      "accuracy": 89
+     },
+     "tackles": {
+      "total": 11,
+      "blocks": 3,
+      "interceptions": 7
+     },
+     "duels": {
+      "total": 239,
+      "won": 105
+     },
+     "dribbles": {
+      "attempts": 41,
+      "success": 19,
+      "past": null
+     },
+     "fouls": {
+      "drawn": 67,
+      "committed": 41
+     },
+     "cards": {
+      "yellow": 7,
+      "yellowred": 2,
+      "red": 0
+     },
+     "penalty": {
+      "won": 1,
+      "commited": null,
+      "scored": 0,
+      "missed": 0,
+      "saved": null
+     }
+    }
+   ]
+  }
+ ]
+}

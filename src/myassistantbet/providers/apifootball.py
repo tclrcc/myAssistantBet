@@ -202,6 +202,27 @@ class APIFootballClient(BaseHTTPClient):
         rows = await self._fetch("/teams", {"id": team_id})
         return rows[0] if rows else None
 
+    async def top_scorers(self, league_id: int, season: int) -> list[dict[str, Any]]:
+        """Vingt meilleurs buteurs d'une competition, en un appel.
+
+        L'appel porte sur la **ligue** et non sur une equipe : toutes les equipes
+        d'une meme competition le partagent, ce qui en fait le seul endpoint de
+        joueurs dont le cout ne croit pas avec la taille de la selection.
+
+        Corollaire a assumer : une equipe dont aucun joueur n'est dans les vingt
+        premiers n'aura pas de ligne. Aller la chercher demanderait `/players`,
+        pagine, donc deux a trois appels par equipe.
+        """
+        return await self._fetch("/players/topscorers", {"league": league_id, "season": season})
+
+    async def squad(self, team_id: int) -> list[dict[str, Any]]:
+        """Effectif actuel d'une equipe : identifiants, postes, ages, numeros.
+
+        Aucune statistique — c'est une liste nominative. Elle sert a rattacher un
+        nom de joueur a un identifiant, pas a decrire une equipe.
+        """
+        return await self._fetch("/players/squads", {"team": team_id})
+
     async def team_fixtures(self, team_id: int, season: int) -> list[dict[str, Any]]:
         """Tous les matchs d'une equipe sur une saison, **toutes competitions**.
 

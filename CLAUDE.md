@@ -323,6 +323,30 @@ de fois qu'elle joue.
   chaque lecture. Volontairement **absent de `report.kinds`** : ce n'est pas un contexte
   recupere, c'est le moyen d'en chercher d'autres. Un evenement dont le rapprochement est
   reste incertain n'a rien ici, et le dossier **ne devine pas**.
+- **Buteurs** (`/players/topscorers`, `KIND_SCORERS`, table `league_context`) : ranges par
+  **competition** et non par equipe. Un appel rend les vingt meilleurs de toute la ligue,
+  donc le cout ne croit pas avec la taille du lot ; les ranger par equipe stockerait la
+  meme liste vingt fois et la paierait vingt fois. `LEAGUE_KINDS` porte la distinction, et
+  c'est **le type qui dit ou le releve se range** — la mettre dans la liste des taches
+  l'aurait fait oublier au premier appelant suivant.
+  - **Ni paye ni rendu hors de `PLAYER_PROPS_LEAGUES`** (`_props_league()`) : ailleurs
+    aucun book ne sert de props, et la ligne couterait des tokens sans marche en face.
+    Second garde-fou gratuit : `coverage.top_scorers`, memorise au rapprochement.
+  - **La part de penaltys est dite** : 23 buts dont 10 sur penalty ne se parient pas comme
+    23 buts dans le jeu.
+  - **Sous `SCORERS_MIN_GOALS` (3) buts, aucun joueur.** Verifie en reel : en aout
+    l'endpoint rend une liste **vide**, puis des septembre vingt joueurs a un ou deux buts.
+    Les lister ferait passer un classement de coincidences pour une hierarchie. La reponse
+    vide est memorisee — c'est une reponse, et la repayer chaque jour n'apprend rien.
+  - Le drapeau `injured` du fournisseur est **ignore** : sa fraicheur est inconnue, alors
+    que `/injuries` fait autorite sur les absents. Deux sources qui se contredisent dans le
+    meme bloc valent moins qu'une seule.
+  - Limite assumee : une equipe dont aucun joueur n'est dans les vingt premiers n'a pas de
+    ligne. Le template le dit — une equipe absente n'est pas une equipe sans buteur.
+- **Effectif** (`/players/squads`, `KIND_SQUAD`) : **collecte, jamais rendu**. Sans une
+  statistique, vingt-six noms sont du bruit dans un prompt. Il sert a rattacher un nom a un
+  identifiant de joueur. Le garder sans lecteur est assume et delimite : si rien ne le lit
+  a terme, il se retire en supprimant son type.
 - **Historique de saison** (`/fixtures?team=&season=`, `KIND_SEASON`, scope = l'annee) : un
   seul appel rend toute la saison d'une equipe, **toutes competitions**, avec les scores a
   la pause et les matchs a venir. C'est ce qui repare l'angle mort de `/teams/statistics`,

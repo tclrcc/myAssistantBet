@@ -40,6 +40,14 @@ logger = logging.getLogger(__name__)
 
 KIND_COACH = "coach"
 KIND_SEASON = "season"
+#: Meilleurs buteurs, ranges par **competition** et non par equipe : un appel
+#: rend les vingt premiers de toute la ligue, et les stocker par equipe les
+#: dupliquerait autant de fois qu'elle compte de clubs.
+KIND_SCORERS = "scorers"
+#: Effectif nominatif. Collecte, **jamais rendu** : sans statistique, une liste de
+#: vingt-six noms serait du bruit dans un prompt. Il sert a rattacher un nom a un
+#: identifiant de joueur, ce dont la phase suivante a besoin.
+KIND_SQUAD = "squad"
 
 #: Peremption par type, en heures. Elle se regle sur la vitesse a laquelle la
 #: donnee change, bornee par ce qu'elle coute.
@@ -54,7 +62,10 @@ KIND_SEASON = "season"
 #:
 #: L'historique d'une saison en cours change des qu'un match est joue : douze
 #: heures suffisent a ce qu'une journee de championnat entre dans les comptes.
-TTL_HOURS = {KIND_COACH: 24 * 7, KIND_SEASON: 12}
+#: Les buteurs suivent la meme cadence, pour un appel par ligue et non par
+#: equipe. Un effectif ne bouge qu'au mercato : un mois suffit, et le raccourcir
+#: paierait un appel par equipe pour reecrire les memes noms.
+TTL_HOURS = {KIND_COACH: 24 * 7, KIND_SEASON: 12, KIND_SCORERS: 12, KIND_SQUAD: 24 * 30}
 
 #: Peremption d'une saison **terminee**. Elle ne changera plus jamais : la
 #: rafraichir toutes les douze heures paierait un appel par equipe pour reecrire
@@ -89,6 +100,17 @@ SEASON_MIN_MATCHES = 5
 
 #: Une serie de un match n'est pas une serie.
 STREAK_MIN = 2
+
+#: Buteurs rendus par equipe. Au-dela de trois, on liste des remplacants a un but
+#: dont aucune props n'est jouable.
+SCORERS_KEEP = 3
+
+#: Sous ce nombre de buts, un joueur n'est pas rendu. Verifie en reel : en aout,
+#: `/players/topscorers` rend une liste **vide** — aucune journee n'a ete jouee —
+#: puis, des septembre, vingt joueurs a un ou deux buts. Les lister ferait passer
+#: un classement de coincidences pour une hierarchie de buteurs. Trois buts est le
+#: premier palier ou l'ordre commence a decrire quelque chose.
+SCORERS_MIN_GOALS = 3
 
 #: Au-dela, le prochain match n'est plus un facteur de rotation d'effectif.
 NEXT_MATCH_MAX_DAYS = 10
@@ -148,6 +170,41 @@ def load(
             "SELECT payload_json, fetched_at FROM team_context "
             "WHERE team_id = ? AND kind = ? AND scope = ?",
             (team_id, kind, scope),
+        ).fetchone()
+    if row is None:
+        return None
+    return json.loads(row["payload_json"]), row["fetched_at"]
+
+
+def store_league(
+    league_id: int,
+    kind: str,
+    payload: Any,
+    scope: str = "",
+    settings: Settings | None = None,
+    now: datetime | None = None,
+) -> None:
+    """Remplace un releve de competition. Meme regle d'idempotence et d'horloge."""
+    stamp = now.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ") if now else utcnow()
+    with connect(settings) as conn:
+        conn.execute(
+            "INSERT INTO league_context (league_id, kind, scope, payload_json, fetched_at) "
+            "VALUES (?, ?, ?, ?, ?) "
+            "ON CONFLICT (league_id, kind, scope) DO UPDATE SET "
+            "payload_json = excluded.payload_json, fetched_at = excluded.fetched_at",
+            (league_id, kind, scope, json.dumps(payload, ensure_ascii=False), stamp),
+        )
+
+
+def load_league(
+    league_id: int, kind: str, scope: str = "", settings: Settings | None = None
+) -> tuple[Any, str] | None:
+    """Charge utile et date de releve d'une competition, ou None."""
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT payload_json, fetched_at FROM league_context "
+            "WHERE league_id = ? AND kind = ? AND scope = ?",
+            (league_id, kind, scope),
         ).fetchone()
     if row is None:
         return None
@@ -269,6 +326,53 @@ def _summarize(fixtures: list[dict[str, Any]], team_id: int) -> list[dict[str, A
     return sorted(summary, key=lambda item: item["date"])
 
 
+def _summarize_scorers(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Reduit `/players/topscorers` a ce qu'une props buteur utilise.
+
+    Le drapeau `injured` du fournisseur est volontairement **ignore** : sa
+    fraicheur est inconnue, alors que `/injuries` — deja appele, et par match —
+    fait autorite sur les absents. Deux sources qui se contredisent dans le meme
+    bloc valent moins qu'une seule.
+    """
+    scorers = []
+    for row in rows:
+        player = row.get("player") or {}
+        stats = (row.get("statistics") or [{}])[0]
+        team_id = (stats.get("team") or {}).get("id")
+        goals = (stats.get("goals") or {}).get("total")
+        if not player.get("id") or team_id is None or not goals:
+            continue
+        scorers.append(
+            {
+                "id": int(player["id"]),
+                "name": player.get("name"),
+                "team_id": int(team_id),
+                "goals": int(goals),
+                "penalties": ((stats.get("penalty") or {}).get("scored")) or 0,
+                "played": ((stats.get("games") or {}).get("appearences")) or 0,
+            }
+        )
+    return scorers
+
+
+def _summarize_squad(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Reduit `/players/squads` a une liste nominative exploitable."""
+    players = []
+    for entry in rows:
+        for player in entry.get("players") or []:
+            if not player.get("id"):
+                continue
+            players.append(
+                {
+                    "id": int(player["id"]),
+                    "name": player.get("name"),
+                    "position": player.get("position"),
+                    "number": player.get("number"),
+                }
+            )
+    return players
+
+
 def _played(matches: Any) -> list[dict[str, Any]]:
     """Matchs officiels effectivement joues, dans l'ordre chronologique.
 
@@ -330,6 +434,8 @@ async def refresh_event(
         return report
     season = int(teams["season"]) if teams.get("season") else None
 
+    coverage = teams.get("coverage") if isinstance(teams.get("coverage"), dict) else {}
+
     todo: list[tuple[int, str, str]] = []
     for team_id in team_ids:
         if not _is_cached(team_id, KIND_COACH, "", report, settings, now, season):
@@ -338,6 +444,24 @@ async def refresh_event(
             team_id, KIND_SEASON, str(season), report, settings, now, season
         ):
             todo.append((team_id, KIND_SEASON, str(season)))
+        # L'effectif ne sert pas a decrire une equipe : il rattache un nom a un
+        # identifiant. Un champ de couverture absent vaut couvert, comme ailleurs.
+        if coverage.get("players", True) and not _is_cached(
+            team_id, KIND_SQUAD, "", report, settings, now, season
+        ):
+            todo.append((team_id, KIND_SQUAD, ""))
+
+    # Les buteurs se demandent une fois pour toute la competition, et seulement la
+    # ou les props sont achetees : ailleurs, la ligne n'aurait aucun marche en face.
+    league_id = int(teams["league"]) if teams.get("league") else None
+    if (
+        league_id
+        and season
+        and _props_league(event_id, settings)
+        and coverage.get("top_scorers", True)
+        and not _is_cached(league_id, KIND_SCORERS, str(season), report, settings, now, season)
+    ):
+        todo.append((league_id, KIND_SCORERS, str(season)))
 
     if not await _run(client, todo, report, settings, now):
         return report
@@ -377,29 +501,59 @@ async def _run(
         logger.warning(blocked)
         return False
 
-    for team_id, kind, scope in todo:
+    for subject_id, kind, scope in todo:
         try:
-            payload = await _fetch_kind(client, team_id, kind, scope)
+            payload = await _fetch_kind(client, subject_id, kind, scope)
         except ProviderError as exc:
             report.errors.append(f"{kind} : {exc}")
             continue
-        store(team_id, kind, payload, scope, settings, now)
+        _store_any(subject_id, kind, payload, scope, settings, now)
         if kind not in report.kinds:
             report.kinds.append(kind)
     return True
 
 
-async def _fetch_kind(client: APIFootballClient, team_id: int, kind: str, scope: str) -> Any:
+#: Types dont le sujet est une **competition** et non une equipe. C'est le type
+#: qui dit ou le releve se range : porter la distinction dans la liste des taches
+#: l'aurait fait oublier a chaque nouvel appelant.
+LEAGUE_KINDS = frozenset({KIND_SCORERS})
+
+
+def _store_any(
+    subject_id: int,
+    kind: str,
+    payload: Any,
+    scope: str,
+    settings: Settings,
+    now: datetime | None,
+) -> None:
+    if kind in LEAGUE_KINDS:
+        store_league(subject_id, kind, payload, scope, settings, now)
+    else:
+        store(subject_id, kind, payload, scope, settings, now)
+
+
+def _load_any(subject_id: int, kind: str, scope: str, settings: Settings) -> tuple[Any, str] | None:
+    if kind in LEAGUE_KINDS:
+        return load_league(subject_id, kind, scope, settings)
+    return load(subject_id, kind, scope, settings)
+
+
+async def _fetch_kind(client: APIFootballClient, subject_id: int, kind: str, scope: str) -> Any:
     """Recupere un type de releve, et le reduit s'il y a lieu."""
     if kind == KIND_COACH:
-        return await client.coachs(team_id)
+        return await client.coachs(subject_id)
     if kind == KIND_SEASON:
-        return _summarize(await client.team_fixtures(team_id, int(scope)), team_id)
+        return _summarize(await client.team_fixtures(subject_id, int(scope)), subject_id)
+    if kind == KIND_SCORERS:
+        return _summarize_scorers(await client.top_scorers(subject_id, int(scope)))
+    if kind == KIND_SQUAD:
+        return _summarize_squad(await client.squad(subject_id))
     raise ValueError(f"type de dossier inconnu : {kind}")
 
 
 def _is_cached(
-    team_id: int,
+    subject_id: int,
     kind: str,
     scope: str,
     report: DossierReport,
@@ -407,13 +561,29 @@ def _is_cached(
     now: datetime | None,
     current_season: int | None = None,
 ) -> bool:
-    """Vrai si le releve de cette equipe est encore frais. Le note au rapport."""
-    known = load(team_id, kind, scope, settings)
+    """Vrai si le releve de ce sujet est encore frais. Le note au rapport."""
+    known = _load_any(subject_id, kind, scope, settings)
     if known is None or not is_fresh(kind, known[1], now, ttl_for(kind, scope, current_season)):
         return False
     if kind not in report.cached:
         report.cached.append(kind)
     return True
+
+
+def _props_league(event_id: int, settings: Settings) -> bool:
+    """Vrai si les props buteurs sont achetees sur la competition de cet evenement.
+
+    Ailleurs, aucun bookmaker ne les sert : payer les buteurs y ajouterait une
+    ligne sans marche en face, et des tokens a chaque bloc.
+    """
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT c.oddsapi_key FROM events e "
+            "JOIN competitions c ON c.id = e.competition_id WHERE e.id = ?",
+            (event_id,),
+        ).fetchone()
+    key = (row["oddsapi_key"] or "") if row else ""
+    return key in settings.player_props_whitelist
 
 
 def _too_thin(team_id: int, season: int, settings: Settings) -> bool:
@@ -618,6 +788,55 @@ def _next_fragment(
     return f"{team} dans {days}j{detail}"
 
 
+def _scorers_fragment(
+    team: str,
+    team_id: int | None,
+    scorers: list[dict[str, Any]],
+) -> str:
+    """`BK Hacken Larsson 12b (3 pen), Nilsson 7b` — de quoi juger une props.
+
+    La part de penaltys est dite parce qu'elle change la nature du pari : un
+    attaquant a douze buts dont sept sur penalty ne marque pas de la meme facon
+    que celui qui en met douze dans le jeu.
+
+    Une equipe dont aucun joueur n'est dans les vingt meilleurs de la competition
+    ne produit **aucune ligne** — et c'est une limite de l'endpoint, pas un
+    silence sur l'equipe : la nommer sans buteur ferait croire qu'elle n'en a pas.
+    Meme silence sous `SCORERS_MIN_GOALS` buts, ou l'ordre du classement ne
+    decrit rien encore.
+    """
+    if not team_id:
+        return ""
+    ranked = sorted(
+        (
+            item
+            for item in scorers
+            if int(item.get("team_id") or 0) == int(team_id)
+            and int(item.get("goals") or 0) >= SCORERS_MIN_GOALS
+        ),
+        key=lambda item: int(item.get("goals") or 0),
+        reverse=True,
+    )[:SCORERS_KEEP]
+    if not ranked:
+        return ""
+    listed = []
+    for player in ranked:
+        penalties = int(player.get("penalties") or 0)
+        tail = f" ({penalties} pen)" if penalties else ""
+        listed.append(f"{player.get('name') or '?'} {player['goals']}b{tail}")
+    return f"{team} {', '.join(listed)}"
+
+
+def _scorers_of(event_id: int, league_id: Any, season: int | None, settings: Settings) -> list[Any]:
+    """Buteurs memorises pour la competition de cet evenement, s'ils s'y appliquent."""
+    if not league_id or season is None or not _props_league(event_id, settings):
+        return []
+    known = load_league(int(league_id), KIND_SCORERS, str(season), settings)
+    if known is None or not isinstance(known[0], list):
+        return []
+    return known[0]
+
+
 def dossier_lines(
     event_id: int,
     home: str,
@@ -642,6 +861,7 @@ def dossier_lines(
     home_id, away_id = teams.get("home"), teams.get("away")
     home_history = _history(home_id, season, settings)
     away_history = _history(away_id, season, settings)
+    scorers = _scorers_of(event_id, league_id, season, settings)
 
     lines: list[tuple[str, str]] = []
     for label, fragments in (
@@ -660,6 +880,13 @@ def dossier_lines(
             ),
         ),
         ("Serie", (_streak_fragment(home, home_history), _streak_fragment(away, away_history))),
+        (
+            "Buteurs",
+            (
+                _scorers_fragment(home, home_id, scorers),
+                _scorers_fragment(away, away_id, scorers),
+            ),
+        ),
         (
             "Calendrier",
             (
