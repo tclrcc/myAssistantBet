@@ -278,6 +278,25 @@ Elo de Tennis Abstract comblent ce trou, **gratuitement et sans cle**.
   d'une cote, est exactement le calcul d'esperance qu'interdit la section 9. Le template
   de prompt porte cette interdiction, et un test verifie qu'elle y est.
 
+## Repos et charge au tennis (`services/tennis_load.py`)
+
+Le football recoit onze types de lignes d'API-Football ; le tennis n'avait que l'Elo, et
+l'analyse allait chercher a la main, match par match, qui avait joue la veille. Or
+l'information dort **deja dans la base** : les tours precedents du meme tournoi ont ete
+scannes les jours d'avant. Aucun appel, aucune cle, aucun quota.
+
+- Deux grandeurs seulement : **jours de repos** et **nombre de tours disputes**. Le compte
+  accompagne le repos — deux jours apres un premier tour et deux jours apres un quart ne se
+  valent pas.
+- Ce qu'on ne tire **pas** et qu'il ne faut pas inventer : duree des matchs, score, maniere.
+  La base ne stocke aucun resultat. Un joueur present au tour suivant a forcement passe le
+  precedent, mais l'ecrire supposerait qu'aucun forfait n'existe.
+- Rapprochement des noms par `labels.sort_key` — casse et accents ignores, **rien de flou** :
+  deux joueurs differents ne doivent jamais partager un parcours.
+- Aucun tour connu ne produit **aucune ligne**. Ecrire « 0 tour » laisserait croire a une
+  entree en lice alors que le tournoi n'a peut-etre ete scanne que ce jour-la.
+- Au-dela de `MAX_DAYS`, c'est une autre semaine : le repos ne dit plus rien de la fraicheur.
+
 ## Tennis, cyclisme et saisie manuelle
 
 - `render.py` a un ordre de marches **par sport** (`MARKET_ORDER_BY_SPORT`). Le tennis parle

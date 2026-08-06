@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from ..db import connect
 from ..providers.oddsapi import DEFAULT_BOOKMAKER
-from . import coverage, elo
+from . import coverage, elo, tennis_load
 from .context import context_lines
 from .labels import UNTIMED_BOOKMAKERS, affiche, bookmaker_label, primary_book
 from .render import (
@@ -247,6 +247,12 @@ def _context_for(row: Any, settings: Settings) -> list[tuple[str, str]]:
     lines = context_lines(int(row["id"]), row["home"], row["away"], row["commence_time"], settings)
     if row["sport_key"] == "tennis":
         lines += elo.lines(row["home"], row["away"], row["oddsapi_key"], row["surface"], settings)
+        # Repos et charge sortent de nos propres lignes : les tours precedents
+        # du meme tournoi ont ete scannes les jours d'avant. Aucun appel, aucune
+        # cle — et c'est l'information que l'analyse allait chercher a la main.
+        lines += tennis_load.lines(
+            row["home"], row["away"], row["competition_id"], row["commence_time"], settings
+        )
     return lines
 
 
