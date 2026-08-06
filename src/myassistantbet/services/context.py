@@ -22,6 +22,7 @@ from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.apifootball import APIFootballClient
 from ..providers.base import ProviderError
+from .labels import sort_key
 from .matching import Resolution, resolve_team
 from .render import UNAVAILABLE
 
@@ -62,6 +63,7 @@ KIND_INJURIES = "injuries"
 KIND_H2H = "h2h"
 KIND_RECENT = "recent"
 KIND_PROFILE = "profile"
+KIND_VENUE = "venue"
 KIND_MAPPING = "mapping_pending"
 KIND_MANUAL_NOTE = "manual_note"
 
@@ -148,6 +150,9 @@ class FixtureMapping:
     #: vide ne dit rien tant qu'on ignore si la donnee existe : `injuries:
     #: false` transforme « aucun absent » en « donnee non disponible ».
     coverage: dict[str, Any] = field(default_factory=dict)
+    #: Stade du match, tel que le fournisseur le donne. Sans identifiant
+    #: exploitable, mais avec sa ville — de quoi voir une delocalisation.
+    venue: dict[str, Any] = field(default_factory=dict)
 
 
 async def _memoized(cache: dict[str, Any], key: str, coroutine_factory: Any) -> Any:
@@ -216,6 +221,7 @@ async def resolve_fixture(
         home_id=home.matched.apifootball_id,
         away_id=away.matched.apifootball_id,
         coverage=coverage,
+        venue=(fixture.get("fixture") or {}).get("venue") or {},
     )
 
 
@@ -459,6 +465,26 @@ async def fetch_context(
     except ProviderError as exc:
         report.errors.append(f"matchs recents : {exc}")
 
+    # Lieu : une rencontre delocalisee ou un terrain synthetique changent la
+    # lecture d'un match, et rien dans le bloc ne les laissait deviner. Quatre
+    # « domiciles » d'une soiree de qualifications europeennes se jouaient
+    # ailleurs — Kyiv a Lublin, Beitar a Ploiesti, Hapoel a Miskolc.
+    try:
+        home_team = await _memo(f"team:{mapping.home_id}", lambda: client.team(mapping.home_id))
+        usual = ((home_team or {}).get("venue")) or {}
+        payload = {
+            "name": mapping.venue.get("name"),
+            "city": mapping.venue.get("city"),
+            "usual_name": usual.get("name"),
+            "usual_city": usual.get("city"),
+            "surface": usual.get("surface"),
+        }
+        if payload["city"] or payload["surface"]:
+            store(report.event_id, KIND_VENUE, payload, settings)
+            report.kinds.append(KIND_VENUE)
+    except ProviderError as exc:
+        report.errors.append(f"lieu : {exc}")
+
     # Profil corners et cartons, sur les memes matchs recents. Le prompt
     # proposait des lignes de corners sans rien savoir de ce qu'une equipe en
     # produit ou en concede : le marche etait rendu, l'angle sportif absent.
@@ -687,6 +713,17 @@ def context_lines(
     if sides:
         lines.append(("Dom/Ext", sides))
 
+    venue = data.get(KIND_VENUE) or {}
+    if venue:
+        # Le lieu n'est rendu que s'il surprend : ecrire « joue chez lui » sous
+        # chaque affiche couterait des tokens pour ne rien apprendre.
+        moved = _relocated(venue)
+        if moved:
+            lines.append(("Lieu", moved))
+        surface = (venue.get("surface") or "").strip().lower()
+        if surface and "grass" not in surface:
+            lines.append(("Pelouse", SURFACE_LABELS.get(surface, surface)))
+
     profile = data.get(KIND_PROFILE) or {}
     corners = _pair(
         _corner_fragment(home, profile.get("home")), _corner_fragment(away, profile.get("away"))
@@ -754,6 +791,44 @@ def _rank_fragment(team: str, entry: dict[str, Any] | None) -> str:
         if part
     )
     return f"{team} {rank}{suffix} ({detail})" if detail else f"{team} {rank}{suffix}"
+
+
+#: Surfaces telles que le fournisseur les nomme. Une pelouse naturelle ne
+#: produit aucune ligne : c'est le cas ordinaire.
+SURFACE_LABELS = {
+    "artificial turf": "synthetique",
+    "astroturf": "synthetique",
+    "hybrid grass": "hybride",
+}
+
+
+def _relocated(venue: dict[str, Any]) -> str:
+    """Ligne de lieu quand un match ne se joue pas chez l'equipe qui recoit.
+
+    Le `venue` d'un match n'a pas d'identifiant exploitable : restent son nom et
+    sa ville. **Il faut que les deux different**, et voici pourquoi — la ville
+    seule se trompe, le nom seul laisse passer :
+
+    - `Veritas Stadion / Turku` contre `Veritas Stadion / Åbo` : meme stade,
+      deux noms de la meme ville finlandaise. Idem `Belgrade` et `Beograd`.
+    - `Teddy Stadium / Ploiesti` contre `Teddi Malcha Stadium / Jerusalem` :
+      le fournisseur garde un nom de stade proche alors que la rencontre est
+      bel et bien delocalisee en Roumanie.
+
+    En cas de doute — une seule des deux differences, ou une donnee manquante —
+    aucune ligne. On ne remplace pas une inconnue par une supposition, et une
+    delocalisation inventee se lit comme un fait.
+    """
+    city = sort_key((venue.get("city") or "").strip())
+    usual_city = sort_key((venue.get("usual_city") or "").strip())
+    name = sort_key((venue.get("name") or "").strip())
+    usual_name = sort_key((venue.get("usual_name") or "").strip())
+    if not (city and usual_city and name and usual_name):
+        return ""
+    if city == usual_city or name == usual_name:
+        return ""
+    lieu = f"{(venue.get('name') or '').strip()}, {(venue.get('city') or '').strip()}"
+    return f"{lieu} — hors de {(venue.get('usual_city') or '').strip()}"
 
 
 def _profile_suffix(profile: dict[str, Any]) -> str:

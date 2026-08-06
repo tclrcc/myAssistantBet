@@ -1,0 +1,30 @@
+{
+  "get": "teams",
+  "parameters": {
+    "id": "376"
+  },
+  "errors": [],
+  "results": 1,
+  "paging": {
+    "current": 1,
+    "total": 1
+  },
+  "response": [
+    {
+      "team": {
+        "id": 376,
+        "name": "BK Hacken",
+        "country": "Sweden",
+        "national": false
+      },
+      "venue": {
+        "id": 1234,
+        "name": "Bravida Arena",
+        "address": "Rambergsvallen",
+        "city": "Goteborg",
+        "capacity": 6316,
+        "surface": "artificial turf"
+      }
+    }
+  ]
+}

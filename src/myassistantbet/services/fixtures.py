@@ -198,6 +198,11 @@ BET_MARKETS = {
     "Exact Score": "correct_score",
     "Corners Over Under": "alternate_totals_corners",
     "Cards Over/Under": "alternate_totals_cards",
+    # Le fournisseur nomme « Total - Home » ce que l'app appelle des buts
+    # d'equipe : le marche existait des deux cotes et se perdait faute de
+    # rapprochement, alors qu'un rendu dedie l'attendait deja.
+    "Total - Home": "team_totals",
+    "Total - Away": "team_totals",
 }
 
 
@@ -206,7 +211,9 @@ def _book_key(name: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", (name or "").lower()).strip("_")
 
 
-def _outcome(market: str, value: str, home: str, away: str) -> tuple[str, float | None] | None:
+def _outcome(
+    market: str, value: str, home: str, away: str, bet: str = ""
+) -> tuple[str, float | None, str | None] | None:
     """Traduit une issue du fournisseur vers (nom, ligne) de l'application.
 
     Le fournisseur ecrit « Home », « Over 2.5 » ou « Home -0.5 » la ou l'app
@@ -217,23 +224,38 @@ def _outcome(market: str, value: str, home: str, away: str) -> tuple[str, float 
     text = (value or "").strip()
     if not text:
         return None
+    if market == "team_totals":
+        # L'equipe concernee est dans le nom du marche, la ligne dans la valeur :
+        # `Total - Home` + `Over 1.5` devient (Over, 1.5, equipe a domicile).
+        team = home if bet.endswith("Home") else away
+        parts = text.split()
+        if len(parts) == 2:
+            try:
+                return parts[0], float(parts[1]), team
+            except ValueError:
+                return text, None, team
+        return text, None, team
     if market in {"h2h", "spreads"}:
         parts = text.rsplit(" ", 1)
         side, point = (parts[0], parts[1]) if len(parts) == 2 else (text, None)
         name = {"home": home, "away": away, "draw": "Draw"}.get(side.lower(), side)
         try:
-            return name, float(point) if point is not None else None
+            return name, float(point) if point is not None else None, None
         except ValueError:
-            return {"home": home, "away": away, "draw": "Draw"}.get(text.lower(), text), None
+            return (
+                {"home": home, "away": away, "draw": "Draw"}.get(text.lower(), text),
+                None,
+                None,
+            )
     if market in {"totals", "totals_h1", "alternate_totals_corners", "alternate_totals_cards"}:
         parts = text.split()
         if len(parts) == 2:
             try:
-                return parts[0], float(parts[1])
+                return parts[0], float(parts[1]), None
             except ValueError:
-                return text, None
-        return text, None
-    return text, None
+                return text, None, None
+        return text, None, None
+    return text, None, None
 
 
 @dataclass
@@ -329,7 +351,9 @@ async def import_odds(
                 continue
             written = 0
             for value in bet.get("values") or []:
-                outcome = _outcome(market, str(value.get("value")), row["home"], row["away"])
+                outcome = _outcome(
+                    market, str(value.get("value")), row["home"], row["away"], str(bet.get("name"))
+                )
                 try:
                     price = float(value.get("odd"))
                 except (TypeError, ValueError):
@@ -337,9 +361,10 @@ async def import_odds(
                 if outcome is None:
                     continue
                 conn.execute(
-                    "INSERT INTO odds (event_id, bookmaker, market_key, outcome_name, point, "
-                    "                  price, fetched_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
-                    (event_id, key, market, outcome[0], outcome[1], price, stamp),
+                    "INSERT INTO odds (event_id, bookmaker, market_key, outcome_name, "
+                    "                  description, point, price, fetched_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (event_id, key, market, outcome[0], outcome[2], outcome[1], price, stamp),
                 )
                 written += 1
             if written:

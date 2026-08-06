@@ -40,6 +40,10 @@ UNAVAILABLE = "donnees non disponibles pour cette competition"
 #: Libelle de la ligne qui enumere les marches demandes et jamais obtenus.
 UNSERVED_LABEL = "Non servis"
 UNSERVED_NOTE = "aucun book interroge ne les sert sur cette competition"
+#: Meme ligne, autre cause : le match n'existe pas chez le fournisseur de
+#: cotes, et le book de substitution ne sert pas tout. Le distinguer evite de
+#: chercher un reglage la ou il n'y a qu'une offre plus etroite.
+UNSERVED_NOTE_SUBSTITUTE = "non servis par le book de substitution sur ce match"
 
 
 @dataclass
@@ -77,6 +81,9 @@ class RenderableEvent:
     #: Marches demandes a l'API et jamais servis sur cette competition. Les
     #: taire laisserait croire a un bloc incomplet plutot qu'a une limite connue.
     unserved: list[str] = field(default_factory=list)
+    #: Vrai quand les cotes viennent d'un book de repli et non du fournisseur
+    #: principal : la cause d'une absence n'est alors pas la meme.
+    substitute: bool = False
 
 
 # -- Formatage elementaire --------------------------------------------------
@@ -440,7 +447,8 @@ def _unserved_line(event: RenderableEvent) -> list[str]:
     """
     absent = (key for key in event.unserved if key not in event.markets)
     labels = ordered_labels(event.sport_key, absent)
-    return [line(UNSERVED_LABEL, f"{', '.join(labels)} — {UNSERVED_NOTE}")] if labels else []
+    note = UNSERVED_NOTE_SUBSTITUTE if event.substitute else UNSERVED_NOTE
+    return [line(UNSERVED_LABEL, f"{', '.join(labels)} — {note}")] if labels else []
 
 
 # -- Bloc complet -----------------------------------------------------------

@@ -192,6 +192,16 @@ class APIFootballClient(BaseHTTPClient):
         """Blesses et suspendus declares pour un match."""
         return await self._fetch("/injuries", {"fixture": fixture_id})
 
+    async def team(self, team_id: int) -> dict[str, Any] | None:
+        """Fiche d'une equipe, avec son stade habituel et sa surface.
+
+        Sert a savoir si une rencontre est delocalisee : le `venue` d'un match
+        n'a pas d'identifiant exploitable, mais sa ville se compare a celle du
+        stade de l'equipe qui recoit.
+        """
+        rows = await self._fetch("/teams", {"id": team_id})
+        return rows[0] if rows else None
+
     async def odds(self, fixture_id: int) -> list[dict[str, Any]]:
         """Cotes d'avant-match, tous books et tous marches en un appel.
 

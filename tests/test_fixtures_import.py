@@ -24,6 +24,7 @@ from myassistantbet.services.fixtures import (
     import_odds,
 )
 from myassistantbet.services.labels import bookmaker_label
+from myassistantbet.services.session import render_blocks
 
 NOW = datetime(2026, 8, 6, 9, 0, tzinfo=UTC)
 
@@ -486,3 +487,72 @@ def test_la_progression_compte_les_substituts(migrated: Settings) -> None:
 
     assert estimate.events == 0, "aucun credit en jeu"
     assert estimate.total_events == 1, "mais bien un evenement a traiter"
+
+
+# -- Ce que le book de substitution ne sert pas -------------------------------
+
+
+@respx.mock
+async def test_les_buts_par_equipe_sont_recuperes(
+    http_client: httpx.AsyncClient, migrated: Settings
+) -> None:
+    """Le fournisseur nomme « Total - Home » ce que l'app appelle des buts
+    d'equipe : le marche existait des deux cotes et se perdait faute de
+    rapprochement, alors qu'un rendu dedie l'attendait deja."""
+    event_id = _event_avec_fixture(migrated)
+    payload = {
+        "errors": [],
+        "response": [
+            {
+                "bookmakers": [
+                    {
+                        "id": 21,
+                        "name": "888Sport",
+                        "bets": [
+                            {
+                                "name": "Total - Home",
+                                "values": [{"value": "Over 1.5", "odd": "2.30"}],
+                            },
+                            {
+                                "name": "Total - Away",
+                                "values": [{"value": "Over 1.5", "odd": "3.10"}],
+                            },
+                        ],
+                    }
+                ]
+            }
+        ],
+    }
+    respx.get(f"{BASE_URL}/odds").mock(return_value=httpx.Response(200, json=payload))
+
+    await import_odds(APIFootballClient(http_client, migrated), event_id, migrated)
+
+    rows = db.query(
+        "SELECT outcome_name, description, point, price FROM odds WHERE event_id = ? "
+        "AND market_key = 'team_totals' ORDER BY price",
+        (event_id,),
+        settings=migrated,
+    )
+    assert [(r["outcome_name"], r["description"], r["point"]) for r in rows] == [
+        ("Over", "KuPS", 1.5),
+        ("Over", "U Craiova", 1.5),
+    ]
+
+
+def test_un_marche_absent_chez_le_substitut_est_annonce(migrated: Settings) -> None:
+    """Sans cette ligne, l'absence d'un handicap se lisait comme un oubli de
+    l'outil, et rien ne permettait de trancher."""
+    event_id = _event_avec_fixture(migrated)
+    session_id = _shortlist(migrated, event_id)
+    db.execute(
+        "INSERT INTO odds (event_id, bookmaker, market_key, outcome_name, price, fetched_at) "
+        "VALUES (?, '888sport', 'h2h', 'KuPS', 1.85, ?)",
+        (event_id, db.utcnow()),
+        settings=migrated,
+    )
+
+    bloc = render_blocks(session_id, migrated, now=NOW)[0]
+
+    assert "Non servis" in bloc
+    assert "book de substitution" in bloc
+    assert "Handicap" in bloc, "le handicap manquant est nomme"

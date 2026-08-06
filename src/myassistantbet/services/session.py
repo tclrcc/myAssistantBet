@@ -12,10 +12,17 @@ from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
 from ..db import connect
+from ..providers.oddsapi import DEFAULT_BOOKMAKER
 from . import coverage, elo
 from .context import context_lines
 from .labels import UNTIMED_BOOKMAKERS, affiche, bookmaker_label, primary_book
-from .render import Outcome, RenderableEvent, render_event
+from .render import (
+    MARKET_ORDER,
+    MARKET_ORDER_BY_SPORT,
+    Outcome,
+    RenderableEvent,
+    render_event,
+)
 
 #: Marches releves par l'etage A. Leur presence seule signale un evenement
 #: pas encore enrichi.
@@ -243,6 +250,33 @@ def _context_for(row: Any, settings: Settings) -> list[tuple[str, str]]:
     return lines
 
 
+def _is_substitute(primary: str) -> bool:
+    """Vrai si la source principale est un book de repli, pas le fournisseur.
+
+    Sur ces matchs, The Odds API ne connait pas la rencontre : rien ne lui a
+    ete demande, donc `coverage` n'a aucun constat a offrir.
+    """
+    return bool(primary) and primary not in {DEFAULT_BOOKMAKER, *UNTIMED_BOOKMAKERS}
+
+
+def _unserved_for(
+    row: Any, present: set[str], primary: str, unserved: dict[int, set[str]]
+) -> list[str]:
+    """Marches modelises absents du bloc, et pour la bonne raison.
+
+    Sur un evenement servi par The Odds API, la reponse vient de `coverage` :
+    ce que le book a deja refuse de servir sur cette competition. Sur un
+    evenement releve chez un book de substitution, il n'y a aucun constat a
+    consulter — le marche manque parce que ce book ne l'offre pas ici. Sans
+    cette ligne, l'absence d'un handicap se lisait comme un oubli de l'outil,
+    et rien ne permettait de trancher.
+    """
+    if not _is_substitute(primary):
+        return sorted(unserved.get(row["competition_id"], set()))
+    order = MARKET_ORDER_BY_SPORT.get(row["sport_key"], MARKET_ORDER)
+    return [key for key, _ in order if key not in present and key != "outright"]
+
+
 def renderable_events(
     session_id: int,
     settings: Settings | None = None,
@@ -325,7 +359,8 @@ def renderable_events(
                     # jouable et laquelle ne faisait que situer le marche.
                     bookmaker_label=bookmaker_label(primary) if primary else "—",
                     primary_book=primary,
-                    unserved=sorted(unserved.get(row["competition_id"], set())),
+                    unserved=_unserved_for(row, set(markets), primary, unserved),
+                    substitute=_is_substitute(primary),
                     # `fetched` n'a ete alimente que par les bookmakers relevables :
                     # l'heure d'une saisie est celle de la frappe, pas celle d'un
                     # releve de marche, et l'afficher tromperait sur la fraicheur.

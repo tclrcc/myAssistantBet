@@ -209,6 +209,26 @@ regression.
 - La **fiche d'un match** affiche le bloc CONTEXTE (`_event_context.html`), relu en base et
   sans aucun appel reseau. Sans lui, tout ce qui etait recupere n'existait que dans le
   prompt genere — donc invisible tant qu'une session n'avait pas ete montee.
+- **La couverture declaree par le fournisseur fait foi** (`season_coverage`) : `/leagues`
+  publie, par competition, ce qu'il sert. La Conference League annonce
+  `injuries: false` et `standings: false`. Sans le lire, une liste d'absents vide se rendait
+  « aucun signale » — **l'affirmation inverse de la verite** : sur vingt-sept qualifications
+  europeennes, la ligne niait six absents a Motherwell et sept a l'Ajax, tous annonces par
+  la presse. Une donnee non couverte devient une ligne « donnees non disponibles », et son
+  appel n'est plus emis.
+- **`Dom/Ext` n'est pas rendu sur zero match joue** : le fournisseur repond alors
+  `0V-0N-0D` et une moyenne de `0.0`, indiscernables d'une equipe qui ne gagne ni ne marque.
+  Quand la ligne existe, elle porte son effectif (`1.4 bpm/8j`) — la statistique vaut pour
+  **cette competition**, pas pour toute la saison de l'equipe.
+- **Delocalisation** (`_relocated`) : un match hors du stade de l'equipe qui recoit change la
+  lecture, et rien ne le laissait deviner. Le `venue` d'un match n'a pas d'identifiant
+  exploitable : restent son nom et sa ville, et **il faut que les deux different**.
+  `Veritas Stadion / Turku` contre `Veritas Stadion / Åbo` est le meme stade sous deux noms
+  de ville ; `Teddy Stadium / Ploiesti` contre `Teddi Malcha Stadium / Jerusalem` est une
+  vraie delocalisation sous un nom de stade proche. La ville seule inventait deux
+  delocalisations sur dix, le nom seul en laissait passer. En cas de doute, aucune ligne.
+- La **surface** vient du meme appel `/teams` : une pelouse naturelle ne produit rien, c'est
+  le cas ordinaire. Un synthetique change le rythme et se disait jusqu'ici nulle part.
 - **Les absents arrivent en double** : `/injuries` rend chaque joueur deux fois — constate
   en reel, 14 lignes pour 7 absents. Le dedoublonnage se fait a la collecte, sur
   (cote, nom, type, raison). Sans lui la ligne liste tout le monde deux fois, ce qui fait
