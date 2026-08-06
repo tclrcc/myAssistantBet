@@ -43,16 +43,20 @@ aucun scan ne ramenera de donnees.
 ## Lancement
 
 ```bash
-uv run uvicorn myassistantbet.main:app --reload
+uv run uvicorn myassistantbet.main:app --reload --port 8022
 ```
 
-L'application ecoute sur <http://127.0.0.1:8000>. Les migrations de base sont appliquees
+L'application ecoute sur <http://127.0.0.1:8022>. Les migrations de base sont appliquees
 automatiquement au demarrage.
+
+Le port est explicite parce que le defaut d'uvicorn (8000) est souvent pris, et parce que
+le service systemd occupe deja 8021 : garder le developpement sur un troisieme port evite
+de croire qu'on regarde ses modifications alors qu'on lit l'instance de production.
 
 Verification :
 
 ```bash
-curl -s http://127.0.0.1:8000/health | python3 -m json.tool
+curl -s http://127.0.0.1:8022/health | python3 -m json.tool
 ```
 
 La reponse expose l'etat de la base (chemin, version de schema, tables, mode journal) et la
@@ -284,59 +288,77 @@ sudo systemctl start myassistantbet
 
 ## Deploiement VPS
 
-Testé sur Debian 12 et Ubuntu 24.04. Les fichiers cites sont dans [`deploy/`](./deploy).
+Testé sur Debian 12 et Ubuntu 24.04. Les fichiers cites sont dans [`deploy/`](./deploy),
+et decrivent le deploiement reel : l'application vit dans le home de l'utilisateur `ubuntu`,
+uvicorn ecoute sur `127.0.0.1:8021`, nginx expose le port 443.
 
-### 1. Utilisateur et code
-
-```bash
-sudo adduser --system --group --home /opt/myassistantbet myassistantbet
-sudo -u myassistantbet git clone https://github.com/tclrcc/myAssistantBet.git /opt/myassistantbet
-```
-
-### 2. uv, a l'echelle du systeme
-
-L'unite systemd appelle `/usr/local/bin/uv`. Installer uv a cet emplacement :
+### 1. Code et dependances
 
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sudo env UV_INSTALL_DIR=/usr/local/bin sh
-command -v uv
+git clone https://github.com/tclrcc/myAssistantBet.git ~/myAssistantBet
+cd ~/myAssistantBet
+uv sync --frozen
+cp .env.example .env
+nano .env                                 # renseigner ODDS_API_KEY et APIFOOTBALL_KEY
+chmod 600 .env                            # le fichier contient des secrets
 ```
 
-### 3. Dependances et configuration
+L'unite systemd appelle `uv` par son chemin absolu (`~/.local/bin/uv`, l'emplacement de
+l'installateur officiel). Verifier avec `command -v uv` et corriger l'unite si besoin.
 
-```bash
-cd /opt/myassistantbet
-sudo -u myassistantbet uv sync --frozen
-sudo -u myassistantbet cp .env.example .env
-sudo -u myassistantbet nano .env          # renseigner ODDS_API_KEY et APIFOOTBALL_KEY
-sudo chmod 600 .env                       # le fichier contient des secrets
-```
-
-### 4. Service
+### 2. Service
 
 ```bash
 sudo cp deploy/myassistantbet.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now myassistantbet
 sudo systemctl status myassistantbet
-curl -s localhost:8000/health | python3 -m json.tool
+curl -s localhost:8021/health | python3 -m json.tool
 ```
+
+`enable` est le mot important : c'est lui qui fait repartir l'application au demarrage de la
+machine. Lancee a la main dans un shell, elle mourait avec la session SSH.
 
 L'application n'ecoute que sur `127.0.0.1` : elle n'est joignable que par le proxy. L'unite
 est durcie (`ProtectSystem=strict`, `NoNewPrivileges`, filtrage d'appels systeme) et seuls
 la base, les sauvegardes, les templates de prompt et l'environnement virtuel sont accessibles
 en ecriture.
 
-### 5. nginx et TLS
+Le port 8021 n'est pas arbitraire : 8000, le defaut d'uvicorn, est couramment occupe par un
+autre service sur la meme machine.
+
+### 3. nginx, TLS et mot de passe
+
+Aucun domaine a acheter : le nom d'hote attribue au VPS (ici `vps-5ff241d3.vps.ovh.net`)
+resout deja publiquement, ce qui suffit a Let's Encrypt.
 
 ```bash
-sudo apt install nginx apache2-utils
-sudo cp deploy/nginx.conf.example /etc/nginx/sites-available/myassistantbet
-sudo nano /etc/nginx/sites-available/myassistantbet   # remplacer le nom de domaine
-sudo ln -s /etc/nginx/sites-available/myassistantbet /etc/nginx/sites-enabled/
-sudo htpasswd -c /etc/nginx/.htpasswd-myassistantbet <utilisateur>
+sudo apt install nginx certbot apache2-utils
+sudo cp deploy/nginx.conf.example /etc/nginx/sites-available/myassistantbet.conf
+sudo ln -s /etc/nginx/sites-available/myassistantbet.conf /etc/nginx/sites-enabled/
+```
+
+Le fichier livre contient les deux blocs, dont celui en 443 qui reference des certificats
+qui n'existent pas encore — `nginx -t` echouerait. Commenter le bloc 443 le temps d'obtenir
+le certificat, puis le retablir :
+
+```bash
 sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d myassistantbet.exemple.fr
+sudo certbot certonly --webroot -w /var/www/html -d vps-5ff241d3.vps.ovh.net
+sudo htpasswd -c /etc/nginx/myassistantbet.htpasswd <utilisateur>
+sudo chown root:www-data /etc/nginx/myassistantbet.htpasswd && sudo chmod 640 $_
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+Le renouvellement est porte par `certbot.timer`, deja installe par le paquet. En mode
+`--webroot`, certbot ne recharge pas nginx : sans le crochet ci-dessous, le certificat est
+bien renouvele sur le disque mais l'ancien continue d'etre servi jusqu'a son expiration.
+
+```bash
+printf '#!/bin/sh\nsystemctl reload nginx\n' \
+  | sudo tee /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+sudo chmod 755 /etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh
+sudo certbot renew --dry-run --no-random-sleep-on-renew
 ```
 
 > **L'application n'a aucune authentification** — c'est un choix assume (section 1 de
@@ -347,7 +369,7 @@ sudo certbot --nginx -d myassistantbet.exemple.fr
 Verifier la version de nginx (`nginx -v`) : la directive HTTP/2 change de forme avant et
 apres la 1.25.1, un commentaire dans le fichier explique les deux ecritures.
 
-### 6. Sauvegardes automatiques
+### 4. Sauvegardes automatiques
 
 ```bash
 sudo cp deploy/myassistantbet-backup.service deploy/myassistantbet-backup.timer /etc/systemd/system/
@@ -360,7 +382,7 @@ sudo systemctl start myassistantbet-backup   # declenchement immediat, pour veri
 Le minuteur tourne a 06:30, avant le scan de 07:00. `Persistent=true` rattrape la sauvegarde
 si le serveur etait eteint a l'heure prevue.
 
-### 7. Exploitation
+### 5. Exploitation
 
 ```bash
 sudo journalctl -u myassistantbet -f              # logs en direct
@@ -371,9 +393,9 @@ sudo systemctl restart myassistantbet             # apres un changement de .env
 Mise a jour :
 
 ```bash
-cd /opt/myassistantbet
-sudo -u myassistantbet git pull
-sudo -u myassistantbet uv sync --frozen
+cd ~/myAssistantBet
+git pull
+uv sync --frozen
 sudo systemctl restart myassistantbet
 ```
 

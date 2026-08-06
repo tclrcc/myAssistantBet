@@ -7,13 +7,24 @@ commandes, conventions, et surtout la liste des interdits. En cas de contradicti
 ## Commandes
 
 ```bash
-uv sync                                              # installer / mettre a jour l'env
-uv run uvicorn myassistantbet.main:app --reload      # lancer l'app (port 8000)
-uv run pytest                                        # tests
-uv run pytest tests/test_db.py -k migrations         # un sous-ensemble
-uv run ruff check . --fix                            # lint (avec corrections sures)
-uv run ruff format .                                 # formatage
-curl -s localhost:8000/health | python3 -m json.tool # etat de l'app
+uv sync                                                    # installer / mettre a jour l'env
+uv run uvicorn myassistantbet.main:app --reload --port 8022 # lancer l'app en dev
+uv run pytest                                              # tests
+uv run pytest tests/test_db.py -k migrations               # un sous-ensemble
+uv run ruff check . --fix                                  # lint (avec corrections sures)
+uv run ruff format .                                       # formatage
+curl -s localhost:8022/health | python3 -m json.tool       # etat de l'app en dev
+```
+
+Trois ports, a ne pas confondre : **8022** pour le developpement, **8021** pour l'instance
+servie par systemd, **8000** pour un autre service de la machine — c'est pour lui que le
+defaut d'uvicorn ne convient pas ici.
+
+```bash
+sudo systemctl status myassistantbet          # etat du service
+sudo systemctl restart myassistantbet         # apres un git pull ou un changement de .env
+sudo journalctl -u myassistantbet -f          # logs en direct
+curl -s localhost:8021/health | python3 -m json.tool
 ```
 
 `uv` s'installe avec `curl -LsSf https://astral.sh/uv/install.sh | sh` (binaire dans `~/.local/bin`).
@@ -315,12 +326,25 @@ donc rien qui puisse manquer un matin.
 
 - Les fichiers de deploiement sont dans `deploy/` : unite systemd durcie, unite et minuteur
   de sauvegarde, exemple nginx. Ils sont valides par `systemd-analyze verify` et `nginx -t`.
+  Ils decrivent le **deploiement reel**, pas un ideal : chemins dans le home de `ubuntu`,
+  uvicorn sur `127.0.0.1:8021`, nginx sur 443. Un fichier de deploiement qui ne correspond
+  pas au deploiement est pire qu'absent — on le recopie en croyant reparer.
+- `ProtectHome=read-only` et non `true` : l'application est installee dans le home, qui doit
+  rester lisible et executable — le binaire `uv` y vit aussi. Les `ReadWritePaths` percent
+  ce verrou pour `data/`, `templates/prompts/` et `.venv/`, et pour eux seuls.
 - `backup.py` utilise **`VACUUM INTO`**, jamais une copie de fichier : en mode WAL, copier
   le `.db` seul livrerait une base incomplete.
 - La rotation ne supprime **jamais la sauvegarde la plus recente**, meme expiree.
 - L'application ecoute uniquement sur `127.0.0.1`. Elle n'a aucune authentification par
   choix : c'est nginx qui la protege. Toute modification du deploiement doit conserver ces
-  deux proprietes.
+  deux proprietes. Le mot de passe `auth_basic` n'est pas une precaution de principe : un
+  `/scan` depense de vrais credits, et la base porte tout l'historique de paris.
+- Le certificat couvre le **nom d'hote du VPS**, qui resout deja publiquement — aucun domaine
+  n'a ete achete. En mode `--webroot`, certbot ne recharge pas nginx : le crochet
+  `/etc/letsencrypt/renewal-hooks/deploy/reload-nginx.sh` s'en charge. Sans lui le
+  renouvellement reussit et le certificat expire quand meme, ce qui ne se voit que le jour J.
+- L'emplacement `/.well-known/acme-challenge/` du bloc port 80 doit rester **avant** la
+  redirection vers HTTPS, sinon le renouvellement echoue.
 
 ## Front
 

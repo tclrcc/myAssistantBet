@@ -5,6 +5,9 @@
 #   sudo systemctl enable --now myassistantbet-backup.timer
 #
 # Declenchement manuel :  sudo systemctl start myassistantbet-backup
+#
+# Les chemins suivent ceux de myassistantbet.service : les deux unites doivent
+# designer la meme installation, sinon la sauvegarde porte sur une autre base.
 
 [Unit]
 Description=Sauvegarde de la base MyAssistantBet
@@ -12,18 +15,21 @@ Documentation=https://github.com/tclrcc/myAssistantBet
 
 [Service]
 Type=oneshot
-User=myassistantbet
-Group=myassistantbet
-WorkingDirectory=/opt/myassistantbet
-EnvironmentFile=/opt/myassistantbet/.env
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/myAssistantBet
+EnvironmentFile=/home/ubuntu/myAssistantBet/.env
 
-ExecStart=/usr/local/bin/uv run --frozen myassistantbet-backup
+ExecStart=/home/ubuntu/.local/bin/uv run --frozen myassistantbet-backup
 
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
-ReadWritePaths=/opt/myassistantbet/data
-Environment=UV_CACHE_DIR=/opt/myassistantbet/data/.uv-cache
+# `read-only` et non `true` : l'application vit dans le home, qui doit rester
+# lisible et executable. Voir le meme commentaire dans myassistantbet.service.
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/myAssistantBet/data
+ReadWritePaths=/home/ubuntu/myAssistantBet/.venv
+Environment=UV_CACHE_DIR=/home/ubuntu/myAssistantBet/data/.uv-cache
 
 SyslogIdentifier=myassistantbet-backup
