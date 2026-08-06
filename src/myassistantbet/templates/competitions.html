@@ -7,8 +7,19 @@
 </div>
 
 <p class="muted small">
-  Seules les compétitions actives sont scannées. La synchronisation utilise
-  <code>GET /sports</code>, qui est gratuit, et n'active jamais rien d'elle-même.
+  Deux fournisseurs, deux rôles distincts. <b>The Odds API</b> donne les cotes : seules les
+  compétitions actives sont scannées, et c'est lui qui coûte des crédits. <b>API-Football</b>
+  donne le contexte — classement, forme, absents, confrontations, profil corners et cartons —
+  pour les compétitions rattachées à une ligue ; son quota est journalier et indépendant.
+  La synchronisation utilise <code>GET /sports</code>, qui est gratuit, et n'active jamais
+  rien d'elle-même.
+</p>
+
+<p class="muted small">
+  Une compétition que The Odds API ne sert pas peut quand même entrer sur le board :
+  ses matchs s'importent depuis API-Football, sans cotes, qui se saisissent ensuite à la
+  main. C'est le cas des tours préliminaires d'Europa League et de Conference League, que
+  le fournisseur de cotes ignore.
 </p>
 
 {% include "_competitions.html" %}

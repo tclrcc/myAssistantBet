@@ -30,6 +30,7 @@ from .services import coupons as coupons_service
 from .services import coverage as coverage_service
 from .services import elo as elo_service
 from .services import enrich as enrich_service
+from .services import fixtures as fixtures_service
 from .services import grid as grid_service
 from .services import history as history_service
 from .services import manual as manual_service
@@ -468,7 +469,9 @@ async def manual_create(request: Request) -> HTMLResponse:
 
 
 def _competitions_context(
-    report: object | None = None, elo_report: object | None = None
+    report: object | None = None,
+    elo_report: object | None = None,
+    import_report: object | None = None,
 ) -> dict[str, object]:
     settings = get_settings()
     return {
@@ -476,6 +479,7 @@ def _competitions_context(
         "coverage": coverage_service.by_competition(settings),
         "report": report,
         "elo_report": elo_report,
+        "import_report": import_report,
         "surfaces": competitions_service.SURFACES,
         "categories": competitions_service.CATEGORIES,
         "elo_state": elo_service.state(settings),
@@ -529,6 +533,17 @@ def competition_surface(
     """Fixe la surface d'une competition : elle decide quel Elo de surface est rendu."""
     competitions_service.set_surface(competition_id, surface, get_settings())
     return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
+
+
+@app.post("/competitions/{competition_id}/fixtures", response_class=HTMLResponse)
+async def competition_import_fixtures(request: Request, competition_id: int) -> HTMLResponse:
+    """Importe les matchs depuis API-Football, pour ce que The Odds API ne sert pas."""
+    settings = get_settings()
+    client = APIFootballClient(request.app.state.http, settings)
+    report = await fixtures_service.import_competition(client, competition_id, settings)
+    return templates.TemplateResponse(
+        request, "_competitions.html", _competitions_context(import_report=report)
+    )
 
 
 @app.post("/competitions/{competition_id}/apifootball", response_class=HTMLResponse)

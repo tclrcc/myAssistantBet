@@ -34,6 +34,18 @@
   </div>
   {% endif %}
 
+  {% if import_report %}
+  <div class="report {% if import_report.error %}report-warn{% endif %}">
+    Import des matchs : {{ import_report.note }} Aucun crédit Odds API consommé.
+    {% if import_report.created %}
+      <br><span class="muted small">
+        Ces matchs arrivent sans cotes — The Odds API ne les sert pas. Elles se saisissent
+        depuis la fiche de chaque match.
+      </span>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <div class="enrich-bar">
     <div class="estimate">
       <span class="label">Elo tennis</span>
@@ -68,15 +80,28 @@
   <div class="enrich-bar">
     {% set actives = competitions | selectattr('active') | list %}
     {% set servies = actives | selectattr('api_active') | list %}
+    {% set football = actives | selectattr('sport_key', 'equalto', 'football') | list %}
+    {% set rattachees = football | selectattr('apifootball_league_id') | list %}
     <div class="estimate">
       <span class="label">Actives</span>
       <span class="value">{{ actives | length }}</span>
       <span class="muted">
         sur {{ competitions | length }} — un scan coûte
-        <b>{{ servies | length * 2 }} crédits</b>
+        <b>{{ servies | length * 2 }} crédits</b> Odds API
         {%- if actives | length > servies | length %},
           les {{ actives | length - servies | length }} hors saison ne sont pas facturées
           tant qu'elles ne servent rien{% endif %}.
+        {# Le contexte ne consomme pas de credits Odds API : le dire evite de
+           croire qu'activer une competition football coute deux fois. #}
+        {% if football %}
+          <br>Côté contexte, <b>{{ rattachees | length }}</b> compétition(s) football
+          rattachée(s) à une ligue API-Football sur {{ football | length }} active(s) —
+          quota journalier séparé, aucun crédit Odds API.
+          {%- if football | length > rattachees | length %}
+            Les {{ football | length - rattachees | length }} autres sont muettes : ni
+            classement, ni forme, ni absents.
+          {%- endif %}
+        {% endif %}
       </span>
     </div>
     <form hx-post="/competitions/sync" hx-target="#competitions" hx-swap="outerHTML"
@@ -146,6 +171,22 @@
             <span class="badge ok" title="L'API sert des cotes en ce moment">oui</span>
           {% else %}
             <span class="badge warn" title="Hors saison ou pas encore ouverte : l'activer d'avance ne coûte rien, une réponse vide n'est pas facturée">hors saison</span>
+            {# Le seul cas ou l'import a un sens : The Odds API ne sert rien, et
+               API-Football connait les matchs. Proposer le bouton sur une
+               competition deja servie inviterait a creer des doublons que rien
+               ne saurait rapprocher — « KFUM » et « KFUM Oslo » sont deja
+               au-dessus du seuil de rapprochement automatique. #}
+            {% if competition.active and competition.apifootball_league_id %}
+              <form hx-post="/competitions/{{ competition.id }}/fixtures"
+                    hx-target="#competitions" hx-swap="outerHTML"
+                    hx-indicator="#import-{{ competition.id }}">
+                <button type="submit" class="link-action"
+                        title="Importer les matchs depuis API-Football, sans cotes">
+                  importer les matchs
+                </button>
+                <span id="import-{{ competition.id }}" class="htmx-indicator">…</span>
+              </form>
+            {% endif %}
           {% endif %}
         </td>
         {# Sans identifiant de ligue, aucun contexte n'est demande et la

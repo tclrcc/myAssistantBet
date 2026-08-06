@@ -173,6 +173,18 @@ regression.
     publication qui attend, pas la collecte.
   - Le compte accompagne toujours la moyenne (`5.2 pris 6.4/5`), meme regle que le nombre
     de paris a cote d'un taux.
+- `services/fixtures.py` : **les matchs que The Odds API ne sert pas entrent par
+  API-Football**. Les tours preliminaires d'Europa League et de Conference League n'ont
+  chez le fournisseur de cotes *aucun evenement* ; le fournisseur de contexte les connait,
+  les date et les nomme. Ils arrivent donc sans cotes, qui se saisissent a la main.
+  - Garde-fou qui evite les doublons a la racine : **on n'importe que ce qui n'est pas
+    servi** (`api_active = 0`). Une competition servie par les deux produirait deux fois le
+    meme match, sous deux orthographes que rien ne saurait rapprocher — « KFUM » et
+    « KFUM Oslo » sont deja au-dessus du seuil de `matching.py`.
+  - Cle naturelle : `apifootball_fixture_id`. Relancer un import ne duplique rien, et un
+    report d'horaire met la ligne a jour au lieu d'en creer une seconde.
+  - `source = 'apifootball'`, distincte de `api` et de `manual` : savoir d'ou vient un
+    match explique pourquoi il n'a pas de cotes, et evite de chercher une panne de scan.
 - **Les absents arrivent en double** : `/injuries` rend chaque joueur deux fois — constate
   en reel, 14 lignes pour 7 absents. Le dedoublonnage se fait a la collecte, sur
   (cote, nom, type, raison). Sans lui la ligne liste tout le monde deux fois, ce qui fait

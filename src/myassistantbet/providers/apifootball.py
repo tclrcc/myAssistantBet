@@ -150,6 +150,20 @@ class APIFootballClient(BaseHTTPClient):
             "/fixtures", {"date": date_iso, "league": league_id, "season": season}
         )
 
+    async def fixtures_by_range(
+        self, league_id: int, season: int, from_iso: str, to_iso: str
+    ) -> list[dict[str, Any]]:
+        """Matchs d'une ligue sur une plage de dates, bornes incluses.
+
+        Sert a peupler le board pour les competitions que The Odds API ne sert
+        pas : le fournisseur de cotes ignore les tours preliminaires europeens,
+        le fournisseur de contexte les connait.
+        """
+        return await self._fetch(
+            "/fixtures",
+            {"league": league_id, "season": season, "from": from_iso, "to": to_iso},
+        )
+
     async def team_statistics(
         self, league_id: int, season: int, team_id: int
     ) -> dict[str, Any] | None:
