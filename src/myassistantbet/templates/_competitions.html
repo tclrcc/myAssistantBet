@@ -139,7 +139,7 @@
         </td>
         <td class="tight">
           <span class="sport sport-{{ competition.sport_key }}" title="{{ competition.sport_label }}">
-            <span aria-hidden="true">{{ competition.sport_emoji }}</span>
+            <svg class="icon" aria-hidden="true"><use href="#i-{{ competition.sport_key }}"></use></svg>
             <span class="visually-hidden">{{ competition.sport_label }}</span>
           </span>
         </td>

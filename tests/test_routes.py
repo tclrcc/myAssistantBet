@@ -321,3 +321,23 @@ def test_une_recherche_sans_resultat_le_dit(
     response = client.get(f"/history/{session_id}/pick-options", params={"q": "zzz-introuvable"})
 
     assert "aucun match ne correspond" in response.text
+
+
+def test_le_sprite_porte_les_pictogrammes_de_sport(client: TestClient) -> None:
+    """Sans le sprite en tete de page, chaque `<use>` du board pointe dans le
+    vide et la colonne « Sport » se vide sans rien dire — exactement le defaut
+    que les emoji avaient sur un appareil sans police d'emoji."""
+    page = client.get("/").text
+
+    assert '<svg class="sprite"' in page
+    for sport in ("football", "tennis", "cycling"):
+        assert f'id="i-{sport}"' in page
+
+
+def test_la_police_est_servie_en_local(client: TestClient) -> None:
+    """Vendorisee comme htmx : aucun CDN, aucun appel reseau depuis la page."""
+    assert "fonts/InterVariable.woff2" not in client.get("/").text, "referencee par la CSS"
+    css = client.get("/static/app.css").text
+    assert 'src: url("fonts/InterVariable.woff2") format("woff2")' in css
+    assert "//fonts.googleapis" not in css and "https://" not in css
+    assert client.get("/static/fonts/InterVariable.woff2").status_code == 200

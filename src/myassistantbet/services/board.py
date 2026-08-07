@@ -17,7 +17,7 @@ from ..providers.base import last_known_quota
 from ..providers.oddsapi import PROVIDER as ODDSAPI_PROVIDER
 from . import tennis_round, tournament_day
 from .competitions import category_label, category_rank
-from .labels import affiche, sort_key, sport_emoji
+from .labels import affiche, sort_key
 from .mapping_ui import pending_count
 from .scan import scan_window
 from .session import has_started
@@ -70,10 +70,6 @@ class BoardRow:
     @property
     def affiche(self) -> str:
         return affiche(self.home, self.away)
-
-    @property
-    def sport_emoji(self) -> str:
-        return sport_emoji(self.sport_key)
 
     @property
     def has_odds(self) -> bool:
@@ -395,7 +391,7 @@ def filter_options(
     """
     with connect(settings) as conn:
         sports = [
-            {**dict(row), "emoji": sport_emoji(row["key"])}
+            dict(row)
             for row in conn.execute("SELECT key, label FROM sports ORDER BY id").fetchall()
         ]
         competitions = [

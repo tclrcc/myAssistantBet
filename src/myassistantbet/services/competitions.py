@@ -18,7 +18,7 @@ from typing import Any
 from ..config import Settings, get_settings
 from ..db import connect
 from ..providers.oddsapi import OddsAPIClient
-from .labels import sort_key, sport_emoji
+from .labels import sort_key
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +105,6 @@ def list_all(settings: Settings | None = None) -> list[dict[str, Any]]:
     competitions = [
         {
             **dict(row),
-            "sport_emoji": sport_emoji(row["sport_key"]),
             "category_label": category_label(row["category"]),
         }
         for row in rows

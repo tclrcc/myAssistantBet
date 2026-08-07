@@ -1,6 +1,29 @@
 /* MyAssistantBet — feuille de style unique, sans build step.
    Les tokens vivent dans :root ; tout le reste s'y rapporte. */
 
+/* Inter, vendorisee comme htmx : servie depuis `static/`, aucun CDN, aucun
+   appel reseau depuis la page. Un seul fichier variable couvre toutes les
+   graisses de 100 a 900 — les sept fichiers statiques equivalents peseraient
+   plus lourd et n'offriraient pas les graisses intermediaires.
+
+   L'italique n'est pas vendorise : 378 Ko de plus pour un usage que
+   l'application n'a pas. Un `<em>` sera donc incline par synthese, ce qui
+   suffit a du texte qui n'en contient presque pas.
+
+   `font-display: swap` : la pile systeme s'affiche d'abord et Inter la
+   remplace des qu'elle est la. Sur une application locale le basculement dure
+   quelques millisecondes, et l'inverse — attendre la police — donnerait une
+   page blanche.
+
+   Licence SIL OFL, copie dans `fonts/LICENSE-Inter.txt`. */
+@font-face {
+  font-family: "InterVariable";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/InterVariable.woff2") format("woff2");
+}
+
 :root {
   /* Fonds, du plus profond au plus clair. Legerement bleutes : un gris neutre
      sur un ecran de bureau parait sale a cote des accents colores. */
@@ -56,7 +79,27 @@
   --shadow-accent: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 18px rgba(91, 140, 250, 0.28);
 
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
-  --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  /* La pile systeme reste derriere Inter : elle sert pendant le chargement, et
+     sur un navigateur qui refuserait le woff2. */
+  --sans: "InterVariable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    sans-serif;
+
+  /* Echelle typographique. Six tailles, pas une de plus : chacune a un role, et
+     une septieme ne se distinguerait plus de sa voisine. Les valeurs montent
+     d'environ un cinquieme a chaque cran — assez pour que la hierarchie se lise
+     sans mesurer, pas au point de faire des sauts. */
+  --text-xs: 0.72rem;   /* etiquettes en capitales, en-tetes de tableau */
+  --text-sm: 0.82rem;   /* mentions secondaires, notes */
+  --text-md: 0.9rem;    /* corps des tableaux */
+  --text-lg: 1rem;      /* corps courant, titres de section */
+  --text-xl: 1.25rem;   /* titres de bloc */
+  --text-2xl: 1.7rem;   /* titre de page */
+
+  /* Inter se resserre en grandissant : sans cela, un titre parait relache et
+     un texte de 12 px parait comprime. Le crenage suit donc la taille. */
+  --track-tight: -0.022em;
+  --track-snug: -0.011em;
+  --track-wide: 0.06em;
 }
 
 *,
@@ -68,8 +111,12 @@ body {
   background: var(--bg);
   color: var(--text);
   font: 14px/1.55 var(--sans);
+  letter-spacing: var(--track-snug);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  /* Inter porte un axe optique : les fines chasses des petits corps
+     s'epaississent d'elles-memes, ce qu'aucun reglage manuel ne rattrape. */
+  font-optical-sizing: auto;
 }
 
 /* Une seule lueur, tres diffuse, derriere la barre de navigation. Elle donne
@@ -472,17 +519,17 @@ a.badge:hover { border-color: var(--accent-line); text-decoration: none; }
   margin-bottom: var(--s4);
 }
 .page-head h1 {
-  font-size: 1.55rem;
+  font-size: var(--text-2xl);
   margin: 0;
   font-weight: 700;
-  letter-spacing: -0.025em;
+  letter-spacing: var(--track-tight);
 }
 .page-head { margin-bottom: var(--s5); }
 .page-head .actions { display: flex; gap: var(--s2); align-items: center; flex-shrink: 0; }
 .page-head form { display: inline; }
 
 .group { margin-bottom: var(--s5); }
-.group h2 { font-size: 0.95rem; font-weight: 650; margin: 0 0 var(--s2); }
+.group h2 { font-size: var(--text-lg); font-weight: 650; margin: 0 0 var(--s2); }
 
 .progress {
   height: 4px;
@@ -663,7 +710,8 @@ tr.result-loss td:first-child { box-shadow: inset 3px 0 0 var(--alert); }
   gap: var(--s3);
   margin: var(--s6) 0 var(--s2);
 }
-.section-head h2 { font-size: 1rem; font-weight: 650; margin: 0; }
+.section-head h2 { font-size: var(--text-xl); font-weight: 650; margin: 0;
+                   letter-spacing: var(--track-tight); }
 .section-head span { margin-left: auto; text-align: right; }
 
 /* Ce qui ne sert qu'une fois par session — coller un tableau, ajouter une
@@ -947,6 +995,30 @@ kbd {
 .import-table input.tiny { width: 4rem; min-width: 0; text-align: right; }
 .import-table select { max-width: 15rem; }
 
+/* --- Pictogrammes ---------------------------------------------------------- */
+
+/* Le sprite n'est jamais visible : il ne sert qu'a definir les `<symbol>` que
+   `<use>` instancie. `display: none` supprimerait aussi les symboles sur
+   certains navigateurs — d'ou une taille nulle plutot qu'un retrait du flux. */
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+/* `currentColor` fait suivre la couleur de la pastille qui porte l'icone :
+   c'est tout l'interet du SVG sur l'emoji, dont la couleur est figee dans la
+   police. `1em` la cale sur la taille du texte voisin. */
+.icon {
+  width: 1em;
+  height: 1em;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  /* Un `<svg>` est en ligne, donc pose sur la ligne de base : sans cela le
+     pictogramme flotte au-dessus du texte qui l'accompagne. */
+  vertical-align: -0.125em;
+  flex: none;
+}
+
 /* --- Reperage des sports --------------------------------------------------- */
 
 .sport {
@@ -1001,7 +1073,8 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
   margin-bottom: var(--s4);
   border-bottom: 1px solid var(--line-soft);
 }
-.block-head h2 { font-size: 1.05rem; font-weight: 650; margin: 0; }
+.block-head h2 { font-size: var(--text-xl); font-weight: 650; margin: 0;
+                 letter-spacing: var(--track-tight); }
 .block-head span { margin-left: auto; text-align: right; }
 .block-note {
   color: var(--text-dim);
@@ -1123,7 +1196,17 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
   margin-bottom: var(--s4);
 }
 @media (min-width: 900px) {
-  .charts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  /* Des colonnes, pas une grille. En grille, les cartes se rangent par
+     rangees et la plus courte des deux laisse un vide sous elle jusqu'a la
+     rangee suivante — sur cette page, trois trous sur quatre rangees. En flux
+     de colonnes, chacune se remplit a sa hauteur et les vides disparaissent.
+     `break-inside` empeche qu'une carte soit coupee en deux au passage. */
+  .charts {
+    display: block;
+    column-count: 2;
+    column-gap: var(--s3);
+  }
+  .charts > * { break-inside: avoid; margin-bottom: var(--s3); }
 }
 .chart-card {
   padding: var(--s4);
@@ -1190,7 +1273,7 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
 .bar-row.is-void .bar-value { color: var(--muted); }
 
 .stats h3 { color: var(--text-dim); }
-.group > h2 { font-size: 1rem; }
+.group > h2 { font-size: var(--text-lg); }
 
 /* Le compte reste affiche jusqu'en bas : « 100 % » sur un pari et « 100 % » sur
    quarante ne disent pas la meme chose, et le masquer sur petit ecran serait
@@ -1407,10 +1490,10 @@ details.panel,
    n'apparait qu'au survol : permanente, elle ferait vibrer toute la page. */
 button.primary:hover { box-shadow: var(--shadow-accent), var(--edge); }
 
-/* Titres legerement resserres. Aux graisses hautes, l'espacement par defaut
-   d'une police systeme est calibre pour du texte courant et rend les titres
-   mous. `.page-head h1` le faisait deja ; c'est vrai de tous les niveaux. */
-h1, h2, h3 { letter-spacing: -0.015em; }
+/* Aux graisses hautes, l'espacement par defaut est calibre pour du texte
+   courant et rend les titres mous. Le crenage suit donc la taille — les gros
+   titres portent `--track-tight` sur leur propre regle. */
+h1, h2, h3 { letter-spacing: var(--track-snug); }
 
 /* Le mouvement est un ornement : qui l'a desactive au niveau du systeme ne
    doit pas le subir ici. */

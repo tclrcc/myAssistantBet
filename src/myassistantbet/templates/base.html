@@ -9,6 +9,33 @@
   <script src="/static/app.js" defer></script>
 </head>
 <body>
+  {# Pictogrammes de sport, en SVG plutot qu'en emoji. Trois raisons : un emoji
+     est rendu par la police de l'appareil, donc different d'une machine a
+     l'autre et absent de certaines — la colonne « Sport » se vidait alors sans
+     rien dire ; il ne prend pas la couleur de sa pastille, la ou `currentColor`
+     la suit ; et sa graisse ne s'accorde a aucune typographie.
+
+     Un sprite en tete de page plutot qu'un fichier par icone : trois requetes
+     de moins, et `<use>` les instancie autant de fois que le board a de lignes
+     sans les redecrire. #}
+  <svg class="sprite" aria-hidden="true" focusable="false">
+    <symbol id="i-football" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="M12 7.6l3.9 2.8-1.5 4.6H9.6L8.1 10.4z"/>
+      <path d="M12 3v4.6M20.6 9.2l-4.7 1.2M18.3 19.4L15 15M5.7 19.4L9 15M3.4 9.2l4.7 1.2"/>
+    </symbol>
+    <symbol id="i-tennis" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9"/>
+      <path d="M5.2 6.1A7 7 0 0 1 5.2 17.9"/>
+      <path d="M18.8 6.1A7 7 0 0 0 18.8 17.9"/>
+    </symbol>
+    <symbol id="i-cycling" viewBox="0 0 24 24">
+      <circle cx="5.5" cy="17" r="3.6"/>
+      <circle cx="18.5" cy="17" r="3.6"/>
+      <path d="M5.5 17l4.4-7.4h4.8l-2.6 7.4M14.7 9.6h2.6l1.2 7.4M9.9 9.6h5.6"/>
+    </symbol>
+  </svg>
+
   <header class="topbar">
     <a class="brand" href="/">MyAssistantBet</a>
     <nav>

@@ -51,16 +51,15 @@
   </div>
   {% endif %}
 
-  <form class="banner-item actions push"
-        hx-post="/scan"
-        hx-target="#board"
-        hx-swap="outerHTML"
-        hx-indicator="#scan-spinner">
-    <button type="submit" class="primary">Relancer le scan</button>
-    <span id="scan-spinner" class="htmx-indicator">scan en cours…</span>
-  </form>
-
-  <div class="banner-item actions">
+  {# Les deux actions dans un seul groupe : separees, la seconde se retrouvait
+     seule sur une ligne des que le bandeau debordait, alors qu'elles se lisent
+     ensemble. #}
+  <div class="banner-item actions push">
+    <form hx-post="/scan" hx-target="#board" hx-swap="outerHTML"
+          hx-indicator="#scan-spinner">
+      <button type="submit" class="primary">Relancer le scan</button>
+      <span id="scan-spinner" class="htmx-indicator">scan en cours…</span>
+    </form>
     <a class="button" href="/manual">+ Événement manuel</a>
   </div>
 </div>

@@ -91,15 +91,20 @@ def context_icon(label: str) -> str:
     return CONTEXT_ICONS.get(label) or CONTEXT_ICONS.get(head, "")
 
 
-#: Emoji par sport. Sur un board de vingt lignes, le sport se lit d'un coup
-#: d'oeil sans occuper une colonne entiere de texte. Le libelle reste porte par
-#: l'attribut `title` : un pictogramme seul n'est pas lisible au lecteur d'ecran.
-SPORT_EMOJI = {"football": "⚽", "tennis": "🎾", "cycling": "🚴"}
+#: Sports dont le sprite `base.html` porte un pictogramme. Sur un board de
+#: soixante-seize lignes, le sport se lit d'un coup d'oeil sans occuper une
+#: colonne entiere de texte ; le libelle reste porte par `title` et par un texte
+#: masque, un pictogramme seul n'etant pas lisible au lecteur d'ecran.
+#:
+#: **Des SVG, plus des emoji.** Un emoji est rendu par la police de l'appareil :
+#: different d'une machine a l'autre, absent de certaines — la colonne se vidait
+#: alors sans rien dire — et il ne prend jamais la couleur de sa pastille.
+SPORT_ICONS = frozenset({"football", "tennis", "cycling"})
 
 
-def sport_emoji(key: str | None) -> str:
-    """Pictogramme d'un sport, chaine vide si le sport est inconnu."""
-    return SPORT_EMOJI.get(key or "", "")
+def has_sport_icon(key: str | None) -> bool:
+    """Vrai si le sprite porte un pictogramme pour ce sport."""
+    return (key or "") in SPORT_ICONS
 
 
 def sort_key(text: str | None) -> str:

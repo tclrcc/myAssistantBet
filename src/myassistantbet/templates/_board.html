@@ -31,7 +31,7 @@
         <input type="radio" name="sport" id="sport-{{ sport.key }}" value="{{ sport.key }}"
                {% if filters.sport == sport.key %}checked{% endif %}>
         <label for="sport-{{ sport.key }}" title="{{ sport.label }}">
-          <span aria-hidden="true">{{ sport.emoji }}</span>
+          <svg class="icon" aria-hidden="true"><use href="#i-{{ sport.key }}"></use></svg>
           <span class="sport-name">{{ sport.label }}</span>
         </label>
       {% endfor %}
@@ -138,7 +138,7 @@
         <td class="num">{{ row.local_time.strftime('%d/%m %H:%M') }}</td>
         <td class="tight">
           <span class="sport sport-{{ row.sport_key }}" title="{{ row.sport_label }}">
-            <span aria-hidden="true">{{ row.sport_emoji }}</span>
+            <svg class="icon" aria-hidden="true"><use href="#i-{{ row.sport_key }}"></use></svg>
             <span class="visually-hidden">{{ row.sport_label }}</span>
           </span>
         </td>

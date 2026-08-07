@@ -906,7 +906,35 @@ partagent, sans quoi le banc serait collecte d'un cote et oublie de l'autre.
 ## Front
 
 HTMX est **vendorise** dans `static/htmx.min.js` — aucun CDN, aucun appel reseau depuis la
-page. Les fragments HTMX sont des templates `_*.html` autonomes, inclus par les pages
+page. **Inter l'est aussi** (`static/fonts/InterVariable.woff2`, 344 Ko, licence SIL OFL
+copiee a cote). Un seul fichier variable couvre les graisses de 100 a 900 ; l'italique
+n'est pas vendorise, 378 Ko de plus pour un usage que l'application n'a pas. Un test
+verifie qu'aucune URL externe n'entre dans la feuille de style.
+
+`SPEC.md` section 9.4 interdit **framework JS front, bundler et TypeScript**. L'esthetique
+se travaille donc en CSS vanilla, et ce n'est pas une limitation subie : une police
+vendorisee, une echelle typographique et un jeu d'icones font l'essentiel du chemin sans
+un octet de `node_modules`.
+
+- **Echelle typographique** : six tailles (`--text-xs` a `--text-2xl`), pas une de plus.
+  Les titres de section vivaient a `0.95`, `1` et `1.05rem` — trois valeurs pour un seul
+  niveau, donc aucune hierarchie lisible. Le crenage suit la taille (`--track-tight` /
+  `--track-snug`) : Inter se resserre en grandissant, et une valeur unique sur trois
+  niveaux resserre trop le petit et pas assez le grand.
+- **Les pictogrammes de sport sont des SVG**, plus des emoji (`base.html` porte le sprite,
+  `labels.SPORT_ICONS` dit ce qu'il couvre). Un emoji est rendu par la police de
+  l'appareil : different d'une machine a l'autre, **absent de certaines** — la colonne se
+  vidait alors sans rien dire — et il ne prend jamais la couleur de sa pastille, la ou
+  `currentColor` la suit. Le sprite est instancie par `<use>` autant de fois que le board
+  a de lignes sans etre redecrit. Un test verifie sa presence : sans lui, chaque `<use>`
+  pointe dans le vide.
+  - Les emoji de **palier** (`🟢 SAFE`…) restent : ils sont stockes en base et
+    `picks_import` doit pouvoir les reconnaitre dans un tableau colle a la main. Ceux du
+    bloc CONTEXTE restent aussi — vingt-huit icones a dessiner pour un ornement de fiche.
+- **Les cartes de statistiques coulent en colonnes** (`column-count`), pas en grille. En
+  grille, la plus courte de deux cartes laisse un vide sous elle jusqu'a la rangee
+  suivante : trois trous sur quatre rangees. `break-inside: avoid` empeche qu'une carte
+  soit coupee au passage d'une colonne. Les fragments HTMX sont des templates `_*.html` autonomes, inclus par les pages
 completes : `_board.html` porte l'id `#board`, `_banner.html` porte l'id `#banner`,
 `_worksheet.html` porte l'id `#worksheet` (selections + coupons d'une session, qui
 changent ensemble : le resultat d'une jambe modifie celui de son coupon).

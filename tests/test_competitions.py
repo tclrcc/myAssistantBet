@@ -19,6 +19,7 @@ from myassistantbet.services.competitions import (
     set_category,
     sync_from_api,
 )
+from myassistantbet.services.labels import has_sport_icon
 from myassistantbet.services.scan import active_competitions
 
 from .helpers import QUOTA_HEADERS
@@ -320,10 +321,13 @@ async def test_la_disponibilite_suit_le_fournisseur_sans_toucher_a_l_activation(
 
 
 def test_chaque_competition_porte_son_pictogramme(migrated: Settings) -> None:
-    par_sport = {row["sport_key"]: row["sport_emoji"] for row in list_all(migrated)}
+    """Le pictogramme est un SVG du sprite, designe par la cle du sport — plus
+    un emoji rendu par la police de l'appareil, donc different d'une machine a
+    l'autre et absent de certaines. C'est la cle qui doit arriver au gabarit."""
+    sports = {row["sport_key"] for row in list_all(migrated)}
 
-    assert par_sport.get("football") == "⚽"
-    assert par_sport.get("tennis") == "🎾"
+    assert {"football", "tennis"} <= sports
+    assert all(has_sport_icon(key) for key in sports), "le sprite couvre tous les sports servis"
 
 
 # -- Niveau de tournoi ------------------------------------------------------
