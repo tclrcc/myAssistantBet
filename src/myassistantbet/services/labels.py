@@ -65,6 +65,7 @@ CONTEXT_ICONS = {
     "Stats match": "🚫",
     "Absents": "🩹",
     "H2H": "⚔️",
+    "Tour": "🪜",
     "Repos": "🛌",
     "Elo": "♟️",
     "H2H ici": "📍",

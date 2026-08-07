@@ -50,6 +50,12 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)-8s %(name)s — %(message)s",
 )
+# httpx journalise en INFO l'URL complete de chaque appel, **cle d'API
+# comprise** : `apiKey=…` se retrouvait en clair dans journalctl, a rebours de
+# la regle qui veut qu'un secret ne sorte jamais dans les logs. Nos propres
+# lignes disent deja l'endpoint, le cout, les credits restants et la duree —
+# les taire ici ne fait donc perdre aucune information, seulement le secret.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger(__name__)
 
 templates = Jinja2Templates(directory=PACKAGE_DIR / "templates")
@@ -101,6 +107,7 @@ def _filters_from(params: Mapping[str, Any]) -> board_service.Filters:
         hour_from=_int_or_none(params.get("hour_from")),
         hour_to=_int_or_none(params.get("hour_to")),
         text=str(params.get("text", "")).strip(),
+        date=str(params.get("date", "")).strip(),
     )
 
 
@@ -212,9 +219,7 @@ def _event_context(event_id: int, **extra: object) -> dict[str, object]:
         # par joueur y couteraient cinq cents caracteres — mais l'ecran n'a pas de
         # budget, et c'est la que la ligne « Forme » montre sa limite.
         "recent_matches": (
-            tennis_history_service.recent_matches(
-                view.home, view.away, view.commence_utc, settings
-            )
+            tennis_history_service.recent_matches(view.home, view.away, view.commence_utc, settings)
             if view.sport_key == "tennis"
             else []
         ),

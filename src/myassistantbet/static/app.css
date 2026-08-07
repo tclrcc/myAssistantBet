@@ -922,6 +922,21 @@ kbd {
 .sport-tennis   { background: rgba(217, 164, 65, 0.16);  color: #e6bb63; border-color: rgba(217, 164, 65, 0.35); }
 .sport-cycling  { background: rgba(168, 130, 240, 0.16); color: #bda3f5; border-color: rgba(168, 130, 240, 0.35); }
 
+/* Le tour d'un tournoi, a cote de son nom. Discret : il precise la competition,
+   il ne la concurrence pas. Sur une ligne etroite il passe dessous plutot que
+   de pousser les colonnes de cotes. */
+.round {
+  display: inline-block;
+  padding: 0.02rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid var(--edge);
+}
+
 /* Filet de couleur en bord de ligne : le sport se lit sans lire la colonne. */
 table.board tbody tr.sportrow-football td:first-child { box-shadow: inset 3px 0 0 rgba(79, 183, 131, 0.55); }
 table.board tbody tr.sportrow-tennis   td:first-child { box-shadow: inset 3px 0 0 rgba(217, 164, 65, 0.55); }

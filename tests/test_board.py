@@ -378,3 +378,78 @@ async def test_le_board_ignore_une_competition_incoherente(
     )
     assert autre.filters.competition_id is None
     assert {row["sport_key"] for row in autre.options["competitions"]} <= {"tennis"}
+
+
+# --- Filtre par journee de tournoi -----------------------------------------
+
+
+def _tennis_event(settings: Settings, home: str, away: str, when: str) -> None:
+    competition = db.query_one(
+        "SELECT id FROM competitions WHERE oddsapi_key = 'tennis_atp_us_open'", settings=settings
+    )
+    sport = db.query_one("SELECT id FROM sports WHERE key = 'tennis'", settings=settings)
+    db.execute(
+        "INSERT INTO events (sport_id, competition_id, home, away, commence_time, source, "
+        "created_at) VALUES (?, ?, ?, ?, ?, 'api', ?)",
+        (sport["id"], competition["id"], home, away, when, db.utcnow()),
+        settings=settings,
+    )
+
+
+def _soiree_canadienne(settings: Settings) -> None:
+    """Une soiree de tournoi a Montreal, puis la journee du lendemain.
+
+    Le second match part a 01h00 a Paris : date a la journee civile, il quitte
+    la soiree a laquelle il appartient.
+    """
+    _tennis_event(settings, "Fils", "Svajda", "2026-08-03T19:00:00Z")  # 21h00, le 3
+    _tennis_event(settings, "Navone", "Vacherot", "2026-08-03T23:00:00Z")  # 01h00, le 4
+    _tennis_event(settings, "Paul", "Bergs", "2026-08-04T17:00:00Z")  # 19h00, le 4
+
+
+def test_le_filtre_par_journee_retient_la_session_de_nuit(migrated: Settings) -> None:
+    """« Tous les matchs d'aujourd'hui » doit rendre la soiree entiere, y compris
+    ce qui se joue apres minuit a Paris parce que le tournoi est au Canada."""
+    _soiree_canadienne(migrated)
+
+    rows = board_service.list_rows(
+        board_service.Filters(date="2026-08-03"), settings=migrated, now=NOW
+    )
+
+    assert [row.affiche for row in rows] == ["Fils – Svajda", "Navone – Vacherot"]
+    # Le match de 01h00 est bien affiche au 4 aout : c'est son rattachement qui
+    # change, pas son heure.
+    assert rows[1].local_time.strftime("%d/%m %H:%M") == "04/08 01:00"
+
+
+def test_la_journee_suivante_ne_ramasse_pas_la_nuit_precedente(migrated: Settings) -> None:
+    _soiree_canadienne(migrated)
+
+    rows = board_service.list_rows(
+        board_service.Filters(date="2026-08-04"), settings=migrated, now=NOW
+    )
+
+    assert [row.affiche for row in rows] == ["Paul – Bergs"]
+
+
+def test_les_journees_proposees_portent_leur_compte(migrated: Settings) -> None:
+    """Le menu se construit avant que le filtre ne s'applique : choisir une date
+    ne doit pas effacer les autres du menu, sans quoi on ne peut plus en changer."""
+    _soiree_canadienne(migrated)
+
+    view = board_service.build_view(board_service.Filters(date="2026-08-03"), migrated, now=NOW)
+
+    assert [(jour.key, jour.count) for jour in view.options["days"]] == [
+        ("2026-08-03", 2),
+        ("2026-08-04", 1),
+    ]
+
+
+def test_une_journee_sortie_de_la_fenetre_est_oubliee(migrated: Settings) -> None:
+    """Sinon le board se vide en montrant un menu qui n'explique rien."""
+    _soiree_canadienne(migrated)
+
+    view = board_service.build_view(board_service.Filters(date="2026-07-01"), migrated, now=NOW)
+
+    assert view.filters.date == ""
+    assert len(view.rows) == 3

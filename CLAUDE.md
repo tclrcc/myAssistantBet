@@ -65,7 +65,11 @@ Le front est en HTMX + CSS vanilla : pas de build step, pas de `node_modules`.
   board — mais **reste attache a la session** : l'historique des picks s'appuie dessus. Il est
   affiche marque « commence », jamais retire tout seul.
 - **Secrets** : uniquement via l'environnement / `.env`. Jamais dans le code, les logs, les
-  reponses HTTP ni les fixtures de test.
+  reponses HTTP ni les fixtures de test. Corollaire non evident : **`httpx` journalise en
+  INFO l'URL complete de chaque appel**, cle d'API comprise — `apiKey=…` se retrouvait en
+  clair dans `journalctl`. Son logger est donc remonte a `WARNING` dans `main.py`. Nos
+  propres lignes disent deja l'endpoint, le cout, les credits restants et la duree : les
+  taire ne fait perdre que le secret.
 - **Erreurs** : une API indisponible n'empeche jamais de servir la page. Les donnees partielles
   sont affichees avec une mention visible de ce qui manque — jamais de silence.
 - **Logs** : logging structure, un log par appel externe avec endpoint, cout, credits restants
@@ -549,6 +553,63 @@ scannes les jours d'avant. Aucun appel, aucune cle, aucun quota.
 - Aucun tour connu ne produit **aucune ligne**. Ecrire « 0 tour » laisserait croire a une
   entree en lice alors que le tournoi n'a peut-etre ete scanne que ce jour-la.
 - Au-dela de `MAX_DAYS`, c'est une autre semaine : le repos ne dit plus rien de la fraicheur.
+
+## Journees de tournoi (`services/tournament_day.py`)
+
+Une journee civile ne decrit pas une journee de tournoi. A Montreal la session du soir
+commence vers 19h locales : le dernier match part a 23h a Paris et le suivant a 01h le
+lendemain, si bien que « les matchs d'aujourd'hui » en perdait la moitie.
+
+- **Une heure de bascule fixe reglerait le Canada en cassant l'Australie.** A Melbourne,
+  un match a 01h a Paris *ouvre* la journee du jour meme : le ranger la veille serait
+  l'erreur exactement inverse. Les matchs se regroupent donc par **trou horaire**
+  (`GAP_HOURS`, 6), et la journee prend la date locale de son **premier** match. Aucun
+  fuseau a stocker, aucune table a tenir a jour, et la regle vaut pour les deux hemispheres.
+- Mesure qui fixe le seuil : sur le Canadian Open, le dernier match d'une journee part a
+  23h10 UTC et le premier de la session de nuit a 00h10 — une heure. Le trou suivant, entre
+  la fin de nuit et la reprise de l'apres-midi, depasse dix heures. Le plus grand ecart
+  *a l'interieur* d'une journee tient en trois heures.
+- Le regroupement est **par competition** : deux tournois joues sur deux continents n'ont
+  aucune raison de decouper leurs journees ensemble.
+- Le filtre du board (`Filters.date`) porte cette journee, **pas la date du coup d'envoi**.
+  Les journees proposees se comptent **avant** que le filtre ne s'applique, sans quoi
+  choisir une date effacerait les autres du menu et on ne pourrait plus en changer. Une
+  journee sortie de la fenetre est oubliee, comme une competition qui n'appartient pas au
+  sport choisi.
+- Le regroupement se fait sur **toute** la competition et non sur la fenetre : une soiree
+  coupee par le bord de la fenetre serait datee de son second match.
+
+## Le tour d'un match de tennis (`services/tennis_round.py`)
+
+Aucune source ne le donne. The Odds API ne transmet pas le tour, et `tennisdata.co.uk`
+publie son fichier une fois par semaine : verifie en reel, un fichier rafraichi le 6 aout
+ne portait aucun match posterieur au 3 alors que le tournoi avait commence le 4. Un tour
+se deduit donc, ou ne se dit pas.
+
+- **L'invariant** : dans un tableau a elimination directe, chaque match elimine exactement
+  un joueur. Donc `joueurs en lice = joueurs vus dans le tournoi - matchs deja joues`, et
+  le tour se lit dans ce seul nombre — 2 joueurs restants sont une finale, 16 des huitiemes.
+- **Ce comptage reste juste sur une vue partielle**, et c'est ce qui le rend utilisable :
+  un match jamais scanne elimine un joueur jamais vu, il ne compte ni au numerateur ni au
+  denominateur. Constate en reel : le tableau ATP du Canadian Open n'a montre que 79
+  joueurs — une vue tronquee — et son compte tombait malgre tout sur les memes 16 que le
+  tableau WTA, vu entier, pour la meme journee.
+- **Ce que la vue partielle interdit, c'est de compter depuis le debut.** « 2e tour »
+  suppose de connaitre la taille du tableau, « quart de finale » non. Les tours de la fin
+  sont donc nommes sans condition ; les premiers seulement quand le total des joueurs est
+  une taille de tableau qui existe (`PLAUSIBLE_DRAWS`). 79 n'en est pas une : ce tournoi
+  s'est tu sur ses premieres journees et a retrouve la parole a l'approche de la fin.
+- **Le compte s'arrondit a la puissance de deux superieure** : quatre joueurs moins une
+  demi-finale deja jouee en laissent trois, et c'est le compte du *debut* du tour qui le
+  nomme. Sans cet arrondi, le second match d'une soiree prendrait le nom du tour suivant.
+  Meme raison pour les matchs **simultanes**, qui ne se comptent pas les uns les autres.
+- `draw_sequence` tient compte des **exemptions** : de 96 joueurs on passe a 64, jamais a
+  48. Sans cela le premier tour d'un Masters ne serait pas le premier element de la suite.
+- Les editions se separent par un trou de plus de `EDITION_GAP_DAYS` : la competition garde
+  son identifiant d'une annee sur l'autre, et les joueurs de l'edition precedente
+  gonfleraient le compte toute la semaine.
+- En cas de doute, **aucune ligne**. Un « demi-finale » affiche sur un quart serait l'erreur
+  la plus visible que ce module puisse produire.
 
 ## Tennis, cyclisme et saisie manuelle
 

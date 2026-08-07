@@ -57,6 +57,22 @@
       </select>
     </label>
 
+    {# Une journee de tournoi, pas une date civile : au Canada, un match joue a
+       02h a Paris appartient a la soiree de la veille et se range avec elle. #}
+    {% if options.days %}
+    <label>
+      Journée
+      <select name="date">
+        <option value="">toutes</option>
+        {% for day in options.days %}
+          <option value="{{ day.key }}" {% if filters.date == day.key %}selected{% endif %}>
+            {{ day.label }} ({{ day.count }})
+          </option>
+        {% endfor %}
+      </select>
+    </label>
+    {% endif %}
+
     <label>
       De
       <input type="number" name="hour_from" min="0" max="23" placeholder="0"
@@ -126,7 +142,13 @@
             <span class="visually-hidden">{{ row.sport_label }}</span>
           </span>
         </td>
-        <td>{{ row.competition_label }}</td>
+        <td>
+          {{ row.competition_label }}
+          {# Le tour ne s'affiche que lorsqu'il peut etre affirme : une vue
+             partielle du tableau ne produit aucune mention plutot qu'un tour
+             approximatif. #}
+          {% if row.round_label %}<span class="round">{{ row.round_label }}</span>{% endif %}
+        </td>
         <td class="affiche">
           <a href="/events/{{ row.event_id }}">{{ row.affiche }}</a>
         </td>

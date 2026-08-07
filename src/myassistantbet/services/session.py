@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from ..db import connect
 from ..providers.oddsapi import DEFAULT_BOOKMAKER, SCAN_MARKETS
-from . import coverage, dossier, elo, tennis_history, tennis_load
+from . import coverage, dossier, elo, tennis_history, tennis_load, tennis_round
 from .context import context_lines
 from .labels import UNTIMED_BOOKMAKERS, affiche, bookmaker_label, primary_book
 from .markets import markets_for
@@ -269,6 +269,11 @@ def context_block(
         # relu ici, comme le reste, sans un appel.
         lines += dossier.dossier_lines(event_id, home, away, commence_time, settings)
     if sport_key == "tennis":
+        # Le tour se deduit du nombre de joueurs encore en lice, donc de nos
+        # propres scans : aucune source ne le publie a temps. Il vient en tete
+        # du bloc parce qu'il situe tout le reste — une forme moyenne ne se lit
+        # pas pareil en finale et au premier tour.
+        lines += tennis_round.lines(competition_id, commence_time, settings)
         lines += elo.lines(home, away, oddsapi_key, surface, settings)
         # Repos et charge sortent de nos propres lignes : les tours precedents
         # du meme tournoi ont ete scannes les jours d'avant. Aucun appel, aucune

@@ -15,6 +15,7 @@ from ..db import connect, utcnow
 from ..providers.apifootball import PROVIDER as APIFOOTBALL_PROVIDER
 from ..providers.base import last_known_quota
 from ..providers.oddsapi import PROVIDER as ODDSAPI_PROVIDER
+from . import tennis_round, tournament_day
 from .competitions import category_label, category_rank
 from .labels import affiche, sort_key, sport_emoji
 from .mapping_ui import pending_count
@@ -34,6 +35,11 @@ class Filters:
     hour_from: int | None = None
     hour_to: int | None = None
     text: str = ""
+    #: Journee de tournoi, en ISO (`2026-08-04`). Ce n'est **pas** la date
+    #: civile du coup d'envoi : un match joue a 02h a Paris parce que le tournoi
+    #: est au Canada appartient a la soiree de la veille. `tournament_day` porte
+    #: la regle.
+    date: str = ""
 
 
 @dataclass
@@ -55,6 +61,11 @@ class BoardRow:
     over_price: float | None = None
     under_price: float | None = None
     selected: bool = False
+    #: Journee de tournoi qui porte ce match, en ISO. Sert au filtre par date.
+    day_key: str = ""
+    #: « quart de finale », « 2e tour »… Absent des que le tour ne peut etre
+    #: affirme, et absent hors tennis.
+    round_label: str | None = None
 
     @property
     def affiche(self) -> str:
@@ -234,13 +245,28 @@ def list_rows(
     now: datetime | None = None,
 ) -> list[BoardRow]:
     """Evenements de la fenetre courante, avec leurs cotes 1N2 et O/U principales."""
+    return _collect(filters, settings, now)[0]
+
+
+def _collect(
+    filters: Filters | None = None,
+    settings: Settings | None = None,
+    now: datetime | None = None,
+) -> tuple[list[BoardRow], list[tournament_day.Day]]:
+    """Lignes du board, et les journees de tournoi proposees au filtre.
+
+    Les deux sortent du meme parcours : les journees se comptent **avant** que
+    le filtre de date ne s'applique, sans quoi choisir une date effacerait
+    toutes les autres du menu et il n'y aurait plus moyen d'en changer.
+    """
     settings = settings or get_settings()
     filters = filters or Filters()
     window_start, window_end = scan_window(settings, now)
     selected = selected_event_ids(settings)
 
     sql = [
-        "SELECT e.id, e.home, e.away, e.commence_time, s.key AS sport_key, s.label AS sport_label,",
+        "SELECT e.id, e.home, e.away, e.commence_time, e.competition_id,",
+        "       s.key AS sport_key, s.label AS sport_label,",
         "       COALESCE(c.label, '—') AS competition_label",
         "FROM events e",
         "JOIN sports s ON s.id = e.sport_id",
@@ -265,7 +291,7 @@ def list_rows(
     with connect(settings) as conn:
         events = conn.execute("\n".join(sql), params).fetchall()
         if not events:
-            return []
+            return [], []
 
         ids = [int(row["id"]) for row in events]
         placeholders = ",".join("?" * len(ids))
@@ -274,6 +300,22 @@ def list_rows(
             f"WHERE event_id IN ({placeholders}) AND market_key IN (?, ?)",
             [*ids, H2H_MARKET, TOTALS_MARKET],
         ).fetchall()
+
+        # Les journees de tournoi et les tours se lisent sur **toute** la
+        # competition, pas sur la fenetre : une soiree coupee par le bord de la
+        # fenetre serait datee de son second match, et le compte des joueurs
+        # encore en lice n'aurait plus de sens.
+        competitions = sorted(
+            {int(row["competition_id"]) for row in events if row["competition_id"]}
+        )
+        siblings = []
+        if competitions:
+            marks = ",".join("?" * len(competitions))
+            siblings = conn.execute(
+                f"SELECT id, competition_id, home, away, commence_time FROM events "
+                f"WHERE competition_id IN ({marks}) ORDER BY commence_time",
+                competitions,
+            ).fetchall()
 
     h2h: dict[int, dict[str, float]] = {}
     totals: dict[int, dict[float, dict[str, float]]] = {}
@@ -286,6 +328,14 @@ def list_rows(
             totals.setdefault(event_id, {}).setdefault(point, {})[row["outcome_name"]] = float(
                 row["price"]
             )
+
+    keys = tournament_day.day_keys(
+        ((int(row["id"]), row["competition_id"], row["commence_time"]) for row in siblings),
+        settings.tz,
+    )
+    par_competition: dict[Any, list[Any]] = {}
+    for row in siblings:
+        par_competition.setdefault(row["competition_id"], []).append(row)
 
     rows: list[BoardRow] = []
     for event in events:
@@ -304,10 +354,17 @@ def list_rows(
             draw_price=prices.get("Draw"),
             away_price=prices.get(event["away"]),
             selected=event_id in selected,
+            day_key=keys.get(event_id, ""),
         )
         main = _main_total(totals.get(event_id, {}))
         if main:
             row.total_point, row.over_price, row.under_price = main
+        if event["sport_key"] == "tennis":
+            voisins = par_competition.get(event["competition_id"], [])
+            row.round_label = tennis_round.label_for(
+                tennis_round.edition_for(voisins, event["commence_time"]),
+                event["commence_time"],
+            )
 
         if filters.hour_from is not None and row.local_time.hour < filters.hour_from:
             continue
@@ -315,7 +372,10 @@ def list_rows(
             continue
         rows.append(row)
 
-    return rows
+    days = tournament_day.options([row.day_key for row in rows if row.day_key], settings.tz, now)
+    if filters.date:
+        rows = [row for row in rows if row.day_key == filters.date]
+    return rows, days
 
 
 def filter_options(
@@ -444,7 +504,7 @@ class BoardView:
 
     rows: list[BoardRow] = field(default_factory=list)
     banner: Banner = field(default_factory=Banner)
-    options: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
+    options: dict[str, list[Any]] = field(default_factory=dict)
     filters: Filters = field(default_factory=Filters)
 
 
@@ -455,11 +515,14 @@ def build_view(
 ) -> BoardView:
     settings = settings or get_settings()
     filters = filters or Filters()
-    options = filter_options(settings, filters.sport)
+    options: dict[str, list[Any]] = dict(filter_options(settings, filters.sport))
     filters = coherent(filters, options)
-    return BoardView(
-        rows=list_rows(filters, settings, now),
-        banner=banner(settings, now),
-        options=options,
-        filters=filters,
-    )
+    rows, days = _collect(filters, settings, now)
+    if filters.date and filters.date not in {day.key for day in days}:
+        # Une journee sortie de la fenetre viderait le board sans que le menu
+        # montre le filtre en cause : on l'oublie, exactement comme une
+        # competition qui n'appartient pas au sport choisi.
+        filters = replace(filters, date="")
+        rows, days = _collect(filters, settings, now)
+    options["days"] = days
+    return BoardView(rows=rows, banner=banner(settings, now), options=options, filters=filters)
