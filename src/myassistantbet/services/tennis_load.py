@@ -21,11 +21,11 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from ..config import Settings, get_settings
 from ..db import connect
-from . import elo
+from . import elo, tournament_day
 from .labels import sort_key
 
 logger = logging.getLogger(__name__)
@@ -33,6 +33,10 @@ logger = logging.getLogger(__name__)
 #: Au-dela, on parle d'un autre tournoi ou d'une autre semaine : le repos
 #: n'a plus de sens comme information de fraicheur.
 MAX_DAYS = 10
+
+#: Identifiant sentinelle du match analyse dans le regroupement en journees. Un
+#: entier negatif ne peut collisionner avec aucune cle primaire d'evenement.
+_ICI = -1
 
 
 @dataclass
@@ -46,15 +50,15 @@ class Load:
 
     @property
     def fragment(self) -> str:
-        """`2j (3 tours)`, ou rien si le tournoi vient de commencer.
+        """`2j`, ou rien si aucun tour precedent n'est connu.
 
-        Le nombre de tours accompagne le repos : deux jours apres un premier
-        tour et deux jours apres un quart ne se valent pas.
+        Le nombre de tours **ne l'accompagne plus**. Il comptait les apparitions
+        que nous avions scannees, pas les matchs joues : sur un tournoi dont les
+        premiers jours precedent notre fenetre, il en manque. Constate en reel —
+        le bloc creditait Michelsen d'un tour la ou l'ATP lui en donne deux. La
+        ligne « Tour » dit desormais ou en est le tournoi, et elle le dit juste.
         """
-        if self.days_rest is None:
-            return ""
-        tours = f" ({self.rounds} tour{'s' if self.rounds > 1 else ''})" if self.rounds else ""
-        return f"{self.days_rest}j{tours}"
+        return f"{self.days_rest}j" if self.days_rest is not None else ""
 
 
 def load_for(
@@ -76,14 +80,36 @@ def load_for(
     key = sort_key(player)
 
     with connect(settings) as conn:
-        rows = conn.execute(
-            "SELECT home, away, commence_time FROM events "
-            "WHERE competition_id = ? AND commence_time < ? ORDER BY commence_time DESC",
-            (competition_id, commence_time),
+        # Toute la competition, match du jour compris : le regroupement en
+        # journees de tournoi a besoin de la suite pour placer ses coupures.
+        toutes = conn.execute(
+            "SELECT id, home, away, commence_time FROM events "
+            "WHERE competition_id = ? ORDER BY commence_time",
+            (competition_id,),
         ).fetchall()
+    rows = [row for row in toutes if row["commence_time"] < commence_time]
+
+    # **Le repos se compte en journees de tournoi, jamais en dates civiles.** A
+    # Montreal, un match de la session du soir part a 01h du matin a Paris : sa
+    # date civile est celle du lendemain, et le repos calcule dessus perdait un
+    # jour d'un cote et en gagnait un de l'autre. Constate en reel — le bloc
+    # donnait van de Zandschulp a 1j et Paul a 3j la ou l'ATP date leurs deux
+    # matchs precedents du meme mercredi.
+    #
+    # Le match du jour entre dans le regroupement sous un identifiant sentinelle
+    # plutot que d'y etre cherche : rien ne garantit qu'il figure en base — un
+    # contexte peut se calculer sur une rencontre saisie a la main, ou pas
+    # encore scannee — et l'y supposer faisait disparaitre la ligne entiere.
+    journees = tournament_day.day_keys(
+        [(int(row["id"]), competition_id, row["commence_time"]) for row in toutes]
+        + [(_ICI, competition_id, commence_time)],
+        settings.tz,
+    )
+    ici = journees.get(_ICI)
 
     when = _parse(commence_time)
     dates: list[datetime] = []
+    veilles: list[str | None] = []
     faced: list[tuple[datetime, str]] = []
     for row in rows:
         if key not in (sort_key(row["home"]), sort_key(row["away"])):
@@ -92,6 +118,7 @@ def load_for(
         if when is None or played is None or (when - played).days > MAX_DAYS:
             continue
         dates.append(played)
+        veilles.append(journees.get(int(row["id"])))
         # L'adversaire est l'autre nom de la ligne. Il est retenu tel qu'il a ete
         # scanne : c'est ainsi qu'il figure partout ailleurs dans l'application.
         autre = row["away"] if key == sort_key(row["home"]) else row["home"]
@@ -102,9 +129,19 @@ def load_for(
         return Load()
     return Load(
         rounds=len(dates),
-        days_rest=(when.date() - max(dates).date()).days,
+        days_rest=_rest(ici, [jour for jour in veilles if jour]),
         opponents=tuple(nom for _, nom in sorted(faced)),
     )
+
+
+def _rest(here: str | None, previous: list[str]) -> int | None:
+    """Journees de tournoi entre la derniere apparition et celle du jour."""
+    if not here or not previous:
+        return None
+    try:
+        return (date.fromisoformat(here) - date.fromisoformat(max(previous))).days
+    except ValueError:
+        return None
 
 
 def lines(

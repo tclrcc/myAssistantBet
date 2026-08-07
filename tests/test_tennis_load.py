@@ -38,12 +38,16 @@ def test_le_repos_se_compte_sur_les_tours_precedents(migrated: Settings) -> None
         "Fils", "Navone", _competition(migrated), "2026-08-07T18:00:00Z", migrated
     )
 
-    assert lignes == [("Repos", "Fils 2j (1 tour) | Navone 3j (1 tour)")]
+    assert lignes == [("Repos", "Fils 2j | Navone 3j")]
 
 
-def test_le_nombre_de_tours_accompagne_le_repos(migrated: Settings) -> None:
-    """Deux jours apres un premier tour et deux jours apres un quart ne se
-    valent pas."""
+def test_le_nombre_de_tours_n_accompagne_plus_le_repos(migrated: Settings) -> None:
+    """Il comptait les apparitions **scannees**, pas les matchs joues. Sur un
+    tournoi dont les premiers jours precedent notre fenetre, il en manque :
+    constate en reel, le bloc creditait Michelsen d'un tour la ou l'ATP lui en
+    donne deux. La ligne « Tour » dit desormais ou en est le tournoi, et elle le
+    dit juste — ce compte-la n'avait plus de raison d'etre.
+    """
     _match(migrated, "Fils", "A", "2026-08-03T18:00:00Z")
     _match(migrated, "B", "Fils", "2026-08-05T18:00:00Z")
 
@@ -51,7 +55,7 @@ def test_le_nombre_de_tours_accompagne_le_repos(migrated: Settings) -> None:
         "Fils", "Inconnu", _competition(migrated), "2026-08-07T18:00:00Z", migrated
     )
 
-    assert lignes == [("Repos", "Fils 2j (2 tours)")]
+    assert lignes == [("Repos", "Fils 2j")]
 
 
 def test_un_joueur_sans_tour_precedent_ne_produit_rien(migrated: Settings) -> None:
@@ -106,3 +110,29 @@ def test_les_accents_et_la_casse_ne_separent_pas_un_joueur(migrated: Settings) -
     )
 
     assert lignes and "Fabian Marozsan 2j" in lignes[0][1]
+
+
+def test_le_repos_se_compte_en_journees_de_tournoi(migrated: Settings) -> None:
+    """Le defaut constate en reel sur Montreal. Un match de la session du soir
+    part a 01h du matin a Paris : sa date civile est celle du lendemain, et le
+    repos calcule dessus perdait un jour d'un cote et en gagnait un de l'autre.
+
+    Le bloc donnait van de Zandschulp a 1j et Paul a 3j la ou l'ATP date leurs
+    deux matchs precedents du meme mercredi. Regroupes en journees de tournoi,
+    les deux tombent sur le meme compte.
+    """
+    # Session du soir du 5 aout a Montreal : 23h10 UTC, soit 01h10 a Paris le 6.
+    _match(migrated, "Paul", "Royer", "2026-08-05T23:10:00Z")
+    # Session du soir du 6 aout : 00h10 UTC le 7, soit 02h10 a Paris.
+    _match(migrated, "Zandschulp", "Medvedev", "2026-08-06T00:10:00Z")
+
+    # Les deux jouent la session du soir du 7 aout, soit 00h10 UTC le 8.
+    repos = {
+        nom: tennis_load.load_for(nom, _competition(migrated), "2026-08-08T00:10:00Z", migrated)
+        for nom in ("Paul", "Zandschulp")
+    }
+
+    # Les deux ont joue la meme session du soir, a deux journees de tournoi de
+    # celle-ci. En dates civiles, l'un donnait 3 jours et l'autre 2.
+    assert repos["Paul"].days_rest == 2
+    assert repos["Zandschulp"].days_rest == 2

@@ -35,15 +35,6 @@ def _edition(players: int, played: int) -> tennis_round.Edition:
     return edition
 
 
-def test_la_suite_des_tours_tient_compte_des_exemptions() -> None:
-    """Un tableau qui n'est pas une puissance de deux distribue des exemptions
-    au premier tour : de 96 joueurs on passe a 64, jamais a 48."""
-    assert tennis_round.draw_sequence(96) == [96, 64, 32, 16, 8, 4, 2]
-    assert tennis_round.draw_sequence(64) == [64, 32, 16, 8, 4, 2]
-    assert tennis_round.draw_sequence(128) == [128, 64, 32, 16, 8, 4, 2]
-    assert tennis_round.draw_sequence(28) == [28, 16, 8, 4, 2]
-
-
 def test_les_derniers_tours_se_nomment_depuis_la_fin() -> None:
     """Deux joueurs restants sont une finale, quatre une demi-finale : le nom
     ne demande aucune connaissance de la taille du tableau."""
@@ -59,41 +50,6 @@ def test_un_tour_deja_entame_garde_son_nom() -> None:
     perdrait son libelle — ou pire, prendrait celui du tour suivant."""
     assert tennis_round.label_for(_edition(64, 61), "2026-08-08T12:00:00Z") == "demi-finale"
     assert tennis_round.label_for(_edition(64, 57), "2026-08-08T12:00:00Z") == "quart de finale"
-
-
-def test_les_premiers_tours_se_comptent_depuis_le_debut() -> None:
-    """« 1er tour » suppose de savoir ou est le debut, donc la taille du tableau."""
-    assert tennis_round.label_for(_edition(64, 0), "2026-08-08T12:00:00Z") == "1er tour"
-    assert tennis_round.label_for(_edition(64, 20), "2026-08-08T12:00:00Z") == "1er tour"
-    assert tennis_round.label_for(_edition(64, 32), "2026-08-08T12:00:00Z") == "2e tour"
-    assert tennis_round.label_for(_edition(128, 64), "2026-08-08T12:00:00Z") == "2e tour"
-    assert tennis_round.label_for(_edition(128, 96), "2026-08-08T12:00:00Z") == "3e tour"
-
-
-def test_une_vue_tronquee_se_tait_sur_les_premiers_tours_et_parle_a_la_fin() -> None:
-    """Releve en reel sur le Canadian Open : le tableau ATP n'a montre que 79
-    joueurs, ce qui n'est la taille d'aucun tableau — nos premiers jours de scan
-    manquaient. Compter « 2e tour » sur cette base serait un pari.
-
-    Le solde des joueurs en lice, lui, reste juste : un match jamais scanne
-    elimine un joueur jamais vu, et les deux s'annulent. Les tours de la fin se
-    nomment donc quand meme — et ils tombaient bien sur les memes seize joueurs
-    que le tableau WTA, vu entier, pour la meme journee.
-    """
-    assert 79 not in tennis_round.PLAUSIBLE_DRAWS
-    assert tennis_round.label_for(_edition(79, 55), "2026-08-08T12:00:00Z") is None
-    assert tennis_round.label_for(_edition(79, 63), "2026-08-08T12:00:00Z") == "huitième de finale"
-
-
-def test_le_tournoi_reel_se_lit_tour_par_tour() -> None:
-    """Le Canadian Open feminin, tel qu'il a ete scanne : 64 joueuses, 32 matchs
-    au premier tour etales sur deux jours, 16 au deuxieme sur deux jours aussi,
-    puis les huitiemes. Un tour a cheval sur deux journees ne doit pas changer
-    de nom en cours de route."""
-    attendus = [(0, "1er tour"), (15, "1er tour"), (32, "2e tour"), (40, "2e tour")]
-    for joues, attendu in attendus:
-        assert tennis_round.label_for(_edition(64, joues), "2026-08-08T12:00:00Z") == attendu
-    assert tennis_round.label_for(_edition(64, 48), "2026-08-08T12:00:00Z") == "huitième de finale"
 
 
 def test_plus_de_matchs_que_de_joueurs_ne_produit_rien() -> None:
@@ -142,11 +98,59 @@ def test_la_ligne_du_bloc_se_relit_en_base(migrated: Settings) -> None:
     assert lignes == [("Tour", "demi-finale")]
 
 
-def test_aucune_ligne_quand_le_tour_ne_peut_etre_affirme(migrated: Settings) -> None:
-    """Un tournoi dont on ne connait qu'une poignee de matchs ne dit rien : le
-    silence vaut mieux qu'un tour approximatif."""
+def test_une_vue_partielle_nomme_quand_meme_le_tour(migrated: Settings) -> None:
+    """42 joueurs vus et 20 matchs joues font 22 en lice : le tour a donc
+    commence a 32, et c'est vrai quel que soit le tableau reel. L'ancienne regle
+    se taisait ici parce que 42 n'est la taille d'aucun tableau — elle cherchait
+    le debut. Compte depuis la fin, la question ne se pose plus.
+
+    Limite connue et assumee : un tournoi dont **un seul** match a ete scanne
+    rend « finale », deux joueurs en lice etant indiscernables d'une finale. Le
+    cas suppose de n'avoir jamais scanne le tournoi avant ce match.
+    """
     competition_id = _match(migrated, "A", "B", "2026-08-08T12:00:00Z")
     for index in range(20):
         _match(migrated, f"P{index}", f"Q{index}", "2026-08-07T12:00:00Z")
 
-    assert tennis_round.lines(competition_id, "2026-08-08T12:00:00Z", migrated) == []
+    assert tennis_round.lines(competition_id, "2026-08-08T12:00:00Z", migrated) == [
+        ("Tour", "16e de finale")
+    ]
+
+
+def test_tous_les_tours_se_nomment_depuis_la_fin() -> None:
+    """L'ordinal a ete essaye et retire : « 2e tour » exige de savoir ou est le
+    premier, donc la taille du tableau. Compter depuis la fin ne suppose que le
+    nombre de joueurs restants, qui reste juste sur une vue tronquee."""
+    attendus = [
+        (62, "finale"),
+        (60, "demi-finale"),
+        (56, "quart de finale"),
+        (48, "huitième de finale"),
+        (32, "16e de finale"),
+        (0, "32e de finale"),
+    ]
+    for joues, attendu in attendus:
+        assert tennis_round.label_for(_edition(64, joues), "2026-08-08T12:00:00Z") == attendu
+
+
+def test_une_vue_tronquee_nomme_juste_le_tour_qu_elle_voit() -> None:
+    """Le defaut qui a motive le retrait de l'ordinal, constate en reel : sur le
+    Canadian Open feminin, 64 joueuses vues sur un tableau de 96 — le premier
+    tour n'ayant jamais ete scanne. Huit blocs ont annonce « 2e tour » pour un
+    tour de 32.
+
+    Compte depuis la fin, le meme etat rend « 16e de finale », ce que l'ordre du
+    jeu officiel appelle le 3e tour. Les deux nomment le meme tour ; seul le
+    second est vrai sans connaitre le tableau.
+    """
+    assert tennis_round.label_for(_edition(64, 40), "2026-08-08T12:00:00Z") == "16e de finale"
+
+
+def test_un_tour_qui_demanderait_plus_de_joueurs_que_vus_est_refuse() -> None:
+    """Un tableau a exemptions vu des son premier tour : 96 joueurs ne forment
+    pas un tour de 128, et arrondir a la puissance de deux superieure le
+    pretendrait."""
+    assert tennis_round.label_for(_edition(96, 0), "2026-08-08T12:00:00Z") is None
+    # Des que les exemptions sont purgees, le compte redevient une puissance de
+    # deux et le tour se nomme.
+    assert tennis_round.label_for(_edition(96, 32), "2026-08-08T12:00:00Z") == "32e de finale"

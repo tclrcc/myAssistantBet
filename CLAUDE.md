@@ -646,9 +646,23 @@ l'analyse allait chercher a la main, match par match, qui avait joue la veille. 
 l'information dort **deja dans la base** : les tours precedents du meme tournoi ont ete
 scannes les jours d'avant. Aucun appel, aucune cle, aucun quota.
 
-- Deux grandeurs seulement : **jours de repos** et **nombre de tours disputes**. Le compte
-  accompagne le repos — deux jours apres un premier tour et deux jours apres un quart ne se
-  valent pas.
+- Une seule grandeur : les **jours de repos**, comptes en **journees de tournoi** et jamais
+  en dates civiles. A Montreal, un match de la session du soir part a 01h du matin a Paris :
+  sa date civile est celle du lendemain, et le repos calcule dessus perdait un jour d'un
+  cote et en gagnait un de l'autre. Constate en reel — le bloc donnait van de Zandschulp a
+  1j et Paul a 3j la ou l'ATP date leurs deux matchs precedents du **meme mercredi**.
+  Regroupes par `tournament_day`, les deux tombent sur 2j.
+  - Le match analyse entre dans le regroupement sous un **identifiant sentinelle** plutot
+    que d'y etre cherche : rien ne garantit qu'il figure en base — une rencontre saisie a la
+    main, ou pas encore scannee — et l'y supposer faisait disparaitre la ligne entiere.
+- **Le nombre de tours a ete retire.** Il comptait les apparitions *scannees*, pas les
+  matchs joues : sur un tournoi dont les premiers jours precedent notre fenetre, il en
+  manque. Le bloc creditait Michelsen d'un tour la ou l'ATP lui en donne deux. La ligne
+  `Tour` dit desormais ou en est le tournoi, et elle le dit juste.
+- **Le double n'est pas vu.** Sur un tournoi ou le tableau de double a commence, un joueur
+  peut avoir la meme ligne `Repos` et une charge tout autre — releve en reel, 10 des 16
+  joueuses d'une journee WTA avaient joue le double la veille. Le fournisseur de cotes ne
+  sert pas les doubles : le template dit que c'est a la recherche.
 - Ce qu'on ne tire **pas** et qu'il ne faut pas inventer : duree des matchs, score, maniere.
   La base ne stocke aucun resultat. Un joueur present au tour suivant a forcement passe le
   precedent, mais l'ecrire supposerait qu'aucun forfait n'existe.

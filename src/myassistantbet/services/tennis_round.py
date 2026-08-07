@@ -21,14 +21,13 @@ n'a montre que 79 joueurs — une vue tronquee de ses premiers jours — et le
 nombre de joueurs en lice y tombait malgre tout sur les memes 16 que le tableau
 WTA, vu entier, pour la meme journee.
 
-**Ce que la vue partielle interdit, en revanche, c'est de compter depuis le
-debut.** Nommer « 2e tour » suppose de connaitre la taille du tableau ; nommer
-« quart de finale » ne suppose que de savoir combien il reste de joueurs. Les
-tours de la fin sont donc nommes sans condition, et les premiers seulement
-quand le nombre de joueurs vus est une taille de tableau qui existe
-(`PLAUSIBLE_DRAWS`). Le tableau ATP a 79 joueurs n'en est pas une : il ne
-produit aucun libelle sur ses premieres journees, et retrouve la parole a
-l'approche de la fin.
+**Tous les tours se nomment donc depuis la fin** — finale, demi, quart,
+huitieme, 16e, 32e — et jamais par un ordinal. « 2e tour » exigerait de savoir
+ou est le premier, donc la taille du tableau, et rien ne permet de la deduire :
+une vue qui commence a une frontiere de tour est **indiscernable** d'un tableau
+plus petit vu en entier. Essaye puis retire, apres l'avoir constate en reel :
+sur le Canadian Open feminin, 64 joueuses vues sur un tableau de 96 ont fait
+annoncer « 2e tour » a huit blocs pour un tour de 32.
 
 En cas de doute, aucune ligne. Un « demi-finale » affiche sur un quart serait
 l'erreur la plus visible que ce module puisse produire.
@@ -46,25 +45,30 @@ from ..db import connect
 from .labels import sort_key
 from .tournament_day import parse
 
-#: Tailles de tableau qui existent sur les circuits ATP et WTA. Un total de
-#: joueurs qui n'y figure pas signale une vue tronquee du tournoi : les tours
-#: comptes depuis le debut se taisent alors, faute de pouvoir dire lequel est
-#: le premier.
-PLAUSIBLE_DRAWS = (28, 32, 48, 56, 64, 96, 128)
-
 #: Au-dela, c'est une autre edition du meme tournoi. La competition garde son
 #: identifiant d'une annee sur l'autre : sans cette coupure, les joueurs de
 #: l'edition precedente gonfleraient le compte.
 EDITION_GAP_DAYS = 5
 
-#: Nom des derniers tours, par nombre de joueurs encore en lice au debut du
-#: tour. Au-dela, on compte depuis le debut (« 1er tour ») : c'est ainsi que le
-#: tennis se raconte, et le passage se fait exactement a seize.
-FINAL_ROUNDS = {
+#: Nom du tour, par nombre de joueurs en lice **au debut du tour**. Tous comptes
+#: **depuis la fin**, et c'est la seule facon d'avoir raison.
+#:
+#: L'ordinal — « 1er tour », « 2e tour » — a ete essaye et retire. Il exige de
+#: connaitre la taille du tableau, que rien ne permet de deduire : une vue qui
+#: commence a une frontiere de tour est **indiscernable** d'un tableau plus
+#: petit vu en entier. Constate en reel sur le Canadian Open feminin — 64
+#: joueuses vues sur un tableau de 96, le premier tour n'ayant jamais ete scanne
+#: — ou huit blocs ont annonce « 2e tour » pour un tour de 32. Le compte des
+#: joueurs restants, lui, reste juste sur une vue tronquee : c'est le meme
+#: invariant qui rendait deja les derniers tours fiables, applique partout.
+ROUND_NAMES = {
     2: "finale",
     4: "demi-finale",
     8: "quart de finale",
     16: "huitième de finale",
+    32: "16e de finale",
+    64: "32e de finale",
+    128: "64e de finale",
 }
 
 
@@ -81,34 +85,11 @@ class Edition:
         return len({key for _, home, away in self.matches for key in (home, away) if key})
 
 
-def _is_power_of_two(value: int) -> bool:
-    return value > 0 and value & (value - 1) == 0
-
-
 def _ceil_power_of_two(value: int) -> int:
     """Plus petite puissance de deux superieure ou egale a `value`."""
     if value <= 1:
         return 1
     return 1 << (value - 1).bit_length()
-
-
-def draw_sequence(size: int) -> list[int]:
-    """Joueurs en lice au debut de chaque tour, pour un tableau de `size`.
-
-    Un tableau qui n'est pas une puissance de deux distribue des exemptions au
-    premier tour : de 96 joueurs on passe a 64, pas a 48. La suite se lit donc
-    `[96, 64, 32, 16, 8, 4, 2]`, ou le premier tour est bien le premier element.
-    """
-    sequence = [size]
-    current = size
-    while current > 2:
-        current = current // 2 if _is_power_of_two(current) else 1 << (current.bit_length() - 1)
-        sequence.append(current)
-    return sequence
-
-
-def _ordinal(index: int) -> str:
-    return "1er tour" if index == 1 else f"{index}e tour"
 
 
 def label_for(edition: Edition, commence_time: str) -> str | None:
@@ -127,22 +108,16 @@ def label_for(edition: Edition, commence_time: str) -> str | None:
         # rien ne peut en sortir.
         return None
 
-    if alive <= max(FINAL_ROUNDS):
-        # Les derniers tours se nomment depuis la fin : aucune connaissance du
-        # tableau n'est necessaire, seulement le nombre de joueurs restants. Un
-        # tour deja entame laisse un compte impair — quatre joueurs moins une
-        # demi-finale jouee en font trois — d'ou l'arrondi a la puissance de
-        # deux superieure, qui rend le compte du **debut** du tour.
-        return FINAL_ROUNDS.get(_ceil_power_of_two(alive))
-
-    size = edition.players
-    if size not in PLAUSIBLE_DRAWS:
+    # Un tour deja entame laisse un compte impair — quatre joueurs moins une
+    # demi-finale jouee en font trois — d'ou l'arrondi a la puissance de deux
+    # superieure, qui rend le compte du **debut** du tour.
+    start = _ceil_power_of_two(alive)
+    if start > edition.players:
+        # Ce tour n'a jamais pu exister : il demanderait plus de joueurs que le
+        # tournoi n'en a montre. C'est le cas d'un tableau a exemptions vu des
+        # son premier tour — 96 joueurs ne forment pas un tour de 128.
         return None
-    sequence = draw_sequence(size)
-    remaining = [value for value in sequence if value >= alive]
-    if not remaining:
-        return None
-    return _ordinal(sequence.index(min(remaining)) + 1)
+    return ROUND_NAMES.get(start)
 
 
 def edition_for(matches: Sequence[Any], commence_time: str) -> Edition:
