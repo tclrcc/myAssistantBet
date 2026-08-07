@@ -474,6 +474,24 @@ si deux joueurs se sont deja affrontes, ou ce qu'un joueur vaut sur terre.
   qui commence est justement vide. Trouve en ecrivant le test.
 - Une saison **terminee** n'est jamais retelechargee ; la saison en cours l'est une fois
   par semaine, cadence de mise a jour du fichier.
+- **Une date qui ne peut pas etre celle de sa saison n'entre pas en base** (`in_season()`).
+  La source se trompe parfois : le fichier 2026 datait une finale de l'Iasi Open du
+  20 juillet **2029**. Le degat est invisible, et c'est ce qui le rend genant — posterieure
+  a tout match analyse, la ligne sort de **chaque** fenetre de lecture (forme, surface, H2H
+  filtrent toutes sur `played_on < debut du match`), si bien que le match disparait de
+  l'historique des deux joueuses sans qu'aucune ligne ne signale le trou.
+  - **Le garde-fou evident est le mauvais.** Exiger que l'annee de la date egale la saison
+    jetterait des matchs bien reels : la saison ouvre dans les tout derniers jours de
+    decembre, et le fichier 2025 porte 69 matchs joues du 29 au 31 decembre 2024, celui de
+    2024 onze matchs du 31 decembre 2023. Une date vaut donc pour sa saison si elle tombe
+    dans son annee, **ou en decembre de l'annee precedente**.
+  - Les lignes ecartees sont **dites** (`HistoryReport.rejected`, un log a part des
+    erreurs) : le telechargement a reussi, c'est la source qui s'est trompee, et confondre
+    les deux ferait chercher une panne de reseau.
+  - La migration 021 nettoie ce qui avait ete ecrit avant — une saison terminee n'etant
+    jamais retelechargee, rien d'autre ne repasserait dessus. Elle **rejoue le meme
+    critere en SQL** : un test relit le fichier de migration plutot que d'en recopier la
+    regle, les deux ecritures n'ayant sinon rien qui les empeche de diverger.
 - Les dates n'ont pas le meme format selon la ligne, et c'est voulu : `%m/%y` pour une
   confrontation directe — sur trois saisons, « 12/04 » ne situe rien — et `%d/%m` pour un
   abandon recent, ou le jour compte.
