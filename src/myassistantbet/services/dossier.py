@@ -44,10 +44,6 @@ KIND_SEASON = "season"
 #: rend les vingt premiers de toute la ligue, et les stocker par equipe les
 #: dupliquerait autant de fois qu'elle compte de clubs.
 KIND_SCORERS = "scorers"
-#: Effectif nominatif. Collecte, **jamais rendu** : sans statistique, une liste de
-#: vingt-six noms serait du bruit dans un prompt. Il sert a rattacher un nom a un
-#: identifiant de joueur.
-KIND_SQUAD = "squad"
 #: Indisponibilites d'un **joueur**, troisieme echelle du dossier. Un appel par
 #: joueur : demande pour les seuls buteurs deja identifies, jamais pour un
 #: effectif entier — trente-six joueurs feraient soixante-douze appels par affiche.
@@ -76,7 +72,6 @@ TTL_HOURS = {
     KIND_COACH: 24 * 7,
     KIND_SEASON: 12,
     KIND_SCORERS: 12,
-    KIND_SQUAD: 24 * 30,
     KIND_SIDELINED: 24,
 }
 
@@ -403,24 +398,6 @@ def _summarize_scorers(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return scorers
 
 
-def _summarize_squad(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Reduit `/players/squads` a une liste nominative exploitable."""
-    players = []
-    for entry in rows:
-        for player in entry.get("players") or []:
-            if not player.get("id"):
-                continue
-            players.append(
-                {
-                    "id": int(player["id"]),
-                    "name": player.get("name"),
-                    "position": player.get("position"),
-                    "number": player.get("number"),
-                }
-            )
-    return players
-
-
 def _played(matches: Any) -> list[dict[str, Any]]:
     """Matchs officiels effectivement joues, dans l'ordre chronologique.
 
@@ -492,12 +469,6 @@ async def refresh_event(
             team_id, KIND_SEASON, str(season), report, settings, now, season
         ):
             todo.append((team_id, KIND_SEASON, str(season)))
-        # L'effectif ne sert pas a decrire une equipe : il rattache un nom a un
-        # identifiant. Un champ de couverture absent vaut couvert, comme ailleurs.
-        if coverage.get("players", True) and not _is_cached(
-            team_id, KIND_SQUAD, "", report, settings, now, season
-        ):
-            todo.append((team_id, KIND_SQUAD, ""))
 
     # Les buteurs se demandent une fois pour toute la competition, et seulement la
     # ou les props sont achetees : ailleurs, la ligne n'aurait aucun marche en face.
@@ -627,8 +598,6 @@ async def _fetch_kind(client: APIFootballClient, subject_id: int, kind: str, sco
         return _summarize(await client.team_fixtures(subject_id, int(scope)), subject_id)
     if kind == KIND_SCORERS:
         return _summarize_scorers(await client.top_scorers(subject_id, int(scope)))
-    if kind == KIND_SQUAD:
-        return _summarize_squad(await client.squad(subject_id))
     if kind == KIND_SIDELINED:
         return await client.sidelined(subject_id)
     raise ValueError(f"type de dossier inconnu : {kind}")

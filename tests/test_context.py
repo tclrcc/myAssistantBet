@@ -106,12 +106,6 @@ def _mock_all(load_fixture: Any) -> dict[str, respx.Route]:
         "coachs_away": _mock(
             "/coachs", "apifootball_coachs_away.json", params__contains={"team": "377"}
         ),
-        "squad_home": _mock(
-            "/players/squads", "apifootball_squad_home.json", params__contains={"team": "376"}
-        ),
-        "squad_away": _mock(
-            "/players/squads", "apifootball_squad_away.json", params__contains={"team": "377"}
-        ),
         "fixture_stats": _mock("/fixtures/statistics", "apifootball_fixture_statistics.json"),
         "team": _mock("/teams", "apifootball_team.json"),
     }
@@ -1459,3 +1453,115 @@ async def test_le_balayage_ignore_un_match_hors_shortlist(
     await refresh_due_lineups(api_client, migrated, now=PROCHE)
 
     assert route.call_count == 0
+
+
+# -- Ce qui arrivait deja et n'etait pas lu -----------------------------------
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_les_buts_encaisses_completent_les_buts_marques(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """`goals.for.under_over` etait lu, `goals.against.under_over` jamais — dans
+    la meme charge utile, deja persistee entiere. On savait dans combien de
+    matchs une equipe avait marque deux buts, pas dans combien elle en avait
+    encaisse deux, ce qui est pourtant la seule ligne qui decrive une defense."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    lignes = _lines(migrated)
+    assert "Buts encais." in lignes
+    assert lignes["Buts encais."] != lignes["Buts marq."], "deux cotes, deux comptes"
+    assert routes["stats_home"].call_count == 1, "aucun appel de plus"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_l_enjeu_vient_du_classement_et_ne_coute_rien(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """`description` arrivait avec le classement et partait a la poubelle. C'est
+    pourtant l'« enjeu reel » que la fiche de verification reclame a chaque
+    match, et que la recherche web devait deviner du rang.
+
+    Le libelle est recopie **tel quel** : il vient de la competition, et le
+    reecrire serait s'en porter garant.
+    """
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    routes["standings"].mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "errors": [],
+                "response": [
+                    {
+                        "league": {
+                            "standings": [
+                                [
+                                    {
+                                        "rank": 1,
+                                        "team": {"id": 376, "name": "BK Hacken"},
+                                        "points": 41,
+                                        "goalsDiff": 12,
+                                        "description": "Play-offs",
+                                        "all": {"played": 16},
+                                    }
+                                ]
+                            ]
+                        }
+                    }
+                ],
+            },
+            headers=RATE_HEADERS,
+        )
+    )
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    lignes = _lines(migrated)
+    assert lignes["Enjeu"] == "BK Hacken Play-offs"
+    assert "+12" in lignes["Classement"], "la difference de buts separe deux egalites de points"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_fautes_et_possession_sortent_du_meme_appel(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Un appel `/fixtures/statistics` rend dix-huit statistiques ; cinq etaient
+    gardees, treize jetees avant la base. En garder deux de plus ne coute aucun
+    appel — seulement de la place."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    stats = load_fixture("apifootball_fixture_statistics.json")
+    for equipe in stats["response"]:
+        equipe["statistics"] += [
+            {"type": "Fouls", "value": 13},
+            {"type": "Ball Possession", "value": "56%"},
+        ]
+    routes["fixture_stats"].mock(return_value=httpx.Response(200, json=stats, headers=RATE_HEADERS))
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    lignes = _lines(migrated)
+    assert "Fautes" in lignes and "subies" in lignes["Fautes"]
+    assert "%" in lignes["Possession"]
+
+
+def test_la_possession_est_le_seul_pourcentage_du_bloc() -> None:
+    """L'interdit vise les **frequences d'issues** : « BTTS 56 % » invite a
+    diviser par une cote, ce qui est un calcul d'esperance. Une part de ballon
+    ne se rapporte a aucun marche et rien ne se divise par elle — son unite
+    naturelle est le pourcentage, et le template l'explique."""
+    from myassistantbet.config import PACKAGE_DIR
+
+    template = (PACKAGE_DIR / "templates" / "prompts" / "session_default.md.j2").read_text(
+        encoding="utf-8"
+    )
+
+    assert "seul pourcentage du bloc" in template
+    assert "fréquences" in template and "diviser par une cote" in template

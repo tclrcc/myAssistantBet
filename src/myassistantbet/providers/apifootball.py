@@ -228,14 +228,6 @@ class APIFootballClient(BaseHTTPClient):
         """
         return await self._fetch("/sidelined", {"player": player_id})
 
-    async def squad(self, team_id: int) -> list[dict[str, Any]]:
-        """Effectif actuel d'une equipe : identifiants, postes, ages, numeros.
-
-        Aucune statistique — c'est une liste nominative. Elle sert a rattacher un
-        nom de joueur a un identifiant, pas a decrire une equipe.
-        """
-        return await self._fetch("/players/squads", {"team": team_id})
-
     async def team_fixtures(self, team_id: int, season: int) -> list[dict[str, Any]]:
         """Tous les matchs d'une equipe sur une saison, **toutes competitions**.
 

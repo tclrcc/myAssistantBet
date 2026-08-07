@@ -326,6 +326,15 @@ def _standings_entry(standings: list[dict[str, Any]], team_id: int) -> dict[str,
                         "rank": row.get("rank"),
                         "points": row.get("points"),
                         "played": ((row.get("all") or {}).get("played")),
+                        # `description` porte l'enjeu tel que le fournisseur le
+                        # nomme : « Play-offs », « Relegation Round »,
+                        # « Promotion - Champions League ». Il arrivait dans le
+                        # meme appel et partait a la poubelle, alors que la
+                        # fiche de verification du prompt reclame l'enjeu a
+                        # chaque match et que la recherche web devait aller le
+                        # chercher.
+                        "stake": row.get("description"),
+                        "diff": row.get("goalsDiff"),
                     }
     return None
 
@@ -362,12 +371,22 @@ def _recent_summary(fixtures: list[dict[str, Any]], team_id: int) -> dict[str, A
 
 #: Libelles du fournisseur -> cles du profil. Rapproches **par libelle**, jamais
 #: par position : l'ordre de la liste `statistics` varie d'un match a l'autre.
+#: Statistiques de match retenues, par libelle du fournisseur. Le rapprochement
+#: se fait **par libelle** et jamais par position : l'ordre de la liste
+#: `statistics` varie d'un match a l'autre.
+#:
+#: Un appel en rend dix-huit ; celles qui ne sont pas ici sont jetees avant la
+#: base. En garder une de plus ne coute donc **aucun appel** — seulement de la
+#: place. `Fouls` accompagne les cartons, marche que l'etage B achete, et
+#: `Ball Possession` dit qui subit, ce qu'aucune autre ligne ne donne.
 PROFILE_STATS = {
     "Corner Kicks": "corners",
     "Yellow Cards": "yellow",
     "Red Cards": "red",
     "Total Shots": "shots",
     "Shots on Goal": "shots_on",
+    "Fouls": "fouls",
+    "Ball Possession": "possession",
 }
 
 
@@ -884,7 +903,30 @@ def _team_goals_fragment(team: str, stats: dict[str, Any] | None) -> str:
     played = _season_ready(stats)
     if not played:
         return ""
-    under_over = ((stats or {}).get("goals") or {}).get("for") or {}
+    return _under_over_fragment(team, stats, "for", played)
+
+
+def _conceded_goals_fragment(team: str, stats: dict[str, Any] | None) -> str:
+    """Le miroir exact de « Buts marq. », et il dormait dans la meme charge utile.
+
+    `goals.for.under_over` etait lu, `goals.against.under_over` jamais : on
+    savait dans combien de matchs une equipe avait marque deux buts, pas dans
+    combien elle en avait encaisse deux. C'est pourtant l'autre moitie d'un
+    total de rencontre, et la seule qui decrive une defense.
+    """
+    played = _season_ready(stats)
+    if not played:
+        return ""
+    return _under_over_fragment(team, stats, "against", played)
+
+
+def _under_over_fragment(team: str, stats: dict[str, Any] | None, side: str, played: int) -> str:
+    """Fractions de matchs passant chaque ligne de buts, d'un cote ou de l'autre.
+
+    Ecrite une seule fois : les deux cotes se lisent au meme endroit de la
+    charge utile, et deux copies auraient diverge au premier seuil ajoute.
+    """
+    under_over = ((stats or {}).get("goals") or {}).get(side) or {}
     lines = under_over.get("under_over")
     if not isinstance(lines, dict):
         return ""
@@ -1123,6 +1165,12 @@ def context_lines(
     if ranked:
         lines.append(("Classement", ranked))
 
+    stakes = _pair(
+        _stake_fragment(home, standings.get("home")), _stake_fragment(away, standings.get("away"))
+    )
+    if stakes:
+        lines.append(("Enjeu", stakes))
+
     form = data.get(KIND_FORM) or {}
     recent = data.get(KIND_RECENT) or {}
     forms = _pair(
@@ -1143,6 +1191,7 @@ def context_lines(
     # que l'etage B achete : buts d'equipe, BTTS, premiere mi-temps, cartons.
     for label, fragment in (
         ("Buts marq.", _team_goals_fragment),
+        ("Buts encais.", _conceded_goals_fragment),
         ("Clean sheet", _clean_sheet_fragment),
         ("1re MT", _half_fragment),
         ("Formations", _formation_fragment),
@@ -1189,11 +1238,24 @@ def context_lines(
     if card_timing:
         lines.append(("Cartons tps", card_timing))
 
+    fouls = _pair(
+        _fouls_fragment(home, profile.get("home")), _fouls_fragment(away, profile.get("away"))
+    )
+    if fouls:
+        lines.append(("Fautes", fouls))
+
     shots = _pair(
         _shot_fragment(home, profile.get("home")), _shot_fragment(away, profile.get("away"))
     )
     if shots:
         lines.append(("Tirs", shots))
+
+    possession = _pair(
+        _possession_fragment(home, profile.get("home")),
+        _possession_fragment(away, profile.get("away")),
+    )
+    if possession:
+        lines.append(("Possession", possession))
 
     # Avant les absents, qu'elle complete et parfois remplace : sur une
     # competition ou `injuries` est faux, la composition est la seule facon de
@@ -1249,10 +1311,28 @@ def _rank_fragment(team: str, entry: dict[str, Any] | None) -> str:
         for part in (
             f"{entry['points']}pts" if entry.get("points") is not None else "",
             f"{entry['played']}j" if entry.get("played") is not None else "",
+            # La difference de buts separe deux equipes a egalite de points,
+            # ce que le rang seul ne dit pas. Signee, pour qu'un negatif se voie.
+            f"{entry['diff']:+d}" if isinstance(entry.get("diff"), int) else "",
         )
         if part
     )
     return f"{team} {rank}{suffix} ({detail})" if detail else f"{team} {rank}{suffix}"
+
+
+def _stake_fragment(team: str, entry: dict[str, Any] | None) -> str:
+    """`Estoril Play-offs` — l'enjeu, tel que le fournisseur le nomme.
+
+    Il arrivait dans l'appel de classement et partait a la poubelle. C'est
+    pourtant l'« enjeu reel » que la fiche de verification du prompt reclame a
+    chaque match, et que la recherche web devait sinon deviner du rang.
+
+    Le libelle est **recopie tel quel**, jamais traduit ni interprete : il vient
+    du fournisseur, qui le tient de la competition. « Relegation Round » veut
+    dire ce qu'il dit, et le reecrire serait s'en porter garant.
+    """
+    stake = (entry or {}).get("stake")
+    return f"{team} {stake}" if stake else ""
 
 
 #: Surfaces telles que le fournisseur les nomme. Une pelouse naturelle ne
@@ -1318,6 +1398,34 @@ def _corner_fragment(team: str, profile: dict[str, Any] | None) -> str:
     against = profile.get("corners_against")
     tail = f" pris {against}" if against is not None else ""
     return f"{team} {profile['corners']}{tail}{_profile_suffix(profile)}"
+
+
+def _fouls_fragment(team: str, profile: dict[str, Any] | None) -> str:
+    """`Estoril 12.4 subies 10.8/5` — fautes commises, puis subies.
+
+    Elle accompagne « Cartons » : un arbitre ne sort un carton que sur une
+    faute, et une equipe qui en commet quatorze par match n'aborde pas le
+    marche des cartons comme celle qui en commet huit.
+    """
+    if not _profiled(profile, "fouls"):
+        return ""
+    against = profile.get("fouls_against")
+    tail = f" subies {against}" if against is not None else ""
+    return f"{team} {profile['fouls']}{tail}{_profile_suffix(profile)}"
+
+
+def _possession_fragment(team: str, profile: dict[str, Any] | None) -> str:
+    """`Estoril 54 %/5` — part du ballon, en pourcentage.
+
+    **Le seul pourcentage autorise du bloc, et il ne contredit pas la regle.**
+    L'interdit vise les *frequences d'issues* — « BTTS 56 % » invite a diviser
+    par une cote, ce qui est un calcul d'esperance. Une part de ballon n'est
+    pas une frequence d'issue : elle ne se rapporte a aucun marche, rien ne se
+    divise par elle, et sa seule unite naturelle est le pourcentage.
+    """
+    if not _profiled(profile, "possession"):
+        return ""
+    return f"{team} {profile['possession']:.0f} %{_profile_suffix(profile)}"
 
 
 def _card_fragment(team: str, profile: dict[str, Any] | None) -> str:

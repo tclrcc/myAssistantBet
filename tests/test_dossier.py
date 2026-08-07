@@ -99,12 +99,6 @@ def _mock_dossier(load_fixture: Any) -> dict[str, respx.Route]:
         "season_away": _saison("apifootball_fixtures_season_away.json", "377", "2026"),
         "season_home_prev": _saison("apifootball_fixtures_season_home_prev.json", "376", "2025"),
         "season_away_prev": _saison("apifootball_fixtures_season_away_prev.json", "377", "2025"),
-        "squad_home": _mock(
-            "/players/squads", "apifootball_squad_home.json", params__contains={"team": "376"}
-        ),
-        "squad_away": _mock(
-            "/players/squads", "apifootball_squad_away.json", params__contains={"team": "377"}
-        ),
         # Un seul appel pour toute la competition : c'est ce qui fait de cet
         # endpoint le seul dont le cout ne croit pas avec la taille du lot.
         "scorers": _mock(
@@ -833,7 +827,6 @@ async def test_les_buteurs_non_couverts_ne_sont_pas_appeles(
     await dossier.refresh_event(api_client, 1, migrated, now=NOW)
 
     assert routes["scorers"].call_count == 0
-    assert routes["squad_home"].call_count == 0, "meme regle pour l'effectif"
     assert "Buteurs" not in _lines(migrated)
 
 
@@ -855,23 +848,26 @@ async def test_une_couverture_absente_du_releve_ne_bloque_rien(
 
 @respx.mock
 @pytest.mark.anyio
-async def test_l_effectif_est_collecte_sans_etre_rendu(
+async def test_l_effectif_n_est_plus_appele(
     api_client: APIFootballClient, migrated: Settings, load_fixture: Any
 ) -> None:
-    """Une liste de vingt-six noms sans une statistique serait du bruit dans un
-    prompt. Elle est collectee pour rattacher un nom a un identifiant de joueur —
-    ce dont la suite a besoin — et rien de plus."""
+    """`/players/squads` a ete collecte des mois sans **aucun** lecteur : un
+    appel par equipe et par mois pour une liste de noms que rien ne rendait.
+    Son commentaire annoncait lui-meme sa sortie — « si rien ne le lit a terme,
+    il se retire en supprimant son type ».
+
+    Ce test garde la porte fermee. Le rouvrir demande d'abord un lecteur : sans
+    statistique a cote, vingt-six noms restent du bruit dans un prompt.
+    """
     _seed_event(migrated)
     _mock_dossier(load_fixture)
 
     await dossier.refresh_event(api_client, 1, migrated, now=NOW)
 
-    effectif = dossier.load(376, dossier.KIND_SQUAD, settings=migrated)
-    assert effectif is not None
-    assert len(effectif[0]) == 26
-    assert all(joueur["id"] and joueur["name"] for joueur in effectif[0])
-    lignes = " ".join(_lines(migrated).values())
-    assert effectif[0][0]["name"] not in lignes, "aucun nom d'effectif dans le bloc"
+    appels = [str(call.request.url) for call in respx.calls]
+    assert not [url for url in appels if "players/squads" in url]
+    assert not hasattr(dossier, "KIND_SQUAD")
+    assert not hasattr(api_client, "squad")
 
 
 @respx.mock

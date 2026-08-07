@@ -58,12 +58,14 @@ UNTIMED_BOOKMAKERS = frozenset({"manual"})
 #: « Startlist » sont deux noms d'une liste de partants.
 CONTEXT_ICONS = {
     "Classement": "trophee",
+    "Enjeu": "cible",
     "Palmares": "medaille",
     "Forme 5": "courbe",
     "Forme": "courbe",
     "Dom/Ext": "stade",
     "Entraineur": "personne",
     "Buts marq.": "football",
+    "Buts encais.": "bouclier",
     "Clean sheet": "bouclier",
     "1re MT": "chrono",
     # Le rapprochement se fait sur le premier mot : « Cartons tps » heriterait
@@ -73,6 +75,8 @@ CONTEXT_ICONS = {
     "Cartons": "carte",
     "Formations": "grille",
     "Corners": "drapeau",
+    "Fautes": "interdit",
+    "Possession": "jauge",
     "Tirs": "cible",
     "Stats match": "interdit",
     "Compos": "liste",

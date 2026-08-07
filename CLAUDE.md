@@ -170,9 +170,11 @@ chaque marche ajoute a `markets.py` sans l'etre a `render.py`.
 
 - `providers/apifootball.py` : piege du fournisseur, **les erreurs applicatives arrivent en
   HTTP 200** dans le champ `errors` de l'enveloppe. Le client les convertit en `ProviderError`.
-  Corollaire non traite a ce jour : une erreur de **debit** (`rateLimit`) arrive par le meme
-  chemin, donc en HTTP 200, et `RETRY_STATUSES` ne la voit pas. Le backoff ne se declenche
-  pas sur une erreur pourtant transitoire.
+  Corollaire **traite** : une erreur de **debit** arrive par le meme chemin, donc en HTTP
+  200, et `RETRY_STATUSES` ne la voit pas. `_transient_payload_error()` la distingue d'une
+  cle invalide — celle-ci doit echouer tout de suite, un debit depasse doit etre retente —
+  et declenche le backoff. Verifie en direct : « nouvelle tentative 2/3 dans 5.0s » sur un
+  enrichissement en rafale, la ou l'appel laissait auparavant un trou definitif.
 - **`/fixtures` exige `season` des qu'on passe `league`**, sinon l'API repond
   « season: The Season field is required ». L'appel echouait donc toujours, et l'absence de
   contexte qui en resultait se lisait comme un probleme de rapprochement de noms.
@@ -198,6 +200,11 @@ chaque marche ajoute a `markets.py` sans l'etre a `render.py`.
   (`goals.for.under_over` → `team_totals`), `Clean sheet` (→ `btts`), `1re MT`
   (`goals.*.minute` → `totals_h1`, `halftime_fulltime`), `Cartons tps` (→
   `alternate_totals_cards`), `Formations`.
+  - `Buts encais.` est le **miroir** de `Buts marq.`, et dormait dans la meme charge
+    utile : `goals.for.under_over` etait lu, `goals.against.under_over` jamais. On savait
+    dans combien de matchs une equipe avait marque deux buts, pas dans combien elle en
+    avait encaisse deux — la seule des deux qui decrive une defense. `_under_over_fragment`
+    sert les deux cotes, pour qu'un seuil ajoute ne le soit pas d'un cote seulement.
   - **Des fractions, jamais des pourcentages.** Une frequence observee decrit le passe,
     ce qui reste permis ; ecrite « 56 % », elle invite a la diviser par une cote, et c'est
     le calcul d'esperance de la section 9. `9/16` porte la meme information et le meme
@@ -309,6 +316,31 @@ chaque marche ajoute a `markets.py` sans l'etre a `render.py`.
     pas de budget de tokens — meme arbitrage que `recent_matches` au tennis.
   - La formation accompagne le onze : `Formations` donne deja l'habitude de la saison, et
     c'est l'ecart avec elle qui se lit ici.
+- **`Enjeu`** (`standings.description`) : « Play-offs », « Relegation Playoffs »,
+  « Promotion - Champions League ». Il arrivait dans l'appel de classement et partait a la
+  poubelle, alors que la fiche de verification du prompt reclame l'enjeu reel a chaque
+  match — la recherche web devait sinon le deviner du rang. Le libelle est **recopie tel
+  quel**, jamais traduit : il vient de la competition, et le reecrire serait s'en porter
+  garant. Verifie en reel : SonderjyskE « Relegation Playoffs » contre Viborg « Play-offs »,
+  deux enjeux opposes que le classement seul ne disait pas. `goalsDiff` rejoint la ligne
+  `Classement` au passage : il separe deux equipes a egalite de points.
+- **`Fautes` et `Possession`** : un appel `/fixtures/statistics` rend **dix-huit**
+  statistiques, `PROFILE_STATS` en gardait cinq. En garder deux de plus ne coute **aucun
+  appel** — seulement de la place. `Fouls` accompagne `Cartons` (un arbitre ne sort un
+  carton que sur une faute) et `Ball Possession` dit qui subit, ce qu'aucune autre ligne ne
+  donne. Restent jetees : passes, hors-jeu, arrets, tirs par zone, et `expected_goals` —
+  celle-ci demande un arbitrage, c'est une sortie de modele et non un fait observe.
+  - **`Possession` est le seul pourcentage du bloc, et il ne contredit pas la regle.**
+    L'interdit vise les *frequences d'issues* : « BTTS 56 % » invite a diviser par une
+    cote, ce qui est le calcul d'esperance de la section 9. Une part de ballon ne se
+    rapporte a aucun marche, rien ne se divise par elle, et son unite naturelle est le
+    pourcentage. Le template le dit, un test le verifie.
+- **`/players/squads` a ete retire** (migration 022). Collecte des mois — un appel par
+  equipe et par mois — sans **aucun** lecteur : son propre commentaire annoncait sa sortie,
+  « si rien ne le lit a terme, il se retire en supprimant son type ». Le type, le resume, la
+  methode du client, ses simulations et ses fixtures sont partis ensemble. Un test garde la
+  porte fermee : la rouvrir demande d'abord un lecteur, sans quoi vingt-six noms restent du
+  bruit dans un prompt.
 - **Les absents arrivent en double** : `/injuries` rend chaque joueur deux fois — constate
   en reel, 14 lignes pour 7 absents. Le dedoublonnage se fait a la collecte, sur
   (cote, nom, type, raison). Sans lui la ligne liste tout le monde deux fois, ce qui fait
