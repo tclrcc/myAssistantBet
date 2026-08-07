@@ -342,6 +342,14 @@ MARKET_ORDER: list[tuple[str, str]] = [
     ("alternate_totals_corners", "Corners"),
     ("corners_1x2", "Corners 1N2"),
     ("alternate_totals_cards", "Cartons"),
+    # Props buteurs, demandees sur les seules competitions de la liste blanche.
+    # Sans entree ici, `ordered_labels` rendait leur **cle brute** :
+    # « player_goal_scorer_anytime » s'affichait tel quel dans la ligne
+    # « Non servis » et dans la liste des marches en tete de prompt. Meme piege
+    # que pour `alternate_totals`, et meme regle — tout marche demande doit
+    # avoir son libelle, servi ou non.
+    ("player_goal_scorer_anytime", "Buteur"),
+    ("player_first_goal_scorer", "1er buteur"),
     # Saisie manuelle : marche libre, sans forme imposee.
     ("outright", "Cotes"),
 ]

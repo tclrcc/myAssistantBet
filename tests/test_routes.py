@@ -151,7 +151,16 @@ def _select_event(client: TestClient, settings: Settings) -> tuple[int, int]:
 
 
 def test_shortlist_affiche_la_selection(client: TestClient, isolated_settings: Settings) -> None:
-    session_id, _ = _select_event(client, isolated_settings)
+    session_id, event_id = _select_event(client, isolated_settings)
+    # Le 1N2 de l'etage A : sur une competition que Betclic sert, il est deja en
+    # base et l'etage B ne le rachete pas. Sans cette cote, le match se lirait
+    # comme un match sans etage A, et couterait un credit de plus.
+    db.execute(
+        "INSERT INTO odds (event_id, bookmaker, market_key, outcome_name, price, fetched_at) "
+        "VALUES (?, 'betclic_fr', 'h2h', 'Lyon', 1.8, ?)",
+        (event_id, db.utcnow()),
+        settings=isolated_settings,
+    )
 
     response = client.get(f"/session/{session_id}")
 
@@ -160,6 +169,24 @@ def test_shortlist_affiche_la_selection(client: TestClient, isolated_settings: S
     assert "Coût estimé" in response.text
     # Ligue 1 est dans la liste blanche des props : 14 marches + 2 props.
     assert "16 crédits" in response.text
+
+
+def test_un_match_sans_etage_a_reclame_son_1n2(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Sur une competition que le book principal ne sert pas, l'etage A ne ramene
+    rien : le 1N2 s'ajoute a la demande de l'etage B, pour un credit de plus.
+
+    Sans lui, le marche n'arrivait jamais **et** ne pouvait pas etre declare
+    manquant — il disparaissait du bloc sans laisser de trace. Constate en reel
+    sur la Super League chinoise.
+    """
+    session_id, _ = _select_event(client, isolated_settings)
+
+    response = client.get(f"/session/{session_id}")
+
+    assert response.status_code == 200
+    assert "17 crédits" in response.text
 
 
 def test_shortlist_inconnue_renvoie_404(client: TestClient) -> None:

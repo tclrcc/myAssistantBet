@@ -65,13 +65,40 @@ PLAYER_PROP_MARKETS: tuple[str, ...] = (
     "player_first_goal_scorer",
 )
 
+#: Marche de l'etage A **sans equivalent profond**, a reclamer a l'etage B quand
+#: l'etage A n'a rien ramene sur cet evenement.
+#:
+#: `h2h` et `totals` sont normalement acquis par le scan, chez Betclic seul, et
+#: les racheter couterait deux credits par match pour des cotes deja en base.
+#: Mais sur une competition que **Betclic ne sert pas du tout** — Super League
+#: chinoise, Veikkausliiga — l'etage A ne ramene rien, et le 1N2 n'arrivait
+#: alors jamais : ni en cote, ni meme en « Non servis », puisque la ligne se
+#: calcule sur cette liste. Constate en reel sur Beijing FC - Shenzhen Peng City,
+#: ou l'analyse s'est rabattue sur le handicap faute de 1N2.
+#:
+#: `totals` n'y figure pas, et ce n'est pas un oubli : `alternate_totals` est
+#: deja demande et le rendu les fusionne dans la meme ligne O/U. Le reclamer
+#: couterait un credit pour une ligne deja affichee.
+FOOTBALL_BASE_MARKETS: tuple[str, ...] = ("h2h",)
 
-def markets_for(sport_key: str, oddsapi_sport_key: str, settings: Settings) -> tuple[str, ...]:
-    """Marches a demander pour cet evenement, props incluses si la ligue y donne droit."""
+
+def markets_for(
+    sport_key: str,
+    oddsapi_sport_key: str,
+    settings: Settings,
+    base_served: bool = True,
+) -> tuple[str, ...]:
+    """Marches a demander pour cet evenement, props incluses si la ligue y donne droit.
+
+    `base_served` dit si l'etage A a ramene ses cotes sur cet evenement. A faux,
+    le 1N2 est reclame en plus : voir `FOOTBALL_BASE_MARKETS`. Le tennis demande
+    deja `h2h` en toute circonstance, la question ne s'y pose pas.
+    """
     if sport_key == "tennis":
         return TENNIS_MARKETS
     if sport_key != "football":
         return ()
+    base = () if base_served else FOOTBALL_BASE_MARKETS
     if oddsapi_sport_key in settings.player_props_whitelist:
-        return FOOTBALL_MARKETS + PLAYER_PROP_MARKETS
-    return FOOTBALL_MARKETS
+        return base + FOOTBALL_MARKETS + PLAYER_PROP_MARKETS
+    return base + FOOTBALL_MARKETS

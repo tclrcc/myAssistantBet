@@ -358,8 +358,16 @@ def _unserved_for(
         order = MARKET_ORDER_BY_SPORT.get(row["sport_key"], MARKET_ORDER)
         return [key for key, _ in order if key not in present and key != "outright"]
     if _is_enriched(row["sport_key"], present):
-        requested = markets_for(row["sport_key"], row["oddsapi_key"] or "", settings)
-        useful = coverage.useful(row["competition_id"], requested, settings)
+        # `base_served` doit refleter ce que **cet** evenement porte, exactement
+        # comme dans `enrich` : sur une competition que le book principal ne sert
+        # pas, le 1N2 fait partie du demande, et son absence doit se dire. Sans
+        # cela il ne pouvait ni arriver, ni etre declare manquant — il
+        # disparaissait, ce que cette ligne existe precisement pour empecher.
+        base_served = coverage.ANCHOR_MARKET in present
+        requested = markets_for(row["sport_key"], row["oddsapi_key"] or "", settings, base_served)
+        useful = coverage.useful(
+            row["competition_id"], requested, settings, anchor_alone=not base_served
+        )
         barren |= {key for key in useful if key not in present}
     return sorted(barren)
 

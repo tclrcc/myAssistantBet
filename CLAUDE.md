@@ -111,9 +111,23 @@ constate absent chez Betclic seul ne prouve rien sur un book de reference, et le
 l'ensemble qui l'a produit et pour tout ensemble plus etroit, jamais plus large.
 
 Etage B (`services/enrich.py`) : 1 credit par marche profond, match par match. 14 marches
-football, 16 sur les competitions de `PLAYER_PROPS_LEAGUES` (props buteurs), 8 en tennis.
+football, 16 sur les competitions de `PLAYER_PROPS_LEAGUES` (props buteurs), 10 en tennis.
 Le cout est estime **avant** l'appel et compare a `ODDS_API_CREDIT_FLOOR` : sous le plancher,
 aucun appel n'est emis.
+
+**Un credit de plus quand l'etage A n'a rien ramene** (`FOOTBALL_BASE_MARKETS`). Le 1N2
+vient du scan, chez Betclic seul, et l'etage B ne le rachete pas — sauf sur une competition
+que **Betclic ne sert pas du tout** (Super League chinoise, Veikkausliiga), ou il n'arrivait
+alors jamais. Pire, il ne pouvait pas non plus etre declare manquant : la ligne
+« Non servis » se calcule sur `markets_for()`, qui l'excluait. Le marche disparaissait du
+bloc sans laisser de trace, et une analyse reelle s'est rabattue sur le handicap sans savoir
+pourquoi. `enrich` et `session._unserved_for` lisent donc tous deux la meme chose — le match
+porte-t-il une cote `h2h` ? — et passent `base_served` a `markets_for()`.
+  - `totals` n'est **pas** dans cette liste : `alternate_totals` est deja demande et le rendu
+    les fusionne dans la meme ligne O/U. Le reclamer paierait une ligne deja affichee.
+  - `coverage.useful(..., anchor_alone=)` leve pour ce cas la regle « un reliquat reduit au
+    seul `h2h` ne vaut pas l'appel ». Elle est juste quand l'etage A possede deja la cote ;
+    elle est fausse quand il n'a rien ramene, ou ce `h2h` est le seul 1N2 obtenable.
 
 ## Le rendu compact (`services/render.py`)
 
@@ -147,7 +161,10 @@ non negociables, toutes couvertes par des tests :
 
 Ajouter un marche : une entree dans `MARKET_ORDER`, un rendu dedie si sa forme le merite,
 et un test. Sans rendu dedie, le repli generique s'applique — c'est acceptable, pas une
-regression.
+regression. L'entree, elle, ne se negocie pas : les deux props buteurs n'en avaient aucune
+et sortaient en **cle brute** (`player_goal_scorer_anytime`) dans la ligne « Non servis »
+d'un match de Ligue 1. Meme piege que `alternate_totals` avant elles, et il se reproduira a
+chaque marche ajoute a `markets.py` sans l'etre a `render.py`.
 
 ## Contexte sportif et mapping
 

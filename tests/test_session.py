@@ -342,3 +342,93 @@ def test_les_competitions_de_la_session_sont_listees(migrated: Settings) -> None
     lots = session_service.competitions_of(session_id, migrated)
 
     assert [(lot["label"], lot["total"]) for lot in lots] == [("ATP — US Open", 1)]
+
+
+def _football_event(settings: Settings, home: str, away: str) -> tuple[int, int]:
+    """Un match de football dans une session, sans aucune cote."""
+    competition = db.query_one(
+        "SELECT id, sport_id FROM competitions WHERE oddsapi_key = 'soccer_france_ligue_one'",
+        settings=settings,
+    )
+    db.execute(
+        "INSERT INTO events (sport_id, competition_id, oddsapi_event_id, home, away, "
+        "commence_time, source, created_at) "
+        "VALUES (?, ?, 'evt-foot', ?, ?, '2026-08-07T18:00:00Z', 'api', ?)",
+        (competition["sport_id"], competition["id"], home, away, db.utcnow()),
+        settings=settings,
+    )
+    event = db.query_one("SELECT id FROM events WHERE home = ?", (home,), settings=settings)
+    db.execute(
+        "INSERT INTO sessions (label, created_at) VALUES ('x', ?)",
+        (db.utcnow(),),
+        settings=settings,
+    )
+    session = db.query_one("SELECT id FROM sessions ORDER BY id DESC LIMIT 1", settings=settings)
+    db.execute(
+        "INSERT INTO session_events (session_id, event_id) VALUES (?, ?)",
+        (session["id"], event["id"]),
+        settings=settings,
+    )
+    return int(session["id"]), int(event["id"])
+
+
+def _unserved(bloc: str) -> list[str]:
+    """Marches nommes par la ligne « Non servis », un par un.
+
+    Le rapprochement se fait sur le libelle **entier** : chercher « 1N2 » dans
+    la ligne le trouverait dans « Corners 1N2 », et le test passerait pour de
+    mauvaises raisons.
+    """
+    corps = bloc.split("Non servis", 1)[-1].split("—")[0]
+    return [item.strip() for item in corps.split(",") if item.strip()]
+
+
+def test_le_1n2_absent_au_football_est_annonce(migrated: Settings) -> None:
+    """Le silence qui a motive le correctif, constate en reel sur Beijing FC -
+    Shenzhen Peng City.
+
+    Le 1N2 vient de l'etage A, chez le book principal seul. Quand celui-ci ne
+    sert pas la competition — Super League chinoise, Veikkausliiga — il
+    n'arrive jamais. Et comme la ligne « Non servis » se calculait sur les seuls
+    marches profonds, il ne pouvait pas non plus etre declare manquant : le
+    marche disparaissait du bloc sans laisser de trace, et l'analyse s'est
+    rabattue sur le handicap sans savoir pourquoi.
+    """
+    session_id, event_id = _football_event(migrated, "Beijing", "Shenzhen")
+    # L'etage B a tourne — un book de reference a servi le handicap — mais
+    # l'etage A n'a rien ramene : aucune cote 1N2.
+    _odds(migrated, event_id, "alternate_spreads", "Beijing")
+
+    bloc = render_blocks(session_id, migrated, now=NOW)[0]
+
+    assert "Non servis" in bloc
+    assert "1N2" in _unserved(bloc), "le marche demande, jamais servi et jamais dit"
+
+
+def test_le_1n2_servi_n_est_pas_annonce_absent(migrated: Settings) -> None:
+    """Le cas ordinaire : le book principal sert la competition, l'etage A a
+    ramene le 1N2. L'annoncer absent le ferait chercher juste sous la ligne qui
+    l'affiche — l'erreur exacte que `MERGED_MARKETS` evite deja ailleurs."""
+    session_id, event_id = _football_event(migrated, "Lyon", "Nice")
+    _odds(migrated, event_id, "h2h", "Lyon")
+    _odds(migrated, event_id, "alternate_spreads", "Lyon")
+
+    bloc = render_blocks(session_id, migrated, now=NOW)[0]
+
+    assert "1N2" not in _unserved(bloc)
+
+
+def test_les_props_buteurs_ont_un_libelle(migrated: Settings) -> None:
+    """Tout marche demande doit avoir son libelle, servi ou non. Sans entree
+    dans `MARKET_ORDER`, les deux props sortaient en **cle brute** :
+    « player_goal_scorer_anytime » s'affichait tel quel dans la ligne
+    « Non servis » d'un match de Ligue 1, seule competition ou elles sont
+    demandees. Meme piege que `alternate_totals` avant lui."""
+    session_id, event_id = _football_event(migrated, "Lyon", "Nice")
+    _odds(migrated, event_id, "h2h", "Lyon")
+    _odds(migrated, event_id, "alternate_spreads", "Lyon")
+
+    manquants = _unserved(render_blocks(session_id, migrated, now=NOW)[0])
+
+    assert not [item for item in manquants if item.startswith("player_")]
+    assert {"Buteur", "1er buteur"} <= set(manquants)

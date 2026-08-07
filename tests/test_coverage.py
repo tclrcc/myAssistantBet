@@ -143,6 +143,20 @@ def test_une_reponse_vide_ne_casse_rien(migrated: Settings, payload: dict[str, A
     assert row["served"] == 0
 
 
+def _scan_odds(settings, event_id: int) -> None:
+    """Pose la cote 1N2 que l'etage A ramene sur une competition servie.
+
+    Sans elle, l'evenement se lit comme un match dont le book principal n'a rien
+    servi — et le 1N2 devient alors le seul marche qu'il reste a acheter.
+    """
+    db.execute(
+        "INSERT INTO odds (event_id, bookmaker, market_key, outcome_name, price, fetched_at) "
+        "VALUES (?, 'betclic_fr', 'h2h', 'Moutet', 1.8, ?)",
+        (event_id, db.utcnow()),
+        settings=settings,
+    )
+
+
 def test_un_evenement_sans_marche_servi_est_ecarte_du_cout(migrated: Settings) -> None:
     """Il est couvert par l'API : le motif differe d'un evenement manuel."""
     from myassistantbet.services import board as board_service
@@ -160,6 +174,7 @@ def test_un_evenement_sans_marche_servi_est_ecarte_du_cout(migrated: Settings) -
         settings=migrated,
     )
     event = db.query_one("SELECT MAX(id) AS id FROM events", settings=migrated)
+    _scan_odds(migrated, int(event["id"]))
     session_id = board_service.toggle_selection(int(event["id"]), True, migrated)
 
     avant = build_estimate(session_id, migrated, NOW)
@@ -191,6 +206,7 @@ def test_le_motif_de_blocage_ne_ment_pas(migrated: Settings) -> None:
         settings=migrated,
     )
     event = db.query_one("SELECT MAX(id) AS id FROM events", settings=migrated)
+    _scan_odds(migrated, int(event["id"]))
 
     vide = build_estimate(board_service.current_session(migrated), migrated, NOW)
     assert vide.blocked_reason == "Aucun evenement selectionne."
@@ -307,3 +323,42 @@ def test_les_marches_abandonnes_sont_lus_en_une_requete(migrated: Settings) -> N
     dead = coverage.barren_by_competition([atp, wta], migrated)
 
     assert dead == {atp: {"spreads"}}
+
+
+def test_le_1n2_seul_vaut_son_credit_quand_l_etage_a_n_a_rien_ramene(
+    migrated: Settings,
+) -> None:
+    """Le pendant exact du test precedent, et la raison d'etre d'`anchor_alone`.
+
+    Meme constat de couverture — le book ne sert que le 1N2 — mais cette fois
+    l'etage A n'a rien ramene sur ce match : c'est le cas d'une competition que
+    le book principal ne sert pas du tout. Le 1N2 n'est plus une cote qu'on
+    possede deja, c'est la seule qu'on puisse encore obtenir. L'ecarter
+    laisserait le match sans aucun marche, ce que la ligne « Non servis » ne
+    pourrait meme pas dire.
+    """
+    from myassistantbet.services import board as board_service
+    from myassistantbet.services.enrich import build_estimate
+    from myassistantbet.services.markets import TENNIS_MARKETS
+
+    competition = _competition(migrated)
+    db.execute("UPDATE competitions SET active = 1 WHERE id = ?", (competition,), settings=migrated)
+    sport = db.query_one("SELECT id FROM sports WHERE key = 'tennis'", settings=migrated)
+    db.execute(
+        "INSERT INTO events (sport_id, competition_id, oddsapi_event_id, home, away, "
+        "commence_time, source, created_at) "
+        "VALUES (?, ?, 'sans-etage-a', 'Moutet', 'Bergs', '2026-08-04T15:00:00Z', 'oddsapi', ?)",
+        (sport["id"], competition, db.utcnow()),
+        settings=migrated,
+    )
+    event = db.query_one("SELECT MAX(id) AS id FROM events", settings=migrated)
+    session_id = board_service.toggle_selection(int(event["id"]), True, migrated)
+    for _ in range(coverage.GIVE_UP_AFTER):
+        coverage.record(competition, TENNIS_MARKETS, _payload("h2h"), migrated)
+
+    estimate = build_estimate(session_id, migrated, NOW)
+
+    assert estimate.events == 1
+    assert estimate.barren == []
+    assert estimate.targets[0].markets == ("h2h",)
+    assert estimate.cost == 1, "un seul marche, un seul book : un credit"

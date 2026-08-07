@@ -145,18 +145,27 @@ def useful(
     markets: tuple[str, ...],
     settings: Settings | None = None,
     books: Sequence[str] | None = None,
+    *,
+    anchor_alone: bool = False,
 ) -> tuple[str, ...]:
     """Retire les marches que cette competition n'a jamais servis.
 
     Renvoie un tuple vide si plus rien d'utile ne reste : l'appel serait payant
     pour des cotes que l'etage A possede deja.
+
+    `anchor_alone` leve cette derniere reserve. Un reliquat reduit au seul `h2h`
+    ne vaut rien **quand l'etage A l'a deja** — c'est le cas ordinaire, et le
+    racheter serait payer une cote en base. Mais sur une competition que le book
+    principal ne sert pas, l'etage A n'a rien ramene : ce `h2h` est alors la
+    seule facon d'obtenir un 1N2, et l'ecarter laisserait le match sans son
+    marche le plus utile.
     """
     settings = settings or get_settings()
     dead = barren(competition_id, settings, books)
     if not dead:
         return markets
     kept = tuple(market for market in markets if market not in dead)
-    if kept == (ANCHOR_MARKET,) or not kept:
+    if not kept or (kept == (ANCHOR_MARKET,) and not anchor_alone):
         return ()
     return kept
 

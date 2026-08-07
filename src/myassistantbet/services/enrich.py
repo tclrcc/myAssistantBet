@@ -256,7 +256,12 @@ def build_estimate(
         rows = conn.execute(
             "SELECT e.id, e.oddsapi_event_id, e.home, e.away, e.commence_time, "
             "       s.key AS sport_key, c.oddsapi_key AS competition_key, "
-            "       c.id AS competition_id, c.apifootball_league_id "
+            "       c.id AS competition_id, c.apifootball_league_id, "
+            # L'etage A a-t-il ramene ses cotes sur ce match ? Sur une competition
+            # que le book principal ne sert pas, la reponse est non, et le 1N2
+            # doit alors etre reclame ici — sans quoi il n'arrive jamais.
+            "       EXISTS(SELECT 1 FROM odds o WHERE o.event_id = e.id "
+            "              AND o.market_key = 'h2h') AS base_served "
             "FROM session_events se "
             "JOIN events e ON e.id = se.event_id "
             "JOIN sports s ON s.id = e.sport_id "
@@ -297,14 +302,19 @@ def build_estimate(
             # Evenement manuel (cyclisme, ATP 250) : aucun appel possible.
             estimate.skipped.append(label)
             continue
-        markets = markets_for(row["sport_key"], row["competition_key"], settings)
+        base_served = bool(row["base_served"])
+        markets = markets_for(row["sport_key"], row["competition_key"], settings, base_served)
         if not markets:
             estimate.skipped.append(label)
             continue
         # Ne pas repayer un constat deja fait : les marches que cette competition
         # n'a jamais servis sont retires, et si plus rien d'utile ne reste,
-        # l'evenement est ecarte plutot qu'appele pour rien.
-        markets = coverage.useful(row["competition_id"], markets, settings)
+        # l'evenement est ecarte plutot qu'appele pour rien. Sauf s'il ne reste
+        # que le 1N2 d'un match que l'etage A n'a pas servi : celui-la vaut son
+        # credit, c'est le seul moyen de l'obtenir.
+        markets = coverage.useful(
+            row["competition_id"], markets, settings, anchor_alone=not base_served
+        )
         if not markets:
             estimate.barren.append(label)
             continue
