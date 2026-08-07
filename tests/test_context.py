@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -1188,3 +1189,141 @@ def test_le_prompt_interdit_de_rapprocher_une_frequence_d_une_cote(migrated: Set
     assert "jamais** : les traiter comme des probabilités" in body
     assert "espérance" in body
     assert "les siens uniquement" in body, "le sens de la ligne doit etre sans ambiguite"
+
+
+# -- Compositions : la seule donnee dont la disponibilite depend de l'heure ----
+
+#: Coup d'envoi a 15h30 UTC. Une heure avant, la compo est publiee.
+PROCHE = datetime(2026, 8, 3, 14, 30, tzinfo=UTC)
+#: Cinq heures et demie avant : le fournisseur n'a encore rien.
+LOIN = datetime(2026, 8, 3, 10, 0, tzinfo=UTC)
+
+LEAGUES_SANS_COMPOS = {
+    "errors": [],
+    "response": [
+        {
+            "league": {"id": 113, "name": "Allsvenskan", "type": "League"},
+            "seasons": [
+                {
+                    "year": 2026,
+                    "current": True,
+                    "coverage": {
+                        "fixtures": {"events": True, "lineups": False},
+                        "standings": True,
+                        "injuries": True,
+                    },
+                }
+            ],
+        }
+    ],
+}
+
+
+def _mock_lineups(load_fixture: Any, payload: Any = None) -> respx.Route:
+    return respx.get(f"{BASE_URL}/fixtures/lineups").mock(
+        return_value=httpx.Response(
+            200,
+            json=payload if payload is not None else load_fixture("apifootball_lineups.json"),
+            headers=RATE_HEADERS,
+        )
+    )
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_la_compo_n_est_pas_demandee_trop_tot(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Mesure en reel : a 2h30, 3h30 et 5h45 du coup d'envoi, l'endpoint rend
+    zero equipe. Appeler la depenserait un appel par match et par
+    enrichissement pour une reponse vide.
+
+    Et **aucune mention** n'est produite : contrairement aux absents, une compo
+    qui manque cinq heures avant ne dit rien de l'equipe. L'annoncer « non
+    disponible » ferait chercher un trou de collecte la ou il n'y a qu'une
+    heure trop tot.
+    """
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+    route = _mock_lineups(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated, now=LOIN)
+
+    assert route.call_count == 0
+    assert "Compos" not in _lines(migrated)
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_la_compo_arrive_a_l_approche_du_coup_d_envoi(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Ce que l'utilisateur collait a la main : qui joue vraiment. La formation
+    accompagne le onze — c'est l'ecart avec l'habitude de la saison, que la
+    ligne « Formations » donne deja, qui se lit ici."""
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+    route = _mock_lineups(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated, now=PROCHE)
+
+    assert route.call_count == 1
+    compos = _lines(migrated)["Compos"]
+    assert "BK Hacken (4-4-2) P. Hansson, E. Lindberg" in compos
+    assert "Djurgardens IF (4-3-3) H. Widell" in compos
+    assert compos.count("|") == 1, "une equipe de chaque cote, comme les autres lignes"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_banc_n_entre_pas_dans_le_prompt(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Vingt-quatre noms de plus y couteraient plus qu'ils n'apprennent. Il est
+    collecte quand meme : il ne coute aucun appel de plus."""
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+    _mock_lineups(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated, now=PROCHE)
+
+    assert "R. Palm" not in _lines(migrated)["Compos"]
+    stored = load(1, migrated)["lineups"]
+    assert "R. Palm" in stored["home"]["bench"]
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_compo_non_couverte_n_est_pas_demandee(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Meme sous-objet que les statistiques de match, meme piege. Le drapeau
+    vaut la peine d'etre lu : sur la Super League chinoise, `injuries` est faux
+    quand `lineups` est vrai."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    routes["leagues"].mock(
+        return_value=httpx.Response(200, json=LEAGUES_SANS_COMPOS, headers=RATE_HEADERS)
+    )
+    route = _mock_lineups(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated, now=PROCHE)
+
+    assert route.call_count == 0
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_compo_vide_n_est_pas_figee(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Les compositions sortent au compte-gouttes : figer « rien » empecherait
+    un second essai dix minutes plus tard de rapporter quelque chose."""
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+    _mock_lineups(load_fixture, {"errors": [], "response": []})
+
+    await fetch_context(api_client, EVENT, migrated, now=PROCHE)
+
+    assert "lineups" not in load(1, migrated)
+    assert "Compos" not in _lines(migrated)

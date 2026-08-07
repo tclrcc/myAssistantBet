@@ -353,10 +353,11 @@ async def _add_context(
     result: EnrichResult,
     settings: Settings,
     cache: dict[str, Any],
+    now: datetime | None = None,
 ) -> None:
     """Ajoute le contexte sportif. Un echec ici ne remet jamais en cause les cotes."""
     try:
-        report = await fetch_context(context_client, target.as_event(), settings, cache)
+        report = await fetch_context(context_client, target.as_event(), settings, cache, now)
     except Exception as exc:  # noqa: BLE001 — le contexte est un bonus, jamais bloquant
         result.context_errors.append(f"{type(exc).__name__}: {exc}")
         logger.exception("Contexte indisponible pour %s", target.label)
@@ -519,7 +520,7 @@ async def run_enrich(
             logger.exception("Reponse inexploitable pour %s", target.label)
 
         if context_client is not None and target.context_possible:
-            await _add_context(context_client, target, result, settings, context_cache)
+            await _add_context(context_client, target, result, settings, context_cache, now)
 
         report.results.append(result)
         report.done += 1
@@ -550,7 +551,7 @@ async def run_enrich(
             logger.warning("Releve de substitution echoue pour %s : %s", target.label, exc)
 
         if context_client is not None and target.context_possible:
-            await _add_context(context_client, target, result, settings, context_cache)
+            await _add_context(context_client, target, result, settings, context_cache, now)
 
         report.results.append(result)
         report.done += 1

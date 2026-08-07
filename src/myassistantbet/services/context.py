@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from ..config import Settings, get_settings
@@ -89,8 +89,21 @@ KIND_H2H = "h2h"
 KIND_RECENT = "recent"
 KIND_PROFILE = "profile"
 KIND_VENUE = "venue"
+KIND_LINEUPS = "lineups"
 KIND_MAPPING = "mapping_pending"
 KIND_MANUAL_NOTE = "manual_note"
+
+#: Minutes avant le coup d'envoi en deca desquelles la composition est demandee.
+#:
+#: Mesure en reel, et c'est elle qui fixe la regle : sur trois matchs a 2h30,
+#: 3h30 et 5h45 du coup d'envoi, `/fixtures/lineups` a rendu **zero equipe** ;
+#: sur un match a 8 minutes, les deux compositions completes. Les clubs
+#: publient environ une heure avant, et le fournisseur ne devine pas.
+#:
+#: Appeler plus tot depenserait un appel pour une reponse vide, a chaque
+#: enrichissement de chaque match. En deca de la fenetre, la ligne n'existe
+#: donc pas — et son absence ne dit rien de l'equipe, seulement de l'heure.
+LINEUP_WINDOW_MINUTES = 90
 
 #: Identifiants API-Football du match, memorises au rapprochement. Ce n'est pas
 #: une ligne de contexte — rien ne le rend — mais le point d'entree de tout ce
@@ -418,6 +431,44 @@ def _covers_fixture_statistics(coverage: dict[str, Any]) -> bool:
     return bool(fixtures.get("statistics_fixtures", True))
 
 
+def _covers_lineups(coverage: dict[str, Any]) -> bool:
+    """Vrai si le fournisseur declare servir les compositions.
+
+    Meme sous-objet que les statistiques de match, meme piege. Le drapeau vaut
+    la peine d'etre lu : sur la Super League chinoise, `injuries` est faux quand
+    `lineups` est vrai — la composition est donc la seule facon de savoir qui
+    joue, la ou la ligne « Absents » ne peut rien dire.
+    """
+    fixtures = coverage.get("fixtures")
+    if not isinstance(fixtures, dict):
+        return True
+    return bool(fixtures.get("lineups", True))
+
+
+def _lineup_due(commence_time: str | None, now: datetime | None = None) -> bool:
+    """Vrai si le coup d'envoi est proche, et pas encore passe.
+
+    **La fenetre est bornee des deux cotes.** Ouverte vers le passe, elle
+    rendait « imminent » un match joue il y a quatre jours, et chaque
+    consultation de sa fiche aurait paye un appel pour une composition
+    qu'aucun pari avant-match ne peut plus utiliser. C'est la regle que le
+    projet applique deja partout : un match commence quitte le prompt.
+
+    Une heure de match illisible fait renoncer : mieux vaut une ligne absente
+    qu'un appel tire au hasard a chaque enrichissement.
+    """
+    if not commence_time:
+        return False
+    try:
+        moment = datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return False
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    delay = moment - (now or datetime.now(UTC))
+    return timedelta(0) <= delay <= timedelta(minutes=LINEUP_WINDOW_MINUTES)
+
+
 async def _fetch_profile(
     client: APIFootballClient,
     cache: dict[str, Any],
@@ -452,6 +503,7 @@ async def fetch_context(
     event: dict[str, Any],
     settings: Settings | None = None,
     cache: dict[str, Any] | None = None,
+    now: datetime | None = None,
 ) -> ContextReport:
     """Recupere et persiste tout le contexte disponible pour un evenement.
 
@@ -459,6 +511,9 @@ async def fetch_context(
     enrichissement : deux matchs de la meme ligue ne paient pas deux fois.
     Aucune erreur n'est propagee : ce qui manque est simplement absent du
     rapport, donc rendu comme « donnee non disponible ».
+
+    `now` ne sert qu'a la composition, seule donnee dont la disponibilite depend
+    de l'heure : elle n'est publiee qu'a l'approche du coup d'envoi.
     """
     settings = settings or get_settings()
     cache = cache if cache is not None else {}
@@ -576,6 +631,51 @@ async def fetch_context(
     except ProviderError as exc:
         report.errors.append(f"profil corners/cartons : {exc}")
 
+    # Compositions — la seule donnee dont la disponibilite depend de l'heure.
+    try:
+        if not _covers_lineups(mapping.coverage) or not _lineup_due(
+            event.get("commence_time"), now
+        ):
+            # Hors fenetre, aucune ligne et **aucune mention** : contrairement
+            # aux absents, une composition qui manque a trois heures du match ne
+            # dit rien de l'equipe. L'annoncer « non disponible » ferait chercher
+            # un trou de collecte la ou il n'y a qu'une heure trop tot.
+            raise _NotCovered
+        rows = await client.lineups(mapping.fixture_id)
+        sides = {mapping.home_id: "home", mapping.away_id: "away"}
+        payload: dict[str, Any] = {}
+        for row in rows:
+            side = sides.get((row.get("team") or {}).get("id"))
+            if side is None:
+                continue
+            payload[side] = {
+                "formation": row.get("formation"),
+                "starters": [
+                    name
+                    for entry in row.get("startXI") or []
+                    if (name := (entry.get("player") or {}).get("name"))
+                ],
+                # Le banc est **collecte et jamais rendu dans le prompt** : vingt-
+                # quatre noms de plus y couteraient plus qu'ils n'apprennent. Il
+                # est garde parce qu'il ne coute aucun appel de plus et qu'il a
+                # sa place sur la fiche, ou l'ecran n'a pas de budget de tokens.
+                "bench": [
+                    name
+                    for entry in row.get("substitutes") or []
+                    if (name := (entry.get("player") or {}).get("name"))
+                ],
+            }
+        # Une reponse vide n'est **pas** persistee : les compositions sortent au
+        # compte-gouttes, et figer « rien » empecherait un second essai dix
+        # minutes plus tard de rapporter quelque chose.
+        if payload:
+            store(report.event_id, KIND_LINEUPS, payload, settings)
+            report.kinds.append(KIND_LINEUPS)
+    except _NotCovered:
+        pass
+    except ProviderError as exc:
+        report.errors.append(f"compositions : {exc}")
+
     # Blesses et suspendus — couverture irreguliere selon les ligues.
     try:
         if not mapping.coverage.get("injuries", True):
@@ -690,6 +790,23 @@ def _pair(home: str, away: str) -> str:
     """Assemble deux fragments cote a cote, en omettant celui qui manque."""
     parts = [part for part in (home, away) if part]
     return " | ".join(parts)
+
+
+def _lineup_fragment(team: str, entry: dict[str, Any] | None) -> str:
+    """`Beijing FC (4-4-2) Hou Sen, Bai, …`, ou rien si le onze manque.
+
+    La formation seule ne suffit pas : `Formations` la donne deja pour la
+    saison, et c'est justement l'ecart entre l'habitude et le jour meme qui se
+    lit ici. Le banc n'y figure pas — voir la collecte.
+    """
+    if not entry:
+        return ""
+    starters = entry.get("starters") or []
+    if not starters:
+        return ""
+    formation = entry.get("formation")
+    head = f"{team} ({formation})" if formation else team
+    return f"{head} {', '.join(starters)}"
 
 
 # -- Statistiques de saison : deja payees, longtemps jetees -------------------
@@ -994,6 +1111,16 @@ def context_lines(
     )
     if shots:
         lines.append(("Tirs", shots))
+
+    # Avant les absents, qu'elle complete et parfois remplace : sur une
+    # competition ou `injuries` est faux, la composition est la seule facon de
+    # savoir qui joue.
+    lineups = data.get(KIND_LINEUPS) or {}
+    composed = _pair(
+        _lineup_fragment(home, lineups.get("home")), _lineup_fragment(away, lineups.get("away"))
+    )
+    if composed:
+        lines.append(("Compos", composed))
 
     injuries = data.get(KIND_INJURIES)
     if injuries is not None:

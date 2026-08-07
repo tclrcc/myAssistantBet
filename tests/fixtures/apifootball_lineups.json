@@ -1,0 +1,85 @@
+{
+  "get": "fixtures/lineups",
+  "parameters": {
+    "fixture": "1122334"
+  },
+  "errors": [],
+  "results": 2,
+  "paging": {
+    "current": 1,
+    "total": 1
+  },
+  "response": [
+    {
+      "team": {
+        "id": 376,
+        "name": "BK Hacken",
+        "colors": {
+          "player": {
+            "primary": "ffee00",
+            "number": "000000",
+            "border": "ffee00"
+          }
+        }
+      },
+      "formation": "4-4-2",
+      "startXI": [
+        { "player": { "id": 9001, "name": "P. Hansson", "number": 1, "pos": "G", "grid": "1:1" } },
+        { "player": { "id": 9002, "name": "E. Lindberg", "number": 2, "pos": "D", "grid": "2:4" } },
+        { "player": { "id": 9003, "name": "T. Berg", "number": 4, "pos": "D", "grid": "2:3" } },
+        { "player": { "id": 9004, "name": "N. Sandell", "number": 5, "pos": "D", "grid": "2:2" } },
+        { "player": { "id": 9005, "name": "J. Alm", "number": 3, "pos": "D", "grid": "2:1" } },
+        { "player": { "id": 9006, "name": "S. Ohlsson", "number": 8, "pos": "M", "grid": "3:4" } },
+        { "player": { "id": 9007, "name": "A. Rygaard", "number": 6, "pos": "M", "grid": "3:3" } },
+        { "player": { "id": 9008, "name": "M. Holm", "number": 10, "pos": "M", "grid": "3:2" } },
+        { "player": { "id": 9009, "name": "K. Nilsen", "number": 7, "pos": "M", "grid": "3:1" } },
+        { "player": { "id": 9010, "name": "D. Svensson", "number": 9, "pos": "F", "grid": "4:2" } },
+        { "player": { "id": 9011, "name": "L. Ek", "number": 11, "pos": "F", "grid": "4:1" } }
+      ],
+      "substitutes": [
+        { "player": { "id": 9012, "name": "R. Palm", "number": 12, "pos": "G", "grid": null } },
+        { "player": { "id": 9013, "name": "V. Ahlgren", "number": 14, "pos": "D", "grid": null } },
+        { "player": { "id": 9014, "name": "O. Fransson", "number": 17, "pos": "F", "grid": null } }
+      ],
+      "coach": {
+        "id": 4001,
+        "name": "P. Gustafsson"
+      }
+    },
+    {
+      "team": {
+        "id": 377,
+        "name": "Djurgardens IF",
+        "colors": {
+          "player": {
+            "primary": "1a3f8f",
+            "number": "ffffff",
+            "border": "1a3f8f"
+          }
+        }
+      },
+      "formation": "4-3-3",
+      "startXI": [
+        { "player": { "id": 9101, "name": "H. Widell", "number": 1, "pos": "G", "grid": "1:1" } },
+        { "player": { "id": 9102, "name": "C. Une", "number": 2, "pos": "D", "grid": "2:4" } },
+        { "player": { "id": 9103, "name": "B. Stensson", "number": 3, "pos": "D", "grid": "2:3" } },
+        { "player": { "id": 9104, "name": "G. Marks", "number": 5, "pos": "D", "grid": "2:2" } },
+        { "player": { "id": 9105, "name": "I. Wahlberg", "number": 6, "pos": "D", "grid": "2:1" } },
+        { "player": { "id": 9106, "name": "F. Kaya", "number": 8, "pos": "M", "grid": "3:3" } },
+        { "player": { "id": 9107, "name": "U. Nordin", "number": 15, "pos": "M", "grid": "3:2" } },
+        { "player": { "id": 9108, "name": "W. Priske", "number": 20, "pos": "M", "grid": "3:1" } },
+        { "player": { "id": 9109, "name": "Y. Sadiq", "number": 7, "pos": "F", "grid": "4:3" } },
+        { "player": { "id": 9110, "name": "Z. Kalman", "number": 9, "pos": "F", "grid": "4:2" } },
+        { "player": { "id": 9111, "name": "Q. Bjur", "number": 11, "pos": "F", "grid": "4:1" } }
+      ],
+      "substitutes": [
+        { "player": { "id": 9112, "name": "T. Lager", "number": 13, "pos": "G", "grid": null } },
+        { "player": { "id": 9113, "name": "X. Norling", "number": 16, "pos": "M", "grid": null } }
+      ],
+      "coach": {
+        "id": 4002,
+        "name": "J. Lundqvist"
+      }
+    }
+  ]
+}

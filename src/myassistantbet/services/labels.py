@@ -63,6 +63,7 @@ CONTEXT_ICONS = {
     "Cartons tps": "🕐",
     "Tirs": "🎯",
     "Stats match": "🚫",
+    "Compos": "📋",
     "Absents": "🩹",
     "H2H": "⚔️",
     "Tour": "🪜",

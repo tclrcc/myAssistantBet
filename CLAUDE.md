@@ -287,6 +287,28 @@ chaque marche ajoute a `markets.py` sans l'etre a `render.py`.
   delocalisations sur dix, le nom seul en laissait passer. En cas de doute, aucune ligne.
 - La **surface** vient du meme appel `/teams` : une pelouse naturelle ne produit rien, c'est
   le cas ordinaire. Un synthetique change le rythme et se disait jusqu'ici nulle part.
+- **Compositions** (`/fixtures/lineups`, `KIND_LINEUPS`) : la seule donnee dont la
+  disponibilite depend de **l'heure**, et la seule facon de savoir qui joue la ou
+  `injuries` est faux — sur la Super League chinoise, `lineups: true` et
+  `injuries: false`. Le drapeau vit dans le meme sous-objet que les statistiques de match
+  (`coverage.fixtures.lineups`), meme piege.
+  - **Fenetre `LINEUP_WINDOW_MINUTES` (90), bornee des deux cotes.** Mesure en reel : a
+    2h30, 3h30 et 5h45 du coup d'envoi, l'endpoint rend **zero equipe** ; a 8 minutes, les
+    deux compositions completes. Les clubs publient environ une heure avant. Appeler plus
+    tot paierait un appel par match et par enrichissement pour du vide. Ouverte vers le
+    passe, elle rendait « imminent » un match joue il y a quatre jours — la borne basse
+    reprend la regle du projet : un match commence quitte le prompt.
+  - **Hors fenetre, aucune ligne et aucune mention.** Contrairement aux absents, une compo
+    qui manque cinq heures avant ne dit rien de l'equipe. « non disponible » ferait chercher
+    un trou de collecte la ou il n'y a qu'une heure trop tot.
+  - **Une reponse vide n'est pas persistee** : les compositions sortent au compte-gouttes, et
+    figer « rien » empecherait un second essai dix minutes plus tard de rapporter quelque
+    chose.
+  - **Le banc est collecte et jamais rendu** : vingt-quatre noms de plus couteraient au
+    prompt plus qu'ils n'apprennent. Il ne coute aucun appel de plus, et l'ecran, lui, n'a
+    pas de budget de tokens — meme arbitrage que `recent_matches` au tennis.
+  - La formation accompagne le onze : `Formations` donne deja l'habitude de la saison, et
+    c'est l'ecart avec elle qui se lit ici.
 - **Les absents arrivent en double** : `/injuries` rend chaque joueur deux fois — constate
   en reel, 14 lignes pour 7 absents. Le dedoublonnage se fait a la collecte, sur
   (cote, nom, type, raison). Sans lui la ligne liste tout le monde deux fois, ce qui fait
