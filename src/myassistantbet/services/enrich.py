@@ -428,6 +428,13 @@ async def _refresh_tennis_history(
         report = await tennis_history.refresh(history_client, settings, now=now)
         if report.errors:
             logger.warning("Historique tennis partiel : %s", " ; ".join(report.errors))
+        if report.rejected:
+            # Tenu a part des erreurs : le telechargement a reussi, c'est la
+            # source qui a mal date quelques lignes.
+            logger.warning(
+                "Historique tennis : %d ligne(s) hors de leur saison, ecartee(s)",
+                report.rejected,
+            )
     except Exception as exc:  # noqa: BLE001 — l'historique est un bonus, jamais bloquant
         logger.exception("Historique tennis indisponible : %s", exc)
 

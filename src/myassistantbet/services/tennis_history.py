@@ -24,7 +24,7 @@ import logging
 import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
@@ -104,6 +104,11 @@ class HistoryReport:
     cached: list[str] = field(default_factory=list)
     matches: int = 0
     errors: list[str] = field(default_factory=list)
+    #: Lignes ecartees parce que leur date ne peut pas etre celle de leur saison.
+    #: Comptees a part des erreurs : le telechargement a reussi, c'est la source
+    #: qui s'est trompee sur quelques lignes. Les taire ferait passer une coquille
+    #: pour une absence.
+    rejected: int = 0
 
     @property
     def ok(self) -> bool:
@@ -252,6 +257,31 @@ def is_stale(
     return reference - taken >= timedelta(hours=CURRENT_SEASON_TTL_HOURS)
 
 
+def in_season(played_on: str, season: int) -> bool:
+    """Vrai si cette date peut etre celle de cette saison.
+
+    **La regle evidente serait fausse.** Exiger que l'annee de la date egale la
+    saison jetterait des matchs bien reels : la saison de tennis ouvre dans les
+    tout derniers jours de decembre, et le fichier 2025 porte 69 matchs joues du
+    29 au 31 decembre 2024, celui de 2024 onze matchs du 31 decembre 2023. Une
+    date vaut donc pour sa saison si elle tombe dans l'annee de la saison, ou en
+    decembre de l'annee precedente.
+
+    Ce qui deborde de l'autre cote ne peut etre qu'une coquille de la source : le
+    fichier 2026 datait la finale de l'Iasi Open du 20 juillet **2029**. Le degat
+    est invisible, et c'est ce qui le rend genant — une date posterieure a tout
+    match analyse sort de **chaque** fenetre de lecture, puisque la forme, la
+    surface et les confrontations filtrent toutes sur `played_on < debut du
+    match`. Le match ne s'affiche jamais nulle part, et disparait de l'historique
+    des deux joueuses sans qu'aucune ligne ne signale le trou.
+    """
+    try:
+        day = date.fromisoformat(played_on)
+    except (TypeError, ValueError):
+        return False
+    return day.year == season or (day.year == season - 1 and day.month == 12)
+
+
 def store(
     tour: str,
     season: int,
@@ -259,8 +289,22 @@ def store(
     settings: Settings | None = None,
     now: datetime | None = None,
 ) -> int:
-    """Ecrit une saison. Idempotent sur sa cle naturelle."""
+    """Ecrit une saison. Idempotent sur sa cle naturelle.
+
+    Les lignes dont la date ne peut pas etre celle de la saison sont ecartees et
+    **dites** : une coquille de la source ne doit pas passer pour une absence.
+    """
     stamp = now.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ") if now else utcnow()
+    rejected = [match for match in matches if not in_season(match.played_on, season)]
+    if rejected:
+        logger.warning(
+            "Historique tennis %s %s : %d ligne(s) hors saison ecartee(s) — %s",
+            tour,
+            season,
+            len(rejected),
+            ", ".join(f"{match.played_on} {match.tournament}" for match in rejected[:5]),
+        )
+    matches = [match for match in matches if in_season(match.played_on, season)]
     rows = [
         (
             tour,
@@ -330,7 +374,9 @@ async def refresh(
                 report.errors.append(f"{label} : {exc}")
                 logger.warning("Historique tennis indisponible pour %s : %s", label, exc)
                 continue
-            report.matches += store(tour, season, matches, settings, now)
+            stored = store(tour, season, matches, settings, now)
+            report.matches += stored
+            report.rejected += len(matches) - stored
             report.seasons.append(label)
     return report
 

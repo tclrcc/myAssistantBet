@@ -20,6 +20,7 @@ from myassistantbet.config import Settings
 from myassistantbet.providers.tennisdata import (
     BASE_URL,
     ODDS_COLUMNS,
+    RawMatch,
     TennisDataClient,
     parse_workbook,
 )
@@ -697,3 +698,107 @@ async def test_un_joueur_non_rapproche_le_dit_sur_la_fiche(
         page = client.get("/events/1").text
 
     assert "Aucun match dans l'historique collecté pour ce joueur." in page
+
+
+# -- Dates hors saison -------------------------------------------------------
+
+
+def _raw(played_on: str, tournament: str = "Iasi Open") -> RawMatch:
+    return RawMatch(
+        played_on=played_on,
+        tournament=tournament,
+        location="Iasi",
+        series="WTA250",
+        court="Outdoor",
+        surface="Clay",
+        round="The Final",
+        winner="Sherif M.",
+        loser="Badosa P.",
+        score="6-4 4-0",
+        comment="Retired",
+    )
+
+
+def test_la_saison_ouvre_en_decembre_de_l_annee_precedente() -> None:
+    """Le garde-fou evident — « l'annee de la date egale la saison » — serait
+    faux. Releve en base : le fichier 2025 porte 69 matchs joues du 29 au 31
+    decembre 2024, celui de 2024 onze matchs du 31 decembre 2023. Les jeter
+    amputerait chaque saison de son ouverture."""
+    assert tennis_history.in_season("2024-12-29", 2025) is True
+    assert tennis_history.in_season("2024-12-31", 2025) is True
+    assert tennis_history.in_season("2025-01-01", 2025) is True
+    assert tennis_history.in_season("2025-11-16", 2025) is True
+    # Novembre de l'annee precedente, en revanche, est la saison d'avant.
+    assert tennis_history.in_season("2024-11-16", 2025) is False
+
+
+def test_une_date_posterieure_a_la_saison_est_une_coquille() -> None:
+    """Le fichier 2026 datait une finale de l'Iasi Open du 20 juillet 2029."""
+    assert tennis_history.in_season("2029-07-20", 2026) is False
+    assert tennis_history.in_season("pas une date", 2026) is False
+
+
+def test_une_date_hors_saison_n_entre_pas_en_base(migrated: Settings) -> None:
+    """Le degat qu'elle fait est invisible : posterieure a tout match analyse,
+    elle sort de chaque fenetre de forme, de surface et de H2H. Le match ne
+    s'affiche donc nulle part, et rien ne signale le trou."""
+    ecrits = tennis_history.store(
+        "wta", 2026, [_raw("2026-07-20"), _raw("2029-07-20", "Iasi Open bis")], migrated, NOW
+    )
+
+    assert ecrits == 1
+    dates = [
+        row["played_on"]
+        for row in db.query("SELECT played_on FROM tennis_matches", settings=migrated)
+    ]
+    assert dates == ["2026-07-20"]
+
+
+def test_le_compte_de_la_collecte_ne_retient_que_les_lignes_gardees(migrated: Settings) -> None:
+    """`tennis_history_state.matches` sert a savoir ce qui a ete collecte : y
+    compter une ligne jetee ferait chercher en base un match qui n'y est pas."""
+    tennis_history.store("wta", 2026, [_raw("2026-07-20"), _raw("2029-07-20")], migrated, NOW)
+
+    etat = db.query_one(
+        "SELECT matches FROM tennis_history_state WHERE tour = 'wta' AND season = 2026",
+        settings=migrated,
+    )
+    assert etat["matches"] == 1
+
+
+def test_la_migration_purge_les_dates_deja_ecrites(migrated: Settings) -> None:
+    """Le garde-fou de `store()` ne nettoie pas le passe : une saison terminee
+    n'est jamais retelechargee, et la saison en cours ne reecrit pas une ligne
+    qu'elle ne renvoie plus. La migration 021 s'en charge une fois.
+
+    Elle rejoue **le texte du fichier**, pas une copie de la regle : la version
+    SQL et `in_season()` sont deux ecritures du meme critere, et rien d'autre ne
+    les empeche de diverger.
+    """
+    from myassistantbet.config import PACKAGE_DIR
+
+    lignes = [
+        ("wta", 2026, "2026-07-20", "Iasi Open"),  # dans sa saison
+        ("wta", 2026, "2029-07-20", "Iasi Open bis"),  # coquille de la source
+        ("atp", 2025, "2024-12-29", "United Cup"),  # ouverture de saison, valide
+        ("atp", 2025, "2024-11-29", "Tournoi d'avant"),  # saison precedente
+    ]
+    for tour, season, played_on, tournament in lignes:
+        db.execute(
+            "INSERT INTO tennis_matches (tour, season, played_on, tournament, winner, loser, "
+            "winner_key, loser_key, fetched_at) VALUES (?, ?, ?, ?, 'A', 'B', ?, 'b|', ?)",
+            (tour, season, played_on, tournament, f"a|{played_on}", db.utcnow()),
+            settings=migrated,
+        )
+
+    sql = (PACKAGE_DIR / "migrations" / "021_dates_hors_saison.sql").read_text(encoding="utf-8")
+    with db.connect(migrated) as conn:
+        conn.execute(sql)
+
+    restant = [
+        row["played_on"]
+        for row in db.query(
+            "SELECT played_on FROM tennis_matches ORDER BY played_on", settings=migrated
+        )
+    ]
+    assert restant == ["2024-12-29", "2026-07-20"]
