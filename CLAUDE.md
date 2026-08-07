@@ -921,16 +921,46 @@ un octet de `node_modules`.
   niveau, donc aucune hierarchie lisible. Le crenage suit la taille (`--track-tight` /
   `--track-snug`) : Inter se resserre en grandissant, et une valeur unique sur trois
   niveaux resserre trop le petit et pas assez le grand.
-- **Les pictogrammes de sport sont des SVG**, plus des emoji (`base.html` porte le sprite,
-  `labels.SPORT_ICONS` dit ce qu'il couvre). Un emoji est rendu par la police de
-  l'appareil : different d'une machine a l'autre, **absent de certaines** — la colonne se
-  vidait alors sans rien dire — et il ne prend jamais la couleur de sa pastille, la ou
-  `currentColor` la suit. Le sprite est instancie par `<use>` autant de fois que le board
-  a de lignes sans etre redecrit. Un test verifie sa presence : sans lui, chaque `<use>`
-  pointe dans le vide.
-  - Les emoji de **palier** (`🟢 SAFE`…) restent : ils sont stockes en base et
-    `picks_import` doit pouvoir les reconnaitre dans un tableau colle a la main. Ceux du
-    bloc CONTEXTE restent aussi — vingt-huit icones a dessiner pour un ornement de fiche.
+- **Tous les pictogrammes sont des SVG**, plus des emoji : les sports
+  (`labels.SPORT_ICONS`) comme les lignes du bloc CONTEXTE (`labels.CONTEXT_ICONS`, dont
+  la valeur est l'identifiant d'un `<symbol>` du sprite de `base.html`, sans son prefixe
+  `i-`). Un emoji est rendu par la police de l'appareil : different d'une machine a
+  l'autre, **absent de certaines** — la colonne se vidait alors sans rien dire — et il ne
+  prend jamais la couleur de son entourage, ce qui l'aurait rendu criard sur le theme
+  clair. Le sprite est instancie par `<use>` autant de fois qu'il y a de lignes sans etre
+  redecrit.
+  - **Un test verifie que chaque identifiant vise un symbole existant.** Une faute de
+    frappe ne casse rien : le `<use>` pointe dans le vide et la carte perd son pictogramme
+    sans un mot. Constate en reel, sur une feuille servie perimee.
+  - Les emoji de **palier** (`🟢 SAFE`…) restent, et c'est le seul cas : ils sont stockes
+    en base et `picks_import` doit pouvoir les reconnaitre dans un tableau colle a la main.
+
+### Theme clair (`prefers-color-scheme`)
+
+Il suit le reglage du systeme plutot qu'un bouton : sans JS ni stockage, et surtout parce
+qu'un utilisateur qui a regle son systeme en clair a deja repondu a la question.
+
+**Le bloc ne redeclare que des tokens, jamais un selecteur de composant**, et un test le
+verifie. C'est la preuve que le systeme tient : le jour ou ce test casse, il faut sortir
+dans `:root` la couleur ecrite en dur qui l'a fait casser — pas ajouter la regle au bloc.
+Sortir les couleurs en dur a d'ailleurs revele une declaration invalide : `.round` prenait
+`--edge`, une valeur d'**ombre**, comme couleur de bordure — donc pas de bordure du tout,
+invisible sur fond sombre et franchement plat sur fond clair.
+
+Trois inversions qui ne vont pas de soi :
+
+- `--edge` est un lisere **clair** sur fond sombre ; sur fond clair il disparaitrait, et
+  c'est une ombre sombre qui prend le relief a sa place ;
+- `--surface` eclaircissait le haut d'une surface sombre ; sur du blanc il n'y a plus rien
+  a eclaircir, c'est le bas qui s'assombrit ;
+- les teintes de sport doivent **foncer**, pas s'eclaircir : un vert pastel lisible sur du
+  noir devient illisible sur du blanc. Le token porte donc la couleur **du texte**, et le
+  fond comme la bordure s'en deduisent par `color-mix`.
+
+**Piege de verification** : `--force-prefers-color-scheme` n'existe pas dans le Chromium
+utilise pour les captures, et le headless rend en **clair** par defaut. Deux captures
+« light » et « dark » peuvent donc etre identiques sans que rien ne le signale — verifie
+par `md5sum`. Pour voir le theme sombre, neutraliser temporairement la media query.
 - **Les cartes de statistiques coulent en colonnes** (`column-count`), pas en grille. En
   grille, la plus courte de deux cartes laisse un vide sous elle jusqu'a la rangee
   suivante : trois trous sur quatre rangees. `break-inside: avoid` empeche qu'une carte

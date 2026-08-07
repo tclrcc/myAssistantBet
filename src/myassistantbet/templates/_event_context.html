@@ -49,7 +49,7 @@
         {% set icon = label | context_icon %}
         <article class="context-card">
           <header>
-            {% if icon %}<span class="context-icon" aria-hidden="true">{{ icon }}</span>{% endif %}
+            {% if icon %}<svg class="icon context-icon" aria-hidden="true"><use href="#i-{{ icon }}"></use></svg>{% endif %}
             <span class="context-label">{{ label }}</span>
           </header>
           {# `pre-line` : les valeurs a deux equipes gardent leur retour a la

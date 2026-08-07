@@ -44,12 +44,33 @@
   --accent-2: #7c6cf5;
   --accent-soft: rgba(91, 140, 250, 0.14);
   --accent-line: rgba(91, 140, 250, 0.45);
+  /* Les deux bouts des degrades d'accent. `--accent-deep` doit rester plus
+     sombre que `--accent` et `--accent-light` plus clair : ecrits en dur, ils
+     s'inversaient des que l'accent changeait de valeur avec le theme, et le
+     bouton paraissait eclaire par en dessous. */
+  --accent-deep: #4a7ae8;
+  --accent-light: #7ba4fb;
   --alert: #f2726a;
   --alert-soft: rgba(242, 114, 106, 0.13);
   --ok: #45c48a;
   --ok-soft: rgba(69, 196, 138, 0.13);
   --warn: #e0a63f;
   --warn-soft: rgba(224, 166, 63, 0.13);
+
+  /* Fond de la barre collante : semi-transparent, c'est lui qui donne son sens
+     au flou d'arriere-plan. */
+  --topbar-bg: rgba(11, 13, 18, 0.72);
+  /* Fond d'une pastille discrete posee sur une surface (le tour d'un tournoi). */
+  --chip-bg: rgba(255, 255, 255, 0.06);
+  /* Les deux lueurs derriere la barre de navigation. */
+  --glow-1: rgba(91, 140, 250, 0.11);
+  --glow-2: rgba(124, 108, 245, 0.08);
+
+  /* Une teinte par sport. Le token porte la couleur **du texte**, celle qui
+     doit rester lisible ; le fond et la bordure s'en deduisent par melange. */
+  --sport-football: #6fd3a4;
+  --sport-tennis: #e6bb63;
+  --sport-cycling: #bda3f5;
 
   /* Rythme : une echelle, pas des valeurs au hasard. */
   --s1: 0.25rem;
@@ -102,6 +123,67 @@
   --track-wide: 0.06em;
 }
 
+/* --- Theme clair -----------------------------------------------------------
+   Rien que des tokens. Aucune regle de composant n'est redeclaree ici, et
+   c'est la preuve que le systeme tient : si un theme demandait de reecrire des
+   selecteurs, c'est qu'une couleur avait ete ecrite en dur quelque part.
+
+   Le choix suit le systeme (`prefers-color-scheme`) plutot qu'un bouton : sans
+   JS ni stockage, et surtout parce qu'un utilisateur qui a regle son systeme en
+   clair a deja repondu a la question.
+
+   Trois inversions qui ne vont pas de soi :
+
+   * `--edge` est un lisere **clair** sur fond sombre ; sur fond clair il
+     disparaitrait, donc c'est une ombre sombre qui prend le relief a sa place ;
+   * `--surface` eclaircissait le haut d'une surface sombre ; sur du blanc, il
+     n'y a plus rien a eclaircir — c'est le bas qui s'assombrit ;
+   * les teintes de sport doivent **foncer**, pas s'eclaircir : un vert pastel
+     lisible sur du noir devient illisible sur du blanc. */
+@media (prefers-color-scheme: light) {
+  :root {
+    --bg: #f2f4f9;
+    --panel: #ffffff;
+    --panel-2: #f2f4f8;
+    --panel-3: #e6eaf1;
+    --line: #d3d9e3;
+    --line-soft: #e4e8ef;
+
+    --text: #0f131b;
+    --text-dim: #3c4553;
+    --muted: #67717f;
+
+    /* Un bleu plus dense : celui du theme sombre passe le contraste sur du
+       noir, pas sur du blanc. */
+    --accent: #2f68d8;
+    --accent-2: #6250e0;
+    --accent-soft: rgba(47, 104, 216, 0.1);
+    --accent-line: rgba(47, 104, 216, 0.35);
+    --accent-deep: #2455bd;
+    --accent-light: #5b8cfa;
+    --alert: #cf3a30;
+    --alert-soft: rgba(207, 58, 48, 0.1);
+    --ok: #14875a;
+    --ok-soft: rgba(20, 135, 90, 0.1);
+    --warn: #9a6b06;
+    --warn-soft: rgba(154, 107, 6, 0.12);
+
+    --topbar-bg: rgba(242, 244, 249, 0.78);
+    --chip-bg: rgba(15, 19, 27, 0.05);
+    --glow-1: rgba(47, 104, 216, 0.07);
+    --glow-2: rgba(98, 80, 224, 0.05);
+
+    --sport-football: #157a51;
+    --sport-tennis: #8d6410;
+    --sport-cycling: #6741b8;
+
+    --edge: inset 0 1px 0 rgba(15, 19, 27, 0.04);
+    --surface: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(15, 19, 27, 0.018));
+    --shadow: 0 1px 2px rgba(15, 19, 27, 0.06), 0 8px 24px rgba(15, 19, 27, 0.07);
+    --shadow-accent: 0 1px 2px rgba(15, 19, 27, 0.12), 0 6px 18px rgba(47, 104, 216, 0.25);
+  }
+}
+
 *,
 *::before,
 *::after { box-sizing: border-box; }
@@ -127,8 +209,8 @@ body::before {
   inset: 0 0 auto;
   height: 420px;
   background:
-    radial-gradient(60% 100% at 20% 0%, rgba(91, 140, 250, 0.11), transparent 70%),
-    radial-gradient(45% 100% at 80% 0%, rgba(124, 108, 245, 0.08), transparent 70%);
+    radial-gradient(60% 100% at 20% 0%, var(--glow-1), transparent 70%),
+    radial-gradient(45% 100% at 80% 0%, var(--glow-2), transparent 70%);
   pointer-events: none;
   z-index: 0;
 }
@@ -155,7 +237,7 @@ a:hover { text-decoration: underline; }
   align-items: center;
   gap: var(--s5);
   padding: var(--s3) var(--s5);
-  background: rgba(11, 13, 18, 0.72);
+  background: var(--topbar-bg);
   backdrop-filter: blur(14px) saturate(140%);
   border-bottom: 1px solid var(--line-soft);
   position: sticky;
@@ -260,7 +342,7 @@ button.primary,
   white-space: nowrap;
 }
 button.primary {
-  background: linear-gradient(180deg, var(--accent), #4a7ae8);
+  background: linear-gradient(180deg, var(--accent), var(--accent-deep));
   color: #fff;
   border: 1px solid rgba(255, 255, 255, 0.14);
   font-weight: 600;
@@ -282,7 +364,7 @@ button.primary:disabled {
 }
 .button:hover { text-decoration: none; border-color: var(--accent-line); background: var(--panel-3); }
 .primary-link {
-  background: linear-gradient(180deg, var(--accent), #4a7ae8);
+  background: linear-gradient(180deg, var(--accent), var(--accent-deep));
   border-color: rgba(255, 255, 255, 0.14);
   color: #fff;
   font-weight: 600;
@@ -458,7 +540,9 @@ table.board tbody tr { transition: background 0.1s; }
 table.board tbody tr:hover { background: var(--panel-2); }
 table.board tbody tr:hover .link-action { color: var(--accent); }
 table.board tr.is-selected { background: var(--accent-soft); }
-table.board tr.is-selected:hover { background: rgba(91, 147, 247, 0.18); }
+table.board tr.is-selected:hover {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
 table.board tr.is-selected td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
 
 /* Match deja commence : lisible, mais visiblement hors du prompt. */
@@ -1031,9 +1115,18 @@ kbd {
   border: 1px solid transparent;
   white-space: nowrap;
 }
-.sport-football { background: rgba(79, 183, 131, 0.16); color: #6fd3a4; border-color: rgba(79, 183, 131, 0.35); }
-.sport-tennis   { background: rgba(217, 164, 65, 0.16);  color: #e6bb63; border-color: rgba(217, 164, 65, 0.35); }
-.sport-cycling  { background: rgba(168, 130, 240, 0.16); color: #bda3f5; border-color: rgba(168, 130, 240, 0.35); }
+/* Une teinte par sport, et le fond comme la bordure s'en deduisent. Le
+   token porte la couleur **lisible sur le theme courant** : le fond clair
+   demande un vert sombre la ou le fond sombre demandait un vert clair. */
+.sport-football,
+.sport-tennis,
+.sport-cycling {
+  background: color-mix(in srgb, currentColor 16%, transparent);
+  border-color: color-mix(in srgb, currentColor 35%, transparent);
+}
+.sport-football { color: var(--sport-football); }
+.sport-tennis   { color: var(--sport-tennis); }
+.sport-cycling  { color: var(--sport-cycling); }
 
 /* Le tour d'un tournoi, a cote de son nom. Discret : il precise la competition,
    il ne la concurrence pas. Sur une ligne etroite il passe dessous plutot que
@@ -1046,14 +1139,24 @@ kbd {
   font-weight: 600;
   white-space: nowrap;
   color: var(--muted);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid var(--edge);
+  background: var(--chip-bg);
+  /* `--edge` est une valeur d'**ombre**, pas une couleur : l'utiliser ici
+     rendait la declaration invalide, donc la pastille n'avait pas de bordure
+     du tout. Invisible sur fond sombre, ou le fond suffisait a la detacher ;
+     franchement plat sur fond clair. */
+  border: 1px solid var(--line-soft);
 }
 
 /* Filet de couleur en bord de ligne : le sport se lit sans lire la colonne. */
-table.board tbody tr.sportrow-football td:first-child { box-shadow: inset 3px 0 0 rgba(79, 183, 131, 0.55); }
-table.board tbody tr.sportrow-tennis   td:first-child { box-shadow: inset 3px 0 0 rgba(217, 164, 65, 0.55); }
-table.board tbody tr.sportrow-cycling  td:first-child { box-shadow: inset 3px 0 0 rgba(168, 130, 240, 0.55); }
+table.board tbody tr.sportrow-football td:first-child {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--sport-football) 70%, transparent);
+}
+table.board tbody tr.sportrow-tennis td:first-child {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--sport-tennis) 70%, transparent);
+}
+table.board tbody tr.sportrow-cycling td:first-child {
+  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--sport-cycling) 70%, transparent);
+}
 /* La selection reprend la main : c'est l'information la plus utile. */
 table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
 
@@ -1173,7 +1276,7 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
   /* Un degrade **vertical** : une seule teinte, un simple relief. Horizontal,
      il ferait varier la couleur avec la longueur et encoderait deux fois la
      meme grandeur. */
-  background: linear-gradient(180deg, #7ba4fb, var(--accent));
+  background: linear-gradient(180deg, var(--accent-light), var(--accent));
 }
 /* Sous quatre paris tranches, le taux mesure surtout le hasard. La barre reste
    affichee — la taire cacherait une information — mais elle est visiblement
@@ -1416,7 +1519,8 @@ td .sport {
 
 /* Le pictogramme accompagne le libelle, il ne le remplace pas : seul, il
    faudrait le deviner, et un lecteur d'ecran n'en dirait rien d'utile. */
-.context-icon { font-size: 1.05rem; line-height: 1; }
+/* Un cran au-dessus du libelle qu'elle accompagne, et dans sa couleur. */
+.context-icon { width: 1.15em; height: 1.15em; color: var(--muted); }
 
 .context-label {
   font-size: 0.78rem;

@@ -254,5 +254,9 @@ def test_chaque_ligne_de_contexte_porte_son_pictogramme(
 
     page = client.get(f"/events/{event_id}").text
 
-    assert "🏆" in page
+    # Un `<use>` vers le sprite, plus un caractere : un emoji est rendu par la
+    # police de l'appareil — absent de certaines — et ne prend pas la couleur de
+    # son entourage, ce qui le rendait criard sur le theme clair.
+    assert 'href="#i-trophee"' in page
     assert "Classement" in page
+    assert 'id="i-trophee"' in page, "le sprite doit porter le symbole vise"

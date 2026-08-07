@@ -44,45 +44,55 @@ BOOKMAKER_LABELS = {
 UNTIMED_BOOKMAKERS = frozenset({"manual"})
 
 #: Pictogramme de chaque ligne du bloc CONTEXTE, pour la fiche d'un match.
-#: Purement decoratif : le libelle reste ecrit a cote, et le prompt genere ne
-#: porte aucun de ces caracteres — il compte ses tokens.
+#: La valeur est l'identifiant d'un `<symbol>` du sprite de `base.html`, sans
+#: son prefixe `i-`. Purement decoratif : le libelle reste ecrit a cote, et le
+#: prompt genere n'en porte aucune trace — il compte ses tokens.
+#:
+#: **Des SVG, plus des emoji**, meme raison que pour les sports : un emoji est
+#: rendu par la police de l'appareil, donc absent de certaines, et il ne prend
+#: pas la couleur de son entourage. Un theme clair l'aurait rendu criard la ou
+#: `currentColor` suit sagement le texte de l'etiquette.
+#:
+#: Plusieurs libelles partagent volontiers un pictogramme : « Forme » et
+#: « Forme 5 » decrivent la meme chose a deux echelles, « Compos » et
+#: « Startlist » sont deux noms d'une liste de partants.
 CONTEXT_ICONS = {
-    "Classement": "🏆",
-    "Forme 5": "📈",
-    "Dom/Ext": "🏟️",
-    "Entraineur": "🧑‍🏫",
-    "Buts marq.": "⚽",
-    "Clean sheet": "🧱",
-    "1re MT": "⏱️",
-    "Formations": "🧩",
-    "Corners": "🚩",
-    "Cartons": "🟨",
+    "Classement": "trophee",
+    "Palmares": "medaille",
+    "Forme 5": "courbe",
+    "Forme": "courbe",
+    "Dom/Ext": "stade",
+    "Entraineur": "personne",
+    "Buts marq.": "football",
+    "Clean sheet": "bouclier",
+    "1re MT": "chrono",
     # Le rapprochement se fait sur le premier mot : « Cartons tps » heriterait
     # sinon du pictogramme de « Cartons », alors que la ligne dit *quand* ils
     # tombent et non combien.
-    "Cartons tps": "🕐",
-    "Tirs": "🎯",
-    "Stats match": "🚫",
-    "Compos": "📋",
-    "Absents": "🩹",
-    "H2H": "⚔️",
-    "Tour": "🪜",
-    "Repos": "🛌",
-    "Elo": "♟️",
-    "H2H ici": "📍",
-    "Palmares": "🏅",
-    "Forme": "📈",
-    "Surface": "🎾",
-    "Abandons": "🚑",
-    "Profil": "🗺️",
-    "Startlist": "📋",
-    "References": "🔗",
-    "Infos": "📝",
+    "Cartons tps": "horloge",
+    "Cartons": "carte",
+    "Formations": "grille",
+    "Corners": "drapeau",
+    "Tirs": "cible",
+    "Stats match": "interdit",
+    "Compos": "liste",
+    "Startlist": "liste",
+    "Absents": "absent",
+    "H2H ici": "epingle",
+    "H2H": "duel",
+    "Tour": "echelons",
+    "Repos": "lit",
+    "Elo": "jauge",
+    "Surface": "tennis",
+    "Abandons": "sortie",
+    "Profil": "relief",
+    "References": "lien",
+    "Infos": "note",
 }
 
 
 def context_icon(label: str) -> str:
-    """Pictogramme d'une ligne de contexte, vide si elle n'en a pas.
+    """Identifiant du pictogramme d'une ligne de contexte, vide si elle n'en a pas.
 
     Le rapprochement se fait sur le debut du libelle : « H2H (5) » porte son
     nombre de confrontations, qui varie d'un match a l'autre.

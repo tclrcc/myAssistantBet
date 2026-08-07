@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from typing import Any
 
@@ -341,3 +342,52 @@ def test_la_police_est_servie_en_local(client: TestClient) -> None:
     assert 'src: url("fonts/InterVariable.woff2") format("woff2")' in css
     assert "//fonts.googleapis" not in css and "https://" not in css
     assert client.get("/static/fonts/InterVariable.woff2").status_code == 200
+
+
+def _stylesheet() -> str:
+    from myassistantbet.config import PACKAGE_DIR
+
+    return (PACKAGE_DIR / "static" / "app.css").read_text(encoding="utf-8")
+
+
+def test_le_theme_clair_ne_redeclare_que_des_tokens() -> None:
+    """C'est la preuve que le systeme de tokens tient : si un theme devait
+    reecrire un selecteur de composant, c'est qu'une couleur avait ete ecrite
+    en dur quelque part. Le jour ou ce test casse, il faut sortir la couleur
+    fautive dans `:root`, pas ajouter la regle ici."""
+    css = _stylesheet()
+    debut = css.index("@media (prefers-color-scheme: light)")
+    # Bloc delimite par comptage d'accolades : le decoupage naif s'arretait a la
+    # premiere fermeture, donc avant la fin de `:root`.
+    profondeur, fin = 0, debut
+    for index in range(debut, len(css)):
+        if css[index] == "{":
+            profondeur += 1
+        elif css[index] == "}":
+            profondeur -= 1
+            if profondeur == 0:
+                fin = index
+                break
+    bloc = re.sub(r"/\*.*?\*/", "", css[debut:fin], flags=re.S)
+
+    intrus = [
+        ligne.strip()
+        for ligne in bloc.splitlines()
+        if ligne.strip() and not ligne.strip().startswith(("--", "@media", ":root", "}"))
+    ]
+
+    assert not intrus, f"le theme clair ne doit porter que des tokens : {intrus}"
+
+
+def test_chaque_pictogramme_vise_un_symbole_existant(client: TestClient) -> None:
+    """Un identifiant mal orthographie dans `CONTEXT_ICONS` ne casse rien : le
+    `<use>` pointe simplement dans le vide et la carte perd son pictogramme
+    sans un mot. Constate en reel sur une feuille de style servie perimee."""
+    from myassistantbet.services.labels import CONTEXT_ICONS, SPORT_ICONS
+
+    page = client.get("/").text
+    disponibles = set(re.findall(r'<symbol id="i-([a-z]+)"', page))
+
+    assert disponibles >= SPORT_ICONS
+    manquants = set(CONTEXT_ICONS.values()) - disponibles
+    assert not manquants, f"symboles absents du sprite : {sorted(manquants)}"
