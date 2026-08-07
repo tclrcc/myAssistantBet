@@ -58,7 +58,7 @@ UNTIMED_BOOKMAKERS = frozenset({"manual"})
 #: « Startlist » sont deux noms d'une liste de partants.
 CONTEXT_ICONS = {
     "Classement": "trophee",
-    "Enjeu": "cible",
+    "Enjeu": "enjeu",
     "Palmares": "medaille",
     "Forme 5": "courbe",
     "Forme": "courbe",
@@ -78,6 +78,7 @@ CONTEXT_ICONS = {
     "Fautes": "interdit",
     "Possession": "jauge",
     "Tirs": "cible",
+    "xG": "cible",
     "Stats match": "interdit",
     "Compos": "liste",
     "Startlist": "liste",

@@ -329,7 +329,22 @@ chaque marche ajoute a `markets.py` sans l'etre a `render.py`.
   appel** — seulement de la place. `Fouls` accompagne `Cartons` (un arbitre ne sort un
   carton que sur une faute) et `Ball Possession` dit qui subit, ce qu'aucune autre ligne ne
   donne. Restent jetees : passes, hors-jeu, arrets, tirs par zone, et `expected_goals` —
-  celle-ci demande un arbitrage, c'est une sortie de modele et non un fait observe.
+  `goals_prevented`.
+- **`xG`** (`expected_goals`, meme appel) : **la seule ligne du bloc qui ne soit pas un
+  fait observe mais une sortie de modele**, et elle est rendue en le sachant. Elle separe
+  ce qu'aucun compte de tirs ne separe — des buts nes d'occasions repetees, et des buts
+  nes d'une frappe heureuse.
+  - **Interdit, et c'est le coeur du sujet** : la convertir en probabilite puis la
+    rapprocher d'une cote. Meme garde-fou que l'Elo tennis, meme raison — ce serait le
+    calcul d'esperance de la section 9, et le fait que le chiffre vienne du fournisseur
+    n'y change rien. Le template porte l'interdiction, un test verifie qu'elle y est.
+  - **Couverture inegale, verifiee en reel** : la Super League chinoise rend
+    `expected_goals: null`, la Superliga danoise sert 0.9 produit contre 1.5 concede.
+    `_stat_value` ecarte le `null` comme toute valeur absente, donc aucune ligne — et
+    surtout pas un zero, qui se lirait comme une equipe sans occasion.
+  - **Le budget de tokens du prompt est un vrai garde-fou** : documenter ces lignes l'a
+    fait passer a 8012 pour six matchs, contre 8000 permis. Toute ligne ajoutee se paie
+    deux fois — la donnee dans chaque bloc, et son mode d'emploi en tete de prompt.
   - **`Possession` est le seul pourcentage du bloc, et il ne contredit pas la regle.**
     L'interdit vise les *frequences d'issues* : « BTTS 56 % » invite a diviser par une
     cote, ce qui est le calcul d'esperance de la section 9. Une part de ballon ne se

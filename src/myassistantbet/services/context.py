@@ -387,6 +387,10 @@ PROFILE_STATS = {
     "Shots on Goal": "shots_on",
     "Fouls": "fouls",
     "Ball Possession": "possession",
+    # Couverture inegale : la Super League chinoise la rend `null`, et
+    # `_stat_value` l'ecarte alors comme n'importe quelle valeur absente. La
+    # ligne n'existe donc que la ou le fournisseur la sert.
+    "expected_goals": "xg",
 }
 
 
@@ -1250,6 +1254,10 @@ def context_lines(
     if shots:
         lines.append(("Tirs", shots))
 
+    xg = _pair(_xg_fragment(home, profile.get("home")), _xg_fragment(away, profile.get("away")))
+    if xg:
+        lines.append(("xG", xg))
+
     possession = _pair(
         _possession_fragment(home, profile.get("home")),
         _possession_fragment(away, profile.get("away")),
@@ -1426,6 +1434,26 @@ def _possession_fragment(team: str, profile: dict[str, Any] | None) -> str:
     if not _profiled(profile, "possession"):
         return ""
     return f"{team} {profile['possession']:.0f} %{_profile_suffix(profile)}"
+
+
+def _xg_fragment(team: str, profile: dict[str, Any] | None) -> str:
+    """`Estoril 1.85 concede 0.92/5` — buts attendus produits, puis concedes.
+
+    C'est la seule ligne du bloc qui ne soit pas un fait observe mais une
+    **sortie de modele**, et elle est rendue en le sachant : elle dit si les
+    buts d'une equipe viennent d'occasions repetees ou d'une frappe heureuse,
+    ce qu'aucun compte de tirs ne separe.
+
+    Elle porte donc la meme interdiction que l'Elo, et pour la meme raison : la
+    convertir en probabilite puis la rapprocher d'une cote serait le calcul
+    d'esperance de la section 9. Le template le dit noir sur blanc, un test le
+    verifie.
+    """
+    if not _profiled(profile, "xg"):
+        return ""
+    against = profile.get("xg_against")
+    tail = f" concédé {against}" if against is not None else ""
+    return f"{team} {profile['xg']}{tail}{_profile_suffix(profile)}"
 
 
 def _card_fragment(team: str, profile: dict[str, Any] | None) -> str:

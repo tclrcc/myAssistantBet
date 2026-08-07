@@ -1565,3 +1565,61 @@ def test_la_possession_est_le_seul_pourcentage_du_bloc() -> None:
 
     assert "seul pourcentage du bloc" in template
     assert "fréquences" in template and "diviser par une cote" in template
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_xg_arrive_du_meme_appel(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Buts attendus produits puis concedes. Le « concede » vient de l'adversaire
+    du meme match, comme les corners : un seul appel donne les deux cotes."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    stats = load_fixture("apifootball_fixture_statistics.json")
+    for index, equipe in enumerate(stats["response"]):
+        equipe["statistics"].append(
+            {"type": "expected_goals", "value": "1.85" if index else "0.92"}
+        )
+    routes["fixture_stats"].mock(return_value=httpx.Response(200, json=stats, headers=RATE_HEADERS))
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert "concédé" in _lines(migrated)["xG"]
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_un_xg_non_servi_ne_produit_aucune_ligne(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Verifie en reel : la Super League chinoise rend `expected_goals: null`.
+    Son absence ne dit rien de l'equipe, seulement du fournisseur — donc aucune
+    ligne, et surtout pas un zero qui se lirait comme une equipe sans occasion."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    stats = load_fixture("apifootball_fixture_statistics.json")
+    for equipe in stats["response"]:
+        equipe["statistics"].append({"type": "expected_goals", "value": None})
+    routes["fixture_stats"].mock(return_value=httpx.Response(200, json=stats, headers=RATE_HEADERS))
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert "xG" not in _lines(migrated)
+
+
+def test_le_template_interdit_de_convertir_le_xg() -> None:
+    """C'est la ligne la plus tentante a convertir en probabilite du bloc entier.
+    Meme garde-fou que l'Elo, et meme raison : rapprochee d'une cote, elle
+    devient le calcul d'esperance de la section 9. Le fait que le chiffre vienne
+    du fournisseur n'y change rien."""
+    from myassistantbet.config import PACKAGE_DIR
+
+    template = (PACKAGE_DIR / "templates" / "prompts" / "session_default.md.j2").read_text(
+        encoding="utf-8"
+    )
+    bloc = template[template.index("**« xG »**") : template.index("**« Possession »**")]
+
+    assert "jamais** en probabilité" in bloc
+    assert "cote" in bloc
+    assert "sortie de modèle" in bloc

@@ -60,28 +60,35 @@ compétition**, et non des pourcentages ni des moyennes :
     nombre de titularisations. Une formation à 4 sur 16 n'est pas une habitude,
     c'est un effectif qui tourne — et ça se lit sur le compte, pas sur le nom.
 
-La ligne **« Enjeu »** donne ce que la compétition déclare pour chaque équipe à
-cette place du classement — « Play-offs », « Relegation Round », « Promotion -
-Champions League ». C'est le format officiel, recopié tel quel : la fiche de
-vérification te demande l'enjeu réel de chaque match, et cette ligne y répond
-sans recherche. Elle ne dit en revanche rien de l'**écart** au premier ou au
-barragiste : ça, c'est la différence de buts et le nombre de points de la ligne
-« Classement », et souvent ta recherche. Une équipe sans ligne « Enjeu » est une
-équipe dont la compétition ne déclare rien à cette place — pas une équipe sans
-enjeu.
+La ligne **« Enjeu »** donne ce que la compétition déclare pour l'équipe à cette
+place — « Play-offs », « Relegation Round », « Promotion - Champions League ».
+Recopiée telle quelle : c'est l'enjeu réel que la fiche de vérification réclame,
+sans recherche. Elle ne dit rien de l'**écart** au premier ou au barragiste — ça,
+c'est la ligne « Classement » et ta recherche. Absente, elle signale que la
+compétition ne déclare rien à cette place, pas une équipe sans enjeu.
 
-Deux lignes décrivent la **manière**, moyennées sur les derniers matchs :
+Trois lignes décrivent la **manière**, moyennées sur les derniers matchs :
 
-  · **« Fautes »** — fautes commises, puis subies. Elle accompagne « Cartons » :
-    un arbitre ne sort un carton que sur une faute, et une équipe qui en commet
+  · **« Fautes »** — commises, puis subies. Elle accompagne « Cartons » : un
+    arbitre ne sort un carton que sur une faute, et une équipe qui en commet
     quatorze par match n'aborde pas ce marché comme celle qui en commet huit.
+  · **« xG »** — buts attendus produits, puis concédés. Elle sépare ce qu'aucun
+    compte de tirs ne sépare : marquer 2.0 pour 0.8 xG, c'est avoir été porté par
+    sa finition ; l'inverse décrit une équipe qui se crée des situations sans
+    conclure.
+
+    **C'est la seule ligne du bloc qui ne soit pas un fait observé mais une
+    sortie de modèle.** Elle porte donc la même interdiction que l'Elo : ne la
+    convertis **jamais** en probabilité, et ne la rapproche jamais d'une cote —
+    ce serait le calcul d'espérance interdit plus haut, et le fait que le chiffre
+    vienne du fournisseur n'y change rien. Sa couverture est inégale : son
+    absence ne dit rien de l'équipe, seulement du fournisseur.
   · **« Possession »** — la part du ballon. **Le seul pourcentage du bloc**, et
     il ne contredit pas l'interdiction ci-dessous : celle-ci vise les fréquences
-    d'issues, qu'un pourcentage invite à diviser par une cote. Une part de
-    ballon ne se rapporte à aucun marché, rien ne se divise par elle, et son
-    unité naturelle est le pourcentage. Elle dit qui subit — ce qu'aucune autre
-    ligne ne donne — et se lit contre le style de l'adversaire, pas seule : 60 %
-    contre un bloc bas et 60 % contre un pressing ne décrivent pas le même match.
+    d'issues, qu'un pourcentage invite à diviser par une cote. Une part de ballon
+    ne se rapporte à aucun marché, rien ne se divise par elle. Elle dit qui subit,
+    et se lit contre le style de l'adversaire : 60 % contre un bloc bas et 60 %
+    contre un pressing ne décrivent pas le même match.
 
 Trois autres lignes viennent de l'historique complet de la saison, **toutes
 compétitions confondues** — championnat, coupes, Europe — et non de la seule
