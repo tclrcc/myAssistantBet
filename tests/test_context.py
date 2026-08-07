@@ -1173,11 +1173,7 @@ def test_le_prompt_interdit_de_rapprocher_une_frequence_d_une_cote(migrated: Set
     frequence passee rapprochee d'une cote est un calcul d'esperance, et le fait
     qu'elle vienne d'un releve reel n'y change rien — meme regle que pour l'Elo
     et pour le retour d'experience."""
-    db.execute(
-        "INSERT INTO sessions (id, label, created_at) VALUES (1, 'test', ?)",
-        (db.utcnow(),),
-        settings=migrated,
-    )
+    _lot(migrated, "football")
 
     body = build_prompt(1, settings=migrated).body
 
@@ -1623,3 +1619,29 @@ def test_le_template_interdit_de_convertir_le_xg() -> None:
     assert "jamais** en probabilité" in bloc
     assert "cote" in bloc
     assert "sortie de modèle" in bloc
+
+
+def _lot(settings: Settings, sport: str) -> int:
+    """Une session portant un match de ce sport, et son identifiant.
+
+    Le preambule du prompt ne documente que les sports **presents dans le lot** :
+    une session de football n'a pas a payer les quarante lignes d'explication du
+    tennis. Ces tests portent donc sur un lot du bon sport — sur une session
+    vide, aucun garde-fou ne se rendrait, et pour cause.
+    """
+    row = db.query_one(f"SELECT id FROM sports WHERE key = '{sport}'", settings=settings)
+    db.execute(
+        "INSERT INTO events (id, sport_id, home, away, commence_time, source, created_at) "
+        "VALUES (900, ?, 'A', 'B', '2099-01-01T18:00:00Z', 'api', ?)",
+        (row["id"], db.utcnow()),
+        settings=settings,
+    )
+    db.execute(
+        "INSERT INTO sessions (id, label, created_at) VALUES (1, 'test', ?)",
+        (db.utcnow(),),
+        settings=settings,
+    )
+    db.execute(
+        "INSERT INTO session_events (session_id, event_id) VALUES (1, 900)", settings=settings
+    )
+    return 1

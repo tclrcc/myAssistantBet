@@ -657,6 +657,29 @@ scannes les jours d'avant. Aucun appel, aucune cle, aucun quota.
 - Aucun tour connu ne produit **aucune ligne**. Ecrire « 0 tour » laisserait croire a une
   entree en lice alors que le tournoi n'a peut-etre ete scanne que ce jour-la.
 - Au-dela de `MAX_DAYS`, c'est une autre semaine : le repos ne dit plus rien de la fraicheur.
+- **`Parcours`** (`path_lines`) : les adversaires deja rencontres **dans ce tournoi-ci**, du
+  premier tour au dernier, avec leur Elo quand il est connu — c'est lui qui distingue un
+  parcours facile d'un parcours d'usure, et il ne coute rien, le classement etant deja en
+  base. Les adversaires et **jamais les resultats** : un joueur present au tour suivant a
+  forcement passe le precedent, mais l'ecrire « il a battu X » supposerait qu'aucun forfait
+  n'existe.
+- **`Usure`** (`tennis_history._games_fragment`) : jeux par match sur les dix derniers, le
+  **temps passe sur le court par procuration**. Abandons et tapis verts exclus — leur score
+  est tronque a l'instant ou le match s'arrete, et les compter ferait passer un joueur qui a
+  abandonne pour un joueur aux matchs courts.
+
+**Ce qu'aucune source ne donne, verifie le 7 aout 2026** — a ne pas rechercher a nouveau
+sans raison nouvelle :
+
+- **la duree d'un match** et **les statistiques de service** (aces, doubles fautes, premiere
+  balle, balles de break). `tennis-data.co.uk` ne sert que les scores ; les pages match de
+  Tennis Abstract sont interdites par son `robots.txt` ; et les CSV de Jeff Sackmann, qui
+  les portaient, **ont disparu de GitHub** — 404 jusque sur l'API du depot. `Usure` est le
+  meilleur substitut disponible ;
+- **les resultats du tournoi en cours.** Le fichier tennis-data est hebdomadaire : le
+  7 aout, quatre jours apres le debut du Canadian Open, il s'arretait toujours au 3 aout.
+  Les resultats arrivent apres la fin du tournoi. C'est pourquoi `Parcours` sort de nos
+  propres scans et non de l'historique.
 
 ## Journees de tournoi (`services/tournament_day.py`)
 
@@ -751,6 +774,23 @@ se deduit donc, ou ne se dit pas.
   libelle — les separer diviserait par deux des echantillons deja courts. Un niveau non
   renseigne ne produit **aucune ligne** de statistiques : « non renseigne » ne dirait
   rien sur les matchs, seulement sur la saisie.
+
+## Le preambule ne documente que les sports du lot
+
+Le mode d'emploi des lignes — quarante lignes pour le tennis, autant pour le football —
+etait rendu en entier sur chaque prompt : une session de football payait l'explication de
+l'Elo et des handicaps jeux, une session de tennis celle des buteurs et des formations.
+
+`build_prompt` passe donc `sports`, l'ensemble des sports presents, et le preambule se
+garde par `{% if 'tennis' in sports %}`. Mesure : **6 555 tokens de preambule pour les deux
+sports, 5 126 pour le football seul, 4 457 pour le tennis seul** — de 22 a 32 % de
+gagnes, sur un budget que le test des huit mille tokens surveille.
+
+C'est la meme regle que pour les blocs : **ce qui n'a pas de donnee est omis, jamais rendu
+vide.** Corollaire pour les tests : un prompt construit sur une session **vide** ne porte
+aucun garde-fou de sport, et pour cause. Six tests l'ont appris en cassant — ils
+verifiaient le template a travers un rendu sans match. Ils portent desormais sur un lot du
+bon sport, ce qui teste aussi le conditionnel.
 
 ## Generer un prompt par competition
 

@@ -504,6 +504,46 @@ def _form_fragment(player: str, matches: list[Match]) -> str:
     return f"{player} {letters}/{len(recent)}"
 
 
+def _games_fragment(player: str, matches: list[Match]) -> str:
+    """`Sinner 20.4 jeux/match sur 10` — le temps passe sur le court, par procuration.
+
+    Aucune source gratuite ne publie la **duree** d'un match : ni
+    `tennis-data.co.uk`, qui ne sert que les scores, ni Tennis Abstract, dont
+    les pages match sont interdites par son `robots.txt`. Le nombre de jeux en
+    est le meilleur substitut disponible — un match en vingt jeux et un match en
+    trente-huit ne laissent pas le meme joueur le lendemain.
+
+    Les tapis verts sont exclus, comme partout, et les **abandons aussi** : leur
+    score est tronque a l'instant ou le match s'arrete, donc les compter
+    ferait passer un joueur qui a abandonne pour un joueur aux matchs courts.
+    Ils ont deja leur ligne.
+    """
+    recent = [match for match in _played(matches) if not match.retired][-FORM_LAST:]
+    totals = [total for match in recent if (total := _games_in(match.score))]
+    if not totals:
+        return ""
+    return f"{player} {sum(totals) / len(totals):.1f} jeux/match sur {len(totals)}"
+
+
+def _games_in(score: str) -> int:
+    """Jeux d'un match, reconstitues du score. Zero si le score est illisible.
+
+    Le score est stocke tel qu'il a ete recompose des colonnes de sets —
+    « 6-4 3-6 7-5 ». Un set dont un cote manque est ignore plutot que compte a
+    moitie.
+    """
+    total = 0
+    for manche in (score or "").split():
+        parts = manche.split("-")
+        if len(parts) != 2:
+            continue
+        try:
+            total += int(parts[0]) + int(parts[1])
+        except ValueError:
+            continue
+    return total
+
+
 def _surface_fragment(player: str, matches: list[Match], surface: str) -> str:
     """`Sinner dur 24V-4D/12m` — bilan sur la surface du tournoi.
 
@@ -663,6 +703,10 @@ def lines(
     form = _pair(_form_fragment(home, recent[home]), _form_fragment(away, recent[away]))
     if form:
         rendered.append(("Forme", form))
+
+    games = _pair(_games_fragment(home, recent[home]), _games_fragment(away, recent[away]))
+    if games:
+        rendered.append(("Usure", games))
 
     if names:
         last = _pair(

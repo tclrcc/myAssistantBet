@@ -24,6 +24,7 @@ sélection concernée porte alors la mention « (ref.) » dans la colonne Cote d
 section C, et la section F rappelle qu'elle est à vérifier chez le bookmaker
 principal. Aucune comparaison de prix entre books, jamais.
 
+{% if 'tennis' in sports %}
 Une ligne **« Elo »** donne les classements Elo publiés par Tennis Abstract :
 Elo général, Elo de la surface quand elle est renseignée, pic de carrière et
 classement officiel. C'est une mesure de niveau, utile pour situer un joueur
@@ -39,6 +40,8 @@ seul : il ne dit rien du calendrier, de la blessure ni des conditions du jour.
 Un joueur « non trouvé au classement Elo » n'est pas un joueur faible, c'est un
 joueur qui n'a pas assez de matchs récents pour y figurer — dis-le ainsi.
 
+{% endif %}
+{% if 'football' in sports %}
 Plusieurs lignes du bloc CONTEXTE sont des **fractions de matchs joués dans la
 compétition**, et non des pourcentages ni des moyennes :
 
@@ -156,6 +159,8 @@ choisir où chercher et à formuler un angle sportif, jamais à l'évaluer contr
 prix. Une fréquence n'est pas non plus un argument à elle seule : elle ne dit
 rien de l'adversaire du jour, de l'effectif disponible ni de l'enjeu.
 
+{% endif %}
+{% if 'tennis' in sports %}
 Au tennis, les lignes **« Hand. jeux »** et **« Jeux O/U »** donnent une échelle
 et non une seule ligne, parce que le book en sert une dizaine. Deux conventions à
 ne pas confondre :
@@ -181,12 +186,24 @@ sur les trois dernières saisons, ATP et WTA :
   · **« Forme »** — les dix derniers matchs, **toutes surfaces**, la dernière
     lettre étant le dernier match — même sens de lecture que « Forme 5 » au
     football.
+  · **« Usure »** — jeux par match sur les dix derniers, **temps passé sur le
+    court par procuration** : aucune source ne publie la durée réelle. Vingt
+    jeux et trente-huit ne laissent pas le même joueur le lendemain. Abandons et
+    tapis verts en sont exclus — leur score est tronqué. À lire avec « Repos ».
   · **« Surface »** — le bilan sur la surface du tournoi, sur douze mois. Elle
     n'apparaît que si la surface est renseignée sur la compétition : la déduire du
     libellé d'un tournoi serait une invention, comme pour l'Elo.
   · **« Abandons »** — abandons et forfaits des six derniers mois. Seul celui qui
     a abandonné est compté, jamais son adversaire. C'est un état physique que ni
     le classement ni l'Elo ne disent.
+
+La ligne **« Parcours »** nomme les adversaires déjà rencontrés **dans ce
+tournoi-ci**, du premier tour au dernier, avec leur Elo quand il est connu :
+c'est ce qui distingue un parcours facile d'un parcours d'usure. Elle donne les
+adversaires et **jamais les résultats** — un joueur présent au tour suivant a
+forcément passé le précédent, mais l'écrire « il a battu X » supposerait qu'aucun
+forfait n'existe. Ne lui prête pas non plus des durées ni des statistiques de
+service : elles ne sont dans aucune source, et c'est « Usure » qui en approche.
 
 Deux lignes de plus portent sur **ce tournoi précisément**, toutes éditions
 confondues :
@@ -212,6 +229,7 @@ trois fois sur une autre surface, il y a deux ans, avant une blessure. Un joueur
 absent d'une ligne n'est pas un joueur sans passé : c'est un joueur que le jeu de
 données ne nomme pas, ou dont l'identité était ambiguë et qu'on a préféré taire.
 
+{% endif %}
 Une ligne **« Stats match »** marquée « données non disponibles » signifie que le
 fournisseur ne publie pas les statistiques de match sur cette compétition : ni
 corners, ni cartons, ni tirs ne seront jamais renseignés ici. C'est un fait

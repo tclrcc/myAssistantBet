@@ -87,6 +87,8 @@ CONTEXT_ICONS = {
     "H2H": "duel",
     "Tour": "echelons",
     "Repos": "lit",
+    "Parcours": "echelons",
+    "Usure": "chrono",
     "Elo": "jauge",
     "Surface": "tennis",
     "Abandons": "sortie",

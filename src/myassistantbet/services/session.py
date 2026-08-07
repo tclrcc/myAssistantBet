@@ -279,6 +279,11 @@ def context_block(
         # du meme tournoi ont ete scannes les jours d'avant. Aucun appel, aucune
         # cle — et c'est l'information que l'analyse allait chercher a la main.
         lines += tennis_load.lines(home, away, competition_id, commence_time, settings)
+        # Qui a ete rencontre ici, et a quel niveau. Aucun appel : les tours
+        # precedents ont ete scannes les jours d'avant, et l'Elo est deja en base.
+        lines += tennis_load.path_lines(
+            home, away, competition_id, commence_time, oddsapi_key, settings
+        )
         # L'historique des matchs joues : confrontations directes, palmares dans
         # ce tournoi, forme, bilan de surface et abandons.
         lines += tennis_history.lines(home, away, surface, commence_time, settings, competition_id)

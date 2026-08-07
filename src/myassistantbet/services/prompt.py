@@ -286,6 +286,12 @@ def build_prompt(
             session_label=session_label(session_id, settings),
             tiers=load_tiers(settings),
             tz=settings.tz,
+            # Les sports presents dans le lot. Le preambule documente les
+            # lignes de chaque sport, et une session de football payait jusqu'ici
+            # les quarante lignes d'explication du tennis — et l'inverse. C'est
+            # la meme regle que pour les blocs : ce qui n'a pas de donnee est
+            # omis, jamais rendu vide.
+            sports=sorted({event.sport_key for event in events}),
             catalogues=catalogues(session_id, settings, moment),
             competition_notes=competition_notes(session_id, settings, moment),
             # Les consignes permanentes et le retour d'experience ne coutent
