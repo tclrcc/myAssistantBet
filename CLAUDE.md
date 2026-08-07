@@ -874,8 +874,32 @@ framework ni build step. Il ne porte que ce qu'un aller-retour serveur rendrait 
 aujourd'hui la case « tout cocher ». Tout le reste passe par HTMX.
 
 Les tokens de style vivent dans `:root`. Changer l'apparence se fait la, jamais page par
-page : `--edge` (liseré clair en haut d'une surface) porte le relief, la lueur de `body::before`
-donne une direction a la lumiere.
+page : `--edge` (liseré clair en haut d'une surface) porte le relief, `--surface` (degrade
+de deux pour cent) lui donne son epaisseur, et la lueur de `body::before` donne une
+direction a la lumiere. Les trois vont dans le meme sens — lumiere en haut — et s'annulent
+des qu'on les contrarie.
+
+- `--surface` est applique **en un seul endroit**, par une liste de selecteurs groupee en
+  fin de feuille. Sept declarations dispersees auraient diverge au premier ajout. Les
+  surfaces qui portent deja leur propre degrade (`.tile`, `button.primary`) n'y figurent
+  pas — le leur est plus marque, et c'est voulu ; `pre#prompt-body` non plus, un bloc a
+  chasse fixe se lisant mieux sur un fond uni.
+- **Le bandeau est fait de pastilles, pas d'une phrase.** Separees par des blancs,
+  « credits 19540 plancher 500 appels contexte 7388 » obligeait l'oeil a redecouper les
+  paires a chaque passage. `.banner-item.actions` fait sortir les boutons de ce traitement :
+  ils portent deja leur fond.
+- `table.board` porte `font-variant-numeric: tabular-nums` **en entier**, pas seulement sur
+  `.num` : l'heure et les comptes y echappaient, et « 07/08 13:35 » ne s'alignait pas avec
+  « 07/08 17:00 ». Sur soixante-seize lignes, ce tremblement se voit.
+- `th[colspan]` se centre. Aligne a gauche, « 1N2 » se posait au-dessus de sa premiere
+  colonne : rien ne disait qu'il en coiffait trois.
+- La densite du board est un choix mesure : a `0.45rem` de rembourrage vertical il tient
+  seize lignes a l'ecran contre treize, et l'usage est de les balayer.
+- **La figure de tete des statistiques se couche quand elle est seule** (≥ 900 px). La
+  borner a 26 rem restait juste — un chiffre perdu au milieu de 1400 px se lit moins bien —
+  mais ouvrait un vide sur toute la droite. En grille, le chiffre garde son ancrage a
+  gauche et sa taille, la barre et son detail passent a cote.
+- `prefers-reduced-motion` coupe toutes les transitions : le mouvement est un ornement.
 
 **Piege verifie, a ne pas reintroduire** : `.filters label` empile ses enfants en colonne
 (c'est ce qui met le libelle au-dessus de son champ). Toute pastille placee dans la barre

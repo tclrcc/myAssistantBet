@@ -45,6 +45,16 @@
      c'est ce qui donne du relief sans empiler les ombres. */
   --edge: inset 0 1px 0 rgba(255, 255, 255, 0.04);
 
+  /* Une surface n'est jamais d'un seul ton : un degrade de deux pour cent
+     suffit a lui donner une epaisseur, la ou un aplat parait imprime. Il
+     accompagne `--edge` — la lumiere vient du haut, la surface s'assombrit en
+     descendant — et reste assez faible pour ne jamais se lire comme une
+     couleur. */
+  --surface: linear-gradient(180deg, rgba(255, 255, 255, 0.022), rgba(255, 255, 255, 0));
+  /* Ombre portee d'un element qui agit, teintee de son accent plutot que noire :
+     une ombre neutre sous un bouton colore le fait paraitre decolle du fond. */
+  --shadow-accent: 0 1px 2px rgba(0, 0, 0, 0.35), 0 6px 18px rgba(91, 140, 250, 0.28);
+
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
@@ -143,18 +153,33 @@ main { padding: var(--s5); max-width: 1440px; margin: 0 auto; }
 .pick-form {
   display: flex;
   align-items: center;
-  gap: var(--s5);
+  gap: var(--s2);
   flex-wrap: wrap;
-  padding: var(--s3) var(--s4);
-  background: var(--panel);
+  padding: var(--s3);
+  background: var(--panel) var(--surface);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   box-shadow: var(--edge);
   margin-bottom: var(--s4);
 }
+/* Chaque mesure dans sa propre pastille. En une seule ligne separee par des
+   blancs, « credits 19540 plancher 500 appels contexte 7388 » se lisait comme
+   une phrase : l'oeil devait redecouper les paires a chaque passage. Un fond
+   ferme le groupe, et le blanc entre pastilles n'a plus a faire ce travail. */
 .banner-item,
-.enrich-bar .estimate { display: flex; align-items: baseline; gap: var(--s2); }
+.enrich-bar .estimate {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  padding: var(--s2) var(--s3);
+  background: var(--panel-2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+}
 .banner-item.push { margin-left: auto; }
+/* Les boutons du bandeau ne sont pas des mesures : ils gardent leur propre
+   fond, et la pastille ne doit pas s'y ajouter. */
+.banner-item.actions { padding: 0; background: none; border: 0; }
 
 .label,
 .banner .label,
@@ -338,11 +363,16 @@ table.board {
   width: 100%;
   border-collapse: separate;
   border-spacing: 0;
-  background: var(--panel);
+  background: var(--panel) var(--surface);
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   box-shadow: var(--edge);
   font-size: 0.9rem;
+  /* Toute la table en chiffres a chasse fixe. `.num` le faisait deja colonne
+     par colonne, mais l'heure et les comptes y echappaient : « 07/08 13:35 »
+     et « 07/08 17:00 » ne s'alignaient pas d'une ligne a l'autre, et sur
+     soixante-seize lignes ce tremblement se voit. */
+  font-variant-numeric: tabular-nums;
 }
 table.board th {
   position: sticky;
@@ -359,12 +389,20 @@ table.board th {
   border-bottom: 1px solid var(--line);
   white-space: nowrap;
 }
+/* Un en-tete qui coiffe plusieurs colonnes se centre sur elles. Aligne a
+   gauche, « 1N2 » se posait au-dessus de sa premiere colonne et « O/U »
+   au-dessus de la sienne : rien ne disait que chacun en couvrait trois. */
+table.board th[colspan] { text-align: center; }
 table.board thead tr:first-child th:first-child { border-top-left-radius: var(--radius); }
 table.board thead tr:first-child th:last-child { border-top-right-radius: var(--radius); }
 table.board tbody tr:last-child td:first-child { border-bottom-left-radius: var(--radius); }
 table.board tbody tr:last-child td:last-child { border-bottom-right-radius: var(--radius); }
+/* Densite : un board porte soixante-seize lignes, et l'usage est de les
+   balayer. A 0.75rem de rembourrage vertical, treize tenaient dans l'ecran ;
+   a 0.45rem il en tient seize, sans que les lignes se touchent — la hauteur
+   de ligne du texte fait le reste du travail. */
 table.board td {
-  padding: var(--s3);
+  padding: 0.45rem var(--s3);
   border-bottom: 1px solid var(--line-soft);
   vertical-align: middle;
 }
@@ -978,8 +1016,31 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
   margin-bottom: var(--s4);
 }
 /* Seule, la figure de tete n'a pas a s'etaler sur toute la largeur : un chiffre
-   perdu au milieu d'une carte de 1400 px se lit moins bien, pas mieux. */
+   perdu au milieu d'une carte de 1400 px se lit moins bien, pas mieux.
+   Mais la borner a 26 rem ouvrait un vide sur toute la droite de l'ecran, en
+   haut de la page la plus consultee. Elle prend donc la largeur **en se
+   couchant** : le chiffre reste ancre a gauche et a sa taille — l'objection
+   d'origine tient toujours — pendant que la barre et son detail passent a
+   cote au lieu de dessous. */
 .kpi > .tile:only-child { max-width: 26rem; }
+
+@media (min-width: 900px) {
+  .kpi > .tile:only-child {
+    max-width: none;
+    display: grid;
+    grid-template-columns: minmax(auto, 14rem) minmax(0, 1fr);
+    align-items: center;
+    column-gap: var(--s6);
+    row-gap: var(--s1);
+  }
+  .kpi > .tile:only-child .label { grid-column: 1; grid-row: 1; align-self: end; }
+  .kpi > .tile:only-child .hero-figure { grid-column: 1; grid-row: 2; align-self: start; }
+  .kpi > .tile:only-child .track { grid-column: 2; grid-row: 1; margin: 0; align-self: end; }
+  .kpi > .tile:only-child .tile-detail { grid-column: 2; grid-row: 2; align-self: start; }
+  /* La note eventuelle reprend toute la largeur : elle commente l'ensemble,
+     pas la colonne de droite. */
+  .kpi > .tile:only-child > .muted { grid-column: 1 / -1; }
+}
 .tile {
   display: flex;
   flex-direction: column;
@@ -1314,3 +1375,47 @@ td .sport {
 }
 .recent-matches table { font-size: 0.8rem; }
 .recent-matches .empty { margin: 0; }
+
+/* --- Epaisseur des surfaces ------------------------------------------------
+   Un aplat sombre parait imprime ; deux pour cent de degre suffisent a lui
+   donner une epaisseur. Le degrade suit `--edge` — la lumiere vient du haut,
+   la surface s'assombrit en descendant — et reste sous le seuil ou l'oeil le
+   lirait comme une couleur.
+
+   Regroupe ici plutot que declare surface par surface : c'est la meme
+   intention partout, et sept declarations dispersees auraient diverge au
+   premier ajout. Les surfaces qui portaient deja leur propre degrade
+   (`.tile`, `button.primary`) n'y figurent pas — le leur est plus marque, et
+   c'est voulu. `pre#prompt-body` non plus : un bloc de texte a chasse fixe se
+   lit mieux sur un fond parfaitement uni. */
+.odds-summary,
+.market,
+details.panel,
+.coupon,
+.grid-head,
+.paste-form,
+.chart-card,
+.context-card {
+  background-image: var(--surface);
+}
+
+/* Une ombre teintee de l'accent sous le bouton qui agit. Une ombre neutre le
+   faisait paraitre pose sur le fond ; celle-ci le relie a sa couleur. Elle
+   n'apparait qu'au survol : permanente, elle ferait vibrer toute la page. */
+button.primary:hover { box-shadow: var(--shadow-accent), var(--edge); }
+
+/* Titres legerement resserres. Aux graisses hautes, l'espacement par defaut
+   d'une police systeme est calibre pour du texte courant et rend les titres
+   mous. `.page-head h1` le faisait deja ; c'est vrai de tous les niveaux. */
+h1, h2, h3 { letter-spacing: -0.015em; }
+
+/* Le mouvement est un ornement : qui l'a desactive au niveau du systeme ne
+   doit pas le subir ici. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
