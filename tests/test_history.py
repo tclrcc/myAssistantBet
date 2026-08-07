@@ -19,6 +19,7 @@ from myassistantbet.services.history import (
     delete_pick,
     list_picks,
     list_sessions,
+    pickable_events,
     pickable_groups,
     set_event,
     set_result,
@@ -432,7 +433,14 @@ def test_les_matchs_sont_groupes_par_sport_et_competition(migrated: Settings) ->
 
     assert "Football · Amical" in groups
     assert "Tennis · ATP Canadian Open" in groups
-    assert [event.label for event in groups["Tennis · ATP Canadian Open"]] == ["Moutet – Bergs"]
+    # L'heure precede l'affiche sur **tous** les matchs, shortlist comprise :
+    # une session porte trente affiches sur deux jours et le rattachement se
+    # fait de memoire — « le match de 18h00 ». Sans l'heure, il fallait
+    # reconnaitre l'affiche pour retrouver le match, ce dont on n'est
+    # justement pas sur.
+    assert [event.label for event in groups["Tennis · ATP Canadian Open"]] == [
+        "04/08 18:00 · Moutet – Bergs"
+    ]
 
 
 def test_un_evenement_sans_competition_reste_groupe(migrated: Settings) -> None:
@@ -898,3 +906,90 @@ def test_la_page_de_stats_porte_l_interdiction(
 
     assert "Aucun indicateur financier n'est produit" in page
     assert "espérance" in page
+
+
+def test_la_recherche_leve_la_fenetre_de_temps(migrated: Settings) -> None:
+    """Le voisinage de la session couvre la journee de travail, pas un match
+    joue la semaine d'avant ni un report. Quand le match cherche n'est nulle
+    part dans le menu, il n'y avait plus aucun recours : la selection restait
+    sans evenement, donc sans sport, donc muette dans les statistiques."""
+    session_id, _ = _session_avec_match(migrated, "football")
+    lointain = save(
+        build(
+            "tennis",
+            "ATP Canadian Open",
+            "Alcaraz",
+            "Sinner",
+            "2026-06-01",  # bien au-dela de PICKABLE_BEFORE_H
+            "18:00",
+            "Alcaraz 1.80",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+
+    sans = {e.event_id for e in pickable_events(session_id, migrated)}
+    avec = {e.event_id for e in pickable_events(session_id, migrated, "Alcaraz")}
+
+    assert lointain not in sans, "hors fenetre, le match n'est pas propose"
+    assert lointain in avec, "la recherche par libelle doit le retrouver"
+
+
+def test_la_recherche_porte_aussi_sur_la_competition(migrated: Settings) -> None:
+    """On se souvient parfois du tournoi, pas des deux noms."""
+    session_id, _ = _session_avec_match(migrated, "football")
+    save(
+        build(
+            "tennis",
+            "ATP Canadian Open",
+            "Alcaraz",
+            "Sinner",
+            "2026-06-01",
+            "18:00",
+            "Alcaraz 1.80",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+
+    trouves = pickable_events(session_id, migrated, "Canadian")
+
+    assert any(e.home == "Alcaraz" for e in trouves)
+
+
+def test_une_recherche_sans_resultat_ne_rend_rien(migrated: Settings) -> None:
+    """Et surtout pas la liste ordinaire : on croirait avoir trouve."""
+    session_id, _ = _session_avec_match(migrated, "football")
+
+    assert pickable_events(session_id, migrated, "zzzz-introuvable") == []
+
+
+def test_les_groupes_sont_ranges_par_heure(migrated: Settings) -> None:
+    """Ils l'etaient par identifiant de sport puis par nom de competition :
+    « Bundesliga 2 » passait devant « Premier League » pour des raisons
+    alphabetiques. Une session se relit dans l'ordre ou elle s'est jouee."""
+    session_id, _ = _session_avec_match(migrated, "football")  # Amical, 20:00
+    tot = save(
+        build(
+            "tennis",
+            "ATP Canadian Open",
+            "Moutet",
+            "Bergs",
+            "2026-08-04",
+            "12:00",
+            "Moutet 1.80",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+    board_service.toggle_selection(tot, True, migrated)
+
+    noms = [nom for nom, _ in pickable_groups(session_id, migrated)]
+
+    assert noms.index("Tennis · ATP Canadian Open") < noms.index("Football · Amical")

@@ -1065,6 +1065,30 @@ def set_pick_result(
     return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
 
 
+@app.get("/history/{session_id}/pick-options", response_class=HTMLResponse)
+def pick_options(
+    request: Request, session_id: int, q: str = "", selected_id: str = ""
+) -> HTMLResponse:
+    """Options d'un selecteur de match, filtrees par une recherche de libelle.
+
+    Ne rend que les `<option>`, jamais le formulaire : la recherche remplace le
+    contenu du menu qui la suit, et rerendre le formulaire ferait perdre le
+    focus a chaque frappe.
+
+    `q` vide redonne la liste ordinaire — c'est ce qui permet d'effacer sa
+    recherche sans recharger la page.
+    """
+    settings = get_settings()
+    return templates.TemplateResponse(
+        request,
+        "_pick_options.html",
+        {
+            "events": history_service.pickable_groups(session_id, settings, q),
+            "selected_id": _int_or_none(selected_id),
+        },
+    )
+
+
 @app.get("/picks/{pick_id}/event", response_class=HTMLResponse)
 def edit_pick_event(request: Request, pick_id: int) -> HTMLResponse:
     """Selecteur de match d'une selection, charge a la demande.

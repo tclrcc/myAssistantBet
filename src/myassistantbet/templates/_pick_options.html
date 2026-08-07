@@ -1,0 +1,25 @@
+{# Options d'un selecteur de match, seule source de cette liste.
+
+   Elle etait recopiee a trois endroits — l'apercu d'import, l'ajout a la main
+   et le rattachement d'une selection deja enregistree. Trois copies, donc trois
+   occasions de diverger : la recherche n'aurait ete branchee que sur l'une
+   d'elles, et les deux autres auraient continue de ne rien trouver.
+
+   `selected_id` peut etre absent : les formulaires de creation n'ont rien a
+   preselectionner. #}
+<option value="">— hors match —</option>
+{% for group, group_events in events %}
+<optgroup label="{{ group }}">
+  {% for event in group_events %}
+    <option value="{{ event.event_id }}"
+            {% if selected_id is defined and event.event_id == selected_id %}selected{% endif %}>
+      {{ event.label }}
+    </option>
+  {% endfor %}
+</optgroup>
+{% endfor %}
+{% if not events %}
+  {# Une recherche sans resultat se dit. Un menu reduit a « hors match » se
+     lirait comme une panne, alors que c'est une reponse. #}
+  <option value="" disabled>aucun match ne correspond</option>
+{% endif %}

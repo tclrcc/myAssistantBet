@@ -1,18 +1,19 @@
 {# Selecteur de match d'une selection deja enregistree. Rendu a la demande dans
    la cellule, il remplace le libelle par le menu ; valider rend la feuille
-   entiere, car changer de match change aussi le sport d'un coupon. #}
+   entiere, car changer de match change aussi le sport d'un coupon.
+
+   La recherche vise le `select` qui la suit et n'en remplace que **les
+   options** : rerendre le formulaire entier ferait perdre le focus a chaque
+   frappe, donc rendrait la recherche inutilisable. #}
 <form class="pick-event" hx-post="/picks/{{ pick.pick_id }}/event"
       hx-target="#worksheet" hx-swap="outerHTML">
+  <input type="search" name="q" class="pick-search" placeholder="chercher un match…"
+         aria-label="Chercher un match hors de la journée"
+         hx-get="/history/{{ pick.session_id }}/pick-options?selected_id={{ pick.event_id or '' }}"
+         hx-target="next select" hx-swap="innerHTML"
+         hx-trigger="keyup changed delay:300ms, search">
   <select name="event_id" aria-label="Match de la sélection {{ pick.selection }}">
-    <option value="">— hors match —</option>
-    {% for group, group_events in events %}
-    <optgroup label="{{ group }}">
-      {% for event in group_events %}
-        <option value="{{ event.event_id }}"
-                {% if event.event_id == pick.event_id %}selected{% endif %}>{{ event.label }}</option>
-      {% endfor %}
-    </optgroup>
-    {% endfor %}
+    {% with selected_id = pick.event_id %}{% include "_pick_options.html" %}{% endwith %}
   </select>
   <button type="submit" class="link-action">rattacher</button>
 </form>

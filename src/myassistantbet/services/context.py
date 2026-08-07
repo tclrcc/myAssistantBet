@@ -445,6 +445,40 @@ def _covers_lineups(coverage: dict[str, Any]) -> bool:
     return bool(fixtures.get("lineups", True))
 
 
+def _lineup_payload(rows: list[dict[str, Any]], home_id: Any, away_id: Any) -> dict[str, Any]:
+    """Charge utile d'une composition, rangee par cote.
+
+    **Ecrite une seule fois** : `fetch_context` et le balayage planifie la
+    construisent tous les deux, et deux mises en forme paralleles de la meme
+    reponse auraient fini par diverger — le banc collecte d'un cote, oublie de
+    l'autre.
+    """
+    sides = {home_id: "home", away_id: "away"}
+    payload: dict[str, Any] = {}
+    for row in rows:
+        side = sides.get((row.get("team") or {}).get("id"))
+        if side is None:
+            continue
+        payload[side] = {
+            "formation": row.get("formation"),
+            "starters": [
+                name
+                for entry in row.get("startXI") or []
+                if (name := (entry.get("player") or {}).get("name"))
+            ],
+            # Le banc est **collecte et jamais rendu dans le prompt** : vingt-
+            # quatre noms de plus y couteraient plus qu'ils n'apprennent. Il est
+            # garde parce qu'il ne coute aucun appel de plus et qu'il a sa place
+            # sur la fiche, ou l'ecran n'a pas de budget de tokens.
+            "bench": [
+                name
+                for entry in row.get("substitutes") or []
+                if (name := (entry.get("player") or {}).get("name"))
+            ],
+        }
+    return payload
+
+
 def _lineup_due(commence_time: str | None, now: datetime | None = None) -> bool:
     """Vrai si le coup d'envoi est proche, et pas encore passe.
 
@@ -641,30 +675,9 @@ async def fetch_context(
             # dit rien de l'equipe. L'annoncer « non disponible » ferait chercher
             # un trou de collecte la ou il n'y a qu'une heure trop tot.
             raise _NotCovered
-        rows = await client.lineups(mapping.fixture_id)
-        sides = {mapping.home_id: "home", mapping.away_id: "away"}
-        payload: dict[str, Any] = {}
-        for row in rows:
-            side = sides.get((row.get("team") or {}).get("id"))
-            if side is None:
-                continue
-            payload[side] = {
-                "formation": row.get("formation"),
-                "starters": [
-                    name
-                    for entry in row.get("startXI") or []
-                    if (name := (entry.get("player") or {}).get("name"))
-                ],
-                # Le banc est **collecte et jamais rendu dans le prompt** : vingt-
-                # quatre noms de plus y couteraient plus qu'ils n'apprennent. Il
-                # est garde parce qu'il ne coute aucun appel de plus et qu'il a
-                # sa place sur la fiche, ou l'ecran n'a pas de budget de tokens.
-                "bench": [
-                    name
-                    for entry in row.get("substitutes") or []
-                    if (name := (entry.get("player") or {}).get("name"))
-                ],
-            }
+        payload = _lineup_payload(
+            await client.lineups(mapping.fixture_id), mapping.home_id, mapping.away_id
+        )
         # Une reponse vide n'est **pas** persistee : les compositions sortent au
         # compte-gouttes, et figer « rien » empecherait un second essai dix
         # minutes plus tard de rapporter quelque chose.
@@ -1002,6 +1015,76 @@ def _rest_days(summary: dict[str, Any] | None, commence_time: str) -> str:
     # debut d'apres-midi font « 6j » de repos, pas 5 tranches de 24 heures.
     days = (start.date() - last.date()).days
     return f"{days}j" if days >= 0 else ""
+
+
+@dataclass
+class LineupSweep:
+    """Ce qu'une passe de rafraichissement des compositions a fait."""
+
+    checked: int = 0
+    fetched: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+
+
+async def refresh_due_lineups(
+    client: APIFootballClient,
+    settings: Settings | None = None,
+    now: datetime | None = None,
+) -> LineupSweep:
+    """Recupere les compositions des matchs dont le coup d'envoi approche.
+
+    **Ciblee, pas un contexte complet.** `fetch_context` fait une dizaine
+    d'appels ; ici il en faut un par match, et seulement pour ce qui manque.
+    Tout ce dont elle a besoin est deja en base : `apifootball_fixture_id` sur
+    l'evenement, et la couverture memorisee au rapprochement (`KIND_TEAMS`).
+
+    Le perimetre est la **shortlist** : ce sont les matchs qui iront dans un
+    prompt. Un match jamais coche n'a pas besoin de sa composition, et
+    l'appeler pour tout le board depenserait le quota sur des rencontres que
+    personne n'analysera.
+
+    Un match dont la composition est deja en base n'est pas redemande : elle ne
+    change plus une fois publiee.
+    """
+    settings = settings or get_settings()
+    sweep = LineupSweep()
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT e.id, e.home, e.away, e.commence_time, e.apifootball_fixture_id "
+            "FROM session_events se "
+            "JOIN events e ON e.id = se.event_id "
+            "JOIN sports s ON s.id = e.sport_id "
+            "WHERE s.key = 'football' AND e.apifootball_fixture_id IS NOT NULL "
+            "  AND NOT EXISTS (SELECT 1 FROM context c "
+            "                  WHERE c.event_id = e.id AND c.kind = ?) "
+            "ORDER BY e.commence_time",
+            (KIND_LINEUPS,),
+        ).fetchall()
+
+    for row in rows:
+        if not _lineup_due(row["commence_time"], now):
+            continue
+        data = load(int(row["id"]), settings)
+        teams = data.get(KIND_TEAMS) or {}
+        if not teams or not _covers_lineups(teams.get("coverage") or {}):
+            # Sans rapprochement memorise, il faudrait le refaire — donc payer
+            # `/fixtures`. Ce balayage doit rester a un appel par match.
+            continue
+        sweep.checked += 1
+        label = f"{row['home']} – {row['away']}"
+        try:
+            payload = _lineup_payload(
+                await client.lineups(int(row["apifootball_fixture_id"])),
+                teams.get("home"),
+                teams.get("away"),
+            )
+        except ProviderError as exc:
+            sweep.errors.append(f"{label} : {exc}")
+            continue
+        if payload:
+            store(int(row["id"]), KIND_LINEUPS, payload, settings)
+            sweep.fetched.append(label)
+    return sweep
 
 
 def context_lines(

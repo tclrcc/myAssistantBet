@@ -726,7 +726,26 @@ lot merite d'etre coupe.
 - `pickable_events()` : les matchs proposes au rattachement d'une selection. La shortlist
   d'abord — c'est ce qui a ete analyse — puis les matchs voisins de la session
   (`PICKABLE_BEFORE_H` / `PICKABLE_AFTER_H` autour de son `created_at`), marques
-  « hors selection » et horodates. **Sans ce second groupe, un match commence etait
+  « hors selection » et horodates.
+  - **`query` leve la fenetre de temps, et elle seule** (`SEARCH_LIMIT`, 50). Le voisinage
+    couvre la journee de travail, pas un pari pose trois jours plus tot ni un match
+    reporte : quand le match cherche n'etait nulle part dans le menu, il n'y avait plus
+    aucun recours et la selection restait sans evenement — donc sans sport, donc muette
+    dans les statistiques. La recherche porte sur les deux equipes **et** la competition :
+    on se souvient parfois du tournoi et pas des noms.
+  - **L'heure precede l'affiche sur tous les matchs**, plus seulement hors shortlist. Une
+    session porte trente affiches sur deux jours et le rattachement se fait de memoire
+    (« le match de 20h30 ») : sans l'heure, il fallait reconnaitre l'affiche pour
+    retrouver le match, ce dont on n'est justement pas sur.
+  - **Les groupes sont ranges par heure du premier match**, shortlist d'abord. Ils
+    l'etaient par identifiant de sport puis par nom : « Bundesliga 2 » passait devant
+    « Premier League » pour des raisons alphabetiques. Une session se relit dans l'ordre
+    ou elle s'est jouee.
+  - `_pick_options.html` est la **seule** source de cette liste d'options. Elle etait
+    recopiee a trois endroits — apercu d'import, ajout a la main, rattachement — donc
+    trois occasions de diverger : la recherche n'aurait ete branchee que sur l'une
+    d'elles. La recherche ne remplace que les `<option>` du menu qui la suit ; rerendre
+    le formulaire ferait perdre le focus a chaque frappe. **Sans ce second groupe, un match commence etait
   irrattachable** : il a quitte le board, il n'a donc jamais pu etre coche, et la
   selection qui le visait restait « — hors match — » — donc sans sport ni competition,
   donc muette dans les statistiques. `set_event()` corrige apres coup, et refuse un
@@ -828,6 +847,37 @@ donc rien qui puisse manquer un matin.
   l'utilisateur, recopiees en tete de prompt. Elles priment sur les preferences generales
   du template, **jamais sur les interdits** — le template le dit noir sur blanc. Seule leur
   longueur est bornee : ce texte n'est ni compile ni interprete.
+
+## Ce que l'application fait toute seule (`scheduler.py`)
+
+Une regle separe le planifie du manuel : **rien de ce qui coute des credits The Odds API
+ne part sans decision humaine.** Le scan quotidien est la seule exception, et il precede
+la regle — c'est lui qui remplit le board du matin, sans quoi il n'y aurait rien a cocher.
+
+- `SCAN_JOB_ID` — le scan, a `SCAN_AT`.
+- `FREE_JOB_ID` — Elo tennis, historique tennis, synchronisation des competitions, groupes
+  `FREE_JOB_DELAY_MIN` apres le scan. Tous gratuits. Ils ne se declenchaient qu'a
+  l'enrichissement, ce qui laissait une installation sans session avec des classements
+  figes. Chaque source est isolee : celle qui echoue ne prive pas les autres.
+- `LINEUPS_JOB_ID` — les compositions, toutes les `LINEUPS_EVERY_MIN` (10). Elles sortent
+  environ une heure avant le coup d'envoi **sans horaire fixe** : une passe quotidienne les
+  manquerait toutes. Un passage manque ne se rattrape pas (`misfire_grace_time` court) —
+  la fenetre a bouge, et rejouer un balayage en retard appellerait pour des matchs deja
+  commences.
+
+**L'etage B n'est pas planifie, et ce n'est pas un oubli.** Il depense de vrais credits,
+une shortlist de trente matchs en vaut quelques centaines, et `ODDS_API_CREDIT_FLOOR`
+protege le fond du quota mais pas le gaspillage. Un test le verifie, pour qu'il ne soit
+pas ajoute par megarde.
+
+`context.refresh_due_lineups()` est **cible** : un appel par match, jamais un contexte
+complet. Tout ce dont il a besoin est deja en base — `apifootball_fixture_id` sur
+l'evenement, couverture memorisee dans `KIND_TEAMS`. Trois filtres avant l'appel : la
+shortlist (un match jamais coche n'ira dans aucun prompt), la couverture, et la
+composition deja connue — elle ne change plus une fois publiee, et sans ce dernier filtre
+chaque match serait redemande toutes les dix minutes jusqu'a son coup d'envoi.
+`_lineup_payload()` est ecrit une seule fois : `fetch_context` et le balayage le
+partagent, sans quoi le banc serait collecte d'un cote et oublie de l'autre.
 
 ## Deploiement et sauvegardes
 

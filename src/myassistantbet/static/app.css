@@ -747,6 +747,9 @@ tr:hover .link-quiet, .link-quiet:focus-visible { color: var(--muted); }
 .link-quiet:hover { color: var(--accent); text-decoration: underline; }
 .pick-match .link-action { margin-left: var(--s2); }
 .pick-event { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
+/* Recherche d'un match hors de la journee. Etroite a dessein : elle est le
+   recours, pas le geste ordinaire — le menu suffit dans la plupart des cas. */
+.pick-search { width: 11rem; font-size: 0.85rem; }
 .pick-event select { max-width: 20rem; }
 
 /* Quatre etats, un clic chacun. Un menu deroulant en demandait deux, et la

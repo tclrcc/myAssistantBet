@@ -19,6 +19,8 @@ from myassistantbet.services.context import (
     context_lines,
     fetch_context,
     load,
+    refresh_due_lineups,
+    store,
 )
 from myassistantbet.services.matching import save_alias
 from myassistantbet.services.prompt import build_prompt
@@ -1327,3 +1329,133 @@ async def test_une_compo_vide_n_est_pas_figee(
 
     assert "lineups" not in load(1, migrated)
     assert "Compos" not in _lines(migrated)
+
+
+# -- Balayage planifie des compositions ---------------------------------------
+
+
+def _shortlist(settings: Settings, event_id: int = 1) -> None:
+    db.execute(
+        "INSERT INTO sessions (label, created_at) VALUES ('x', ?)",
+        (db.utcnow(),),
+        settings=settings,
+    )
+    session = db.query_one("SELECT id FROM sessions ORDER BY id DESC LIMIT 1", settings=settings)
+    db.execute(
+        "INSERT INTO session_events (session_id, event_id) VALUES (?, ?)",
+        (session["id"], event_id),
+        settings=settings,
+    )
+    db.execute(
+        "UPDATE events SET apifootball_fixture_id = 1122334 WHERE id = ?",
+        (event_id,),
+        settings=settings,
+    )
+
+
+def _memorise_mapping(settings: Settings, lineups: bool = True) -> None:
+    """Ce que `resolve_fixture` ecrit au rapprochement, et que le balayage relit."""
+    store(
+        1,
+        "teams",
+        {
+            "home": 376,
+            "away": 377,
+            "league": 113,
+            "season": 2026,
+            "coverage": {"fixtures": {"lineups": lineups}, "injuries": True},
+        },
+        settings,
+    )
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_balayage_ne_coute_qu_un_appel_par_match(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Tout ce dont il a besoin est deja en base : l'identifiant de match sur
+    l'evenement, la couverture memorisee au rapprochement. Repasser par
+    `fetch_context` couterait une dizaine d'appels pour une seule donnee."""
+    _seed_event(migrated)
+    _shortlist(migrated)
+    _memorise_mapping(migrated)
+    route = _mock_lineups(load_fixture)
+    autres = _mock_all(load_fixture)
+
+    sweep = await refresh_due_lineups(api_client, migrated, now=PROCHE)
+
+    assert route.call_count == 1
+    assert sweep.fetched == ["BK Hacken – Djurgardens IF"]
+    assert all(r.call_count == 0 for r in autres.values()), "aucun autre endpoint appele"
+    assert "BK Hacken (4-4-2)" in dict(_lines(migrated))["Compos"]
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_balayage_respecte_la_fenetre(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Il tourne toutes les dix minutes : hors fenetre, il ne doit rien couter
+    de plus qu'une lecture en base."""
+    _seed_event(migrated)
+    _shortlist(migrated)
+    _memorise_mapping(migrated)
+    route = _mock_lineups(load_fixture)
+
+    sweep = await refresh_due_lineups(api_client, migrated, now=LOIN)
+
+    assert route.call_count == 0
+    assert sweep.checked == 0
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_balayage_ignore_une_competition_sans_compositions(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """La couverture est deja connue : la relire est gratuit, l'appel non."""
+    _seed_event(migrated)
+    _shortlist(migrated)
+    _memorise_mapping(migrated, lineups=False)
+    route = _mock_lineups(load_fixture)
+
+    await refresh_due_lineups(api_client, migrated, now=PROCHE)
+
+    assert route.call_count == 0
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_balayage_ne_redemande_pas_une_compo_connue(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Une composition ne change plus une fois publiee, et le balayage repasse
+    toutes les dix minutes : sans ce filtre, chaque match serait redemande
+    jusqu'a son coup d'envoi."""
+    _seed_event(migrated)
+    _shortlist(migrated)
+    _memorise_mapping(migrated)
+    route = _mock_lineups(load_fixture)
+    await refresh_due_lineups(api_client, migrated, now=PROCHE)
+
+    await refresh_due_lineups(api_client, migrated, now=PROCHE)
+
+    assert route.call_count == 1, "le second passage ne redemande rien"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_balayage_ignore_un_match_hors_shortlist(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Un match que personne n'a coche n'ira dans aucun prompt : payer sa
+    composition depenserait le quota sur une rencontre que rien ne lira."""
+    _seed_event(migrated)
+    _memorise_mapping(migrated)
+    db.execute("UPDATE events SET apifootball_fixture_id = 1122334 WHERE id = 1", settings=migrated)
+    route = _mock_lineups(load_fixture)
+
+    await refresh_due_lineups(api_client, migrated, now=PROCHE)
+
+    assert route.call_count == 0

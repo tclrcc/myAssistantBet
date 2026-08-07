@@ -62,15 +62,7 @@
           </td>
           <td>
             <select name="event_{{ pick.index }}">
-              <option value="">— hors match —</option>
-              {% for group, group_events in events %}
-              <optgroup label="{{ group }}">
-                {% for event in group_events %}
-                  <option value="{{ event.event_id }}"
-                          {% if event.event_id == pick.event_id %}selected{% endif %}>{{ event.label }}</option>
-                {% endfor %}
-              </optgroup>
-              {% endfor %}
+              {% with selected_id = pick.event_id %}{% include "_pick_options.html" %}{% endwith %}
             </select>
           </td>
           <td><input type="text" name="market_{{ pick.index }}" value="{{ pick.market }}"></td>
@@ -123,15 +115,15 @@
   <form class="pick-form" method="post" action="/history/{{ session_id }}/picks">
     <label class="grow">
       Match
+      {# Meme recherche que sur le rattachement : elle ne remplace que les
+         options du menu, ce qui laisse intact le reste du formulaire. #}
+      <input type="search" name="q" class="pick-search" placeholder="chercher un match…"
+             aria-label="Chercher un match hors de la journée"
+             hx-get="/history/{{ session_id }}/pick-options"
+             hx-target="next select" hx-swap="innerHTML"
+             hx-trigger="keyup changed delay:300ms, search">
       <select name="event_id">
-        <option value="">— hors match —</option>
-        {% for group, group_events in events %}
-        <optgroup label="{{ group }}">
-          {% for event in group_events %}
-            <option value="{{ event.event_id }}">{{ event.label }}</option>
-          {% endfor %}
-        </optgroup>
-        {% endfor %}
+        {% include "_pick_options.html" %}
       </select>
     </label>
     <label>

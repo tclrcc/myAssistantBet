@@ -351,6 +351,11 @@ def worksheet(session_id: int, settings: Settings | None = None) -> Worksheet:
 PICKABLE_BEFORE_H = 24
 PICKABLE_AFTER_H = 48
 
+#: Resultats rendus par une recherche de match. Au-dela, le menu redevient
+#: illisible — et une recherche qui ramene cinquante matchs demande surtout a
+#: etre precisee.
+SEARCH_LIMIT = 50
+
 
 @dataclass
 class PickableEvent:
@@ -377,13 +382,22 @@ class PickableEvent:
 
     @property
     def label(self) -> str:
-        """Un match hors shortlist porte son horaire : il peut etre d'un autre jour."""
-        if self.in_session:
-            return self.affiche
+        """L'horaire d'abord, l'affiche ensuite — sur **tous** les matchs.
+
+        Il n'accompagnait que les matchs hors shortlist. Mais une shortlist
+        porte trente affiches reparties sur deux jours, et le rattachement se
+        fait de memoire — « le match de 20h30 ». Sans l'heure, il fallait
+        reconnaitre l'affiche pour retrouver le match, alors que c'est
+        justement ce dont on n'est pas sur.
+        """
         return f"{self.local_time:%d/%m %H:%M} · {self.affiche}"
 
 
-def pickable_events(session_id: int, settings: Settings | None = None) -> list[PickableEvent]:
+def pickable_events(
+    session_id: int,
+    settings: Settings | None = None,
+    query: str = "",
+) -> list[PickableEvent]:
     """Matchs proposes au rattachement d'une selection, shortlist d'abord.
 
     La shortlist ne suffit pas. Un match qui a commence quitte le board : il ne
@@ -394,8 +408,18 @@ def pickable_events(session_id: int, settings: Settings | None = None) -> list[P
 
     Les matchs voisins de la session sont donc proposes aussi, marques comme
     tels : ils n'ont pas ete analyses, et l'utilisateur doit le voir.
+
+    **`query` leve la fenetre de temps, et elle seule.** Le voisinage de
+    `PICKABLE_BEFORE_H` / `PICKABLE_AFTER_H` couvre la journee de travail, pas
+    un pari pose trois jours plus tot ni un match reporte. Quand le match
+    cherche n'est nulle part dans le menu, il n'y avait plus aucun recours :
+    la selection restait sans evenement, donc sans sport, donc muette dans les
+    statistiques. Une recherche par libelle rouvre tout le catalogue, bornee a
+    `SEARCH_LIMIT` — un menu de mille lignes ne se lit pas davantage qu'un menu
+    vide.
     """
     settings = settings or get_settings()
+    needle = query.strip()
     with connect(settings) as conn:
         session = conn.execute(
             "SELECT created_at FROM sessions WHERE id = ?", (session_id,)
@@ -405,7 +429,8 @@ def pickable_events(session_id: int, settings: Settings | None = None) -> list[P
         created = datetime.fromisoformat(session["created_at"].replace("Z", "+00:00"))
         if created.tzinfo is None:
             created = created.replace(tzinfo=UTC)
-        rows = conn.execute(
+
+        columns = (
             "SELECT e.id, e.home, e.away, e.commence_time, s.id AS sport_id, "
             "       s.label AS sport_label, "
             "       COALESCE(c.label, 'Saisie manuelle') AS competition, "
@@ -414,17 +439,27 @@ def pickable_events(session_id: int, settings: Settings | None = None) -> list[P
             "FROM events e "
             "JOIN sports s ON s.id = e.sport_id "
             "LEFT JOIN competitions c ON c.id = e.competition_id "
-            "WHERE (e.commence_time >= ? AND e.commence_time <= ?) "
-            "   OR EXISTS (SELECT 1 FROM session_events se "
-            "              WHERE se.session_id = ? AND se.event_id = e.id) "
-            "ORDER BY in_session DESC, s.id, competition, e.commence_time",
-            (
-                session_id,
-                _iso(created - timedelta(hours=PICKABLE_BEFORE_H)),
-                _iso(created + timedelta(hours=PICKABLE_AFTER_H)),
-                session_id,
-            ),
-        ).fetchall()
+        )
+        if needle:
+            like = f"%{needle}%"
+            rows = conn.execute(
+                columns + "WHERE e.home LIKE ? OR e.away LIKE ? OR c.label LIKE ? "
+                "ORDER BY in_session DESC, e.commence_time DESC LIMIT ?",
+                (session_id, like, like, like, SEARCH_LIMIT),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                columns + "WHERE (e.commence_time >= ? AND e.commence_time <= ?) "
+                "   OR EXISTS (SELECT 1 FROM session_events se "
+                "              WHERE se.session_id = ? AND se.event_id = e.id) "
+                "ORDER BY in_session DESC, e.commence_time",
+                (
+                    session_id,
+                    _iso(created - timedelta(hours=PICKABLE_BEFORE_H)),
+                    _iso(created + timedelta(hours=PICKABLE_AFTER_H)),
+                    session_id,
+                ),
+            ).fetchall()
 
     return [
         PickableEvent(
@@ -441,7 +476,7 @@ def pickable_events(session_id: int, settings: Settings | None = None) -> list[P
 
 
 def pickable_groups(
-    session_id: int, settings: Settings | None = None
+    session_id: int, settings: Settings | None = None, query: str = ""
 ) -> list[tuple[str, list[PickableEvent]]]:
     """Les memes matchs, groupes par sport et competition pour un `optgroup`.
 
@@ -449,11 +484,21 @@ def pickable_groups(
     ligne. Le groupement est fait ici et non dans le template — le filtre
     `groupby` de Jinja retrie par ordre alphabetique, ce qui remettrait les
     matchs hors shortlist devant ceux de la session.
+
+    **Les groupes sont ranges par heure du premier match**, la shortlist
+    d'abord. Ils l'etaient par identifiant de sport puis par nom de
+    competition : « Bundesliga 2 » passait donc devant « Premier League » pour
+    des raisons alphabetiques, et on cherchait le match de 20h30 en parcourant
+    des competitions rangees dans un ordre qui ne dit rien de la soiree. Une
+    session se relit dans l'ordre ou elle s'est jouee.
     """
     groups: dict[str, list[PickableEvent]] = {}
-    for event in pickable_events(session_id, settings):
+    for event in pickable_events(session_id, settings, query):
         groups.setdefault(event.group, []).append(event)
-    return list(groups.items())
+    return sorted(
+        groups.items(),
+        key=lambda item: (not item[1][0].in_session, min(e.local_time for e in item[1])),
+    )
 
 
 def tiers(settings: Settings | None = None) -> list[dict[str, str]]:

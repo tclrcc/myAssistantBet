@@ -294,3 +294,30 @@ def test_une_sous_page_reste_marquee(client: TestClient) -> None:
     page = client.get("/history").text
 
     assert "is-current" in page
+
+
+def test_la_recherche_de_match_rend_les_options_seules(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """La recherche remplace le contenu du menu, pas le formulaire : rerendre
+    le formulaire ferait perdre le focus a chaque frappe."""
+    session_id, _ = _select_event(client, isolated_settings)
+
+    response = client.get(f"/history/{session_id}/pick-options", params={"q": "Lyon"})
+
+    assert response.status_code == 200
+    assert "Lyon – Nice" in response.text
+    assert "<optgroup" in response.text
+    assert "<form" not in response.text, "un fragment d'options, jamais un formulaire"
+    assert "<html" not in response.text
+
+
+def test_une_recherche_sans_resultat_le_dit(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Un menu reduit a « hors match » se lirait comme une panne."""
+    session_id, _ = _select_event(client, isolated_settings)
+
+    response = client.get(f"/history/{session_id}/pick-options", params={"q": "zzz-introuvable"})
+
+    assert "aucun match ne correspond" in response.text
