@@ -39,9 +39,20 @@ logger = logging.getLogger(__name__)
 #: chargement double de volume pour un palmares qui n'eclaire plus le match.
 SEASONS_KEPT = 3
 
-#: Le fichier de la saison en cours est mis a jour une fois par semaine. Une
-#: saison terminee ne changera plus : elle n'est jamais retelechargee.
-CURRENT_SEASON_TTL_HOURS = 24 * 7
+#: Delai avant de redemander le fichier de la saison en cours. Une saison
+#: terminee ne changera plus : elle n'est jamais retelechargee.
+#:
+#: **Une semaine etait la mauvaise cadence, et pas d'un peu.** Le fichier est
+#: publie une fois par semaine mais **aucun jour connu** — il se remplit a mesure
+#: que les tournois se terminent. Caler la relance sur notre propre derniere
+#: collecte manquait donc une publication entiere : releve en reel le 8 aout,
+#: l'historique s'arretait au 3 et n'aurait ete redemande que le 13, soit dix
+#: jours de retard sur une source qui en accuse deja trois.
+#:
+#: Une tentative par jour colle a la cadence du travail planifie (`FREE_JOB_ID`)
+#: et ne coute rien : 400 Ko par circuit, sans cle, sans quota, et hors de
+#: `api_usage` comme tout ce qui ne consomme pas de credit.
+CURRENT_SEASON_TTL_HOURS = 24
 
 #: Suffixes de filiation, ecartes des deux cotes : le fichier ecrit « Damm M. »
 #: la ou The Odds API dit « Martin Damm Jr. ».
@@ -255,8 +266,9 @@ def is_stale(
     """Vrai si une saison doit etre (re)telechargee.
 
     Une saison **terminee** ne change plus : une fois collectee, elle n'est jamais
-    redemandee. Seule la saison en cours se rafraichit, a la cadence de mise a
-    jour du fichier.
+    redemandee. Seule la saison en cours se rafraichit, une fois par jour — le
+    fichier est publie chaque semaine mais aucun jour connu, et attendre une
+    semaine depuis notre derniere collecte manquait une publication entiere.
 
     La date lue est celle de la **collecte** et non celle des donnees. Deduire la
     peremption du `MAX(fetched_at)` des matchs tombe des qu'une saison n'en ramene
@@ -561,12 +573,27 @@ def _games_fragment(player: str, matches: list[Match]) -> str:
     score est tronque a l'instant ou le match s'arrete, donc les compter
     ferait passer un joueur qui a abandonne pour un joueur aux matchs courts.
     Ils ont deja leur ligne.
+
+    **Les matchs au meilleur des cinq sets restent comptes, et leur nombre est
+    dit.** Ils sont justes pour ce que cette ligne mesure — trente-neuf jeux
+    fatiguent autant quel que soit le format, et c'est bien du temps passe sur le
+    court. Ce qu'ils rendaient faux, c'est la **comparaison** : Lehecka affichait
+    32.3 jeux/match contre 30.5 a Jodar, sans que rien ne dise que quatre de ses
+    dix matchs etaient un Grand Chelem. Les retirer aurait efface une vraie
+    fatigue ; les compter en silence faisait passer un joueur ordinaire pour un
+    marathonien. Le compte tranche, et il ne coute que cinq caracteres.
+
+    C'est l'arbitrage inverse de `Profil` et `Marge`, qui les ecartent : celles-la
+    decrivent la forme d'un match en trois sets, pas une charge.
     """
     recent = [match for match in _played(matches) if not match.retired][-FORM_LAST:]
-    totals = [total for match in recent if (total := _games_in(match.score))]
+    kept = [match for match in recent if _games_in(match.score)]
+    totals = [_games_in(match.score) for match in kept]
     if not totals:
         return ""
-    return f"{player} {sum(totals) / len(totals):.1f} jeux/match sur {len(totals)}"
+    longs = sum(match.long_format for match in kept)
+    fragment = f"{player} {sum(totals) / len(totals):.1f} jeux/match sur {len(totals)}"
+    return fragment + (f" ({longs} en 5 sets)" if longs else "")
 
 
 def _games_in(score: str) -> int:

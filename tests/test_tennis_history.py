@@ -237,8 +237,8 @@ async def test_la_collecte_est_idempotente(
 async def test_une_saison_terminee_n_est_jamais_retelechargee(
     api_client: TennisDataClient, migrated: Settings, classeur: bytes
 ) -> None:
-    """Elle ne changera plus. Seule la saison en cours se rafraichit, a la cadence
-    de mise a jour du fichier — une fois par semaine."""
+    """Elle ne changera plus. Seule la saison en cours se rafraichit, une fois
+    par jour — le fichier se remplit a mesure que les tournois se terminent."""
     routes = _mock_seasons(classeur)
     await tennis_history.refresh(api_client, migrated, now=NOW)
     premier = _downloads(routes)
@@ -1139,3 +1139,48 @@ def test_le_prompt_rappelle_que_le_vainqueur_n_est_pas_le_debouche_par_defaut(
     assert "le plus grossier des débouchés d'une analyse" in corps
     assert "ce serait raisonner sur le prix" in corps
     assert "« Profil » et « Marge » sont là pour ça" in corps
+
+
+def test_l_usure_dit_combien_de_matchs_se_jouaient_en_cinq_sets(migrated: Settings) -> None:
+    """Ils restent comptes — trente-neuf jeux fatiguent autant quel que soit le
+    format — mais leur nombre est dit, parce que c'est la **comparaison** qu'ils
+    faussaient. Lehecka affichait 32.3 jeux/match contre 30.5 a Jodar sans que
+    rien ne dise que quatre de ses dix matchs etaient un Grand Chelem."""
+    _serie(migrated, [("6-4 6-4", True)] * 4)
+    _joue(migrated, "2026-07-20", "7-6 6-7 7-6 6-7 7-5", won=True, series="Grand Slam")
+
+    lignes = _lines(migrated, "Jiri Lehecka", "Vit Kopriva")
+
+    assert lignes["Usure"].startswith("Jiri Lehecka 28.8 jeux/match sur 5 (1 en 5 sets)")
+
+
+def test_l_usure_ne_compte_pas_les_cinq_sets_quand_il_n_y_en_a_pas(migrated: Settings) -> None:
+    """Une donnee absente ne produit jamais un « 0 » : c'est le cas ordinaire, et
+    l'ecrire couterait une mention a chaque bloc pour ne rien apprendre."""
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+
+    usure = _lines(migrated, "Jiri Lehecka", "Vit Kopriva")["Usure"]
+
+    assert usure.startswith("Jiri Lehecka 20.0 jeux/match sur 5")
+    assert "5 sets" not in usure
+
+
+def test_le_preambule_dit_ce_que_le_compte_de_cinq_sets_change(migrated: Settings) -> None:
+    """Le chiffre seul se lirait comme une charge comparable d'un joueur a
+    l'autre, ce qu'il n'est justement pas."""
+    from myassistantbet.services.prompt import build_prompt
+
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+    session = _lot(migrated, "tennis", "Jiri Lehecka", "Vit Kopriva", COMMENCE)
+    corps = " ".join(build_prompt(session, settings=migrated, now=NOW).body.split())
+
+    assert "elle ne se compare pas" in corps
+    assert "passe pour un marathonien" in corps
+
+
+def test_la_saison_en_cours_est_redemandee_chaque_jour(migrated: Settings) -> None:
+    """Le fichier est publie une fois par semaine mais **aucun jour connu** : il
+    se remplit a mesure que les tournois se terminent. Caler la relance sur notre
+    propre derniere collecte manquait une publication entiere — releve le 8 aout,
+    l'historique s'arretait au 3 et n'aurait ete redemande que le 13."""
+    assert tennis_history.CURRENT_SEASON_TTL_HOURS == 24

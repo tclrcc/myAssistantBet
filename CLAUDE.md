@@ -558,8 +558,13 @@ si deux joueurs se sont deja affrontes, ou ce qu'un joueur vaut sur terre.
   tombe des qu'une saison est vide : sans ligne, pas de date, donc « jamais telecharge »,
   donc redemandee a chaque enrichissement, sans fin. En janvier, le fichier de la saison
   qui commence est justement vide. Trouve en ecrivant le test.
-- Une saison **terminee** n'est jamais retelechargee ; la saison en cours l'est une fois
-  par semaine, cadence de mise a jour du fichier.
+- Une saison **terminee** n'est jamais retelechargee ; la saison en cours l'est **une fois
+  par jour**. Une semaine etait la mauvaise cadence, et pas d'un peu : le fichier parait
+  chaque semaine mais **aucun jour connu** — il se remplit a mesure que les tournois se
+  terminent — si bien que caler la relance sur notre propre derniere collecte manquait une
+  publication entiere. Releve en reel le 8 aout : l'historique s'arretait au 3 et n'aurait
+  ete redemande que le 13. Une tentative par jour colle a `FREE_JOB_ID` et ne coute rien —
+  400 Ko par circuit, sans cle et sans quota.
 - **Une date qui ne peut pas etre celle de sa saison n'entre pas en base** (`in_season()`).
   La source se trompe parfois : le fichier 2026 datait une finale de l'Iasi Open du
   20 juillet **2029**. Le degat est invisible, et c'est ce qui le rend genant — posterieure
@@ -738,6 +743,14 @@ scannes les jours d'avant. Aucun appel, aucune cle, aucun quota.
   **temps passe sur le court par procuration**. Abandons et tapis verts exclus — leur score
   est tronque a l'instant ou le match s'arrete, et les compter ferait passer un joueur qui a
   abandonne pour un joueur aux matchs courts.
+  - **Les matchs au meilleur des cinq sets restent comptes, et leur nombre est dit**
+    (`32.3 jeux/match sur 10 (4 en 5 sets)`). C'est l'arbitrage **inverse** de `Profil` et
+    `Marge`, qui les ecartent, et les deux sont justes : trente-neuf jeux fatiguent autant
+    quel que soit le format, donc la moyenne decrit bien une charge ; mais elle ne decrit
+    pas la forme d'un match en trois sets. Ce que le silence rendait faux, c'est la
+    **comparaison** — Lehecka affichait 32.3 contre 30.5 a Jodar sans que rien ne dise que
+    quatre de ses dix matchs etaient un Grand Chelem. Les retirer aurait efface une vraie
+    fatigue, les taire faisait passer un joueur ordinaire pour un marathonien.
 
 **Ce qu'aucune source ne donne, verifie le 7 aout 2026** — a ne pas rechercher a nouveau
 sans raison nouvelle :
