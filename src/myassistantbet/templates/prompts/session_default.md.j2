@@ -175,7 +175,7 @@ ne pas confondre :
   · **« Jeux O/U »** : `21.5: 1.96/1.93` se lit « plus de 21.5 jeux coté 1.96,
     moins coté 1.93 ». Over d'abord, Under ensuite, comme au football.
 
-Au tennis, quatre lignes viennent de l'historique des matchs **réellement joués**
+{% if 'Forme' in context_labels or 'H2H' in context_labels or 'Tour' in context_labels or 'Repos' in context_labels %}Au tennis, quatre lignes viennent de l'historique des matchs **réellement joués**
 sur les trois dernières saisons, ATP et WTA :
 
   · **« H2H (n) »** — le bilan des confrontations directes, écrit `3V-7D` du point
@@ -245,7 +245,7 @@ côté dit combien des dix ont été retenus. « Usure » les garde, elle, parce
 cinq sets fatiguent vraiment. Sous cinq matchs retenus, ces trois lignes
 n'existent pas.
 
-La ligne **« Parcours »** nomme les adversaires déjà rencontrés **dans ce
+{% if 'Parcours' in context_labels %}La ligne **« Parcours »** nomme les adversaires déjà rencontrés **dans ce
 tournoi-ci**, du premier tour au dernier, avec leur Elo quand il est connu :
 c'est ce qui distingue un parcours facile d'un parcours d'usure. Elle donne les
 adversaires et **jamais les résultats** — un joueur présent au tour suivant a
@@ -263,6 +263,7 @@ Deux limites, toutes deux vérifiées en réel :
     le court, et « Repos » compte ce jour-là de la même façon. C'est l'un des
     points que la recherche des matchs déjà joués tranche.
 
+{% endif %}
 Deux lignes de plus portent sur **ce tournoi précisément**, toutes éditions
 confondues :
 
@@ -287,7 +288,7 @@ trois fois sur une autre surface, il y a deux ans, avant une blessure. Un joueur
 absent d'une ligne n'est pas un joueur sans passé : c'est un joueur que le jeu de
 données ne nomme pas, ou dont l'identité était ambiguë et qu'on a préféré taire.
 
-{% endif %}
+{% endif %}{% endif %}
 Une ligne **« Stats match »** marquée « données non disponibles » signifie que le
 fournisseur ne publie pas les statistiques de match sur cette compétition : ni
 corners, ni cartons, ni tirs ne seront jamais renseignés ici. C'est un fait
@@ -297,6 +298,21 @@ Une ligne **« Non servis »** énumère les marchés demandés à l'API et jama
 obtenus sur cette compétition. C'est un fait acquis, pas un oubli de collecte :
 n'imagine aucune sélection dessus, et ne les reporte pas en section F — ils y
 sont déjà connus.
+
+Une ligne **« A relever »** est tout autre chose, et il ne faut surtout pas la
+lire comme un refus : ces marchés sont affichés au-dessus, mais aucun de leurs
+prix ne vient du bookmaker principal. **Le bookmaker les propose bien sur son
+site** — c'est notre collecte qui ne les remonte pas, pas son offre qui manque.
+Le prix affiché situe le marché ; celui qu'on obtiendra se lit chez le bookmaker
+au moment de miser.
+
+Donc : **appuie-toi dessus quand l'angle l'appelle.** Au tennis, le handicap jeux
+et le total de jeux y figurent presque toujours, et ce sont justement les marchés
+qui traduisent le mieux un angle de manière. Y renoncer au motif qu'aucun prix
+maison n'apparaît reviendrait à jeter la moitié des débouchés d'une analyse. La
+sélection porte alors « (ref.) » en colonne Cote et la section F rappelle de
+vérifier le prix — c'est tout ce qui change. Cette ligne n'a pas sa place en
+section F : elle y est déjà connue.
 
 Ces cotes font autorité. **Ne remplace jamais une cote du bloc par une cote
 trouvée en ligne**, même plus récente, même plus juste. Le bloc est ce qui a
@@ -533,6 +549,11 @@ La sélection porte obligatoirement sur un marché présent dans le bloc du matc
 et la colonne « Cote » recopie **au centime près** la valeur du bloc. Si ton
 angle appelle un marché absent, ne l'invente pas : signale-le en section F.
 
+Un marché listé « A relever » **est un marché présent** : il est sélectionnable
+comme les autres, sa cote se recopie du bloc et porte « (ref.) ». N'écarte jamais
+un angle parce que son prix vient d'un book de référence — c'est une vérification
+à faire avant de miser, pas une raison de se rabattre sur le vainqueur.
+
 Conf/5 mesure la solidité du faisceau sportif, pas ton envie :
   5  plusieurs facteurs indépendants concordent, tous vérifiés
   3  un facteur dominant vérifié, le reste neutre
@@ -583,6 +604,19 @@ inférieur : c'est l'erreur la plus coûteuse que tu puisses commettre ici.
 - Un combiné « frisson » : 4-5 sélections, cote cible 25-80
 {% if exact_scores %}- Optionnel : un multichoix scores exacts sur le match le plus lisible
 {% endif %}Contrainte : une seule sélection par match dans un combiné.
+{% if 'tennis' in sports %}
+**Score exact en sets** — obligatoire, une ligne par match du lot où un scénario
+se dessine, `PASSE` sinon. Donne le score en sets le plus probable et, si un
+second se défend, le second : `2-0` / `2-1` du point de vue du premier joueur
+nommé, ou `0-2` / `1-2`. Fonde-le sur la manière et non sur l'issue seule —
+« Profil » (sets secs contre tie-breaks), « Marge », le H2H set par set, et
+l'écart de niveau.
+
+**Aucune cote n'existe pour ce marché** : The Odds API ne le sert pas au tennis,
+le bookmaker si. Ne l'invente donc pas, n'en fais pas une ligne de la section C
+et ne le mets dans aucun combiné — c'est une proposition à tarifer sur place.
+Écris le score, une phrase de justification, et rien d'autre.
+{% endif %}
 
 Les cotes cibles sont indicatives et cèdent devant la confiance. **N'ajoute
 jamais une jambe sous confiance 3 pour atteindre une fourchette** : rends le

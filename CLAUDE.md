@@ -145,17 +145,21 @@ non negociables, toutes couvertes par des tests :
   porte en fin de ligne** (`[Pinnacle (ref.)]`, `[saisie manuelle]`, `[dont …]` quand une
   ligne fusionnee melange les deux). Un en-tete « Betclic + Pinnacle (ref.) » laissait
   deviner quelle cote etait jouable et laquelle ne faisait que situer le marche ;
-- **`Non jouable` est un troisieme etat, et c'est celui qui decide de ce qu'on peut
-  parier** : le marche est affiche, mais aucun de ses prix ne vient du book principal.
-  Mesure qui l'a fait naitre : sur 127 matchs de tennis a venir, `betclic_fr` ne sert
-  **que** le `h2h` — tout le handicap jeux et tout le total de jeux viennent de Pinnacle,
-  donc en reference. Chaque ligne le disait par son `[Pinnacle (ref.)]`, mais il fallait
-  les lire toutes pour voir qu'il ne restait rien a jouer hors du vainqueur : une analyse
-  reelle a bati deux angles sur les jeux avant de devoir se rabattre sur l'issue, et l'a
-  signale en section F. La ligne est **seche, sans note** — `Non servis` porte la sienne
-  parce qu'elle a trois causes, celle-ci n'en a qu'une et le preambule l'explique une fois
-  pour tout le lot. Le libelle est au singulier : « Non jouables » fait douze caracteres,
-  soit exactement `LABEL_WIDTH`, et collait sa valeur.
+- **`A relever` est un troisieme etat** : le marche est affiche, mais aucun de ses prix ne
+  vient du book principal. Sur 127 matchs de tennis a venir, `betclic_fr` ne sert **que**
+  le `h2h` via The Odds API — tout le handicap jeux et tout le total de jeux viennent de
+  Pinnacle. Chaque ligne le disait par son `[Pinnacle (ref.)]`, mais il fallait les lire
+  toutes pour le voir.
+  - **Le premier libelle, « Non jouable », se trompait de mot, et l'erreur a coute
+    exactement ce qu'elle devait epargner.** Betclic sert bien ces marches **sur son
+    site** : c'est notre collecte qui ne les remonte pas, pas son offre qui manque. Une
+    analyse reelle a renonce a deux angles de jeux pour se rabattre sur le vainqueur,
+    alors que les paris etaient posables. La ligne dit donc ce qu'il y a **a faire** —
+    relever le prix avant de miser — et le preambule ajoute noir sur blanc qu'un marche
+    « A relever » est un marche **selectionnable**, avec sa cote de reference et sa
+    mention `(ref.)`.
+  - La ligne est **seche, sans note** — `Non servis` porte la sienne parce qu'elle a trois
+    causes, celle-ci n'en a qu'une et le preambule l'explique une fois pour tout le lot.
   - Le rapprochement se fait sur le marche **fusionne**, comme pour `Non servis` : un
     `spreads` servi par Betclic et un `alternate_spreads` servi par Pinnacle partagent une
     ligne, et la declarer non jouable ferait chercher un prix affiche juste au-dessus.
@@ -1038,6 +1042,16 @@ Releve en rendant le bloc CONTEXTE de 250 evenements reels et en le passant a
 C'est exactement le defaut que le sprite devait supprimer : la colonne se vide sans rien
 dire. **Toute ligne ajoutee a un bloc doit entrer dans `CONTEXT_ICONS` le meme jour**, et
 le script d'audit tient en dix lignes — le refaire coute moins que de le regretter.
+
+## Le score exact en sets, au tennis, se propose sans prix
+
+The Odds API ne sert **aucun** marche de score en sets au tennis ; le bookmaker, lui, le
+propose. La demande est donc portee par le template et **hors du tableau des selections** :
+un score en sets par match, fonde sur la maniere (`Profil`, `Marge`, H2H set par set) et
+non sur l'issue, avec l'interdiction explicite d'inventer une cote, d'en faire une ligne de
+la section C ou une jambe de combine. Une cote inventee entrerait en base, classerait la
+selection dans le mauvais palier et fausserait le taux de reussite — c'est la meme raison
+qui interdit de remplacer une cote du bloc par une cote trouvee en ligne.
 
 ## Le vainqueur n'est pas le debouche par defaut (section B du template)
 

@@ -46,19 +46,22 @@ UNSERVED_NOTE = "aucun book interroge ne les sert sur cette competition"
 UNSERVED_NOTE_SUBSTITUTE = "non servis par le book de substitution sur ce match"
 
 #: Troisieme etat, distinct des deux precedents : le marche **est la**, mais
-#: aucun de ses prix ne vient du book principal. Il situe le marche, il ne se
-#: joue pas.
+#: aucun de ses prix ne vient du book principal. Le prix affiche situe le marche,
+#: ce n'est pas celui qu'on obtiendra — il reste a relever avant de miser.
 #:
 #: Mesure qui l'a fait naitre : sur 127 matchs de tennis a venir, `betclic_fr`
-#: ne sert **que** le `h2h`. Tout le handicap jeux et tout le total de jeux
-#: viennent de Pinnacle, donc en reference. Chaque ligne le disait deja par son
-#: `[Pinnacle (ref.)]`, mais il fallait les lire toutes pour s'apercevoir qu'il
-#: ne restait rien a jouer hors du vainqueur — et une analyse reelle a bati deux
-#: angles sur les jeux avant de devoir se rabattre sur l'issue.
+#: ne sert **que** le `h2h` via The Odds API. Tout le handicap jeux et tout le
+#: total de jeux viennent de Pinnacle. Chaque ligne le disait par son
+#: `[Pinnacle (ref.)]`, mais il fallait les lire toutes pour le voir.
 #:
-#: Le libelle est au singulier alors qu'il enumere : « Non jouables » fait douze
-#: caracteres, soit exactement `LABEL_WIDTH`, et collait sa valeur faute d'espace.
-UNPLAYABLE_LABEL = "Non jouable"
+#: **Ce n'est pas « non jouable », et le premier libelle se trompait de mot.**
+#: Betclic sert bien ces marches sur son site : c'est notre collecte qui ne les
+#: remonte pas, pas l'offre qui manque. Nommer la ligne « Non jouable » a fait
+#: exactement le degat qu'elle devait empecher — une analyse reelle a renonce a
+#: deux angles de jeux pour se rabattre sur le vainqueur, alors que les paris
+#: etaient parfaitement posables. Elle dit donc ce qu'il y a a faire : relever le
+#: prix chez le book principal avant de miser.
+UNPLAYABLE_LABEL = "A relever"
 
 
 @dataclass

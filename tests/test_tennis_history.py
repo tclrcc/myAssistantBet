@@ -417,12 +417,16 @@ async def test_une_saison_sans_aucun_match_n_est_pas_redemandee_sans_fin(
 def test_le_prompt_encadre_les_bilans_de_tennis(migrated: Settings) -> None:
     """Le garde-fou compte autant que la donnee. Un bilan de confrontations est une
     frequence passee, comme les fractions du football : jamais rapprochee d'une
-    cote. Et une ligne absente n'est pas un joueur sans passe."""
+    cote. Et une ligne absente n'est pas un joueur sans passe.
+
+    Le lot porte de vrais matchs : le preambule ne documente que les lignes
+    presentes, et un lot sans historique n'a pas a payer leur mode d'emploi."""
     from myassistantbet.services.prompt import build_prompt
 
-    _lot(migrated, "tennis")
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+    session = _lot(migrated, "tennis", "Jiri Lehecka", "Vit Kopriva", COMMENCE)
 
-    body = build_prompt(1, settings=migrated).body
+    body = build_prompt(session, settings=migrated, now=NOW).body
 
     assert "ne les rapproche jamais d'une cote" in body
     assert "tapis vert n'entre dans aucun de ces comptes" in body
@@ -560,12 +564,17 @@ def test_la_table_de_correspondance_couvre_nos_tournois(migrated: Settings) -> N
 def test_le_prompt_dit_ce_que_l_absence_des_lignes_ici_signifie(migrated: Settings) -> None:
     """Leur absence ne dit rien du passe des joueurs sur place : elle dit que le
     rattachement du tournoi manque. Confondre les deux ferait conclure d'un
-    silence."""
+    silence.
+
+    Cette note explique une **absence** : elle ne peut donc pas se garder sur la
+    presence de « Palmares ». Elle suit le sort du bloc d'historique, qui n'a de
+    raison d'exister que si le lot porte des lignes d'historique."""
     from myassistantbet.services.prompt import build_prompt
 
-    _lot(migrated, "tennis")
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+    session = _lot(migrated, "tennis", "Jiri Lehecka", "Vit Kopriva", COMMENCE)
 
-    body = build_prompt(1, settings=migrated).body
+    body = build_prompt(session, settings=migrated, now=NOW).body
 
     assert "« finaliste » veut dire finale" in body
     assert "elle dit que le rattachement manque" in body
@@ -1042,7 +1051,9 @@ def test_le_preambule_documente_les_trois_lignes(migrated: Settings) -> None:
     contexte ajoutee sans le sien se lit de travers, ce qui est pire."""
     from myassistantbet.services.prompt import build_prompt
 
-    corps = build_prompt(_lot(migrated, "tennis"), settings=migrated).body
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+    session = _lot(migrated, "tennis", "Jiri Lehecka", "Vit Kopriva", COMMENCE)
+    corps = build_prompt(session, settings=migrated, now=NOW).body
 
     assert "« Niveau adv. »" in corps
     assert "« Profil »" in corps
@@ -1184,3 +1195,45 @@ def test_la_saison_en_cours_est_redemandee_chaque_jour(migrated: Settings) -> No
     propre derniere collecte manquait une publication entiere — releve le 8 aout,
     l'historique s'arretait au 3 et n'aurait ete redemande que le 13."""
     assert tennis_history.CURRENT_SEASON_TTL_HOURS == 24
+
+
+def test_le_prompt_autorise_un_angle_sur_un_marche_a_relever(migrated: Settings) -> None:
+    """Le premier libelle, « Non jouable », se trompait de mot et a fait le degat
+    qu'il devait empecher : Betclic sert bien le handicap jeux et le total de
+    jeux sur son site, c'est notre collecte qui ne les remonte pas. Une analyse
+    reelle a renonce a deux angles de jeux pour se rabattre sur le vainqueur,
+    alors que les paris etaient posables."""
+    from myassistantbet.services.prompt import build_prompt
+
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+    session = _lot(migrated, "tennis", "Jiri Lehecka", "Vit Kopriva", COMMENCE)
+    corps = " ".join(build_prompt(session, settings=migrated, now=NOW).body.split())
+
+    assert "Le bookmaker les propose bien sur son site" in corps
+    assert "est un marché présent" in corps
+    assert "pas une raison de se rabattre sur le vainqueur" in corps
+
+
+def test_le_prompt_reclame_un_score_exact_en_sets_au_tennis(migrated: Settings) -> None:
+    """Aucune cote n'existe pour ce marche — The Odds API ne le sert pas au
+    tennis, le bookmaker si. La proposition se fait donc **sans prix**, hors du
+    tableau des selections et hors des combines : inventer une cote la ferait
+    entrer en base et fausserait le palier comme le taux de reussite."""
+    from myassistantbet.services.prompt import build_prompt
+
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+    session = _lot(migrated, "tennis", "Jiri Lehecka", "Vit Kopriva", COMMENCE)
+    corps = " ".join(build_prompt(session, settings=migrated, now=NOW).body.split())
+
+    assert "Score exact en sets" in corps
+    assert "Aucune cote n'existe pour ce marché" in corps
+    assert "n'en fais pas une ligne de la section C" in corps
+
+
+def test_le_score_exact_en_sets_ne_sort_pas_sur_un_lot_de_football(migrated: Settings) -> None:
+    """Meme regle que partout : ce qui n'a pas d'objet dans le lot est omis."""
+    from myassistantbet.services.prompt import build_prompt
+
+    corps = build_prompt(_lot(migrated, "football"), settings=migrated).body
+
+    assert "Score exact en sets" not in corps

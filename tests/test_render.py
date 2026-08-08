@@ -635,7 +635,7 @@ def test_les_marches_tennis_demandes_ont_tous_un_libelle() -> None:
     assert "Hand. jeux" in libelles
 
 
-def test_un_marche_servi_en_reference_seulement_est_dit_non_jouable() -> None:
+def test_un_marche_servi_en_reference_seulement_est_dit_a_relever() -> None:
     """Troisieme etat, distinct de « absent » et de « jouable », et c'est celui
     qui decide de ce qu'on peut reellement parier.
 
@@ -660,8 +660,8 @@ def test_un_marche_servi_en_reference_seulement_est_dit_non_jouable() -> None:
 
     bloc = render_event(event)
 
-    assert "Non jouable Jeux O/U" in bloc
-    assert "Vainqueur" in bloc and "Non jouable Vainqueur" not in bloc
+    assert "A relever   Jeux O/U" in bloc
+    assert "Vainqueur" in bloc and "A relever   Vainqueur" not in bloc
 
 
 def test_un_marche_jouable_ne_devient_pas_non_jouable_par_sa_variante() -> None:
@@ -678,7 +678,7 @@ def test_un_marche_jouable_ne_devient_pas_non_jouable_par_sa_variante() -> None:
         ],
     }
 
-    assert "Non jouable" not in render_event(event)
+    assert "A relever" not in render_event(event)
 
 
 def test_un_book_de_substitution_ne_declare_rien_non_jouable() -> None:
@@ -695,4 +695,4 @@ def test_un_book_de_substitution_ne_declare_rien_non_jouable() -> None:
         ],
     }
 
-    assert "Non jouable" not in render_event(event)
+    assert "A relever" not in render_event(event)
