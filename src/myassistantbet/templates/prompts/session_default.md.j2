@@ -210,20 +210,28 @@ sur les trois dernières saisons, ATP et WTA :
     meilleur d'entre eux qui ait été battu. C'est elle qui rend « Forme »
     lisible : la suite de lettres traite une victoire sur le 150e comme une
     victoire sur le 5e. Un « meilleur battu » inférieur à la moyenne dit que les
-    victoires sont venues du bas du tableau. Le compte accolé à la moyenne est le
-    nombre d'adversaires rapprochés au classement, pas le nombre de matchs.
+    victoires sont venues du bas du tableau. Le compte est celui des adversaires
+    rapprochés au classement, pas celui des matchs.
   · **« Profil »** — médiane des jeux et étendue, matchs avec tie-break, matchs
-    pliés en deux sets. « Usure » dit le temps passé sur le court, « Profil » dit
-    à quoi ressemble un match de ce joueur : c'est la ligne des marchés de jeux.
-    Un joueur dont le match le plus court fait vingt-trois jeux ne se lit pas
-    comme un joueur qui oscille entre seize et trente. C'est aussi le plus proche
-    du **style** que les données permettent — beaucoup de tie-breaks décrivent un
-    joueur qui tient son engagement, des sets secs un tableau de breaks. Aces,
-    première balle et balles de break ne sont dans aucune source : à ta recherche.
+    pliés en deux sets : à quoi ressemble un match de ce joueur, là où « Usure »
+    ne dit que le temps passé sur le court. C'est la ligne des marchés de jeux, et
+    le plus proche du **style** que les données permettent — beaucoup de tie-breaks
+    décrivent un joueur qui tient son engagement, des sets secs un tableau de
+    breaks. Aces, première balle et balles de break ne sont dans aucune source :
+    à ta recherche.
   · **« Marge »** — l'écart de jeux moyen quand il gagne, puis quand il perd,
     chacun avec son compte. C'est la grandeur du **handicap jeux**, et la seule
     ligne du bloc qui en parle. Les deux sens sont séparés parce qu'une moyenne
-    unique les annule : un joueur régulier y ressemble à un joueur irrégulier.
+    unique les annule.
+
+La ligne **« Historique »** dit jusqu'où va le jeu de données, donc jusqu'où vont
+toutes les lignes ci-dessus. La source est **hebdomadaire et publiée après coup** :
+les matchs joués depuis cette date — y compris ceux de ce tournoi-ci — ne sont
+dans aucune d'elles. « Forme » peut ignorer deux victoires de la semaine, et
+« Précédent » nommer l'avant-dernier tournoi. Seules **« Tour », « Repos » et
+« Parcours »**, qui viennent de nos propres relevés, portent le tournoi en cours ;
+le score de ces matchs n'est nulle part, et c'est le premier endroit à chercher.
+Ligne absente : données à jour.
 
 « Profil » et « Marge » écartent les matchs au **meilleur des cinq sets** — les
 Grands Chelems masculins, où quarante jeux sont ordinaires : le compte écrit à
@@ -478,6 +486,16 @@ Si aucun angle net ne se dégage : écris « PASSE » et passe au suivant.
 Passer est un résultat valable et attendu sur une partie du lot.
 Si la section A laisse trop de trous sur ce match, c'est un PASSE — pas une
 sélection prudente.
+
+Le marché du vainqueur — **« 1N2 » au football, « Vainqueur » au tennis** — est le
+plus grossier des débouchés d'une analyse : de tout ton raisonnement, il ne retient
+que le nom d'un camp. Un angle qui décrit une **manière** — un rythme, une usure,
+un déséquilibre au service, une équipe obligée de marquer — se traduit souvent
+mieux en handicap, en total ou en marché par équipe.{% if 'tennis' in sports %} Au
+tennis, « Profil » et « Marge » sont là pour ça.{% endif %} Ce n'est pas une
+consigne de l'éviter, encore moins de lui préférer un marché plus généreux : ce
+serait raisonner sur le prix. Si ton angle porte sur l'issue, le vainqueur reste
+le bon marché et tu le dis.
 
 ### C. Tableau des sélections
 | # | Match | Marché | Sélection | Cote | Palier | Conf/5 | Angle (1 ligne) | Ce qui la tue |

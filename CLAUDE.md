@@ -637,6 +637,27 @@ si deux joueurs se sont deja affrontes, ou ce qu'un joueur vaut sur terre.
     ecrit a cote dit combien ont ete gardes.
   - Sous `SHAPE_MIN_MATCHES` (5), **aucune des trois lignes**. Cout mesure : +1 279 tokens
     sur un prompt de huit matchs de tennis, dont environ 510 pour le preambule.
+- **`Historique` dit jusqu'ou va le jeu de donnees**, et donc jusqu'ou vont toutes les
+  lignes qui en sortent. Le fichier source est hebdomadaire et publie **apres coup** : le
+  8 aout il s'arretait au 3, si bien qu'aucun match du Canadian Open — commence le 4 —
+  n'existait en base. `Forme` ignorait deux victoires de Lehecka acquises sur place et
+  `Precedent` nommait Los Cabos comme son dernier tournoi alors qu'il jouait un huitieme
+  ici. **Rien ne le disait**, et le trou se lisait comme un rapprochement rate.
+  - La ligne **enonce un fait et s'arrete la** : « dernier match connu le 03/08, soit 5j
+    avant celui-ci ». Elle n'ecrit pas « ce tournoi n'y figure pas » — ce serait faux d'un
+    tournoi commence avant la date de collecte, et une affirmation fausse dans la ligne qui
+    sert justement a douter est le pire endroit ou en mettre une. C'est le preambule qui en
+    tire la consequence, et qui renvoie a `Tour`, `Repos` et `Parcours` — les seules lignes
+    qui viennent de nos propres releves et portent donc le tournoi en cours.
+  - `HISTORY_LATE_DAYS` vaut 2 : un fichier frais accuse deja trois a quatre jours de
+    retard, et rendre la ligne en dessous ferait douter de donnees completes.
+  - **Le retard se compte par circuit** (`horizon()`) : l'ATP et la WTA sont deux fichiers,
+    et lire le plus recent des deux tairait le retard du bon.
+  - **Ni apostrophe ni accent dans une valeur rendue**, comme partout dans ce module. Elles
+    traversent Jinja pour la fiche d'un match, qui les echappe, et le test de parite
+    fiche/prompt comparait deux textes bruts — `jusqu'au` echouait sur `&#39;`. Le test
+    passe desormais par `markupsafe.escape`, pour qu'une future valeur echoue pour la bonne
+    raison au lieu de se faire « corriger » en affaiblissant l'assertion.
 - `as_bytes` a ete ajoute au client de base pour ce fichier. Il n'est **jamais** mis en
   cache disque : le cache de developpement est un cache JSON, y ecrire des octets bruts le
   corromprait.
@@ -935,6 +956,21 @@ deja saisis — rien n'est retape.
 - Les captures vivent sous `data/`, donc deja couvertes par le `ReadWritePaths` de l'unite
   systemd et le `.gitignore`. Elles ne sont **pas** dans la sauvegarde, qui ne porte que
   sur la base.
+
+## Le vainqueur n'est pas le debouche par defaut (section B du template)
+
+Sur les trente premieres selections de tennis, **vingt-cinq portaient sur un
+« Vainqueur »**, pour onze gagnees — et une seule sur un total de jeux. La section B
+demandait « le marche qui traduit le mieux l'angle » sans jamais dire que ce marche-la ne
+retient d'un raisonnement que le nom d'un camp. Elle le dit maintenant, et nomme les
+lignes faites pour les marches derives.
+
+**Le rappel reste sportif, et c'est la seule facon de l'ecrire.** « Le book est plus fort
+sur le 1N2 » serait vrai et interdit : chercher ou le prix est tendre est exactement la
+recherche de value de la section 9. Le template dit donc qu'un angle decrivant une
+**maniere** se traduit mieux en handicap ou en total, et ajoute noir sur blanc que
+preferer un marche plus genereux serait raisonner sur le prix. Un test verifie que les
+deux phrases y sont.
 
 ## Ce qui nourrit le prompt en dehors des cotes
 

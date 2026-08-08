@@ -63,6 +63,21 @@ RETIRED_DAYS = 180
 #: comme telle est pire que de ne rien lire. La collecte, elle, n'attend pas.
 SHAPE_MIN_MATCHES = 5
 
+#: Ecart, en jours, entre le dernier match collecte et le match analyse au-dela
+#: duquel l'historique se declare en retard.
+#:
+#: Le fichier source est **hebdomadaire** et publie apres coup : le 8 aout, il
+#: s'arretait au 3, si bien qu'aucun match du Canadian Open — commence le 4 —
+#: n'existait en base. Toutes les lignes tirees de l'historique s'arretaient donc
+#: avant le tournoi en cours **sans que rien ne le dise** : « Precedent » nommait
+#: Los Cabos comme dernier tournoi de Lehecka alors qu'il jouait un huitieme ici,
+#: et « Forme » ignorait ses deux victoires du tournoi. Le trou se lisait comme un
+#: rapprochement rate, ce qu'il n'est pas.
+#:
+#: Deux jours, parce qu'un fichier frais accuse deja trois a quatre jours de
+#: retard : en dessous, la ligne se rendrait sans qu'il manque rien.
+HISTORY_LATE_DAYS = 2
+
 #: Les tournois joues au meilleur des cinq sets. Le fichier ne le publie pas :
 #: cote ATP, `series` vaut « Grand Slam » et c'est le seul format long du
 #: circuit ; cote WTA la colonne est vide et tout se joue en trois sets.
@@ -696,6 +711,49 @@ def _level_fragment(
     return fragment + (f" · meilleur battu {max(beaten):.0f}" if beaten else "")
 
 
+def horizon(tours: set[str], settings: Settings | None = None) -> str | None:
+    """Date du match le plus recent collecte sur ces circuits.
+
+    C'est jusqu'ou va l'historique, et donc jusqu'ou vont toutes les lignes qui
+    en sortent. Le circuit fait partie de la question : l'ATP et la WTA ont deux
+    fichiers, et l'un peut etre a jour quand l'autre ne l'est pas.
+    """
+    if not tours:
+        return None
+    marks = ", ".join("?" for _ in tours)
+    with connect(settings) as conn:
+        row = conn.execute(
+            f"SELECT MAX(played_on) AS dernier FROM tennis_matches WHERE tour IN ({marks})",
+            tuple(sorted(tours)),
+        ).fetchone()
+    return str(row["dernier"]) if row and row["dernier"] else None
+
+
+def _late_fragment(matches: list[Match], start: datetime, settings: Settings) -> str:
+    """`dernier match connu le 03/08, soit 6j avant celui-ci` — ou rien.
+
+    La ligne enonce un fait et **s'arrete la**. Elle ne dit pas « ce tournoi n'y
+    figure pas » : ce serait faux d'un tournoi commence avant la date de
+    collecte, et une affirmation fausse dans une ligne qui sert a douter est le
+    pire endroit ou en mettre une. Le template en tire la consequence.
+
+    Ni apostrophe ni accent, comme toutes les valeurs rendues par ce module.
+    Elles traversent un template Jinja pour la fiche d'un match, qui les echappe,
+    et le test de parite fiche/prompt compare deux textes bruts.
+    """
+    last = horizon({match.tour.casefold() for match in matches if match.tour}, settings)
+    if not last:
+        return ""
+    try:
+        collected = date.fromisoformat(last)
+    except ValueError:
+        return ""
+    days = (start.date() - collected).days
+    if days < HISTORY_LATE_DAYS:
+        return ""
+    return f"dernier match connu le {_short(last)}, soit {days}j avant celui-ci"
+
+
 def ratings_by_key(
     index: dict[str, set[str]], settings: Settings | None = None
 ) -> dict[tuple[str, str], float]:
@@ -851,6 +909,14 @@ def lines(
     }
 
     rendered: list[tuple[str, str]] = []
+
+    # En tete des lignes qu'elle qualifie : toutes celles qui suivent sortent de
+    # l'historique, et s'arretent donc ou il s'arrete. La taire faisait lire un
+    # tournoi manquant comme un rapprochement rate.
+    late = _late_fragment(everything[home] + everything[away], start, settings)
+    if late:
+        rendered.append(("Historique", late))
+
     meetings = _meetings(home_keys, away_keys, until, settings)
     meeting_line = _h2h_line(home, away, meetings)
     if meeting_line:

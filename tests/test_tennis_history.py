@@ -14,6 +14,7 @@ from pathlib import Path
 import httpx
 import pytest
 import respx
+from markupsafe import escape
 
 from myassistantbet import db
 from myassistantbet.config import Settings
@@ -616,7 +617,11 @@ async def test_la_fiche_d_un_match_de_tennis_porte_le_meme_bloc_que_le_prompt(
 
     for label, value in attendu:
         assert label in page.text, f"la fiche doit porter la ligne « {label} »"
-        assert value.split(" · ")[0] in page.text
+        # La fiche passe par Jinja, qui echappe : une valeur portant une
+        # apostrophe echouerait ici pour une raison qui n'a rien a voir avec la
+        # divergence que ce test surveille, et se ferait « corriger » en
+        # affaiblissant l'assertion.
+        assert str(escape(value.split(" · ")[0])) in page.text
 
 
 @respx.mock
@@ -1033,3 +1038,86 @@ def test_le_preambule_documente_les_trois_lignes(migrated: Settings) -> None:
     assert "« Marge »" in corps
     assert "handicap jeux" in corps
     assert "meilleur des cinq sets" in corps
+
+
+# -- Jusqu'ou va l'historique ------------------------------------------------
+
+
+def test_un_historique_en_retard_le_dit(migrated: Settings) -> None:
+    """Le fichier source est hebdomadaire et publie apres coup : le 8 aout il
+    s'arretait au 3, et aucun match du Canadian Open — commence le 4 — n'existait
+    en base. Toutes les lignes tirees de l'historique s'arretaient donc avant le
+    tournoi en cours sans que rien ne le dise, et le trou se lisait comme un
+    rapprochement rate."""
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+
+    lignes = _lines(migrated, "Jiri Lehecka", "Vit Kopriva")
+
+    assert lignes["Historique"] == "dernier match connu le 05/07, soit 36j avant celui-ci"
+
+
+def test_un_historique_a_jour_ne_dit_rien(migrated: Settings) -> None:
+    """Un fichier frais accuse deja trois a quatre jours de retard sur la
+    semaine en cours : sous le seuil, la ligne se rendrait sans qu'il manque
+    quoi que ce soit, et ferait douter de donnees completes."""
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+    _joue(migrated, "2026-08-09", "6-4 6-4", won=True)
+
+    assert "Historique" not in _lines(migrated, "Jiri Lehecka", "Vit Kopriva")
+
+
+def test_le_retard_se_compte_par_circuit(migrated: Settings) -> None:
+    """L'ATP et la WTA sont deux fichiers : l'un peut etre a jour quand l'autre
+    ne l'est pas, et lire le plus recent des deux tairait le retard du bon."""
+    _serie(migrated, [("6-4 6-4", True)] * 5, joueur="swiatek|i", tour="wta", series="")
+    # Un match ATP tout frais, entre deux joueurs etrangers a cette rencontre :
+    # le prendre en compte tairait le retard du circuit qui nous interesse.
+    _joue(migrated, "2026-08-09", "6-4 6-4", joueur="fritz|t", contre="gea|a", tour="atp")
+
+    lignes = _lines(migrated, "Iga Swiatek", "Vit Kopriva")
+
+    assert lignes["Historique"] == "dernier match connu le 05/07, soit 36j avant celui-ci"
+
+
+def test_la_ligne_n_affirme_jamais_que_ce_tournoi_manque(migrated: Settings) -> None:
+    """Ce serait faux d'un tournoi commence avant la date de collecte, et une
+    affirmation fausse dans la ligne qui sert justement a douter est le pire
+    endroit ou en mettre une. Elle enonce un fait, le template en tire la suite."""
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+
+    valeur = _lines(migrated, "Jiri Lehecka", "Vit Kopriva")["Historique"]
+
+    assert "tournoi" not in valeur
+    assert valeur.startswith("dernier match connu le ")
+
+
+def test_le_preambule_dit_ce_que_le_retard_implique(migrated: Settings) -> None:
+    """La ligne donne une date ; c'est le preambule qui dit que « Forme » peut
+    ignorer deux victoires de la semaine, et que « Parcours » comble le trou."""
+    from myassistantbet.services.prompt import build_prompt
+
+    corps = build_prompt(_lot(migrated, "tennis"), settings=migrated).body
+
+    assert "« Historique »" in corps
+    assert "hebdomadaire" in corps
+    assert "« Parcours »" in corps
+
+
+def test_le_prompt_rappelle_que_le_vainqueur_n_est_pas_le_debouche_par_defaut(
+    migrated: Settings,
+) -> None:
+    """Vingt-cinq des trente premieres selections tennis portaient sur un
+    Vainqueur. La section B demandait « le marche qui traduit le mieux l'angle »
+    sans jamais dire que ce marche-la ne retient qu'un nom de camp.
+
+    Le rappel reste **sportif** : suggerer d'aller chercher un marche mieux paye
+    serait raisonner sur le prix, ce qu'interdit la section 9. Un test le verifie."""
+    from myassistantbet.services.prompt import build_prompt
+
+    # Le texte est justifie a une largeur fixe : chercher une phrase entiere
+    # dans le corps brut la couperait a la premiere fin de ligne.
+    corps = " ".join(build_prompt(_lot(migrated, "tennis"), settings=migrated).body.split())
+
+    assert "le plus grossier des débouchés d'une analyse" in corps
+    assert "ce serait raisonner sur le prix" in corps
+    assert "« Profil » et « Marge » sont là pour ça" in corps
