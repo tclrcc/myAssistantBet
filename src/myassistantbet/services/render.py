@@ -45,6 +45,21 @@ UNSERVED_NOTE = "aucun book interroge ne les sert sur cette competition"
 #: chercher un reglage la ou il n'y a qu'une offre plus etroite.
 UNSERVED_NOTE_SUBSTITUTE = "non servis par le book de substitution sur ce match"
 
+#: Troisieme etat, distinct des deux precedents : le marche **est la**, mais
+#: aucun de ses prix ne vient du book principal. Il situe le marche, il ne se
+#: joue pas.
+#:
+#: Mesure qui l'a fait naitre : sur 127 matchs de tennis a venir, `betclic_fr`
+#: ne sert **que** le `h2h`. Tout le handicap jeux et tout le total de jeux
+#: viennent de Pinnacle, donc en reference. Chaque ligne le disait deja par son
+#: `[Pinnacle (ref.)]`, mais il fallait les lire toutes pour s'apercevoir qu'il
+#: ne restait rien a jouer hors du vainqueur — et une analyse reelle a bati deux
+#: angles sur les jeux avant de devoir se rabattre sur l'issue.
+#:
+#: Le libelle est au singulier alors qu'il enumere : « Non jouables » fait douze
+#: caracteres, soit exactement `LABEL_WIDTH`, et collait sa valeur faute d'espace.
+UNPLAYABLE_LABEL = "Non jouable"
+
 
 @dataclass
 class Outcome:
@@ -519,6 +534,43 @@ def _unserved_line(event: RenderableEvent) -> list[str]:
     return [line(UNSERVED_LABEL, f"{', '.join(labels)} — {note}")] if labels else []
 
 
+def unplayable_markets(event: RenderableEvent) -> list[str]:
+    """Marches presents dont **aucun** prix ne vient du book principal.
+
+    Ni un marche absent, ni un marche jouable : un troisieme etat, et c'est
+    celui qui decide de ce qu'on peut reellement parier. Le distinguer evite de
+    batir un angle sur un marche qu'on ne pourra pas jouer.
+
+    Un evenement servi par un book de substitution n'en produit aucun : tous ses
+    prix sont de reference par construction, le bloc le dit deja en entier, et
+    repeter la liste de ses marches n'ajouterait rien.
+    """
+    if not event.primary_book or event.substitute:
+        return []
+    absent = {
+        key
+        for key, outcomes in event.markets.items()
+        if outcomes and all(outcome.bookmaker != event.primary_book for outcome in outcomes)
+    }
+    # Meme rapprochement que pour « Non servis » : `spreads` et
+    # `alternate_spreads` partagent une ligne, et n'en declarer qu'une moitie
+    # non jouable ferait chercher le prix manquant dans la ligne affichee.
+    merged = {MERGED_MARKETS.get(key, key) for key in absent}
+    playable = {MERGED_MARKETS.get(key, key) for key in set(event.markets) - absent}
+    return ordered_labels(event.sport_key, sorted(merged - playable))
+
+
+def _unplayable_line(event: RenderableEvent) -> list[str]:
+    """La ligne est **seche, sans note**, contrairement a « Non servis ».
+
+    Celle-la porte la sienne parce qu'elle a trois causes qu'il faut distinguer.
+    Ici il n'y en a qu'une, le preambule l'explique une fois pour tout le lot, et
+    la repeter huit fois coutait cent tokens pour redire le libelle.
+    """
+    labels = unplayable_markets(event)
+    return [line(UNPLAYABLE_LABEL, ", ".join(labels))] if labels else []
+
+
 # -- Bloc complet -----------------------------------------------------------
 
 
@@ -549,7 +601,7 @@ def _context_block(event: RenderableEvent) -> list[str]:
 
 
 def _markets_block(event: RenderableEvent) -> list[str]:
-    rows = _render_markets(event) + _unserved_line(event)
+    rows = _render_markets(event) + _unplayable_line(event) + _unserved_line(event)
     if not rows:
         return []
     heading = f"MARCHES ({event.bookmaker_label}"

@@ -136,3 +136,25 @@ def test_le_repos_se_compte_en_journees_de_tournoi(migrated: Settings) -> None:
     # celle-ci. En dates civiles, l'un donnait 3 jours et l'autre 2.
     assert repos["Paul"].days_rest == 2
     assert repos["Zandschulp"].days_rest == 2
+
+
+def test_le_parcours_dit_depuis_quand_il_voit(migrated: Settings) -> None:
+    """La liste se lisait comme un parcours complet, et elle ne l'est pas : un
+    tournoi commence avant notre fenetre de scan a des premiers tours que nous
+    n'avons jamais vus.
+
+    Constate en reel — le « Parcours » de Norrie omettait son premier tour contre
+    Ugo Carabelli, joue la veille du premier jour scanne, et seule une recherche
+    exterieure l'a rattrape. La date rend le trou visible : comparee a « Tour »,
+    elle dit tout de suite si le debut du tableau manque.
+    """
+    _match(migrated, "Norrie", "Buse", "2026-08-05T18:00:00Z")
+    _match(migrated, "Norrie", "de Minaur", "2026-08-06T18:00:00Z")
+
+    lignes = dict(
+        tennis_load.path_lines(
+            "Norrie", "Fils", _competition(migrated), "2026-08-08T23:10:00Z", None, migrated
+        )
+    )
+
+    assert lignes["Parcours"].endswith("[vu depuis le 05/08]")

@@ -633,3 +633,66 @@ def test_les_marches_tennis_demandes_ont_tous_un_libelle() -> None:
     assert not any("_" in libelle for libelle in libelles), libelles
     assert "Jeux O/U" in libelles
     assert "Hand. jeux" in libelles
+
+
+def test_un_marche_servi_en_reference_seulement_est_dit_non_jouable() -> None:
+    """Troisieme etat, distinct de « absent » et de « jouable », et c'est celui
+    qui decide de ce qu'on peut reellement parier.
+
+    Mesure qui l'a fait naitre : sur 127 matchs de tennis a venir, `betclic_fr`
+    ne sert **que** le `h2h`. Chaque ligne portait deja son `[Pinnacle (ref.)]`,
+    mais il fallait les lire toutes pour voir qu'il ne restait rien a jouer hors
+    du vainqueur — et une analyse reelle a bati deux angles sur les jeux avant de
+    devoir se rabattre sur l'issue.
+    """
+    event = _event(sport_key="tennis")
+    event.primary_book = "betclic_fr"
+    event.markets = {
+        "h2h": [
+            Outcome(name=event.home, price=1.39, bookmaker="betclic_fr"),
+            Outcome(name=event.away, price=2.90, bookmaker="betclic_fr"),
+        ],
+        "alternate_totals": [
+            Outcome(name="Over", price=1.98, point=21.5, bookmaker="pinnacle"),
+            Outcome(name="Under", price=1.91, point=21.5, bookmaker="pinnacle"),
+        ],
+    }
+
+    bloc = render_event(event)
+
+    assert "Non jouable Jeux O/U" in bloc
+    assert "Vainqueur" in bloc and "Non jouable Vainqueur" not in bloc
+
+
+def test_un_marche_jouable_ne_devient_pas_non_jouable_par_sa_variante() -> None:
+    """`spreads` et `alternate_spreads` partagent une ligne et un libelle : si le
+    book principal sert la ligne principale et Pinnacle l'echelle, le marche est
+    jouable. Le declarer non jouable ferait chercher un prix affiche juste au
+    dessus."""
+    event = _event(sport_key="tennis")
+    event.primary_book = "betclic_fr"
+    event.markets = {
+        "spreads": [Outcome(name=event.home, price=1.88, point=-2.5, bookmaker="betclic_fr")],
+        "alternate_spreads": [
+            Outcome(name=event.home, price=2.36, point=-4.5, bookmaker="pinnacle")
+        ],
+    }
+
+    assert "Non jouable" not in render_event(event)
+
+
+def test_un_book_de_substitution_ne_declare_rien_non_jouable() -> None:
+    """Tous ses prix sont de reference par construction, le bloc le dit deja en
+    entier, et repeter la liste de ses marches n'ajouterait rien."""
+    event = _event(sport_key="tennis")
+    event.primary_book = "betvictor"
+    event.substitute = True
+    event.markets = {
+        "h2h": [Outcome(name=event.home, price=1.39, bookmaker="betvictor")],
+        "alternate_totals": [
+            Outcome(name="Over", price=1.98, point=21.5, bookmaker="pinnacle"),
+            Outcome(name="Under", price=1.91, point=21.5, bookmaker="pinnacle"),
+        ],
+    }
+
+    assert "Non jouable" not in render_event(event)

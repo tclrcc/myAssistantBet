@@ -47,6 +47,9 @@ class Load:
     days_rest: int | None = None
     #: Adversaires deja rencontres ici, du premier tour au dernier.
     opponents: tuple[str, ...] = ()
+    #: Premiere journee de tournoi que nos scans ont vue, au format ISO. Ce que
+    #: le tournoi a joue avant elle n'existe nulle part chez nous.
+    first_day: str = ""
 
     @property
     def fragment(self) -> str:
@@ -127,10 +130,12 @@ def load_for(
 
     if not dates or when is None:
         return Load()
+    connues = [journees[int(row["id"])] for row in toutes if int(row["id"]) in journees]
     return Load(
         rounds=len(dates),
         days_rest=_rest(ici, [jour for jour in veilles if jour]),
         opponents=tuple(nom for _, nom in sorted(faced)),
+        first_day=min(connues) if connues else "",
     )
 
 
@@ -195,15 +200,39 @@ def path_lines(
     """
     settings = settings or get_settings()
     fragments = []
+    debut = ""
     for player in (home, away):
         if not player:
             continue
-        faced = load_for(player, competition_id, commence_time, settings).opponents
-        if not faced:
+        charge = load_for(player, competition_id, commence_time, settings)
+        debut = debut or charge.first_day
+        if not charge.opponents:
             continue
-        noms = ", ".join(_with_elo(nom, oddsapi_key, settings) for nom in faced)
+        noms = ", ".join(_with_elo(nom, oddsapi_key, settings) for nom in charge.opponents)
         fragments.append(f"{player} {noms}")
-    return [("Parcours", " | ".join(fragments))] if fragments else []
+    if not fragments:
+        return []
+    return [("Parcours", " | ".join(fragments) + _since(debut))]
+
+
+def _since(first_day: str) -> str:
+    """` [vu depuis le 04/08]` — la fenetre de nos scans, jamais celle du tournoi.
+
+    La liste se lisait comme un parcours complet, et elle ne l'est pas : un
+    tournoi commence avant notre fenetre de scan a des premiers tours que nous
+    n'avons jamais vus. Constate en reel — le `Parcours` de Norrie omettait son
+    premier tour contre Ugo Carabelli, joue la veille du premier jour scanne, et
+    seule une recherche exterieure l'a rattrape.
+
+    La date suffit a rendre le trou visible : comparee a « Tour », elle dit tout
+    de suite si le debut du tableau manque. Compter les tours absents demanderait
+    la taille du tableau, que rien ne donne.
+    """
+    try:
+        jour = date.fromisoformat(first_day)
+    except ValueError:
+        return ""
+    return f" [vu depuis le {jour.strftime('%d/%m')}]"
 
 
 def _with_elo(name: str, oddsapi_key: str | None, settings: Settings) -> str:

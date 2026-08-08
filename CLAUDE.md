@@ -145,6 +145,22 @@ non negociables, toutes couvertes par des tests :
   porte en fin de ligne** (`[Pinnacle (ref.)]`, `[saisie manuelle]`, `[dont …]` quand une
   ligne fusionnee melange les deux). Un en-tete « Betclic + Pinnacle (ref.) » laissait
   deviner quelle cote etait jouable et laquelle ne faisait que situer le marche ;
+- **`Non jouable` est un troisieme etat, et c'est celui qui decide de ce qu'on peut
+  parier** : le marche est affiche, mais aucun de ses prix ne vient du book principal.
+  Mesure qui l'a fait naitre : sur 127 matchs de tennis a venir, `betclic_fr` ne sert
+  **que** le `h2h` — tout le handicap jeux et tout le total de jeux viennent de Pinnacle,
+  donc en reference. Chaque ligne le disait par son `[Pinnacle (ref.)]`, mais il fallait
+  les lire toutes pour voir qu'il ne restait rien a jouer hors du vainqueur : une analyse
+  reelle a bati deux angles sur les jeux avant de devoir se rabattre sur l'issue, et l'a
+  signale en section F. La ligne est **seche, sans note** — `Non servis` porte la sienne
+  parce qu'elle a trois causes, celle-ci n'en a qu'une et le preambule l'explique une fois
+  pour tout le lot. Le libelle est au singulier : « Non jouables » fait douze caracteres,
+  soit exactement `LABEL_WIDTH`, et collait sa valeur.
+  - Le rapprochement se fait sur le marche **fusionne**, comme pour `Non servis` : un
+    `spreads` servi par Betclic et un `alternate_spreads` servi par Pinnacle partagent une
+    ligne, et la declarer non jouable ferait chercher un prix affiche juste au-dessus.
+  - Un evenement servi par un **book de substitution** n'en produit aucune : tous ses prix
+    sont de reference par construction, et le bloc le dit deja en entier.
 - les marches demandes a l'API et jamais servis deviennent une ligne `Non servis` : une
   absence constatee est une information, et la taire fait chercher un handicap jeux qui
   n'existe pas. **Trois causes distinctes**, portees par `session._unserved_for` :
@@ -739,6 +755,17 @@ scannes les jours d'avant. Aucun appel, aucune cle, aucun quota.
   base. Les adversaires et **jamais les resultats** : un joueur present au tour suivant a
   forcement passe le precedent, mais l'ecrire « il a battu X » supposerait qu'aucun forfait
   n'existe.
+- **`Parcours` porte la fenetre de nos scans** (`[vu depuis le 04/08]`), et ce n'est pas
+  celle du tournoi. La liste se lisait comme un parcours complet : constate en reel, celui
+  de Norrie omettait son premier tour contre Ugo Carabelli, joue la veille du premier jour
+  scanne, et seule une recherche exterieure l'a rattrape. Comparee a `Tour`, la date dit
+  tout de suite si le debut du tableau manque — compter les tours absents demanderait la
+  taille du tableau, que rien ne donne.
+  - **Un forfait s'y lit comme un match joue.** L'adversaire y figure parce que la
+    rencontre etait *programmee* : Anisimova avait deux noms au `Parcours` pour un seul
+    match dispute, et `Repos` comptait ce jour-la de la meme facon. Nos donnees ne peuvent
+    pas le savoir — le fournisseur de cotes programme, le fichier de resultats retarde — et
+    c'est donc le template qui le dit.
 - **`Usure`** (`tennis_history._games_fragment`) : jeux par match sur les dix derniers, le
   **temps passe sur le court par procuration**. Abandons et tapis verts exclus — leur score
   est tronque a l'instant ou le match s'arrete, et les compter ferait passer un joueur qui a
