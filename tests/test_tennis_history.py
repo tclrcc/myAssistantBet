@@ -820,3 +820,216 @@ def _lot(settings: Settings, sport: str) -> int:
         "INSERT INTO session_events (session_id, event_id) VALUES (1, 900)", settings=settings
     )
     return 1
+
+
+# -- Forme d'un match : profil de jeux, marge, niveau des adversaires ---------
+
+
+def _joue(
+    settings: Settings,
+    played_on: str,
+    score: str,
+    *,
+    won: bool = True,
+    joueur: str = "lehecka|j",
+    contre: str = "kopriva|v",
+    tour: str = "atp",
+    series: str = "ATP500",
+    comment: str = "Completed",
+) -> None:
+    """Un match en base, du point de vue du joueur interroge.
+
+    Le score est toujours ecrit gagnant d'abord, comme le fichier source le
+    publie : c'est ce sens qui rend la marge negative pour le perdant.
+    """
+    winner, loser = (joueur, contre) if won else (contre, joueur)
+    db.execute(
+        "INSERT INTO tennis_matches (tour, season, played_on, tournament, series, surface, "
+        "round, winner, loser, winner_key, loser_key, score, comment, fetched_at) "
+        "VALUES (?, ?, ?, 'Tournoi', ?, 'Hard', '1st Round', ?, ?, ?, ?, ?, ?, ?)",
+        (
+            tour,
+            int(played_on[:4]),
+            played_on,
+            series,
+            winner.split("|")[0].title(),
+            loser.split("|")[0].title(),
+            winner,
+            loser,
+            score,
+            comment,
+            db.utcnow(),
+        ),
+        settings=settings,
+    )
+
+
+def _serie(settings: Settings, scores: list[tuple[str, bool]], **kwargs: object) -> None:
+    """Une suite de matchs, un par jour, du plus ancien au plus recent."""
+    for index, (score, won) in enumerate(scores):
+        _joue(settings, f"2026-07-{index + 1:02d}", score, won=won, **kwargs)  # type: ignore[arg-type]
+
+
+def test_le_profil_donne_la_forme_d_un_match(migrated: Settings) -> None:
+    """« Usure » donne une moyenne, qui dit le temps passe sur le court. Elle ne
+    dit pas si ce joueur produit des matchs serres ou des matchs a sens unique,
+    et c'est la question des marches de jeux — que rien n'eclairait."""
+    _serie(
+        migrated,
+        [
+            ("7-6 6-7 7-6", True),
+            ("7-6 7-6", True),
+            ("6-4 6-4", True),
+            ("6-1 6-2", True),
+            ("6-3 6-4", False),
+        ],
+    )
+
+    lignes = _lines(migrated, "Jiri Lehecka", "Vit Kopriva")
+    profil = lignes["Profil"]
+
+    # 39, 26, 20, 15 et 19 jeux : la mediane vaut 20 la ou la moyenne vaut 23.8.
+    assert "Jiri Lehecka med 20 jeux (15-39)" in profil
+    assert "TB 2/5" in profil, "deux matchs contenaient un tie-break, pas trois sets"
+    assert "2 sets 4/5" in profil
+
+
+def test_le_grand_chelem_masculin_sort_du_profil_mais_reste_dans_l_usure(
+    migrated: Settings,
+) -> None:
+    """Quarante jeux sont ordinaires au meilleur des cinq sets et exceptionnels
+    ailleurs : les melanger fait lire un joueur de trois sets comme un marathonien.
+    « Usure » les garde, elle — cinq sets fatiguent vraiment."""
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+    _joue(migrated, "2026-07-20", "7-6 6-7 7-6 6-7 7-5", won=True, series="Grand Slam")
+
+    lignes = _lines(migrated, "Jiri Lehecka", "Vit Kopriva")
+
+    assert "med 20 jeux (20-20)" in lignes["Profil"], "le Bo5 ne doit pas peser"
+    assert "sur 5" in lignes["Profil"] or "/5" in lignes["Profil"]
+    assert "sur 6" in lignes["Usure"], "l'usure, elle, compte les cinq sets"
+
+
+def test_le_meme_grand_chelem_compte_au_feminin(migrated: Settings) -> None:
+    """La colonne `series` est vide cote WTA, et tout s'y joue en trois sets :
+    ecarter les Grands Chelems des deux cotes viderait la ligne d'un tableau
+    entier."""
+    _serie(migrated, [("6-4 6-4", True)] * 5, joueur="swiatek|i", tour="wta", series="")
+    _joue(
+        migrated,
+        "2026-07-20",
+        "6-4 6-4",
+        joueur="swiatek|i",
+        tour="wta",
+        series="Grand Slam",
+    )
+
+    lignes = _lines(migrated, "Iga Swiatek", "Vit Kopriva")
+
+    assert "2 sets 6/6" in lignes["Profil"]
+
+
+def test_la_marge_separe_les_victoires_des_defaites(migrated: Settings) -> None:
+    """Melangees en une moyenne unique, elles s'annulent : ce joueur gagne de
+    huit jeux et perd de huit, et une moyenne a zero le decrirait comme un joueur
+    qui joue serre. C'est la grandeur du handicap jeux."""
+    _serie(
+        migrated,
+        [
+            ("6-1 6-2", True),
+            ("6-2 6-1", True),
+            ("6-2 6-1", False),
+            ("6-1 6-2", False),
+            ("6-3 6-3", True),
+        ],
+    )
+
+    marge = _lines(migrated, "Jiri Lehecka", "Vit Kopriva")["Marge"]
+
+    assert "+8.0 en V/3" in marge
+    assert "-9.0 en D/2" in marge
+
+
+def test_sous_cinq_matchs_aucune_forme_de_match(migrated: Settings) -> None:
+    """Une mediane sur quatre matchs decrit une semaine, pas une tendance, et la
+    lire comme telle est pire que de ne rien lire. Meme regle que le profil
+    corners du football."""
+    _serie(migrated, [("6-4 6-4", True)] * 4)
+
+    lignes = _lines(migrated, "Jiri Lehecka", "Vit Kopriva")
+
+    assert "Profil" not in lignes
+    assert "Marge" not in lignes
+    assert "Forme" in lignes, "la forme, elle, se rend des le premier match"
+
+
+def test_le_niveau_des_adversaires_corrige_la_lecture_de_la_forme(migrated: Settings) -> None:
+    """`DDDDDVVVVV` traite une victoire sur le 150e comme une victoire sur le 5e.
+    L'Elo des adversaires est deja en base pour la ligne « Elo » : la ligne ne
+    coute aucun appel."""
+    _serie(migrated, [("6-4 6-4", True)] * 3 + [("6-4 6-4", False)] * 2)
+    _joue(migrated, "2026-07-10", "6-4 6-4", won=True, contre="musetti|l")
+    for player, elo in (("Vit Kopriva", 1700.0), ("Lorenzo Musetti", 1950.0)):
+        db.execute(
+            "INSERT INTO tennis_elo (tour, normalized, player, elo, fetched_at) "
+            "VALUES ('atp', ?, ?, ?, ?)",
+            (player.casefold(), player, elo, db.utcnow()),
+            settings=migrated,
+        )
+
+    niveau = _lines(migrated, "Jiri Lehecka", "Vit Kopriva")["Niveau adv."]
+
+    assert "Jiri Lehecka adv. Elo moy 1742/6" in niveau
+    assert "meilleur battu 1950" in niveau
+
+
+def test_le_meilleur_battu_ne_sort_jamais_d_une_defaite(migrated: Settings) -> None:
+    """Il nomme un fait — cet adversaire-la a ete battu. Le prendre sur toutes
+    les rencontres creditrait un joueur du niveau de celui qui l'a sorti."""
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+    _joue(migrated, "2026-07-10", "6-4 6-4", won=False, contre="musetti|l")
+    for player, elo in (("Vit Kopriva", 1700.0), ("Lorenzo Musetti", 1950.0)):
+        db.execute(
+            "INSERT INTO tennis_elo (tour, normalized, player, elo, fetched_at) "
+            "VALUES ('atp', ?, ?, ?, ?)",
+            (player.casefold(), player, elo, db.utcnow()),
+            settings=migrated,
+        )
+
+    niveau = _lines(migrated, "Jiri Lehecka", "Vit Kopriva")["Niveau adv."]
+
+    assert "meilleur battu 1700" in niveau
+
+
+def test_une_cle_disputee_par_deux_joueurs_du_classement_est_ecartee(migrated: Settings) -> None:
+    """Garder le dernier arrive rendrait l'erreur silencieuse le jour ou deux
+    homonymes apparaissent au classement. Meme regle que le rapprochement des
+    noms : en cas de doute, aucune ligne."""
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+    for player, elo in (("Vit Kopriva", 1700.0), ("Vaclav Kopriva", 1950.0)):
+        db.execute(
+            "INSERT INTO tennis_elo (tour, normalized, player, elo, fetched_at) "
+            "VALUES ('atp', ?, ?, ?, ?)",
+            (player.casefold(), player, elo, db.utcnow()),
+            settings=migrated,
+        )
+
+    index = tennis_history.known_keys(migrated)
+    ratings = tennis_history.ratings_by_key(index, migrated)
+
+    assert ("atp", "kopriva|v") not in ratings
+    assert "Niveau adv." not in _lines(migrated, "Jiri Lehecka", "Vit Kopriva")
+
+
+def test_le_preambule_documente_les_trois_lignes(migrated: Settings) -> None:
+    """Un marche ajoute sans son mode d'emploi sort en cle brute ; une ligne de
+    contexte ajoutee sans le sien se lit de travers, ce qui est pire."""
+    from myassistantbet.services.prompt import build_prompt
+
+    corps = build_prompt(_lot(migrated, "tennis"), settings=migrated).body
+
+    assert "« Niveau adv. »" in corps
+    assert "« Profil »" in corps
+    assert "« Marge »" in corps
+    assert "handicap jeux" in corps
+    assert "meilleur des cinq sets" in corps

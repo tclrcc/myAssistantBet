@@ -25,6 +25,7 @@ import unicodedata
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
+from statistics import median
 
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
@@ -55,6 +56,17 @@ SURFACE_DAYS = 365
 
 #: Fenetre des abandons. Au-dela, un abandon ne dit plus rien de l'etat du jour.
 RETIRED_DAYS = 180
+
+#: Matchs necessaires pour publier une forme de match — profil de jeux, marge,
+#: niveau des adversaires. Meme raison que `PROFILE_MIN_MATCHES` au football :
+#: une mediane sur deux matchs decrit une soiree, pas une tendance, et la lire
+#: comme telle est pire que de ne rien lire. La collecte, elle, n'attend pas.
+SHAPE_MIN_MATCHES = 5
+
+#: Les tournois joues au meilleur des cinq sets. Le fichier ne le publie pas :
+#: cote ATP, `series` vaut « Grand Slam » et c'est le seul format long du
+#: circuit ; cote WTA la colonne est vide et tout se joue en trois sets.
+LONG_FORMAT_SERIES = "grand slam"
 
 #: Confrontations directes detaillees. Au-dela, la ligne devient un historique et
 #: non un rapport de forces.
@@ -396,6 +408,9 @@ class Match:
     score: str
     comment: str
     opponent: str
+    tour: str = ""
+    series: str = ""
+    opponent_key: str = ""
 
     @property
     def walkover(self) -> bool:
@@ -404,6 +419,17 @@ class Match:
     @property
     def retired(self) -> bool:
         return self.comment.casefold() == RETIRED
+
+    @property
+    def long_format(self) -> bool:
+        """Vrai si le match s'est joue au meilleur des cinq sets.
+
+        Un Grand Chelem masculin ne se compare a rien d'autre : quarante jeux y
+        sont ordinaires quand vingt-deux le sont ailleurs. Il reste compte dans
+        « Usure » — cinq sets fatiguent vraiment — et sort du profil de jeux,
+        qui sert a lire un match en trois sets.
+        """
+        return self.tour.casefold() == "atp" and self.series.casefold() == LONG_FORMAT_SERIES
 
 
 def _matches_of(keys: tuple[str, ...], since: str, until: str, settings: Settings) -> list[Match]:
@@ -414,7 +440,7 @@ def _matches_of(keys: tuple[str, ...], since: str, until: str, settings: Setting
     with connect(settings) as conn:
         rows = conn.execute(
             "SELECT played_on, tournament, surface, round, score, comment, winner_key, "
-            "       winner, loser "
+            "       loser_key, winner, loser, tour, series "
             f"FROM tennis_matches WHERE (winner_key IN ({marks}) OR loser_key IN ({marks})) "
             "AND played_on >= ? AND played_on < ? ORDER BY played_on",
             (*keys, *keys, since, until),
@@ -432,6 +458,9 @@ def _matches_of(keys: tuple[str, ...], since: str, until: str, settings: Setting
                 score=row["score"] or "",
                 comment=row["comment"] or "",
                 opponent=(row["loser"] if won else row["winner"]) or "",
+                tour=row["tour"] or "",
+                series=row["series"] or "",
+                opponent_key=(row["loser_key"] if won else row["winner_key"]) or "",
             )
         )
     return matches
@@ -542,6 +571,156 @@ def _games_in(score: str) -> int:
         except ValueError:
             continue
     return total
+
+
+def _sets_in(score: str) -> list[tuple[int, int]]:
+    """Les sets d'un score, **du point de vue du vainqueur du match**.
+
+    Le score est stocke tel que le fichier le publie, gagnant d'abord : `6-4 3-6
+    7-5` se lit toujours dans ce sens, quel que soit le joueur interroge. Un set
+    dont un cote manque est ignore plutot que compte a moitie, comme dans
+    `_games_in`.
+    """
+    sets: list[tuple[int, int]] = []
+    for manche in (score or "").split():
+        parts = manche.split("-")
+        if len(parts) != 2:
+            continue
+        try:
+            sets.append((int(parts[0]), int(parts[1])))
+        except ValueError:
+            continue
+    return sets
+
+
+def _shape_sample(matches: list[Match]) -> list[Match]:
+    """Les matchs qui decrivent la **forme d'une rencontre en trois sets**.
+
+    Meme fenetre que « Forme » et « Usure » — les dix derniers matchs joues,
+    abandons exclus — puis les formats longs en sont retires. Filtrer avant de
+    couper la fenetre irait chercher plus loin dans le passe et donnerait trois
+    lignes portant sur trois periodes differentes ; le compte ecrit a cote dit
+    combien de matchs ont ete gardes.
+    """
+    recent = [match for match in _played(matches) if not match.retired][-FORM_LAST:]
+    return [match for match in recent if not match.long_format]
+
+
+def _shape_fragment(player: str, matches: list[Match]) -> str:
+    """`Fils med 22 jeux (18-31) · TB 4/8 · 2 sets 6/8` — la forme d'un match.
+
+    « Usure » donne une moyenne, qui dit le temps passe sur le court ; elle ne
+    dit pas si ce joueur produit des matchs serres ou des matchs a sens unique,
+    et c'est la question des marches de jeux. La mediane et l'etendue la
+    completent — un joueur dont le match le plus court fait vingt-trois jeux ne
+    se lit pas comme un joueur qui oscille entre seize et trente.
+
+    Le taux de tie-breaks est le meilleur substitut disponible au **style** :
+    aucune source gratuite ne publie les statistiques de service, et un joueur
+    qui tient son engagement produit des sets a 7-6. Les sets secs disent
+    l'inverse — un tableau de breaks.
+    """
+    kept = _shape_sample(matches)
+    if len(kept) < SHAPE_MIN_MATCHES:
+        return ""
+    totals, breaks, straight = [], 0, 0
+    for match in kept:
+        sets = _sets_in(match.score)
+        if not sets:
+            continue
+        totals.append(sum(won + lost for won, lost in sets))
+        breaks += any({won, lost} == {7, 6} for won, lost in sets)
+        straight += len(sets) == 2
+    if len(totals) < SHAPE_MIN_MATCHES:
+        return ""
+    return (
+        f"{player} med {median(totals):.0f} jeux ({min(totals)}-{max(totals)})"
+        f" · TB {breaks}/{len(totals)} · 2 sets {straight}/{len(totals)}"
+    )
+
+
+def _margin_fragment(player: str, matches: list[Match]) -> str:
+    """`Fils +5.2 en V/6 · -4.1 en D/4` — l'ecart de jeux, marche par marche.
+
+    C'est la grandeur du **handicap jeux**, et le bloc n'en portait aucune : on
+    savait qui gagne, jamais de combien. Les deux sens sont separes parce qu'ils
+    repondent a deux questions differentes — de combien il gagne quand il gagne,
+    de combien il tombe quand il tombe. Melangees en une moyenne unique, elles
+    s'annulent et un joueur regulier ressemble a un joueur irregulier.
+
+    Le compte accompagne toujours la moyenne, meme regle que partout ailleurs.
+    """
+    won_by: list[int] = []
+    lost_by: list[int] = []
+    for match in _shape_sample(matches):
+        sets = _sets_in(match.score)
+        if not sets:
+            continue
+        margin = sum(won - lost for won, lost in sets)
+        (won_by if match.won else lost_by).append(margin)
+    if len(won_by) + len(lost_by) < SHAPE_MIN_MATCHES:
+        return ""
+    parts = []
+    if won_by:
+        parts.append(f"+{sum(won_by) / len(won_by):.1f} en V/{len(won_by)}")
+    if lost_by:
+        parts.append(f"-{sum(lost_by) / len(lost_by):.1f} en D/{len(lost_by)}")
+    return f"{player} {' · '.join(parts)}"
+
+
+def _level_fragment(
+    player: str, matches: list[Match], ratings: dict[tuple[str, str], float]
+) -> str:
+    """`Fils adv. Elo moy 1916/10 · meilleur battu 1994` — contre qui, au juste.
+
+    `VVVVVDDVDD` et `DDDDDDVVVD` ne se lisent pas pareil selon le niveau en
+    face, et rien dans le bloc ne le disait : la ligne « Forme » traitait une
+    victoire sur le 150e comme une victoire sur le 5e. L'Elo des adversaires est
+    deja en base pour la ligne « Elo » et pour « Parcours » — ces deux lignes ne
+    coutent donc aucun appel.
+
+    Le « meilleur battu » est un fait, pas une categorie : ecrire « 3 victoires
+    contre du top 20 » supposerait un seuil que rien ne fonde.
+    """
+    recent = [match for match in _played(matches) if not match.retired][-FORM_LAST:]
+    faced = [
+        (match, rating)
+        for match in recent
+        if (rating := ratings.get((match.tour.casefold(), match.opponent_key))) is not None
+    ]
+    if len(faced) < SHAPE_MIN_MATCHES:
+        return ""
+    average = sum(rating for _, rating in faced) / len(faced)
+    beaten = [rating for match, rating in faced if match.won]
+    fragment = f"{player} adv. Elo moy {average:.0f}/{len(faced)}"
+    return fragment + (f" · meilleur battu {max(beaten):.0f}" if beaten else "")
+
+
+def ratings_by_key(
+    index: dict[str, set[str]], settings: Settings | None = None
+) -> dict[tuple[str, str], float]:
+    """Elo de chaque identite du fichier de resultats, indexee par circuit et cle.
+
+    `elo.lookup()` rapproche **un** nom complet ; ici il faut l'inverse, et pour
+    des centaines d'adversaires a la fois : le fichier de resultats ne nomme
+    qu'« Fritz T. ». On parcourt donc le classement une fois et on rapproche
+    chaque joueur avec `resolve()`, la meme regle qu'ailleurs — elle refuse le
+    moindre doute plutot que d'attribuer a un joueur le rating d'un autre.
+
+    **Une cle que deux joueurs du classement se disputent est retiree.** Le cas
+    ne s'observe pas aujourd'hui, mais garder le dernier arrive rendrait
+    l'erreur silencieuse le jour ou deux homonymes apparaissent, et une ligne
+    absente vaut mieux qu'une ligne fausse.
+    """
+    found: dict[tuple[str, str], set[float]] = defaultdict(set)
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT tour, player, elo FROM tennis_elo WHERE elo IS NOT NULL"
+        ).fetchall()
+    for row in rows:
+        for key in resolve(row["player"], index):
+            found[(str(row["tour"]).casefold(), key)].add(float(row["elo"]))
+    return {key: next(iter(values)) for key, values in found.items() if len(values) == 1}
 
 
 def _surface_fragment(player: str, matches: list[Match], surface: str) -> str:
@@ -704,9 +883,27 @@ def lines(
     if form:
         rendered.append(("Forme", form))
 
+    # Le niveau des adversaires suit immediatement la forme : c'est elle qu'il
+    # corrige. Une seule lecture du classement sert les deux joueurs.
+    ratings = ratings_by_key(index, settings)
+    level = _pair(
+        _level_fragment(home, recent[home], ratings),
+        _level_fragment(away, recent[away], ratings),
+    )
+    if level:
+        rendered.append(("Niveau adv.", level))
+
     games = _pair(_games_fragment(home, recent[home]), _games_fragment(away, recent[away]))
     if games:
         rendered.append(("Usure", games))
+
+    shape = _pair(_shape_fragment(home, recent[home]), _shape_fragment(away, recent[away]))
+    if shape:
+        rendered.append(("Profil", shape))
+
+    margin = _pair(_margin_fragment(home, recent[home]), _margin_fragment(away, recent[away]))
+    if margin:
+        rendered.append(("Marge", margin))
 
     if names:
         last = _pair(

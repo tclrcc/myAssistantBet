@@ -877,6 +877,23 @@ FEEDBACK_MIN_TOTAL = 40
 #: Meme regle a l'echelle d'une ligne : un regroupement vu sept fois reste tu.
 FEEDBACK_MIN_ROWS = 8
 
+#: Journees d'analyse distinctes sous lesquelles aucun detail n'est publie.
+#:
+#: `FEEDBACK_MIN_TOTAL` garde le **volume**, ce garde-fou garde l'**etalement**,
+#: et les deux ne se remplacent pas : 63 selections tranchees prises en quatre
+#: jours restent une semaine de paris, pas un historique. Mesure sur les donnees
+#: reelles — les 60 selections de la fenetre couvraient du 5 au 8 aout, un seul
+#: tournoi de tennis en deux tableaux et une seule soiree de coupes d'Europe.
+#: Le bloc annoncait alors « Masters 1000 13/30 » et « Tennis 13/30 » comme deux
+#: observations independantes, la ou c'etaient les memes matchs sous deux noms,
+#: et « Conference League 11 » sur une unique soiree.
+#:
+#: Une concentration ne se mesure pas par competition : les deux tableaux du
+#: Canadian Open sont deux competitions distinctes en base, si bien qu'un compte
+#: de competitions aurait declare l'echantillon varie. C'est le calendrier qui
+#: la dit — dix journees ne tiennent pas dans une semaine de tournoi.
+FEEDBACK_MIN_DAYS = 10
+
 
 @dataclass
 class FeedbackRow:
@@ -922,8 +939,11 @@ class Feedback:
     """
 
     settled: int = 0
+    #: Journees d'analyse distinctes couvertes par ces selections.
+    days: int = 0
     window: int = FEEDBACK_WINDOW
     minimum: int = FEEDBACK_MIN_TOTAL
+    minimum_days: int = FEEDBACK_MIN_DAYS
     by_tier: list[FeedbackRow] = field(default_factory=list)
     by_confidence: list[FeedbackRow] = field(default_factory=list)
     by_sport: list[FeedbackRow] = field(default_factory=list)
@@ -940,8 +960,14 @@ class Feedback:
 
     @property
     def enough(self) -> bool:
-        """Assez de recul pour qu'un pourcentage veuille dire quelque chose."""
-        return self.settled >= self.minimum
+        """Assez de recul pour qu'un pourcentage veuille dire quelque chose.
+
+        Deux conditions, et il faut les deux : assez de selections, et assez de
+        journees. Un lot nombreux mais concentre sur quelques jours mesure ces
+        jours-la — un tournoi, une soiree de coupe d'Europe, une meteo — et le
+        prompt le presenterait comme un ordre de passage durable.
+        """
+        return self.settled >= self.minimum and self.days >= self.minimum_days
 
 
 def _market_key(text: str) -> str:
@@ -998,7 +1024,7 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
             row["key"]: row["label"] for row in conn.execute("SELECT key, label FROM sports")
         }
         rows = conn.execute(
-            "SELECT k.tier, k.result, k.market, k.confidence, s.key AS sport_key, "
+            "SELECT k.tier, k.result, k.market, k.confidence, k.created_at, s.key AS sport_key, "
             "       c.category, COALESCE(c.label, '') AS competition FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
@@ -1009,10 +1035,16 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
             (FEEDBACK_WINDOW,),
         ).fetchall()
 
-    report = Feedback(settled=len(rows))
+    # La journee d'analyse, et non celle du match : ce bloc juge des decisions,
+    # et deux paris pris le meme soir sur deux jours de calendrier restent une
+    # seule seance de travail.
+    report = Feedback(
+        settled=len(rows),
+        days=len({str(row["created_at"])[:10] for row in rows}),
+    )
     if not report.enough:
-        # En dessous du seuil, on ne publie aucun detail : le prompt dira qu'il
-        # manque du recul, ce qui vaut mieux qu'un pourcentage trompeur.
+        # En dessous d'un des deux seuils, on ne publie aucun detail : le prompt
+        # dira ce qui manque, ce qui vaut mieux qu'un pourcentage trompeur.
         return report
 
     report.by_tier = _feedback_tally(
@@ -1084,8 +1116,9 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
     )
 
     logger.info(
-        "Retour d'experience : %d pari(s) tranche(s) sur les %d derniers",
+        "Retour d'experience : %d pari(s) tranche(s) sur les %d derniers, %d journee(s)",
         report.settled,
         FEEDBACK_WINDOW,
+        report.days,
     )
     return report

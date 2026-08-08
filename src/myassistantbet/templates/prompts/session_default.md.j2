@@ -206,6 +206,30 @@ sur les trois dernières saisons, ATP et WTA :
   · **« Abandons »** — abandons et forfaits des six derniers mois. Seul celui qui
     a abandonné est compté, jamais son adversaire. C'est un état physique que ni
     le classement ni l'Elo ne disent.
+  · **« Niveau adv. »** — l'Elo moyen des adversaires de ces dix matchs, et le
+    meilleur d'entre eux qui ait été battu. C'est elle qui rend « Forme »
+    lisible : la suite de lettres traite une victoire sur le 150e comme une
+    victoire sur le 5e. Un « meilleur battu » inférieur à la moyenne dit que les
+    victoires sont venues du bas du tableau. Le compte accolé à la moyenne est le
+    nombre d'adversaires rapprochés au classement, pas le nombre de matchs.
+  · **« Profil »** — médiane des jeux et étendue, matchs avec tie-break, matchs
+    pliés en deux sets. « Usure » dit le temps passé sur le court, « Profil » dit
+    à quoi ressemble un match de ce joueur : c'est la ligne des marchés de jeux.
+    Un joueur dont le match le plus court fait vingt-trois jeux ne se lit pas
+    comme un joueur qui oscille entre seize et trente. C'est aussi le plus proche
+    du **style** que les données permettent — beaucoup de tie-breaks décrivent un
+    joueur qui tient son engagement, des sets secs un tableau de breaks. Aces,
+    première balle et balles de break ne sont dans aucune source : à ta recherche.
+  · **« Marge »** — l'écart de jeux moyen quand il gagne, puis quand il perd,
+    chacun avec son compte. C'est la grandeur du **handicap jeux**, et la seule
+    ligne du bloc qui en parle. Les deux sens sont séparés parce qu'une moyenne
+    unique les annule : un joueur régulier y ressemble à un joueur irrégulier.
+
+« Profil » et « Marge » écartent les matchs au **meilleur des cinq sets** — les
+Grands Chelems masculins, où quarante jeux sont ordinaires : le compte écrit à
+côté dit combien des dix ont été retenus. « Usure » les garde, elle, parce que
+cinq sets fatiguent vraiment. Sous cinq matchs retenus, ces trois lignes
+n'existent pas.
 
 La ligne **« Parcours »** nomme les adversaires déjà rencontrés **dans ce
 tournoi-ci**, du premier tour au dernier, avec leur Elo quand il est connu :
@@ -428,8 +452,17 @@ et le taux constaté : il dit que ma notation de confiance dérive, et c'est à 
 de la resserrer dès la section C.
 {% else %}
 Trop peu de recul : {{ feedback.settled }} sélection(s) tranchée(s) enregistrée(s),
-là où il en faudrait au moins {{ feedback.minimum }} pour qu'un taux veuille dire
-quelque chose. N'en tire aucune tendance, et n'écris rien à ce sujet.
+réparties sur {{ feedback.days }} journée(s) d'analyse — il en faudrait au moins
+{{ feedback.minimum }} sur {{ feedback.minimum_days }} journées pour qu'un taux
+veuille dire quelque chose.
+
+Les deux conditions comptent, et le nombre de journées n'est pas une formalité :
+un lot nombreux mais concentré sur quelques jours mesure ces jours-là — un
+tournoi, une soirée de coupe, une météo — et non ma façon d'analyser. Écrit sous
+un nom large comme « Masters 1000 » ou « Tennis », il ferait passer une semaine
+pour une tendance.
+
+N'en tire aucune tendance, et n'écris rien à ce sujet.
 {% endif %}
 {% endif %}## SORTIE ATTENDUE
 

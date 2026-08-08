@@ -20,6 +20,7 @@ from myassistantbet.services import board as board_service
 from myassistantbet.services import competitions as competitions_service
 from myassistantbet.services import coupons as coupons_service
 from myassistantbet.services.history import (
+    FEEDBACK_MIN_DAYS,
     FEEDBACK_MIN_ROWS,
     FEEDBACK_MIN_TOTAL,
     FEEDBACK_WINDOW,
@@ -91,6 +92,15 @@ def _regle(
         settings=settings,
     )
     set_result(pick_id, result, settings)
+    # Le retour d'experience exige un etalement autant qu'un volume : des
+    # selections toutes prises le meme jour mesurent ce jour-la. Les tests de
+    # volume n'ont pas a porter cette seconde contrainte, donc les picks sont
+    # repartis sur assez de journees — le seuil a son propre test.
+    db.execute(
+        "UPDATE picks SET created_at = ? WHERE id = ?",
+        (f"2026-07-{1 + pick_id % FEEDBACK_MIN_DAYS:02d}T12:00:00Z", pick_id),
+        settings=settings,
+    )
     # Un pick ne nourrit le retour d'experience que s'il a ete joue, c'est a
     # dire rattache a un coupon. Le marquer a la main ferait passer le test
     # sans que le parcours reel fonctionne.
@@ -118,6 +128,58 @@ def test_sous_le_seuil_aucun_detail_n_est_publie(migrated: Settings) -> None:
     assert not report.empty
     assert not report.enough
     assert report.by_tier == [], "un taux sous le seuil mesure le hasard, pas une tendance"
+
+
+def test_un_lot_concentre_sur_quelques_jours_ne_publie_aucun_detail(migrated: Settings) -> None:
+    """Le volume ne suffit pas : soixante selections prises en quatre jours
+    mesurent ces quatre jours-la — un tournoi, une soiree de coupe, une meteo.
+
+    Constate en reel : les soixante selections de la fenetre couvraient du 5 au
+    8 aout, et le bloc publiait « Masters 1000 13/30 » a cote de « Tennis 13/30 »
+    comme deux observations, la ou c'etaient les memes matchs sous deux noms.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(FEEDBACK_MIN_TOTAL + 10):
+        _regle(migrated, session_id, event_id, "safe", "win")
+    db.execute("UPDATE picks SET created_at = '2026-07-01T12:00:00Z'", settings=migrated)
+
+    report = feedback(migrated)
+
+    assert report.settled >= FEEDBACK_MIN_TOTAL, "le volume, lui, est atteint"
+    assert report.days == 1
+    assert not report.enough
+    assert report.by_tier == []
+
+
+def test_le_meme_lot_etale_publie_ses_taux(migrated: Settings) -> None:
+    """Le pendant du precedent : c'est bien l'etalement qui manquait, pas autre
+    chose. Sans ce test, un garde-fou trop severe passerait inapercu."""
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(FEEDBACK_MIN_TOTAL + 10):
+        _regle(migrated, session_id, event_id, "safe", "win")
+
+    report = feedback(migrated)
+
+    assert report.days >= FEEDBACK_MIN_DAYS
+    assert report.enough
+    assert [row.key for row in report.by_tier] == ["safe"]
+
+
+def test_deux_paris_du_meme_soir_ne_font_qu_une_journee(migrated: Settings) -> None:
+    """C'est la journee d'**analyse** qui est comptee, pas celle du match : deux
+    paris pris dans la meme seance restent une seule decision de travail, meme
+    s'ils portent sur deux jours de calendrier."""
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(4):
+        _regle(migrated, session_id, event_id, "safe", "win")
+    db.execute(
+        "UPDATE picks SET created_at = '2026-07-01T22:00:00Z' WHERE id % 2 = 0", settings=migrated
+    )
+    db.execute(
+        "UPDATE picks SET created_at = '2026-07-01T23:30:00Z' WHERE id % 2 = 1", settings=migrated
+    )
+
+    assert feedback(migrated).days == 1
 
 
 def test_un_regroupement_trop_maigre_est_ecarte(migrated: Settings) -> None:

@@ -608,6 +608,35 @@ si deux joueurs se sont deja affrontes, ou ce qu'un joueur vaut sur terre.
   fiche et **pas dans le prompt** : dix rencontres par joueur avec adversaire, score, tournoi
   et tour couteraient cinq cents caracteres par bloc. L'ecran n'a pas de budget de tokens,
   et c'est la que dix lettres V/D montrent leur limite.
+- **La forme d'un match** — `Profil`, `Marge`, `Niveau adv.` — repond au fait mesure sur les
+  soixante-trois premieres selections : **25 des 30 selections tennis portaient sur un
+  Vainqueur**, pour 11 gagnees. Les onze lignes du bloc repondaient toutes a la meme question,
+  « qui est le meilleur des deux », c'est a dire ce que la cote 1N2 resume deja et ce qu'un
+  book fait le mieux. Rien n'eclairait les marches de jeux, ou le prix est plus grossier — et
+  l'analyse ne pouvait donc pas les jouer. Ces trois lignes sortent des **scores deja en
+  base** : aucun appel, aucune cle, aucun quota.
+  - `Profil` — mediane des jeux, etendue, part de matchs avec tie-break, part de matchs en
+    deux sets. Le taux de tie-breaks est **le plus proche du style** que les donnees
+    permettent : un joueur qui tient son engagement produit des 7-6.
+  - `Marge` — l'ecart de jeux **en victoire et en defaite separement**, la grandeur du
+    handicap jeux. Une moyenne unique les annule : un joueur qui gagne de huit et perd de
+    huit y ressemblerait a un joueur qui joue serre.
+  - `Niveau adv.` — Elo moyen des adversaires des dix derniers matchs, et le meilleur
+    battu. C'est lui qui rend `Forme` lisible : la suite de lettres traite une victoire sur
+    le 150e comme une victoire sur le 5e. `ratings_by_key()` fait l'inverse d'`elo.lookup()`
+    — le fichier de resultats ne nomme qu'« Fritz T. » — et **retire toute cle que deux
+    joueurs du classement se disputent**, meme regle qu'ailleurs : en cas de doute, rien.
+  - **Les Grands Chelems masculins sortent de `Profil` et de `Marge`, et restent dans
+    `Usure`.** Quarante jeux sont ordinaires au meilleur des cinq sets ; les melanger fait
+    lire un joueur de trois sets comme un marathonien. `Usure`, elle, mesure le temps passe
+    sur le court, et cinq sets fatiguent vraiment. Cote WTA la colonne `series` est vide et
+    tout se joue en trois sets : le filtre ne vaut donc que pour l'ATP.
+  - La fenetre est **celle de `Forme` et d'`Usure`** — les dix derniers matchs joues — puis
+    les formats longs en sont retires. Filtrer avant de couper irait chercher plus loin dans
+    le passe et donnerait trois lignes portant sur trois periodes differentes ; le compte
+    ecrit a cote dit combien ont ete gardes.
+  - Sous `SHAPE_MIN_MATCHES` (5), **aucune des trois lignes**. Cout mesure : +1 279 tokens
+    sur un prompt de huit matchs de tennis, dont environ 510 pour le preambule.
 - `as_bytes` a ete ajoute au client de base pour ce fichier. Il n'est **jamais** mis en
   cache disque : le cache de developpement est un cache JSON, y ecrire des octets bruts le
   corromprait.
@@ -934,6 +963,17 @@ donc rien qui puisse manquer un matin.
     s'est mal passee ». Presente comme un ordre de passage, **un chiffre faux oriente plus
     surement que pas de chiffre du tout** : c'est pourquoi le seuil se regle haut, et
     `by_competition` est le regroupement qui en souffre le plus.
+  - **`FEEDBACK_MIN_DAYS` (10) garde l'etalement, la ou les deux autres gardent le
+    volume**, et il faut les deux. A 63 selections tranchees le bloc publiait tout son
+    detail — sauf que la fenetre entiere tenait **du 5 au 8 aout** : un seul tournoi de
+    tennis en deux tableaux, une seule soiree de coupes d'Europe. « Masters 1000 13/30 »
+    et « Tennis 13/30 » y etaient les **memes matchs sous deux noms**, presentes comme
+    deux observations independantes.
+    - **Une concentration ne se mesure pas par competition.** Les deux tableaux du Canadian
+      Open sont deux competitions distinctes en base, et un compte de competitions aurait
+      declare l'echantillon varie. C'est le calendrier qui la dit.
+    - C'est la journee d'**analyse** (`picks.created_at`) et non celle du match : deux
+      paris pris dans la meme seance restent une seule decision, meme a cheval sur minuit.
   - **Le garde-fou compte autant que le chiffre.** Le template interdit explicitement de
     rapprocher un taux d'une cote : ce serait calculer une esperance, et le fait que le
     chiffre vienne de l'historique de l'utilisateur n'y change rien (section 9). Un test
