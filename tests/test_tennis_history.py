@@ -801,8 +801,19 @@ def test_la_migration_purge_les_dates_deja_ecrites(migrated: Settings) -> None:
     assert restant == ["2024-12-29", "2026-07-20"]
 
 
-def _lot(settings: Settings, sport: str) -> int:
+def _lot(
+    settings: Settings,
+    sport: str,
+    home: str = "A",
+    away: str = "B",
+    commence: str = "2099-01-01T18:00:00Z",
+) -> int:
     """Une session portant un match de ce sport, et son identifiant.
+
+    Les noms et l'horaire se choisissent parce que le preambule ne documente pas
+    seulement les **sports** du lot : il ne documente que les **lignes de
+    contexte reellement presentes**. Un mode d'emploi ne se teste donc que sur un
+    lot qui porte la ligne, et l'affiche « A – B » ne porte rien.
 
     Le preambule du prompt ne documente que les sports **presents dans le lot** :
     une session de football n'a pas a payer les quarante lignes d'explication du
@@ -812,8 +823,8 @@ def _lot(settings: Settings, sport: str) -> int:
     row = db.query_one(f"SELECT id FROM sports WHERE key = '{sport}'", settings=settings)
     db.execute(
         "INSERT INTO events (id, sport_id, home, away, commence_time, source, created_at) "
-        "VALUES (900, ?, 'A', 'B', '2099-01-01T18:00:00Z', 'api', ?)",
-        (row["id"], db.utcnow()),
+        "VALUES (900, ?, ?, ?, ?, 'api', ?)",
+        (row["id"], home, away, commence, db.utcnow()),
         settings=settings,
     )
     db.execute(
@@ -1093,10 +1104,17 @@ def test_la_ligne_n_affirme_jamais_que_ce_tournoi_manque(migrated: Settings) -> 
 
 def test_le_preambule_dit_ce_que_le_retard_implique(migrated: Settings) -> None:
     """La ligne donne une date ; c'est le preambule qui dit que « Forme » peut
-    ignorer deux victoires de la semaine, et que « Parcours » comble le trou."""
+    ignorer deux victoires de la semaine, et que « Parcours » comble le trou.
+
+    Le lot porte de vrais matchs : sans la ligne, son mode d'emploi ne se rend
+    pas — et c'est voulu."""
     from myassistantbet.services.prompt import build_prompt
 
-    corps = build_prompt(_lot(migrated, "tennis"), settings=migrated).body
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+    session = _lot(migrated, "tennis", "Jiri Lehecka", "Vit Kopriva", COMMENCE)
+    corps = build_prompt(session, settings=migrated, now=NOW).body
+
+    assert "Historique" in corps, "le lot porte bien la ligne"
 
     assert "« Historique »" in corps
     assert "hebdomadaire" in corps

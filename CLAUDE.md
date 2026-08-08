@@ -637,6 +637,13 @@ si deux joueurs se sont deja affrontes, ou ce qu'un joueur vaut sur terre.
     ecrit a cote dit combien ont ete gardes.
   - Sous `SHAPE_MIN_MATCHES` (5), **aucune des trois lignes**. Cout mesure : +1 279 tokens
     sur un prompt de huit matchs de tennis, dont environ 510 pour le preambule.
+- **La recherche des matchs deja joues dans ce tournoi est la premiere tache de la liste
+  de verification tennis.** Elle est la contrepartie directe de `Historique` : nos sources
+  ne portent ni le score, ni la duree, ni les statistiques de service des tours precedents,
+  et `Parcours` ne nomme que les adversaires. Le prompt demande donc explicitement le score
+  set par set, la duree et — quand le site du tournoi ou de l'ATP/WTA les publie — aces,
+  doubles fautes, premiere balle et balles de break. C'est la seule facon d'obtenir ce que
+  la section « ce qu'aucune source ne donne » declare introuvable en automatique.
 - **`Historique` dit jusqu'ou va le jeu de donnees**, et donc jusqu'ou vont toutes les
   lignes qui en sortent. Le fichier source est hebdomadaire et publie **apres coup** : le
   8 aout il s'arretait au 3, si bien qu'aucun match du Canadian Open — commence le 4 —
@@ -957,6 +964,41 @@ deja saisis — rien n'est retape.
   systemd et le `.gitignore`. Elles ne sont **pas** dans la sauvegarde, qui ne porte que
   sur la base.
 
+## Le preambule ne documente que ce que le lot porte vraiment
+
+Prolongement d'un cran de la regle des sports. `build_prompt` passe
+`context_labels` — l'ensemble des libelles de contexte reellement rendus dans le lot — et
+le mode d'emploi d'une ligne se garde par `{% if 'Buteurs' in context_labels %}`. Le
+preambule expliquait les buteurs a un lot sans props et l'Elo a un lot dont aucun joueur
+n'est classe. Mesure : le socle par sport passe de 2 267 a 1 814 tokens au football, de
+2 696 a 2 283 au tennis.
+
+- **Une porte ne se pose que sur un mode d'emploi, jamais sur l'explication d'une
+  absence.** La porte essayee sur `Palmares` / `H2H ici` etait fausse : ce paragraphe dit
+  precisement que *l'absence* de ces lignes signale un tournoi non rattache et non un passe
+  vierge. La cacher quand elles manquent, c'est la cacher au seul moment ou elle sert. Un
+  test existant l'a attrapee — c'est pour ca qu'il existe.
+- **Une faute de frappe dans un libelle ne casse rien**, et c'est le danger : la condition
+  est toujours fausse, le mode d'emploi disparait sans un mot, et la donnee reste affichee
+  pour se lire de travers. Un test verifie que chaque libelle vise par une porte existe
+  dans `labels.CONTEXT_ICONS`, le registre des libelles que le code sait produire — meme
+  garde-fou que les identifiants du sprite.
+- Les listes **« CE QU'IL FAUT VERIFIER »** sont gardees par sport de la meme facon. Un lot
+  de tennis payait l'arbitre, la pelouse et le risque de bordures.
+
+**Corollaire pour les tests** : un garde-fou ne se teste plus sur un evenement vide. Il
+faut un lot qui porte la ligne — donc de vrais buteurs recuperes, ou de vrais matchs en
+base. Trois tests l'ont appris en cassant, exactement comme les six du garde-fou de sport.
+
+## Huit libelles sortaient sans pictogramme
+
+Releve en rendant le bloc CONTEXTE de 250 evenements reels et en le passant a
+`context_icon()` : `Buteurs`, `Buteur abs.`, `Total buts`, `Serie`, `Calendrier`,
+`Precedent`, `Lieu`, `Pelouse` — plus `Niveau adv.` et `Marge`, ajoutes le meme jour.
+C'est exactement le defaut que le sprite devait supprimer : la colonne se vide sans rien
+dire. **Toute ligne ajoutee a un bloc doit entrer dans `CONTEXT_ICONS` le meme jour**, et
+le script d'audit tient en dix lignes — le refaire coute moins que de le regretter.
+
 ## Le vainqueur n'est pas le debouche par defaut (section B du template)
 
 Sur les trente premieres selections de tennis, **vingt-cinq portaient sur un
@@ -964,6 +1006,12 @@ Sur les trente premieres selections de tennis, **vingt-cinq portaient sur un
 demandait « le marche qui traduit le mieux l'angle » sans jamais dire que ce marche-la ne
 retient d'un raisonnement que le nom d'un camp. Elle le dit maintenant, et nomme les
 lignes faites pour les marches derives.
+
+La section C porte deux exigences de plus, mesurees elles aussi : **un palier au-dela des
+deux plus surs reclame un fait nomme et date** de la section A — le palier ULTRA FUN etait
+a 0/6 et les selections a plus de 2.00 a 1/7, quand les favoris tenaient ; et **deux
+selections qui reposent sur la meme cause doivent le dire**, regle qui n'existait que pour
+les combines alors qu'un tableau entier peut tenir sur une seule soiree.
 
 **Le rappel reste sportif, et c'est la seule facon de l'ecrire.** « Le book est plus fort
 sur le 1N2 » serait vrai et interdit : chercher ou le prix est tendre est exactement la

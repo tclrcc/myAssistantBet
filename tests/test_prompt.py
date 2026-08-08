@@ -479,3 +479,25 @@ async def test_l_arbitrage_des_paliers_est_ecrit(
     body = build_prompt(session_id, settings=migrated, now=NOW).body
 
     assert "la confiance tranche" in body
+
+
+def test_chaque_porte_du_preambule_vise_un_libelle_qui_existe() -> None:
+    """Le preambule ne documente que les lignes **presentes dans le lot**, par des
+    conditions du genre `{% if 'Buteurs' in context_labels %}`.
+
+    Une faute de frappe dans un de ces libelles ne casse rien : la condition est
+    simplement toujours fausse, et le mode d'emploi disparait sans un mot — la
+    donnee, elle, reste affichee et se lit de travers. Meme piege que les
+    identifiants du sprite, meme garde-fou : `CONTEXT_ICONS` est le registre des
+    libelles que le code sait produire.
+    """
+    import re
+
+    from myassistantbet.services.labels import CONTEXT_ICONS
+    from myassistantbet.services.prompt import TEMPLATES_DIR
+
+    for chemin in TEMPLATES_DIR.glob("*.md.j2"):
+        vises = set(re.findall(r"'([^']+)' in context_labels", chemin.read_text(encoding="utf-8")))
+        inconnus = vises - set(CONTEXT_ICONS)
+        assert not inconnus, f"{chemin.name} : libelles jamais produits {sorted(inconnus)}"
+        assert vises, f"{chemin.name} : aucune porte, le preambule paie tout"

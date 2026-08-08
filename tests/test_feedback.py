@@ -526,3 +526,20 @@ def test_un_libelle_long_ne_casse_pas_l_alignement(migrated: Settings) -> None:
 
     assert ligne.line.startswith("Championnat de Belg…")
     assert len(ligne.line.split("3/4")[0]) == FeedbackRow.LABEL_WIDTH + 1
+
+
+def test_le_prompt_exige_un_fait_date_pour_un_palier_haut(migrated: Settings) -> None:
+    """Mesure sur les soixante-trois premieres selections : le palier ULTRA FUN
+    est a 0/6, et les selections a cote superieure a 2.00 a 1/7. Les favoris,
+    eux, tiennent. L'analyse ne detecte pas les surprises, elle les tente — et
+    rien dans la sortie attendue ne relevait l'exigence a mesure que le palier
+    monte. Le fait doit etre **nomme et date**, donc verifiable en section A."""
+    session_id, event_id = _session_avec_match(migrated)
+    _regle(migrated, session_id, event_id, "safe", "win")
+
+    corps = " ".join(build_prompt(session_id, settings=migrated, now=NOW).body.split())
+
+    assert "Les paliers hauts se méritent" in corps
+    assert "fait nommé et daté" in corps
+    assert "un favori qu'on n'a pas envie de jouer" in corps
+    assert "Deux lignes qui tombent ensemble n'en font qu'une" in corps

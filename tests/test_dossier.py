@@ -907,15 +907,24 @@ async def test_une_liste_de_buteurs_vide_n_est_pas_redemandee_pendant_sa_duree(
     assert "Buteurs" not in _lines(migrated)
 
 
-def test_le_prompt_dit_ce_que_la_ligne_buteurs_ne_dit_pas(migrated: Settings) -> None:
+@respx.mock
+@pytest.mark.anyio
+async def test_le_prompt_dit_ce_que_la_ligne_buteurs_ne_dit_pas(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
     """Le garde-fou compte autant que la donnee. Une equipe absente de la ligne
     n'est pas une equipe sans buteur, et un total de saison ne dit ni la
-    disponibilite ni la forme du moment."""
+    disponibilite ni la forme du moment.
+
+    Le lot porte de vrais buteurs : le preambule ne documente que les lignes
+    presentes, et un lot sans buteur n'a pas a payer leur mode d'emploi."""
     from myassistantbet.services.prompt import build_prompt
 
-    _lot(migrated, "football")
+    _seed_event(migrated, league=PROPS_LEAGUE)
+    _mock_dossier(load_fixture)
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
 
-    body = build_prompt(1, settings=migrated).body
+    body = build_prompt(_session_sur_event(migrated), settings=migrated, now=NOW).body
 
     assert "n'est pas une équipe sans buteur" in body
     assert "elle ne dit pas qui est disponible" in body
@@ -1134,20 +1143,48 @@ async def test_la_periode_la_plus_recente_prime(
     assert "absent depuis 20/07" in _lines(migrated)["Buteur abs."]
 
 
-def test_le_prompt_traite_une_absence_comme_une_piste_datee(migrated: Settings) -> None:
+@respx.mock
+@pytest.mark.anyio
+async def test_le_prompt_traite_une_absence_comme_une_piste_datee(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
     """Le garde-fou compte autant que la donnee. Une periode sans date de fin dit
     que le fournisseur ne l'a pas refermee, pas qu'un joueur est forcement absent
     aujourd'hui — et la recherche doit pouvoir la contredire."""
     from myassistantbet.services.prompt import build_prompt
 
-    _lot(migrated, "football")
+    _seed_event(migrated, league=PROPS_LEAGUE)
+    _mock_dossier(load_fixture)
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
 
-    body = build_prompt(1, settings=migrated).body
+    body = build_prompt(_session_sur_event(migrated), settings=migrated, now=NOW).body
 
     assert "Buteur abs." in body
     assert "datée à confirmer, pas comme un fait" in body
     assert "c'est ta recherche qui gagne" in body
     assert "L'absence de cette ligne ne prouve rien" in body
+
+
+def _session_sur_event(settings: Settings, event_id: int = 1) -> int:
+    """Une session portant cet evenement deja renseigne, et son identifiant.
+
+    Le preambule ne documente pas seulement les **sports** du lot : il ne
+    documente que les **lignes de contexte reellement presentes**. Un lot sans
+    buteur n'a donc aucun mode d'emploi des buteurs a payer — ce qui oblige les
+    tests de garde-fou a porter sur un lot qui en a. Un evenement vide les
+    ferait passer sans que le parcours reel fonctionne.
+    """
+    db.execute(
+        "INSERT INTO sessions (id, label, created_at) VALUES (1, 'test', ?)",
+        (db.utcnow(),),
+        settings=settings,
+    )
+    db.execute(
+        "INSERT INTO session_events (session_id, event_id) VALUES (1, ?)",
+        (event_id,),
+        settings=settings,
+    )
+    return 1
 
 
 def _lot(settings: Settings, sport: str) -> int:

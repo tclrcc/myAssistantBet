@@ -93,6 +93,26 @@ CONTEXT_ICONS = {
     "Surface": "tennis",
     "Abandons": "sortie",
     "Profil": "relief",
+    # La forme d'un match et son cadre. « Marge » partage le pictogramme de
+    # « Profil » : les deux decrivent le relief d'une rencontre, l'un par la
+    # duree, l'autre par l'ecart. « Historique » prend l'horloge, parce qu'elle
+    # ne dit rien du match — seulement jusqu'ou remonte ce qu'on sait.
+    "Niveau adv.": "jauge",
+    "Marge": "relief",
+    "Historique": "horloge",
+    # Huit libelles sortaient sans pictogramme, releves en rendant le bloc de
+    # 250 evenements reels : la colonne se vidait sans rien dire, exactement le
+    # defaut que le sprite devait supprimer. Les doublons sont assumes — deux
+    # lignes qui parlent de la meme chose meritent le meme signe.
+    "Buteurs": "football",
+    "Buteur abs.": "absent",
+    "Total buts": "football",
+    "Serie": "courbe",
+    "Calendrier": "horloge",
+    "Precedent": "medaille",
+    #: Un match delocalise : l'epingle dit un endroit, pas un terrain.
+    "Lieu": "epingle",
+    "Pelouse": "stade",
     "References": "lien",
     "Infos": "note",
 }

@@ -292,6 +292,13 @@ def build_prompt(
             # la meme regle que pour les blocs : ce qui n'a pas de donnee est
             # omis, jamais rendu vide.
             sports=sorted({event.sport_key for event in events}),
+            # Les libelles de contexte reellement presents dans le lot. Le
+            # preambule expliquait des lignes qu'aucun bloc ne portait : le mode
+            # d'emploi du palmares sur un tournoi jamais rattache, celui des
+            # buteurs sur une competition sans props. C'est le prolongement d'un
+            # cran de la regle des sports — ce qui n'a pas de donnee est omis —
+            # et ca rend au budget de quoi payer ce qui, lui, est la.
+            context_labels=sorted({label for event in events for label, _ in event.context_lines}),
             catalogues=catalogues(session_id, settings, moment),
             competition_notes=competition_notes(session_id, settings, moment),
             # Les consignes permanentes et le retour d'experience ne coutent
