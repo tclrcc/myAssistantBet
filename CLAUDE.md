@@ -139,7 +139,17 @@ non negociables, toutes couvertes par des tests :
   (« donnees non disponibles pour cette competition ») ;
 - cotes a deux decimales ; scores exacts limites aux 10 cotes les plus basses, triees
   croissant ; lignes O/U limitees aux 5 plus proches de la ligne principale ;
-- libelle sur 12 caracteres, indentation de 2, continuations alignees a 14 ;
+- libelle sur 12 caracteres, indentation de 2, continuations alignees a 14. **Le
+  separateur entre le libelle et sa valeur n'existe pas en propre** : c'est le
+  remplissage du champ qui le fabrique, donc un libelle de 12 caracteres ne laisse
+  rien et sort colle a sa valeur. Constate sur un prompt reel :
+  `Buts encais.Lillestrom >0.5 10/15`. Les cles de marche etaient deja tronquees a
+  `LABEL_MAX` ; les libelles de contexte, eux, ne passaient par aucune troncature.
+  Un test parcourt donc `CONTEXT_ICONS` entier — **11 caracteres utiles**, et
+  `Buts encais.` est devenu `Buts pris`, qui dit la meme chose et rappelle le
+  « pris » de la ligne `Corners`. `line()` degrade en plus proprement : un libelle
+  trop long decale sa ligne d'une colonne, ce qui se voit, au lieu de souder deux
+  mots, ce qui se lit de travers ;
 - un marche paye mais non modelise est rendu brut plutot que perdu silencieusement ;
 - l'en-tete ne nomme que le book principal ; **toute ligne servie par une autre source la
   porte en fin de ligne** (`[Pinnacle (ref.)]`, `[saisie manuelle]`, `[dont …]` quand une
@@ -220,7 +230,7 @@ chaque marche ajoute a `markets.py` sans l'etre a `render.py`.
   (`goals.for.under_over` → `team_totals`), `Clean sheet` (→ `btts`), `1re MT`
   (`goals.*.minute` → `totals_h1`, `halftime_fulltime`), `Cartons tps` (→
   `alternate_totals_cards`), `Formations`.
-  - `Buts encais.` est le **miroir** de `Buts marq.`, et dormait dans la meme charge
+  - `Buts pris` est le **miroir** de `Buts marq.`, et dormait dans la meme charge
     utile : `goals.for.under_over` etait lu, `goals.against.under_over` jamais. On savait
     dans combien de matchs une equipe avait marque deux buts, pas dans combien elle en
     avait encaisse deux — la seule des deux qui decrive une defense. `_under_over_fragment`
@@ -305,6 +315,28 @@ chaque marche ajoute a `markets.py` sans l'etre a `render.py`.
   `0V-0N-0D` et une moyenne de `0.0`, indiscernables d'une equipe qui ne gagne ni ne marque.
   Quand la ligne existe, elle porte son effectif (`1.4 bpm/8j`) — la statistique vaut pour
   **cette competition**, pas pour toute la saison de l'equipe.
+- **`Classement` et `Enjeu` non plus** (`_standing_played`), et ils etaient les deux
+  seules lignes a passer au travers. A zero match, le fournisseur classe quand meme
+  tout le monde : l'Eredivisie ouvrait sa saison avec « FC Zwolle 7e (0pts, 0j, +0) »
+  et « Ajax 8e (0pts, 0j, +0) » — un rang herite de la saison passee, qui ne classe
+  rien — et l'enjeu qui s'en deduit annoncait « Conference League - Play Offs » avant
+  le premier coup d'envoi du championnat. Toutes les statistiques de saison se
+  taisaient deja sur ces matchs-la.
+  - Le seuil est **un** match et non `SEASON_MIN_MATCHES` : des la premiere journee
+    le rang decrit un resultat reel, et la ligne porte deja son compte (`0pts, 1j`).
+    Limite assumee que ce seuil ne couvre pas : sur une Premiership ecossaise, le
+    fournisseur nomme des la 1re journee un « Relegation Group » qui ne se decide
+    qu'apres la 33e. La fiche de la competition le dit dans le meme prompt, et un
+    second seuil, invente pour un cas, se tromperait ailleurs.
+- **`Forme 5` melange deux fenetres, et son compte le rend visible.** Les lettres
+  viennent de `/teams/statistics`, donc de la **seule competition** ; les buts entre
+  parentheses des `RECENT_LAST` (5) derniers matchs **toutes competitions**. Les deux
+  coincident des qu'une equipe a joue cinq matchs dans la competition — soit partout,
+  sauf en debut de saison, ou l'ecart devient absurde : « Celtic V (6-8) » se lisait
+  « une victoire, six buts marques, huit encaisses », et « Slask Wroclaw DV (12-4) »
+  douze buts en deux matchs. Le compte suit donc les buts (`V (6-8/5)`), meme idiome
+  que `1.4 bpm/8j` — une lettre en face de `/5` se voit, et c'est tout ce qu'il faut
+  pour ne pas lire les deux moities sur la meme periode.
 - **Delocalisation** (`_relocated`) : un match hors du stade de l'equipe qui recoit change la
   lecture, et rien ne le laissait deviner. Le `venue` d'un match n'a pas d'identifiant
   exploitable : restent son nom et sa ville, et **il faut que les deux different**.

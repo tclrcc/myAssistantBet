@@ -1195,7 +1195,7 @@ def context_lines(
     # que l'etage B achete : buts d'equipe, BTTS, premiere mi-temps, cartons.
     for label, fragment in (
         ("Buts marq.", _team_goals_fragment),
-        ("Buts encais.", _conceded_goals_fragment),
+        ("Buts pris", _conceded_goals_fragment),
         ("Clean sheet", _clean_sheet_fragment),
         ("1re MT", _half_fragment),
         ("Formations", _formation_fragment),
@@ -1309,8 +1309,30 @@ def _prefix(team: str, value: str) -> str:
     return f"{team} {value}" if value else ""
 
 
+def _standing_played(entry: dict[str, Any] | None) -> bool:
+    """Vrai si le classement porte sur au moins un match joue.
+
+    A zero match, le fournisseur classe quand meme tout le monde : l'Eredivisie
+    ouvrait sa saison avec « FC Zwolle 7e (0pts, 0j, +0) » et « Ajax 8e (0pts,
+    0j, +0) ». Ce rang ne classe rien — il vient de la saison passee ou de
+    l'ordre alphabetique — et l'« Enjeu » qui s'en deduit non plus : le meme
+    bloc annoncait « Promotion - Eredivisie (Conference League - Play Offs) »
+    avant le premier coup d'envoi du championnat.
+
+    Toutes les statistiques de saison se taisaient deja sur ces deux matchs
+    (`SEASON_MIN_MATCHES`), et `Dom/Ext` pour la meme raison : ces deux lignes
+    la etaient les seules a passer au travers.
+
+    Le seuil est **un** match et non cinq : des la premiere journee le rang
+    decrit un resultat reel, et la ligne porte deja son compte (`0pts, 1j`) —
+    au lecteur de juger de ce que vaut un classement de debut de saison.
+    Absente, la donnee ne prouve rien : on ne retient que le zero constate.
+    """
+    return (entry or {}).get("played") != 0
+
+
 def _rank_fragment(team: str, entry: dict[str, Any] | None) -> str:
-    if not entry or entry.get("rank") is None:
+    if not entry or entry.get("rank") is None or not _standing_played(entry):
         return ""
     rank = entry["rank"]
     suffix = "er" if rank == 1 else "e"
@@ -1338,9 +1360,12 @@ def _stake_fragment(team: str, entry: dict[str, Any] | None) -> str:
     Le libelle est **recopie tel quel**, jamais traduit ni interprete : il vient
     du fournisseur, qui le tient de la competition. « Relegation Round » veut
     dire ce qu'il dit, et le reecrire serait s'en porter garant.
+
+    Meme garde que le rang, et pour la meme raison : a zero match joue, l'enjeu
+    se deduit d'un classement qui ne classe rien.
     """
     stake = (entry or {}).get("stake")
-    return f"{team} {stake}" if stake else ""
+    return f"{team} {stake}" if stake and _standing_played(entry) else ""
 
 
 #: Surfaces telles que le fournisseur les nomme. Une pelouse naturelle ne
@@ -1475,9 +1500,25 @@ def _shot_fragment(team: str, profile: dict[str, Any] | None) -> str:
 
 
 def _form_fragment(team: str, stats: dict[str, Any] | None, recent: dict[str, Any] | None) -> str:
+    """`Celtic V (6-8/5)` — les lettres, puis les buts et leur compte.
+
+    **Les deux moities ne portent pas sur la meme fenetre**, et c'est ce que le
+    compte rend enfin visible. Les lettres viennent de `/teams/statistics`,
+    donc de la **seule competition du jour** ; les buts viennent des
+    `RECENT_LAST` derniers matchs **toutes competitions**. Les deux coincident
+    des qu'une equipe a joue cinq matchs dans la competition — soit partout,
+    sauf en debut de saison, ou l'ecart devient absurde : « Celtic V (6-8) » se
+    lisait « une victoire, six buts marques, huit encaisses », et « Slask
+    Wroclaw DV (12-4) » douze buts en deux matchs.
+
+    Le compte suit donc les buts, comme `1.4 bpm/8j` ou `5.2 pris 6.4/5`
+    ailleurs : une lettre en face de `/5` se voit, et c'est tout ce qu'il faut
+    pour ne pas lire les deux moities sur la meme periode.
+    """
     letters = _form_letters((stats or {}).get("form"))
     if not letters:
         return ""
     if recent and recent.get("matches"):
-        return f"{team} {letters} ({recent['goals_for']}-{recent['goals_against']})"
+        goals = f"{recent['goals_for']}-{recent['goals_against']}/{recent['matches']}"
+        return f"{team} {letters} ({goals})"
     return f"{team} {letters}"

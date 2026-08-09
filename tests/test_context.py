@@ -12,10 +12,13 @@ from myassistantbet.config import Settings
 from myassistantbet.providers.apifootball import BASE_URL, APIFootballClient
 from myassistantbet.providers.base import ProviderError
 from myassistantbet.services.context import (
+    KIND_FORM,
     KIND_H2H,
     KIND_INJURIES,
     KIND_MAPPING,
     KIND_PROFILE,
+    KIND_RECENT,
+    KIND_STANDINGS,
     context_lines,
     fetch_context,
     load,
@@ -248,7 +251,9 @@ async def test_bloc_contexte_complet(
     lines = _lines(migrated)
 
     assert lines["Classement"] == "BK Hacken 4e (34pts, 16j) | Djurgardens IF 2e (39pts, 16j)"
-    assert lines["Forme 5"] == "BK Hacken VVNDV (9-4) | Djurgardens IF VVVND (11-3)"
+    # Le compte suit les buts : les lettres portent sur la competition, les buts
+    # sur les cinq derniers matchs toutes competitions.
+    assert lines["Forme 5"] == "BK Hacken VVNDV (9-4/5) | Djurgardens IF VVVND (11-3/5)"
     assert lines["Dom/Ext"] == (
         "BK Hacken dom 6V-1N-1D 2.1 bpm/8j | Djurgardens IF ext 4V-2N-2D 1.4 bpm/8j"
     )
@@ -1469,9 +1474,81 @@ async def test_les_buts_encaisses_completent_les_buts_marques(
     await fetch_context(api_client, EVENT, migrated)
 
     lignes = _lines(migrated)
-    assert "Buts encais." in lignes
-    assert lignes["Buts encais."] != lignes["Buts marq."], "deux cotes, deux comptes"
+    assert "Buts pris" in lignes
+    assert lignes["Buts pris"] != lignes["Buts marq."], "deux cotes, deux comptes"
     assert routes["stats_home"].call_count == 1, "aucun appel de plus"
+
+
+def _standing(rank: int, played: int, stake: str = "") -> dict[str, Any]:
+    return {"rank": rank, "points": 0, "played": played, "diff": 0, "stake": stake}
+
+
+def test_un_classement_a_zero_match_joue_ne_classe_rien(migrated: Settings) -> None:
+    """Le fournisseur classe tout le monde des avant le premier coup d'envoi :
+    l'Eredivisie ouvrait sa saison avec « FC Zwolle 7e (0pts, 0j, +0) » et
+    « Ajax 8e (0pts, 0j, +0) », et l'enjeu qui s'en deduit annoncait
+    « Conference League - Play Offs » sur une saison pas encore commencee.
+
+    Toutes les statistiques de saison se taisaient deja sur ces deux matchs :
+    ces deux lignes-la etaient les seules a passer au travers."""
+    _seed_event(migrated)
+    store(
+        1,
+        KIND_STANDINGS,
+        {
+            "home": _standing(7, 0, "Promotion - Eredivisie (Conference League - Play Offs)"),
+            "away": _standing(8, 0),
+        },
+        migrated,
+    )
+
+    lignes = _lines(migrated)
+
+    assert "Classement" not in lignes
+    assert "Enjeu" not in lignes
+
+
+def test_des_la_premiere_journee_le_classement_est_rendu(migrated: Settings) -> None:
+    """Le seuil est un match et non cinq : des la premiere journee le rang
+    decrit un resultat reel, et la ligne porte deja son compte — au lecteur de
+    juger de ce que vaut un classement de debut de saison."""
+    _seed_event(migrated)
+    store(
+        1,
+        KIND_STANDINGS,
+        {"home": _standing(9, 1, "Premiership (Relegation Group)"), "away": _standing(4, 1)},
+        migrated,
+    )
+
+    lignes = _lines(migrated)
+
+    assert "1j" in lignes["Classement"]
+    assert lignes["Enjeu"].endswith("Premiership (Relegation Group)")
+
+
+def test_la_forme_dit_sur_combien_de_matchs_portent_ses_buts(migrated: Settings) -> None:
+    """Les deux moities de la ligne ne portent pas sur la meme fenetre : les
+    lettres viennent de la seule competition du jour, les buts des cinq derniers
+    matchs toutes competitions. Elles coincidaient partout sauf en debut de
+    saison, ou « Celtic V (6-8) » se lisait « une victoire, six buts marques,
+    huit encaisses » — et « Slask Wroclaw DV (12-4) » douze buts en deux
+    matchs."""
+    _seed_event(migrated)
+    store(1, KIND_FORM, {"home": {"form": "W"}, "away": {"form": "LW"}}, migrated)
+    store(
+        1,
+        KIND_RECENT,
+        {
+            "home": {"goals_for": 6, "goals_against": 8, "matches": 5},
+            "away": {"goals_for": 12, "goals_against": 4, "matches": 5},
+        },
+        migrated,
+    )
+
+    forme = _lines(migrated)["Forme 5"]
+
+    assert "V (6-8/5)" in forme, "une lettre en face de cinq matchs, et ca se voit"
+    assert "DV (12-4/5)" in forme
 
 
 @respx.mock

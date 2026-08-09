@@ -361,7 +361,7 @@ async def test_le_prompt_contient_le_bloc_contexte(
 
     assert "CONTEXTE" in body
     assert "  Classement  BK Hacken 4e (34pts, 16j)" in body
-    assert "  Forme 5     BK Hacken VVNDV (9-4)" in body
+    assert "  Forme 5     BK Hacken VVNDV (9-4/5)" in body
     assert "  Absents     BK Hacken — M. Rygaard" in body
     assert "  H2H (3)     1-1 · 0-2 D · 2-2" in body
     # Le bloc MARCHES suit immediatement le contexte, sans ligne vide parasite.
@@ -561,3 +561,22 @@ def test_chaque_porte_du_preambule_vise_un_libelle_qui_existe() -> None:
         inconnus = vises - set(CONTEXT_ICONS)
         assert not inconnus, f"{chemin.name} : libelles jamais produits {sorted(inconnus)}"
         assert vises, f"{chemin.name} : aucune porte, le preambule paie tout"
+
+
+def test_aucun_libelle_de_contexte_ne_remplit_sa_colonne() -> None:
+    """Le separateur entre un libelle et sa valeur n'existe pas en propre :
+    c'est le remplissage du champ qui le fabrique. Un libelle qui occupe les
+    douze caracteres ne laisse donc rien, et sort colle a sa valeur — constate
+    en reel sur un prompt de six matchs, `Buts encais.Lillestrom >0.5 10/15`.
+
+    Les cles de marche etaient deja tronquees a `LABEL_MAX` ; les libelles de
+    contexte ne passaient par aucune troncature. C'est ce test qui tient la
+    regle, `line()` ne faisant que degrader proprement."""
+    from myassistantbet.services.labels import CONTEXT_ICONS
+    from myassistantbet.services.render import LABEL_MAX, line
+
+    trop_longs = {label for label in CONTEXT_ICONS if len(label) > LABEL_MAX}
+
+    assert not trop_longs, f"libelles sans separateur possible : {sorted(trop_longs)}"
+    for label in CONTEXT_ICONS:
+        assert line(label, "valeur").endswith(" valeur"), label

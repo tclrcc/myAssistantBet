@@ -65,7 +65,7 @@ CONTEXT_ICONS = {
     "Dom/Ext": "stade",
     "Entraineur": "personne",
     "Buts marq.": "football",
-    "Buts encais.": "bouclier",
+    "Buts pris": "bouclier",
     "Clean sheet": "bouclier",
     "1re MT": "chrono",
     # Le rapprochement se fait sur le premier mot : « Cartons tps » heriterait

@@ -27,6 +27,15 @@ INDENT = "  "
 LABEL_WIDTH = 12
 CONTINUATION = INDENT + " " * LABEL_WIDTH
 
+#: Longueur utile d'un libelle. Le separateur entre le libelle et sa valeur
+#: n'existe pas en propre : c'est le remplissage du champ de `LABEL_WIDTH` qui
+#: le fabrique. Un libelle qui occupe le champ entier ne laisse donc **rien** —
+#: constate en reel, « Buts encais. » faisait exactement 12 caracteres et
+#: sortait colle a sa valeur (`Buts encais.Lillestrom >0.5 10/15`). Les cles de
+#: marche etaient deja tronquees ici ; les libelles de contexte, eux, ne
+#: passaient par aucune troncature. Un test verifie le registre entier.
+LABEL_MAX = LABEL_WIDTH - 1
+
 #: Nombre de cotes de score exact retenues, et nombre par ligne rendue.
 CORRECT_SCORE_KEEP = 10
 CORRECT_SCORE_PER_LINE = 6
@@ -118,7 +127,15 @@ def _point(value: float) -> str:
 
 
 def line(label: str, value: str) -> str:
-    return f"{INDENT}{label:<{LABEL_WIDTH}}{value}"
+    """`  Classement  Lyon 4e` — libelle cale sur `LABEL_WIDTH`, puis la valeur.
+
+    Le `max` n'est pas une precaution de principe : sans lui, un libelle aussi
+    long que le champ colle sa valeur au dernier caractere. Un libelle trop
+    long decale desormais sa ligne d'une colonne, ce qui se voit et se corrige,
+    au lieu de souder deux mots, ce qui se lit de travers. Le vrai garde-fou
+    reste le test sur `LABEL_MAX`.
+    """
+    return f"{INDENT}{label:<{max(LABEL_WIDTH, len(label) + 1)}}{value}"
 
 
 def _wrap(label: str, chunks: Sequence[str], per_line: int) -> list[str]:
