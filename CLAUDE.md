@@ -1074,6 +1074,38 @@ recherche de value de la section 9. Le template dit donc qu'un angle decrivant u
 preferer un marche plus genereux serait raisonner sur le prix. Un test verifie que les
 deux phrases y sont.
 
+### Le rappel ne suffisait pas : la forme du tableau se compte
+
+Le paragraphe ci-dessus expliquait, sans que rien ne verifie jamais **la sortie**.
+Mesure a 71 selections tranchees : `Vainqueur` reste le plus gros regroupement de la
+base (28 lignes, 13/28) et le plus faible, et **28 des 35 selections tennis** y sont —
+il ne restait que six handicaps jeux et un total de jeux. Deux morceaux, qui n'en font
+qu'un :
+
+- **section B, la nature de l'angle en un mot** — « issue » ou « maniere ». C'est ce
+  mot qui choisit le marche, et l'ecrire empeche un raisonnement sur un rythme de
+  finir sur un nom de camp ;
+- **section C, le comptage** : si plus de la moitie du tableau porte sur le vainqueur,
+  ces selections se relisent avec ce mot. Si elles decrivent **toutes** une issue,
+  elles restent et le tableau le dit — c'est une information sur le lot, pas une faute.
+
+Le controle porte sur le **lot** et jamais sur une selection prise seule : la
+contrainte inverse — « varie tes marches » — ferait choisir un marche pour ne pas
+ressembler au precedent, ce qui n'est pas un angle. Et rien n'y invite a un marche
+mieux paye : ce serait raisonner sur le prix.
+
+**Les deux tombent ensemble sous quatre matchs.** Une proportion sur deux lignes ne
+decrit rien — meme regle que `FEEDBACK_MIN_ROWS` — et la derive mesuree s'est produite
+sur des lots de huit et plus. Garder le mot de la section B sans le comptage aurait
+coute des tokens sans rien mettre en face.
+
+**Le budget de tokens a tranche la forme, et il faut le savoir avant d'ecrire ici.**
+Le lot le plus lourd — trois sports pour trois matchs, donc trois preambules ouverts —
+etait a **7999 tokens sur 8000 permis**, saturation a un token pres. La consigne
+complete en coutait 21 de plus. Le conditionnement la ramene exactement a 7999. Toute
+ligne ajoutee a une section **non gardee** se paie donc sur ce lot-la, et non sur les
+six matchs de football qui gardent ~1300 tokens de marge.
+
 ## Ce qui nourrit le prompt en dehors des cotes
 
 Trois sources locales, relues a chaque generation : aucun appel reseau, aucun credit,

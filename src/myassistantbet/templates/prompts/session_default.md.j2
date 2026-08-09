@@ -526,7 +526,8 @@ La colonne « Ce qui manque » n'est jamais vide par confort : si tu n'as rien
 trouvé sur un point, il y figure.
 
 ### B. Analyse par match — 8 lignes maximum chacune
-L'angle sportif dominant, puis le marché qui le traduit le mieux.
+L'angle sportif dominant, {% if event_blocks | length >= 4 %}sa **nature en un mot — « issue » ou « manière »** —
+puis le marché qui la traduit : c'est ce mot qui choisit le marché.{% else %}puis le marché qui le traduit le mieux.{% endif %}
 Si aucun angle net ne se dégage : écris « PASSE » et passe au suivant.
 Passer est un résultat valable et attendu sur une partie du lot.
 Si la section A laisse trop de trous sur ce match, c'est un PASSE — pas une
@@ -567,7 +568,13 @@ surface qui ne convient pas, un enjeu asymétrique, une charge anormale. Sans ce
 fait, il n'y a pas d'outsider à jouer : il y a un favori qu'on n'a pas envie de
 jouer, ce qui n'est pas la même chose, et c'est un PASSE.
 
-Si deux sélections du tableau reposent sur la **même cause** — même tournoi,
+{% if event_blocks | length >= 4 %}**Compte tes lignes avant de rendre.** Si plus
+de la moitié du tableau porte sur le marché du vainqueur, relis ces sélections
+avec le mot écrit en section B : celle dont l'angle portait sur une **manière**
+se traduit ailleurs. Si elles décrivent toutes une issue, garde-les et dis-le en
+une ligne sous le tableau — c'est une information sur le lot, pas une faute.
+
+{% endif %}Si deux sélections du tableau reposent sur la **même cause** — même tournoi,
 mêmes conditions, même type de scénario — dis-le en une ligne sous le tableau.
 Deux lignes qui tombent ensemble n'en font qu'une.
 

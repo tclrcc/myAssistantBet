@@ -15,6 +15,7 @@ from myassistantbet.providers.oddsapi import BASE_URL, OddsAPIClient
 from myassistantbet.services import board as board_service
 from myassistantbet.services import session as session_service
 from myassistantbet.services.enrich import run_enrich
+from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import (
     DEFAULT_TEMPLATE,
     build_prompt,
@@ -123,6 +124,65 @@ async def test_le_prompt_interdit_toujours_le_calcul_de_value(
 
     for interdit in ("value bet", "EV", "edge", "CLV", "devigging", "Kelly"):
         assert interdit in body, f"« {interdit} » doit rester explicitement interdit"
+
+
+def _lot_de(migrated: Settings, matchs: int) -> int:
+    """Un lot de `matchs` affiches de football, montees a la main."""
+    session_id = 0
+    for index in range(matchs):
+        event_id = save(
+            build(
+                "football",
+                "Match amical",
+                f"Lyon {index}",
+                f"Nice {index}",
+                "2026-08-04",
+                "20:45",
+                f"Lyon {index} 2.10\nNul 3.40\nNice {index} 3.20",
+                "",
+                "",
+                settings=migrated,
+            ),
+            migrated,
+        )
+        session_id = board_service.toggle_selection(event_id, True, migrated)
+    return session_id
+
+
+def test_le_prompt_fait_compter_les_lignes_de_vainqueur(migrated: Settings) -> None:
+    """Section B rappelait deja que le vainqueur est le plus grossier des
+    debouches, sans que rien ne verifie jamais la forme du tableau rendu. Mesure
+    sur les selections reelles : 28 des 35 selections tennis tranchees portaient
+    sur un « Vainqueur », a 13/28 — le plus gros regroupement de la base et le
+    plus faible, quand il ne restait que six handicaps jeux et un total.
+
+    Le controle porte sur le **lot** et jamais sur une selection prise seule : si
+    tous les angles decrivent bien une issue, le tableau est juste et le dit."""
+    # Le texte est justifie a une largeur fixe : chercher une phrase entiere
+    # dans le corps brut la couperait a la premiere fin de ligne.
+    corps = " ".join(build_prompt(_lot_de(migrated, 4), settings=migrated, now=NOW).body.split())
+
+    assert "sa **nature en un mot — « issue » ou « manière »**" in corps
+    assert "Compte tes lignes avant de rendre" in corps
+    assert "plus de la moitié du tableau porte sur le marché du vainqueur" in corps
+    assert "garde-les et dis-le en une ligne sous le tableau" in corps
+
+
+def test_le_comptage_se_tait_sur_un_lot_trop_court(migrated: Settings) -> None:
+    """« Plus de la moitie » ne decrit rien sur deux ou trois lignes, et les
+    quotas se reduisent deja a proportion du lot. Meme regle que partout
+    ailleurs : sous quelques observations, une proportion ne dit rien.
+
+    Les deux morceaux tombent **ensemble**, parce qu'ils n'en font qu'un : le mot
+    de la section B n'existe que pour etre relu au moment du comptage. Garder le
+    premier sans le second aurait coute au budget de tokens du lot le plus lourd
+    — trois sports pour trois matchs — sans rien mettre en face."""
+    corps = " ".join(build_prompt(_lot_de(migrated, 3), settings=migrated, now=NOW).body.split())
+
+    assert "Compte tes lignes avant de rendre" not in corps
+    assert "nature en un mot" not in corps
+    assert "puis le marché qui le traduit le mieux" in corps, "la consigne d'origine tient"
+    assert "le plus grossier des débouchés d'une analyse" in corps, "le rappel de fond reste"
 
 
 @respx.mock
