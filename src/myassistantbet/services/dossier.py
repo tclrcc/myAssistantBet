@@ -763,17 +763,30 @@ def _goals_fragment(
     return fragment if from_season == season else f"{fragment} ({from_season})"
 
 
-def _streak_fragment(team: str, history: tuple[list[dict[str, Any]], int] | None) -> str:
+def _streak_fragment(
+    team: str, history: tuple[list[dict[str, Any]], int] | None, season: int
+) -> str:
     """`Estoril 3V` — la serie **en cours**, et non le record de la saison.
 
     `biggest.streak` de `/teams/satistics` donne le record, ce qui se lit comme la
     serie en cours et dit l'inverse : une equipe qui a gagne quatre fois en mars
     et perd depuis un mois y afficherait « 4 ».
+
+    **Rien sur un repli de saison, et c'est ce qui la distingue de « Total
+    buts ».** Cette derniere marque l'annee et reste lisible : une frequence sur
+    trente-six matchs decrit encore un profil d'equipe. Une serie « en cours »,
+    elle, est par definition une affirmation sur maintenant — datee de la saison
+    passee, elle ne serait pas seulement perimee, elle serait fausse. Constate en
+    reel : le bloc donnait « Cracovia Krakow 5N » quand la ligne « Forme 5 » juste
+    au-dessus montrait un nul puis une **defaite** dans la nouvelle saison. Le
+    repli ignore ces matchs-la — il se declenche justement parce qu'ils sont
+    moins de `SEASON_MIN_MATCHES` — donc la serie qu'il decrit est demontrablement
+    rompue.
     """
     if history is None:
         return ""
-    matches, _ = history
-    if not matches:
+    matches, from_season = history
+    if not matches or from_season != season:
         return ""
     last = _outcome(matches[-1])
     length = 0
@@ -994,7 +1007,13 @@ def dossier_lines(
                 _goals_fragment(away, away_history, season or 0),
             ),
         ),
-        ("Serie", (_streak_fragment(home, home_history), _streak_fragment(away, away_history))),
+        (
+            "Serie",
+            (
+                _streak_fragment(home, home_history, season or 0),
+                _streak_fragment(away, away_history, season or 0),
+            ),
+        ),
         (
             "Buteurs",
             (

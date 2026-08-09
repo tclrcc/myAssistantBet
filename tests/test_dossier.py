@@ -26,7 +26,13 @@ from myassistantbet.services import dossier
 from myassistantbet.services.context import KIND_TEAMS
 from myassistantbet.services.context import store as store_context
 
-from .helpers import LEAGUE, PROPS_LEAGUE, RATE_HEADERS, mock_dossier_routes
+from .helpers import (
+    DOSSIER_RATE_HEADERS,
+    LEAGUE,
+    PROPS_LEAGUE,
+    RATE_HEADERS,
+    mock_dossier_routes,
+)
 
 HOME = "BK Hacken"
 AWAY = "Djurgardens IF"
@@ -471,6 +477,25 @@ async def test_un_match_annule_ou_reporte_ne_compte_pas(
     assert "BK Hacken >2.5 23/35, BTTS 21/35" in _lines(migrated)["Total buts"]
 
 
+def _saison_en_cours_pleine(routes: dict[str, Any], load_fixture: Any) -> None:
+    """Sert la saison complete sous l'annee **en cours**, donc sans repli.
+
+    Les fixtures decrivent volontairement un mois d'aout : la saison en cours n'y
+    porte que des amicaux et des matchs a venir, si bien que `_history` se replie
+    sur N-1. C'est le cas normal, teste a part — mais la mecanique de la serie,
+    elle, ne peut se verifier que sur une saison en cours qui dit quelque chose.
+    """
+    for cote, fichier in (
+        ("season_home", "apifootball_fixtures_season_home_prev.json"),
+        ("season_away", "apifootball_fixtures_season_away_prev.json"),
+    ):
+        routes[cote].mock(
+            return_value=httpx.Response(
+                200, json=load_fixture(fichier), headers=DOSSIER_RATE_HEADERS
+            )
+        )
+
+
 @respx.mock
 @pytest.mark.anyio
 async def test_la_serie_en_cours_n_est_pas_le_record_de_la_saison(
@@ -480,7 +505,7 @@ async def test_la_serie_en_cours_n_est_pas_le_record_de_la_saison(
     comme la serie en cours et dit l'inverse : une equipe qui a gagne quatre fois
     en mars et perd depuis un mois y afficherait « 4 »."""
     _seed_event(migrated)
-    _mock_dossier(load_fixture)
+    _saison_en_cours_pleine(_mock_dossier(load_fixture), load_fixture)
 
     await dossier.refresh_event(api_client, 1, migrated, now=NOW)
 
@@ -495,11 +520,39 @@ async def test_une_serie_de_un_match_n_est_pas_une_serie(
     """L'equipe a domicile sort d'une seule defaite : ecrire « 1D » habillerait
     un resultat isole en tendance."""
     _seed_event(migrated)
-    _mock_dossier(load_fixture)
+    _saison_en_cours_pleine(_mock_dossier(load_fixture), load_fixture)
 
     await dossier.refresh_event(api_client, 1, migrated, now=NOW)
 
     assert HOME not in _lines(migrated)["Serie"]
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_aucune_serie_quand_l_historique_se_replie_sur_la_saison_passee(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Une serie « en cours » est une affirmation sur **maintenant**. Lue sur la
+    saison passee, elle n'est pas seulement perimee : elle est fausse, parce que
+    le repli se declenche justement quand la nouvelle saison compte moins de
+    `SEASON_MIN_MATCHES` matchs — donc en ignorant ceux qui l'ont deja rompue.
+
+    Constate en reel : le bloc donnait « Cracovia Krakow 5N » quand la ligne
+    « Forme 5 » juste au-dessus montrait un nul puis une **defaite** dans la
+    nouvelle saison.
+
+    « Total buts » ne suit pas cette regle et c'est voulu : une frequence sur
+    trente-six matchs decrit encore un profil d'equipe, et son annee ecrite
+    suffit a la situer."""
+    _seed_event(migrated)
+    _mock_dossier(load_fixture)
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    lignes = _lines(migrated)
+
+    assert "(2025)" in lignes["Total buts"], "on est bien sur un repli"
+    assert "Serie" not in lignes
 
 
 @respx.mock

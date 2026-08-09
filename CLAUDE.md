@@ -537,6 +537,20 @@ de fois qu'elle joue.
     explicitement, et un test le verifie.
   - `Serie` est la serie **en cours**. `biggest.streak` de `/teams/statistics` donne le
     record de la saison, ce qui se lit comme la serie en cours et dit l'inverse.
+  - **Et elle ne se rend pas du tout sur un repli de saison**, contrairement a
+    `Total buts` qui se contente d'ecrire son annee. Les deux traitements sont
+    justes parce que les deux grandeurs n'ont pas la meme nature : une frequence
+    sur trente-six matchs decrit encore un profil d'equipe, une serie « en cours »
+    est une affirmation sur **maintenant**. Datee de la saison passee, elle n'est
+    pas seulement perimee — elle est **fausse**, parce que le repli se declenche
+    justement quand la nouvelle saison compte moins de `SEASON_MIN_MATCHES`
+    matchs, donc en ignorant ceux qui l'ont deja rompue. Constate en reel sur un
+    prompt de six matchs : le bloc donnait « Cracovia Krakow 5N » quand la ligne
+    `Forme 5` juste au-dessus montrait un nul puis une **defaite** dans la
+    nouvelle saison, et quatre blocs sur six portaient la meme contradiction.
+    `_streak_fragment` recoit donc la saison comme `_goals_fragment` — l'oubli
+    venait de la : `matches, _ = history` jetait l'information que
+    `_history` rendait exprès.
   - **La charge utile n'est pas stockee brute** — seule exception du module : 43 ko pour 41
     matchs, soit une base dix fois plus grosse pour des logos. `_summarize()` garde de quoi
     tout recalculer.
