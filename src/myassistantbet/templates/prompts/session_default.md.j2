@@ -144,7 +144,13 @@ c'est ta recherche qui gagne. L'absence de cette ligne ne prouve rien non plus :
 le fournisseur ne couvre pas les indisponibilités partout.
 
 {% endif %}
-La ligne **« Entraîneur »** donne la date de prise de fonction et l'ancienneté
+{% if 'Statut' in context_labels -%}
+Une ligne **« Statut »** dit que le fournisseur de contexte ne donne pas ce match
+comme jouable à l'heure annoncée — reporté, annulé, forfait. C'est **bloquant** :
+PASSE, et une seule ligne en section B. Vérifie-le quand même, un relevé peut
+dater ; mais l'absence de cette ligne ne prouve rien dans l'autre sens.
+
+{% endif %}La ligne **« Entraîneur »** donne la date de prise de fonction et l'ancienneté
 dans **cette** équipe. Une arrivée récente est le signal : un effectif qui change
 de mains n'a plus la forme qu'on lui prête, et les statistiques ci-dessus
 décrivent en partie le travail de quelqu'un d'autre. Une ancienneté longue ne dit

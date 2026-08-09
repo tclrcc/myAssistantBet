@@ -91,6 +91,21 @@ COACH_RECENT_DAYS = 90
 #: fausserait autant les buts que la serie en cours.
 PLAYED_STATUSES = frozenset({"FT", "AET", "PEN"})
 
+#: Statuts qui disent qu'un match **ne se jouera pas a l'heure annoncee**, et le
+#: mot rendu pour chacun. `NS` est le cas ordinaire et ne produit aucune ligne ;
+#: les statuts de match en cours ou termine ne sont pas ici, `session.has_started`
+#: s'en charge deja et se lit sur l'horloge — une certitude, la ou ceci est un
+#: releve de fournisseur.
+SCHEDULE_ALERTS = {
+    "PST": "reporte",
+    "CANC": "annule",
+    "ABD": "abandonne",
+    "SUSP": "suspendu",
+    "AWD": "donne sur tapis vert",
+    "WO": "forfait",
+    "TBD": "horaire non fixe",
+}
+
 #: Amicaux, exclus de tous les comptes. Une victoire 4-3 en preparation ne dit
 #: rien de la saison, et en juillet ce sont les seuls matchs joues : les compter
 #: donnerait « >2.5 dans 4/4 » a une equipe qui n'a pas encore joue un match
@@ -305,6 +320,56 @@ def teams_of(event_id: int, settings: Settings | None = None) -> dict[str, Any]:
     """
     payload = load_context(event_id, settings).get(KIND_TEAMS)
     return payload if isinstance(payload, dict) else {}
+
+
+def status_lines(
+    event_id: int, commence_time: str, settings: Settings | None = None
+) -> list[tuple[str, str]]:
+    """`Statut  reporte (fournisseur de contexte)`, ou rien du tout.
+
+    **L'information dormait deja en base.** `_summarize` garde le statut de
+    chaque match de la saison, et le match analyse figure forcement dans
+    l'historique de sa propre equipe — le meme constat qui obligeait a un garde
+    `days >= 1` sur la ligne `Calendrier`. Personne ne le lisait : le bloc a
+    servi « Rakow Czestochowa - Zaglebie Lubin » avec ses cotes le jour ou il
+    etait reporte **depuis neuf jours**, et seule une recherche exterieure l'a
+    rattrape. Aucun appel n'est ajoute ici.
+
+    Le rapprochement se fait sur la **journee** et non sur l'heure exacte : un
+    report s'accompagne souvent d'un changement d'horaire, et exiger la minute
+    ferait manquer precisement le cas qu'on cherche. Une equipe ne joue pas deux
+    fois le meme jour, l'ambiguite n'existe pas.
+
+    Rien n'est rendu quand le rapprochement n'a pas eu lieu, quand la saison
+    n'est pas en base, ou quand le statut est celui d'un match normal. **Une
+    absence de ligne ne prouve donc pas qu'un match aura lieu** — elle dit
+    seulement que rien ne s'y oppose dans ce que nous savons.
+    """
+    settings = settings or get_settings()
+    teams = teams_of(event_id, settings)
+    season = teams.get("season")
+    moment = _parse(commence_time)
+    if not season or moment is None:
+        return []
+
+    jour = moment.date()
+    for side in ("home", "away"):
+        if not teams.get(side):
+            continue
+        known = load(int(teams[side]), KIND_SEASON, str(season), settings)
+        if known is None or not isinstance(known[0], list):
+            continue
+        for match in known[0]:
+            if not isinstance(match, dict):
+                continue
+            date = _parse(match.get("date") or "")
+            if date is None or date.date() != jour:
+                continue
+            alerte = SCHEDULE_ALERTS.get(match.get("status") or "")
+            if alerte:
+                return [("Statut", f"{alerte} (fournisseur de contexte)")]
+            return []
+    return []
 
 
 def _score_90(fixture: dict[str, Any]) -> tuple[int, int] | None:

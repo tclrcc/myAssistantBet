@@ -527,6 +527,114 @@ async def test_une_serie_de_un_match_n_est_pas_une_serie(
     assert HOME not in _lines(migrated)["Serie"]
 
 
+def _saison_avec_statut(settings: Settings, statut: str, jour: str = "2026-08-03") -> None:
+    """Un match de l'equipe a domicile, ce jour-la, avec le statut voulu."""
+    dossier.store(
+        376,
+        dossier.KIND_SEASON,
+        [{"date": f"{jour}T15:30:00+00:00", "status": statut, "league_id": 113, "at_home": True}],
+        "2026",
+        settings,
+    )
+
+
+def test_un_match_reporte_est_dit_avant_tout_le_reste(migrated: Settings) -> None:
+    """L'information dormait deja en base : `_summarize` garde le statut de
+    chaque match, et le match analyse figure dans l'historique de sa propre
+    equipe. Personne ne le lisait — le bloc a servi « Rakow - Zaglebie » avec ses
+    cotes le jour ou il etait reporte depuis neuf jours, et seule une recherche
+    exterieure l'a rattrape. Aucun appel n'est ajoute pour le savoir."""
+    from myassistantbet.services import session
+
+    _seed_event(migrated)
+    _saison_avec_statut(migrated, "PST")
+
+    lignes = session.context_block(1, HOME, AWAY, COMMENCE, "football", settings=migrated)
+
+    assert lignes[0] == ("Statut", "reporte (fournisseur de contexte)"), "en tete du bloc"
+
+
+def test_un_match_normal_ne_produit_aucune_ligne_de_statut(migrated: Settings) -> None:
+    """`NS` est le cas ordinaire : une ligne par match dirait le contraire de ce
+    qu'elle sert a signaler."""
+    from myassistantbet.services import session
+
+    _seed_event(migrated)
+    _saison_avec_statut(migrated, "NS")
+
+    lignes = session.context_block(1, HOME, AWAY, COMMENCE, "football", settings=migrated)
+
+    assert "Statut" not in dict(lignes)
+
+
+def test_le_statut_se_rapproche_sur_la_journee_et_non_sur_l_heure(migrated: Settings) -> None:
+    """Un report s'accompagne souvent d'un changement d'horaire : exiger la minute
+    ferait manquer precisement le cas qu'on cherche."""
+    from myassistantbet.services import session
+
+    _seed_event(migrated)
+    dossier.store(
+        376,
+        dossier.KIND_SEASON,
+        [{"date": "2026-08-03T19:00:00+00:00", "status": "PST", "league_id": 113, "at_home": True}],
+        "2026",
+        migrated,
+    )
+
+    lignes = session.context_block(1, HOME, AWAY, COMMENCE, "football", settings=migrated)
+
+    assert dict(lignes)["Statut"].startswith("reporte")
+
+
+def test_sans_rapprochement_aucun_statut_n_est_devine(migrated: Settings) -> None:
+    """Une absence de ligne ne prouve pas qu'un match aura lieu : elle dit
+    seulement que rien ne s'y oppose dans ce que nous savons."""
+    from myassistantbet.services import session
+
+    _seed_event(migrated, rapproche=False)
+
+    lignes = session.context_block(1, HOME, AWAY, COMMENCE, "football", settings=migrated)
+
+    assert "Statut" not in dict(lignes)
+
+
+def test_le_prompt_dit_qu_un_statut_est_bloquant(migrated: Settings) -> None:
+    """Le mode d'emploi est garde sur le libelle : il n'est paye que par les lots
+    qui portent vraiment la ligne, comme toutes les portes du preambule."""
+    from myassistantbet.services.prompt import build_prompt
+
+    _seed_event(migrated)
+    _saison_avec_statut(migrated, "PST")
+    db.execute(
+        "INSERT INTO sessions (id, label, created_at) VALUES (1, 'test', ?)",
+        (db.utcnow(),),
+        settings=migrated,
+    )
+    db.execute("INSERT INTO session_events (session_id, event_id) VALUES (1, 1)", settings=migrated)
+
+    body = build_prompt(1, settings=migrated, now=NOW).body
+    # La prose est justifiee a largeur fixe : la chercher dans le corps brut la
+    # couperait a la premiere fin de ligne. La ligne du bloc, elle, garde son
+    # alignement — qu'une normalisation des blancs effacerait.
+    corps = " ".join(body.split())
+
+    assert "  Statut      reporte (fournisseur de contexte)" in body
+    assert "ne donne pas ce match comme jouable" in corps
+    assert "l'absence de cette ligne ne prouve rien" in corps
+
+
+def test_le_mode_d_emploi_du_statut_ne_se_paie_pas_sans_la_ligne(migrated: Settings) -> None:
+    """Meme regle que le reste du preambule : ce que le lot ne porte pas ne se
+    documente pas."""
+    from myassistantbet.services.prompt import build_prompt
+
+    _lot(migrated, "football")
+
+    corps = build_prompt(1, settings=migrated).body
+
+    assert "ne donne pas ce match comme jouable" not in corps
+
+
 @respx.mock
 @pytest.mark.anyio
 async def test_aucune_serie_quand_l_historique_se_replie_sur_la_saison_passee(

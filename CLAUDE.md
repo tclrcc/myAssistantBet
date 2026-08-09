@@ -60,6 +60,22 @@ Le front est en HTMX + CSS vanilla : pas de build step, pas de `node_modules`.
   **jamais** : creer un nouveau fichier.
 - **Idempotence** : relancer un scan ne duplique aucune ligne. Upserts sur cles naturelles.
 - **Cotes** : une ligne par outcome dans `odds`. Jamais de blob JSON de cotes.
+- **Matchs reportes** : `dossier.status_lines()` rend une ligne `Statut` en **tete** du
+  bloc — `reporte`, `annule`, `forfait`, `horaire non fixe`. **L'information dormait
+  deja en base** : `_summarize` garde le statut de chaque match de la saison, et le
+  match analyse figure forcement dans l'historique de sa propre equipe. Personne ne le
+  lisait, si bien que le bloc a servi Rakow - Zaglebie avec ses cotes le jour ou il
+  etait reporte **depuis neuf jours** — seule une recherche exterieure l'a rattrape.
+  Aucun appel n'est ajoute.
+  - Le rapprochement se fait sur la **journee**, jamais sur l'heure exacte : un report
+    s'accompagne souvent d'un changement d'horaire, et exiger la minute ferait manquer
+    le cas cherche. Une equipe ne joue pas deux fois le meme jour.
+  - Le match **reste dans le prompt**, contrairement a un match commence : le statut
+    est un releve de fournisseur, pas l'horloge. Le taire ou retirer l'evenement sur
+    un flag qui peut etre perime serait pire que l'afficher marque.
+  - **Une absence de ligne ne prouve pas qu'un match aura lieu** — elle dit que rien
+    ne s'y oppose dans ce que nous savons. Le preambule le dit, et il est garde par
+    `{% if 'Statut' in context_labels %}` : il ne se paie que sur les lots concernes.
 - **Matchs commences** : `session.has_started()` porte la regle. Un evenement dont l'heure est
   passee sort du prompt, de l'enrichissement et du compteur de selection — il quitte deja le
   board — mais **reste attache a la session** : l'historique des picks s'appuie dessus. Il est

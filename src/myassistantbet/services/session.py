@@ -265,6 +265,10 @@ def context_block(
     settings = settings or get_settings()
     lines = context_lines(event_id, home, away, commence_time, settings)
     if sport_key == "football":
+        # Un match que le fournisseur ne donne pas jouable se dit **avant** tout
+        # le reste : tout ce qui suit decrit alors une rencontre qui n'aura pas
+        # lieu, et l'analyse ne doit pas le decouvrir en fin de bloc.
+        lines = dossier.status_lines(event_id, commence_time, settings) + lines
         # Le dossier d'equipe se memorise par equipe et non par match : il est
         # relu ici, comme le reste, sans un appel.
         lines += dossier.dossier_lines(event_id, home, away, commence_time, settings)

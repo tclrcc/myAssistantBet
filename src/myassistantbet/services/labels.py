@@ -57,6 +57,10 @@ UNTIMED_BOOKMAKERS = frozenset({"manual"})
 #: « Forme 5 » decrivent la meme chose a deux echelles, « Compos » et
 #: « Startlist » sont deux noms d'une liste de partants.
 CONTEXT_ICONS = {
+    # Un match que le fournisseur ne donne pas jouable a l'heure annoncee. Le
+    # panneau d'interdiction est le bon signe : la ligne ne decrit pas le match,
+    # elle dit qu'il n'aura pas lieu.
+    "Statut": "interdit",
     "Classement": "trophee",
     "Enjeu": "enjeu",
     "Palmares": "medaille",
