@@ -22,7 +22,15 @@
     {% for row in rows %}
     <tr>
       <td class="affiche">{{ row.label }}</td>
-      <td class="num">{{ row.rate_label }}</td>
+      {# L'intervalle est plus discret que le taux : c'est sa précision, pas une
+         seconde mesure. Une ligne dont il contient 50 % ne tranche pas — elle
+         reste affichée et le dit, elle n'est jamais retirée. #}
+      <td class="num">
+        {{ row.rate_label }}
+        {%- if row.interval_label %}
+        <span class="muted small ci-text">{{ row.interval_label }}</span>
+        {%- endif %}
+      </td>
       <td class="num">
         {{ row.implied_label }}
         {# Le dénominateur du taux implicite est le sous-ensemble coté. Quand il

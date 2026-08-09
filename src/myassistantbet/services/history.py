@@ -15,6 +15,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from math import sqrt
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -111,6 +112,34 @@ class Pick:
         return RESULT_LABELS.get(self.result, self.result)
 
 
+#: z d'un intervalle de confiance a 95 %.
+WILSON_Z = 1.96
+
+
+def wilson(won: int, settled: int) -> tuple[float, float] | None:
+    """Intervalle de Wilson a 95 % sur une proportion observee.
+
+    Choisi plutot que l'intervalle normal, qui donne des bornes hors de [0, 1]
+    et une largeur nulle a `x = 0` — soit exactement les deux cas ou la page a
+    le plus besoin d'etre juste : 0/6 sur ULTRA FUN, et les regroupements de
+    quelques lignes.
+
+    C'est de la statistique descriptive sur des resultats passes. Rien n'en
+    sort qui ressemble a une prevision : l'intervalle dit ce que ces tirages-la
+    permettent d'affirmer, pas ce que le prochain fera.
+    """
+    if settled <= 0:
+        return None
+    z_squared = WILSON_Z * WILSON_Z
+    observed = won / settled
+    denominator = settled + z_squared
+    centre = (won + z_squared / 2) / denominator
+    half = (WILSON_Z / denominator) * sqrt(settled * observed * (1 - observed) + z_squared / 4)
+    # Les bornes se rabattent sur [0, 1] : un taux ne sort pas de la, et une
+    # borne a -0.03 se lirait comme une grandeur signee.
+    return (max(0.0, centre - half), min(1.0, centre + half))
+
+
 @dataclass
 class RateRow:
     """Taux de reussite d'un regroupement. Aucune notion d'argent.
@@ -160,6 +189,36 @@ class RateRow:
         vient justement y regarder ses propres donnees.
         """
         return 0 < self.settled < ANALYSIS_MIN_ROWS
+
+    @property
+    def interval(self) -> tuple[float, float] | None:
+        """Intervalle de Wilson a 95 % du taux constate."""
+        return wilson(self.won, self.settled)
+
+    @property
+    def interval_label(self) -> str:
+        """« [47 – 76] », en points de pourcentage."""
+        bounds = self.interval
+        if bounds is None:
+            return ""
+        low, high = bounds
+        return f"[{low * 100:.0f} – {high * 100:.0f}]"
+
+    @property
+    def inconclusive(self) -> bool:
+        """L'intervalle contient 50 % : le taux ne tranche pas.
+
+        Un regroupement dans ce cas n'est pas presente comme un constat — il ne
+        dit pas si l'on passe plus souvent qu'a pile ou face. Au volume actuel
+        cela concerne la quasi-totalite des lignes, **et c'est le message** :
+        c'est une propriete de l'echantillon, pas un defaut d'affichage.
+
+        Distinct de `thin`, qui compte les lignes : une ligne peut porter assez
+        de paris et rester indecise, et une ligne courte peut trancher — 0/6 ne
+        contient pas 50 %.
+        """
+        bounds = self.interval
+        return bounds is not None and bounds[0] <= 0.5 <= bounds[1]
 
     @property
     def implied(self) -> float | None:
@@ -913,20 +972,41 @@ class Analysis:
         return self.settled >= self.minimum and self.days >= self.minimum_days
 
     @property
-    def thin_rows(self) -> int:
-        """Regroupements dont le taux mesure surtout le hasard.
-
-        Annonce plutot que laissee a l'oeil : la barre pale se remarque quand on
-        la cherche, pas quand on parcourt la page.
-        """
-        groups = (
+    def groups(self) -> tuple[list[RateRow], ...]:
+        """Tous les regroupements de la vue, dans l'ordre ou la page les rend."""
+        return (
             self.by_tier,
             self.by_confidence,
             self.by_sport,
             self.by_category,
             self.by_market,
         )
-        return sum(1 for rows in groups for row in rows if row.thin)
+
+    @property
+    def thin_rows(self) -> int:
+        """Regroupements dont le taux mesure surtout le hasard.
+
+        Annonce plutot que laissee a l'oeil : la barre pale se remarque quand on
+        la cherche, pas quand on parcourt la page.
+        """
+        return sum(1 for rows in self.groups for row in rows if row.thin)
+
+    @property
+    def undecided_rows(self) -> int:
+        """Regroupements dont l'intervalle contient 50 %.
+
+        Compte a part de `thin_rows`, parce que les deux causes sont
+        differentes : l'une dit « trop peu de lignes », l'autre « assez de
+        lignes, mais l'ecart reste dans le bruit ». Une ligne peut etre l'un
+        sans l'autre.
+        """
+        return sum(1 for rows in self.groups for row in rows if row.inconclusive)
+
+    @property
+    def decided_rows(self) -> int:
+        """Regroupements dont l'intervalle exclut 50 % — les seuls qui tranchent."""
+        total = sum(len(rows) for rows in self.groups)
+        return total - self.undecided_rows
 
     @property
     def overall(self) -> RateRow:

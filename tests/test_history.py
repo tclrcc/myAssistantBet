@@ -32,6 +32,7 @@ from myassistantbet.services.history import (
     set_event,
     set_result,
     stats,
+    wilson,
     worksheet,
 )
 from myassistantbet.services.manual import build, save
@@ -948,6 +949,99 @@ def test_la_page_parle_avant_le_premier_resultat(
 
     assert "Rien à mesurer" not in page
     assert "Comment tu étiquettes" in page
+
+
+# -- Intervalles de confiance -----------------------------------------------
+
+
+def test_wilson_sur_un_petit_echantillon() -> None:
+    """Une victoire sur un pari : le taux vaut 100 % et ne prouve rien.
+
+    L'intervalle normal donnerait ici une largeur **nulle** — la borne haute
+    comme la basse a 100 % — soit l'exact contraire de ce qu'il faut lire.
+    """
+    low, high = wilson(1, 1)
+
+    assert low == pytest.approx(0.2065, abs=1e-4)
+    assert high == pytest.approx(1.0)
+    assert low <= 1.0
+
+
+def test_wilson_sur_zero_reussite() -> None:
+    """0/6 — le cas ULTRA FUN. La borne basse touche zero sans le franchir, et
+    la borne haute dit ce que six paris ne permettent pas d'ecarter."""
+    low, high = wilson(0, 6)
+
+    assert low == pytest.approx(0.0, abs=1e-3)
+    assert high == pytest.approx(0.3903, abs=1e-4)
+    assert 0.0 <= low <= high <= 1.0
+
+
+def test_wilson_se_resserre_quand_l_echantillon_grandit() -> None:
+    court = wilson(5, 10)
+    long = wilson(50, 100)
+
+    assert court[1] - court[0] > long[1] - long[0]
+    assert long[0] <= 0.5 <= long[1], "50 % sur 100 paris ne tranche toujours pas"
+
+
+def test_wilson_sans_rien_de_tranche() -> None:
+    assert wilson(0, 0) is None
+
+
+def test_un_taux_dont_l_intervalle_contient_50_ne_tranche_pas(migrated: Settings) -> None:
+    session_id, event_id = _session_avec_match(migrated)
+    for index in range(10):
+        _propose(migrated, session_id, event_id, "safe", "win" if index < 6 else "loss")
+
+    ligne = analysis(migrated).by_tier[0]
+
+    assert ligne.rate == pytest.approx(0.6)
+    assert ligne.inconclusive, "6/10 ne dit pas qu'on passe plus souvent qu'a pile ou face"
+    assert ligne.interval_label == "[31 – 83]"
+
+
+def test_un_taux_tranche_quand_l_intervalle_ecarte_50(migrated: Settings) -> None:
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(12):
+        _propose(migrated, session_id, event_id, "safe", "win")
+
+    ligne = analysis(migrated).by_tier[0]
+
+    assert not ligne.inconclusive
+    assert ligne.interval[0] > 0.5
+
+
+def test_indecis_et_trop_court_sont_deux_causes_distinctes(migrated: Settings) -> None:
+    """Une ligne peut porter assez de paris et rester indecise, et une ligne
+    courte peut trancher : 0/6 n'atteint pas le seuil et exclut pourtant 50 %."""
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(6):
+        _propose(migrated, session_id, event_id, "ultra_fun", "loss")
+    for index in range(12):
+        _propose(migrated, session_id, event_id, "safe", "win" if index < 7 else "loss")
+
+    par_palier = {row.key: row for row in analysis(migrated).by_tier}
+
+    assert (par_palier["ultra_fun"].thin, par_palier["ultra_fun"].inconclusive) == (True, False)
+    assert (par_palier["safe"].thin, par_palier["safe"].inconclusive) == (False, True)
+
+
+def test_la_page_materialise_l_intervalle_et_dit_la_regle(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    session_id, event_id = _session_avec_match(isolated_settings)
+    for index in range(10):
+        _propose(isolated_settings, session_id, event_id, "safe", "win" if index < 6 else "loss")
+
+    report = analysis(isolated_settings)
+    page = " ".join(client.get("/stats").text.split())
+
+    assert report.undecided_rows, "6/10 ne tranche pas"
+    assert 'class="ci"' in page, "l'intervalle est materialise sur la barre, pas ecrit"
+    assert "intervalle à 95 %" in page
+    assert "contient 50 %" in page
+    assert "[31 – 83]" in page, "le detail chiffre, lui, l'ecrit"
 
 
 # -- Le taux implicite ------------------------------------------------------

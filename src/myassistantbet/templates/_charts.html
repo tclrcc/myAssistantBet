@@ -16,10 +16,21 @@
      Elle ne disparaît pas : le prompt tait ces lignes parce que Claude ne peut
      pas savoir qu'il lit trois paris, mais ici c'est l'utilisateur qui regarde
      ses propres données, et les lui cacher répondrait à côté. #}
+  {# L'intervalle de Wilson est **matérialisé sur la piste**, pas écrit : la vue
+     synthétique se parcourt, et deux nombres de plus par ligne la rendraient
+     illisible. Le détail chiffré, lui, l'écrit — c'est là qu'on lit au chiffre.
+     Un taux dont l'intervalle contient 50 % ne tranche pas : sa barre pâlit,
+     comme une ligne trop courte. Les deux causes diffèrent et la note sous le
+     bloc les sépare, mais le geste de lecture est le même — ne pas y voir un
+     constat. #}
   <span class="track" aria-hidden="true">
     {% if row.rate is not none %}
-      <span class="fill{% if row.thin %} is-thin{% endif %}"
+      <span class="fill{% if row.thin or row.inconclusive %} is-thin{% endif %}"
             style="width: {{ '%.1f'|format(row.rate * 100) }}%"></span>
+      {% set low, high = row.interval %}
+      <span class="ci"
+            style="left: {{ '%.1f'|format(low * 100) }}%;
+                   width: {{ '%.1f'|format((high - low) * 100) }}%"></span>
     {% endif %}
   </span>
 {% endmacro %}

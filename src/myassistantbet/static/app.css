@@ -1308,6 +1308,29 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
    moins affirmee, et le compte a cote dit pourquoi. */
 .fill.is-thin { opacity: 0.42; }
 
+/* L'intervalle de Wilson, pose **par-dessus** la barre : deux moustaches
+   reliees par un trait, l'idiome habituel. Il dit ce que le taux ne dit pas —
+   sa largeur. Une barre a 63 % qui s'etend de 47 a 76 se lit d'un coup d'oeil
+   comme ce qu'elle est : un chiffre qui ne tranche pas.
+   Pas de teinte propre : ce n'est pas une seconde grandeur, c'est la precision
+   de la premiere. Il emprunte donc la couleur du texte, en retrait. */
+.ci {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--text-dim);
+  border-right: 1px solid var(--text-dim);
+  opacity: 0.55;
+}
+.ci::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  border-top: 1px solid var(--text-dim);
+}
+
 /* Deux cartes par rangee, jamais trois : la barre est ce que la carte a a dire,
    et sur trois colonnes il ne lui reste que quelques pixels — le graphique
    n'ajoute alors plus rien au pourcentage ecrit a cote. Deux colonnes rangent

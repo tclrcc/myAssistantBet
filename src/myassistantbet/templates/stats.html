@@ -90,12 +90,31 @@
     {% endif %}
   </div>
 
+  {# Une barre pâlit pour deux raisons distinctes, et la note ne peut donc pas
+     promettre que le pâlissement identifie l'une d'elles : au volume actuel
+     seize lignes sur dix-sept sont indécises, si bien que tout le graphique
+     pâlit et que le contraste ne dit plus rien. Ce sont les deux comptes qui
+     portent l'information, et le crochet qui la montre ligne par ligne. #}
   {% if analysis.thin_rows %}
   <p class="block-note">
     {{ analysis.thin_rows }} ligne(s) portent moins de {{ analysis.minimum_rows }}
-    paris tranchés : leur barre est pâlie. Le taux y mesure surtout le hasard —
-    « 100 % » sur deux paris et « 100 % » sur quarante ne disent pas la même chose.
-    Le prompt, lui, ne publie pas ces lignes du tout.
+    paris tranchés. Le taux y mesure surtout le hasard — « 100 % » sur deux paris
+    et « 100 % » sur quarante ne disent pas la même chose. Le prompt, lui, ne
+    publie pas ces lignes du tout.
+  </p>
+  {% endif %}
+
+  {% if analysis.undecided_rows %}
+  <p class="block-note">
+    Le crochet posé sur chaque barre est l'<strong>intervalle à 95 %</strong> :
+    l'étendue des taux que ces tirages-là ne permettent pas d'écarter.
+    <strong>{{ analysis.undecided_rows }} ligne(s) sur
+    {{ analysis.undecided_rows + analysis.decided_rows }} ont un intervalle qui
+    contient 50 %</strong> — elles ne disent donc pas si tu passes plus souvent
+    qu'à pile ou face. Ce n'est pas un défaut d'affichage : c'est ce que permet
+    ce volume, et le seul moyen de le savoir est de l'écrire.
+    Une barre pâlie signale l'un ou l'autre — trop peu de paris, ou un intervalle
+    qui contient 50 % — et c'est le crochet qui dit lequel.
   </p>
   {% endif %}
 
