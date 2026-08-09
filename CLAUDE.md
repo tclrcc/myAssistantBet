@@ -551,6 +551,19 @@ de fois qu'elle joue.
     `_streak_fragment` recoit donc la saison comme `_goals_fragment` — l'oubli
     venait de la : `matches, _ = history` jetait l'information que
     `_history` rendait exprès.
+  - **Corollaire immediat, et il a failli passer inapercu : l'absence de la ligne
+    a desormais deux causes, donc le preambule doit les nommer toutes les deux.**
+    Il disait « une equipe absente de la ligne sort **donc** d'un resultat
+    isole » — vrai tant que c'etait la seule cause, faux des le correctif
+    ci-dessus. Sur le prompt reel qui l'a revele, quatre blocs sur six perdaient
+    la ligne par repli de saison, dont un Celtic sur **six victoires de rang** :
+    le preambule en faisait une equipe sans serie, l'inverse exact. Meme regle
+    que `Non servis` et ses trois causes. Le lecteur les distingue sans effort,
+    le `(2025)` de `Total buts` etant visible dans le meme bloc.
+    - Corriger un rendu sans relire son mode d'emploi laisse une **affirmation
+      fausse** a l'endroit precis ou l'on vient de gagner en justesse. La regle
+      generale : toute condition ajoutee a une ligne se verifie contre la phrase
+      du preambule qui explique son absence.
   - **La charge utile n'est pas stockee brute** — seule exception du module : 43 ko pour 41
     matchs, soit une base dix fois plus grosse pour des logos. `_summarize()` garde de quoi
     tout recalculer.

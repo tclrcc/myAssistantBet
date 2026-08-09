@@ -668,6 +668,27 @@ def test_le_prompt_distingue_les_buts_du_match_de_ceux_de_l_equipe(
     assert "saison précédente" in body, "l'annee entre parentheses doit etre expliquee"
 
 
+def test_le_prompt_donne_les_deux_causes_d_une_serie_absente(migrated: Settings) -> None:
+    """Le preambule n'en nommait qu'une — « un resultat isole » — et c'etait vrai
+    tant que c'etait la seule. Depuis que `Serie` se tait aussi sur un repli de
+    saison, cette phrase affirme le contraire de la verite : sur un prompt reel,
+    quatre blocs sur six perdaient la ligne parce que leur historique venait de
+    2025, dont un Celtic sur six victoires de rang.
+
+    Meme regle que « Non servis », qui porte ses trois causes : une absence a
+    plusieurs causes se dit en entier, sinon elle en affirme une fausse. Et le
+    lecteur peut les distinguer, le `(2025)` etant visible dans le meme bloc."""
+    from myassistantbet.services.prompt import build_prompt
+
+    _lot(migrated, "football")
+
+    corps = " ".join(build_prompt(1, settings=migrated).body.split())
+
+    assert "Deux raisons de ne pas la voir" in corps
+    assert "un résultat isolé n'est pas une série" in corps
+    assert "la seule série connue serait celle de la saison passée" in corps
+
+
 @respx.mock
 @pytest.mark.anyio
 async def test_le_match_analyse_n_est_pas_son_propre_prochain_match(
