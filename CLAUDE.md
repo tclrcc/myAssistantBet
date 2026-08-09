@@ -282,6 +282,20 @@ chaque marche ajoute a `markets.py` sans l'etre a `render.py`.
   - Sous `SEASON_MIN_MATCHES` (5) matchs joues, **aucune ligne**. Le fournisseur repond des
     zeros partout pour une equipe qui n'a rien joue dans la competition — le cas de toute
     equipe entrant en qualification europeenne, ou « >0.5 0/0 » ne decrirait personne.
+  - **`Buts tard.` est le miroir de `1re MT`**, dans la meme charge utile et pour aucun
+    appel : `_half_fragment` lisait `goals.*.minute` et n'en prenait que les trois
+    premieres tranches. C'est le **seul signal de maniere** du bloc football — `xG` et
+    `Tirs` disent le volume produit, jamais le moment ou il tombe — donc le seul qui
+    reponde a ce que la section B reclame pour sortir du 1N2.
+    - **La fenetre est `76-90` + `91-105`, pas celle des cartons, et c'est mesure.**
+      Sur les equipes ayant marque ou encaisse au moins vingt buts, les deux fenetres
+      ont le meme ecart absolu entre premier et dernier decile (25 points) mais pas la
+      meme base : mediane de 39 % apres la 60e contre 24 % apres la 75e. Rapporte a sa
+      base, le quart d'heure final discrimine donc deux fois plus. Chaque ligne ecrit
+      sa fenetre dans sa valeur, pour qu'aucune ne se lise a la place de l'autre.
+    - Mesure : KFUM Oslo n'a rien marque apres la 75e en dix-neuf buts, SJK en met
+      huit sur vingt-trois, Sichuan Jiuniu encaisse seize de ses trente-neuf buts
+      dans ce quart d'heure.
   - `cards.yellow` porte une tranche de libelle **vide** : un carton dont la minute est
     inconnue. Elle compte au total mais a aucune mi-temps — l'omettre du denominateur
     surestimerait la part des cartons tardifs.
@@ -462,6 +476,23 @@ chaque marche ajoute a `markets.py` sans l'etre a `render.py`.
   le piege classique, il a son test.
 - H2H : toujours rendu du point de vue de l'equipe a domicile du match courant, avec un
   marqueur `V`/`D` quand ce n'est pas un nul.
+- **`Aller`** : la fiche de verification appelle la double confrontation « le premier
+  determinant du scenario » et rien ne la servait. La cause etait un champ jete a la
+  collecte — le resume H2H gardait les scores et **pas la competition**, donc un aller
+  de coupe d'Europe ne se distinguait pas d'un match de championnat d'il y a deux ans.
+  Garder `league_id` ne coute **aucun appel**, c'est le meme `/fixtures/headtohead`.
+  - Trois conditions, et il faut les trois : meme competition, **terrain inverse** et
+    moins de `RETURN_LEG_DAYS` (21) jours. Le terrain inverse est le discriminant
+    fort — sans lui, deux journees de championnat rapprochees passeraient pour une
+    double confrontation.
+  - La ligne **enonce un fait et s'arrete la** : ces deux equipes se sont rencontrees
+    tel jour, chez l'autre, dans cette competition. Qu'il s'agisse d'une double
+    confrontation est une deduction, tres sure sur un tour europeen et moins ailleurs ;
+    c'est le preambule qui la fait faire, pas la ligne.
+  - Le score se lit du point de vue de l'equipe qui **recoit aujourd'hui**, comme
+    `H2H` : deux conventions dans le meme bloc se liraient a l'envers.
+  - Un releve anterieur a ce champ n'a pas de `league_id` : aucune ligne jusqu'au
+    prochain enrichissement, et surtout aucune erreur.
 - `services/matching.py` : alias memorise, puis normalisation + Levenshtein. Seuils
   `MIN_SCORE` et `MIN_GAP`. **En cas de doute on ne devine pas** : `mapping_pending` et
   resolution manuelle. Un alias manuel prime pour toujours.

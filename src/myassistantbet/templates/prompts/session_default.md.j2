@@ -56,13 +56,28 @@ compétition**, et non des pourcentages ni des moyennes :
     s'additionnent toujours pas en un total de rencontre : pour ça, la ligne
     « Total buts » plus bas est la seule qui compte les deux équipes réunies.
   · **« Clean sheet »** — matchs sans encaisser, puis matchs sans marquer.
-  · **« 1re MT »** — part des buts marqués puis encaissés tombée avant la
-    pause, rapportée au nombre de buts et non au nombre de matchs.
+{% if '1re MT' in context_labels %}  · **« 1re MT »** et **« Buts tard. »** — la
+    répartition des buts marqués puis encaissés, avant la pause et après la 75e,
+    rapportée au nombre de buts et non au nombre de matchs. La seconde est la
+    seule ligne qui dise **quand** une équipe marque ou cède : `xG` et `Tirs`
+    donnent le volume, jamais le moment. Encaisser le tiers de ses buts dans le
+    dernier quart d'heure éclaire un total et un handicap, pas le seul vainqueur.
+{% endif %}
   · **« Cartons tps »** — part des cartons jaunes reçus après la 60e.
   · **« Formations »** — les deux formations les plus alignées, avec leur
     nombre de titularisations. Une formation à 4 sur 16 n'est pas une habitude,
     c'est un effectif qui tourne — et ça se lit sur le compte, pas sur le nom.
 
+{% if 'Aller' in context_labels -%}
+La ligne **« Aller »** dit que ces deux équipes se sont déjà rencontrées dans
+cette compétition, chez l'autre, il y a moins de trois semaines — le score est
+donné du point de vue de l'équipe qui reçoit aujourd'hui, comme « H2H ». C'est
+un fait, pas une conclusion : à toi de dire s'il s'agit d'une double
+confrontation, ce qui est presque certain sur un tour européen. Si c'en est une,
+c'est **le premier déterminant du scénario** — qui doit marquer, qui gère, qui
+joue le prolongement — et il prime sur la forme et sur le classement.
+
+{% endif -%}
 La ligne **« Enjeu »** donne ce que la compétition déclare pour l'équipe à cette
 place — « Play-offs », « Relegation Round », « Promotion - Champions League ».
 Recopiée telle quelle : c'est l'enjeu réel que la fiche de vérification réclame,

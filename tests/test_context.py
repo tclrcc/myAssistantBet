@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -19,6 +19,7 @@ from myassistantbet.services.context import (
     KIND_PROFILE,
     KIND_RECENT,
     KIND_STANDINGS,
+    KIND_TEAMS,
     context_lines,
     fetch_context,
     load,
@@ -1428,6 +1429,90 @@ async def test_les_buts_encaisses_completent_les_buts_marques(
     assert "Buts pris" in lignes
     assert lignes["Buts pris"] != lignes["Buts marq."], "deux cotes, deux comptes"
     assert routes["stats_home"].call_count == 1, "aucun appel de plus"
+
+
+def _h2h(settings: Settings, *, jours: int, league: int | None = 113, inverse: bool = True) -> None:
+    """Une confrontation directe unique, datee par rapport au match analyse."""
+    joue = datetime(2026, 8, 3, 15, 30, tzinfo=UTC) - timedelta(days=jours)
+    store(1, KIND_TEAMS, {"home": 376, "away": 377, "league": 113, "season": 2026}, settings)
+    store(
+        1,
+        KIND_H2H,
+        {
+            "home_id": 376,
+            "matches": [
+                {
+                    # `inverse` : celui qui recoit aujourd'hui se deplacait.
+                    "home_id": 377 if inverse else 376,
+                    "home_goals": 2,
+                    "away_goals": 0,
+                    "date": joue.isoformat(),
+                    "league_id": league,
+                }
+            ],
+        },
+        settings,
+    )
+
+
+def test_l_aller_d_une_double_confrontation_est_nomme(migrated: Settings) -> None:
+    """La fiche de verification appelle ca « le premier determinant du
+    scenario » et rien ne le servait : le resume H2H gardait les scores et
+    jetait la competition, si bien qu'un aller de coupe d'Europe ne se
+    distinguait pas d'un match de championnat d'il y a deux ans.
+
+    Le score se lit du point de vue de l'equipe qui recoit aujourd'hui, comme
+    « H2H » — deux conventions dans le meme bloc se liraient a l'envers."""
+    _seed_event(migrated)
+    _h2h(migrated, jours=7)
+
+    lignes = _lines(migrated)
+
+    assert lignes["Aller"] == "0-2 le 27/07, Djurgardens IF recevait"
+
+
+@pytest.mark.parametrize(
+    ("cas", "kwargs"),
+    [
+        ("une autre competition", {"league": 3}),
+        ("le meme terrain, donc pas un retour", {"inverse": False}),
+        ("trop ancien pour une double confrontation", {"jours": 40}),
+        ("competition inconnue au rapprochement", {"league": None}),
+    ],
+)
+def test_aucun_aller_hors_des_trois_conditions(
+    migrated: Settings, cas: str, kwargs: dict[str, Any]
+) -> None:
+    """Le terrain inverse est le discriminant fort : sans lui, deux journees de
+    championnat rapprochees passeraient pour une double confrontation."""
+    _seed_event(migrated)
+    _h2h(migrated, **{"jours": 7, **kwargs})
+
+    assert "Aller" not in _lines(migrated), cas
+
+
+def test_un_releve_d_avant_le_champ_ne_produit_pas_d_aller(migrated: Settings) -> None:
+    """Un h2h stocke avant que la competition ne soit gardee n'a pas de
+    `league_id` : aucune ligne, jusqu'au prochain enrichissement. Le rendu ne
+    doit pas lever pour autant."""
+    _seed_event(migrated)
+    store(1, KIND_TEAMS, {"home": 376, "away": 377, "league": 113, "season": 2026}, migrated)
+    store(
+        1,
+        KIND_H2H,
+        {
+            "home_id": 376,
+            "matches": [
+                {"home_id": 377, "home_goals": 2, "away_goals": 0, "date": "2026-07-27T15:30:00Z"}
+            ],
+        },
+        migrated,
+    )
+
+    lignes = _lines(migrated)
+
+    assert "Aller" not in lignes
+    assert lignes["H2H (1)"] == "0-2 D", "la suite des scores tient toujours"
 
 
 def _standing(rank: int, played: int, stake: str = "") -> dict[str, Any]:

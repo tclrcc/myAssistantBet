@@ -73,6 +73,17 @@ TEAM_TOTAL_LINES = ("0.5", "1.5", "2.5")
 FIRST_HALF_BANDS = ("0-15", "16-30", "31-45")
 LATE_BANDS = ("61-75", "76-90", "91-105")
 
+#: Fenetre des buts tardifs, plus etroite que celle des cartons — et la
+#: difference est **mesuree**, pas esthetique. Sur les equipes en base ayant
+#: marque ou encaisse au moins vingt buts, les deux fenetres ont le meme ecart
+#: absolu entre premier et dernier decile (25 points), mais pas la meme base :
+#: mediane de 39 % apres la 60e contre 24 % apres la 75e. Rapporte a sa base, le
+#: quart d'heure final discrimine donc deux fois plus — 12 % contre 38 % est un
+#: rapport de trois, 28 % contre 53 % n'en fait pas deux. Chaque ligne ecrit sa
+#: fenetre dans sa valeur, comme « Cartons tps », pour qu'aucune des deux ne se
+#: lise a la place de l'autre.
+LATE_GOAL_BANDS = ("76-90", "91-105")
+
 #: Formations rendues au plus. Deux suffisent a dire « une equipe stable » ou
 #: « un effectif tournant » ; les sept que le fournisseur peut lister ne
 #: diraient rien de plus pour sept fois le cout en tokens.
@@ -773,6 +784,10 @@ async def fetch_context(
                     "home_goals": goals.get("home"),
                     "away_goals": goals.get("away"),
                     "date": (fixture.get("fixture") or {}).get("date"),
+                    # La competition ne servait a rien tant qu'on ne rendait que
+                    # la suite des scores. Elle est ce qui distingue un match
+                    # aller d'une rencontre de championnat d'il y a deux ans.
+                    "league_id": (fixture.get("league") or {}).get("id"),
                 }
             )
         store(report.event_id, KIND_H2H, {"home_id": mapping.home_id, "matches": matches}, settings)
@@ -980,6 +995,32 @@ def _half_fragment(team: str, stats: dict[str, Any] | None) -> str:
     return f"{team} {' '.join(parts)}" if parts else ""
 
 
+def _late_goals_fragment(team: str, stats: dict[str, Any] | None) -> str:
+    """`BK Hacken 5/28 marq. 9/20 pris apres 75e` — la fin de match.
+
+    Miroir tardif de « 1re MT », dans la meme charge utile et pour aucun appel
+    de plus : `_half_fragment` lisait `goals.*.minute` et n'en prenait que les
+    trois premieres tranches. C'est le **seul signal de maniere** du bloc
+    football — `xG` et `Tirs` disent le volume produit, jamais le moment ou il
+    tombe — et c'est ce que la section B reclame pour sortir du 1N2.
+
+    Mesure sur la base : KFUM Oslo n'a rien marque apres la 75e en dix-neuf
+    buts quand SJK en met huit sur vingt-trois, et Sichuan Jiuniu encaisse
+    seize de ses trente-neuf buts dans ce quart d'heure.
+    """
+    if not _season_ready(stats):
+        return ""
+    goals = (stats or {}).get("goals") or {}
+    parts = []
+    for side, label in (("for", "marq."), ("against", "pris")):
+        block = (goals.get(side) or {}).get("minute")
+        total = _all_bands_total(block)
+        if not total:
+            continue
+        parts.append(f"{_bands_total(block, LATE_GOAL_BANDS)}/{total} {label}")
+    return f"{team} {' '.join(parts)} apres 75e" if parts else ""
+
+
 def _card_timing_fragment(team: str, stats: dict[str, Any] | None) -> str:
     """`BK Hacken 19/34 apres 60e` — les cartons tardifs sont un angle a eux.
 
@@ -1043,6 +1084,62 @@ def _h2h_line(payload: dict[str, Any], settings: Settings) -> str:
         marker = " V" if ours > theirs else " D" if ours < theirs else ""
         fragments.append(f"{ours}-{theirs}{marker}")
     return " · ".join(fragments)
+
+
+#: Au-dela, deux rencontres entre les memes equipes ne forment plus une double
+#: confrontation. Trois semaines couvrent large : un tour europeen se joue a
+#: sept jours, un huitieme de finale a quatorze ou vingt et un.
+RETURN_LEG_DAYS = 21
+
+
+def _return_leg_line(payload: dict[str, Any], league_id: Any, away: str, commence_time: str) -> str:
+    """`0-0 le 06/08, Hammarby recevait` — l'aller d'une double confrontation.
+
+    La fiche de verification appelle ca **« le premier determinant du
+    scenario »** et rien ne le servait : le resume H2H gardait les scores et
+    jetait la competition, si bien qu'on ne pouvait pas distinguer l'aller du
+    tour en cours d'un match de championnat d'il y a deux ans. Le champ est
+    garde depuis, sans un appel de plus — c'est le meme `/fixtures/headtohead`.
+
+    Trois conditions, et il faut les trois : **meme competition**, **terrain
+    inverse** — celui qui recoit aujourd'hui se deplacait — et moins de
+    `RETURN_LEG_DAYS` jours. Le terrain inverse est le discriminant fort ; sans
+    lui, deux journees de championnat rapprochees passeraient pour une double
+    confrontation.
+
+    La ligne **enonce un fait et s'arrete la** : ces deux equipes se sont
+    rencontrees tel jour, chez l'autre, dans cette competition. Qu'il s'agisse
+    d'une double confrontation est une deduction, tres sure sur un tour europeen
+    et moins ailleurs — c'est au lecteur de la faire.
+
+    Un releve d'avant ce champ n'a pas de `league_id` : aucune ligne, jusqu'au
+    prochain enrichissement.
+    """
+    matches = payload.get("matches") or []
+    home_id = payload.get("home_id")
+    if not matches or home_id is None or league_id is None:
+        return ""
+    start = _moment(commence_time)
+    recent = max(matches, key=lambda item: str(item.get("date") or ""))
+    played = _moment(str(recent.get("date") or ""))
+    if start is None or played is None:
+        return ""
+    if recent.get("league_id") != league_id or recent.get("home_id") == home_id:
+        return ""
+    jours = (start - played).days
+    if not 0 <= jours <= RETURN_LEG_DAYS:
+        return ""
+    # Le score se lit du point de vue de l'equipe qui recoit aujourd'hui, comme
+    # la ligne H2H : deux conventions dans le meme bloc se liraient a l'envers.
+    ours, theirs = recent["away_goals"], recent["home_goals"]
+    return f"{ours}-{theirs} le {played.strftime('%d/%m')}, {away} recevait"
+
+
+def _moment(value: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 def _rest_days(summary: dict[str, Any] | None, commence_time: str) -> str:
@@ -1198,6 +1295,9 @@ def context_lines(
         ("Buts pris", _conceded_goals_fragment),
         ("Clean sheet", _clean_sheet_fragment),
         ("1re MT", _half_fragment),
+        # Meme charge utile, meme denominateur, fenetre opposee : les deux se
+        # lisent ensemble, et ce qui manque entre les deux est le milieu.
+        ("Buts tard.", _late_goals_fragment),
         ("Formations", _formation_fragment),
     ):
         rendered = _pair(fragment(home, form.get("home")), fragment(away, form.get("away")))
@@ -1291,6 +1391,14 @@ def context_lines(
 
     h2h = data.get(KIND_H2H)
     if h2h:
+        # L'aller precede la suite des scores : la premiere entree de « H2H »
+        # est le meme match, et le lecteur doit savoir a quoi elle correspond
+        # avant de la lire comme un antecedent parmi d'autres.
+        aller = _return_leg_line(
+            h2h, (data.get(KIND_TEAMS) or {}).get("league"), away, commence_time
+        )
+        if aller:
+            lines.append(("Aller", aller))
         rendered = _h2h_line(h2h, settings)
         if rendered:
             lines.append((f"H2H ({len(h2h.get('matches') or [])})", rendered))

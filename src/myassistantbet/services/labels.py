@@ -72,6 +72,9 @@ CONTEXT_ICONS = {
     "Buts pris": "bouclier",
     "Clean sheet": "bouclier",
     "1re MT": "chrono",
+    # Les deux fenetres d'une meme repartition : meme pictogramme, la valeur
+    # ecrit laquelle.
+    "Buts tard.": "chrono",
     # Le rapprochement se fait sur le premier mot : « Cartons tps » heriterait
     # sinon du pictogramme de « Cartons », alors que la ligne dit *quand* ils
     # tombent et non combien.
@@ -87,6 +90,9 @@ CONTEXT_ICONS = {
     "Compos": "liste",
     "Startlist": "liste",
     "Absents": "absent",
+    # L'aller d'une double confrontation : meme signe que la confrontation
+    # directe, dont il est la premiere entree.
+    "Aller": "duel",
     "H2H ici": "epingle",
     "H2H": "duel",
     "Tour": "echelons",
