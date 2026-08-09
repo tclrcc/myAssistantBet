@@ -771,7 +771,14 @@ table.board select.niveau { max-width: 11rem; }
 /* --- Historique et picks --------------------------------------------------- */
 
 .stats { display: flex; gap: var(--s5); flex-wrap: wrap; align-items: flex-start; }
-.stats > div { flex: 1; min-width: 260px; }
+/* Le detail chiffre porte huit colonnes depuis le taux implicite, contre six
+   avant lui. A 260px les valeurs se cassaient en deux — « 59 » puis « % », et
+   « -11 » puis « pts » — et deux tableaux voisins finissaient par se
+   chevaucher. La largeur mini suit donc le contenu.
+   `min()` la fait ceder sur petit ecran : une valeur fixe y ferait defiler la
+   page entiere horizontalement, ce qui est pire que deux tableaux l'un sous
+   l'autre. */
+.stats > div { flex: 1; min-width: min(30rem, 100%); }
 .stats h3 {
   font-size: 0.75rem;
   font-weight: 650;
@@ -781,6 +788,9 @@ table.board select.niveau { max-width: 11rem; }
   margin: 0 0 var(--s2);
 }
 table.rates { font-size: 0.9rem; }
+/* Une valeur ne se coupe jamais : « -11 pts » repli sur deux lignes se lit de
+   travers, et l'unite separee de son nombre a l'air d'une autre colonne. */
+table.rates .num { white-space: nowrap; }
 tr.result-win td:first-child { box-shadow: inset 3px 0 0 var(--ok); }
 tr.result-loss td:first-child { box-shadow: inset 3px 0 0 var(--alert); }
 

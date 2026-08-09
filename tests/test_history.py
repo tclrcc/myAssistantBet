@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from dataclasses import fields
 
@@ -749,6 +750,7 @@ def _propose(
     result: str,
     market: str = "O/U",
     confidence: str = "",
+    price: str = "",
 ) -> int:
     """Une selection **non jouee** dont on connait le resultat."""
     pick_id = add_pick(
@@ -758,6 +760,7 @@ def _propose(
         "Over",
         event_id=str(event_id),
         confidence=confidence,
+        price=price,
         settings=settings,
     )
     set_result(pick_id, result, settings)
@@ -833,6 +836,140 @@ def test_aucun_champ_financier_sur_l_analyse() -> None:
     noms |= {name for name in dir(Analysis) if not name.startswith("_")}
 
     assert not (noms & interdits)
+
+
+# -- Le taux implicite ------------------------------------------------------
+
+
+def test_le_taux_implicite_est_la_moyenne_des_inverses_de_cote(migrated: Settings) -> None:
+    """`1/cote` sur des selections deja tranchees : de l'arithmetique sur un
+    prix connu, pas une prevision."""
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(ANALYSIS_MIN_ROWS):
+        _propose(migrated, session_id, event_id, "safe", "win", price="2.00")
+
+    ligne = analysis(migrated).by_tier[0]
+
+    assert ligne.priced == ANALYSIS_MIN_ROWS
+    assert ligne.implied == pytest.approx(0.5)
+    assert ligne.implied_label == "50 %"
+
+
+def test_l_ecart_est_signe_et_compte_en_points(migrated: Settings) -> None:
+    session_id, event_id = _session_avec_match(migrated)
+    # Cote 2.00 partout : taux implicite 50 %. Six gagnees sur huit, soit 75 %.
+    for index in range(ANALYSIS_MIN_ROWS):
+        _propose(
+            migrated,
+            session_id,
+            event_id,
+            "safe",
+            "win" if index < 6 else "loss",
+            price="2.00",
+        )
+
+    ligne = analysis(migrated).by_tier[0]
+
+    assert ligne.rate == pytest.approx(0.75)
+    assert ligne.gap == pytest.approx(0.25)
+    assert ligne.gap_label == "+25 pts"
+
+
+def test_les_selections_sans_cote_sortent_du_seul_taux_implicite(migrated: Settings) -> None:
+    """Une cote manquante ne retire pas la selection du taux constate : les 88
+    selections anterieures a cette colonne restent comptees, elles n'entrent
+    simplement pas dans la moyenne des prix."""
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(ANALYSIS_MIN_ROWS):
+        _propose(migrated, session_id, event_id, "safe", "win", price="2.00")
+    for _ in range(4):
+        _propose(migrated, session_id, event_id, "safe", "win")
+
+    ligne = analysis(migrated).by_tier[0]
+
+    assert ligne.settled == ANALYSIS_MIN_ROWS + 4, "toutes comptent au taux constate"
+    assert ligne.priced == ANALYSIS_MIN_ROWS, "seules les cotees comptent au taux implicite"
+    assert ligne.implied == pytest.approx(0.5), "les non cotees ne tirent pas la moyenne"
+    assert ligne.priced_note == "8 cotée(s)", "les deux denominateurs different : le dire"
+
+
+def test_sans_aucune_cote_les_deux_colonnes_se_taisent(migrated: Settings) -> None:
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(ANALYSIS_MIN_ROWS):
+        _propose(migrated, session_id, event_id, "safe", "win")
+
+    ligne = analysis(migrated).by_tier[0]
+
+    assert ligne.implied is None
+    assert (ligne.implied_label, ligne.gap_label) == ("—", "—")
+    assert ligne.priced_note == "", "aucune cote : il n'y a pas deux denominateurs a opposer"
+
+
+def test_le_seuil_de_lecture_s_applique_aussi_aux_cotes(migrated: Settings) -> None:
+    """Meme seuil que le taux : une moyenne sur sept prix decrit sept paris."""
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(ANALYSIS_MIN_ROWS - 1):
+        _propose(migrated, session_id, event_id, "safe", "win", price="2.00")
+
+    ligne = analysis(migrated).by_tier[0]
+
+    assert ligne.priced == ANALYSIS_MIN_ROWS - 1
+    assert ligne.implied is None
+    assert ligne.gap is None
+
+
+def test_une_cote_a_un_ou_moins_est_refusee(migrated: Settings) -> None:
+    """Ce serait un taux implicite d'au moins 100 %, donc pas une cote."""
+    session_id, _ = _session_avec_match(migrated)
+
+    for valeur in ("1.00", "0.80"):
+        with pytest.raises(HistoryError, match="Cote"):
+            add_pick(session_id, "safe", "O/U", "Over", price=valeur, settings=migrated)
+
+
+def test_la_page_publie_les_deux_colonnes_et_leur_mode_d_emploi(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    session_id, event_id = _session_avec_match(isolated_settings)
+    for _ in range(ANALYSIS_MIN_ROWS):
+        _propose(isolated_settings, session_id, event_id, "safe", "win", price="2.00")
+
+    page = " ".join(client.get("/stats").text.split())
+
+    assert "Taux implicite" in page
+    assert "négatif par construction" in page, "l'ecart ne se lit pas dans l'absolu"
+    assert "les uns par rapport aux autres" in page
+
+
+def test_aucun_mot_financier_dans_le_rendu_des_cotes(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """La colonne parle de prix ; elle ne doit pas ouvrir la porte au reste."""
+    session_id, event_id = _session_avec_match(isolated_settings)
+    for _ in range(ANALYSIS_MIN_ROWS):
+        _propose(isolated_settings, session_id, event_id, "safe", "win", price="2.00")
+
+    html = client.get("/stats").text
+    # Le balisage est retire avant de chercher : c'est le **texte lu** qui ne
+    # doit porter aucun de ces mots. Sans cela le test echoue sur la classe CSS
+    # `bar-value`, qui n'apparait sur aucun ecran, et se ferait « corriger » en
+    # affaiblissant l'assertion.
+    page = " ".join(re.sub(r"<[^>]+>", " ", html).split()).lower()
+
+    # « espérance » et « gain » ne sont pas dans cette liste, et ce n'est pas un
+    # oubli : la page les **nomme pour les refuser**, comme le template de
+    # prompt. Les bannir ferait supprimer l'interdiction elle-meme — c'est
+    # justement ce qu'il faut garder maintenant que la colonne existe. Ne
+    # restent bannis que les mots qu'aucune phrase de refus n'emploie.
+    for interdit in ("roi", "bankroll", "kelly", "clv", "value", "edge", "profit"):
+        assert not re.search(rf"\b{interdit}\b", page), (
+            f"« {interdit} » n'a rien a faire sur cette page"
+        )
+
+    assert "aucun indicateur financier n'est produit" in page
+    assert "ne fait pas exception" in page, (
+        "le taux implicite est le cas limite : la page doit le dire, pas l'omettre"
+    )
 
 
 def test_les_seuils_de_la_page_sont_ceux_du_prompt() -> None:
@@ -1018,8 +1155,14 @@ def test_un_niveau_absent_ne_produit_pas_de_ligne(
 def test_la_page_de_stats_porte_l_interdiction(
     client: TestClient, isolated_settings: Settings
 ) -> None:
-    """Le garde-fou compte autant que le chiffre : un taux ne se rapproche
-    jamais d'une cote, ce serait calculer une esperance (SPEC.md section 9)."""
+    """Le garde-fou compte autant que le chiffre (SPEC.md section 9).
+
+    La page rapproche desormais un taux d'un `1/cote` — c'est tout l'objet de la
+    colonne « Taux implicite » — et l'interdiction n'a donc plus le meme
+    perimetre qu'avant : ce n'est pas le rapprochement qui est interdit, c'est
+    d'en tirer ce que rapporterait la suite. Le mot doit rester sur la page
+    justement parce que la colonne existe : c'est maintenant qu'il sert.
+    """
     session_id, event_id = _session_avec_match(isolated_settings)
     _joue(isolated_settings, session_id, event_id, "safe", "win")
 

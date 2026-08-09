@@ -113,7 +113,13 @@ class Pick:
 
 @dataclass
 class RateRow:
-    """Taux de reussite d'un regroupement. Aucune notion d'argent."""
+    """Taux de reussite d'un regroupement. Aucune notion d'argent.
+
+    Le taux implicite moyen (`1/cote`) n'en est pas un : c'est de
+    l'arithmetique sur des cotes deja connues, sur des selections deja
+    tranchees. Rien n'y est multiplie par une mise, et rien n'en sort qui
+    ressemble a un gain ou a une esperance.
+    """
 
     key: str
     label: str
@@ -121,6 +127,13 @@ class RateRow:
     lost: int = 0
     void: int = 0
     pending: int = 0
+    #: Selections tranchees du regroupement qui portent une cote. Tenu a part
+    #: de `settled` : une cote manquante ne retire pas la selection du taux
+    #: constate, elle la retire du seul taux implicite.
+    priced: int = 0
+    #: Somme des `1/cote` de ces selections. Stockee en somme plutot qu'en
+    #: moyenne pour que deux regroupements s'additionnent sans se ponderer.
+    implied_sum: float = 0.0
 
     @property
     def settled(self) -> int:
@@ -147,6 +160,54 @@ class RateRow:
         vient justement y regarder ses propres donnees.
         """
         return 0 < self.settled < ANALYSIS_MIN_ROWS
+
+    @property
+    def implied(self) -> float | None:
+        """Moyenne des `1/cote` sur les selections tranchees **et cotees**.
+
+        Meme seuil de lecture que le taux constate : sous `ANALYSIS_MIN_ROWS`
+        cotes, la moyenne decrit une poignee de prix et non un regroupement.
+        """
+        if self.priced < ANALYSIS_MIN_ROWS:
+            return None
+        return self.implied_sum / self.priced
+
+    @property
+    def implied_label(self) -> str:
+        return "—" if self.implied is None else f"{self.implied * 100:.0f} %"
+
+    @property
+    def gap(self) -> float | None:
+        """Ecart en points entre le taux constate et le taux implicite moyen.
+
+        **Structurellement negatif** : `1/cote` porte la marge du bookmaker, si
+        bien qu'un regroupement parfaitement neutre s'ecarte deja de la valeur
+        de cette marge. Il ne se lit que compare a un autre ecart de la meme
+        page, jamais dans l'absolu — la note sous le tableau le dit.
+        """
+        if self.rate is None or self.implied is None:
+            return None
+        return self.rate - self.implied
+
+    @property
+    def gap_label(self) -> str:
+        return "—" if self.gap is None else f"{self.gap * 100:+.0f} pts"
+
+    @property
+    def priced_note(self) -> str:
+        """« 9 cotées », et seulement quand ce n'est pas tout le regroupement.
+
+        Les deux colonnes de cotes n'ont alors pas le meme denominateur que le
+        taux constate : le taire ferait soustraire deux populations differentes
+        sans que rien ne le signale.
+
+        Rien non plus quand **aucune** selection n'est cotee : les deux colonnes
+        affichent deja « — », et « 0 cotée(s) » a cote ne ferait que du bruit
+        sur toutes les lignes anterieures a cette mesure.
+        """
+        if self.priced == 0 or self.priced == self.settled:
+            return ""
+        return f"{self.priced} cotée(s)"
 
 
 @dataclass
@@ -571,6 +632,14 @@ def add_pick(
         raise HistoryError(f"Résultat inconnu : {result}")
 
     price_value = _as_float(price, "Cote")
+    # Une cote se saisit au moment de l'analyse, et c'est celle-la qui compte :
+    # elle vient du bloc CONTEXTE que Claude avait sous les yeux, releve au
+    # scan. La relire chez le fournisseur au moment du rattachement donnerait
+    # un prix posterieur, donc une autre grandeur. Elle reste facultative — les
+    # selections anterieures a cette regle n'en portent pas — mais 1.00 ou
+    # moins n'est pas une cote : ce serait un taux implicite d'au moins 100 %.
+    if price_value is not None and price_value <= 1.0:
+        raise HistoryError("« Cote » doit être supérieure à 1.00.")
     stake_value = _as_float(stake, "Mise")
     confidence_value = _as_float(confidence, "Confiance")
     if confidence_value is not None and not 1 <= confidence_value <= 5:
@@ -639,20 +708,35 @@ def delete_pick(pick_id: int, settings: Settings | None = None) -> None:
 # -- Statistiques -----------------------------------------------------------
 
 
+def _count(entry: RateRow, result: str, price: float | None = None) -> None:
+    """Ajoute une selection a un regroupement.
+
+    Ecrit une seule fois parce que quatre endroits comptent la meme chose : le
+    taux par palier, celui par sport, la comparaison joue / ecarte et le total.
+    Les copier aurait suffi a ce qu'un seul d'entre eux oublie la cote.
+    """
+    if result == "win":
+        entry.won += 1
+    elif result == "loss":
+        entry.lost += 1
+    elif result == "void":
+        entry.void += 1
+    else:
+        entry.pending += 1
+    # Seules les selections tranchees portent un taux constate : ne cumuler que
+    # celles-la garde les deux colonnes comparables. Une cote <= 1.00 ne peut
+    # pas etre une cote et donnerait un taux implicite superieur a 100 %.
+    if result in ("win", "loss") and price is not None and price > 1.0:
+        entry.priced += 1
+        entry.implied_sum += 1.0 / price
+
+
 def _tally(rows: list[Any], key_field: str, labels: dict[str, str]) -> list[RateRow]:
     grouped: dict[str, RateRow] = {}
     for row in rows:
         key = row[key_field] or NO_SPORT
         entry = grouped.setdefault(key, RateRow(key=key, label=labels.get(key, key)))
-        result = row["result"] or "pending"
-        if result == "win":
-            entry.won += 1
-        elif result == "loss":
-            entry.lost += 1
-        elif result == "void":
-            entry.void += 1
-        else:
-            entry.pending += 1
+        _count(entry, row["result"] or "pending", _column(row, "price"))
     return list(grouped.values())
 
 
@@ -674,7 +758,7 @@ def stats(settings: Settings | None = None) -> Stats:
             row["key"]: row["label"] for row in conn.execute("SELECT key, label FROM sports")
         }
         rows = conn.execute(
-            "SELECT k.tier, k.result, s.key AS sport_key FROM picks k "
+            "SELECT k.tier, k.result, k.price, s.key AS sport_key FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
             "WHERE k.played = 1"
@@ -690,6 +774,8 @@ def stats(settings: Settings | None = None) -> Stats:
         overall.lost += entry.lost
         overall.void += entry.void
         overall.pending += entry.pending
+        overall.priced += entry.priced
+        overall.implied_sum += entry.implied_sum
 
     return Stats(by_tier=by_tier, by_sport=by_sport, overall=overall)
 
@@ -842,22 +928,18 @@ class Analysis:
             total.lost += entry.lost
             total.void += entry.void
             total.pending += entry.pending
+            total.priced += entry.priced
+            total.implied_sum += entry.implied_sum
         return total
 
 
-def _rate_tally(entries: list[tuple[str, str, str]], minimum: int = 1) -> list[RateRow]:
-    """Agrege des triplets (cle, libelle, resultat) en lignes de taux."""
+def _rate_tally(
+    entries: list[tuple[str, str, str, float | None]], minimum: int = 1
+) -> list[RateRow]:
+    """Agrege des quadruplets (cle, libelle, resultat, cote) en lignes de taux."""
     grouped: dict[str, RateRow] = {}
-    for key, label, result in entries:
-        row = grouped.setdefault(key, RateRow(key=key, label=label))
-        if result == "win":
-            row.won += 1
-        elif result == "loss":
-            row.lost += 1
-        elif result == "void":
-            row.void += 1
-        else:
-            row.pending += 1
+    for key, label, result, price in entries:
+        _count(grouped.setdefault(key, RateRow(key=key, label=label)), result, price)
     return [row for row in grouped.values() if row.settled >= minimum]
 
 
@@ -875,7 +957,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
             row["key"]: row["label"] for row in conn.execute("SELECT key, label FROM sports")
         }
         rows = conn.execute(
-            "SELECT k.tier, k.result, k.market, k.confidence, k.played, k.created_at, "
+            "SELECT k.tier, k.result, k.market, k.confidence, k.played, k.created_at, k.price, "
             "       s.key AS sport_key, c.category FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
@@ -901,7 +983,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
 
     report.by_tier = _rate_tally(
         [
-            (row["tier"], tier_labels.get(row["tier"], row["tier"]), result)
+            (row["tier"], tier_labels.get(row["tier"], row["tier"]), result, row["price"])
             for row, result in zip(rows, results, strict=True)
         ]
     )
@@ -912,7 +994,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
     report.by_confidence = sorted(
         _rate_tally(
             [
-                (str(row["confidence"]), f"confiance {row['confidence']}", result)
+                (str(row["confidence"]), f"confiance {row['confidence']}", result, row["price"])
                 for row, result in zip(rows, results, strict=True)
                 if row["confidence"] is not None
             ]
@@ -924,7 +1006,12 @@ def analysis(settings: Settings | None = None) -> Analysis:
     report.by_sport = sorted(
         _rate_tally(
             [
-                (row["sport_key"] or NO_SPORT, sport_labels.get(row["sport_key"], NO_SPORT), result)
+                (
+                    row["sport_key"] or NO_SPORT,
+                    sport_labels.get(row["sport_key"], NO_SPORT),
+                    result,
+                    row["price"],
+                )
                 for row, result in zip(rows, results, strict=True)
             ]
         ),
@@ -936,7 +1023,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
     report.by_category = sorted(
         _rate_tally(
             [
-                (row["category"], category_label(row["category"]), result)
+                (row["category"], category_label(row["category"]), result, row["price"])
                 for row, result in zip(rows, results, strict=True)
                 if row["category"]
             ]
@@ -945,7 +1032,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
     )
 
     markets = [
-        (_market_key(row["market"]), (row["market"] or "").strip(), result)
+        (_market_key(row["market"]), (row["market"] or "").strip(), result, row["price"])
         for row, result in zip(rows, results, strict=True)
         if _market_key(row["market"])
     ]
@@ -955,15 +1042,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
     report.hidden_markets = len(_rate_tally(markets)) - len(report.by_market)
 
     for row, result in zip(rows, results, strict=True):
-        entry = report.played if row["played"] else report.skipped
-        if result == "win":
-            entry.won += 1
-        elif result == "loss":
-            entry.lost += 1
-        elif result == "void":
-            entry.void += 1
-        else:
-            entry.pending += 1
+        _count(report.played if row["played"] else report.skipped, result, row["price"])
 
     return report
 

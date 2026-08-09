@@ -1,0 +1,19 @@
+{# Mode d'emploi des deux colonnes de cotes, sous les tableaux du détail chiffré.
+
+   Écrit une seule fois et inclus par les deux blocs : recopié, il aurait fini
+   par ne plus dire la même chose des deux côtés. #}
+<p class="block-note">
+  Le <strong>taux implicite</strong> est la moyenne des « 1 / cote » des sélections
+  tranchées du regroupement. Cette cote porte la marge du bookmaker, et la marge est
+  comptée dedans : l'<strong>écart est négatif par construction</strong>. Sur un marché
+  à 5 % de marge, −4 points n'est pas un mauvais résultat — c'est ce que donne quelqu'un
+  qui a vu aussi juste que le book.
+  Ces écarts ne se lisent donc que <strong>les uns par rapport aux autres</strong> :
+  SAFE s'écarte-t-il plus que FUN, le tennis plus que le football ? Pris seul, le nombre
+  ne dit rien, et il ne dit rien non plus de ce qui vient — il décrit ce qui est déjà
+  tranché.
+  La cote enregistrée est celle que l'analyse avait sous les yeux, relevée au scan :
+  ni celle de la prise de pari, ni celle de clôture.
+  Un regroupement dont moins de {{ minimum_rows }} sélections tranchées portent une cote
+  affiche « — » dans ces deux colonnes, comme un taux sous le même seuil.
+</p>

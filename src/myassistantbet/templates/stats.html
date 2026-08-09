@@ -136,6 +136,9 @@
       </div>
       {% endif %}
     </div>
+    {% with minimum_rows = analysis.minimum_rows %}
+      {% include "_rates_note.html" %}
+    {% endwith %}
   </details>
 </section>
 {% endif %}
@@ -194,15 +197,28 @@
       </div>
       {% endif %}
     </div>
+    {% with minimum_rows = analysis.minimum_rows %}
+      {% include "_rates_note.html" %}
+    {% endwith %}
+    {% if coupon_rates %}
+    <p class="block-note">
+      Les lignes « Coupons » n'ont pas de taux implicite : un coupon porte une jambe
+      ou dix, et sa cote d'ensemble n'est pas calculée — la capture la porte déjà.
+    </p>
+    {% endif %}
   </details>
 </section>
 {% endif %}
 
 <p class="muted small">
   Taux = gagnés / (gagnés + perdus). Les paris annulés et ceux en attente sont exclus
-  du dénominateur. Aucun indicateur financier n'est produit — ni gain, ni solde, ni
-  espérance — et c'est volontaire : rapprocher un de ces taux d'une cote reviendrait
-  à calculer une espérance.
+  du dénominateur. Aucun indicateur financier n'est produit : rien n'est multiplié par
+  une mise, aucun solde ni aucun gain n'est calculé, et la cote d'ensemble d'un coupon
+  ne l'est pas davantage.
+  Le taux implicite ne fait pas exception, et c'est le point à tenir : il se compte en
+  points de taux, il décrit des sélections déjà tranchées, et il porte la marge du book.
+  En faire l'annonce de ce que rapporterait la suite serait calculer une
+  <strong>espérance</strong> — c'est le calcul que cette page ne fait pas.
 </p>
 {% endif %}
 {% endblock %}

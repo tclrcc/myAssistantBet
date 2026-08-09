@@ -1,8 +1,17 @@
+{# Le détail chiffré d'un regroupement.
+
+   Les deux colonnes de cotes ne sont pas un indicateur financier : « 1/cote »
+   est de l'arithmétique sur un prix déjà connu, et l'écart se lit en points de
+   taux. Rien n'y est multiplié par une mise. Elles se taisent sous le même
+   seuil que le taux constaté — une moyenne sur trois prix décrit trois paris,
+   pas un regroupement. #}
 <table class="board rates">
   <thead>
     <tr>
       <th>{{ heading }}</th>
       <th class="num">Taux</th>
+      <th class="num">Taux implicite</th>
+      <th class="num">Écart</th>
       <th class="num">G</th>
       <th class="num">P</th>
       <th class="num">Ann.</th>
@@ -14,6 +23,16 @@
     <tr>
       <td class="affiche">{{ row.label }}</td>
       <td class="num">{{ row.rate_label }}</td>
+      <td class="num">
+        {{ row.implied_label }}
+        {# Le dénominateur du taux implicite est le sous-ensemble coté. Quand il
+           diffère du regroupement, l'écart soustrait deux populations qui ne se
+           recouvrent pas : le dire est la seule façon de ne pas le cacher. #}
+        {%- if row.priced_note %}
+        <span class="muted small">· {{ row.priced_note }}</span>
+        {%- endif %}
+      </td>
+      <td class="num">{{ row.gap_label }}</td>
       <td class="num">{{ row.won }}</td>
       <td class="num">{{ row.lost }}</td>
       <td class="num muted">{{ row.void }}</td>
