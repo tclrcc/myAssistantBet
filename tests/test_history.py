@@ -952,6 +952,94 @@ def test_la_page_parle_avant_le_premier_resultat(
     assert "Comment tu étiquettes" in page
 
 
+# -- Effectif independant ---------------------------------------------------
+
+
+def test_trois_selections_sur_un_match_font_un_evenement(migrated: Settings) -> None:
+    """Vainqueur, handicap jeux et total de jeux sur la meme rencontre sont une
+    seule issue comptee trois fois : le joueur qui gagne en deux sets les fait
+    passer ensemble."""
+    session_id, event_id = _session_avec_match(migrated)
+    for marche in ("Vainqueur", "Hand. jeux", "O/U jeux"):
+        _propose(migrated, session_id, event_id, "safe", "win", market=marche)
+
+    ligne = analysis(migrated).by_tier[0]
+
+    assert (ligne.settled, ligne.units) == (3, 1)
+    assert ligne.clustered
+    assert ligne.units_label == "1 événement(s)"
+
+
+def test_une_selection_par_match_ne_signale_rien(migrated: Settings) -> None:
+    """Le cas des donnees reelles : 90 selections pour 87 evenements. Ecrire
+    « 37 paris · 37 evenements » sur chaque ligne ne dirait rien."""
+    session_id, premier = _session_avec_match(migrated)
+    _propose(migrated, session_id, premier, "safe", "win")
+    _, second = _session_avec_match(migrated, "tennis")
+    _propose(migrated, session_id, second, "safe", "win")
+
+    ligne = analysis(migrated).by_tier[0]
+
+    assert (ligne.settled, ligne.units) == (2, 2)
+    assert not ligne.clustered
+    assert ligne.units_label == ""
+
+
+def test_une_selection_sans_match_compte_pour_une_unite(migrated: Settings) -> None:
+    """Rien ne permet de la rapprocher d'une autre, donc rien ne permet de la
+    declarer correlee. C'est l'hypothese optimiste, et la note le dit."""
+    session_id, _ = _session_avec_match(migrated)
+    for _ in range(2):
+        pick_id = add_pick(session_id, "safe", "Vainqueur tournoi", "X", settings=migrated)
+        set_result(pick_id, "win", migrated)
+
+    ligne = analysis(migrated).by_tier[0]
+
+    assert (ligne.settled, ligne.units, ligne.unattached) == (2, 2, 2)
+
+
+def test_les_paris_en_attente_ne_comptent_pas_d_evenement(migrated: Settings) -> None:
+    """L'effectif accompagne le taux, qui ne porte que sur les tranchees."""
+    session_id, event_id = _session_avec_match(migrated)
+    _propose(migrated, session_id, event_id, "safe", "win")
+    add_pick(session_id, "safe", "O/U", "Over", event_id=str(event_id), settings=migrated)
+
+    ligne = analysis(migrated).by_tier[0]
+
+    assert (ligne.settled, ligne.units, ligne.pending) == (1, 1, 1)
+
+
+def test_la_page_dit_l_effectif_independant(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    session_id, event_id = _session_avec_match(isolated_settings)
+    for marche in ("Vainqueur", "Hand. jeux", "O/U jeux"):
+        _propose(isolated_settings, session_id, event_id, "safe", "win", market=marche)
+
+    page = " ".join(client.get("/stats").text.split())
+
+    assert "3 sélection(s) tranchée(s) · 1 événement(s) distinct(s)" in page
+    assert "optimistes" in page, "les intervalles supposent l'independance"
+    assert "ne s'estime pas proprement" in page, "aucune correction n'est tentee"
+
+
+def test_la_page_dit_aussi_quand_rien_ne_se_recoupe(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Le dire evite de chercher un biais absent — c'est le cas des donnees
+    reelles, 90 selections pour 87 evenements."""
+    session_id, premier = _session_avec_match(isolated_settings)
+    _propose(isolated_settings, session_id, premier, "safe", "win")
+    _, second = _session_avec_match(isolated_settings, "tennis")
+    _propose(isolated_settings, session_id, second, "safe", "win")
+
+    page = " ".join(client.get("/stats").text.split())
+
+    assert "2 sélection(s) tranchée(s) · 2 événement(s) distinct(s)" in page
+    assert "rien ne se compte deux fois" in page
+    assert "optimistes" not in page
+
+
 # -- Colinearite entre axes -------------------------------------------------
 
 

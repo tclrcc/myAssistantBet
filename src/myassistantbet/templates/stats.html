@@ -119,6 +119,31 @@
   </p>
   {% endif %}
 
+  {# L'effectif indépendant. La note est écrite dans les deux sens parce que
+     les deux cas se produisent et n'appellent pas la même lecture : là où des
+     sélections se partagent un match, l'intervalle est optimiste ; là où
+     chacune a le sien, il n'y a rien à corriger et le dire évite de chercher
+     un biais absent. #}
+  <p class="block-note">
+    <strong>{{ analysis.settled }} sélection(s) tranchée(s) ·
+    {{ analysis.settled_events }} événement(s) distinct(s).</strong>
+    {% if analysis.settled_events < analysis.settled %}
+    Plusieurs sélections portent sur le même match — Vainqueur, handicap jeux et
+    total de jeux sur une même rencontre sont une seule issue comptée trois fois,
+    le joueur qui gagne en deux sets les faisant passer ensemble. Les intervalles
+    ci-dessous supposent l'indépendance : ils sont donc <strong>optimistes</strong>,
+    et les vrais sont plus larges. De combien ne s'estime pas proprement à ce
+    volume — le signaler est tout ce qu'on peut faire honnêtement.
+    {% if analysis.clustered_rows %}
+    Les {{ analysis.clustered_rows }} ligne(s) concernées portent leur compte
+    d'événements à côté du leur.
+    {% endif %}
+    {% else %}
+    Chaque sélection porte sur un match différent : sur ce lot, rien ne se compte
+    deux fois, et les intervalles ci-dessous n'ont pas à être élargis pour ça.
+    {% endif %}
+  </p>
+
   {% if analysis.undecided_rows %}
   <p class="block-note">
     Le crochet posé sur chaque barre est l'<strong>intervalle à 95 %</strong> :

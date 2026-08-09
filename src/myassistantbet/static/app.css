@@ -1308,6 +1308,10 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
    moins affirmee, et le compte a cote dit pourquoi. */
 .fill.is-thin { opacity: 0.42; }
 
+/* L'effectif independant, colle au compte de paris et plus discret que lui :
+   c'est une precision sur ce compte, pas un second. */
+.units { font-style: normal; opacity: 0.7; margin-left: 0.15em; }
+
 /* L'intervalle de Wilson, pose **par-dessus** la barre : deux moustaches
    reliees par un trait, l'idiome habituel. Il dit ce que le taux ne dit pas —
    sa largeur. Une barre a 63 % qui s'etend de 47 a 76 se lit d'un coup d'oeil

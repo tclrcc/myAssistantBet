@@ -173,6 +173,15 @@ class RateRow:
     #: memes 39 selections » a cote de barres portant 17/37 — un nombre que
     #: rien d'autre sur la page ne permettait de verifier.
     members: set[int] = field(default_factory=set)
+    #: Matchs distincts portes par ces selections tranchees. Plusieurs lignes
+    #: sur la meme rencontre — Vainqueur, handicap jeux et total de jeux — sont
+    #: **une seule issue comptee trois fois** : le joueur qui gagne en deux sets
+    #: les fait passer ensemble.
+    events: set[int] = field(default_factory=set)
+    #: Selections tranchees qu'aucun match ne porte. Comptees chacune pour une
+    #: unite : rien ne permet de les rapprocher, donc rien ne permet de les
+    #: declarer correlees.
+    unattached: int = 0
 
     @property
     def settled(self) -> int:
@@ -199,6 +208,46 @@ class RateRow:
         vient justement y regarder ses propres donnees.
         """
         return 0 < self.settled < ANALYSIS_MIN_ROWS
+
+    def merge(self, other: RateRow) -> None:
+        """Ajoute un regroupement a celui-ci, champ par champ.
+
+        Ecrit une seule fois, et c'est ce qui manquait : chaque chantier a
+        ajoute un champ a cette classe, et les deux fusions recopiees a la main
+        ne les ont pas suivis. `Analysis.overall` annoncait « 0 événements
+        distincts » sur trois selections tranchees — un total qui oubliait
+        silencieusement tout ce qui avait ete ajoute apres lui.
+        """
+        self.won += other.won
+        self.lost += other.lost
+        self.void += other.void
+        self.pending += other.pending
+        self.priced += other.priced
+        self.implied_sum += other.implied_sum
+        self.unattached += other.unattached
+        self.members |= other.members
+        self.events |= other.events
+
+    @property
+    def units(self) -> int:
+        """Evenements distincts derriere les selections tranchees.
+
+        C'est l'**effectif independant** : trois lignes sur le meme match ne
+        sont pas trois observations. Quand il est nettement inferieur a
+        `settled`, l'intervalle de Wilson — qui suppose l'independance — est
+        optimiste, et le vrai est plus large.
+        """
+        return len(self.events) + self.unattached
+
+    @property
+    def clustered(self) -> bool:
+        """Des selections se partagent des matchs."""
+        return 0 < self.units < self.settled
+
+    @property
+    def units_label(self) -> str:
+        """« 30 événements », et rien quand chaque pari a le sien."""
+        return "" if not self.clustered else f"{self.units} événement(s)"
 
     @property
     def interval(self) -> tuple[float, float] | None:
@@ -777,17 +826,31 @@ def delete_pick(pick_id: int, settings: Settings | None = None) -> None:
 # -- Statistiques -----------------------------------------------------------
 
 
-def _count(
-    entry: RateRow, result: str, price: float | None = None, pick_id: int | None = None
-) -> None:
+def _count(entry: RateRow, result: str, row: Any = None) -> None:
     """Ajoute une selection a un regroupement.
 
     Ecrit une seule fois parce que quatre endroits comptent la meme chose : le
     taux par palier, celui par sport, la comparaison joue / ecarte et le total.
     Les copier aurait suffi a ce qu'un seul d'entre eux oublie la cote.
+
+    Recoit **la ligne** et non ses champs un a un : chaque chantier de cette
+    page en a ajoute un — la cote, l'identifiant, puis le match — et la liste
+    d'arguments grossissait a chaque fois, obligeant a retoucher les cinq axes
+    d'`analysis()` pour un champ qu'un seul d'entre eux lit.
     """
-    if pick_id is not None and result in ("win", "loss"):
-        entry.members.add(pick_id)
+    settled = result in ("win", "loss")
+    if settled and _column(row, "id") is not None:
+        entry.members.add(int(row["id"]))
+    if settled:
+        # Un pick sans match ne se regroupe pas : rien ne dit a quelle rencontre
+        # il appartient, donc rien ne permet de le rapprocher d'un autre. Il
+        # compte pour une unite a lui seul — c'est l'hypothese **optimiste**, et
+        # la note du bloc dit dans quel sens elle penche.
+        event_id = _column(row, "event_id")
+        if event_id is None:
+            entry.unattached += 1
+        else:
+            entry.events.add(int(event_id))
     if result == "win":
         entry.won += 1
     elif result == "loss":
@@ -799,7 +862,8 @@ def _count(
     # Seules les selections tranchees portent un taux constate : ne cumuler que
     # celles-la garde les deux colonnes comparables. Une cote <= 1.00 ne peut
     # pas etre une cote et donnerait un taux implicite superieur a 100 %.
-    if result in ("win", "loss") and price is not None and price > 1.0:
+    price = _column(row, "price")
+    if settled and price is not None and price > 1.0:
         entry.priced += 1
         entry.implied_sum += 1.0 / price
 
@@ -809,7 +873,7 @@ def _tally(rows: list[Any], key_field: str, labels: dict[str, str]) -> list[Rate
     for row in rows:
         key = row[key_field] or NO_SPORT
         entry = grouped.setdefault(key, RateRow(key=key, label=labels.get(key, key)))
-        _count(entry, row["result"] or "pending", _column(row, "price"))
+        _count(entry, row["result"] or "pending", row)
     return list(grouped.values())
 
 
@@ -831,7 +895,7 @@ def stats(settings: Settings | None = None) -> Stats:
             row["key"]: row["label"] for row in conn.execute("SELECT key, label FROM sports")
         }
         rows = conn.execute(
-            "SELECT k.tier, k.result, k.price, s.key AS sport_key FROM picks k "
+            "SELECT k.id, k.tier, k.result, k.price, k.event_id, s.key AS sport_key FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
             "WHERE k.played = 1"
@@ -843,12 +907,7 @@ def stats(settings: Settings | None = None) -> Stats:
 
     overall = RateRow(key="all", label="Tous")
     for entry in by_tier:
-        overall.won += entry.won
-        overall.lost += entry.lost
-        overall.void += entry.void
-        overall.pending += entry.pending
-        overall.priced += entry.priced
-        overall.implied_sum += entry.implied_sum
+        overall.merge(entry)
 
     return Stats(by_tier=by_tier, by_sport=by_sport, overall=overall)
 
@@ -1028,6 +1087,23 @@ class Analysis:
         return sum(1 for rows in self.groups for row in rows if row.inconclusive)
 
     @property
+    def settled_events(self) -> int:
+        """Matchs distincts derriere les selections tranchees.
+
+        Compte sur `overall`, donc sur toutes les selections a la fois : c'est
+        l'effectif independant de la page entiere. Trois lignes sur le meme
+        match — Vainqueur, handicap jeux, total de jeux — sont une seule issue
+        comptee trois fois, le joueur qui gagne en deux sets les faisant passer
+        ensemble.
+        """
+        return self.overall.units
+
+    @property
+    def clustered_rows(self) -> int:
+        """Regroupements ou des selections se partagent des matchs."""
+        return sum(1 for rows in self.groups for row in rows if row.clustered)
+
+    @property
     def decided_rows(self) -> int:
         """Regroupements dont l'intervalle exclut 50 % — les seuls qui tranchent."""
         total = sum(len(rows) for rows in self.groups)
@@ -1043,12 +1119,7 @@ class Analysis:
         """
         total = RateRow(key="all", label="Toutes")
         for entry in (self.played, self.skipped):
-            total.won += entry.won
-            total.lost += entry.lost
-            total.void += entry.void
-            total.pending += entry.pending
-            total.priced += entry.priced
-            total.implied_sum += entry.implied_sum
+            total.merge(entry)
         return total
 
 
@@ -1252,13 +1323,11 @@ def labelling(settings: Settings | None = None) -> list[Mix]:
     return [confiance, palier]
 
 
-def _rate_tally(
-    entries: list[tuple[str, str, str, float | None, int]], minimum: int = 1
-) -> list[RateRow]:
-    """Agrege des quintuplets (cle, libelle, resultat, cote, id) en lignes de taux."""
+def _rate_tally(entries: list[tuple[str, str, str, Any]], minimum: int = 1) -> list[RateRow]:
+    """Agrege des quadruplets (cle, libelle, resultat, ligne) en lignes de taux."""
     grouped: dict[str, RateRow] = {}
-    for key, label, result, price, pick_id in entries:
-        _count(grouped.setdefault(key, RateRow(key=key, label=label)), result, price, pick_id)
+    for key, label, result, row in entries:
+        _count(grouped.setdefault(key, RateRow(key=key, label=label)), result, row)
     return [row for row in grouped.values() if row.settled >= minimum]
 
 
@@ -1276,7 +1345,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
             row["key"]: row["label"] for row in conn.execute("SELECT key, label FROM sports")
         }
         rows = conn.execute(
-            "SELECT k.id, k.tier, k.result, k.market, k.confidence, k.played, "
+            "SELECT k.id, k.tier, k.result, k.market, k.confidence, k.played, k.event_id, "
             "       k.created_at, k.price, s.key AS sport_key, c.category FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
@@ -1302,13 +1371,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
 
     report.by_tier = _rate_tally(
         [
-            (
-                row["tier"],
-                tier_labels.get(row["tier"], row["tier"]),
-                result,
-                row["price"],
-                row["id"],
-            )
+            (row["tier"], tier_labels.get(row["tier"], row["tier"]), result, row)
             for row, result in zip(rows, results, strict=True)
         ]
     )
@@ -1319,13 +1382,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
     report.by_confidence = sorted(
         _rate_tally(
             [
-                (
-                    str(row["confidence"]),
-                    f"confiance {row['confidence']}",
-                    result,
-                    row["price"],
-                    row["id"],
-                )
+                (str(row["confidence"]), f"confiance {row['confidence']}", result, row)
                 for row, result in zip(rows, results, strict=True)
                 if row["confidence"] is not None
             ]
@@ -1341,8 +1398,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
                     row["sport_key"] or NO_SPORT,
                     sport_labels.get(row["sport_key"], NO_SPORT),
                     result,
-                    row["price"],
-                    row["id"],
+                    row,
                 )
                 for row, result in zip(rows, results, strict=True)
             ]
@@ -1355,7 +1411,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
     report.by_category = sorted(
         _rate_tally(
             [
-                (row["category"], category_label(row["category"]), result, row["price"], row["id"])
+                (row["category"], category_label(row["category"]), result, row)
                 for row, result in zip(rows, results, strict=True)
                 if row["category"]
             ]
@@ -1364,7 +1420,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
     )
 
     markets = [
-        (_market_key(row["market"]), (row["market"] or "").strip(), result, row["price"], row["id"])
+        (_market_key(row["market"]), (row["market"] or "").strip(), result, row)
         for row, result in zip(rows, results, strict=True)
         if _market_key(row["market"])
     ]
@@ -1374,7 +1430,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
     report.hidden_markets = len(_rate_tally(markets)) - len(report.by_market)
 
     for row, result in zip(rows, results, strict=True):
-        _count(report.played if row["played"] else report.skipped, result, row["price"])
+        _count(report.played if row["played"] else report.skipped, result, row)
 
     # Le palier n'entre pas dans la comparaison : il est defini par des tranches
     # de cote, donc correle par construction a tout ce qui depend du prix. Le

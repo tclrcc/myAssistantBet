@@ -45,8 +45,11 @@
       {{ meter(row) }}
       <b class="bar-value">{{ row.rate_label }}</b>
       {# Le compte accompagne toujours le taux : « 100 % » sur un pari et
-         « 100 % » sur quarante ne disent pas la meme chose. #}
-      <span class="bar-count">{{ row.won }}/{{ row.settled }}</span>
+         « 100 % » sur quarante ne disent pas la meme chose. L'effectif
+         indépendant ne s'y ajoute **que s'il diffère** — écrire « 37 paris ·
+         37 événements » sur chaque ligne serait payer une colonne pour dire
+         qu'il n'y a rien à signaler. #}
+      <span class="bar-count">{{ row.won }}/{{ row.settled }}{% if row.clustered %}<i class="units">· {{ row.units }} év.</i>{% endif %}</span>
     </div>
     {% endfor %}
   </div>
