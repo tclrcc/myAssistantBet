@@ -395,8 +395,9 @@ chaque marche ajoute a `markets.py` sans l'etre a `render.py`.
     `_stat_value` ecarte le `null` comme toute valeur absente, donc aucune ligne — et
     surtout pas un zero, qui se lirait comme une equipe sans occasion.
   - **Le budget de tokens du prompt est un vrai garde-fou** : documenter ces lignes l'a
-    fait passer a 8012 pour six matchs, contre 8000 permis. Toute ligne ajoutee se paie
-    deux fois — la donnee dans chaque bloc, et son mode d'emploi en tete de prompt.
+    fait passer a 8012 pour six matchs, contre 8000 permis alors. Toute ligne ajoutee se
+    paie deux fois — la donnee dans chaque bloc, et son mode d'emploi en tete de prompt.
+    Les plafonds actuels et leur mesure sont plus bas, « Deux plafonds de tokens ».
   - **`Possession` est le seul pourcentage du bloc, et il ne contredit pas la regle.**
     L'interdit vise les *frequences d'issues* : « BTTS 56 % » invite a diviser par une
     cote, ce qui est le calcul d'esperance de la section 9. Une part de ballon ne se
@@ -931,7 +932,7 @@ l'Elo et des handicaps jeux, une session de tennis celle des buteurs et des form
 `build_prompt` passe donc `sports`, l'ensemble des sports presents, et le preambule se
 garde par `{% if 'tennis' in sports %}`. Mesure : **6 555 tokens de preambule pour les deux
 sports, 5 126 pour le football seul, 4 457 pour le tennis seul** — de 22 a 32 % de
-gagnes, sur un budget que le test des huit mille tokens surveille.
+gagnes, sur un budget que surveillent les deux plafonds decrits plus bas.
 
 C'est la meme regle que pour les blocs : **ce qui n'a pas de donnee est omis, jamais rendu
 vide.** Corollaire pour les tests : un prompt construit sur une session **vide** ne porte
@@ -1131,12 +1132,47 @@ decrit rien — meme regle que `FEEDBACK_MIN_ROWS` — et la derive mesuree s'es
 sur des lots de huit et plus. Garder le mot de la section B sans le comptage aurait
 coute des tokens sans rien mettre en face.
 
-**Le budget de tokens a tranche la forme, et il faut le savoir avant d'ecrire ici.**
-Le lot le plus lourd — trois sports pour trois matchs, donc trois preambules ouverts —
-etait a **7999 tokens sur 8000 permis**, saturation a un token pres. La consigne
-complete en coutait 21 de plus. Le conditionnement la ramene exactement a 7999. Toute
-ligne ajoutee a une section **non gardee** se paie donc sur ce lot-la, et non sur les
-six matchs de football qui gardent ~1300 tokens de marge.
+**Le budget de tokens a tranche la forme**, et le conditionnement reste juste sur le
+fond : une proportion ne se lit pas sur deux lignes. Mais l'arbitrage a ete rendu sous
+une contrainte fausse — voir la section suivante.
+
+## Deux plafonds de tokens, et ce qu'ils mesurent vraiment
+
+Le garde-fou historique annonçait 8000 tokens pour six matchs de football. Il en
+mesurait **6572**, quand un vrai lot de six matchs en pesait **8304** : sa fixture ne
+clonait que les **cotes**, jamais le bloc CONTEXTE. Tout ce que les phases 11 a 15 ont
+ajoute — statistiques de saison, profil de maniere, dossier d'equipe — n'a donc jamais
+ete mesure. Le plafond paraissait garder 1400 tokens de marge la ou la production
+l'avait franchi depuis des mois sans que rien ne bronche.
+
+- La fixture **enrichit desormais pour de vrai** : `fetch_context` et
+  `dossier.refresh_event` passent une fois par leur vrai parcours, puis les lignes de
+  `context` se recopient sur les clones **comme les cotes**. `KIND_TEAMS` voyage avec
+  elles, donc chaque clone retrouve les memes identifiants d'equipe et le meme dossier.
+  Mesure : **8957**, un peu au-dessus de la production, ses six blocs etant tous
+  complets quand un vrai lot en porte de plus pauvres. C'est ce qu'un plafond doit
+  mesurer.
+- **La marge est le sujet, pas le plafond.** Un garde-fou sature a deux tokens ne
+  protege rien : il transforme le moindre ajout en arbitrage. Les deux plafonds valent
+  donc leur mesure **plus environ 500 tokens**, l'ordre de grandeur d'un paragraphe de
+  preambule — le franchir veut dire « tu as ajoute beaucoup, va mesurer », pas
+  « rabote ». `PROMPT_BUDGET` vaut 9500, `MIXED_BUDGET` 8500.
+- **Les deux lots mesurent des choses opposees, et il faut les deux.** Six matchs de
+  football enrichis pesent par leurs **blocs** ; trois sports pour trois matchs pesent
+  par leur **en-tete**, les trois modes d'emploi etant ouverts en meme temps sur trois
+  blocs montes a la main. Une ligne ajoutee a un bloc se voit sur le premier, une ligne
+  ajoutee a une section non gardee sur le second.
+- **Un plafond ne se releve pas pour faire passer un ajout.** Ici il a ete recale parce
+  que la mesure etait fausse, ce qui est autre chose : le nombre a suivi la realite, il
+  ne l'a pas autorisee. Regenerer un prompt reel — `build_prompt(session_id)`, aucun
+  appel reseau — reste la seule facon de verifier qu'une fixture n'a pas divergé.
+- Les deux jeux de routes API-Football vivent dans `tests/helpers.py`, parce que trois
+  fichiers en dependent maintenant. **Piege non evident** : le plancher du dossier lit
+  `last_known_quota`, donc le **dernier** releve tous endpoints confondus. Un contexte
+  simule a 82 appels restants suffit a suspendre le dossier qui le suit, et le bloc sort
+  sans entraineur ni historique de saison **sans qu'aucune erreur ne soit levee** — la
+  panne exacte qui a fait echouer la premiere version de cette fixture. Un
+  enrichissement complet se simule donc de bout en bout avec `DOSSIER_RATE_HEADERS`.
 
 ## Ce qui nourrit le prompt en dehors des cotes
 

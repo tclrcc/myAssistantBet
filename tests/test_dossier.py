@@ -26,24 +26,12 @@ from myassistantbet.services import dossier
 from myassistantbet.services.context import KIND_TEAMS
 from myassistantbet.services.context import store as store_context
 
-RATE_HEADERS = {"x-ratelimit-requests-remaining": "4300", "x-ratelimit-requests-limit": "7500"}
+from .helpers import LEAGUE, PROPS_LEAGUE, RATE_HEADERS, mock_dossier_routes
 
 HOME = "BK Hacken"
 AWAY = "Djurgardens IF"
 COMMENCE = "2026-08-03T15:30:00Z"
 NOW = datetime(2026, 8, 3, 12, 0, tzinfo=UTC)
-
-
-@pytest.fixture
-def api_client(http_client: httpx.AsyncClient, migrated: Settings) -> APIFootballClient:
-    return APIFootballClient(http_client, migrated)
-
-
-#: Ligue par defaut des tests. L'Allsvenskan **n'est pas** une competition a props
-#: buteurs : c'est le cas majoritaire, et celui ou la ligne « Buteurs » ne doit
-#: rien couter. `PROPS_LEAGUE` sert aux tests qui la veulent.
-LEAGUE = 113
-PROPS_LEAGUE = 39
 
 
 def _seed_event(settings: Settings, *, rapproche: bool = True, league: int = LEAGUE) -> None:
@@ -76,44 +64,8 @@ def _seed_event(settings: Settings, *, rapproche: bool = True, league: int = LEA
 
 
 def _mock_dossier(load_fixture: Any) -> dict[str, respx.Route]:
-    """Repond a tout ce que le dossier peut demander.
-
-    Les fixtures de saison viennent d'une charge utile reelle : la saison en cours
-    ne porte que des amicaux joues et des matchs a venir — la situation reelle
-    d'un mois d'aout — et la precedente porte une saison complete. C'est ce qui
-    fait du repli sur N-1 le cas normal et non un cas limite.
-    """
-
-    def _mock(chemin: str, fichier: str, **selecteurs: Any) -> respx.Route:
-        return respx.get(f"{BASE_URL}{chemin}", **selecteurs).mock(
-            return_value=httpx.Response(200, json=load_fixture(fichier), headers=RATE_HEADERS)
-        )
-
-    def _saison(fichier: str, team: str, season: str) -> respx.Route:
-        return _mock("/fixtures", fichier, params__contains={"team": team, "season": season})
-
-    return {
-        "home": _mock("/coachs", "apifootball_coachs_home.json", params__contains={"team": "376"}),
-        "away": _mock("/coachs", "apifootball_coachs_away.json", params__contains={"team": "377"}),
-        "season_home": _saison("apifootball_fixtures_season_home.json", "376", "2026"),
-        "season_away": _saison("apifootball_fixtures_season_away.json", "377", "2026"),
-        "season_home_prev": _saison("apifootball_fixtures_season_home_prev.json", "376", "2025"),
-        "season_away_prev": _saison("apifootball_fixtures_season_away_prev.json", "377", "2025"),
-        # Un seul appel pour toute la competition : c'est ce qui fait de cet
-        # endpoint le seul dont le cout ne croit pas avec la taille du lot.
-        "scorers": _mock(
-            "/players/topscorers",
-            "apifootball_topscorers.json",
-            params__contains={"league": str(PROPS_LEAGUE)},
-        ),
-        # Un appel par joueur : la route repond vide par defaut, et les tests qui
-        # veulent une absence la posent eux-memes.
-        "sidelined": respx.get(f"{BASE_URL}/sidelined").mock(
-            return_value=httpx.Response(
-                200, json={"errors": [], "response": []}, headers=RATE_HEADERS
-            )
-        ),
-    }
+    """Les routes du dossier, tenues dans `helpers` avec celles du contexte."""
+    return mock_dossier_routes(load_fixture)
 
 
 def _lines(settings: Settings) -> dict[str, str]:

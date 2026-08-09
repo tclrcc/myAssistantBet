@@ -11,6 +11,7 @@ import pytest
 from myassistantbet import db
 from myassistantbet.config import Settings, get_settings
 from myassistantbet.main import ENRICH_PROGRESS
+from myassistantbet.providers.apifootball import APIFootballClient
 from myassistantbet.providers.oddsapi import OddsAPIClient
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
@@ -86,3 +87,9 @@ async def http_client() -> AsyncIterator[httpx.AsyncClient]:
 def odds_client(http_client: httpx.AsyncClient, migrated: Settings) -> OddsAPIClient:
     """Client Odds API pret a l'emploi (temporisation nulle via la config de test)."""
     return OddsAPIClient(http_client, migrated)
+
+
+@pytest.fixture
+def api_client(http_client: httpx.AsyncClient, migrated: Settings) -> APIFootballClient:
+    """Client API-Football. Trois fichiers de test le demandent."""
+    return APIFootballClient(http_client, migrated)

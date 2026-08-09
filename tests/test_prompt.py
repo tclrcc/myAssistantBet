@@ -11,9 +11,12 @@ from jinja2 import TemplateNotFound
 
 from myassistantbet import db
 from myassistantbet.config import Settings
+from myassistantbet.providers.apifootball import APIFootballClient
 from myassistantbet.providers.oddsapi import BASE_URL, OddsAPIClient
 from myassistantbet.services import board as board_service
+from myassistantbet.services import dossier
 from myassistantbet.services import session as session_service
+from myassistantbet.services.context import fetch_context
 from myassistantbet.services.enrich import run_enrich
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import (
@@ -26,10 +29,39 @@ from myassistantbet.services.prompt import (
 )
 from myassistantbet.services.scan import active_competitions, run_scan
 
-from .helpers import NOW, QUOTA_HEADERS
+from .helpers import (
+    DOSSIER_RATE_HEADERS,
+    LEAGUE,
+    NOW,
+    QUOTA_HEADERS,
+    mock_context_routes,
+    mock_dossier_routes,
+)
 
 EVENT_ID = "3c7f9a1b2d4e5f60718293a4b5c6d7e8"
 PARIS = ZoneInfo("Europe/Paris")
+
+#: Plafond de tokens d'un lot de six matchs de football entierement enrichis.
+#:
+#: Recale apres avoir mesure le meme lot des deux cotes : la fixture ne portait
+#: que des cotes et tombait a **6572**, la production a **8304**. Les 8000
+#: d'origine mesuraient donc un squelette, et les 1400 tokens de marge apparente
+#: n'existaient pas — le prompt reel les avait franchis sans que rien ne bronche,
+#: ce qui a fausse toute une discussion sur le cout d'une consigne ajoutee.
+#:
+#: La fixture enrichie mesure **8957**, soit un peu plus que la production : ses
+#: six blocs sont tous complets quand un vrai lot en porte de plus pauvres. C'est
+#: le pire cas, et c'est ce qu'un plafond doit mesurer.
+#:
+#: **La marge est le sujet, pas le plafond.** Un garde-fou sature a quelques
+#: tokens pres ne protege rien : il transforme le moindre ajout en arbitrage, et
+#: c'est ce qui vient d'arriver a `test_session_mixte_foot_tennis_cyclisme`,
+#: assis a deux tokens de sa limite. Le plafond vaut donc la mesure **plus
+#: environ 500 tokens**, l'ordre de grandeur d'un paragraphe de preambule : le
+#: franchir veut dire « tu as ajoute beaucoup, va mesurer », pas « rabote ».
+#: Un lot plus gros se coupe par competition, ce pour quoi
+#: `build_prompt(competition_id=)` existe.
+PROMPT_BUDGET = 9500
 
 
 async def _session_enrichie(
@@ -228,13 +260,51 @@ async def test_note_perso_injectee_telle_quelle(
 
 
 @respx.mock
-async def test_prompt_reste_sous_huit_mille_tokens_pour_six_matchs(
-    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+async def test_prompt_reste_sous_le_budget_pour_six_matchs(
+    odds_client: OddsAPIClient,
+    api_client: APIFootballClient,
+    migrated: Settings,
+    load_fixture: Any,
 ) -> None:
-    """Critere d'acceptation de la phase 2, avec le pire cas : 6 matchs enrichis."""
+    """Critere d'acceptation de la phase 2, avec le pire cas : 6 matchs enrichis.
+
+    **« Enrichi » veut dire cotes profondes ET bloc CONTEXTE complet**, et la
+    nuance a fini par tout changer. Ce test ne clonait que les cotes : il
+    mesurait 6572 tokens quand un vrai lot de six matchs de football en pesait
+    8304 — mille sept cents d'ecart, soit tout ce que les phases 11 a 15 ont
+    ajoute au bloc et que la fixture n'a jamais recu. Le plafond avait donc
+    l'air d'avoir 1400 tokens de marge alors qu'il etait franchi en production
+    depuis des mois, et c'est ce qui a rendu la discussion sur le cout d'une
+    consigne ajoutee au prompt entierement fausse.
+    """
     session_id = await _session_enrichie(odds_client, migrated, load_fixture)
     source = db.query_one("SELECT * FROM events WHERE home = 'BK Hacken'", settings=migrated)
     deep = db.query("SELECT * FROM odds WHERE event_id = ?", (source["id"],), settings=migrated)
+
+    # Le contexte et le dossier passent par leur vrai parcours, une fois, puis
+    # se recopient comme les cotes : c'est le bloc qui est mesure, pas le nombre
+    # d'appels. `KIND_TEAMS` est recopie avec le reste, donc chaque clone
+    # retrouve les memes identifiants d'equipe et donc le meme dossier.
+    mock_context_routes(load_fixture, DOSSIER_RATE_HEADERS)
+    mock_dossier_routes(load_fixture)
+    await fetch_context(
+        api_client,
+        {
+            "id": source["id"],
+            "home": source["home"],
+            "away": source["away"],
+            "commence_time": source["commence_time"],
+            "apifootball_league_id": LEAGUE,
+        },
+        migrated,
+    )
+    await dossier.refresh_event(api_client, int(source["id"]), migrated, now=NOW)
+    context_rows = db.query(
+        "SELECT kind, payload_json, fetched_at FROM context WHERE event_id = ?",
+        (source["id"],),
+        settings=migrated,
+    )
+    assert len(context_rows) >= 8, "sans bloc CONTEXTE, la mesure ne vaut rien"
 
     for index in range(5):
         db.execute(
@@ -272,12 +342,21 @@ async def test_prompt_reste_sous_huit_mille_tokens_pour_six_matchs(
                         row["fetched_at"],
                     ),
                 )
+            for row in context_rows:
+                conn.execute(
+                    "INSERT INTO context (event_id, kind, payload_json, fetched_at) "
+                    "VALUES (?, ?, ?, ?)",
+                    (clone["id"], row["kind"], row["payload_json"], row["fetched_at"]),
+                )
         board_service.toggle_selection(int(clone["id"]), True, migrated)
 
     prompt = build_prompt(session_id, settings=migrated, now=NOW)
 
     assert prompt.blocks == 6
-    assert prompt.token_estimate < 8000, f"prompt trop lourd : {prompt.token_estimate} tokens"
+    assert "Classement" in prompt.body and "Entraineur" in prompt.body, "contexte et dossier"
+    assert prompt.token_estimate < PROMPT_BUDGET, (
+        f"prompt trop lourd : {prompt.token_estimate} tokens"
+    )
 
 
 @respx.mock

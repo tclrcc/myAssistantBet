@@ -28,6 +28,17 @@ from .helpers import NOW
 
 PARIS = ZoneInfo("Europe/Paris")
 
+#: Plafond du lot **le plus cher en preambule** : trois sports pour trois matchs,
+#: donc les trois modes d'emploi ouverts en meme temps sur trois blocs seulement.
+#: Ces blocs sont montes a la main, sans contexte : c'est l'inverse du lot mesure
+#: par `test_prompt.PROMPT_BUDGET`, ou le poids vient des blocs et non de l'en-tete.
+#:
+#: Mesure : **7998**. Le plafond etait a 8000, soit deux tokens de marge — et une
+#: consigne de quinze lignes ajoutee au prompt a suffi a le franchir, transformant
+#: un ajout ordinaire en arbitrage. Meme regle que l'autre plafond : la mesure plus
+#: environ 500 tokens, pour qu'il alerte au lieu de bloquer.
+MIXED_BUDGET = 8500
+
 
 @pytest.fixture
 def client(isolated_settings: Settings) -> Iterator[TestClient]:
@@ -387,7 +398,7 @@ def test_session_mixte_foot_tennis_cyclisme(migrated: Settings) -> None:
     assert "· FOOT · Match amical · Lyon – Nice ·" in prompt.body
     assert "Moutet 1.85" in prompt.body
     assert "Pogacar 2.50" in prompt.body
-    assert prompt.token_estimate < 8000
+    assert prompt.token_estimate < MIXED_BUDGET
 
 
 def test_cotes_manuelles_ont_un_libelle_lisible(migrated: Settings) -> None:

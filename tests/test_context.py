@@ -29,7 +29,7 @@ from myassistantbet.services.matching import save_alias
 from myassistantbet.services.prompt import build_prompt
 from myassistantbet.services.render import UNAVAILABLE
 
-RATE_HEADERS = {"x-ratelimit-requests-remaining": "82", "x-ratelimit-requests-limit": "100"}
+from .helpers import RATE_HEADERS, mock_context_routes
 
 EVENT = {
     "id": 1,
@@ -38,11 +38,6 @@ EVENT = {
     "commence_time": "2026-08-03T15:30:00Z",
     "apifootball_league_id": 113,
 }
-
-
-@pytest.fixture
-def api_client(http_client: httpx.AsyncClient, migrated: Settings) -> APIFootballClient:
-    return APIFootballClient(http_client, migrated)
 
 
 def _seed_event(settings: Settings) -> None:
@@ -66,52 +61,8 @@ def _seed_event(settings: Settings) -> None:
 
 
 def _mock_all(load_fixture: Any) -> dict[str, respx.Route]:
-    """Repond a tous les endpoints API-Football avec les fixtures capturees.
-
-    Rend les routes **par nom** et non par position : les designer par
-    `respx.routes[1]` cassait chaque test des qu'un appel etait ajoute, ce qui
-    poussait a inserer les nouveaux mocks a la fin pour de mauvaises raisons.
-    """
-
-    def _mock(chemin: str, fichier: str, **selecteurs: Any) -> respx.Route:
-        return respx.get(f"{BASE_URL}{chemin}", **selecteurs).mock(
-            return_value=httpx.Response(200, json=load_fixture(fichier), headers=RATE_HEADERS)
-        )
-
-    return {
-        "fixtures_date": _mock(
-            "/fixtures",
-            "apifootball_fixtures_date.json",
-            params__contains={"date": "2026-08-03"},
-        ),
-        "standings": _mock("/standings", "apifootball_standings.json"),
-        "stats_home": _mock(
-            "/teams/statistics", "apifootball_stats_home.json", params__contains={"team": "376"}
-        ),
-        "stats_away": _mock(
-            "/teams/statistics", "apifootball_stats_away.json", params__contains={"team": "377"}
-        ),
-        "recent_home": _mock(
-            "/fixtures", "apifootball_recent_home.json", params__contains={"team": "376"}
-        ),
-        "recent_away": _mock(
-            "/fixtures", "apifootball_recent_away.json", params__contains={"team": "377"}
-        ),
-        "injuries": _mock("/injuries", "apifootball_injuries.json"),
-        "h2h": _mock("/fixtures/headtohead", "apifootball_h2h.json"),
-        "leagues": _mock("/leagues", "apifootball_leagues.json"),
-        # Le dossier d'equipe fait partie d'un enrichissement complet depuis
-        # qu'il existe : sans ces deux routes, tout test qui enrichit tomberait
-        # sur un appel non simule.
-        "coachs_home": _mock(
-            "/coachs", "apifootball_coachs_home.json", params__contains={"team": "376"}
-        ),
-        "coachs_away": _mock(
-            "/coachs", "apifootball_coachs_away.json", params__contains={"team": "377"}
-        ),
-        "fixture_stats": _mock("/fixtures/statistics", "apifootball_fixture_statistics.json"),
-        "team": _mock("/teams", "apifootball_team.json"),
-    }
+    """Les routes du bloc CONTEXTE, tenues dans `helpers` avec celles du dossier."""
+    return mock_context_routes(load_fixture)
 
 
 def _lines(settings: Settings) -> dict[str, str]:
