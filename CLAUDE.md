@@ -612,6 +612,23 @@ de fois qu'elle joue.
   entraineur parti, affirme comme un fait. L'anciennete se compte dans l'equipe du match
   et jamais depuis le premier poste de la carriere, et une prise de fonction posterieure
   au match ne rend aucune duree — un nombre negatif presente comme une anciennete.
+  - **Cette regle ne tranche que dans 15 % des cas, et c'est mesure** : sur les 110
+    clubs en base, **92 ont plusieurs etapes ouvertes** chez eux — le fournisseur ne
+    referme pas ses fiches. Le reste du temps c'est le **depart le plus recent** qui
+    decide : heuristique juste plus souvent qu'aucune autre, mais heuristique.
+  - **Aucune regle ne rattrape une nomination absente.** Le bloc nommait R. Jans a
+    Utrecht, parti depuis, alors que son successeur ne figurait **nulle part** dans la
+    reponse. Il n'existe aucun signal decisif dans la charge utile : le champ `team`
+    de tete est un simple echo de l'equipe interrogee, pas le club courant de
+    l'entraineur — verifie.
+  - **La fausse piste evidente est la peremption, et elle est fausse.** Le releve
+    d'Utrecht datait du matin meme : raccourcir `TTL_HOURS[KIND_COACH]` paierait des
+    appels sans rien corriger.
+  - Ce qui reste, c'est de ne plus presenter la ligne comme un fait. Le preambule dit
+    qu'une anciennete longue **ne prouve pas la continuite** — elle peut n'etre que la
+    derniere fiche restee ouverte — et que la conference de presse tranche. Il est
+    garde par `{% if 'Entraineur' in context_labels %}`, ce qui le rend **moins cher
+    qu'avant** sur un lot qui n'a pas de dossier d'equipe.
 
 ## Elo tennis (`providers/tennisabstract.py`, `services/elo.py`)
 

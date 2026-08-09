@@ -720,6 +720,21 @@ def _current_post(entries: list[dict[str, Any]], team_id: int) -> dict[str, Any]
     en cours est celui dont l'etape de carriere **dans cette equipe** n'a pas de
     date de fin. A defaut de le trouver, aucune ligne — nommer l'entraineur de
     l'an dernier serait pire qu'un silence, parce que ce serait affirme.
+
+    **Ce depart n'a pas la portee qu'on lui prete, et c'est mesure** : sur les
+    110 clubs en base, **92 ont plusieurs etapes ouvertes** chez eux. L'etape non
+    refermee ne tranche donc que dans 15 % des cas, et le reste du temps c'est le
+    depart le plus recent qui decide — heuristique juste plus souvent qu'aucune
+    autre, mais heuristique.
+
+    **Aucune regle ne peut rattraper une nomination absente.** Le champ `team` de
+    tete est un simple echo de l'equipe interrogee, pas le club courant de
+    l'entraineur : il n'existe aucun signal decisif dans la charge utile. Constate
+    en reel — le bloc nommait R. Jans a Utrecht, parti depuis, alors que son
+    successeur ne figurait **nulle part** dans la reponse. Le releve datait du
+    matin meme : raccourcir `TTL_HOURS[KIND_COACH]` n'y changerait rien, et ce
+    serait la fausse piste evidente. C'est le preambule qui porte la limite, en
+    disant que la ligne est une piste et non un fait.
     """
     best: dict[str, Any] | None = None
     for entry in entries or []:

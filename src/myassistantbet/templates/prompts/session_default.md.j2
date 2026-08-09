@@ -150,11 +150,21 @@ comme jouable à l'heure annoncée — reporté, annulé, forfait. C'est **bloqu
 PASSE, et une seule ligne en section B. Vérifie-le quand même, un relevé peut
 dater ; mais l'absence de cette ligne ne prouve rien dans l'autre sens.
 
-{% endif %}La ligne **« Entraîneur »** donne la date de prise de fonction et l'ancienneté
+{% endif %}{% if 'Entraineur' in context_labels -%}
+La ligne **« Entraîneur »** donne la date de prise de fonction et l'ancienneté
 dans **cette** équipe. Une arrivée récente est le signal : un effectif qui change
 de mains n'a plus la forme qu'on lui prête, et les statistiques ci-dessus
-décrivent en partie le travail de quelqu'un d'autre. Une ancienneté longue ne dit
-rien de particulier — c'est le cas ordinaire.
+décrivent en partie le travail de quelqu'un d'autre.
+
+**Le fournisseur ne referme pas ses fiches** — sur les clubs en base, 84 % ont
+plusieurs entraîneurs déclarés en poste en même temps, et il lui arrive de n'avoir
+jamais enregistré une nomination. Une ancienneté longue ne prouve donc pas la
+continuité : elle peut n'être que la dernière fiche restée ouverte. Traite cette
+ligne comme une piste, jamais comme un fait — c'est la conférence de presse qui
+tranche, et un angle qui repose sur un changement d'entraîneur exige de l'avoir
+confirmé.
+
+{% endif -%}
 
 Le dénominateur est toujours écrit, et c'est lui qui fixe ce que la ligne vaut :
 `5 CS/16` décrit une saison, `2 CS/5` décrit un mois. Sous cinq matchs joués, la

@@ -623,6 +623,54 @@ def test_le_prompt_dit_qu_un_statut_est_bloquant(migrated: Settings) -> None:
     assert "l'absence de cette ligne ne prouve rien" in corps
 
 
+def test_le_prompt_presente_l_entraineur_comme_une_piste(migrated: Settings) -> None:
+    """Mesure sur la base reelle : **92 des 110 clubs** ont plusieurs etapes de
+    carriere ouvertes chez eux, et le fournisseur peut n'avoir jamais enregistre
+    une nomination. Le bloc nommait ainsi R. Jans a Utrecht, parti depuis, son
+    successeur ne figurant nulle part dans la reponse — releve du matin meme,
+    donc sans rapport avec la peremption.
+
+    Aucune regle de choix ne rattrape une nomination absente : c'est le preambule
+    qui doit dire que la ligne est une piste, sans quoi une anciennete longue se
+    lit comme une preuve de continuite."""
+    from myassistantbet.services.prompt import build_prompt
+
+    _seed_event(migrated)
+    dossier.store(
+        376,
+        dossier.KIND_COACH,
+        [{"name": "P. Gustafsson", "career": [{"team": {"id": 376}, "start": "2023-06-01"}]}],
+        settings=migrated,
+    )
+    db.execute(
+        "INSERT INTO sessions (id, label, created_at) VALUES (1, 'test', ?)",
+        (db.utcnow(),),
+        settings=migrated,
+    )
+    db.execute("INSERT INTO session_events (session_id, event_id) VALUES (1, 1)", settings=migrated)
+
+    corps = " ".join(build_prompt(1, settings=migrated, now=NOW).body.split())
+
+    assert "Le fournisseur ne referme pas ses fiches" in corps
+    assert "ne prouve donc pas la continuité" in corps
+    assert "Traite cette ligne comme une piste, jamais comme un fait" in corps
+
+
+def test_le_mode_d_emploi_de_l_entraineur_ne_se_paie_pas_sans_la_ligne(
+    migrated: Settings,
+) -> None:
+    """Un lot monte a la main n'a pas de dossier d'equipe : le paragraphe entier
+    disparait, comme toutes les portes du preambule."""
+    from myassistantbet.services.prompt import build_prompt
+
+    _lot(migrated, "football")
+
+    corps = build_prompt(1, settings=migrated).body
+
+    assert "Le fournisseur ne referme pas ses fiches" not in corps
+    assert "La ligne **« Entraîneur »**" not in corps
+
+
 def test_le_mode_d_emploi_du_statut_ne_se_paie_pas_sans_la_ligne(migrated: Settings) -> None:
     """Meme regle que le reste du preambule : ce que le lot ne porte pas ne se
     documente pas."""
