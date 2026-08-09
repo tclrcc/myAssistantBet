@@ -32,6 +32,23 @@
     </span>
   </div>
 
+  {# Le garde-fou d'étalement du prompt, dit au lieu d'être appliqué en silence.
+     71 sélections prises en 4 jours restent une semaine de paris : « Tennis
+     46 % » et « Masters 1000 46 % » y étaient les mêmes 35 matchs sous deux
+     noms, affichés comme deux observations. #}
+  {% if not analysis.enough %}
+  <p class="block-warn">
+    <strong>{{ analysis.settled }} sélection(s) tranchée(s) sur seulement
+    {{ analysis.days }} journée(s) d'analyse.</strong>
+    Ces taux décrivent ces journées-là — un tournoi, une soirée de coupe — et non
+    une façon d'analyser : deux regroupements peuvent y être les mêmes matchs sous
+    deux noms. Il en faudrait {{ analysis.minimum }} réparties sur
+    {{ analysis.minimum_days }} journées pour qu'un regroupement se lise comme une
+    tendance. Les chiffres restent affichés, c'est leur portée qui est limitée —
+    c'est le même seuil qui fait taire le bloc de retour d'expérience du prompt.
+  </p>
+  {% endif %}
+
   <div class="kpi">
     {{ hero(analysis.overall, "Taux de l'analyse") }}
     {% if analysis.comparable %}
@@ -68,6 +85,15 @@
               if analysis.hidden_markets else "") }}
     {% endif %}
   </div>
+
+  {% if analysis.thin_rows %}
+  <p class="block-note">
+    {{ analysis.thin_rows }} ligne(s) portent moins de {{ analysis.minimum_rows }}
+    paris tranchés : leur barre est pâlie. Le taux y mesure surtout le hasard —
+    « 100 % » sur deux paris et « 100 % » sur quarante ne disent pas la même chose.
+    Le prompt, lui, ne publie pas ces lignes du tout.
+  </p>
+  {% endif %}
 
   <details class="panel">
     <summary>

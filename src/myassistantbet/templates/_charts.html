@@ -12,9 +12,13 @@
   {# La piste porte l'echelle (0, 25, 50, 75, 100 %) en filets discrets. Aucun
      seuil n'y est marque : un repere « rentabilite » serait un calcul
      d'esperance, interdit par la section 9 de SPEC.md. #}
+  {# La barre pâlit sous le seuil de lecture — le même que celui du prompt.
+     Elle ne disparaît pas : le prompt tait ces lignes parce que Claude ne peut
+     pas savoir qu'il lit trois paris, mais ici c'est l'utilisateur qui regarde
+     ses propres données, et les lui cacher répondrait à côté. #}
   <span class="track" aria-hidden="true">
     {% if row.rate is not none %}
-      <span class="fill{% if row.settled < 4 %} is-thin{% endif %}"
+      <span class="fill{% if row.thin %} is-thin{% endif %}"
             style="width: {{ '%.1f'|format(row.rate * 100) }}%"></span>
     {% endif %}
   </span>
@@ -25,7 +29,7 @@
   <div class="bars">
     {% for row in rows %}
     <div class="bar-row{% if row.rate is none %} is-void{% endif %}"
-         title="{{ row.label }} — {{ row.won }} gagné(s), {{ row.lost }} perdu(s){% if row.void %}, {{ row.void }} annulé(s){% endif %}{% if row.pending %}, {{ row.pending }} en attente{% endif %}">
+         title="{{ row.label }} — {{ row.won }} gagné(s), {{ row.lost }} perdu(s){% if row.void %}, {{ row.void }} annulé(s){% endif %}{% if row.pending %}, {{ row.pending }} en attente{% endif %}{% if row.thin %} — trop peu tranché pour se lire comme une tendance{% endif %}">
       <span class="bar-label">{{ row.label }}</span>
       {{ meter(row) }}
       <b class="bar-value">{{ row.rate_label }}</b>

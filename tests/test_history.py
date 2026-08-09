@@ -12,6 +12,12 @@ from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services import coupons as coupons_service
 from myassistantbet.services.history import (
+    ANALYSIS_MIN_DAYS,
+    ANALYSIS_MIN_ROWS,
+    ANALYSIS_MIN_TOTAL,
+    FEEDBACK_MIN_DAYS,
+    FEEDBACK_MIN_ROWS,
+    FEEDBACK_MIN_TOTAL,
     Analysis,
     HistoryError,
     add_pick,
@@ -827,6 +833,121 @@ def test_aucun_champ_financier_sur_l_analyse() -> None:
     noms |= {name for name in dir(Analysis) if not name.startswith("_")}
 
     assert not (noms & interdits)
+
+
+def test_les_seuils_de_la_page_sont_ceux_du_prompt() -> None:
+    """Sous quel compte un taux ne veut rien dire est une propriete des donnees,
+    pas de la surface qui les affiche. Les copier des deux cotes les aurait fait
+    diverger, et la page aurait fini par publier ce que le prompt refuse."""
+    assert (ANALYSIS_MIN_TOTAL, ANALYSIS_MIN_ROWS, ANALYSIS_MIN_DAYS) == (
+        FEEDBACK_MIN_TOTAL,
+        FEEDBACK_MIN_ROWS,
+        FEEDBACK_MIN_DAYS,
+    )
+
+
+def _le_jour(settings: Settings, pick_id: int, jour: int) -> None:
+    """Date la **decision**, pas le match : c'est ce que compte l'etalement."""
+    db.execute(
+        "UPDATE picks SET created_at = ? WHERE id = ?",
+        (f"2026-07-{jour:02d}T12:00:00Z", pick_id),
+        settings=settings,
+    )
+
+
+def test_l_analyse_compte_les_journees_d_analyse(migrated: Settings) -> None:
+    """Deux paris pris dans la meme seance restent une seule seance : c'est la
+    journee de la decision qui compte, et deux picks du meme jour n'en font
+    qu'une."""
+    session_id, event_id = _session_avec_match(migrated)
+    for jour in (1, 1, 2):
+        _le_jour(migrated, _propose(migrated, session_id, event_id, "safe", "win"), jour)
+    # En attente : sans resultat, elle ne compte ni au total ni a l'etalement.
+    _le_jour(
+        migrated,
+        add_pick(session_id, "safe", "O/U", "Over", event_id=str(event_id), settings=migrated),
+        9,
+    )
+
+    report = analysis(migrated)
+
+    assert (report.settled, report.days) == (3, 2)
+
+
+def test_un_echantillon_concentre_est_annonce_sur_la_page(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Le garde-fou d'etalement du prompt, dit au lieu d'etre applique en
+    silence : 71 selections prises en quatre jours restent une semaine de paris.
+    « Tennis 46 % » et « Masters 1000 46 % » y etaient les memes 35 matchs sous
+    deux noms, presentes comme deux observations independantes.
+
+    La page, elle, continue d'afficher : c'est la surface ou l'utilisateur vient
+    regarder ses propres donnees."""
+    session_id, event_id = _session_avec_match(isolated_settings)
+    for index in range(ANALYSIS_MIN_TOTAL):
+        _le_jour(
+            isolated_settings,
+            _propose(isolated_settings, session_id, event_id, "safe", "win"),
+            1 + index % (ANALYSIS_MIN_DAYS - 1),
+        )
+
+    report = analysis(isolated_settings)
+    # Le texte est mis en forme sur plusieurs lignes : chercher une phrase
+    # entiere dans le HTML brut la couperait au premier retour a la ligne.
+    page = " ".join(client.get("/stats").text.split())
+
+    assert report.settled >= report.minimum, "le volume, lui, est atteint"
+    assert not report.enough, "mais pas l'etalement, et il faut les deux"
+    assert "journée(s) d'analyse" in page
+    assert "les mêmes matchs sous deux noms" in page
+    assert '<span class="bar-count">' in page, "les chiffres restent affiches"
+
+
+def test_un_echantillon_etale_ne_declenche_aucun_avertissement(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    session_id, event_id = _session_avec_match(isolated_settings)
+    for index in range(ANALYSIS_MIN_TOTAL):
+        _le_jour(
+            isolated_settings,
+            _propose(isolated_settings, session_id, event_id, "safe", "win"),
+            1 + index % ANALYSIS_MIN_DAYS,
+        )
+
+    assert analysis(isolated_settings).enough
+    assert "journée(s) d'analyse" not in client.get("/stats").text
+
+
+def test_une_ligne_trop_courte_est_marquee_et_jamais_tue(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Le prompt tait ces lignes — Claude ne peut pas savoir qu'il lit trois
+    paris. La page les garde et les pale : lui cacher ses propres donnees
+    repondrait a cote de la question qu'elle pose."""
+    session_id, event_id = _session_avec_match(isolated_settings)
+    for _ in range(ANALYSIS_MIN_ROWS - 1):
+        _propose(isolated_settings, session_id, event_id, "safe", "win", market="O/U 2.5")
+
+    report = analysis(isolated_settings)
+    page = " ".join(client.get("/stats").text.split())
+
+    assert [row.label for row in report.by_market] == ["O/U 2.5"], "la ligne existe toujours"
+    assert report.by_market[0].thin
+    assert report.thin_rows == 3, "palier, sport, marche — ni confiance ni niveau ici"
+    assert "is-thin" in page
+    assert f"moins de {ANALYSIS_MIN_ROWS}" in page
+
+
+def test_une_ligne_assez_fournie_n_est_plus_marquee(migrated: Settings) -> None:
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(ANALYSIS_MIN_ROWS):
+        _propose(migrated, session_id, event_id, "safe", "win")
+
+    report = analysis(migrated)
+
+    assert not report.by_tier[0].thin
+    assert report.thin_rows == 0
 
 
 def test_le_taux_global_reunit_joue_et_ecarte(migrated: Settings) -> None:

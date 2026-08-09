@@ -139,6 +139,15 @@ class RateRow:
     def rate_label(self) -> str:
         return "—" if self.rate is None else f"{self.rate * 100:.0f} %"
 
+    @property
+    def thin(self) -> bool:
+        """Trop peu de paris tranches pour que le taux decrive autre chose que
+        le hasard. Meme seuil que le prompt, reaction differente : le bloc du
+        prompt tait la ligne, la page la garde et la marque — l'utilisateur
+        vient justement y regarder ses propres donnees.
+        """
+        return 0 < self.settled < ANALYSIS_MIN_ROWS
+
 
 @dataclass
 class Stats:
@@ -685,10 +694,67 @@ def stats(settings: Settings | None = None) -> Stats:
     return Stats(by_tier=by_tier, by_sport=by_sport, overall=overall)
 
 
+# -- Seuils de lecture, communs aux deux surfaces ---------------------------
+#
+# Sous quel compte un taux ne veut plus rien dire est une propriete des
+# **donnees**, pas de l'endroit qui les affiche : les seuils sont donc ecrits
+# une seule fois. Les copier des deux cotes les aurait fait diverger, et la
+# page aurait fini par publier ce que le prompt refuse.
+#
+# Ce qui differe, c'est la **reaction**, et les deux sont justes :
+#   · le prompt se tait. Claude n'a aucun moyen de savoir qu'il lit une semaine
+#     de paris plutot qu'un historique, et un chiffre faux oriente plus
+#     surement que pas de chiffre du tout ;
+#   · la page le dit. C'est la surface ou l'utilisateur vient regarder ses
+#     propres donnees : les lui cacher repondrait a cote de la question posee.
+#     La ligne reste affichee et porte sa faiblesse, le detail chiffre sous le
+#     graphique restant complet en toutes circonstances.
+
+#: Sous ce total, aucun taux n'est publie. Un 2/3 se lit « 67 % » et n'apprend
+#: rien ; dire qu'il manque du recul est en revanche une information juste.
+#:
+#: Releve a 40 apres coup : a 17 selections tranchees, le bloc publiait un
+#: 2/6 en ATP contre 5/7 en WTA qui ne reposait que sur treize matchs d'un
+#: seul tournoi, joues la meme nuit. Ce n'est pas « je lis mieux la WTA »,
+#: c'est « une soiree s'est mal passee », et le prompt le presentait comme un
+#: ordre de passage. Un chiffre faux oriente plus surement que pas de chiffre.
+FEEDBACK_MIN_TOTAL = 40
+
+#: Meme regle a l'echelle d'une ligne : un regroupement vu sept fois reste tu.
+FEEDBACK_MIN_ROWS = 8
+
+#: Journees d'analyse distinctes sous lesquelles aucun detail n'est publie.
+#:
+#: `FEEDBACK_MIN_TOTAL` garde le **volume**, ce garde-fou garde l'**etalement**,
+#: et les deux ne se remplacent pas : 63 selections tranchees prises en quatre
+#: jours restent une semaine de paris, pas un historique. Mesure sur les donnees
+#: reelles — les 60 selections de la fenetre couvraient du 5 au 8 aout, un seul
+#: tournoi de tennis en deux tableaux et une seule soiree de coupes d'Europe.
+#: Le bloc annoncait alors « Masters 1000 13/30 » et « Tennis 13/30 » comme deux
+#: observations independantes, la ou c'etaient les memes matchs sous deux noms,
+#: et « Conference League 11 » sur une unique soiree.
+#:
+#: Une concentration ne se mesure pas par competition : les deux tableaux du
+#: Canadian Open sont deux competitions distinctes en base, si bien qu'un compte
+#: de competitions aurait declare l'echantillon varie. C'est le calendrier qui
+#: la dit — dix journees ne tiennent pas dans une semaine de tournoi.
+FEEDBACK_MIN_DAYS = 10
+
+#: La page reprend les seuils du prompt, sans en inventer d'autres. Le meme
+#: 46 % sur 35 selections d'un seul tournoi est trompeur des deux cotes ; seule
+#: change la facon de le dire.
+ANALYSIS_MIN_TOTAL = FEEDBACK_MIN_TOTAL
+ANALYSIS_MIN_ROWS = FEEDBACK_MIN_ROWS
+ANALYSIS_MIN_DAYS = FEEDBACK_MIN_DAYS
+
+
 # -- Ce que vaut l'analyse --------------------------------------------------
 
 #: Sous ce nombre de paris tranches, un marche n'est pas liste : la longue
-#: traine des libelles vus une fois noierait les marches qui comptent.
+#: traine des libelles vus une fois noierait les marches qui comptent. C'est le
+#: seul cas ou la page ecarte vraiment une ligne, et il ne contredit pas la
+#: regle ci-dessus : un libelle vu une fois n'est pas un taux fragile, c'est du
+#: bruit d'orthographe. Le compte des ecartes est annonce (`hidden_markets`).
 ANALYSIS_MIN_MARKET = 2
 
 
@@ -707,6 +773,14 @@ class Analysis:
     """
 
     settled: int = 0
+    #: Journees d'analyse distinctes couvertes par ces selections tranchees.
+    #: Comptee comme dans `feedback()` : la journee ou la decision a ete prise,
+    #: et non celle du match — deux paris pris dans la meme seance restent une
+    #: seule seance, meme a cheval sur minuit.
+    days: int = 0
+    minimum: int = ANALYSIS_MIN_TOTAL
+    minimum_days: int = ANALYSIS_MIN_DAYS
+    minimum_rows: int = ANALYSIS_MIN_ROWS
     by_tier: list[RateRow] = field(default_factory=list)
     by_confidence: list[RateRow] = field(default_factory=list)
     by_sport: list[RateRow] = field(default_factory=list)
@@ -727,6 +801,32 @@ class Analysis:
     def comparable(self) -> bool:
         """Vrai si les deux cotes de la comparaison ont de quoi etre lues."""
         return self.played.settled > 0 and self.skipped.settled > 0
+
+    @property
+    def enough(self) -> bool:
+        """Assez de recul pour qu'un regroupement se lise comme une tendance.
+
+        Meme regle que `Feedback.enough`, et il faut les deux conditions : assez
+        de selections **et** assez de journees. Ce que la page en fait differe —
+        elle continue d'afficher, en disant ce que ces taux decrivent vraiment.
+        """
+        return self.settled >= self.minimum and self.days >= self.minimum_days
+
+    @property
+    def thin_rows(self) -> int:
+        """Regroupements dont le taux mesure surtout le hasard.
+
+        Annonce plutot que laissee a l'oeil : la barre pale se remarque quand on
+        la cherche, pas quand on parcourt la page.
+        """
+        groups = (
+            self.by_tier,
+            self.by_confidence,
+            self.by_sport,
+            self.by_category,
+            self.by_market,
+        )
+        return sum(1 for rows in groups for row in rows if row.thin)
 
     @property
     def overall(self) -> RateRow:
@@ -775,7 +875,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
             row["key"]: row["label"] for row in conn.execute("SELECT key, label FROM sports")
         }
         rows = conn.execute(
-            "SELECT k.tier, k.result, k.market, k.confidence, k.played, "
+            "SELECT k.tier, k.result, k.market, k.confidence, k.played, k.created_at, "
             "       s.key AS sport_key, c.category FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
@@ -788,6 +888,16 @@ def analysis(settings: Settings | None = None) -> Analysis:
 
     results = [(row["result"] or "pending") for row in rows]
     report.settled = sum(1 for result in results if result in ("win", "loss"))
+    # Les journees se comptent sur les seules selections tranchees, comme le
+    # total : les compter sur toutes crediterait d'un etalement que le taux
+    # affiche n'a pas.
+    report.days = len(
+        {
+            str(row["created_at"])[:10]
+            for row, result in zip(rows, results, strict=True)
+            if result in ("win", "loss")
+        }
+    )
 
     report.by_tier = _rate_tally(
         [
@@ -864,35 +974,8 @@ def analysis(settings: Settings | None = None) -> Analysis:
 #: d'une autre saison, d'autres competitions et d'une autre facon de jouer.
 FEEDBACK_WINDOW = 60
 
-#: Sous ce total, aucun taux n'est publie. Un 2/3 se lit « 67 % » et n'apprend
-#: rien ; dire qu'il manque du recul est en revanche une information juste.
-#:
-#: Releve a 40 apres coup : a 17 selections tranchees, le bloc publiait un
-#: 2/6 en ATP contre 5/7 en WTA qui ne reposait que sur treize matchs d'un
-#: seul tournoi, joues la meme nuit. Ce n'est pas « je lis mieux la WTA »,
-#: c'est « une soiree s'est mal passee », et le prompt le presentait comme un
-#: ordre de passage. Un chiffre faux oriente plus surement que pas de chiffre.
-FEEDBACK_MIN_TOTAL = 40
-
-#: Meme regle a l'echelle d'une ligne : un regroupement vu sept fois reste tu.
-FEEDBACK_MIN_ROWS = 8
-
-#: Journees d'analyse distinctes sous lesquelles aucun detail n'est publie.
-#:
-#: `FEEDBACK_MIN_TOTAL` garde le **volume**, ce garde-fou garde l'**etalement**,
-#: et les deux ne se remplacent pas : 63 selections tranchees prises en quatre
-#: jours restent une semaine de paris, pas un historique. Mesure sur les donnees
-#: reelles — les 60 selections de la fenetre couvraient du 5 au 8 aout, un seul
-#: tournoi de tennis en deux tableaux et une seule soiree de coupes d'Europe.
-#: Le bloc annoncait alors « Masters 1000 13/30 » et « Tennis 13/30 » comme deux
-#: observations independantes, la ou c'etaient les memes matchs sous deux noms,
-#: et « Conference League 11 » sur une unique soiree.
-#:
-#: Une concentration ne se mesure pas par competition : les deux tableaux du
-#: Canadian Open sont deux competitions distinctes en base, si bien qu'un compte
-#: de competitions aurait declare l'echantillon varie. C'est le calendrier qui
-#: la dit — dix journees ne tiennent pas dans une semaine de tournoi.
-FEEDBACK_MIN_DAYS = 10
+# Les trois seuils de publication — volume, ligne, etalement — vivent avec ceux
+# de la page, plus haut : ils sont communs aux deux surfaces.
 
 
 @dataclass

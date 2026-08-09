@@ -1185,6 +1185,21 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
   max-width: 62ch;
   margin: 0 0 var(--s5);
 }
+/* Ce que les chiffres qui suivent decrivent vraiment. En note grise il se
+   lisait apres coup, une fois les taux deja pris pour des tendances : il porte
+   donc un fond et un filet, comme un bandeau, sans crier pour autant — la page
+   reste consultable, c'est sa portee qui est bornee. */
+.block-warn {
+  color: var(--text);
+  font-size: 0.85rem;
+  max-width: 76ch;
+  margin: 0 0 var(--s4);
+  padding: var(--s3);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-sm);
+  background: var(--warn-soft);
+}
+.block-warn strong { color: var(--warn); }
 
 /* Chiffres de tete. Une seule figure « heros » par page : au-dela, plus rien
    ne dit par ou commencer. */

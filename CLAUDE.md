@@ -1318,6 +1318,42 @@ divergent et l'en-tete colle trop haut ou trop bas.
 
 Les deux vivent sur `/stats`, jamais melangees, et aucune ne produit d'indicateur financier.
 
+### Les seuils de lecture sont communs aux deux surfaces, la reaction ne l'est pas
+
+`feedback()` avait trois garde-fous — volume, ligne, etalement — et `analysis()`
+aucun : la page publiait donc exactement ce que le prompt refuse. Constate sur les
+donnees reelles a 71 selections tranchees : « Tennis 46 % » et « Masters 1000 46 % »
+etaient **les memes 35 lignes** — un seul tournoi en deux tableaux — affichees comme
+deux observations independantes, et toute la mesure tenait sur **quatre jours**
+(5 au 8 aout), le football n'etant qu'une soiree de coupes d'Europe plus des miettes.
+
+- **Sous quel compte un taux ne veut plus rien dire est une propriete des donnees,
+  pas de la surface qui les affiche.** Les seuils sont donc ecrits **une seule
+  fois** (`ANALYSIS_MIN_* = FEEDBACK_MIN_*`, un test le verifie) : les copier des
+  deux cotes les aurait fait diverger, exactement comme la liste de marches de
+  `markets.py`.
+- **Ce qui differe, c'est la reaction, et les deux sont justes.** Le prompt **se
+  tait** : Claude n'a aucun moyen de savoir qu'il lit une semaine de paris, et un
+  chiffre faux oriente plus surement que pas de chiffre. La page **le dit** : c'est
+  la surface ou l'utilisateur vient regarder ses propres donnees, les lui cacher
+  repondrait a cote de la question posee. Blanchir `/stats` aurait ete la
+  traduction litterale du garde-fou et le mauvais choix.
+- L'etalement (`Analysis.days`) se compte sur les seules selections **tranchees**,
+  comme le total : le compter sur toutes crediterait d'un etalement que le taux
+  affiche n'a pas. Et c'est la journee de la **decision** (`picks.created_at`), pas
+  celle du match — meme regle que `feedback()`.
+- Une ligne sous `ANALYSIS_MIN_ROWS` est **palie et annoncee, jamais retiree**.
+  La retirer aurait supprime `ULTRA FUN 0/6`, la ligne la plus actionnable de la
+  page — celle qui dit que le garde-fou « fait nomme et date » a arrete la
+  production de ce palier. Le seuil visuel valait 4 en dur dans le template : il
+  y en a maintenant un seul, et c'est celui du prompt.
+- `ANALYSIS_MIN_MARKET` (2) reste le **seul** cas ou la page ecarte vraiment une
+  ligne, et ne contredit pas la regle : un libelle vu une fois n'est pas un taux
+  fragile, c'est du bruit d'orthographe. Le compte des ecartes est annonce.
+- Le detail chiffre sous le graphique reste **complet en toutes circonstances** :
+  c'est ce qui rend l'ecartement du graphique acceptable. Le graphique interprete,
+  le tableau compte.
+
 ### Les graphiques (`templates/_charts.html`)
 
 Du HTML et du CSS, aucun SVG a calculer, aucune bibliotheque : une barre est une boite
