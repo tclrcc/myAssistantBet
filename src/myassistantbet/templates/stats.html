@@ -94,8 +94,9 @@
             "Chaque niveau porte sa bande cible, réglable dans les réglages. Un taux
              n'est signalé hors bande que si son intervalle en sort entièrement —
              sinon la page crierait à la dérive sur du bruit.",
-            "Aucune confiance annoncée sur les sélections tranchées.") }}
-    {{ card("Par palier", analysis.by_tier) }}
+            "Aucune confiance annoncée sur les sélections tranchées.",
+            comparison=analysis.confidence_comparison) }}
+    {{ card("Par palier", analysis.by_tier, comparison=analysis.tier_comparison) }}
     {{ card("Par sport", analysis.by_sport) }}
     {% if analysis.by_category %}
       {{ card("Par niveau de tournoi", analysis.by_category,

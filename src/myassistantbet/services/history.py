@@ -15,7 +15,7 @@ import re
 import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from math import sqrt
+from math import ceil, sqrt
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -138,6 +138,67 @@ def wilson(won: int, settled: int) -> tuple[float, float] | None:
     # Les bornes se rabattent sur [0, 1] : un taux ne sort pas de la, et une
     # borne a -0.03 se lirait comme une grandeur signee.
     return (max(0.0, centre - half), min(1.0, centre + half))
+
+
+#: z d'un test bilateral a 5 %, et z de la puissance visee (80 %). Les deux
+#: valeurs habituelles : un test qui laisse passer une difference reelle une
+#: fois sur cinq est deja peu exigeant, et viser mieux ferait exploser la cible.
+TEST_Z_ALPHA = 1.96
+TEST_Z_BETA = 0.84
+
+
+def required_sample(first: float, second: float) -> int | None:
+    """Selections **par groupe** pour qu'un ecart observe devienne testable.
+
+    Repond a la question que la page pose sans jamais y repondre : « SAFE fait
+    mieux que FUN » est-il un constat ou du bruit ? Le nombre dit ce qu'il
+    faudrait accumuler pour trancher, ce qui est plus utile que de trancher
+    trop tot.
+
+    C'est un calcul de puissance sur des proportions deja observees, pas une
+    prevision : rien n'y annonce le prochain pari.
+
+    None quand les deux taux sont egaux — un ecart nul ne devient jamais
+    testable, aucun volume n'y suffit.
+    """
+    gap = first - second
+    if gap == 0:
+        return None
+    spread = first * (1 - first) + second * (1 - second)
+    return ceil((TEST_Z_ALPHA + TEST_Z_BETA) ** 2 * spread / (gap * gap))
+
+
+@dataclass
+class Comparison:
+    """Deux regroupements que la page invite implicitement a comparer.
+
+    Elle les pose cote a cote sans jamais dire si l'ecart tient : ce bloc
+    repond en donnant le volume qui le rendrait testable.
+    """
+
+    left: RateRow
+    right: RateRow
+    required: int | None
+
+    @property
+    def observed(self) -> int:
+        """Selections tranchees deja accumulees sur les deux groupes."""
+        return self.left.settled + self.right.settled
+
+    @property
+    def units(self) -> int:
+        """Evenements distincts derriere ces deux groupes.
+
+        Compte sur l'union et non par addition : un match portant une selection
+        de chaque groupe ne compte qu'une fois.
+        """
+        return len(self.left.events | self.right.events) + (
+            self.left.unattached + self.right.unattached
+        )
+
+    @property
+    def clustered(self) -> bool:
+        return 0 < self.units < self.observed
 
 
 @dataclass
@@ -1132,6 +1193,36 @@ class Analysis:
         sans l'autre.
         """
         return sum(1 for rows in self.groups for row in rows if row.inconclusive)
+
+    @staticmethod
+    def _compare(rows: list[RateRow]) -> Comparison | None:
+        """Les deux plus gros regroupements d'un axe, s'ils se lisent.
+
+        Les deux plus gros et non deux cles fixees : c'est ce que l'oeil compare
+        sur un graphique a barres, et la paire suit le lot au lieu de rester
+        collee a des paliers qui pourraient ne plus etre les plus employes.
+        """
+        candidates = sorted((row for row in rows if row.settled), key=lambda row: -row.settled)
+        if len(candidates) < 2:
+            return None
+        first, second = candidates[0], candidates[1]
+        # Le meilleur taux en premier : l'ecart se lit alors dans le sens ou la
+        # phrase le raconte, « X fait mieux que Y ».
+        if (first.rate or 0) < (second.rate or 0):
+            first, second = second, first
+        return Comparison(
+            left=first,
+            right=second,
+            required=required_sample(first.rate or 0.0, second.rate or 0.0),
+        )
+
+    @property
+    def tier_comparison(self) -> Comparison | None:
+        return self._compare(self.by_tier)
+
+    @property
+    def confidence_comparison(self) -> Comparison | None:
+        return self._compare(self.by_confidence)
 
     @property
     def settled_events(self) -> int:

@@ -31,6 +31,7 @@ from myassistantbet.services.history import (
     load_bands,
     pickable_events,
     pickable_groups,
+    required_sample,
     set_event,
     set_result,
     stats,
@@ -951,6 +952,90 @@ def test_la_page_parle_avant_le_premier_resultat(
 
     assert "Rien à mesurer" not in page
     assert "Comment tu étiquettes" in page
+
+
+# -- Distance a la testabilite ----------------------------------------------
+
+
+def test_l_effectif_requis_croit_quand_l_ecart_se_resserre() -> None:
+    """C'est toute la logique du calcul : separer 63 % de 44 % demande moins de
+    paris que separer 63 % de 60 %."""
+    large = required_sample(0.63, 0.44)
+    etroit = required_sample(0.63, 0.60)
+
+    assert large is not None and etroit is not None
+    assert etroit > 10 * large
+
+
+def test_l_effectif_requis_sur_un_ecart_connu() -> None:
+    """SAFE 63 % contre FUN 44 %, la comparaison que la page invite a faire."""
+    assert required_sample(0.63, 0.44) == 105, "ceil(104.14)"
+
+
+def test_un_ecart_nul_n_est_jamais_testable() -> None:
+    """Aucun volume ne separe deux taux egaux, et la ligne se tait plutot que
+    d'annoncer une cible infinie."""
+    assert required_sample(0.5, 0.5) is None
+
+
+def test_la_comparaison_prend_les_deux_plus_gros_regroupements(migrated: Settings) -> None:
+    """Les deux plus gros et non deux cles fixees : c'est ce que l'oeil compare
+    sur un graphique a barres."""
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(10):
+        _propose(migrated, session_id, event_id, "safe", "win")
+    for _ in range(8):
+        _propose(migrated, session_id, event_id, "fun", "loss")
+    _propose(migrated, session_id, event_id, "ultra_fun", "loss")
+
+    comparaison = analysis(migrated).tier_comparison
+
+    assert {comparaison.left.key, comparaison.right.key} == {"safe", "fun"}
+    assert comparaison.left.key == "safe", "le meilleur taux en premier"
+    assert comparaison.observed == 18
+
+
+def test_la_comparaison_se_tait_sur_un_seul_regroupement(migrated: Settings) -> None:
+    session_id, event_id = _session_avec_match(migrated)
+    _propose(migrated, session_id, event_id, "safe", "win")
+
+    assert analysis(migrated).tier_comparison is None
+
+
+def test_la_page_dit_le_volume_qui_trancherait(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    session_id, event_id = _session_avec_match(isolated_settings)
+    for index in range(10):
+        _propose(isolated_settings, session_id, event_id, "safe", "win" if index < 7 else "loss")
+    for index in range(10):
+        _propose(isolated_settings, session_id, event_id, "fun", "win" if index < 3 else "loss")
+
+    page = " ".join(client.get("/stats").text.split())
+
+    assert "20 sélections tranchées sur ces deux lignes (10 et 10)" in page
+    assert "devienne testable" in page
+    assert "par ligne" in page
+    assert "suppose les sélections indépendantes" in page
+
+
+def test_la_cible_est_annoncee_plus_haute_quand_les_paris_se_groupent(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Le calcul suppose l'independance : quand elle ne tient pas, il
+    sous-estime, et le dire coute une phrase."""
+    session_id, event_id = _session_avec_match(isolated_settings)
+    for index in range(10):
+        _propose(isolated_settings, session_id, event_id, "safe", "win" if index < 7 else "loss")
+    for index in range(10):
+        _propose(isolated_settings, session_id, event_id, "fun", "win" if index < 3 else "loss")
+
+    comparaison = analysis(isolated_settings).tier_comparison
+    page = " ".join(client.get("/stats").text.split())
+
+    assert comparaison.clustered, "vingt paris sur un seul match"
+    assert comparaison.units == 1
+    assert "la vraie cible est plus haute" in page
 
 
 # -- Bandes cibles par confiance --------------------------------------------

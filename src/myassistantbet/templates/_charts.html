@@ -85,10 +85,33 @@
   </div>
 {% endmacro %}
 
-{% macro card(title, rows, note="", empty="Rien de tranché sur ce regroupement.") %}
+{# La distance à la testabilité, sous la comparaison que la carte invite à
+   faire. La page pose deux barres côte à côte sans jamais dire si l'écart
+   tient : cette ligne répond en donnant le volume qui trancherait, ce qui est
+   plus utile que de trancher trop tôt. #}
+{% macro reach(comparison) %}
+  {% if comparison and comparison.required %}
+  <p class="chart-note">
+    {{ comparison.observed }} sélections tranchées sur ces deux lignes
+    ({{ comparison.left.settled }} et {{ comparison.right.settled }}).
+    Pour que l'écart observé — {{ comparison.left.rate_label }} contre
+    {{ comparison.right.rate_label }} — devienne testable, il en faudrait environ
+    <strong>{{ comparison.required }} par ligne</strong>.
+    {%- if comparison.clustered %}
+    Ce calcul suppose les sélections indépendantes ; ces deux lignes portent sur
+    {{ comparison.units }} événements seulement, donc la vraie cible est plus haute.
+    {%- else %}
+    Ce calcul suppose les sélections indépendantes — ce que ce lot vérifie.
+    {%- endif %}
+  </p>
+  {% endif %}
+{% endmacro %}
+
+{% macro card(title, rows, note="", empty="Rien de tranché sur ce regroupement.", comparison=none) %}
   <article class="chart-card">
     <h3>{{ title }}</h3>
     {{ bars(rows, empty) }}
+    {{ reach(comparison) }}
     {% if note %}<p class="chart-note">{{ note }}</p>{% endif %}
   </article>
 {% endmacro %}
