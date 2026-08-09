@@ -20,6 +20,7 @@ from myassistantbet.services.context import (
     KIND_RECENT,
     KIND_STANDINGS,
     KIND_TEAMS,
+    SHEETS_LAST,
     context_lines,
     fetch_context,
     load,
@@ -1334,7 +1335,11 @@ async def test_le_balayage_ne_coute_qu_un_appel_par_match(
 
     assert route.call_count == 1
     assert sweep.fetched == ["BK Hacken – Djurgardens IF"]
-    assert all(r.call_count == 0 for r in autres.values()), "aucun autre endpoint appele"
+    # `lineups` est exclu : c'est justement l'endpoint que le balayage appelle,
+    # et il figure desormais dans le jeu de routes complet.
+    assert all(route.call_count == 0 for nom, route in autres.items() if nom != "lineups"), (
+        "aucun autre endpoint appele"
+    )
     assert "BK Hacken (4-4-2)" in dict(_lines(migrated))["Compos"]
 
 
@@ -1429,6 +1434,114 @@ async def test_les_buts_encaisses_completent_les_buts_marques(
     assert "Buts pris" in lignes
     assert lignes["Buts pris"] != lignes["Buts marq."], "deux cotes, deux comptes"
     assert routes["stats_home"].call_count == 1, "aucun appel de plus"
+
+
+def _feuilles(route: respx.Route, noms_par_match: dict[int, list[str]]) -> respx.Route:
+    """Une feuille de match par identifiant de rencontre, pour l'equipe 376.
+
+    L'equipe 377 garde un onze stable : la meme reponse sert les deux cotes, et
+    seul le domicile doit produire une ligne.
+    """
+
+    def _repondre(request: httpx.Request) -> httpx.Response:
+        fixture = int(request.url.params["fixture"])
+        return httpx.Response(
+            200,
+            json={
+                "errors": [],
+                "response": [
+                    {
+                        "team": {"id": 376},
+                        "startXI": [
+                            {"player": {"name": nom}} for nom in noms_par_match.get(fixture, [])
+                        ],
+                        "substitutes": [],
+                    },
+                    {
+                        "team": {"id": 377},
+                        "startXI": [{"player": {"name": "Stable"}}],
+                        "substitutes": [],
+                    },
+                ],
+            },
+            headers=RATE_HEADERS,
+        )
+
+    return route.mock(side_effect=_repondre)
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_l_effectif_se_reconstruit_la_ou_les_absents_ne_sont_pas_couverts(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """`coverage.injuries` est faux sur **46 des 65** evenements rapproches en
+    base — 71 % —, alors que les compositions sont servies sur 55. La ligne la
+    plus decisive du bloc etait donc morte sur trois quarts du board avec, sous
+    la main, de quoi la reconstruire.
+
+    Un joueur vu sur deux feuilles puis absent des deux dernieres est signale
+    avec la date ou on l'a vu pour la derniere fois."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    routes["leagues"].mock(
+        return_value=httpx.Response(200, json=LEAGUES_SANS_COUVERTURE, headers=RATE_HEADERS)
+    )
+    feuilles = _feuilles(
+        routes["lineups"],
+        {
+            800000: ["Andersson", "Berg", "Carlsson"],
+            800001: ["Andersson", "Berg", "Carlsson"],
+            800002: ["Andersson", "Berg", "Knap"],
+            800003: ["Andersson", "Berg", "Knap"],
+        },
+    )
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    lignes = _lines(migrated)
+    assert lignes["Absents"] == UNAVAILABLE, "le fournisseur ne couvre toujours pas"
+    assert lignes["Effectif"] == "BK Hacken — Knap plus vu depuis le 19/07"
+    assert feuilles.call_count == SHEETS_LAST, "une feuille par match de la fenetre"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_aucune_feuille_n_est_payee_la_ou_les_absents_sont_couverts(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """La ou `/injuries` repond, il dit mieux et gratuitement. Ce bloc est un
+    substitut, jamais un doublon — et il coute un appel par feuille."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    feuilles = _feuilles(routes["lineups"], {800000: ["Andersson"]})
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert feuilles.call_count == 0, "aucun appel la ou la couverture existe"
+    assert "Effectif" not in _lines(migrated)
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_un_effectif_stable_ne_produit_aucune_ligne(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Ecrire « aucun » affirmerait un effectif au complet, ce que des feuilles
+    de match ne peuvent pas prouver : un joueur ecarte avant la fenetre lue n'y
+    figure pas du tout."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    routes["leagues"].mock(
+        return_value=httpx.Response(200, json=LEAGUES_SANS_COUVERTURE, headers=RATE_HEADERS)
+    )
+    _feuilles(
+        routes["lineups"], dict.fromkeys((800000, 800001, 800002, 800003), ["Andersson", "Berg"])
+    )
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert "Effectif" not in _lines(migrated)
 
 
 def _h2h(settings: Settings, *, jours: int, league: int | None = 113, inverse: bool = True) -> None:

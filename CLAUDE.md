@@ -461,6 +461,30 @@ chaque marche ajoute a `markets.py` sans l'etre a `render.py`.
   methode du client, ses simulations et ses fixtures sont partis ensemble. Un test garde la
   porte fermee : la rouvrir demande d'abord un lecteur, sans quoi vingt-six noms restent du
   bruit dans un prompt.
+- **`Effectif` reconstruit les absents la ou `/injuries` ne couvre pas**, et c'est le
+  **seul ajout du projet qui coute des appels par equipe** — un par feuille de match.
+  Mesure qui le justifie : `coverage.injuries` est faux sur **52 des 73** evenements
+  rapproches, quand les compositions sont servies sur 44 d'entre eux. La ligne la plus
+  decisive du bloc etait morte sur trois quarts du board avec, sous la main, de quoi la
+  reconstruire.
+  - **Substitut, jamais doublon** : le bloc ne part que si `injuries` est faux **et**
+    `fixtures.lineups` vrai. La ou `/injuries` repond, il dit mieux et gratuitement ;
+    la ou les compositions manquent aussi, rien n'est appele — 8 evenements sur 52.
+  - Les identifiants des derniers matchs ne coutent rien : `recent:{team_id}` est deja
+    memorise pour la forme. Seules les feuilles se paient, `SHEETS_LAST` (4) par
+    equipe, memorisees par rencontre — soit 24 appels sur un lot de six matchs dont
+    trois non couverts.
+  - La regle est severe a dessein : vu sur au moins `SHEETS_MIN` (2) feuilles de la
+    fenetre, absent des `SHEETS_MISSED` (2) plus recentes. Une seule absence est une
+    rotation. Le banc compte comme le onze — etre sur la feuille, c'est etre
+    disponible.
+  - **Ce n'est pas une liste d'absents, et la nuance decide de l'usage** : une
+    blessure, une suspension, un repos et une mise a l'ecart produisent le meme
+    signal, et rien ici ne les distingue. La ligne est une **piste datee** — « plus vu
+    depuis le 26/07 » se verifie en une recherche — meme idiome que `Buteur abs.`.
+  - **Rien quand personne ne manque** : ecrire « aucun » affirmerait un effectif au
+    complet, ce que des feuilles ne peuvent pas prouver — un joueur ecarte avant la
+    fenetre lue n'y figure pas du tout. Le preambule le dit.
 - **Les absents arrivent en double** : `/injuries` rend chaque joueur deux fois — constate
   en reel, 14 lignes pour 7 absents. Le dedoublonnage se fait a la collecte, sur
   (cote, nom, type, raison). Sans lui la ligne liste tout le monde deux fois, ce qui fait

@@ -68,6 +68,21 @@ compétition**, et non des pourcentages ni des moyennes :
     nombre de titularisations. Une formation à 4 sur 16 n'est pas une habitude,
     c'est un effectif qui tourne — et ça se lit sur le compte, pas sur le nom.
 
+{% if 'Effectif' in context_labels -%}
+La ligne **« Effectif »** ne parait que là où « Absents » est muet : sur ces
+compétitions, le fournisseur ne couvre pas les blessures, et la ligne est
+reconstruite des **feuilles de match** des dernières rencontres. Elle nomme les
+joueurs vus régulièrement puis disparus des deux dernières feuilles, banc
+compris, avec la date où on les a vus pour la dernière fois.
+
+Ce n'est **pas** une liste d'absents, et la nuance décide de l'usage : une
+blessure, une suspension, un repos et une mise à l'écart produisent exactement le
+même signal, et rien ici ne les distingue. C'est une **piste datée** — « plus vu
+depuis le 26/07 » se vérifie en une recherche — et elle ne devient un fait que
+confirmée. Son absence ne prouve rien non plus : un joueur écarté avant la
+fenêtre lue n'y figure pas.
+
+{% endif -%}
 {% if 'Aller' in context_labels -%}
 La ligne **« Aller »** dit que ces deux équipes se sont déjà rencontrées dans
 cette compétition, chez l'autre, il y a moins de trois semaines — le score est

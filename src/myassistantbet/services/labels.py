@@ -90,6 +90,9 @@ CONTEXT_ICONS = {
     "Compos": "liste",
     "Startlist": "liste",
     "Absents": "absent",
+    # L'effectif reconstruit des feuilles de match : meme famille que
+    # « Absents », dont il prend la place quand le fournisseur ne couvre pas.
+    "Effectif": "absent",
     # L'aller d'une double confrontation : meme signe que la confrontation
     # directe, dont il est la premiere entree.
     "Aller": "duel",

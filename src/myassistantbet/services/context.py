@@ -39,6 +39,30 @@ class _NotCovered(Exception):
 
 H2H_LAST = 5
 RECENT_LAST = 5
+
+#: Feuilles de match relues pour reconstruire un effectif la ou le fournisseur
+#: ne couvre pas les absents. Quatre suffisent a la regle et bornent la depense :
+#: c'est **le seul ajout du projet qui coute des appels par equipe**, un par
+#: feuille, et il ne part que sur les competitions ou `/injuries` ne repond pas.
+#:
+#: Mesure qui le justifie : `coverage.injuries` est faux sur **46 des 65**
+#: evenements rapproches en base, soit 71 %, quand `coverage.fixtures.lineups`
+#: est vrai sur 55. La ligne la plus decisive du bloc est morte sur trois quarts
+#: du board, et la matiere premiere pour la reconstruire est servie.
+SHEETS_LAST = 4
+#: Feuilles consecutives sans le joueur pour qu'il soit signale. Une seule serait
+#: une rotation ordinaire.
+SHEETS_MISSED = 2
+#: Feuilles ou il faut l'avoir vu avant : sans ce seuil, un jeune apparu une fois
+#: puis redescendu en reserve passerait pour un absent.
+SHEETS_MIN = 2
+#: Joueurs listes par equipe. Au-dela, on decrit une reserve, plus une absence.
+SHEETS_KEEP = 3
+#: Statuts d'un match qui n'a **pas** de feuille. La liste est ecrite dans ce
+#: sens : `/fixtures?last=` ne rend que des matchs joues, et le statut y manque
+#: parfois — exiger un statut connu ferait tout jeter, alors qu'ecarter ce qui
+#: est explicitement non joue ne peut rien couter.
+SHEET_SKIP_STATUSES = frozenset({"NS", "TBD", "PST", "CANC", "ABD", "SUSP"})
 FORM_LENGTH = 5
 
 #: Matchs profiles pour les corners et les cartons. Un appel par rencontre,
@@ -96,6 +120,10 @@ FORM_LETTERS = {"W": "V", "D": "N", "L": "D"}
 KIND_STANDINGS = "standings"
 KIND_FORM = "form"
 KIND_INJURIES = "injuries"
+#: Effectif reconstruit des feuilles de match recentes, la ou `/injuries` ne
+#: couvre pas. Ce n'est pas une liste d'absents : c'est une liste de joueurs
+#: qu'on ne voit plus, ce qui n'est pas la meme chose et se rend comme tel.
+KIND_SHEETS = "sheets"
 KIND_H2H = "h2h"
 KIND_RECENT = "recent"
 KIND_PROFILE = "profile"
@@ -479,6 +507,70 @@ def _covers_lineups(coverage: dict[str, Any]) -> bool:
     return bool(fixtures.get("lineups", True))
 
 
+def _latest_played(fixtures: list[dict[str, Any]], keep: int) -> list[dict[str, Any]]:
+    """Les `keep` derniers matchs **joues**, du plus recent au plus ancien.
+
+    Un match reporte figure dans la liste du fournisseur et n'a evidemment
+    aucune feuille : le compter userait une place de la fenetre pour rien.
+    """
+    played = [
+        fixture
+        for fixture in fixtures
+        if (fixture.get("fixture") or {}).get("date")
+        and ((fixture.get("fixture") or {}).get("status") or {}).get("short")
+        not in SHEET_SKIP_STATUSES
+    ]
+    played.sort(key=lambda item: str((item.get("fixture") or {}).get("date")), reverse=True)
+    return played[:keep]
+
+
+def _sheet_names(rows: list[dict[str, Any]], team_id: Any) -> list[str]:
+    """Tous les noms d'une feuille de match : titulaires **et** remplacants.
+
+    Le banc compte autant que le onze : un joueur sur la feuille est un joueur
+    disponible, et c'est la disponibilite qu'on cherche a lire.
+    """
+    for row in rows:
+        if (row.get("team") or {}).get("id") != team_id:
+            continue
+        return [
+            name
+            for groupe in ("startXI", "substitutes")
+            for entry in row.get(groupe) or []
+            if (name := (entry.get("player") or {}).get("name"))
+        ]
+    return []
+
+
+def _missing_players(sheets: list[tuple[Any, list[str]]]) -> list[dict[str, Any]]:
+    """Joueurs vus regulierement puis disparus, avec la date de leur derniere feuille.
+
+    La regle est volontairement severe : present sur au moins `SHEETS_MIN`
+    feuilles de la fenetre, absent des `SHEETS_MISSED` plus recentes. Une seule
+    absence est une rotation ordinaire, et il n'existe aucun moyen de distinguer
+    ici un blesse d'un joueur mis au repos ou ecarte — c'est pour ca que la ligne
+    se rend comme une **piste datee** et jamais comme une absence.
+
+    Rien n'est rendu tant que la fenetre ne porte pas plus de feuilles que le
+    nombre de manquees : sans un « avant », il n'y a pas de disparition.
+    """
+    if len(sheets) <= SHEETS_MISSED:
+        return []
+    recents = {name for _, names in sheets[:SHEETS_MISSED] for name in names}
+    vus: dict[str, tuple[int, Any]] = {}
+    for date, names in sheets:
+        for name in names:
+            compte, dernier = vus.get(name, (0, None))
+            vus[name] = (compte + 1, dernier or date)
+    manquants = [
+        {"name": name, "last": dernier}
+        for name, (compte, dernier) in vus.items()
+        if name not in recents and compte >= SHEETS_MIN
+    ]
+    manquants.sort(key=lambda item: str(item["last"]), reverse=True)
+    return manquants[:SHEETS_KEEP]
+
+
 def _lineup_payload(rows: list[dict[str, Any]], home_id: Any, away_id: Any) -> dict[str, Any]:
     """Charge utile d'une composition, rangee par cote.
 
@@ -768,6 +860,40 @@ async def fetch_context(
     except ProviderError as exc:
         store(report.event_id, KIND_INJURIES, {"available": False}, settings)
         report.errors.append(f"absents : {exc}")
+
+    # Effectif recent, **uniquement** la ou les absents ne sont pas couverts.
+    # La ou `/injuries` repond, il dit mieux et gratuitement : ce bloc est un
+    # substitut, jamais un doublon. Les identifiants des derniers matchs sont
+    # deja en main — `recent:{team_id}` a ete memorise plus haut pour la forme —
+    # donc seules les feuilles se paient.
+    try:
+        if mapping.coverage.get("injuries", True) or not mapping.coverage.get("fixtures", {}).get(
+            "lineups", True
+        ):
+            raise _NotCovered
+        payload: dict[str, Any] = {"available": True, "home": [], "away": []}
+        for side, team_id in (("home", mapping.home_id), ("away", mapping.away_id)):
+            fixtures = await _memo(
+                f"recent:{team_id}", lambda tid=team_id: client.last_fixtures(tid, RECENT_LAST)
+            )
+            sheets = []
+            for fixture in _latest_played(fixtures, SHEETS_LAST):
+                fixture_id = (fixture.get("fixture") or {}).get("id")
+                if fixture_id is None:
+                    continue
+                rows = await _memo(
+                    f"lineups:{fixture_id}", lambda fid=fixture_id: client.lineups(fid)
+                )
+                names = _sheet_names(rows, team_id)
+                if names:
+                    sheets.append(((fixture.get("fixture") or {}).get("date"), names))
+            payload[side] = _missing_players(sheets)
+        store(report.event_id, KIND_SHEETS, payload, settings)
+        report.kinds.append(KIND_SHEETS)
+    except _NotCovered:
+        pass
+    except ProviderError as exc:
+        report.errors.append(f"effectif recent : {exc}")
 
     # Confrontations directes.
     try:
@@ -1069,6 +1195,24 @@ def _injuries_for(entries: list[dict[str, Any]], team: str) -> str:
         detail = ", ".join(str(item) for item in (entry.get("type"), entry.get("reason")) if item)
         listed.append(f"{name} ({detail})" if detail else name)
     return f"{team} — {', '.join(listed)}"
+
+
+def _sheets_for(entries: list[dict[str, Any]], team: str) -> str:
+    """`Cracovia — Knap plus vu depuis le 26/07, Baumgartner depuis le 02/08`.
+
+    Rien quand personne ne manque : ecrire « aucun » affirmerait un effectif au
+    complet, ce que des feuilles de match ne peuvent pas prouver — un joueur
+    peut n'avoir jamais figure sur la fenetre lue.
+    """
+    listed = []
+    for index, entry in enumerate(entries):
+        date = _moment(str(entry.get("last") or ""))
+        if date is None or not entry.get("name"):
+            continue
+        # « plus vu » une fois par equipe : sur la seconde, la date suffit.
+        prefixe = "plus vu depuis le" if not listed and index == 0 else "depuis le"
+        listed.append(f"{entry['name']} {prefixe} {date.strftime('%d/%m')}")
+    return f"{team} — {', '.join(listed)}" if listed else ""
 
 
 def _h2h_line(payload: dict[str, Any], settings: Settings) -> str:
@@ -1388,6 +1532,17 @@ def context_lines(
                     + _injuries_for(injuries.get("away") or [], away),
                 )
             )
+
+    # Effectif reconstruit : il ne parait que la ou « Absents » est muet, et il
+    # ne pretend pas le remplacer — voir `_missing_players`.
+    sheets = data.get(KIND_SHEETS) or {}
+    if sheets.get("available"):
+        rendered = _pair(
+            _sheets_for(sheets.get("home") or [], home),
+            _sheets_for(sheets.get("away") or [], away),
+        )
+        if rendered:
+            lines.append(("Effectif", rendered))
 
     h2h = data.get(KIND_H2H)
     if h2h:

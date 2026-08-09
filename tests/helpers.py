@@ -120,6 +120,11 @@ def mock_context_routes(
         ),
         "fixture_stats": _mock("/fixtures/statistics", "apifootball_fixture_statistics.json"),
         "team": _mock("/teams", "apifootball_team.json"),
+        # Les feuilles des derniers matchs : un enrichissement complet les
+        # demande des que la competition ne couvre pas les absents. Sans cette
+        # route, tout test qui simule une couverture manquante tombe sur un
+        # appel non simule — ce qui est arrive a deux d'entre eux.
+        "lineups": _mock("/fixtures/lineups", "apifootball_lineups.json"),
     }
 
 
