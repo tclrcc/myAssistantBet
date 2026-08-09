@@ -568,16 +568,22 @@ def test_le_prompt_dit_ce_que_l_absence_des_lignes_ici_signifie(migrated: Settin
 
     Cette note explique une **absence** : elle ne peut donc pas se garder sur la
     presence de « Palmares ». Elle suit le sort du bloc d'historique, qui n'a de
-    raison d'exister que si le lot porte des lignes d'historique."""
+    raison d'exister que si le lot porte des lignes d'historique.
+
+    Elle distingue en outre les deux absences, parce qu'elles ne disent pas la
+    meme chose : rendue pour **un seul** des deux joueurs, la ligne prouve que le
+    rattachement est fait — releve en reel sur Griekspoor - Merida Aguilar, ou le
+    premier a un palmares et le second aucun."""
     from myassistantbet.services.prompt import build_prompt
 
     _serie(migrated, [("6-4 6-4", True)] * 5)
     session = _lot(migrated, "tennis", "Jiri Lehecka", "Vit Kopriva", COMMENCE)
 
-    body = build_prompt(session, settings=migrated, now=NOW).body
+    corps = " ".join(build_prompt(session, settings=migrated, now=NOW).body.split())
 
-    assert "« finaliste » veut dire finale" in body
-    assert "elle dit que le rattachement manque" in body
+    assert "« finaliste » veut dire finale" in corps
+    assert "elles disent que le rattachement manque" in corps
+    assert "Présentes pour **un seul** joueur, elles disent l'inverse" in corps
 
 
 # -- Un seul assembleur de bloc ----------------------------------------------
@@ -1004,7 +1010,7 @@ def test_le_niveau_des_adversaires_corrige_la_lecture_de_la_forme(migrated: Sett
 
     niveau = _lines(migrated, "Jiri Lehecka", "Vit Kopriva")["Niveau adv."]
 
-    assert "Jiri Lehecka adv. Elo moy 1742/6" in niveau
+    assert "Jiri Lehecka Elo moy 1742/6" in niveau, "le libelle porte deja « adv. »"
     assert "meilleur battu 1950" in niveau
 
 

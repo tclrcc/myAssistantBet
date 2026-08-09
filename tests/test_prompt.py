@@ -53,15 +53,22 @@ PARIS = ZoneInfo("Europe/Paris")
 #: six blocs sont tous complets quand un vrai lot en porte de plus pauvres. C'est
 #: le pire cas, et c'est ce qu'un plafond doit mesurer.
 #:
-#: **La marge est le sujet, pas le plafond.** Un garde-fou sature a quelques
-#: tokens pres ne protege rien : il transforme le moindre ajout en arbitrage, et
-#: c'est ce qui vient d'arriver a `test_session_mixte_foot_tennis_cyclisme`,
-#: assis a deux tokens de sa limite. Le plafond vaut donc la mesure **plus
-#: environ 500 tokens**, l'ordre de grandeur d'un paragraphe de preambule : le
-#: franchir veut dire « tu as ajoute beaucoup, va mesurer », pas « rabote ».
-#: Un lot plus gros se coupe par competition, ce pour quoi
-#: `build_prompt(competition_id=)` existe.
-PROMPT_BUDGET = 9500
+#: **Ce nombre est une alarme, pas un budget, et la difference a ete tranchee
+#: par l'utilisateur** : un prompt long ne le gene pas, quitte a ce que l'analyse
+#: prenne dix minutes de plus. Le plafond a donc cesse d'arbitrer les ajouts —
+#: il ne sert plus qu'a rattraper une explosion **involontaire**, du genre d'une
+#: porte de preambule cassee qui rendrait tout le mode d'emploi sur chaque lot,
+#: ou d'un bloc duplique.
+#:
+#: Il vaut la mesure **plus environ 2000 tokens**, soit largement au-dessus de
+#: ce qu'un ajout delibere peut couter et largement en dessous d'un rendu qui
+#: derape. A ~500 il transformait chaque ligne ajoutee en arbitrage, et trois
+#: sessions de suite s'y sont usees.
+#:
+#: Ce qui n'a pas change : la densite reste un objectif de qualite — une ligne
+#: sans donnee est omise, un mode d'emploi se garde sur son libelle. Le plafond
+#: ne remplace pas ces regles, il ne les faisait deja pas respecter.
+PROMPT_BUDGET = 11500
 
 
 async def _session_enrichie(
@@ -228,6 +235,17 @@ def test_les_lignes_entieres_et_demies_restent_selectionnables(migrated: Setting
     assert "gardent un équivalent direct et restent sélectionnables" in corps
     assert "remboursé si match nul" in corps
     assert "le handicap européen" in corps
+
+
+def test_aucune_double_ligne_vide_dans_un_prompt(migrated: Settings) -> None:
+    """Chaque porte du preambule laisse sa ligne vide quand elle ne rend rien :
+    un lot de tennis en portait onze coupures de deux lignes ou plus, dont une de
+    quatre. Regler les blancs porte par porte marche une fois puis se defait a la
+    porte suivante — et il s'en ajoute a chaque ligne de contexte documentee."""
+    corps = build_prompt(_lot_de(migrated, 4), settings=migrated, now=NOW).body
+
+    assert "\n\n\n" not in corps
+    assert "\n\n" in corps, "les paragraphes restent separes"
 
 
 def test_le_comptage_se_tait_sur_un_lot_trop_court(migrated: Settings) -> None:

@@ -713,7 +713,10 @@ def _margin_fragment(player: str, matches: list[Match]) -> str:
 def _level_fragment(
     player: str, matches: list[Match], ratings: dict[tuple[str, str], float]
 ) -> str:
-    """`Fils adv. Elo moy 1916/10 · meilleur battu 1994` — contre qui, au juste.
+    """`Fils Elo moy 1916/10 · meilleur battu 1994` — contre qui, au juste.
+
+    Le fragment ne repete pas « adv. » : le libelle de la ligne le porte deja,
+    et « Niveau adv. Fils adv. Elo moy » begayait.
 
     `VVVVVDDVDD` et `DDDDDDVVVD` ne se lisent pas pareil selon le niveau en
     face, et rien dans le bloc ne le disait : la ligne « Forme » traitait une
@@ -734,7 +737,7 @@ def _level_fragment(
         return ""
     average = sum(rating for _, rating in faced) / len(faced)
     beaten = [rating for match, rating in faced if match.won]
-    fragment = f"{player} adv. Elo moy {average:.0f}/{len(faced)}"
+    fragment = f"{player} Elo moy {average:.0f}/{len(faced)}"
     return fragment + (f" · meilleur battu {max(beaten):.0f}" if beaten else "")
 
 

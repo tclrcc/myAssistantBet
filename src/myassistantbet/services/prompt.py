@@ -261,6 +261,22 @@ def competition_notes(
     return list(seen.values())
 
 
+def _collapse_blank_lines(body: str) -> str:
+    """Au plus une ligne vide d'affilee, partout.
+
+    Chaque porte du preambule — `{% if 'tennis' in sports %}` et les quinze
+    autres — laisse sa propre ligne vide quand elle ne rend rien. Un lot de
+    tennis en portait **onze** coupures de deux lignes ou plus, dont une de
+    quatre : le prompt paraissait mal fini la ou il ne manquait rien.
+
+    Le remede est ici et non porte par porte. Regler les blancs de chaque
+    `{%- if -%}` marche une fois, puis se defait a la porte suivante — et il
+    s'en ajoute a chaque ligne de contexte documentee. Une regle de rendu tient
+    toute seule, quel que soit le nombre de portes.
+    """
+    return re.sub(r"\n{3,}", "\n\n", body)
+
+
 def build_prompt(
     session_id: int,
     template_name: str = DEFAULT_TEMPLATE,
@@ -315,7 +331,7 @@ def build_prompt(
     )
     return RenderedPrompt(
         template_name=template_name,
-        body=body,
+        body=_collapse_blank_lines(body),
         blocks=len(blocks),
         started=started_labels(session_id, settings, moment, competition_id),
     )

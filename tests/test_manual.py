@@ -33,11 +33,10 @@ PARIS = ZoneInfo("Europe/Paris")
 #: Ces blocs sont montes a la main, sans contexte : c'est l'inverse du lot mesure
 #: par `test_prompt.PROMPT_BUDGET`, ou le poids vient des blocs et non de l'en-tete.
 #:
-#: Mesure : **7998**. Le plafond etait a 8000, soit deux tokens de marge — et une
-#: consigne de quinze lignes ajoutee au prompt a suffi a le franchir, transformant
-#: un ajout ordinaire en arbitrage. Meme regle que l'autre plafond : la mesure plus
-#: environ 500 tokens, pour qu'il alerte au lieu de bloquer.
-MIXED_BUDGET = 8500
+#: Mesure : **8188**. Meme regle que `test_prompt.PROMPT_BUDGET`, et meme
+#: decision — c'est une alarme contre une explosion involontaire, pas un budget
+#: qui arbitre les ajouts : la mesure plus environ 2000 tokens.
+MIXED_BUDGET = 10000
 
 
 @pytest.fixture

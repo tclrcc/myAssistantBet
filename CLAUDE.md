@@ -1265,11 +1265,19 @@ l'avait franchi depuis des mois sans que rien ne bronche.
   Mesure : **8957**, un peu au-dessus de la production, ses six blocs etant tous
   complets quand un vrai lot en porte de plus pauvres. C'est ce qu'un plafond doit
   mesurer.
-- **La marge est le sujet, pas le plafond.** Un garde-fou sature a deux tokens ne
-  protege rien : il transforme le moindre ajout en arbitrage. Les deux plafonds valent
-  donc leur mesure **plus environ 500 tokens**, l'ordre de grandeur d'un paragraphe de
-  preambule — le franchir veut dire « tu as ajoute beaucoup, va mesurer », pas
-  « rabote ». `PROMPT_BUDGET` vaut 9500, `MIXED_BUDGET` 8500.
+- **Ce sont des alarmes, pas des budgets, et c'est une decision de l'utilisateur** :
+  un prompt long ne le gene pas, quitte a ce que l'analyse prenne dix minutes de plus.
+  Les plafonds valent donc la mesure **plus environ 2000 tokens** — `PROMPT_BUDGET`
+  11500, `MIXED_BUDGET` 10000 — et ne servent plus qu'a rattraper une explosion
+  **involontaire** : une porte de preambule cassee qui rendrait tout le mode d'emploi
+  sur chaque lot, un bloc duplique. A ~500 tokens de marge, ils arbitraient chaque
+  ligne ajoutee, et trois sessions de suite s'y sont usees.
+  - Ce qui n'a **pas** change : la densite reste un objectif de qualite. Une ligne sans
+    donnee est omise, un mode d'emploi se garde sur son libelle. Le plafond ne
+    remplacait deja pas ces regles.
+  - Le vrai cout residuel n'est plus le token mais l'**appel** : reconstruire les
+    absents la ou `coverage.injuries` est faux vaut 24 a 36 appels par lot, et ce
+    plafond-la n'a pas bouge.
 - **Les deux lots mesurent des choses opposees, et il faut les deux.** Six matchs de
   football enrichis pesent par leurs **blocs** ; trois sports pour trois matchs pesent
   par leur **en-tete**, les trois modes d'emploi etant ouverts en meme temps sur trois
@@ -1279,6 +1287,12 @@ l'avait franchi depuis des mois sans que rien ne bronche.
   que la mesure etait fausse, ce qui est autre chose : le nombre a suivi la realite, il
   ne l'a pas autorisee. Regenerer un prompt reel — `build_prompt(session_id)`, aucun
   appel reseau — reste la seule facon de verifier qu'une fixture n'a pas divergé.
+- **Aucune ligne vide double dans un prompt** (`_collapse_blank_lines`). Chaque porte
+  du preambule laisse la sienne quand elle ne rend rien : un lot de tennis en portait
+  onze coupures de deux lignes ou plus, dont une de quatre. Regler les blancs porte par
+  porte avec `{%- if -%}` marche une fois puis se defait a la porte suivante, et il
+  s'en ajoute a chaque ligne de contexte documentee. Une regle de rendu tient toute
+  seule.
 - Les deux jeux de routes API-Football vivent dans `tests/helpers.py`, parce que trois
   fichiers en dependent maintenant. **Piege non evident** : le plancher du dossier lit
   `last_known_quota`, donc le **dernier** releve tous endpoints confondus. Un contexte
