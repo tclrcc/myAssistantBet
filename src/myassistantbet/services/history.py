@@ -836,6 +836,20 @@ ANALYSIS_MIN_DAYS = FEEDBACK_MIN_DAYS
 
 # -- Ce que vaut l'analyse --------------------------------------------------
 
+#: Part du volume au-dela de laquelle une echelle se comporte comme si elle
+#: comptait moins de niveaux qu'elle n'en a. Mesure qui l'a fixee : 95 des 96
+#: selections portent une confiance 3 ou 4, et 89 des 96 un palier SAFE ou FUN.
+CONCENTRATION_SHARE = 0.80
+
+#: Nombre de niveaux sur lesquels cette part se mesure.
+CONCENTRATION_LEVELS = 2
+
+#: Les cinq niveaux de confiance, **tous rendus meme jamais employes**. C'est
+#: precisement le niveau qui ne sert jamais qui decrit la facon d'etiqueter :
+#: omettre une confiance 5 a zero ferait lire une echelle a quatre crans, et
+#: l'echelle n'aurait plus l'air d'etre sous-employee.
+CONFIDENCE_SCALE = (5, 4, 3, 2, 1)
+
 #: Sous ce nombre de paris tranches, un marche n'est pas liste : la longue
 #: traine des libelles vus une fois noierait les marches qui comptent. C'est le
 #: seul cas ou la page ecarte vraiment une ligne, et il ne contredit pas la
@@ -931,6 +945,141 @@ class Analysis:
             total.priced += entry.priced
             total.implied_sum += entry.implied_sum
         return total
+
+
+@dataclass
+class MixRow:
+    """Un niveau d'une echelle d'etiquetage, et la part du volume qu'il porte."""
+
+    key: str
+    label: str
+    count: int = 0
+    total: int = 0
+
+    @property
+    def share(self) -> float | None:
+        return None if self.total == 0 else self.count / self.total
+
+    @property
+    def share_label(self) -> str:
+        return "—" if self.share is None else f"{self.share * 100:.0f} %"
+
+
+@dataclass
+class Mix:
+    """Repartition des selections sur une echelle d'etiquetage.
+
+    **Le seul bloc de la page qui ne parle pas de resultats**, et le seul qui
+    soit concluant au volume actuel : il decrit un comportement — comment je
+    note — et non des issues. Il ne souffre donc ni du garde-fou de volume ni
+    de celui d'etalement, qui portent tous deux sur des taux.
+
+    Toutes les selections y comptent, tranchees ou non : une confiance annoncee
+    est un geste pose au moment de l'analyse, et le resultat n'y change rien.
+    """
+
+    key: str
+    label: str
+    rows: list[MixRow] = field(default_factory=list)
+    total: int = 0
+    #: Selections ne portant aucune valeur sur cette echelle. Tenues hors du
+    #: total : ne pas etiqueter n'est pas un niveau de l'echelle.
+    unlabelled: int = 0
+
+    @property
+    def levels(self) -> int:
+        return len(self.rows)
+
+    @property
+    def used(self) -> int:
+        """Niveaux effectivement employes au moins une fois."""
+        return sum(1 for row in self.rows if row.count)
+
+    @property
+    def top(self) -> list[MixRow]:
+        """Les niveaux les plus employes, du plus gros au plus petit."""
+        return sorted(self.rows, key=lambda row: -row.count)[:CONCENTRATION_LEVELS]
+
+    @property
+    def top_share(self) -> float:
+        return 0.0 if self.total == 0 else sum(row.count for row in self.top) / self.total
+
+    @property
+    def top_share_label(self) -> str:
+        return f"{self.top_share * 100:.0f} %"
+
+    @property
+    def top_labels(self) -> str:
+        return " et ".join(row.label for row in self.top if row.count)
+
+    @property
+    def concentrated(self) -> bool:
+        """L'echelle est employee comme si elle comptait moins de crans.
+
+        Deux conditions : la part concentree, et une echelle qui compte
+        vraiment plus de niveaux que ceux-la. Sur une echelle a deux crans, la
+        meme part ne dirait rien — il n'y a pas d'autre facon de s'en servir.
+        """
+        return (
+            self.total > 0
+            and self.levels > CONCENTRATION_LEVELS
+            and self.top_share > CONCENTRATION_SHARE
+        )
+
+
+def labelling(settings: Settings | None = None) -> list[Mix]:
+    """Comment les selections sont etiquetees, sans regarder ce qu'elles valent.
+
+    Volontairement separe d'`analysis()` : celle-ci mesure des issues et porte
+    tous ses garde-fous d'echantillon, celui-ci decrit un comportement et n'en
+    a besoin d'aucun. Les melanger aurait fini par appliquer a l'un les seuils
+    de l'autre — donc a taire le seul bloc que le volume actuel autorise.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        tier_labels = _tier_labels(conn)
+        tier_order = [row["key"] for row in conn.execute("SELECT key FROM tiers ORDER BY position")]
+        rows = conn.execute("SELECT tier, confidence FROM picks").fetchall()
+
+    # Aucune selection : aucune echelle a decrire. Rendre deux echelles a zero
+    # ferait lire « je n'emploie aucun niveau » la ou il n'y a rien du tout.
+    if not rows:
+        return []
+
+    confiance = Mix(key="confidence", label="confiance annoncée")
+    niveaux = {str(level): 0 for level in CONFIDENCE_SCALE}
+    for row in rows:
+        if row["confidence"] is None:
+            confiance.unlabelled += 1
+        else:
+            # Une valeur hors echelle ne peut pas arriver — `add_pick` borne a
+            # 1..5 — mais la jeter en silence si elle arrivait ferait mentir le
+            # total. Elle rejoint donc les non etiquetees.
+            key = str(row["confidence"])
+            if key in niveaux:
+                niveaux[key] += 1
+                confiance.total += 1
+            else:
+                confiance.unlabelled += 1
+    confiance.rows = [
+        MixRow(key=key, label=f"confiance {key}", count=count, total=confiance.total)
+        for key, count in niveaux.items()
+    ]
+
+    palier = Mix(key="tier", label="palier")
+    compte = dict.fromkeys(tier_order, 0)
+    for row in rows:
+        if row["tier"] in compte:
+            compte[row["tier"]] += 1
+            palier.total += 1
+        else:
+            palier.unlabelled += 1
+    palier.rows = [
+        MixRow(key=key, label=tier_labels.get(key, key), count=count, total=palier.total)
+        for key, count in compte.items()
+    ]
+
+    return [confiance, palier]
 
 
 def _rate_tally(

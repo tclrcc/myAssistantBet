@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_charts.html" import bars, card, tile, hero %}
+{% from "_charts.html" import bars, card, tile, hero, mix %}
 {% block title %}Statistiques — MyAssistantBet{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -15,7 +15,11 @@
   </div>
 </div>
 
-{% if analysis.empty and stats.empty %}
+{# `labelling` entre dans la condition : il ne depend d'aucun resultat, donc il
+   a deja quelque chose a dire quand rien n'est tranche. Sans lui, vingt
+   selections saisies un soir laissaient la page repondre « rien a mesurer »
+   alors que la repartition des confiances, elle, etait complete. #}
+{% if analysis.empty and stats.empty and not labelling %}
   <p class="empty">
     Rien à mesurer pour l'instant. Saisis le résultat de quelques sélections —
     y compris de celles que tu n'as pas jouées, elles disent si l'analyse voyait juste.
@@ -140,6 +144,46 @@
       {% include "_rates_note.html" %}
     {% endwith %}
   </details>
+</section>
+{% endif %}
+
+{% if labelling %}
+<section class="stats-block">
+  <div class="block-head">
+    <h2>Comment tu étiquettes</h2>
+    <span class="muted small">
+      toutes les sélections, tranchées ou non — le seul bloc qui ne dépende
+      d'aucun résultat
+    </span>
+  </div>
+
+  {% for block in labelling if block.concentrated %}
+  <p class="block-warn">
+    <strong>{{ block.top_share_label }} du volume tiennent sur
+    {{ block.top|length }} niveaux</strong> — {{ block.top_labels }} — d'une échelle
+    de {{ block.label }} qui en compte {{ block.levels }}.
+    Une échelle employée comme si elle en comptait deux ne sépare plus que deux cas,
+    et le niveau le plus fourni y sert de valeur par défaut plutôt que de jugement.
+    Contrairement aux taux de cette page, ce constat-là ne demande pas de recul :
+    il décrit un geste, pas une issue.
+  </p>
+  {% endfor %}
+
+  <div class="charts">
+    {% for block in labelling %}
+    <article class="chart-card">
+      <h3>Par {{ block.label }}</h3>
+      {{ mix(block) }}
+      <p class="chart-note">
+        {{ block.used }} niveau(x) employé(s) sur {{ block.levels }}.
+        {%- if block.unlabelled %}
+        {{ block.unlabelled }} sélection(s) sans {{ block.label }} ne comptent pas ici :
+        ne pas étiqueter n'est pas un niveau de l'échelle.
+        {%- endif %}
+      </p>
+    </article>
+    {% endfor %}
+  </div>
 </section>
 {% endif %}
 

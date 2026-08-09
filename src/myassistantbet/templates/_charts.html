@@ -44,6 +44,27 @@
   {% endif %}
 {% endmacro %}
 
+{# Répartition d'un étiquetage : une part de volume, pas un taux. Même échelle
+   fixe de 0 à 100 % et même teinte unique — c'est toujours une grandeur seule.
+   Un niveau à zéro garde sa ligne : c'est lui qui décrit l'échelle. #}
+{% macro mix(block) %}
+  <div class="bars">
+    {% for row in block.rows %}
+    <div class="bar-row{% if not row.count %} is-void{% endif %}"
+         title="{{ row.label }} — {{ row.count }} sélection(s) sur {{ block.total }}">
+      <span class="bar-label">{{ row.label }}</span>
+      <span class="track" aria-hidden="true">
+        {% if row.count %}
+          <span class="fill" style="width: {{ '%.1f'|format(row.share * 100) }}%"></span>
+        {% endif %}
+      </span>
+      <b class="bar-value">{{ row.share_label }}</b>
+      <span class="bar-count">{{ row.count }}</span>
+    </div>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
 {% macro card(title, rows, note="", empty="Rien de tranché sur ce regroupement.") %}
   <article class="chart-card">
     <h3>{{ title }}</h3>

@@ -24,6 +24,7 @@ from myassistantbet.services.history import (
     add_pick,
     analysis,
     delete_pick,
+    labelling,
     list_picks,
     list_sessions,
     pickable_events,
@@ -836,6 +837,117 @@ def test_aucun_champ_financier_sur_l_analyse() -> None:
     noms |= {name for name in dir(Analysis) if not name.startswith("_")}
 
     assert not (noms & interdits)
+
+
+# -- Comment j'etiquette ----------------------------------------------------
+
+
+def _mix(blocs: list, key: str):
+    return next(bloc for bloc in blocs if bloc.key == key)
+
+
+def test_l_echelle_rend_ses_niveaux_jamais_employes(migrated: Settings) -> None:
+    """C'est le cran jamais mis qui decrit la facon d'etiqueter : omettre une
+    confiance 5 a zero ferait lire une echelle a quatre crans."""
+    session_id, event_id = _session_avec_match(migrated)
+    _propose(migrated, session_id, event_id, "safe", "win", confidence="3")
+
+    confiance = _mix(labelling(migrated), "confidence")
+
+    assert [row.key for row in confiance.rows] == ["5", "4", "3", "2", "1"]
+    assert confiance.used == 1, "un seul cran employe sur cinq"
+    assert confiance.levels == 5
+
+
+def test_la_repartition_compte_les_selections_non_tranchees(migrated: Settings) -> None:
+    """Une confiance annoncee est un geste pose a l'analyse : le resultat n'y
+    change rien, et attendre qu'il tombe ferait taire le bloc le plus sur."""
+    session_id, event_id = _session_avec_match(migrated)
+    add_pick(
+        session_id, "safe", "O/U", "Over", event_id=str(event_id), confidence="4", settings=migrated
+    )
+
+    confiance = _mix(labelling(migrated), "confidence")
+
+    assert analysis(migrated).empty, "rien de tranche"
+    assert confiance.total == 1, "la repartition, elle, a de quoi parler"
+
+
+def test_une_echelle_repliee_sur_deux_crans_est_signalee(migrated: Settings) -> None:
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(9):
+        _propose(migrated, session_id, event_id, "safe", "win", confidence="3")
+    for _ in range(6):
+        _propose(migrated, session_id, event_id, "safe", "win", confidence="4")
+    _propose(migrated, session_id, event_id, "safe", "win", confidence="2")
+
+    confiance = _mix(labelling(migrated), "confidence")
+
+    assert confiance.top_share == pytest.approx(15 / 16)
+    assert confiance.concentrated
+    assert confiance.top_labels == "confiance 3 et confiance 4"
+
+
+def test_une_echelle_employee_en_entier_ne_declenche_rien(migrated: Settings) -> None:
+    session_id, event_id = _session_avec_match(migrated)
+    for niveau in ("1", "2", "3", "4", "5"):
+        for _ in range(4):
+            _propose(migrated, session_id, event_id, "safe", "win", confidence=niveau)
+
+    assert not _mix(labelling(migrated), "confidence").concentrated
+
+
+def test_les_selections_sans_confiance_sortent_du_total(migrated: Settings) -> None:
+    """Ne pas etiqueter n'est pas un niveau de l'echelle : les compter dedans
+    ferait baisser toutes les parts sans decrire aucun cran."""
+    session_id, event_id = _session_avec_match(migrated)
+    _propose(migrated, session_id, event_id, "safe", "win", confidence="3")
+    _propose(migrated, session_id, event_id, "safe", "win")
+
+    confiance = _mix(labelling(migrated), "confidence")
+
+    assert (confiance.total, confiance.unlabelled) == (1, 1)
+    assert _mix(labelling(migrated), "tier").total == 2, "le palier, lui, est obligatoire"
+
+
+def test_la_repartition_se_tait_sur_une_base_vide(migrated: Settings) -> None:
+    assert labelling(migrated) == []
+
+
+def test_la_page_signale_la_concentration(client: TestClient, isolated_settings: Settings) -> None:
+    session_id, event_id = _session_avec_match(isolated_settings)
+    for _ in range(9):
+        _propose(isolated_settings, session_id, event_id, "safe", "win", confidence="3")
+    for _ in range(6):
+        _propose(isolated_settings, session_id, event_id, "fun", "win", confidence="4")
+
+    page = " ".join(client.get("/stats").text.split())
+
+    assert "Comment tu étiquettes" in page
+    assert "du volume tiennent sur" in page
+    assert "ne demande pas de recul" in page, "le bloc ne depend d'aucun resultat"
+
+
+def test_la_page_parle_avant_le_premier_resultat(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Vingt selections saisies un soir : la page repondait « rien a mesurer »
+    alors que la repartition des confiances, elle, etait complete."""
+    session_id, event_id = _session_avec_match(isolated_settings)
+    add_pick(
+        session_id,
+        "safe",
+        "O/U",
+        "Over",
+        event_id=str(event_id),
+        confidence="3",
+        settings=isolated_settings,
+    )
+
+    page = client.get("/stats").text
+
+    assert "Rien à mesurer" not in page
+    assert "Comment tu étiquettes" in page
 
 
 # -- Le taux implicite ------------------------------------------------------

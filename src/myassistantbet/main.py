@@ -815,6 +815,7 @@ def stats_page(request: Request) -> HTMLResponse:
         "stats.html",
         {
             "analysis": history_service.analysis(settings),
+            "labelling": history_service.labelling(settings),
             "stats": history_service.stats(settings),
             "coupon_rates": coupons_service.rates(settings),
         },
