@@ -21,6 +21,7 @@ from myassistantbet.services.history import (
     FEEDBACK_MIN_TOTAL,
     Analysis,
     HistoryError,
+    _overlaps,
     add_pick,
     analysis,
     delete_pick,
@@ -949,6 +950,122 @@ def test_la_page_parle_avant_le_premier_resultat(
 
     assert "Rien à mesurer" not in page
     assert "Comment tu étiquettes" in page
+
+
+# -- Colinearite entre axes -------------------------------------------------
+
+
+def _axe(nom: str, *lots: list[int]) -> tuple[str, list]:
+    """Un axe factice : une ligne par lot d'identifiants de selection."""
+    from myassistantbet.services.history import RateRow
+
+    return (
+        nom,
+        [
+            RateRow(key=str(index), label=f"{nom} {index}", members=set(lot))
+            for index, lot in enumerate(lots)
+        ],
+    )
+
+
+def test_deux_ensembles_identiques_sont_signales() -> None:
+    memes = list(range(20))
+
+    trouves = _overlaps([_axe("sport", memes), _axe("niveau", memes)])
+
+    assert len(trouves) == 1
+    assert trouves[0].shared == 20
+    assert trouves[0].note == "sport 0 et niveau 0 décrivent les mêmes 20 sélections"
+
+
+def test_deux_ensembles_disjoints_ne_le_sont_pas() -> None:
+    trouves = _overlaps([_axe("sport", list(range(20))), _axe("niveau", list(range(20, 40)))])
+
+    assert trouves == []
+
+
+def test_un_sous_ensemble_n_est_pas_le_meme_echantillon() -> None:
+    """Le recouvrement se mesure **des deux cotes** : vingt selections toutes
+    contenues dans quarante ne decrivent pas le meme echantillon, elles en
+    decrivent une moitie."""
+    trouves = _overlaps([_axe("sport", list(range(40))), _axe("niveau", list(range(20)))])
+
+    assert trouves == []
+
+
+def test_un_recouvrement_partiel_reste_sous_le_seuil() -> None:
+    trouves = _overlaps([_axe("sport", list(range(20))), _axe("niveau", list(range(1, 21)))])
+
+    assert trouves == [], "19 communes sur 20 font 95 %, il en faut plus"
+
+
+def test_deux_lignes_trop_courtes_ne_sont_pas_comparees() -> None:
+    """Deux regroupements d'une selection partagee se recouvrent a 100 % sans
+    rien dire : le seuil de lecture de la page vaut aussi ici."""
+    trouves = _overlaps([_axe("sport", [1, 2]), _axe("niveau", [1, 2])])
+
+    assert trouves == []
+
+
+def test_deux_lignes_du_meme_axe_ne_se_comparent_jamais(migrated: Settings) -> None:
+    """Un axe partitionne les selections : ses lignes sont disjointes par
+    construction, les comparer entre elles ne peut rien produire."""
+    axe = _axe("sport", list(range(20)), list(range(20)))
+
+    assert _overlaps([axe]) == []
+
+
+def test_le_tennis_et_son_niveau_de_tournoi_sont_signales(migrated: Settings) -> None:
+    """Le cas reel : 100 % des selections tennis sont sur le Canadian Open, si
+    bien que « Tennis » et « Masters 1000 » sont les memes selections."""
+    session_id, event_id = _session_avec_match(migrated, "tennis")
+    with db.connect(migrated) as conn:
+        conn.execute(
+            "UPDATE competitions SET category = 'masters_1000' "
+            "WHERE id = (SELECT competition_id FROM events WHERE id = ?)",
+            (event_id,),
+        )
+    # Les marches sont varies a dessein : sur un lot ou toutes les selections
+    # portent le meme marche, celui-ci est **lui aussi** colineaire au sport, et
+    # le detecteur a raison de le dire. Ce test-la porte sur le sport et son
+    # niveau de tournoi, pas sur un echantillon degenere.
+    for index in range(2 * ANALYSIS_MIN_ROWS):
+        _propose(
+            migrated,
+            session_id,
+            event_id,
+            "safe",
+            "win",
+            market="Vainqueur" if index % 2 else "O/U jeux",
+        )
+
+    report = analysis(migrated)
+
+    assert [overlap.note for overlap in report.overlaps] == [
+        f"Tennis et Masters 1000 décrivent les mêmes {2 * ANALYSIS_MIN_ROWS} sélections"
+    ]
+
+
+def test_le_bloc_colineaire_est_signale_jamais_masque(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Lequel des deux axes est le bon ne se deduit d'aucune donnee : choisir a
+    la place du lecteur serait pire que le lui dire."""
+    session_id, event_id = _session_avec_match(isolated_settings, "tennis")
+    with db.connect(isolated_settings) as conn:
+        conn.execute(
+            "UPDATE competitions SET category = 'masters_1000' "
+            "WHERE id = (SELECT competition_id FROM events WHERE id = ?)",
+            (event_id,),
+        )
+    for _ in range(ANALYSIS_MIN_ROWS):
+        _propose(isolated_settings, session_id, event_id, "safe", "win")
+
+    page = " ".join(client.get("/stats").text.split())
+
+    assert "décrivent les mêmes" in page
+    assert "Par niveau de tournoi" in page, "le bloc reste affiche"
+    assert "compter deux fois la même chose" in page
 
 
 # -- Intervalles de confiance -----------------------------------------------

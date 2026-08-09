@@ -163,6 +163,16 @@ class RateRow:
     #: Somme des `1/cote` de ces selections. Stockee en somme plutot qu'en
     #: moyenne pour que deux regroupements s'additionnent sans se ponderer.
     implied_sum: float = 0.0
+    #: Identifiants des selections **tranchees** du regroupement. Sert a
+    #: reconnaitre deux regroupements de deux axes differents qui decrivent le
+    #: meme echantillon.
+    #:
+    #: Tranchees seulement, donc `len(members) == settled` : c'est le taux
+    #: affiche qui est en cause dans un recouvrement, et lui ne se calcule que
+    #: sur elles. En y comptant les paris en attente, la note annoncait « les
+    #: memes 39 selections » a cote de barres portant 17/37 — un nombre que
+    #: rien d'autre sur la page ne permettait de verifier.
+    members: set[int] = field(default_factory=set)
 
     @property
     def settled(self) -> int:
@@ -767,13 +777,17 @@ def delete_pick(pick_id: int, settings: Settings | None = None) -> None:
 # -- Statistiques -----------------------------------------------------------
 
 
-def _count(entry: RateRow, result: str, price: float | None = None) -> None:
+def _count(
+    entry: RateRow, result: str, price: float | None = None, pick_id: int | None = None
+) -> None:
     """Ajoute une selection a un regroupement.
 
     Ecrit une seule fois parce que quatre endroits comptent la meme chose : le
     taux par palier, celui par sport, la comparaison joue / ecarte et le total.
     Les copier aurait suffi a ce qu'un seul d'entre eux oublie la cote.
     """
+    if pick_id is not None and result in ("win", "loss"):
+        entry.members.add(pick_id)
     if result == "win":
         entry.won += 1
     elif result == "loss":
@@ -895,6 +909,12 @@ ANALYSIS_MIN_DAYS = FEEDBACK_MIN_DAYS
 
 # -- Ce que vaut l'analyse --------------------------------------------------
 
+#: Part de recouvrement au-dela de laquelle deux regroupements de deux axes
+#: differents decrivent le meme echantillon sous deux noms. Elle se mesure
+#: **des deux cotes** : un sous-ensemble entierement contenu dans un autre n'est
+#: pas le meme echantillon, c'est une partie de celui-ci.
+COLLINEAR_SHARE = 0.95
+
 #: Part du volume au-dela de laquelle une echelle se comporte comme si elle
 #: comptait moins de niveaux qu'elle n'en a. Mesure qui l'a fixee : 95 des 96
 #: selections portent une confiance 3 ou 4, et 89 des 96 un palier SAFE ou FUN.
@@ -951,6 +971,11 @@ class Analysis:
     skipped: RateRow = field(default_factory=lambda: RateRow("skipped", "Écartées"))
     #: Marches ecartes faute d'echantillon. Annonce plutot que tue en silence.
     hidden_markets: int = 0
+    #: Regroupements de deux axes differents qui portent les memes selections.
+    #: Signales, jamais masques : le bloc reste affiche, c'est sa redondance qui
+    #: est dite. Le masquer choisirait a la place du lecteur lequel des deux
+    #: axes est le bon, et rien ici ne permet de trancher ca.
+    overlaps: list[Overlap] = field(default_factory=list)
 
     @property
     def empty(self) -> bool:
@@ -1025,6 +1050,71 @@ class Analysis:
             total.priced += entry.priced
             total.implied_sum += entry.implied_sum
         return total
+
+
+@dataclass
+class Overlap:
+    """Deux regroupements de deux axes differents portant les memes selections.
+
+    La page les presente cote a cote comme deux observations independantes,
+    alors qu'ils comptent les memes paris : « Tennis 46 % » et « Masters 1000
+    46 % » sont les memes 37 selections, 100 % du tennis en base ayant ete joue
+    sur le Canadian Open. Le bloc par niveau de tournoi n'apprend alors rien de
+    plus que le bloc par sport.
+    """
+
+    left_axis: str
+    left_label: str
+    right_axis: str
+    right_label: str
+    shared: int
+
+    @property
+    def note(self) -> str:
+        return (
+            f"{self.left_label} et {self.right_label} décrivent les mêmes {self.shared} sélections"
+        )
+
+
+def _overlaps(axes: list[tuple[str, list[RateRow]]]) -> list[Overlap]:
+    """Regroupements de deux axes distincts qui decrivent le meme echantillon.
+
+    Compare des **ensembles d'identifiants** et non des comptes : deux
+    regroupements de 37 lignes chacun peuvent n'avoir aucune selection commune,
+    et un taux identique de part et d'autre serait alors une coincidence, pas
+    une redondance.
+
+    Le seuil de lecture de la page s'applique ici aussi : deux regroupements
+    d'une seule selection partagee se recouvrent a 100 % sans rien dire.
+    """
+    found: list[Overlap] = []
+    for index, (left_axis, left_rows) in enumerate(axes):
+        for right_axis, right_rows in axes[index + 1 :]:
+            for left in left_rows:
+                for right in right_rows:
+                    if len(left.members) < ANALYSIS_MIN_ROWS:
+                        continue
+                    if len(right.members) < ANALYSIS_MIN_ROWS:
+                        continue
+                    # Le recouvrement doit **depasser** le seuil, pas l'atteindre :
+                    # 19 selections communes sur 20 font exactement 95 % et
+                    # laissent une ligne de difference de chaque cote, ce qui
+                    # suffit a en faire deux echantillons distincts.
+                    shared = len(left.members & right.members)
+                    if shared <= COLLINEAR_SHARE * len(left.members):
+                        continue
+                    if shared <= COLLINEAR_SHARE * len(right.members):
+                        continue
+                    found.append(
+                        Overlap(
+                            left_axis=left_axis,
+                            left_label=left.label,
+                            right_axis=right_axis,
+                            right_label=right.label,
+                            shared=shared,
+                        )
+                    )
+    return found
 
 
 @dataclass
@@ -1163,12 +1253,12 @@ def labelling(settings: Settings | None = None) -> list[Mix]:
 
 
 def _rate_tally(
-    entries: list[tuple[str, str, str, float | None]], minimum: int = 1
+    entries: list[tuple[str, str, str, float | None, int]], minimum: int = 1
 ) -> list[RateRow]:
-    """Agrege des quadruplets (cle, libelle, resultat, cote) en lignes de taux."""
+    """Agrege des quintuplets (cle, libelle, resultat, cote, id) en lignes de taux."""
     grouped: dict[str, RateRow] = {}
-    for key, label, result, price in entries:
-        _count(grouped.setdefault(key, RateRow(key=key, label=label)), result, price)
+    for key, label, result, price, pick_id in entries:
+        _count(grouped.setdefault(key, RateRow(key=key, label=label)), result, price, pick_id)
     return [row for row in grouped.values() if row.settled >= minimum]
 
 
@@ -1186,8 +1276,8 @@ def analysis(settings: Settings | None = None) -> Analysis:
             row["key"]: row["label"] for row in conn.execute("SELECT key, label FROM sports")
         }
         rows = conn.execute(
-            "SELECT k.tier, k.result, k.market, k.confidence, k.played, k.created_at, k.price, "
-            "       s.key AS sport_key, c.category FROM picks k "
+            "SELECT k.id, k.tier, k.result, k.market, k.confidence, k.played, "
+            "       k.created_at, k.price, s.key AS sport_key, c.category FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
             "LEFT JOIN competitions c ON c.id = e.competition_id"
@@ -1212,7 +1302,13 @@ def analysis(settings: Settings | None = None) -> Analysis:
 
     report.by_tier = _rate_tally(
         [
-            (row["tier"], tier_labels.get(row["tier"], row["tier"]), result, row["price"])
+            (
+                row["tier"],
+                tier_labels.get(row["tier"], row["tier"]),
+                result,
+                row["price"],
+                row["id"],
+            )
             for row, result in zip(rows, results, strict=True)
         ]
     )
@@ -1223,7 +1319,13 @@ def analysis(settings: Settings | None = None) -> Analysis:
     report.by_confidence = sorted(
         _rate_tally(
             [
-                (str(row["confidence"]), f"confiance {row['confidence']}", result, row["price"])
+                (
+                    str(row["confidence"]),
+                    f"confiance {row['confidence']}",
+                    result,
+                    row["price"],
+                    row["id"],
+                )
                 for row, result in zip(rows, results, strict=True)
                 if row["confidence"] is not None
             ]
@@ -1240,6 +1342,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
                     sport_labels.get(row["sport_key"], NO_SPORT),
                     result,
                     row["price"],
+                    row["id"],
                 )
                 for row, result in zip(rows, results, strict=True)
             ]
@@ -1252,7 +1355,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
     report.by_category = sorted(
         _rate_tally(
             [
-                (row["category"], category_label(row["category"]), result, row["price"])
+                (row["category"], category_label(row["category"]), result, row["price"], row["id"])
                 for row, result in zip(rows, results, strict=True)
                 if row["category"]
             ]
@@ -1261,7 +1364,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
     )
 
     markets = [
-        (_market_key(row["market"]), (row["market"] or "").strip(), result, row["price"])
+        (_market_key(row["market"]), (row["market"] or "").strip(), result, row["price"], row["id"])
         for row, result in zip(rows, results, strict=True)
         if _market_key(row["market"])
     ]
@@ -1272,6 +1375,18 @@ def analysis(settings: Settings | None = None) -> Analysis:
 
     for row, result in zip(rows, results, strict=True):
         _count(report.played if row["played"] else report.skipped, result, row["price"])
+
+    # Le palier n'entre pas dans la comparaison : il est defini par des tranches
+    # de cote, donc correle par construction a tout ce qui depend du prix. Le
+    # signaler comme une redondance decouverte serait annoncer sa definition.
+    report.overlaps = _overlaps(
+        [
+            ("confidence", report.by_confidence),
+            ("sport", report.by_sport),
+            ("category", report.by_category),
+            ("market", report.by_market),
+        ]
+    )
 
     return report
 

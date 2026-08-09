@@ -70,6 +70,21 @@
   </p>
   {% endif %}
 
+  {# Deux axes peuvent décrire le même échantillon sous deux noms, et la page
+     les présente alors comme deux observations indépendantes. Le bloc n'est
+     pas masqué : lequel des deux axes est le bon ne se déduit d'aucune donnée,
+     et choisir à la place du lecteur serait pire que le lui dire. #}
+  {% if analysis.overlaps %}
+  <p class="block-note">
+    {% for overlap in analysis.overlaps %}
+    <strong>{{ overlap.note }}.</strong>
+    {% endfor %}
+    Les deux regroupements comptent les mêmes paris : le second n'ajoute donc
+    aucune observation au premier, et lire leurs taux comme deux constats
+    reviendrait à compter deux fois la même chose.
+  </p>
+  {% endif %}
+
   <div class="charts">
     {{ card("Par confiance annoncée", analysis.by_confidence,
             "L'écart entre la confiance annoncée et le taux constaté dit que la
