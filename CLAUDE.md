@@ -155,6 +155,28 @@ non negociables, toutes couvertes par des tests :
   porte en fin de ligne** (`[Pinnacle (ref.)]`, `[saisie manuelle]`, `[dont …]` quand une
   ligne fusionnee melange les deux). Un en-tete « Betclic + Pinnacle (ref.) » laissait
   deviner quelle cote etait jouable et laquelle ne faisait que situer le marche ;
+- **Les lignes en quart ne se posent pas au football** (`-0.25`, `+0.75`, `1.25`,
+  `2.75`). Ce sont des paris asiatiques **scindes** — une demi-mise sur chacune des
+  deux lignes voisines — et aucun book français ne les propose. Elles restent
+  **affichees**, parce qu'elles situent le match mieux qu'aucune autre ligne ; c'est
+  la **selection** qui est interdite, et sa traduction se donne sous le tableau,
+  sans cote, comme le score exact en sets au tennis. Mesure qui l'a declenche : sur
+  une analyse reelle, les **deux** selections rendues portaient une ligne en quart
+  (`Over 2.75`, `Slask -0.25`), donc deux paris impossibles a poser.
+  - Le prompt donne la traduction (`+1.25` sur X = « X ne perd pas, ou perd d'un
+    but exactement ») **et** l'equivalent des autres lignes, qui restent
+    selectionnables : `0` = rembourse si nul, `±0.5` = victoire seche ou double
+    chance, `±1` = handicap europeen, totaux en `.5` tels quels. Sans cette
+    seconde moitie, la regle rejouerait le degat du libelle « Non jouable » —
+    faire renoncer a des paris posables.
+  - **`A relever` affirmait « le bookmaker les propose bien sur son site », et
+    c'etait une generalisation.** Le fait a ete verifie **au tennis**, ou il est
+    vrai ; au football il est faux pour les lignes asiatiques. La phrase est donc
+    gardee par sport, ce qui fait au passage economiser au football un
+    paragraphe qui ne le concernait pas.
+  - La regle ne peut pas se poser sur `A relever` : un evenement servi par un book
+    de substitution n'en produit aucune et porte pourtant les memes lignes
+    (`Kilmarnock +1.25` chez Pinnacle). Elle se lit sur la **valeur de la ligne**.
 - **`A relever` est un troisieme etat** : le marche est affiche, mais aucun de ses prix ne
   vient du book principal. Sur 127 matchs de tennis a venir, `betclic_fr` ne sert **que**
   le `h2h` via The Odds API — tout le handicap jeux et tout le total de jeux viennent de

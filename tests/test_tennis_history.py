@@ -1202,16 +1202,21 @@ def test_le_prompt_autorise_un_angle_sur_un_marche_a_relever(migrated: Settings)
     qu'il devait empecher : Betclic sert bien le handicap jeux et le total de
     jeux sur son site, c'est notre collecte qui ne les remonte pas. Une analyse
     reelle a renonce a deux angles de jeux pour se rabattre sur le vainqueur,
-    alors que les paris etaient posables."""
+    alors que les paris etaient posables.
+
+    L'affirmation est **gardee par sport** depuis qu'on sait qu'elle ne vaut pas
+    partout : elle a ete verifiee au tennis, elle est fausse au football pour les
+    lignes asiatiques en quart, qu'aucun book français ne propose."""
     from myassistantbet.services.prompt import build_prompt
 
     _serie(migrated, [("6-4 6-4", True)] * 5)
     session = _lot(migrated, "tennis", "Jiri Lehecka", "Vit Kopriva", COMMENCE)
     corps = " ".join(build_prompt(session, settings=migrated, now=NOW).body.split())
 
-    assert "Le bookmaker les propose bien sur son site" in corps
+    assert "Le bookmaker propose bien ces marchés sur son site" in corps
     assert "est un marché présent" in corps
     assert "pas une raison de se rabattre sur le vainqueur" in corps
+    assert "lignes en quart" not in corps, "regle de football, pas de tennis"
 
 
 def test_le_prompt_reclame_un_score_exact_en_sets_au_tennis(migrated: Settings) -> None:

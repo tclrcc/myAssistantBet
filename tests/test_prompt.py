@@ -200,6 +200,36 @@ def test_le_prompt_fait_compter_les_lignes_de_vainqueur(migrated: Settings) -> N
     assert "garde-les et dis-le en une ligne sous le tableau" in corps
 
 
+def test_le_prompt_refuse_les_lignes_en_quart_au_football(migrated: Settings) -> None:
+    """Mesure sur une analyse reelle : les **deux** selections rendues portaient
+    une ligne en quart — « Over 2.75 » et « Slask -0.25 », toutes deux a `(ref.)`
+    — donc deux paris impossibles a poser chez le bookmaker principal. Un pari
+    asiatique scinde n'existe pas sur le marche français, quel que soit le book.
+
+    La ligne reste affichee, parce qu'elle situe le match mieux qu'aucune autre ;
+    c'est la **selection** qui est interdite. Sa cote entrerait sinon en base et
+    fausserait le palier comme le taux de reussite, exactement comme une cote
+    inventee — la meme raison qui tient le score exact en sets hors du tableau."""
+    corps = " ".join(build_prompt(_lot_de(migrated, 2), settings=migrated, now=NOW).body.split())
+
+    assert "les lignes en quart ne se posent pas" in corps
+    assert "elles ne deviennent jamais une sélection" in corps
+    assert "X ne perd pas, ou perd d'un but exactement" in corps
+    assert "n'entre pas dans ce tableau" in corps
+    assert "sans cote et hors de tout combiné" in corps
+
+
+def test_les_lignes_entieres_et_demies_restent_selectionnables(migrated: Settings) -> None:
+    """Le garde-fou ne doit pas repeter l'erreur du libelle « Non jouable », qui
+    a fait renoncer a des paris posables : seules les lignes en quart sortent, et
+    le prompt nomme l'equivalent des autres pour qu'aucune ne parte avec elles."""
+    corps = " ".join(build_prompt(_lot_de(migrated, 2), settings=migrated, now=NOW).body.split())
+
+    assert "gardent un équivalent direct et restent sélectionnables" in corps
+    assert "remboursé si match nul" in corps
+    assert "le handicap européen" in corps
+
+
 def test_le_comptage_se_tait_sur_un_lot_trop_court(migrated: Settings) -> None:
     """« Plus de la moitie » ne decrit rien sur deux ou trois lignes, et les
     quotas se reduisent deja a proportion du lot. Meme regle que partout
