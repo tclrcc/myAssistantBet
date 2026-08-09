@@ -28,6 +28,7 @@ from myassistantbet.services.history import (
     labelling,
     list_picks,
     list_sessions,
+    load_bands,
     pickable_events,
     pickable_groups,
     set_event,
@@ -950,6 +951,120 @@ def test_la_page_parle_avant_le_premier_resultat(
 
     assert "Rien à mesurer" not in page
     assert "Comment tu étiquettes" in page
+
+
+# -- Bandes cibles par confiance --------------------------------------------
+
+
+def test_les_bandes_sont_reglees_en_base_pas_en_dur(migrated: Settings) -> None:
+    """« Editable sans toucher au code » : c'est une decision de l'utilisateur
+    sur sa propre echelle, pas une constante du projet."""
+    bandes = load_bands(migrated)
+
+    assert [bande.level for bande in bandes.values()] == [1, 2, 3, 4, 5]
+    assert (bandes[4].low, bandes[4].high) == (60.0, 70.0)
+    assert bandes[5].high is None, "le dernier cran n'a pas de borne haute"
+    assert bandes[5].label == "70 % et plus"
+    assert bandes[4].label == "60 – 70 %"
+
+
+def test_la_bande_ne_se_rattache_qu_a_la_confiance(migrated: Settings) -> None:
+    """Un sport ou un marche ne se fixe pas d'objectif de taux."""
+    session_id, event_id = _session_avec_match(migrated)
+    _propose(migrated, session_id, event_id, "safe", "win", confidence="4")
+
+    report = analysis(migrated)
+
+    assert report.by_confidence[0].band is not None
+    assert all(row.band is None for row in report.by_sport + report.by_tier + report.by_market)
+
+
+def test_un_intervalle_a_cheval_ne_signale_rien(migrated: Settings) -> None:
+    """44 % dont l'intervalle va de 31 a 57 traverse trois bandes : le declarer
+    hors de la sienne serait affirmer plus que les donnees ne portent."""
+    session_id, event_id = _session_avec_match(migrated)
+    for index in range(16):
+        _propose(
+            migrated, session_id, event_id, "safe", "win" if index < 7 else "loss", confidence="4"
+        )
+
+    ligne = analysis(migrated).by_confidence[0]
+
+    assert ligne.rate == pytest.approx(7 / 16)
+    assert ligne.band.excludes((0.60, 0.65)) is False, "la bande contient cet intervalle"
+    assert not ligne.off_band, "l'intervalle chevauche encore la bande cible"
+
+
+def test_un_intervalle_entierement_sous_la_bande_est_signale(migrated: Settings) -> None:
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(20):
+        _propose(migrated, session_id, event_id, "safe", "loss", confidence="4")
+
+    ligne = analysis(migrated).by_confidence[0]
+
+    assert ligne.rate == 0.0
+    assert ligne.off_band, "0/20 ne touche pas la bande 60 – 70 %"
+
+
+def test_un_intervalle_entierement_au_dessus_est_signale(migrated: Settings) -> None:
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(20):
+        _propose(migrated, session_id, event_id, "safe", "win", confidence="2")
+
+    ligne = analysis(migrated).by_confidence[0]
+
+    assert ligne.off_band, "20/20 depasse la bande 40 – 50 %"
+
+
+def test_le_dernier_cran_n_a_pas_de_borne_haute(migrated: Settings) -> None:
+    """Rien ne peut etre « au-dessus » de « 70 % et plus »."""
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(20):
+        _propose(migrated, session_id, event_id, "safe", "win", confidence="5")
+
+    ligne = analysis(migrated).by_confidence[0]
+
+    assert ligne.rate == 1.0
+    assert not ligne.off_band
+
+
+def test_les_bandes_se_modifient_depuis_les_reglages(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    reponse = client.post(
+        "/settings/bands",
+        data={"level": ["5", "4"], "low": ["75", "65"], "high": ["", "75"]},
+    )
+
+    assert reponse.status_code == 200
+    assert "Bandes de confiance enregistrées" in reponse.text
+    assert not reponse.text.lstrip().startswith("<!doctype"), "une route HTMX rend le fragment"
+
+    bandes = load_bands(isolated_settings)
+    assert (bandes[4].low, bandes[4].high) == (65.0, 75.0)
+    assert (bandes[5].low, bandes[5].high) == (75.0, None)
+
+
+def test_une_bande_incoherente_est_refusee(client: TestClient) -> None:
+    reponse = client.post("/settings/bands", data={"level": ["4"], "low": ["70"], "high": ["60"]})
+
+    assert "doit dépasser la borne basse" in reponse.text
+
+
+def test_une_bande_hors_de_zero_cent_est_refusee(client: TestClient) -> None:
+    reponse = client.post("/settings/bands", data={"level": ["4"], "low": ["140"], "high": [""]})
+
+    assert "sort de 0 à 100 %" in reponse.text
+
+
+def test_la_page_affiche_la_bande_cible(client: TestClient, isolated_settings: Settings) -> None:
+    session_id, event_id = _session_avec_match(isolated_settings)
+    _propose(isolated_settings, session_id, event_id, "safe", "win", confidence="4")
+
+    page = " ".join(client.get("/stats").text.split())
+
+    assert "cible 60 – 70 %" in page
+    assert "réglable dans les réglages" in page
 
 
 # -- Effectif independant ---------------------------------------------------

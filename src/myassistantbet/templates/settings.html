@@ -37,4 +37,13 @@
   </p>
   {% include "_tiers.html" %}
 </section>
+
+<section class="settings-section">
+  <h2>Bandes de confiance</h2>
+  <p class="muted small">
+    Le taux qu'un niveau de confiance devrait atteindre. Sert à la page Statistiques,
+    jamais au prompt : c'est un repère de relecture, pas une consigne d'analyse.
+  </p>
+  {% include "_bands.html" %}
+</section>
 {% endblock %}

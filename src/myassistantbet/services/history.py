@@ -141,6 +141,39 @@ def wilson(won: int, settled: int) -> tuple[float, float] | None:
 
 
 @dataclass
+class Band:
+    """Bande cible d'un niveau de confiance, en points de pourcentage.
+
+    Elle donne a « confiance 4 » le referentiel qui lui manquait : sans elle,
+    l'ecart entre la confiance annoncee et le taux constate ne se mesurait
+    contre rien, alors que la page affirmait qu'il disait la derive.
+
+    Reglable depuis les reglages, jamais en dur : c'est une decision de
+    l'utilisateur sur sa propre echelle, pas une constante du projet.
+    """
+
+    level: int
+    low: float
+    high: float | None = None
+
+    @property
+    def label(self) -> str:
+        return f"{self.low:.0f} – {self.high:.0f} %" if self.high else f"{self.low:.0f} % et plus"
+
+    def excludes(self, interval: tuple[float, float]) -> bool:
+        """L'intervalle est **entierement** hors de la bande.
+
+        Le chevauchement le plus tenu suffit a se taire : signaler des qu'un
+        taux sort de sa bande ferait crier a la derive sur du bruit, et au
+        volume actuel presque chaque intervalle couvre plusieurs bandes.
+        """
+        low, high = interval[0] * 100, interval[1] * 100
+        if high < self.low:
+            return True
+        return self.high is not None and low > self.high
+
+
+@dataclass
 class RateRow:
     """Taux de reussite d'un regroupement. Aucune notion d'argent.
 
@@ -182,6 +215,9 @@ class RateRow:
     #: unite : rien ne permet de les rapprocher, donc rien ne permet de les
     #: declarer correlees.
     unattached: int = 0
+    #: Bande cible, sur les seuls regroupements par confiance. Les autres axes
+    #: n'en ont pas : un sport ne se fixe pas d'objectif de taux.
+    band: Band | None = None
 
     @property
     def settled(self) -> int:
@@ -278,6 +314,17 @@ class RateRow:
         """
         bounds = self.interval
         return bounds is not None and bounds[0] <= 0.5 <= bounds[1]
+
+    @property
+    def off_band(self) -> bool:
+        """Le taux est hors de sa bande cible, et l'intervalle le confirme.
+
+        Le test porte sur l'**intervalle** et non sur le taux : un 44 % dont
+        l'intervalle va de 31 a 57 traverse deux bandes, et le declarer hors de
+        la sienne serait affirmer plus que les donnees ne portent.
+        """
+        bounds = self.interval
+        return self.band is not None and bounds is not None and self.band.excludes(bounds)
 
     @property
     def implied(self) -> float | None:
@@ -1268,6 +1315,22 @@ class Mix:
         )
 
 
+def load_bands(settings: Settings | None = None) -> dict[int, Band]:
+    """Bandes cibles par niveau de confiance, telles qu'elles sont reglees."""
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT level, low, high FROM confidence_bands ORDER BY level"
+        ).fetchall()
+    return {
+        int(row["level"]): Band(
+            level=int(row["level"]),
+            low=float(row["low"]),
+            high=None if row["high"] is None else float(row["high"]),
+        )
+        for row in rows
+    }
+
+
 def labelling(settings: Settings | None = None) -> list[Mix]:
     """Comment les selections sont etiquetees, sans regarder ce qu'elles valent.
 
@@ -1344,6 +1407,14 @@ def analysis(settings: Settings | None = None) -> Analysis:
         sport_labels = {
             row["key"]: row["label"] for row in conn.execute("SELECT key, label FROM sports")
         }
+        bands = {
+            int(row["level"]): Band(
+                level=int(row["level"]),
+                low=float(row["low"]),
+                high=None if row["high"] is None else float(row["high"]),
+            )
+            for row in conn.execute("SELECT level, low, high FROM confidence_bands")
+        }
         rows = conn.execute(
             "SELECT k.id, k.tier, k.result, k.market, k.confidence, k.played, k.event_id, "
             "       k.created_at, k.price, s.key AS sport_key, c.category FROM picks k "
@@ -1390,6 +1461,11 @@ def analysis(settings: Settings | None = None) -> Analysis:
         key=lambda item: item.key,
         reverse=True,
     )
+    # La bande cible se rattache ici et nulle part ailleurs : un sport ou un
+    # marche ne se fixe pas d'objectif de taux, seule une confiance annoncee le
+    # fait — c'est meme sa definition.
+    for entry in report.by_confidence:
+        entry.band = bands.get(int(entry.key)) if entry.key.isdigit() else None
 
     report.by_sport = sorted(
         _rate_tally(

@@ -17,6 +17,7 @@ LATEST_VERSION = len(ALL_MIGRATIONS)
 EXPECTED_TABLES = {
     "api_usage",
     "competitions",
+    "confidence_bands",
     "context",
     "coupons",
     "events",

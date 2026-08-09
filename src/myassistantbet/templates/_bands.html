@@ -1,0 +1,45 @@
+<div id="bands">
+  {% if bands_error %}<div class="report report-warn">{{ bands_error }}</div>{% endif %}
+  {% if bands_saved %}<div class="report">Bandes de confiance enregistrées.</div>{% endif %}
+
+  <p class="muted small">
+    « Confiance 4 » n'est pas un pourcentage : sans référentiel, l'écart avec le taux
+    constaté ne se mesure contre rien. Ces bandes donnent cet objectif, en points de
+    pourcentage. La page ne signale un niveau hors de sa bande que si son intervalle de
+    confiance en sort <strong>entièrement</strong> — sinon elle crierait à la dérive
+    sur du bruit.
+  </p>
+
+  <form class="tiers-form"
+        hx-post="/settings/bands"
+        hx-target="#bands"
+        hx-swap="outerHTML">
+    <table class="board">
+      <thead>
+        <tr>
+          <th>Confiance</th>
+          <th class="num">Taux min</th>
+          <th class="num">Taux max</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for band in bands %}
+        <tr>
+          <td class="muted">
+            confiance {{ band.level }}
+            <input type="hidden" name="level" value="{{ band.level }}">
+          </td>
+          <td><input class="tiny" type="text" name="low" value="{{ band.low }}"></td>
+          <td>
+            {# Vide = pas de borne haute, comme la cote max d'un palier : le cran
+               le plus élevé n'en a pas. #}
+            <input class="tiny" type="text" name="high"
+                   value="{{ band.high if band.high is not none else '' }}">
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <button type="submit" class="primary">Enregistrer les bandes de confiance</button>
+  </form>
+</div>

@@ -41,9 +41,15 @@
     {% for row in rows %}
     <div class="bar-row{% if row.rate is none %} is-void{% endif %}"
          title="{{ row.label }} — {{ row.won }} gagné(s), {{ row.lost }} perdu(s){% if row.void %}, {{ row.void }} annulé(s){% endif %}{% if row.pending %}, {{ row.pending }} en attente{% endif %}{% if row.thin %} — trop peu tranché pour se lire comme une tendance{% endif %}">
-      <span class="bar-label">{{ row.label }}</span>
+      <span class="bar-label">
+        {{ row.label }}
+        {# La bande cible suit son libellé, en retrait : c'est l'objectif du
+           niveau, pas une seconde mesure. « Hors bande » n'apparaît que si
+           l'intervalle en sort entièrement — voir `Band.excludes`. #}
+        {%- if row.band %}<i class="band">cible {{ row.band.label }}</i>{% endif %}
+      </span>
       {{ meter(row) }}
-      <b class="bar-value">{{ row.rate_label }}</b>
+      <b class="bar-value{% if row.off_band %} is-off{% endif %}">{{ row.rate_label }}</b>
       {# Le compte accompagne toujours le taux : « 100 % » sur un pari et
          « 100 % » sur quarante ne disent pas la meme chose. L'effectif
          indépendant ne s'y ajoute **que s'il diffère** — écrire « 37 paris ·

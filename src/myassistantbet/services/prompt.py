@@ -462,6 +462,47 @@ def delete_template(name: str) -> None:
     logger.info("Template supprime : %s", name)
 
 
+def load_bands(settings: Settings | None = None) -> list[dict[str, Any]]:
+    """Bandes cibles par niveau de confiance, du cran le plus haut au plus bas."""
+    with connect(settings) as conn:
+        return [
+            {"level": int(row["level"]), "low": row["low"], "high": row["high"]}
+            for row in conn.execute(
+                "SELECT level, low, high FROM confidence_bands ORDER BY level DESC"
+            )
+        ]
+
+
+def save_bands(rows: list[dict[str, Any]], settings: Settings | None = None) -> None:
+    """Met a jour les bandes cibles. Memes controles que les bandes de cotes.
+
+    Ce sont des **points de pourcentage** : une borne hors de [0, 100] ne
+    decrit aucun taux, et une bande dont la borne haute n'excede pas la basse
+    est vide — dans les deux cas la page ne pourrait plus rien en dire.
+    """
+    for row in rows:
+        level = row.get("level")
+        low, high = row.get("low"), row.get("high")
+        if low is None:
+            raise CustomizationError(f"Confiance {level} : borne basse manquante.")
+        if not 0 <= low <= 100:
+            raise CustomizationError(f"Confiance {level} : la borne basse sort de 0 à 100 %.")
+        if high is not None and not 0 <= high <= 100:
+            raise CustomizationError(f"Confiance {level} : la borne haute sort de 0 à 100 %.")
+        if high is not None and high <= low:
+            raise CustomizationError(
+                f"Confiance {level} : la borne haute doit dépasser la borne basse."
+            )
+
+    with connect(settings) as conn:
+        for row in rows:
+            conn.execute(
+                "UPDATE confidence_bands SET low = ?, high = ? WHERE level = ?",
+                (row["low"], row["high"], row["level"]),
+            )
+    logger.info("Bandes de confiance mises a jour : %d niveaux", len(rows))
+
+
 def save_tiers(rows: list[dict[str, Any]], settings: Settings | None = None) -> None:
     """Met a jour les bandes de cotes. Les bornes doivent rester coherentes."""
     for row in rows:

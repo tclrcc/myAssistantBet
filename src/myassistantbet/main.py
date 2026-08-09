@@ -1160,6 +1160,9 @@ def _settings_context(**overrides: object) -> dict[str, object]:
         "tiers": prompt_service.load_tiers(settings),
         "tiers_error": None,
         "tiers_saved": False,
+        "bands": prompt_service.load_bands(settings),
+        "bands_error": None,
+        "bands_saved": False,
         "preferences": prompt_service.read_preference(prompt_service.PREFERENCE_NOTES, settings),
         "preferences_error": None,
         "preferences_saved": False,
@@ -1220,6 +1223,29 @@ def save_preferences(request: Request, preferences: str = Form(default="")) -> H
     return templates.TemplateResponse(
         request, "_preferences.html", _settings_context(preferences_saved=True)
     )
+
+
+@app.post("/settings/bands", response_class=HTMLResponse)
+async def save_bands(request: Request) -> HTMLResponse:
+    """Enregistre les bandes cibles de confiance, apres controle des bornes."""
+    form = await request.form()
+    levels = form.getlist("level")
+    rows = [
+        {
+            "level": _int_or_none(level),
+            "low": _float_or_none(form.getlist("low")[index]),
+            "high": _float_or_none(form.getlist("high")[index]),
+        }
+        for index, level in enumerate(levels)
+    ]
+
+    try:
+        prompt_service.save_bands(rows, get_settings())
+    except prompt_service.CustomizationError as exc:
+        return templates.TemplateResponse(
+            request, "_bands.html", _settings_context(bands_error=str(exc))
+        )
+    return templates.TemplateResponse(request, "_bands.html", _settings_context(bands_saved=True))
 
 
 @app.post("/settings/tiers", response_class=HTMLResponse)

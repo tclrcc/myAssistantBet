@@ -1312,6 +1312,21 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
    c'est une precision sur ce compte, pas un second. */
 .units { font-style: normal; opacity: 0.7; margin-left: 0.15em; }
 
+/* La bande cible sous son libelle : un objectif, pas une mesure. Elle passe a
+   la ligne parce que « confiance 4 » et « cible 60 – 70 % » cote a cote
+   pousseraient la barre hors de la carte. */
+.band {
+  display: block;
+  font-style: normal;
+  font-size: var(--text-xs);
+  color: var(--text-dim);
+}
+/* Un taux dont l'intervalle sort entierement de sa bande. Seul cas de la page
+   ou une couleur porte un jugement : partout ailleurs une teinte unique dit
+   qu'il n'y a qu'une grandeur. Ici il ne s'agit pas de la grandeur mais de sa
+   position par rapport a une cible reglee a la main. */
+.bar-value.is-off { color: var(--alert); }
+
 /* L'intervalle de Wilson, pose **par-dessus** la barre : deux moustaches
    reliees par un trait, l'idiome habituel. Il dit ce que le taux ne dit pas —
    sa largeur. Une barre a 63 % qui s'etend de 47 a 76 se lit d'un coup d'oeil

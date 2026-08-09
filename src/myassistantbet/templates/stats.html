@@ -86,9 +86,14 @@
   {% endif %}
 
   <div class="charts">
+    {# La note d'origine affirmait que l'écart « dit que la notation dérive »
+       sans qu'aucun référentiel n'existe : confiance 4 n'est pas un
+       pourcentage, et il n'y avait donc rien contre quoi mesurer l'écart. La
+       bande cible est ce référentiel, et elle se règle dans les réglages. #}
     {{ card("Par confiance annoncée", analysis.by_confidence,
-            "L'écart entre la confiance annoncée et le taux constaté dit que la
-             notation dérive. Une confiance 5 doit passer plus souvent qu'une 3.",
+            "Chaque niveau porte sa bande cible, réglable dans les réglages. Un taux
+             n'est signalé hors bande que si son intervalle en sort entièrement —
+             sinon la page crierait à la dérive sur du bruit.",
             "Aucune confiance annoncée sur les sélections tranchées.") }}
     {{ card("Par palier", analysis.by_tier) }}
     {{ card("Par sport", analysis.by_sport) }}
