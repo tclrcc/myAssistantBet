@@ -488,7 +488,7 @@ def test_le_taux_par_niveau_de_tournoi_est_expose(migrated: Settings) -> None:
     par_niveau = {row.label: row for row in feedback(migrated).by_category}
 
     assert par_niveau["Masters 1000"].rate == 1.0
-    assert "Par niveau de tournoi" in build_prompt(session_id, settings=migrated, now=NOW).body
+    assert "Par niveau de compétition" in build_prompt(session_id, settings=migrated, now=NOW).body
 
 
 def test_un_tournoi_sans_niveau_ne_produit_pas_de_ligne(migrated: Settings) -> None:
@@ -674,3 +674,159 @@ def test_le_prompt_demande_le_type_et_la_source(migrated: Settings) -> None:
     assert "reprend le mot de la section B" in corps
     assert "`lecture` est une réponse **normale et fréquente**" in corps
     assert "adossée à un fait daté tient mieux qu'une lecture" in corps
+
+
+# -- La bande cible, reinjectee dans le prompt ------------------------------
+
+
+def _bande(settings: Settings, level: int, low: float, high: float | None) -> None:
+    db.execute(
+        "UPDATE confidence_bands SET low = ?, high = ? WHERE level = ?",
+        (low, high, level),
+        settings=settings,
+    )
+
+
+def _confiance(
+    settings: Settings, session_id: int, event_id: int, gagnes: int, perdus: int
+) -> None:
+    """Des selections de confiance 3, pour peupler la ligne de ce cran."""
+    for index in range(gagnes + perdus):
+        _regle(
+            settings,
+            session_id,
+            event_id,
+            "safe",
+            "win" if index < gagnes else "loss",
+            confidence="3",
+        )
+
+
+def test_la_bande_cible_accompagne_le_taux_dans_le_prompt(migrated: Settings) -> None:
+    """« Confiance 4 » n'est pas un pourcentage : sans referentiel, l'ecart entre
+    la confiance annoncee et le taux constate ne se mesurait contre rien — et le
+    seul signal reellement actionnable de tout l'historique ne remontait jamais.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    _confiance(migrated, session_id, event_id, gagnes=16, perdus=24)
+
+    ligne = next(row for row in feedback(migrated).by_confidence if row.key == "3")
+
+    assert ligne.rate == 0.4
+    assert ligne.band is not None and ligne.band.label == "50 – 60 %"
+    assert ligne.gap == pytest.approx(-10.0)
+    assert "cible 50 – 60 %, écart -10 pts" in ligne.line
+
+
+def test_un_taux_dans_sa_bande_n_affiche_aucun_ecart(migrated: Settings) -> None:
+    """« Écart 0 pt » ferait chercher un probleme absent."""
+    session_id, event_id = _session_avec_match(migrated)
+    _confiance(migrated, session_id, event_id, gagnes=22, perdus=18)
+
+    ligne = next(row for row in feedback(migrated).by_confidence if row.key == "3")
+
+    assert ligne.gap is None
+    assert "cible 50 – 60 %" in ligne.line
+    assert "écart" not in ligne.line
+
+
+def test_un_ecart_non_confirme_ne_porte_pas_la_mention(migrated: Settings) -> None:
+    """Au volume courant presque chaque intervalle couvre plusieurs bandes.
+
+    Faire resserrer une notation sur du bruit orienterait plus surement
+    qu'aucun chiffre : la ligne dit alors l'ecart **sans** le mot qui declenche
+    l'action. Meme regle que la page, et elle compte plus encore ici.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    _confiance(migrated, session_id, event_id, gagnes=16, perdus=24)
+
+    ligne = next(row for row in feedback(migrated).by_confidence if row.key == "3")
+
+    assert ligne.gap is not None, "l'ecart observe existe"
+    assert not ligne.off_band, "mais l'intervalle traverse encore la bande"
+    assert "hors bande" not in ligne.line
+
+
+def test_un_ecart_confirme_porte_la_mention(migrated: Settings) -> None:
+    """Bande resserree : l'intervalle en sort alors entierement, et c'est le seul
+    cas ou le prompt demande d'agir."""
+    session_id, event_id = _session_avec_match(migrated)
+    _bande(migrated, 3, 80.0, 90.0)
+    _confiance(migrated, session_id, event_id, gagnes=16, perdus=24)
+
+    ligne = next(row for row in feedback(migrated).by_confidence if row.key == "3")
+
+    assert ligne.off_band
+    assert ligne.line.endswith("hors bande")
+
+
+def test_le_prompt_explique_comment_lire_l_ecart(migrated: Settings) -> None:
+    session_id, event_id = _session_avec_match(migrated)
+    _confiance(migrated, session_id, event_id, gagnes=16, perdus=24)
+
+    corps = " ".join(build_prompt(session_id, settings=migrated, now=NOW).body.split())
+
+    assert "cible 50 – 60 %, écart -10 pts" in corps
+    assert "seul chiffre de ce bloc qui parle de ma notation plutôt que des matchs" in corps
+    assert "resserrer dès la section C" in corps
+    assert "n'en fais pas une règle" in corps
+    assert "il ne se compare à aucune cote" in corps
+
+
+def test_les_autres_axes_ne_portent_aucune_bande(migrated: Settings) -> None:
+    """Un sport ou un marche ne se fixe pas d'objectif de taux — seule une
+    confiance annoncee le fait, c'est meme sa definition."""
+    session_id, event_id = _session_avec_match(migrated)
+    _confiance(migrated, session_id, event_id, gagnes=16, perdus=24)
+
+    report = feedback(migrated)
+
+    for axe in (report.by_tier, report.by_sport, report.by_market, report.by_competition):
+        assert all(row.band is None for row in axe)
+        assert all("cible" not in row.line for row in axe)
+
+
+def test_le_taux_implicite_ne_remonte_jamais_au_prompt(migrated: Settings) -> None:
+    """Il est calcule a partir des cotes. L'injecter reviendrait a autoriser le
+    raisonnement d'esperance que le prompt interdit partout ailleurs — et le fait
+    que le chiffre vienne de mon propre historique n'y change rien (section 9).
+
+    Il reste sur la page, ou il se lit a cote d'autres ecarts de la meme page.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(FEEDBACK_MIN_TOTAL):
+        _regle(migrated, session_id, event_id, "safe", "win", confidence="3")
+
+    noms = {field.name for field in fields(FeedbackRow)}
+    corps = " ".join(build_prompt(session_id, settings=migrated, now=NOW).body.split())
+
+    assert not noms & {"price", "priced", "implied", "implied_sum"}
+    assert "taux implicite" not in corps.lower()
+    assert "probabilités implicites" in corps, "l'interdit, lui, reste écrit"
+
+
+def test_un_cran_trop_peu_fourni_n_entre_pas_dans_le_prompt(migrated: Settings) -> None:
+    """Sous huit selections tranchees, un cran est tu — bande comprise.
+
+    Une cible affichee a cote d'un 3/4 ferait resserrer une notation sur quatre
+    paris. Le garde-fou existait deja pour le taux ; il vaut d'autant plus pour
+    l'ecart, qui est le seul chiffre du bloc sur lequel on agit.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    _confiance(migrated, session_id, event_id, gagnes=16, perdus=24)
+    for index in range(4):
+        _regle(migrated, session_id, event_id, "safe", "win" if index else "loss", confidence="5")
+
+    report = feedback(migrated)
+
+    assert [row.key for row in report.by_confidence] == ["3"]
+    assert "confiance 5" not in build_prompt(session_id, settings=migrated, now=NOW).body
+
+
+def test_les_reglages_disent_que_les_bandes_partent_dans_le_prompt(client: TestClient) -> None:
+    """Corriger un rendu sans relire son mode d'emploi laisse une affirmation
+    perimee a l'endroit precis ou l'on vient de gagner en justesse."""
+    page = " ".join(client.get("/settings").text.split())
+
+    assert "ici et dans le prompt" in page
+    assert "C'est la mention qui déclenche l'action, pas le nombre." in page

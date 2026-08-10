@@ -1494,6 +1494,32 @@ donc rien qui puisse manquer un matin.
     n'apparait sur `Feedback` ni `FeedbackRow`.
   - Le signal le plus utile est l'ecart entre la confiance annoncee et le taux constate :
     il dit que la notation derive. C'est pour lui que `by_confidence` existe.
+  - **La bande cible descend dans le prompt, et sans elle l'ecart ne se mesurait contre
+    rien.** « Confiance 4 » n'est pas un pourcentage : le bloc affirmait qu'un ecart
+    disait la derive de la notation, alors qu'aucun referentiel n'y figurait. La ligne
+    porte donc `cible 50 – 60 %, écart -10 pts`, et c'est **le seul chiffre du bloc qui
+    parle de la notation plutot que des matchs** — donc le seul sur lequel la section C
+    puisse agir tout de suite.
+    - **L'ecart s'ecrit toujours, la mention `hors bande` seulement quand l'intervalle
+      le confirme.** Meme regle que la page, et elle compte plus encore ici : au volume
+      courant presque chaque intervalle couvre plusieurs bandes, et faire resserrer une
+      notation sur du bruit orienterait plus surement qu'aucun chiffre. Le template dit
+      lequel des deux declenche l'action.
+    - Rien quand le taux tombe **dans** la bande : « écart 0 pt » ferait chercher un
+      probleme absent.
+    - La bande ne se rattache qu'a `by_confidence`, comme sur la page : un sport ou un
+      marche ne se fixe pas d'objectif de taux, une confiance annoncee si — c'est meme
+      sa definition.
+    - Le seuil de ligne (`FEEDBACK_MIN_ROWS`) garde la bande comme il gardait le taux :
+      une cible affichee a cote d'un 3/4 ferait resserrer une notation sur quatre paris.
+    - **L'ecran des reglages a ete relu avec.** Il decrivait le comportement de la seule
+      page ; ces bandes decident maintenant aussi de ce que l'analyse lit, et le taire
+      aurait laisse une explication perimee a l'endroit ou l'on vient de gagner en
+      justesse. Meme regle que le preambule et ses portes.
+  - **L'ecart au taux implicite, lui, ne remonte jamais.** Il est calcule a partir des
+    cotes : l'injecter reviendrait a rapprocher un taux de reussite d'un prix, c'est a
+    dire a calculer une esperance. `FeedbackRow` ne porte donc **aucun champ de prix**,
+    et deux tests le verifient — l'un sur la classe, l'autre sur le corps du prompt.
 - `competitions.notes` : la fiche d'une competition (format, phase, enjeu, particularites).
   Rendue **une seule fois par lot**, pas par match : repeter le format d'une coupe a chaque
   affiche couterait des tokens sans rien apprendre.

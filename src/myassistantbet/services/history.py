@@ -1961,12 +1961,24 @@ FEEDBACK_MIN_SESSIONS = 3
 
 @dataclass
 class FeedbackRow:
-    """Un regroupement et son taux. Ni mise, ni gain, ni esperance."""
+    """Un regroupement et son taux. Ni mise, ni gain, ni esperance.
+
+    **Aucun champ de prix ici, et c'est deliberе** : l'ecart au taux implicite
+    existe sur la page, ou il se lit a cote d'autres ecarts. L'injecter dans le
+    prompt rapprocherait un taux de reussite d'une cote, c'est a dire calculerait
+    une esperance — interdit de la section 9, et le fait que le chiffre vienne de
+    l'historique de l'utilisateur n'y change rien.
+    """
 
     key: str
     label: str
     won: int = 0
     lost: int = 0
+    #: Bande cible, sur les seuls regroupements par confiance. C'est le seul
+    #: referentiel du bloc qui parle de la **notation** plutot que des matchs :
+    #: un sport ne se fixe pas d'objectif de taux, une confiance annoncee si —
+    #: c'est meme sa definition.
+    band: Band | None = None
 
     @property
     def settled(self) -> int:
@@ -1976,6 +1988,38 @@ class FeedbackRow:
     def rate(self) -> float | None:
         return None if self.settled == 0 else self.won / self.settled
 
+    @property
+    def interval(self) -> tuple[float, float] | None:
+        return wilson(self.won, self.settled)
+
+    @property
+    def gap(self) -> float | None:
+        """Ecart en points a la borne la plus proche de la bande.
+
+        None quand le taux tombe **dans** la bande : il n'y a alors rien a
+        corriger, et ecrire « écart 0 pt » ferait chercher un probleme absent.
+        """
+        if self.band is None or self.rate is None:
+            return None
+        observed = self.rate * 100
+        if observed < self.band.low:
+            return observed - self.band.low
+        if self.band.high is not None and observed > self.band.high:
+            return observed - self.band.high
+        return None
+
+    @property
+    def off_band(self) -> bool:
+        """L'ecart est **confirme par l'intervalle**, pas seulement observe.
+
+        Meme regle que la page, et elle compte plus encore ici : au volume
+        courant presque chaque intervalle couvre plusieurs bandes, et faire
+        resserrer une notation sur du bruit orienterait plus surement qu'aucun
+        chiffre. La ligne dit alors l'ecart sans le mot.
+        """
+        bounds = self.interval
+        return self.band is not None and bounds is not None and self.band.excludes(bounds)
+
     #: Largeur du libelle dans le prompt. Un nom de competition depasse volontiers
     #: la largeur d'un palier : sans troncature, une seule ligne longue casse
     #: l'alignement de tout le bloc et le rend penible a lire.
@@ -1983,14 +2027,26 @@ class FeedbackRow:
 
     @property
     def line(self) -> str:
-        """`🔴 GIGA FUN         2/14    14 %`, aligne comme le reste du prompt."""
+        """`🔴 GIGA FUN         2/14    14 %`, aligne comme le reste du prompt.
+
+        Les lignes de confiance portent en plus leur bande cible et l'ecart :
+        `confiance 3          25/63   40 %   cible 50 – 60 %, écart -10 pts`.
+        """
         if self.rate is None:
             return self.label
         label = self.label
         if len(label) > self.LABEL_WIDTH:
             label = label[: self.LABEL_WIDTH - 1] + "…"
         compte = f"{self.won}/{self.settled}"
-        return f"{label:<{self.LABEL_WIDTH}} {compte:<7} {self.rate * 100:.0f} %"
+        line = f"{label:<{self.LABEL_WIDTH}} {compte:<7} {self.rate * 100:.0f} %"
+        if self.band is None:
+            return line
+        line += f"   cible {self.band.label}"
+        if self.gap is not None:
+            line += f", écart {self.gap:+.0f} pts"
+            if self.off_band:
+                line += ", hors bande"
+        return line
 
 
 @dataclass
@@ -2202,6 +2258,13 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
         ]
     )
     report.by_confidence.sort(key=lambda item: item.key, reverse=True)
+    # La bande cible se rattache ici et nulle part ailleurs, comme sur la page :
+    # un sport ou un marche ne se fixe pas d'objectif de taux. Sans elle,
+    # « confiance 4 » n'etait qu'un nombre sans referentiel, et le prompt
+    # affirmait pourtant qu'un ecart disait la derive de la notation.
+    bands = load_bands(settings)
+    for entry in report.by_confidence:
+        entry.band = bands.get(int(entry.key)) if entry.key.isdigit() else None
 
     report.by_sport = sorted(
         _feedback_tally(

@@ -2,12 +2,23 @@
   {% if bands_error %}<div class="report report-warn">{{ bands_error }}</div>{% endif %}
   {% if bands_saved %}<div class="report">Bandes de confiance enregistrées.</div>{% endif %}
 
+  {# Ces bandes servaient à la relecture seule. Elles entrent maintenant dans le
+     prompt : le seul signal actionnable de tout l'historique — un cran employé
+     trop largement — n'y remontait jamais, et « écart » sans référentiel ne
+     voulait rien dire. Le dire ici, c'est dire que les corriger change ce que
+     l'analyse lit. #}
   <p class="muted small">
     « Confiance 4 » n'est pas un pourcentage : sans référentiel, l'écart avec le taux
     constaté ne se mesure contre rien. Ces bandes donnent cet objectif, en points de
-    pourcentage. La page ne signale un niveau hors de sa bande que si son intervalle de
-    confiance en sort <strong>entièrement</strong> — sinon elle crierait à la dérive
-    sur du bruit.
+    pourcentage. Elles servent <strong>ici et dans le prompt</strong> : le bloc de retour
+    d'expérience affiche la cible de chaque cran et l'écart constaté, et c'est ce qui
+    permet à l'analyse de resserrer un cran employé trop largement.
+  </p>
+  <p class="muted small">
+    Des deux côtés, un niveau n'est signalé <strong>hors de sa bande</strong> que si son
+    intervalle de confiance en sort <strong>entièrement</strong> — sinon on crierait à la
+    dérive sur du bruit. L'écart, lui, est toujours écrit : c'est un fait. C'est la
+    mention qui déclenche l'action, pas le nombre.
   </p>
 
   <form class="tiers-form"
