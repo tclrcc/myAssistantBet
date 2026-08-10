@@ -213,6 +213,27 @@
   </p>
   {% endif %}
 
+  {# Contrôle d'intégrité. Un regroupement qui perd des lignes en silence est la
+     panne la plus coûteuse de cette page : elle ne se voit pas, elle fait
+     seulement baisser un compte que personne ne recompte. Le témoin est lu
+     directement dans `picks`, sans jointure — une jointure devenue stricte le
+     laisserait intact et ferait bouger tout le reste. #}
+  {% if not analysis.consistent %}
+  <p class="block-warn">
+    <strong>Ce que la page compte ne retombe pas sur ce que porte la base.</strong>
+    {% if analysis.settled != analysis.recorded %}
+      La base contient {{ analysis.recorded }} sélection(s) tranchée(s), la page en
+      compte {{ analysis.settled }} : {{ analysis.recorded - analysis.settled }} ligne(s)
+      sortent du dénominateur global.
+    {% endif %}
+    {% for gap in analysis.gaps %}
+      <br>{{ gap.line }}.
+    {% endfor %}
+    Aucune sélection tranchée ne devrait pouvoir sortir d'un compte : si cette ligne
+    est là, c'est un défaut de l'outil et non de la saisie.
+  </p>
+  {% endif %}
+
   <details class="panel">
     <summary>
       Le détail chiffré

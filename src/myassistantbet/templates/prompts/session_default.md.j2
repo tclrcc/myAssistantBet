@@ -199,12 +199,19 @@ remplir une case avec du vide. Il te dit seulement à quoi ressemble d'habitude
 la sortie, pour qu'un lot où tu sélectionnes tout, ou presque rien, se remarque
 et s'explique en une ligne plutôt que de passer inaperçu.
 
+Ce compte-là ne lit pas la même population que les taux ci-dessous : il porte
+sur mes dernières **sessions ayant produit un prompt**, qu'un résultat y soit
+saisi ou non, quand les taux ne comptent que des sélections déjà tranchées. Deux
+nombres différents à quelques lignes d'écart sont donc normaux.
+
 Il ne se compare à aucune cote, comme le reste de ce bloc.
 {% endif %}
 {% if feedback.enough %}
-Taux de réussite de mes {{ feedback.settled }} dernières sélections tranchées,
-jouées ou non : gagnées / (gagnées + perdues). Les annulées et celles encore en
-attente sont exclues du dénominateur. Les regroupements de moins de quatre
+Taux de réussite de {{ feedback.scope_line }}, jouées ou non :
+gagnées / (gagnées + perdues). Ce bloc lit une **fenêtre glissante** — les
+{{ feedback.window }} dernières — et non tout l'historique : son compte plafonne
+donc, et ne se lit pas comme un total. Les annulées et celles encore en attente
+sont exclues du dénominateur. Les regroupements de moins de quatre
 sélections ne sont pas listés — ils ne mesureraient que le hasard.
 
 Ce sont **tes propres analyses passées**, confrontées au terrain. Elles ne
@@ -284,10 +291,10 @@ Le signal le plus utile de tout le bloc reste l'écart à la bande cible, décri
 plus haut : c'est le seul qui porte sur ma façon de noter plutôt que sur les
 matchs, donc le seul sur lequel la section C peut agir tout de suite.
 {% else %}
-Trop peu de recul : {{ feedback.settled }} sélection(s) tranchée(s) enregistrée(s),
-réparties sur {{ feedback.days }} journée(s) d'analyse — il en faudrait au moins
-{{ feedback.minimum }} sur {{ feedback.minimum_days }} journées pour qu'un taux
-veuille dire quelque chose.
+Trop peu de recul. Ce bloc lit une **fenêtre glissante** — les
+{{ feedback.window }} dernières, et non tout l'historique : {{ feedback.scope_line }},
+réparties sur {{ feedback.days }} journée(s) d'analyse. Pour qu'un taux veuille
+dire quelque chose, {{ feedback.missing_note }}.
 
 Les deux conditions comptent, et le nombre de journées n'est pas une formalité :
 un lot nombreux mais concentré sur quelques jours mesure ces jours-là — un

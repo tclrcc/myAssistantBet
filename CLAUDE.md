@@ -1360,6 +1360,44 @@ l'avait franchi depuis des mois sans que rien ne bronche.
   panne exacte qui a fait echouer la premiere version de cette fixture. Un
   enrichissement complet se simule donc de bout en bout avec `DOSSIER_RATE_HEADERS`.
 
+## Le denominateur ne peut pas baisser, et il le prouve
+
+**Une fenetre glissante s'est lue comme un total, et a fait croire a une perte de
+donnees.** Le bloc du prompt annoncait « 60 selection(s) tranchee(s) **enregistree(s)** »
+sur une base qui en portait cent — `feedback()` lit les `FEEDBACK_WINDOW` dernieres, pas
+tout l'historique. Verifie : rien n'avait disparu, `analysis()` comptait bien 100 sur
+5 journees et chaque axe retombait juste.
+
+- Le bloc **nomme sa fenetre** et ecrit le total a cote (`scope_line`) des qu'elle mord.
+  Deux nombres cote a cote rendent le plafond visible ; un seul se lit comme un total.
+- **`missing_note` nomme celle des deux conditions qui manque.** Le texte annoncait les
+  deux seuils quel que soit le bloquant : « il en faudrait au moins 40 » sur un bloc qui
+  en comptait 60 est une phrase qui se contredit, et fait chercher une panne la ou il n'y
+  a qu'un etalement trop court.
+- Le taux de selection **dit qu'il compte autre chose** : des sessions ayant produit un
+  prompt, resultat saisi ou non, quand les taux ne comptent que du tranche. Deux nombres
+  differents a quatre paragraphes d'ecart se lisaient comme un seul qui se contredit.
+
+**Le controle d'integrite** (`Analysis.recorded`, `gaps`, `consistent`) rend la vraie
+panne impossible a taire :
+
+- `recorded` est un `COUNT(*)` **sans jointure ni filtre** sur `picks`. C'est le seul
+  chiffre de la page qu'aucun regroupement ne peut faire baisser, donc le temoin de tous
+  les autres — une jointure devenue stricte le laisserait intact et ferait bouger le reste.
+- Chaque axe **declare ce qu'il laisse dehors** (`uncategorised`, `unlabelled_angle`,
+  `unlabelled_source`, `unlabelled_confidence`, `unlabelled_market`,
+  `unclassified_markets`), et `_audit` verifie que somme + declares retombe sur
+  `recorded`. Un ecart s'affiche en clair, avec le nombre de lignes et la cause.
+- `by_market` s'audite sur le comptage **complet** et non sur les lignes affichees : la
+  carte ecarte volontairement les marches vus une seule fois, et les compter comme perdus
+  ferait crier a la panne sur une regle.
+- Toutes les jointures d'agregation sont des `LEFT JOIN` avec repli explicite. Un test de
+  non-regression monte une selection tranchee **sans aucune dimension** — pas de match,
+  donc ni sport ni competition, ni type, ni source, ni confiance — et verifie qu'elle
+  compte au total et se retrouve dans le compte des non classes de chaque axe.
+- Corollaire teste : reclasser une competition **deplace des lignes entre regroupements,
+  jamais le total**.
+
 ## L'ordre du prompt : ce qui decide avant ce qui explique
 
 **Trois cents lignes de mode d'emploi se lisaient avant la methode.** Le lecteur

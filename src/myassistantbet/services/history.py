@@ -1322,6 +1322,26 @@ class SessionRate:
 
 
 @dataclass
+class AxisGap:
+    """Un axe dont l'addition ne retombe pas sur le total tranche.
+
+    Un regroupement qui perd des lignes en silence est la panne la plus
+    couteuse que cette page puisse avoir : elle ne se voit pas, elle fait
+    seulement baisser un compte que personne ne recompte. Chaque axe declare
+    donc ce qu'il laisse dehors — `uncategorised`, `unlabelled_angle`, etc. — et
+    ce controle verifie que la somme retombe juste.
+    """
+
+    axis: str
+    missing: int
+    reason: str
+
+    @property
+    def line(self) -> str:
+        return f"{self.axis} : {self.missing} sélection(s) hors du compte — {self.reason}"
+
+
+@dataclass
 class Family:
     """Une famille de marches, et le detail fin qu'elle regroupe.
 
@@ -1396,6 +1416,23 @@ class Analysis:
     #: dans ce cas, les colonnes n'existant pas encore.
     unlabelled_angle: int = 0
     unlabelled_source: int = 0
+    #: Selections tranchees sans confiance annoncee. Le regroupement les ecarte
+    #: — une confiance absente n'est pas un niveau de l'echelle — et le compte
+    #: ferme l'addition, comme partout ailleurs.
+    unlabelled_confidence: int = 0
+    #: Selections tranchees dont le libelle de marche est vide. Impossible par
+    #: `add_pick`, qui l'exige ; comptees quand meme, parce qu'un import ancien
+    #: ou une base modifiee a la main les ferait sinon disparaitre des deux
+    #: regroupements de marche sans un mot.
+    unlabelled_market: int = 0
+    #: Total lu **directement dans `picks`**, sans aucune jointure ni filtre.
+    #: C'est le seul chiffre de la page qu'aucun regroupement ne peut faire
+    #: baisser : il sert de temoin a tous les autres.
+    recorded: int = 0
+    #: Axes dont l'addition ne retombe pas sur `recorded`. Vide en marche
+    #: normale ; non vide, la page le dit en clair plutot que d'afficher un
+    #: denominateur amputé.
+    gaps: list[AxisGap] = field(default_factory=list)
     #: Une ligne par session, la plus recente d'abord. Tenu hors de `groups` :
     #: les autres axes decoupent **les selections**, celui-ci decoupe le
     #: **travail**, et il porte une grandeur qu'aucun autre ne porte — le taux
@@ -1415,6 +1452,11 @@ class Analysis:
     @property
     def empty(self) -> bool:
         return self.settled == 0
+
+    @property
+    def consistent(self) -> bool:
+        """Tout ce qui est tranche en base est compte ici, et dans chaque axe."""
+        return self.settled == self.recorded and not self.gaps
 
     @property
     def comparable(self) -> bool:
@@ -1897,6 +1939,12 @@ def analysis(settings: Settings | None = None) -> Analysis:
             "LEFT JOIN sports s ON s.id = e.sport_id "
             "LEFT JOIN competitions c ON c.id = e.competition_id"
         ).fetchall()
+        # Le temoin : compte direct, sans jointure ni filtre. C'est lui qui
+        # rend le denominateur verifiable — une regression de jointure le
+        # laisserait intact et ferait bouger tout le reste.
+        recorded = conn.execute(
+            "SELECT COUNT(*) AS n FROM picks WHERE result IN ('win', 'loss')"
+        ).fetchone()["n"]
         sessions = conn.execute(
             "SELECT s.id, s.label, s.created_at, "
             "  (SELECT COALESCE(MAX(p.token_estimate), 0) FROM prompts p "
@@ -1910,6 +1958,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
         ).fetchall()
 
     report = Analysis()
+    report.recorded = int(recorded)
     report.by_session = _by_session(sessions, rows, lots(settings), sport_labels, settings.tz)
     if not rows:
         return report
@@ -2025,6 +2074,16 @@ def analysis(settings: Settings | None = None) -> Analysis:
         for row, result in zip(rows, results, strict=True)
         if result in ("win", "loss") and row["source_level"] not in SOURCE_LEVELS
     )
+    report.unlabelled_confidence = sum(
+        1
+        for row, result in zip(rows, results, strict=True)
+        if result in ("win", "loss") and row["confidence"] is None
+    )
+    report.unlabelled_market = sum(
+        1
+        for row, result in zip(rows, results, strict=True)
+        if result in ("win", "loss") and not _market_key(row["market"])
+    )
 
     markets = [
         (_market_key(row["market"]), (row["market"] or "").strip(), result, row)
@@ -2063,7 +2122,68 @@ def analysis(settings: Settings | None = None) -> Analysis:
         ]
     )
 
+    report.gaps = _audit(report, tally)
     return report
+
+
+def _audit(report: Analysis, tally: list[RateRow]) -> list[AxisGap]:
+    """Verifie que chaque axe additionne bien toutes les selections tranchees.
+
+    Le total, lui, ne peut pas baisser : il est compte sur les lignes brutes,
+    sans jointure. Ce sont les **regroupements** qui peuvent perdre du monde —
+    une cle inconnue, un champ nul, une jointure devenue stricte — et ils le
+    font sans bruit. Le controle rend le silence impossible.
+
+    `by_market` s'audite sur le comptage **complet** et non sur les lignes
+    affichees : la carte en ecarte volontairement les marches vus une seule
+    fois, et les compter comme perdus ferait crier a la panne sur une regle.
+    """
+    total = report.recorded
+    axes = [
+        ("Palier", sum(row.settled for row in report.by_tier), 0, "palier inconnu"),
+        (
+            "Confiance",
+            sum(row.settled for row in report.by_confidence),
+            report.unlabelled_confidence,
+            "confiance non annoncée",
+        ),
+        ("Sport", sum(row.settled for row in report.by_sport), 0, "sport non résolu"),
+        (
+            "Niveau",
+            sum(row.settled for row in report.by_category),
+            report.uncategorised,
+            "compétition à classer",
+        ),
+        (
+            "Marché",
+            sum(row.settled for row in tally),
+            report.unlabelled_market,
+            "libellé de marché vide",
+        ),
+        (
+            "Famille",
+            sum(entry.rates.settled for entry in report.by_family),
+            report.unclassified_markets + report.unlabelled_market,
+            "marché à classer",
+        ),
+        (
+            "Type d'angle",
+            sum(row.settled for row in report.by_angle),
+            report.unlabelled_angle,
+            "type non renseigné",
+        ),
+        (
+            "Niveau de source",
+            sum(row.settled for row in report.by_source),
+            report.unlabelled_source,
+            "source non renseignée",
+        ),
+    ]
+    return [
+        AxisGap(axis=nom, missing=total - compte - declares, reason=motif)
+        for nom, compte, declares, motif in axes
+        if compte + declares != total
+    ]
 
 
 # -- Retour d'experience, pour le prompt ------------------------------------
@@ -2188,6 +2308,11 @@ class Feedback:
     #: Journees d'analyse distinctes couvertes par ces selections.
     days: int = 0
     window: int = FEEDBACK_WINDOW
+    #: Selections tranchees **de tout l'historique**. Sans elle, `settled`
+    #: plafonne a `window` et se lit comme un total : « 60 selections tranchees
+    #: enregistrees » sur une base qui en porte cent a fait croire a une perte
+    #: de donnees. Les deux nombres cote a cote rendent la fenetre visible.
+    recorded: int = 0
     minimum: int = FEEDBACK_MIN_TOTAL
     minimum_days: int = FEEDBACK_MIN_DAYS
     by_tier: list[FeedbackRow] = field(default_factory=list)
@@ -2217,6 +2342,38 @@ class Feedback:
         encore saisir un seul resultat a bien quelque chose a dire sur son tri.
         """
         return self.settled == 0 and self.selection_median is None
+
+    @property
+    def scope_line(self) -> str:
+        """« mes 60 dernières tranchées, sur 100 enregistrées ».
+
+        Le second nombre n'est la que pour empecher de lire le premier comme un
+        total. Il disparait tant que la fenetre ne mord pas.
+        """
+        base = f"mes {self.settled} dernière(s) sélection(s) tranchée(s)"
+        return base if self.recorded <= self.settled else f"{base}, sur {self.recorded} au total"
+
+    @property
+    def missing_note(self) -> str:
+        """Ce qui manque **exactement** : le volume, l'etalement, ou les deux.
+
+        Le texte annoncait les deux seuils quel que soit celui qui bloquait, si
+        bien qu'un bloc de 60 selections lisait « il en faudrait au moins 40 » —
+        une phrase qui se contredit et fait chercher une panne la ou il n'y a
+        qu'un etalement trop court.
+        """
+        volume = self.settled < self.minimum
+        etalement = self.days < self.minimum_days
+        if volume and etalement:
+            return f"il en faudrait {self.minimum}, réparties sur {self.minimum_days} journées"
+        if volume:
+            return (
+                f"l'étalement suffit ; c'est le volume qui manque — il en faudrait {self.minimum}"
+            )
+        return (
+            "le volume suffit ; c'est l'étalement qui manque — il faudrait "
+            f"{self.minimum_days} journées d'analyse distinctes"
+        )
 
     @property
     def selection_line(self) -> str:
@@ -2341,9 +2498,16 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
     # La journee d'analyse, et non celle du match : ce bloc juge des decisions,
     # et deux paris pris le meme soir sur deux jours de calendrier restent une
     # seule seance de travail.
+    with connect(settings) as conn:
+        recorded = conn.execute(
+            "SELECT COUNT(*) AS n FROM picks WHERE result IN ('win', 'loss')"
+            + (" AND played = 1" if played_only else "")
+        ).fetchone()["n"]
+
     report = Feedback(
         settled=len(rows),
         days=len({str(row["created_at"])[:10] for row in rows}),
+        recorded=int(recorded),
     )
     # Le taux de selection est publie **hors** des trois garde-fous ci-dessous,
     # et ce n'est pas un oubli : eux protegent des taux de reussite, qui

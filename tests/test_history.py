@@ -2371,3 +2371,75 @@ def test_la_justification_est_relue_sur_la_feuille(
     page = " ".join(client.get(f"/history/{session_id}").text.split())
 
     assert "↳ issue contre rythme" in page
+
+
+# -- Le denominateur global ne peut pas baisser -----------------------------
+
+
+def test_une_selection_sans_aucune_dimension_compte_quand_meme(migrated: Settings) -> None:
+    """Aucune selection tranchee ne doit pouvoir sortir du denominateur global.
+
+    Une jointure devenue stricte, une cle de competition absente de la table,
+    un champ nouveau nul sur l'historique : chacun ferait disparaitre des lignes
+    **en silence**, et un compte qui baisse sans que rien ne le dise est la
+    panne la plus couteuse que cette page puisse avoir.
+
+    La ligne montee ici cumule tous les cas : aucun match, donc aucun sport et
+    aucune competition ; ni type, ni source, ni confiance.
+    """
+    session_id, _ = _session_avec_match(migrated)
+    orpheline = add_pick(session_id, "safe", "Marché exotique", "Oui", settings=migrated)
+    set_result(orpheline, "win", migrated)
+
+    report = analysis(migrated)
+
+    assert report.settled == 1
+    assert report.recorded == 1, "le temoin lit picks sans jointure"
+    assert report.consistent, f"axes en defaut : {[g.line for g in report.gaps]}"
+    # Et elle se retrouve dans le compte des non classes de **chaque** axe.
+    assert report.uncategorised == 1
+    assert report.unlabelled_angle == 1
+    assert report.unlabelled_source == 1
+    assert report.unlabelled_confidence == 1
+    assert report.unclassified_markets == 1
+
+
+def test_une_competition_hors_taxonomie_ne_fait_pas_baisser_le_total(
+    migrated: Settings,
+) -> None:
+    """Reclasser une competition change la repartition, jamais le total.
+
+    C'est le critere d'acceptation : un rechargement apres ajout d'une cle a la
+    taxonomie ne doit deplacer que des lignes entre regroupements.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    _propose(migrated, session_id, event_id, "safe", "win")
+    avant = analysis(migrated)
+
+    set_category(
+        db.query_one(
+            "SELECT competition_id AS id FROM events WHERE id = ?",
+            (event_id,),
+            settings=migrated,
+        )["id"],
+        # Un niveau **de football** : la saisie valide contre la taxonomie du
+        # sport, et « grand_slam » y serait refusé.
+        "d1_top5",
+        migrated,
+    )
+    apres = analysis(migrated)
+
+    assert avant.settled == apres.settled == avant.recorded == apres.recorded
+    assert (avant.uncategorised, apres.uncategorised) == (1, 0)
+    assert avant.consistent and apres.consistent
+
+
+def test_l_ecart_est_annonce_en_clair(client: TestClient, isolated_settings: Settings) -> None:
+    """Si le controle casse un jour, la page le dit — elle n'affiche pas un
+    denominateur ampute sans un mot."""
+    session_id, event_id = _session_avec_match(isolated_settings)
+    _propose(isolated_settings, session_id, event_id, "safe", "win")
+
+    page = " ".join(client.get("/stats").text.split())
+
+    assert "ne retombe pas sur ce que porte la base" not in page, "rien a signaler ici"

@@ -841,3 +841,82 @@ def test_les_reglages_disent_que_les_bandes_partent_dans_le_prompt(client: TestC
 
     assert "ici et dans le prompt" in page
     assert "C'est la mention qui déclenche l'action, pas le nombre." in page
+
+
+# -- Une fenetre ne se lit pas comme un total -------------------------------
+
+
+def test_le_bloc_annonce_sa_fenetre_et_non_un_total(migrated: Settings) -> None:
+    """`settled` plafonne a `FEEDBACK_WINDOW` : ecrit « 60 selections tranchees
+    enregistrees » sur une base qui en porte cent, il se lit comme un total et
+    fait croire a une perte de donnees. C'est exactement ce qui s'est produit.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(FEEDBACK_WINDOW + 12):
+        _regle(migrated, session_id, event_id, "safe", "win")
+
+    report = feedback(migrated)
+
+    assert report.settled == FEEDBACK_WINDOW, "la fenetre plafonne"
+    assert report.recorded == FEEDBACK_WINDOW + 12, "le total, lui, ne plafonne pas"
+    attendu = (
+        f"mes {FEEDBACK_WINDOW} dernière(s) sélection(s) tranchée(s), "
+        f"sur {FEEDBACK_WINDOW + 12} au total"
+    )
+    assert report.scope_line == attendu
+
+    corps = " ".join(build_prompt(session_id, settings=migrated, now=NOW).body.split())
+    assert "fenêtre glissante" in corps
+    assert f"sur {FEEDBACK_WINDOW + 12} au total" in corps
+
+
+def test_le_total_ne_s_ecrit_pas_quand_la_fenetre_ne_mord_pas(migrated: Settings) -> None:
+    """« 12 sur 12 au total » serait du bruit sur chaque prompt."""
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(12):
+        _regle(migrated, session_id, event_id, "safe", "win")
+
+    assert feedback(migrated).scope_line == "mes 12 dernière(s) sélection(s) tranchée(s)"
+
+
+def test_le_manque_nomme_ce_qui_bloque_vraiment(migrated: Settings) -> None:
+    """« Il en faudrait au moins 40 » sur un bloc qui en compte 60 est une phrase
+    qui se contredit, et fait chercher une panne la ou il n'y a qu'un etalement
+    trop court. Le texte nomme desormais celle des deux conditions qui manque.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(FEEDBACK_MIN_TOTAL + 5):
+        _regle(migrated, session_id, event_id, "safe", "win")
+    # Toutes le meme jour : le volume est la, l'etalement non — le cas reel.
+    db.execute("UPDATE picks SET created_at = '2026-07-01T12:00:00Z'", settings=migrated)
+
+    report = feedback(migrated)
+
+    assert report.settled >= report.minimum, "le volume est atteint"
+    assert report.days < report.minimum_days, "l'etalement, non"
+    assert "le volume suffit" in report.missing_note
+    assert f"{report.minimum}" not in report.missing_note, "ne pas citer un seuil deja franchi"
+
+
+def test_le_manque_nomme_les_deux_quand_les_deux_manquent(migrated: Settings) -> None:
+    session_id, event_id = _session_avec_match(migrated)
+    _regle(migrated, session_id, event_id, "safe", "win")
+
+    note = feedback(migrated).missing_note
+
+    assert f"il en faudrait {FEEDBACK_MIN_TOTAL}" in note
+    assert f"{FEEDBACK_MIN_DAYS} journées" in note
+
+
+def test_le_taux_de_selection_dit_qu_il_compte_autre_chose(migrated: Settings) -> None:
+    """« 36 % sur 6 sessions » et « 60 sélections sur 4 journées » a quatre
+    paragraphes d'ecart se lisent comme un seul compte qui se contredit. Les
+    deux populations sont differentes, et le texte le dit."""
+    for jour, (retenus, lot) in enumerate(((1, 4), (2, 4), (3, 4)), start=4):
+        session_id = _session_de_lot(migrated, retenus, lot, jour)
+
+    corps = " ".join(build_prompt(session_id, settings=migrated, now=NOW).body.split())
+
+    assert "ne lit pas la même population que les taux ci-dessous" in corps
+    assert "sessions ayant produit un prompt" in corps
+    assert "Deux nombres différents à quelques lignes d'écart sont donc normaux" in corps
