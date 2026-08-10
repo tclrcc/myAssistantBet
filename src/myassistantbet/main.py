@@ -1252,6 +1252,9 @@ def _pick_session(pick_id: int) -> int:
 
 def _settings_context(**overrides: object) -> dict[str, object]:
     settings = get_settings()
+    # Lu **une fois** : il sert l'avancement du gate et la reference des cibles
+    # relatives, et deux appels donneraient deux photos de la meme chose.
+    _recul = history_service.feedback(settings)
     available = prompt_service.list_templates()
     name = str(overrides.pop("template_name", "") or "") or prompt_service.DEFAULT_TEMPLATE
     if name not in available:
@@ -1267,14 +1270,14 @@ def _settings_context(**overrides: object) -> dict[str, object]:
         "tiers": prompt_service.load_tiers(settings),
         "tiers_error": None,
         "tiers_saved": False,
-        "bands": prompt_service.load_bands(settings),
+        "bands": prompt_service.load_bands(settings, reference=_recul.global_rate),
         "bands_error": None,
         "bands_saved": False,
         # Ou en est le recul, et ce qu'il manque pour ouvrir le gate. C'est le
         # seul reglage dont l'effet est differe : sans cet avancement, on ne
         # pouvait pas mesurer sa distance a l'activation. Les deux seuils
         # eux-memes se reglent desormais dans la table des seuils.
-        "feedback": history_service.feedback(settings),
+        "feedback": _recul,
         "preferences": prompt_service.read_preference(prompt_service.PREFERENCE_NOTES, settings),
         "preferences_error": None,
         "preferences_saved": False,

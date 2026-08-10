@@ -842,23 +842,53 @@ def delete_template(name: str) -> None:
     logger.info("Template supprime : %s", name)
 
 
-def load_bands(settings: Settings | None = None) -> list[dict[str, Any]]:
-    """Bandes cibles par niveau de confiance, du cran le plus haut au plus bas."""
+def load_bands(
+    settings: Settings | None = None, reference: float | None = None
+) -> list[dict[str, Any]]:
+    """Bandes cibles par niveau de confiance, du cran le plus haut au plus bas.
+
+    Rend l'ecart **tel qu'il se regle** et sa valeur **resolue** contre le taux
+    global. Les deux cote a cote : l'ecran saisit un ecart, mais sans la seconde
+    il faudrait refaire l'addition pour savoir ce que la cible vaut aujourd'hui.
+    """
+    from .history import Band
+
     with connect(settings) as conn:
-        return [
-            {"level": int(row["level"]), "low": row["low"], "high": row["high"]}
-            for row in conn.execute(
-                "SELECT level, low, high FROM confidence_bands ORDER BY level DESC"
-            )
-        ]
+        rows = conn.execute(
+            "SELECT level, low, high FROM confidence_bands ORDER BY level DESC"
+        ).fetchall()
+    resolues = {
+        int(row["level"]): Band(
+            level=int(row["level"]),
+            low=None if row["low"] is None else float(row["low"]),
+            high=None if row["high"] is None else float(row["high"]),
+            reference=reference,
+        )
+        for row in rows
+    }
+    return [
+        {
+            "level": int(row["level"]),
+            "low": row["low"],
+            "high": row["high"],
+            "resolved_label": resolues[int(row["level"])].label
+            or resolues[int(row["level"])].offset_label,
+        }
+        for row in rows
+    ]
 
 
 def save_bands(rows: list[dict[str, Any]], settings: Settings | None = None) -> None:
     """Met a jour les bandes cibles. Memes controles que les bandes de cotes.
 
-    Ce sont des **points de pourcentage** : une borne hors de [0, 100] ne
-    decrit aucun taux, et une bande dont la borne haute n'excede pas la basse
-    est vide — dans les deux cas la page ne pourrait plus rien en dire.
+    Ce sont des **ecarts en points au taux global**, et non plus des taux :
+    « conf 4 vise six points au-dessus de ma moyenne » ne depend pas du melange
+    de paliers du mois, quand « conf 4 vise 60 % » y est entierement soumis. Un
+    ecart est donc **signe** — un cran bas vise en dessous — et la borne de 0 n'a
+    plus lieu d'etre.
+
+    Reste borne a cent points de part et d'autre : au-dela, l'ecart depasse
+    l'amplitude d'un taux et ne peut plus decrire aucune cible atteignable.
     """
     for row in rows:
         level = row.get("level")
@@ -875,10 +905,12 @@ def save_bands(rows: list[dict[str, Any]], settings: Settings | None = None) -> 
             # exprès : c'est le dernier cas d'erreur que ce validateur sache
             # attraper, et une borne effacee par megarde doit se voir.
             raise CustomizationError(f"Confiance {level} : borne basse manquante.")
-        if not 0 <= low <= 100:
-            raise CustomizationError(f"Confiance {level} : la borne basse sort de 0 à 100 %.")
-        if high is not None and not 0 <= high <= 100:
-            raise CustomizationError(f"Confiance {level} : la borne haute sort de 0 à 100 %.")
+        if not -100 <= low <= 100:
+            raise CustomizationError(f"Confiance {level} : l'écart bas sort de -100 à +100 points.")
+        if high is not None and not -100 <= high <= 100:
+            raise CustomizationError(
+                f"Confiance {level} : l'écart haut sort de -100 à +100 points."
+            )
         if high is not None and high <= low:
             raise CustomizationError(
                 f"Confiance {level} : la borne haute doit dépasser la borne basse."

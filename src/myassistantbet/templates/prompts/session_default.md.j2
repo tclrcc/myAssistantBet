@@ -230,7 +230,8 @@ Par palier :
 {%- endfor %}
 {% endif %}
 {%- if feedback.by_confidence %}
-Par confiance annoncée à l'époque :
+Par confiance annoncée à l'époque — cibles posées **par rapport à mon taux
+global de {{ feedback.global_label }}**, et non à un chiffre absolu :
 {%- for row in feedback.by_confidence %}
   {{ row.line }}
 {%- endfor %}

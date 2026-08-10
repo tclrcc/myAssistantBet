@@ -371,14 +371,24 @@ ANALYSIS_MIN_MARKET = 2
 
 @dataclass
 class Band:
-    """Bande cible d'un niveau de confiance, en points de pourcentage.
+    """Cible d'un niveau de confiance, en **ecart de points au taux global**.
 
-    Elle donne a « confiance 4 » le referentiel qui lui manquait : sans elle,
-    l'ecart entre la confiance annoncee et le taux constate ne se mesurait
-    contre rien, alors que la page affirmait qu'il disait la derive.
+    Elle etait un taux absolu — conf 5 >= 70 %, conf 4 entre 60 et 70 — et
+    rapprochee des paliers, elle recouplait la confiance et la cote. Les bandes
+    de cote traduites en taux d'equilibre le montrent : GIGA FUN va de 28 % a
+    12,5 %, donc une selection a 4.00 qui gagne 30 % du temps est un bon pari et
+    tire pourtant son cran quarante points sous une bande a 70 %. Pour tenir
+    cette bande, **conf 5 devait devenir quasi exclusivement du SAFE** — et le
+    mecanisme qui ordonne de resserrer un cran employe trop largement poussait
+    alors toute selection a cote haute vers le bas de l'echelle.
 
-    Reglable depuis les reglages, jamais en dur : c'est une decision de
-    l'utilisateur sur sa propre echelle, pas une constante du projet.
+    En relatif, ce qui se mesure est la **monotonie** de la notation : un cran
+    superieur bat-il le cran inferieur ? La reponse ne depend plus du melange de
+    paliers du mois.
+
+    `reference` est le taux global des selections tranchees, **sur la meme
+    fenetre que les taux compares**. Si les deux fenetres divergeaient, l'ecart
+    ne voudrait rien dire.
     """
 
     level: int
@@ -391,6 +401,10 @@ class Band:
     #: c'est justement le defaut a eviter.
     low: float | None = None
     high: float | None = None
+    #: Taux global, en points, contre lequel les ecarts se resolvent. `None`
+    #: quand rien n'est tranche : il n'y a alors aucune reference, donc aucune
+    #: cible resoluble — et surtout pas une cible a zero.
+    reference: float | None = None
 
     @property
     def targeted(self) -> bool:
@@ -398,11 +412,52 @@ class Band:
         return self.low is not None
 
     @property
-    def label(self) -> str:
+    def resolved(self) -> bool:
+        """La cible peut etre comparee a un taux : elle a une reference."""
+        return self.targeted and self.reference is not None
+
+    def _absolute(self, offset: float | None) -> float | None:
+        """Un ecart ramene en taux, borne a [0, 100] — un taux n'en sort pas."""
+        if offset is None or self.reference is None:
+            return None
+        return min(100.0, max(0.0, self.reference + offset))
+
+    @property
+    def low_absolute(self) -> float | None:
+        return self._absolute(self.low)
+
+    @property
+    def high_absolute(self) -> float | None:
+        return self._absolute(self.high)
+
+    @property
+    def offset_label(self) -> str:
+        """« global +3 → +12 » — la cible telle qu'elle se **regle**.
+
+        C'est la forme de l'ecran de configuration : on y saisit un ecart. Les
+        surfaces de lecture, elles, montrent la valeur resolue — donner un ecart
+        a comparer a un taux ferait refaire l'addition a chaque ligne.
+        """
         if not self.targeted:
-            return ""
+            return "pas de cible"
         assert self.low is not None
-        return f"{self.low:.0f} – {self.high:.0f} %" if self.high else f"{self.low:.0f} % et plus"
+        if self.high is None:
+            return f"global {self.low:+.0f} et au-dessus"
+        return f"global {self.low:+.0f} → {self.high:+.0f}"
+
+    @property
+    def label(self) -> str:
+        """La cible **resolue**, celle a laquelle un taux se compare.
+
+        Vide tant qu'aucune reference n'existe : sans taux global, un ecart ne
+        se ramene a rien, et afficher l'ecart brut ferait faire l'addition au
+        lecteur — exactement ce que ce projet retire partout ailleurs.
+        """
+        if not self.resolved:
+            return ""
+        low, high = self.low_absolute, self.high_absolute
+        assert low is not None
+        return f"{low:.0f} – {high:.0f} %" if high is not None else f"{low:.0f} % et plus"
 
     def excludes(self, interval: tuple[float, float]) -> bool:
         """L'intervalle est **entierement** hors de la bande.
@@ -411,15 +466,17 @@ class Band:
         taux sort de sa bande ferait crier a la derive sur du bruit, et au
         volume actuel presque chaque intervalle couvre plusieurs bandes.
 
-        Un cran sans cible n'est jamais hors bande : il n'y a rien a en sortir.
+        Un cran sans cible — ou sans reference a laquelle la ramener — n'est
+        jamais hors bande : il n'y a rien a en sortir.
         """
-        if not self.targeted:
+        if not self.resolved:
             return False
-        assert self.low is not None
+        borne_basse, borne_haute = self.low_absolute, self.high_absolute
+        assert borne_basse is not None
         low, high = interval[0] * 100, interval[1] * 100
-        if high < self.low:
+        if high < borne_basse:
             return True
-        return self.high is not None and low > self.high
+        return borne_haute is not None and low > borne_haute
 
 
 @dataclass
@@ -2038,8 +2095,13 @@ class Mix:
         )
 
 
-def load_bands(settings: Settings | None = None) -> dict[int, Band]:
-    """Bandes cibles par niveau de confiance, telles qu'elles sont reglees."""
+def load_bands(settings: Settings | None = None, reference: float | None = None) -> dict[int, Band]:
+    """Bandes cibles par niveau de confiance, telles qu'elles sont reglees.
+
+    `reference` est le taux global, en points, contre lequel les ecarts se
+    resolvent. Sans lui, les bandes se lisent encore — l'ecran de configuration
+    en a besoin — mais aucune ne se compare a un taux.
+    """
     with connect(settings) as conn:
         rows = conn.execute(
             "SELECT level, low, high FROM confidence_bands ORDER BY level"
@@ -2049,6 +2111,7 @@ def load_bands(settings: Settings | None = None) -> dict[int, Band]:
             level=int(row["level"]),
             low=None if row["low"] is None else float(row["low"]),
             high=None if row["high"] is None else float(row["high"]),
+            reference=reference,
         )
         for row in rows
     }
@@ -2247,14 +2310,6 @@ def analysis(settings: Settings | None = None) -> Analysis:
         sport_labels = {
             row["key"]: row["label"] for row in conn.execute("SELECT key, label FROM sports")
         }
-        bands = {
-            int(row["level"]): Band(
-                level=int(row["level"]),
-                low=None if row["low"] is None else float(row["low"]),
-                high=None if row["high"] is None else float(row["high"]),
-            )
-            for row in conn.execute("SELECT level, low, high FROM confidence_bands")
-        }
         rows = conn.execute(
             "SELECT k.id, k.session_id, k.tier, k.result, k.market, k.confidence, k.played, "
             "       k.event_id, k.created_at, k.price, k.angle, k.source_level, "
@@ -2340,6 +2395,11 @@ def analysis(settings: Settings | None = None) -> Analysis:
     # La bande cible se rattache ici et nulle part ailleurs : un sport ou un
     # marche ne se fixe pas d'objectif de taux, seule une confiance annoncee le
     # fait — c'est meme sa definition.
+    #
+    # **La reference est le taux global de la population que la page affiche**,
+    # et non un chiffre pris ailleurs : une cible relative comparee a un taux
+    # calcule sur un autre ensemble ne mesurerait rien.
+    bands = load_bands(settings, reference=_global_rate(rows, results))
     for entry in report.by_confidence:
         entry.band = bands.get(int(entry.key)) if entry.key.isdigit() else None
 
@@ -2599,14 +2659,15 @@ class FeedbackRow:
         None quand le taux tombe **dans** la bande : il n'y a alors rien a
         corriger, et ecrire « écart 0 pt » ferait chercher un probleme absent.
         """
-        if self.band is None or not self.band.targeted or self.rate is None:
+        if self.band is None or not self.band.resolved or self.rate is None:
             return None
-        assert self.band.low is not None
+        borne_basse, borne_haute = self.band.low_absolute, self.band.high_absolute
+        assert borne_basse is not None
         observed = self.rate * 100
-        if observed < self.band.low:
-            return observed - self.band.low
-        if self.band.high is not None and observed > self.band.high:
-            return observed - self.band.high
+        if observed < borne_basse:
+            return observed - borne_basse
+        if borne_haute is not None and observed > borne_haute:
+            return observed - borne_haute
         return None
 
     @property
@@ -2640,7 +2701,7 @@ class FeedbackRow:
             label = label[: self.LABEL_WIDTH - 1] + "…"
         compte = f"{self.won}/{self.settled}"
         line = f"{label:<{self.LABEL_WIDTH}} {compte:<7} {self.rate * 100:.0f} %"
-        if self.band is None or not self.band.targeted:
+        if self.band is None or not self.band.resolved:
             return line
         line += f"   cible {self.band.label}"
         if self.gap is not None:
@@ -2687,6 +2748,10 @@ class Feedback:
     selection_median: float | None = None
     #: Sessions derriere cette mediane. Le compte accompagne toujours le taux.
     selection_sessions: int = 0
+    #: Taux global de la fenetre, en points. C'est la **reference des cibles
+    #: relatives** : sans elle, une bande resolue s'afficherait sans qu'on sache
+    #: contre quoi. `None` quand rien n'est tranche.
+    global_rate: float | None = None
 
     @property
     def empty(self) -> bool:
@@ -2746,6 +2811,11 @@ class Feedback:
         )
 
     @property
+    def global_label(self) -> str:
+        """« 50 % » — la reference des cibles, ecrite une fois pour le bloc."""
+        return "—" if self.global_rate is None else f"{self.global_rate:.0f} %"
+
+    @property
     def reach_line(self) -> str:
         """« 60 / 40 sélections tranchées · 4 / 10 journées distinctes ».
 
@@ -2792,6 +2862,20 @@ class Feedback:
         prompt le presenterait comme un ordre de passage durable.
         """
         return self.settled >= self.minimum and self.days >= self.minimum_days
+
+
+def _global_rate(rows: list[Any], results: list[str]) -> float | None:
+    """Taux global des selections tranchees, en points. `None` s'il n'y en a pas.
+
+    C'est la **reference des cibles relatives**, et elle se calcule sur la meme
+    population que les taux auxquels elle sert de repere. Zero tranchee ne donne
+    pas zero pour cent : elle ne donne rien, et une cible sans reference ne se
+    resout pas.
+    """
+    tranchees = [result for result in results if result in ("win", "loss")]
+    if not tranchees:
+        return None
+    return 100.0 * sum(1 for result in tranchees if result == "win") / len(tranchees)
 
 
 def _feedback_tally(
@@ -2927,6 +3011,7 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
         recorded=int(recorded),
         minimum=minimum,
         minimum_days=minimum_days,
+        global_rate=_global_rate(rows, [str(row["result"]) for row in rows]),
     )
     # Le taux de selection est publie **hors** des trois garde-fous ci-dessous,
     # et ce n'est pas un oubli : eux protegent des taux de reussite, qui
@@ -2969,7 +3054,10 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
     # un sport ou un marche ne se fixe pas d'objectif de taux. Sans elle,
     # « confiance 4 » n'etait qu'un nombre sans referentiel, et le prompt
     # affirmait pourtant qu'un ecart disait la derive de la notation.
-    bands = load_bands(settings)
+    # **Sur la meme fenetre glissante que les taux compares.** Si les deux
+    # divergeaient, l'ecart ne voudrait rien dire : on rapporterait un taux des
+    # soixante dernieres a une moyenne de tout l'historique.
+    bands = load_bands(settings, reference=report.global_rate)
     for entry in report.by_confidence:
         entry.band = bands.get(int(entry.key)) if entry.key.isdigit() else None
 

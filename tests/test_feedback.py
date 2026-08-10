@@ -707,9 +707,14 @@ def _bande(settings: Settings, level: int, low: float, high: float | None) -> No
 
 
 def _confiance(
-    settings: Settings, session_id: int, event_id: int, gagnes: int, perdus: int
+    settings: Settings, session_id: int, event_id: int, gagnes: int, perdus: int, cran: str = "3"
 ) -> None:
-    """Des selections de confiance 3, pour peupler la ligne de ce cran."""
+    """Des selections d'un cran donne, pour peupler sa ligne.
+
+    **Il en faut au moins deux crans depuis que les cibles sont relatives** : un
+    seul cran fait a lui seul le taux global, sa cible se resout donc autour de
+    son propre taux, et tout ecart serait nul par construction.
+    """
     for index in range(gagnes + perdus):
         _regle(
             settings,
@@ -717,8 +722,19 @@ def _confiance(
             event_id,
             "safe",
             "win" if index < gagnes else "loss",
-            confidence="3",
+            confidence=cran,
         )
+
+
+def _deux_crans(settings: Settings, session_id: int, event_id: int) -> None:
+    """Cran 3 a 40 %, cran 4 a 60 %, **taux global a 50 %**.
+
+    Soixante selections en tout, soit exactement la fenetre glissante : au-dela
+    elle tronque par date, et les taux ne seraient plus ceux qu'on a poses. Les
+    cibles se resolvent alors a 44-53 % pour le cran 3 et 53-62 % pour le 4.
+    """
+    _confiance(settings, session_id, event_id, gagnes=12, perdus=18, cran="3")
+    _confiance(settings, session_id, event_id, gagnes=18, perdus=12, cran="4")
 
 
 def test_la_bande_cible_accompagne_le_taux_dans_le_prompt(migrated: Settings) -> None:
@@ -727,25 +743,27 @@ def test_la_bande_cible_accompagne_le_taux_dans_le_prompt(migrated: Settings) ->
     seul signal reellement actionnable de tout l'historique ne remontait jamais.
     """
     session_id, event_id = _session_avec_match(migrated)
-    _confiance(migrated, session_id, event_id, gagnes=16, perdus=24)
+    _deux_crans(migrated, session_id, event_id)
 
     ligne = next(row for row in feedback(migrated).by_confidence if row.key == "3")
 
     assert ligne.rate == 0.4
-    assert ligne.band is not None and ligne.band.label == "50 – 60 %"
-    assert ligne.gap == pytest.approx(-10.0)
-    assert "cible 50 – 60 %, écart -10 pts" in ligne.line
+    assert ligne.band is not None and ligne.band.label == "44 – 53 %"
+    assert ligne.band.offset_label == "global -6 → +3", "stockee en ecart, rendue en taux"
+    assert ligne.gap == pytest.approx(-4.0)
+    assert "cible 44 – 53 %, écart -4 pts" in ligne.line
 
 
 def test_un_taux_dans_sa_bande_n_affiche_aucun_ecart(migrated: Settings) -> None:
-    """« Écart 0 pt » ferait chercher un probleme absent."""
+    """« Écart 0 pt » ferait chercher un probleme absent. Le cran 4 tient sa
+    cible : a 60 % pour un global de 50, il vise `global +3 -> +12`."""
     session_id, event_id = _session_avec_match(migrated)
-    _confiance(migrated, session_id, event_id, gagnes=22, perdus=18)
+    _deux_crans(migrated, session_id, event_id)
 
-    ligne = next(row for row in feedback(migrated).by_confidence if row.key == "3")
+    ligne = next(row for row in feedback(migrated).by_confidence if row.key == "4")
 
     assert ligne.gap is None
-    assert "cible 50 – 60 %" in ligne.line
+    assert "cible 53 – 62 %" in ligne.line
     assert "écart" not in ligne.line
 
 
@@ -757,7 +775,7 @@ def test_un_ecart_non_confirme_ne_porte_pas_la_mention(migrated: Settings) -> No
     l'action. Meme regle que la page, et elle compte plus encore ici.
     """
     session_id, event_id = _session_avec_match(migrated)
-    _confiance(migrated, session_id, event_id, gagnes=16, perdus=24)
+    _deux_crans(migrated, session_id, event_id)
 
     ligne = next(row for row in feedback(migrated).by_confidence if row.key == "3")
 
@@ -781,11 +799,11 @@ def test_un_ecart_confirme_porte_la_mention(migrated: Settings) -> None:
 
 def test_le_prompt_explique_comment_lire_l_ecart(migrated: Settings) -> None:
     session_id, event_id = _session_avec_match(migrated)
-    _confiance(migrated, session_id, event_id, gagnes=16, perdus=24)
+    _deux_crans(migrated, session_id, event_id)
 
     corps = " ".join(build_prompt(session_id, settings=migrated, now=NOW).body.split())
 
-    assert "cible 50 – 60 %, écart -10 pts" in corps
+    assert "cible 44 – 53 %, écart -4 pts" in corps
     assert "seul chiffre de ce bloc qui parle de ma notation plutôt que des matchs" in corps
     assert "resserrer dès la section C" in corps
     assert "n'en fais pas une règle" in corps

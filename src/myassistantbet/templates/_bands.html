@@ -9,10 +9,26 @@
      l'analyse lit. #}
   <p class="muted small">
     « Confiance 4 » n'est pas un pourcentage : sans référentiel, l'écart avec le taux
-    constaté ne se mesure contre rien. Ces bandes donnent cet objectif, en points de
-    pourcentage. Elles servent <strong>ici et dans le prompt</strong> : le bloc de retour
-    d'expérience affiche la cible de chaque cran et l'écart constaté, et c'est ce qui
-    permet à l'analyse de resserrer un cran employé trop largement.
+    constaté ne se mesure contre rien. Ces bandes donnent cet objectif. Elles servent
+    <strong>ici et dans le prompt</strong> : le bloc de retour d'expérience affiche la
+    cible de chaque cran et l'écart constaté, et c'est ce qui permet à l'analyse de
+    resserrer un cran employé trop largement.
+  </p>
+
+  {# Une cible **absolue** rapprochée des paliers recouple la confiance et la
+     cote : GIGA FUN va de 28 % à 12,5 % de taux d'équilibre, donc une sélection
+     à 4.00 qui gagne 30 % du temps est un bon pari et tire pourtant son cran
+     quarante points sous une bande à 70 %. Pour tenir cette bande, conf 5
+     devrait devenir quasi exclusivement du SAFE — et le mécanisme de
+     resserrement pousserait alors tout ce qui est cher vers le bas de
+     l'échelle. C'est la dérive vers le SAFE, réinstallée par un réglage. #}
+  <p class="muted small">
+    <strong>Ce sont des écarts en points à ton taux global</strong>, et non des taux
+    absolus. « Conf 4 vise six points au-dessus de ma moyenne » ne dépend pas du mélange
+    de paliers du mois ; « conf 4 vise 60 % » y est entièrement soumis, et pousse toute
+    sélection à cote haute vers le bas de l'échelle de confiance. Ce qui se mesure ici
+    est la <strong>monotonie</strong> de la notation : un cran supérieur bat-il le cran
+    inférieur ? Un écart est signé — un cran bas vise en dessous.
   </p>
   {# Le bloc n'apparait dans le prompt que lorsque le retour d'experience publie
      son detail — assez de selections tranchees **et** assez de journees. Sans
@@ -69,8 +85,9 @@
       <thead>
         <tr>
           <th>Confiance</th>
-          <th class="num">Taux min</th>
-          <th class="num">Taux max</th>
+          <th class="num">Écart bas</th>
+          <th class="num">Écart haut</th>
+          <th>Cible résolue</th>
         </tr>
       </thead>
       <tbody>
@@ -90,6 +107,10 @@
             <input class="tiny" type="text" name="high"
                    value="{{ band.high if band.high is not none else '' }}">
           </td>
+          {# L'écart est ce qui se **règle** ; la valeur résolue est ce à quoi un
+             taux se compare. Les deux côte à côte : sans la seconde, il faudrait
+             refaire l'addition pour savoir ce que la cible vaut aujourd'hui. #}
+          <td class="small muted">{{ band.resolved_label }}</td>
         </tr>
         {% endfor %}
       </tbody>

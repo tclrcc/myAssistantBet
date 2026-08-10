@@ -415,11 +415,12 @@ def test_le_cran_5_garde_sa_borne_basse(migrated: Settings) -> None:
     frontiere entre « un facteur dominant » et « deux facteurs independants »
     est discretionnaire, et descendre ses marginales en confiance 4 est une
     action reelle. Une borne basse sans borne haute reste sa forme."""
-    save_bands([{"level": 5, "low": 70.0, "high": None}], migrated)
+    save_bands([{"level": 5, "low": 12.0, "high": None}], migrated)
 
-    bande = bandes_reglees(migrated)[5]
+    bande = bandes_reglees(migrated, reference=50.0)[5]
     assert bande.targeted
-    assert bande.label == "70 % et plus"
+    assert bande.offset_label == "global +12 et au-dessus"
+    assert bande.label == "62 % et plus", "resolue contre le taux global"
 
 
 def test_l_ecran_explique_l_etat_sans_cible(client: TestClient) -> None:

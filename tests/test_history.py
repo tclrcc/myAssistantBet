@@ -21,6 +21,7 @@ from myassistantbet.services.history import (
     FEEDBACK_MIN_DAYS,
     FEEDBACK_MIN_ROWS,
     FEEDBACK_MIN_TOTAL,
+    FEEDBACK_WINDOW,
     Analysis,
     HistoryError,
     Lot,
@@ -29,6 +30,7 @@ from myassistantbet.services.history import (
     add_pick,
     analysis,
     delete_pick,
+    feedback,
     get_pick,
     labelling,
     list_picks,
@@ -1152,14 +1154,32 @@ def test_la_cible_est_annoncee_plus_haute_quand_les_paris_se_groupent(
 
 def test_les_bandes_sont_reglees_en_base_pas_en_dur(migrated: Settings) -> None:
     """« Editable sans toucher au code » : c'est une decision de l'utilisateur
-    sur sa propre echelle, pas une constante du projet."""
-    bandes = load_bands(migrated)
+    sur sa propre echelle, pas une constante du projet.
+
+    Les bornes sont des **ecarts au taux global**, plus des taux absolus : une
+    cible absolue rapprochee des paliers recouple la confiance et la cote, et
+    pousse tout ce qui est cher vers le bas de l'echelle."""
+    bandes = load_bands(migrated, reference=50.0)
 
     assert [bande.level for bande in bandes.values()] == [1, 2, 3, 4, 5]
-    assert (bandes[4].low, bandes[4].high) == (60.0, 70.0)
+    assert (bandes[4].low, bandes[4].high) == (3.0, 12.0)
     assert bandes[5].high is None, "le dernier cran n'a pas de borne haute"
-    assert bandes[5].label == "70 % et plus"
-    assert bandes[4].label == "60 – 70 %"
+    assert bandes[4].offset_label == "global +3 → +12"
+    assert bandes[4].label == "53 – 62 %", "resolue contre le taux global"
+    assert bandes[5].label == "62 % et plus"
+    assert not bandes[1].targeted and bandes[1].offset_label == "pas de cible"
+
+
+def test_une_cible_sans_reference_ne_se_resout_pas(migrated: Settings) -> None:
+    """Zero tranchee ne donne pas zero pour cent : elle ne donne rien. Afficher
+    l'ecart brut ferait faire l'addition au lecteur, et une cible resolue contre
+    une reference absente serait un chiffre invente."""
+    bande = load_bands(migrated)[4]
+
+    assert bande.targeted, "la cible existe"
+    assert not bande.resolved, "mais rien ne permet de la ramener a un taux"
+    assert bande.label == ""
+    assert not bande.excludes((0.0, 0.1))
 
 
 def test_la_bande_ne_se_rattache_qu_a_la_confiance(migrated: Settings) -> None:
@@ -1185,33 +1205,43 @@ def test_un_intervalle_a_cheval_ne_signale_rien(migrated: Settings) -> None:
     ligne = analysis(migrated).by_confidence[0]
 
     assert ligne.rate == pytest.approx(7 / 16)
-    assert ligne.band.excludes((0.60, 0.65)) is False, "la bande contient cet intervalle"
+    # Toutes ces selections portent la confiance 4 : le taux global vaut donc le
+    # sien, et sa cible se resout a `global +3 -> +12`, soit 47 a 56 %.
+    assert ligne.band.label == "47 – 56 %"
     assert not ligne.off_band, "l'intervalle chevauche encore la bande cible"
 
 
 def test_un_intervalle_entierement_sous_la_bande_est_signale(migrated: Settings) -> None:
+    """Le cran 4 vise `global +3` au minimum ; a 0/20 quand le global vaut 20 %,
+    l'intervalle entier reste sous la borne."""
     session_id, event_id = _session_avec_match(migrated)
     for _ in range(20):
         _propose(migrated, session_id, event_id, "safe", "loss", confidence="4")
+    for _ in range(10):
+        _propose(migrated, session_id, event_id, "safe", "win", confidence="3")
 
-    ligne = analysis(migrated).by_confidence[0]
+    ligne = next(row for row in analysis(migrated).by_confidence if row.key == "4")
 
     assert ligne.rate == 0.0
-    assert ligne.off_band, "0/20 ne touche pas la bande 60 – 70 %"
+    assert ligne.off_band, "0/20 ne touche pas une cible posee au-dessus du global"
 
 
 def test_un_intervalle_entierement_au_dessus_est_signale(migrated: Settings) -> None:
+    """Et l'inverse : un cran 3 a 100 % quand le global en vaut 33 depasse sa
+    borne haute — `global +3` — de tres loin."""
     session_id, event_id = _session_avec_match(migrated)
     for _ in range(20):
-        _propose(migrated, session_id, event_id, "safe", "win", confidence="2")
+        _propose(migrated, session_id, event_id, "safe", "win", confidence="3")
+    for _ in range(40):
+        _propose(migrated, session_id, event_id, "safe", "loss", confidence="4")
 
-    ligne = analysis(migrated).by_confidence[0]
+    ligne = next(row for row in analysis(migrated).by_confidence if row.key == "3")
 
-    assert ligne.off_band, "20/20 depasse la bande 40 – 50 %"
+    assert ligne.off_band, "20/20 depasse une cible posee autour du global"
 
 
 def test_le_dernier_cran_n_a_pas_de_borne_haute(migrated: Settings) -> None:
-    """Rien ne peut etre « au-dessus » de « 70 % et plus »."""
+    """Rien ne peut etre « au-dessus » de « global +12 et au-dessus »."""
     session_id, event_id = _session_avec_match(migrated)
     for _ in range(20):
         _propose(migrated, session_id, event_id, "safe", "win", confidence="5")
@@ -1245,19 +1275,36 @@ def test_une_bande_incoherente_est_refusee(client: TestClient) -> None:
     assert "doit dépasser la borne basse" in reponse.text
 
 
-def test_une_bande_hors_de_zero_cent_est_refusee(client: TestClient) -> None:
+def test_un_ecart_hors_de_cent_points_est_refuse(client: TestClient) -> None:
+    """Un ecart **signe** — un cran bas vise en dessous du global — donc la borne
+    de zero n'a plus lieu d'etre. Au-dela de cent points, il depasse l'amplitude
+    d'un taux et ne peut plus decrire aucune cible atteignable."""
     reponse = client.post("/settings/bands", data={"level": ["4"], "low": ["140"], "high": [""]})
 
-    assert "sort de 0 à 100 %" in reponse.text
+    assert "sort de -100 à +100 points" in reponse.text
+
+
+def test_un_ecart_negatif_est_accepte(client: TestClient, isolated_settings: Settings) -> None:
+    """C'est tout l'objet des cibles relatives : un cran bas vise **sous** le
+    taux global, ce qu'une borne a zero interdisait d'exprimer."""
+    reponse = client.post("/settings/bands", data={"level": ["2"], "low": ["-6"], "high": ["-3"]})
+
+    assert "sort de" not in reponse.text
+    assert load_bands(isolated_settings)[2].offset_label == "global -6 → -3"
 
 
 def test_la_page_affiche_la_bande_cible(client: TestClient, isolated_settings: Settings) -> None:
+    """La cible est **resolue** avant d'etre affichee : donner « global +3 » a
+    comparer a un taux ferait refaire l'addition a chaque ligne, ce que ce
+    projet retire partout ailleurs. Le taux global vaut ici 50 %, donc le cran 4
+    vise 53 a 62 %."""
     session_id, event_id = _session_avec_match(isolated_settings)
     _propose(isolated_settings, session_id, event_id, "safe", "win", confidence="4")
+    _propose(isolated_settings, session_id, event_id, "safe", "loss", confidence="3")
 
     page = " ".join(client.get("/stats").text.split())
 
-    assert "cible 60 – 70 %" in page
+    assert "cible 53 – 62 %" in page
     assert "réglable dans les réglages" in page
 
 
@@ -2915,3 +2962,78 @@ def test_le_prompt_se_tait_sur_un_regroupement_trop_maigre(migrated: Settings) -
     assert "Marché rare" not in corps
     assert "effectif insuffisant" not in corps
     assert "O/U 2.5" in corps, "le regroupement fourni, lui, est bien publie"
+
+
+# -- Les cibles sont relatives, pas absolues ---------------------------------
+
+
+def test_une_cible_relative_suit_le_taux_global(migrated: Settings) -> None:
+    """**Le coeur du lot.** Une cible absolue rapprochee des paliers recouple la
+    confiance et la cote : GIGA FUN va de 28 % a 12,5 % de taux d'equilibre,
+    donc une selection a 4.00 qui gagne 30 % du temps est un bon pari et tire
+    pourtant son cran quarante points sous une bande a 70 %. Pour tenir cette
+    bande, conf 5 devrait devenir quasi exclusivement du SAFE.
+
+    En relatif, la meme notation se juge sur sa **monotonie** : la cible suit le
+    melange de paliers au lieu de le combattre.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(10):
+        _propose(migrated, session_id, event_id, "safe", "win", confidence="4")
+    for _ in range(10):
+        _propose(migrated, session_id, event_id, "safe", "loss", confidence="3")
+
+    haute = next(row for row in analysis(migrated).by_confidence if row.key == "4")
+    assert haute.band.reference == 50.0
+    assert haute.band.label == "53 – 62 %"
+
+    # Le meme cran, sur un lot deux fois moins reussi : la cible descend avec.
+    for _ in range(20):
+        _propose(migrated, session_id, event_id, "safe", "loss", confidence="3")
+
+    haute = next(row for row in analysis(migrated).by_confidence if row.key == "4")
+    assert haute.band.reference == 25.0
+    assert haute.band.label == "28 – 37 %", "la cible suit, elle ne combat pas le mélange"
+
+
+def test_la_reference_est_celle_de_la_fenetre_du_bloc(migrated: Settings) -> None:
+    """« Si les deux fenetres divergent, l'ecart ne veut rien dire » : on
+    rapporterait un taux des soixante dernieres a une moyenne de tout
+    l'historique. Le prompt lit sa fenetre, la page lit la sienne."""
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(FEEDBACK_WINDOW):
+        _propose(migrated, session_id, event_id, "safe", "win", confidence="4")
+    for _ in range(20):
+        _propose(migrated, session_id, event_id, "safe", "loss", confidence="4")
+        db.execute(
+            "UPDATE picks SET created_at = '2020-01-01T12:00:00Z' WHERE result = 'loss'",
+            settings=migrated,
+        )
+
+    fenetre = feedback(migrated)
+    page = analysis(migrated)
+
+    assert fenetre.global_rate == 100.0, "les plus recentes seulement"
+    assert page.by_confidence[0].band.reference == pytest.approx(100 * 60 / 80)
+
+
+def test_aucune_selection_tranchee_ne_donne_aucune_cible(migrated: Settings) -> None:
+    """Zero tranchee ne donne pas zero pour cent : elle ne donne rien. Une cible
+    resolue contre une reference absente serait un chiffre invente."""
+    report = analysis(migrated)
+
+    assert report.by_confidence == []
+    assert load_bands(migrated)[4].label == "", "sans reference, rien a afficher"
+
+
+def test_le_schema_permet_le_croisement_confiance_palier(migrated: Settings) -> None:
+    """**Piste signalee, pas implementee.** La mesure juste serait un taux par
+    confiance croise avec le palier ; elle demande plusieurs centaines de
+    selections tranchees, et a soixante elle donnerait cinq par case.
+
+    Ce test verifie seulement que rien ne s'y oppose cote schema : les trois
+    colonnes voyagent dans la meme ligne, donc le jour ou le volume suffira, le
+    croisement ne demandera aucune migration."""
+    colonnes = {row["name"] for row in db.query("PRAGMA table_info(picks)", settings=migrated)}
+
+    assert {"confidence", "tier", "tier_real"} <= colonnes
