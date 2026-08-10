@@ -1356,3 +1356,19 @@ def test_le_preambule_fait_lire_la_fraicheur_au_lieu_de_la_calculer(migrated: Se
 
     assert "**« Fraicheur »** dit ce que ça coûte" in corps
     assert "Rien à recalculer, le compte est écrit." in corps
+
+
+def test_les_faits_declencheurs_du_tennis_remplacent_ceux_du_football(migrated: Settings) -> None:
+    """Au tennis une absence signifie qu'il n'y a pas de match, et l'enjeu
+    asymetrique n'existe pas en quart d'un Masters 1000 : la liste des faits qui
+    ouvrent un palier haut ne pouvait rien declencher."""
+    from myassistantbet.services.prompt import build_prompt
+
+    corps = " ".join(
+        build_prompt(_lot(migrated, "tennis"), settings=migrated, now=NOW).body.split()
+    )
+
+    assert "Au tennis : un retour de blessure daté, un double engagé sur place" in corps
+    assert "un changement de court ou de session" in corps
+    assert "Une absence n'en est pas un" in corps
+    assert "Au football :" not in corps

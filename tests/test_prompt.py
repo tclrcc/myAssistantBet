@@ -1312,3 +1312,19 @@ def test_la_meme_cause_ne_se_declenche_plus_sur_le_tournoi_partage(migrated: Set
     assert "Partager le tournoi, la surface ou la soirée **ne suffit pas**" in corps
     assert "même tournoi, mêmes conditions, même type de scénario" not in corps
     assert "au sens strict défini en section C" in corps, "la section D suit la meme regle"
+
+
+def test_les_faits_declencheurs_dependent_du_sport(migrated: Settings) -> None:
+    """« Une absence, un retour de blessure, une surface qui ne convient pas, un
+    enjeu asymetrique, une charge anormale » est taillee pour le football. Au
+    tennis une absence signifie qu'il n'y a **pas de match**, et l'enjeu
+    asymetrique n'existe pas en quart d'un Masters 1000 : la liste ne pouvait
+    donc rien declencher sur la moitie des lots.
+
+    Le football garde la sienne mot pour mot — une regle rendue dependante du
+    sport ne doit pas le faire regresser."""
+    foot = " ".join(build_prompt(_lot_de(migrated, 3), settings=migrated, now=NOW).body.split())
+
+    assert "Au football : une absence, un retour de blessure, une surface qui ne" in foot
+    assert "un enjeu asymétrique, une charge anormale" in foot
+    assert "double engagé sur place" not in foot, "un lot de football ne paie pas la liste tennis"

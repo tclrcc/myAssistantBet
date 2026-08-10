@@ -386,10 +386,17 @@ cran qu'il faut corriger.
 
 **Les paliers hauts se méritent, et pas d'un cran.** Une sélection qui sort des
 deux paliers les plus sûrs ne se prend pas sur une lecture : il lui faut un
-**fait nommé et daté** en section A — une absence, un retour de blessure, une
-surface qui ne convient pas, un enjeu asymétrique, une charge anormale. Sans ce
-fait, il n'y a pas d'outsider à jouer : il y a un favori qu'on n'a pas envie de
-jouer, ce qui n'est pas la même chose, et c'est un PASSE.
+**fait nommé et daté** en section A.
+{% if 'football' in sports %}  · Au football : une absence, un retour de blessure, une surface qui ne
+    convient pas, un enjeu asymétrique, une charge anormale.
+{% endif %}{% if 'tennis' in sports %}  · Au tennis : un retour de blessure daté, un double engagé sur place, une
+    durée cumulée anormale sur le tournoi, un changement de court ou de session,
+    un vent ou une chaleur relevés, un retour après coupure de compétition. Une
+    absence n'en est pas un — elle veut dire qu'il n'y a pas de match — et
+    l'enjeu asymétrique n'existe pas en quart d'un Masters 1000.
+{% endif %}
+Sans ce fait, il n'y a pas d'outsider à jouer : il y a un favori qu'on n'a pas
+envie de jouer, ce qui n'est pas la même chose, et c'est un PASSE.
 
 {% if event_blocks | length >= 4 -%}
 **Compte tes lignes avant de rendre.** Si plus de la moitié du tableau porte sur
