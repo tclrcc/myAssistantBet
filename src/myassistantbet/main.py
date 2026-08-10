@@ -44,6 +44,7 @@ from .services import odds_view as odds_view_service
 from .services import picks_import as picks_import_service
 from .services import prompt as prompt_service
 from .services import session as session_service
+from .services import set_scores as set_scores_service
 from .services import tennis_history as tennis_history_service
 from .services import thresholds as thresholds_service
 from .services.scan import run_scan
@@ -853,6 +854,11 @@ def stats_page(request: Request) -> HTMLResponse:
             "labelling": history_service.labelling(settings),
             "stats": history_service.stats(settings),
             "coupon_rates": coupons_service.rates(settings),
+            # La seule mesure de la page qui ne melange aucun prix : quatre
+            # issues, verifiables sur n'importe quelle feuille de match.
+            "set_scores": set_scores_service.report(settings),
+            "set_score_options": list(set_scores_service.SCORES),
+            "set_score_matrix": set_scores_service.matrix_rows(set_scores_service.report(settings)),
         },
     )
 
@@ -875,6 +881,13 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         "worksheet": history_service.worksheet(session_id, settings),
         "result_labels": list(history_service.RESULT_LABELS.items()),
         "coupons": coupons_service.list_for_session(session_id, settings),
+        # Le score exact en sets : la seule mesure de la lecture de la maniere
+        # qui soit independante de tout prix. Menus fermes, jamais un champ
+        # libre — une faute de frappe ferait disparaitre la ligne du comptage.
+        "set_scores": set_scores_service.lot(session_id, settings),
+        "set_score_options": list(set_scores_service.SCORES),
+        "set_scores_error": None,
+        "set_scores_saved": False,
         "available_picks": coupons_service.available_picks(session_id, settings),
         # Un pari se saisit apres l'avoir pose : l'instant present est le bon
         # defaut, et le corriger reste possible.
@@ -888,6 +901,29 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         "import_failures": [],
         **extra,
     }
+
+
+@app.post("/history/{session_id}/set-scores/{event_id}", response_class=HTMLResponse)
+def save_set_score(
+    request: Request,
+    session_id: int,
+    event_id: int,
+    predicted: str = Form(default=""),
+    alternate: str = Form(default=""),
+    actual: str = Form(default=""),
+) -> HTMLResponse:
+    """Enregistre le score en sets annonce pour un match, et son resultat reel."""
+    _require_session(session_id)
+    extra: dict[str, object] = {"set_scores_saved": True}
+    try:
+        set_scores_service.save(session_id, event_id, predicted, alternate, actual)
+    except set_scores_service.SetScoreError as exc:
+        extra = {"set_scores_error": str(exc)}
+    # Le fragment, jamais la page : rendre `picks.html` dans un `outerHTML`
+    # imbriquerait un `<html>` complet dans le `<div>` remplace.
+    return templates.TemplateResponse(
+        request, "_set_scores.html", _picks_context(session_id, **extra)
+    )
 
 
 @app.get("/history/{session_id}", response_class=HTMLResponse)

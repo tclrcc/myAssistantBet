@@ -1,0 +1,76 @@
+{# Le score exact en sets : la seule mesure de la lecture de la **manière** qui
+   soit indépendante de tout prix. La section D l'impose à chaque session de
+   tennis ; il n'était ni enregistré ni vérifié.
+
+   Saisie par menus fermés et jamais parsée du rendu : le prompt interdit d'en
+   faire une ligne du tableau C, ces scores arrivent donc en prose libre, et une
+   valeur mal lue fausserait le taux qu'on cherche justement à mesurer. #}
+<div id="set-scores">
+  {% if set_scores_error %}<div class="report report-warn">{{ set_scores_error }}</div>{% endif %}
+  {% if set_scores_saved %}<div class="report">Score en sets enregistré.</div>{% endif %}
+
+  {% if set_scores %}
+  <table class="board">
+    <thead>
+      <tr>
+        <th>Match</th>
+        <th>Annoncé</th>
+        <th>2<sup>e</sup> scénario</th>
+        <th>Réel</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in set_scores %}
+      <tr>
+        <td class="affiche">
+          {{ row.label }}
+          <span class="muted small">{{ row.competition }}</span>
+        </td>
+        <form hx-post="/history/{{ session_id }}/set-scores/{{ row.event_id }}"
+              hx-target="#set-scores" hx-swap="outerHTML">
+          <td>
+            <select name="predicted" aria-label="Score annoncé — {{ row.label }}">
+              <option value="">—</option>
+              {% for key in set_score_options %}
+              <option value="{{ key }}" {% if key == row.predicted %}selected{% endif %}>{{ key }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            <select name="alternate" aria-label="Second scénario — {{ row.label }}">
+              <option value="">—</option>
+              {% for key in set_score_options %}
+              <option value="{{ key }}" {% if key == row.alternate %}selected{% endif %}>{{ key }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            <select name="actual" aria-label="Score réel — {{ row.label }}">
+              <option value="">—</option>
+              {% for key in set_score_options %}
+              <option value="{{ key }}" {% if key == row.actual %}selected{% endif %}>{{ key }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td><button type="submit">Enregistrer</button></td>
+        </form>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="muted small">
+    Le score est écrit du point de vue du <strong>premier joueur nommé</strong>,
+    comme le handicap jeux et comme le H2H. Un score annoncé vide retire la ligne :
+    « PASSE » est une réponse attendue sur une partie du lot, et l'enregistrer
+    ferait compter au dénominateur un match sur lequel rien n'a été annoncé.
+  </p>
+  {% else %}
+  <p class="muted small">
+    Aucun match de tennis dans le lot de cette session. Le lot est l'ensemble des
+    matchs <strong>entrés dans un prompt</strong> : une session dont aucun prompt
+    n'a été généré n'en a pas.
+  </p>
+  {% endif %}
+</div>

@@ -33,6 +33,7 @@ EXPECTED_TABLES = {
     "schema_migrations",
     "session_events",
     "sessions",
+    "set_scores",
     "sports",
     "team_aliases",
     "team_context",

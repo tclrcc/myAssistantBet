@@ -18,8 +18,10 @@
 {# `labelling` entre dans la condition : il ne depend d'aucun resultat, donc il
    a deja quelque chose a dire quand rien n'est tranche. Sans lui, vingt
    selections saisies un soir laissaient la page repondre « rien a mesurer »
-   alors que la repartition des confiances, elle, etait complete. #}
-{% if analysis.empty and stats.empty and not labelling %}
+   alors que la repartition des confiances, elle, etait complete. Le score en
+   sets y entre pour la meme raison : il ne lit aucun pick, seulement des scores
+   annonces et constates. #}
+{% if analysis.empty and stats.empty and not labelling and set_scores.empty %}
   <p class="empty">
     Rien à mesurer pour l'instant. Saisis le résultat de quelques sélections —
     y compris de celles que tu n'as pas jouées, elles disent si l'analyse voyait juste.
@@ -448,6 +450,84 @@
       plutôt qu'une erreur de saisie.
     </p>
   </details>
+</section>
+{% endif %}
+
+{% if not set_scores.empty %}
+{# Le score exact en sets : la **seule** mesure de cette page qui ne mélange
+   aucun prix. Quatre issues, vérifiables sur n'importe quelle feuille de match.
+   La section D l'impose à chaque session de tennis ; il n'était ni enregistré ni
+   vérifié — écrit dans le rendu, lu une fois, puis perdu. #}
+<section class="stats-block">
+  <header class="block-head">
+    <h2>Le score en sets annoncé</h2>
+    <p class="block-note">
+      La lecture de la <strong>manière</strong>, mesurée sans aucun prix : ni cote,
+      ni palier, ni mise n'entrent ici. Le score est écrit du point de vue du
+      premier joueur nommé.
+    </p>
+  </header>
+
+  {% if set_scores.settled %}
+  <div class="kpi">
+    <div class="tile">
+      <span class="label">Score exact</span>
+      <b class="tile-figure">{{ (set_scores.exact_rate * 100) | round | int }} %</b>
+      <span class="tile-detail">
+        {{ set_scores.exact }} sur {{ set_scores.settled }} score(s) constaté(s)
+      </span>
+    </div>
+    <div class="tile">
+      <span class="label">Vainqueur juste</span>
+      <b class="tile-figure">{{ (set_scores.issue_rate * 100) | round | int }} %</b>
+      <span class="tile-detail">
+        {{ set_scores.exact + set_scores.issue_only }} sur {{ set_scores.settled }},
+        nombre de sets compris ou non
+      </span>
+    </div>
+  </div>
+
+  <p class="block-note">
+    <strong>{{ set_scores.issue_only }}</strong> score(s) avec le bon vainqueur mais
+    le mauvais nombre de sets : l'issue était lue, la manière non. C'est le chiffre
+    qui dit qu'un raisonnement sur le rythme n'a pas porté — et il le dit même
+    quand la sélection, elle, a gagné.
+    {% if set_scores.alternate %}
+    Le second scénario est tombé {{ set_scores.alternate }} fois ; il est compté à
+    part, deux scores proposés ne valant pas une lecture deux fois plus juste.
+    {% endif %}
+    {% if set_scores.pending %}
+    {{ set_scores.pending }} score(s) annoncé(s) attendent encore leur résultat.
+    {% endif %}
+  </p>
+
+  <details>
+    <summary>Matrice annoncé / constaté</summary>
+    <table class="board">
+      <thead>
+        <tr>
+          <th>Annoncé \ constaté</th>
+          {% for key in set_score_options %}<th class="num">{{ key }}</th>{% endfor %}
+          <th class="num">Total</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for annonce, comptes, total in set_score_matrix %}
+        <tr>
+          <td class="muted">{{ annonce }}</td>
+          {% for compte in comptes %}<td class="num">{{ compte or "—" }}</td>{% endfor %}
+          <td class="num">{{ total or "—" }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% else %}
+  <p class="block-note">
+    {{ set_scores.pending }} score(s) annoncé(s), aucun résultat saisi pour l'instant.
+    Ils se renseignent sur la feuille de session, au même endroit que les paris.
+  </p>
+  {% endif %}
 </section>
 {% endif %}
 
