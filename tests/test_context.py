@@ -30,6 +30,7 @@ from myassistantbet.services.context import (
 from myassistantbet.services.matching import save_alias
 from myassistantbet.services.prompt import build_prompt
 from myassistantbet.services.render import UNAVAILABLE
+from myassistantbet.services.thresholds import save as save_threshold
 
 from .helpers import RATE_HEADERS, mock_context_routes
 
@@ -206,7 +207,7 @@ async def test_bloc_contexte_complet(
     assert lines["Classement"] == "BK Hacken 4e (34pts, 16j) | Djurgardens IF 2e (39pts, 16j)"
     # Le compte suit les buts : les lettres portent sur la competition, les buts
     # sur les cinq derniers matchs toutes competitions.
-    assert lines["Forme 5"] == "BK Hacken VVNDV (9-4/5) | Djurgardens IF VVVND (11-3/5)"
+    assert lines["Forme 5"] == "BK Hacken VVNDV (5j) 9-4/5 | Djurgardens IF VVVND (5j) 11-3/5"
     assert lines["Dom/Ext"] == (
         "BK Hacken dom 6V-1N-1D 2.1 bpm/8j | Djurgardens IF ext 4V-2N-2D 1.4 bpm/8j"
     )
@@ -1672,7 +1673,9 @@ def test_des_la_premiere_journee_le_classement_est_rendu(migrated: Settings) -> 
     lignes = _lines(migrated)
 
     assert "1j" in lignes["Classement"]
-    assert lignes["Enjeu"].endswith("Premiership (Relegation Group)")
+    # A la premiere journee, l'enjeu est date et marque indicatif : « Relegation
+    # Group » y decrit l'ordre alphabetique autant que le niveau.
+    assert lignes["Enjeu"].endswith("Premiership (Relegation Group) (après 1j — indicatif)")
 
 
 def test_la_forme_dit_sur_combien_de_matchs_portent_ses_buts(migrated: Settings) -> None:
@@ -1696,8 +1699,11 @@ def test_la_forme_dit_sur_combien_de_matchs_portent_ses_buts(migrated: Settings)
 
     forme = _lines(migrated)["Forme 5"]
 
-    assert "V (6-8/5)" in forme, "une lettre en face de cinq matchs, et ca se voit"
-    assert "DV (12-4/5)" in forme
+    # Chaque moitie porte desormais **son** denominateur : une lettre pour la
+    # competition, cinq matchs pour les buts. Un seul compte laissait croire a
+    # douze buts en deux matchs.
+    assert "V (1j) 6-8/5" in forme
+    assert "DV (2j) 12-4/5" in forme
 
 
 @respx.mock
@@ -1871,3 +1877,54 @@ def _lot(settings: Settings, sport: str) -> int:
         "INSERT INTO session_events (session_id, event_id) VALUES (1, 900)", settings=settings
     )
     return 1
+
+
+def test_l_enjeu_de_debut_de_saison_est_date_et_marque(migrated: Settings) -> None:
+    """A la 3e journee sur 32, « Relegation Playoffs » decrit l'ordre
+    alphabetique autant que le niveau. Le prompt ordonne pourtant de recopier
+    cette ligne comme l'enjeu reel, sans recherche.
+
+    Elle est **datee** plutot que supprimee : l'information reste — c'est bien ce
+    que la competition declare — et sa portee est dite.
+    """
+    _seed_event(migrated)
+    store(
+        1,
+        KIND_STANDINGS,
+        {"home": _standing(9, 2, "Relegation Playoffs"), "away": _standing(4, 2)},
+        migrated,
+    )
+
+    enjeu = _lines(migrated)["Enjeu"]
+
+    assert "Relegation Playoffs (après 2j — indicatif)" in enjeu
+
+
+def test_un_enjeu_de_saison_avancee_n_est_pas_marque(migrated: Settings) -> None:
+    """Passe le seuil, le classement a decante : l'enjeu vaut pour lui-meme."""
+    _seed_event(migrated)
+    store(
+        1,
+        KIND_STANDINGS,
+        {"home": _standing(9, 20, "Relegation Playoffs"), "away": _standing(4, 20)},
+        migrated,
+    )
+
+    assert "indicatif" not in _lines(migrated)["Enjeu"]
+
+
+def test_le_seuil_de_l_enjeu_se_lit_dans_les_reglages(migrated: Settings) -> None:
+    """Le total d'une saison ne se deduit pas du nombre d'equipes — une Superliga
+    danoise joue 32 journees a douze equipes — donc le seuil se regle."""
+    _seed_event(migrated)
+    store(
+        1,
+        KIND_STANDINGS,
+        {"home": _standing(9, 3, "Play-offs"), "away": _standing(4, 3)},
+        migrated,
+    )
+    assert "indicatif" in _lines(migrated)["Enjeu"]
+
+    save_threshold("enjeu_min_journees", "2", migrated)
+
+    assert "indicatif" not in _lines(migrated)["Enjeu"]

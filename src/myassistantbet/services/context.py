@@ -25,6 +25,7 @@ from ..providers.base import ProviderError
 from .labels import sort_key
 from .matching import Resolution, resolve_team
 from .render import UNAVAILABLE
+from .thresholds import value_of
 
 logger = logging.getLogger(__name__)
 
@@ -1628,7 +1629,19 @@ def _stake_fragment(team: str, entry: dict[str, Any] | None) -> str:
     se deduit d'un classement qui ne classe rien.
     """
     stake = (entry or {}).get("stake")
-    return f"{team} {stake}" if stake and _standing_played(entry) else ""
+    if not stake or not _standing_played(entry):
+        return ""
+    # A la 3e journee sur 32, « Relegation Playoffs » est un artefact du
+    # classement : il decrit l'ordre alphabetique autant que le niveau. Le
+    # prompt ordonne pourtant de recopier cette ligne comme l'enjeu reel, sans
+    # recherche. Elle est donc **datee** plutot que supprimee — l'information
+    # reste, sa portee est dite. Le nombre de journees jouees suffit : le total
+    # de la saison ne se deduit pas du nombre d'equipes, une Superliga danoise
+    # jouant 32 journees a douze equipes.
+    played = (entry or {}).get("played") or 0
+    if played < value_of("enjeu_min_journees"):
+        return f"{team} {stake} (après {played}j — indicatif)"
+    return f"{team} {stake}"
 
 
 #: Surfaces telles que le fournisseur les nomme. Une pelouse naturelle ne
@@ -1774,14 +1787,23 @@ def _form_fragment(team: str, stats: dict[str, Any] | None, recent: dict[str, An
     lisait « une victoire, six buts marques, huit encaisses », et « Slask
     Wroclaw DV (12-4) » douze buts en deux matchs.
 
-    Le compte suit donc les buts, comme `1.4 bpm/8j` ou `5.2 pris 6.4/5`
-    ailleurs : une lettre en face de `/5` se voit, et c'est tout ce qu'il faut
-    pour ne pas lire les deux moities sur la meme periode.
+    **Chaque moitie porte donc son propre denominateur** : `Silkeborg ND (2j)
+    10-6/5` se lit « deux matchs dans cette competition, dix buts marques et six
+    encaisses sur les cinq derniers toutes competitions ». Un seul compte ne
+    suffisait pas : `ND (10-6/5)` laissait croire a seize buts en deux matchs,
+    et rien ne disait que les lettres venaient d'ailleurs.
+
+    Les deux comptes s'ecrivent **meme quand ils coincident**, ce qui est le cas
+    ordinaire. Ne les ecrire qu'en cas d'ecart rendrait une ligne sans annotation
+    ambigue : coincidence, ou verification jamais faite ?
     """
     letters = _form_letters((stats or {}).get("form"))
     if not letters:
         return ""
+    # La longueur des lettres **est** la fenetre : `_form_letters` garde les
+    # `FORM_LENGTH` dernieres, donc une equipe a deux matchs joues en porte deux.
+    played = f"({len(letters)}j)"
     if recent and recent.get("matches"):
         goals = f"{recent['goals_for']}-{recent['goals_against']}/{recent['matches']}"
-        return f"{team} {letters} ({goals})"
-    return f"{team} {letters}"
+        return f"{team} {letters} {played} {goals}"
+    return f"{team} {letters} {played}"

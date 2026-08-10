@@ -1383,6 +1383,27 @@ qui les rend chercheuses.
   selections. Sous `combo_min_lot`, le prompt n'en demande qu'un, et les deux
   paragraphes qui supposent deux combines se gardent avec.
 
+## Deux lignes disaient plus que ce qu'elles savaient
+
+- **`Forme 5` melange deux fenetres, et chaque moitie porte desormais son propre
+  denominateur** : `Silkeborg ND (2j) 10-6/5` — deux matchs dans la competition, cinq
+  derniers toutes competitions pour les buts. Le compte unique laissait lire seize buts en
+  deux matchs. Les deux s'ecrivent **meme quand ils coincident**, ce qui est le cas
+  ordinaire : ne les ecrire qu'en cas d'ecart rendrait une ligne sans annotation ambigue —
+  coincidence, ou verification jamais faite ? La longueur des lettres **est** la fenetre,
+  `_form_letters` gardant les `FORM_LENGTH` dernieres.
+- **`Enjeu` est date et marque « indicatif » en debut de saison.** A la 3e journee sur 32,
+  « Relegation Playoffs » decrit l'ordre alphabetique autant que le niveau — et le prompt
+  ordonne de recopier cette ligne comme l'enjeu reel, sans recherche. Elle est **datee
+  plutot que supprimee** : l'information reste, c'est bien ce que la competition declare,
+  et sa portee est dite.
+  - **Le nombre de journees jouees suffit, le total de la saison n'est pas calculable** :
+    il ne se deduit pas du nombre d'equipes — la Superliga danoise joue 32 journees a
+    douze equipes, quand un double round-robin en donnerait 22. Ecrire « 2j/32 » aurait
+    demande une donnee qu'aucune source ne fournit.
+  - Le seuil se regle (`enjeu_min_journees`, 8 par defaut, environ un quart d'une saison
+    ordinaire).
+
 ## La densite du bloc CONTEXTE (`session.context_density`)
 
 Sur un lot de cinq matchs, la shortlist affichait le **meme badge « 3 marches »** pour

@@ -553,7 +553,7 @@ async def test_le_prompt_contient_le_bloc_contexte(
 
     assert "CONTEXTE" in body
     assert "  Classement  BK Hacken 4e (34pts, 16j)" in body
-    assert "  Forme 5     BK Hacken VVNDV (9-4/5)" in body
+    assert "  Forme 5     BK Hacken VVNDV (5j) 9-4/5" in body
     assert "  Absents     BK Hacken — M. Rygaard" in body
     assert "  H2H (3)     1-1 · 0-2 D · 2-2" in body
     # Le bloc MARCHES suit immediatement le contexte, sans ligne vide parasite.
@@ -1098,3 +1098,14 @@ def test_l_arrondi_des_quotas_ne_depend_pas_du_palier(migrated: Settings) -> Non
 
     assert cinq.quota_for(5, safest=False)[1] == 3, "2.5 monte a 3"
     assert trois.quota_for(5, safest=False)[1] == 2, "1.5 monte a 2"
+
+
+def test_le_glossaire_explique_les_deux_fenetres_de_forme_5(migrated: Settings) -> None:
+    """`ND (2j) 10-6/5` n'est pas seize buts en deux matchs : les lettres
+    viennent de la seule competition, les buts des cinq derniers toutes
+    competitions. La ligne le montre, le glossaire doit le dire."""
+    gabarit = " ".join((TEMPLATES_DIR / DEFAULT_TEMPLATE).read_text(encoding="utf-8").split())
+
+    assert "chaque moitié porte son propre dénominateur" in gabarit
+    assert "n'est pas seize buts en deux matchs" in gabarit
+    assert "(après Nj — indicatif) »**, elle sort d'un classement de début de saison" in gabarit
