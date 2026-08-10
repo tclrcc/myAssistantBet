@@ -1690,6 +1690,16 @@ seuil** — Issue 24/49, Handicap 11/23, Total 10/21 — la ou aucun libelle ne 
     grandeur — les melanger aux buts ferait decrire deux choses par un seul taux ; les
     props buteurs, qui sont des marches de joueur ; et `Cotes`, libelle libre de la saisie
     manuelle, qui peut recouvrir n'importe quoi.
+  - **`cotes` n'est pas un artefact d'ingestion, et la question a ete tranchee.** La ligne
+    intrigue parce qu'elle ressemble a un en-tete de bloc capture comme un marche.
+    Verification faite : **aucune selection de la base ne porte ce libelle** — les seize
+    libelles enregistres sont `Vainqueur`, `1N2`, `Handicap`, `O/U`… Il vient de
+    `FAMILY_SEED` et de la migration 027, et le libelle lui-meme de
+    `render.MARKET_ORDER`, ou `("outright", "Cotes")` nomme le marche libre de la saisie
+    manuelle. L'ecran des reglages liste **toutes** les cles classees, y compris celles
+    que rien n'a encore employees : il affiche « — » dans la colonne des selections, et
+    c'est ce tiret qui distingue une entree seedee d'une entree vue en base. Rien a
+    purger, rien a corriger cote parsing.
   - `equipe` est la seule famille rangee par **sujet** et non par forme : un total
     d'equipe est un total, mais « plus de 1.5 but pour Lyon » et « plus de 2.5 buts dans
     le match » ne se gagnent pas dans les memes scenarios.

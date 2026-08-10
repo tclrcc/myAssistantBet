@@ -21,6 +21,7 @@ from myassistantbet.services import board as board_service
 from myassistantbet.services import market_families
 from myassistantbet.services.history import add_pick, analysis, set_result
 from myassistantbet.services.manual import build, save
+from myassistantbet.services.render import MARKET_ORDER
 
 
 @pytest.fixture
@@ -306,3 +307,21 @@ def test_le_detail_par_famille_est_dans_la_page(migrated: Settings) -> None:
 
     assert [row.label for row in total.markets] == ["O/U", "Nombre total de buts (t. rég)"]
     assert total.markets[1].settled == 1, "gardé sous sa famille, malgré une seule ligne"
+
+
+def test_cotes_est_une_entree_seedee_et_non_un_artefact(migrated: Settings) -> None:
+    """La ligne `cotes` de la table des familles ressemble a un en-tete de bloc
+    capture comme un marche. Elle n'en est pas un : c'est le libelle du marche
+    `outright` dans `render.MARKET_ORDER`, celui de la saisie manuelle, seede
+    par la migration 027.
+
+    Le test verrouille les deux moities du constat — l'entree existe, et le
+    parsing ne la fabrique pas — pour qu'on ne repasse pas une soiree a chercher
+    une panne d'ingestion la ou il n'y a qu'une decision.
+    """
+    assert market_families.FAMILY_SEED["cotes"] == "autre"
+    assert ("outright", "Cotes") in MARKET_ORDER
+    assert market_families.family_key("Cotes") == "cotes"
+    # Vue en base : elle ne vient d'aucune selection, donc elle ne figure pas
+    # dans la liste « a classer », qui ne lit que `picks`.
+    assert all(entry.key != "cotes" for entry in market_families.unclassified(migrated))
