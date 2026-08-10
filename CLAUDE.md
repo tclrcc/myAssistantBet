@@ -1658,6 +1658,106 @@ bornes (1.70, 2.30) l'ecart de marge fait basculer de palier.
   d'`edgelab` instancie un client `anthropic`. Le reutiliser ferait de cette application un
   appelant de l'API Anthropic — interdit n°6, sans exception possible.
 
+## Les cibles de confiance : un ecart, et parfois rien du tout
+
+**Une cible absolue rapprochee des paliers recouple la confiance et la cote.** Les bandes
+de cote traduites en taux d'equilibre vont de 80 % pour SAFE a 12,5 % pour GIGA FUN : une
+selection a 4.00 qui gagne 30 % du temps est un bon pari, et elle tire son cran quarante
+points sous une bande a 70 %. Pour tenir cette bande, conf 5 devait devenir quasi
+exclusivement du SAFE — et le mecanisme qui ordonne de resserrer un cran employe trop
+largement poussait alors toute selection a cote haute vers le bas de l'echelle. C'etait la
+derive vers le SAFE, reinstallee un etage plus haut et cette fois par un reglage.
+
+- Les bornes sont donc des **ecarts en points au taux global** (migration 032). Ce qui se
+  mesure est la **monotonie** de la notation — un cran superieur bat-il le cran
+  inferieur — et non l'atteinte d'un chiffre qui depend du melange de paliers du mois.
+  Mesure sur un rendu a gate ouvert : conf 3 a 38 % et conf 4 a 52 % pour un global de
+  43 % etaient annonces a **-12 et -8 points** de leurs bandes absolues, donc tous deux
+  « a resserrer », alors que la notation est parfaitement monotone. En relatif, les deux
+  tombent **dans** leur bande et rien ne se declenche : c'est la reponse juste.
+- **La reference est le taux global de la population affichee**, sur la meme fenetre que
+  les taux compares. Si les deux divergeaient, on rapporterait un taux des soixante
+  dernieres a une moyenne de tout l'historique. Elle est nommee une fois dans le bloc.
+- **L'ecart est ce qui se regle, la valeur resolue ce a quoi un taux se compare.** L'ecran
+  affiche les deux, les surfaces de lecture la seconde : donner un ecart a comparer a un
+  taux ferait refaire l'addition a chaque ligne.
+- **On est reparti des defauts plutot que de convertir l'existant.** Au taux global
+  constate de 47,1 %, la bande de conf 3 devenait `+2,9 → +12,9` et celle de conf 5
+  `+22,9 et plus` : la conversion reproduit la derive qu'on supprime, l'echelle de depart
+  etant elle-meme calee sur une hypothese SAFE.
+
+**Un cran peut n'avoir aucune cible**, et c'est un etat a part entiere (migration 031).
+La partition n'est pas « les bords de l'echelle » mais **discretionnaire contre determine
+par la source** : une bande sert a declencher un mouvement — resserrer un cran employe
+trop largement, relacher un cran trop etroit — encore faut-il que le mouvement existe.
+
+- Les crans **1 et 2** sont pines par ce que la recherche a trouve : `lecture` impose 1,
+  une source de niveau 3-4 plafonne a 2. Descendre supposerait de nier un fait date,
+  monter exige une meilleure source et non une meilleure notation. Aucune direction n'est
+  un choix, donc aucune cible n'y mesure rien.
+- Les crans **3, 4 et 5** se distinguent par des criteres appreciables — un facteur ou
+  deux, un manque de la section A qui touche ou non le facteur. Le cran 5 **garde donc sa
+  borne basse** : ce qui n'allait pas chez lui n'etait pas d'avoir une cible, mais que
+  cette cible soit absolue.
+- `low` et `high` tous deux NULL = pas de cible. **`high` seul reste refuse** : c'est une
+  saisie incomplete, et le dernier cas d'erreur que ce validateur sache attraper.
+- La page ecrit « pas de cible » plutot que de ne rien afficher — une case vide par
+  decision ne se distingue pas d'un oubli — et **jamais un zero**, qui se lirait comme une
+  cible de 0 %. Le paragraphe de resserrement ne s'ecrit pas si aucun cran n'est cible.
+
+## Le gate de recul se regle et se mesure
+
+Les deux nombres qui decident si le bloc se transmet vivaient dans le code, et l'ecran les
+citait en dur. Ils entrent dans `thresholds` — c'est exactement ce qu'elle heberge — et
+`reach()` les lit **une seule fois pour les deux surfaces**.
+
+- **C'est le seul reglage dont l'effet est differe**, donc le seul dont on ne pouvait pas
+  mesurer la distance a l'activation. L'ecran affiche l'avancement (`60 / 40 selections ·
+  5 / 10 journees`) et ce qu'il manque.
+- Corollaire de validation : **le gate etant ferme en production**, rien de ce qui touche
+  aux bandes ne se voit dans un rendu reel. Tout s'y valide sur `helpers.lot_avec_recul`,
+  qui ouvre les deux seuils a la fois — l'etalement est celui qu'une fixture naive oublie.
+
+## L'effectif minimum : un seuil, deux presentations
+
+Un mecanisme existait deja **en double** : le prompt retirait les regroupements sous huit
+selections tranchees, la page les gardait et palissait leur barre. Le seuil est desormais
+unique et reglable, avec le meme defaut — 8 est deja en service, et le remplacer par un
+nombre rond couterait trois regroupements pour aucun gain de principe.
+
+**Les presentations, elles, restent distinctes, et leurs lecteurs ne sont pas les memes :**
+
+- la **page** affiche l'effectif a la place du taux (`3 selection(s), effectif
+  insuffisant`). « 100 % » sur trois paris occupe la meme colonne qu'un taux calcule sur
+  quarante, et un humain doit savoir qu'une case est vide parce qu'elle est maigre et non
+  parce qu'elle est nulle ;
+- le **prompt** se tait. Son bloc sert, selon son propre texte, a deux choses et a rien
+  d'autre — dire ou chercher en premier, et ou relever l'exigence — et une ligne
+  « effectif insuffisant » ne sert ni l'une ni l'autre.
+
+Le seuil descend **dans chaque ligne** au lieu d'etre lu d'une constante par une
+propriete : une classe qui irait chercher son propre reglage serait intestable hors d'une
+base.
+
+## Une cote hors de toute bande de palier
+
+Comportement d'avant, mesure avant de corriger : **ni rejet, ni exception, ni palier nul
+visible** — pire que les trois. `add_pick` acceptait 1.18 sans controle et la rangeait sous
+le palier choisi au formulaire ; `set_real_price` ecrivait `tier_real` a NULL,
+indiscernable de « jamais saisi », si bien que `tier_effective` retombait en silence sur le
+palier provisoire. La selection sortait alors de la quarantaine des cotes de reference
+comme si son prix avait ete releve, **et entrait dans un taux par bande de cote sans tomber
+dans aucune bande**.
+
+- Audit avant correction : **zero ligne concernee**, les cotes en base allant de 1.25 a
+  3.50. Le defaut etait latent — rien a reparer, seulement a fermer.
+- Le message nomme le palier le plus proche et la borne franchie. « Le plus proche » se
+  mesure en **distance a la borne**, jamais en ordre de position : les bandes se reglent,
+  rien n'empeche d'en laisser un trou au milieu, et nommer le premier de la liste enverrait
+  corriger la mauvaise borne.
+- **Une borne haute vide veut toujours dire « pas de limite »** : 999.00 reste accepte sur
+  `GIGA+`, et un test de non-regression le garde.
+
 ## Les seuils reglables (`services/thresholds.py`)
 
 Des nombres qui decident d'une regle sans etre ni une constante du projet ni une donnee :
