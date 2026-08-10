@@ -53,7 +53,17 @@
         {%- if row.band %}<i class="band">{% if row.band.targeted %}cible {{ row.band.label }}{% else %}pas de cible{% endif %}</i>{% endif %}
       </span>
       {{ meter(row) }}
+      {# Sous le seuil de lecture, **l'effectif prend la place du taux**. Un
+         « 100 % » sur trois paris occupe la même colonne qu'un taux calculé sur
+         quarante, et rien ne les distingue à l'œil ; l'effectif, lui, dit
+         exactement pourquoi la case est vide. Le prompt, lui, tait la ligne —
+         même seuil, présentation différente, et les deux sont justes : son
+         lecteur n'est pas le même. #}
+      {% if row.rate is not none and not row.readable %}
+      <b class="bar-value is-thin" title="{{ row.thin_label }}">{{ row.settled }} sél.</b>
+      {% else %}
       <b class="bar-value{% if row.off_band %} is-off{% endif %}">{{ row.rate_label }}</b>
+      {% endif %}
       {# Le compte accompagne toujours le taux : « 100 % » sur un pari et
          « 100 % » sur quarante ne disent pas la meme chose. L'effectif
          indépendant ne s'y ajoute **que s'il diffère** — écrire « 37 paris ·

@@ -12,7 +12,7 @@ from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services import coupons as coupons_service
-from myassistantbet.services import market_families
+from myassistantbet.services import market_families, thresholds
 from myassistantbet.services.competitions import set_category
 from myassistantbet.services.history import (
     ANALYSIS_MIN_DAYS,
@@ -47,6 +47,9 @@ from myassistantbet.services.history import (
     worksheet,
 )
 from myassistantbet.services.manual import build, save
+from myassistantbet.services.prompt import build_prompt
+
+from .helpers import NOW, lot_avec_recul
 
 
 @pytest.fixture
@@ -2861,3 +2864,54 @@ def test_une_cote_absente_reste_permise(migrated: Settings) -> None:
     )
 
     assert get_pick(pick_id, migrated).price is None
+
+
+# -- L'effectif minimum, un seuil pour deux presentations --------------------
+
+
+def test_le_seuil_de_lecture_se_regle(migrated: Settings) -> None:
+    """Un mecanisme existait deja, et il y en avait meme deux qui divergeaient :
+    le prompt **retirait** les lignes sous le seuil, la page les gardait et les
+    palissait. Le seuil est desormais unique et regle."""
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(4):
+        _pick(migrated, session_id, event_id, market="O/U 2.5", result="win")
+
+    assert all(not row.readable for row in analysis(migrated).by_market)
+
+    thresholds.save("feedback_min_rows", "3", migrated)
+
+    assert all(row.readable for row in analysis(migrated).by_market)
+
+
+def test_la_page_affiche_l_effectif_a_la_place_du_taux(
+    client: TestClient, migrated: Settings
+) -> None:
+    """« 100 % » sur trois paris occupe la meme colonne qu'un taux calcule sur
+    quarante. Un humain doit savoir qu'une case est vide parce qu'elle est
+    maigre, et non parce qu'elle est nulle."""
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(3):
+        _pick(migrated, session_id, event_id, market="GIGA test", result="win")
+
+    page = client.get("/stats").text
+
+    assert "3 sélection(s), effectif insuffisant" in page
+
+
+def test_le_prompt_se_tait_sur_un_regroupement_trop_maigre(migrated: Settings) -> None:
+    """**Meme seuil, presentation differente, et les deux sont justes.** Le bloc
+    du prompt sert selon son propre texte a deux choses et a rien d'autre : dire
+    ou chercher en premier, et ou relever l'exigence. Une ligne « effectif
+    insuffisant » ne sert ni l'une ni l'autre, et on vient de passer une mission
+    entiere a retirer de ce prompt les lignes qui ne decident de rien."""
+    session_id = lot_avec_recul(migrated)
+    event_id = int(db.query_one("SELECT id FROM events LIMIT 1", settings=migrated)["id"])
+    for _ in range(3):
+        _pick(migrated, session_id, event_id, market="Marché rare", result="win")
+
+    corps = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "Marché rare" not in corps
+    assert "effectif insuffisant" not in corps
+    assert "O/U 2.5" in corps, "le regroupement fourni, lui, est bien publie"

@@ -101,6 +101,21 @@ THRESHOLDS: dict[str, Threshold] = {
             "qui compte, pas celle du match."
         ),
     ),
+    "feedback_min_rows": Threshold(
+        key="feedback_min_rows",
+        label="Sélections tranchées avant qu'un regroupement affiche un taux",
+        default=8,
+        low=2,
+        high=100,
+        note=(
+            "Un regroupement moins fourni ne mesure que le hasard. Le seuil est unique, mais "
+            "les deux surfaces n'en font pas le même usage et c'est voulu : la page garde la "
+            "ligne et affiche son effectif à la place du taux — un humain doit savoir qu'une "
+            "case est vide parce qu'elle est maigre et non parce qu'elle est nulle — quand le "
+            "prompt la tait, un « effectif insuffisant » n'y servant ni à dire où chercher, "
+            "ni où relever l'exigence."
+        ),
+    ),
     "enjeu_min_journees": Threshold(
         key="enjeu_min_journees",
         label="Journées avant qu'un enjeu de classement compte",

@@ -26,8 +26,14 @@
          seconde mesure. Une ligne dont il contient 50 % ne tranche pas — elle
          reste affichée et le dit, elle n'est jamais retirée. #}
       <td class="num">
+        {# Sous le seuil de lecture, l'effectif remplace le taux : la case est
+           vide parce qu'elle est maigre, et non parce qu'elle est nulle. #}
+        {% if row.rate is not none and not row.readable %}
+        <span class="muted">{{ row.thin_label }}</span>
+        {%- else %}
         {{ row.rate_label }}
-        {%- if row.interval_label %}
+        {%- endif %}
+        {%- if row.interval_label and row.readable %}
         <span class="muted small ci-text">{{ row.interval_label }}</span>
         {%- endif %}
       </td>

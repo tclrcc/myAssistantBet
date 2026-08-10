@@ -281,6 +281,94 @@ class Comparison:
         return 0 < self.units < self.observed
 
 
+# -- Seuils de lecture, communs aux deux surfaces ---------------------------
+#
+# Sous quel compte un taux ne veut plus rien dire est une propriete des
+# **donnees**, pas de l'endroit qui les affiche : les seuils sont donc ecrits
+# une seule fois. Les copier des deux cotes les aurait fait diverger, et la
+# page aurait fini par publier ce que le prompt refuse.
+#
+# Ce qui differe, c'est la **reaction**, et les deux sont justes :
+#   · le prompt se tait. Claude n'a aucun moyen de savoir qu'il lit une semaine
+#     de paris plutot qu'un historique, et un chiffre faux oriente plus
+#     surement que pas de chiffre du tout ;
+#   · la page le dit. C'est la surface ou l'utilisateur vient regarder ses
+#     propres donnees : les lui cacher repondrait a cote de la question posee.
+#     La ligne reste affichee et porte sa faiblesse, le detail chiffre sous le
+#     graphique restant complet en toutes circonstances.
+
+#: Sous ce total, aucun taux n'est publie. Un 2/3 se lit « 67 % » et n'apprend
+#: rien ; dire qu'il manque du recul est en revanche une information juste.
+#:
+#: Releve a 40 apres coup : a 17 selections tranchees, le bloc publiait un
+#: 2/6 en ATP contre 5/7 en WTA qui ne reposait que sur treize matchs d'un
+#: seul tournoi, joues la meme nuit. Ce n'est pas « je lis mieux la WTA »,
+#: c'est « une soiree s'est mal passee », et le prompt le presentait comme un
+#: ordre de passage. Un chiffre faux oriente plus surement que pas de chiffre.
+#: **Defaut**, et non plus la valeur en vigueur : les deux nombres qui decident
+#: si le bloc se transmet sont exactement ce que la table des seuils heberge —
+#: « des nombres qui decident d'une regle sans etre une donnee ». Ils se reglent
+#: donc dans l'ecran, et `value_of` rend celui-ci quand rien n'est saisi.
+FEEDBACK_MIN_TOTAL = 40
+
+#: Meme regle a l'echelle d'une ligne : un regroupement vu sept fois reste tu.
+FEEDBACK_MIN_ROWS = 8
+
+#: Journees d'analyse distinctes sous lesquelles aucun detail n'est publie.
+#:
+#: `FEEDBACK_MIN_TOTAL` garde le **volume**, ce garde-fou garde l'**etalement**,
+#: et les deux ne se remplacent pas : 63 selections tranchees prises en quatre
+#: jours restent une semaine de paris, pas un historique. Mesure sur les donnees
+#: reelles — les 60 selections de la fenetre couvraient du 5 au 8 aout, un seul
+#: tournoi de tennis en deux tableaux et une seule soiree de coupes d'Europe.
+#: Le bloc annoncait alors « Masters 1000 13/30 » et « Tennis 13/30 » comme deux
+#: observations independantes, la ou c'etaient les memes matchs sous deux noms,
+#: et « Conference League 11 » sur une unique soiree.
+#:
+#: Une concentration ne se mesure pas par competition : les deux tableaux du
+#: Canadian Open sont deux competitions distinctes en base, si bien qu'un compte
+#: de competitions aurait declare l'echantillon varie. C'est le calendrier qui
+#: la dit — dix journees ne tiennent pas dans une semaine de tournoi.
+FEEDBACK_MIN_DAYS = 10
+
+#: La page reprend les seuils du prompt, sans en inventer d'autres. Le meme
+#: 46 % sur 35 selections d'un seul tournoi est trompeur des deux cotes ; seule
+#: change la facon de le dire.
+ANALYSIS_MIN_TOTAL = FEEDBACK_MIN_TOTAL
+ANALYSIS_MIN_ROWS = FEEDBACK_MIN_ROWS
+ANALYSIS_MIN_DAYS = FEEDBACK_MIN_DAYS
+
+
+# -- Ce que vaut l'analyse --------------------------------------------------
+
+#: Part de recouvrement au-dela de laquelle deux regroupements de deux axes
+#: differents decrivent le meme echantillon sous deux noms. Elle se mesure
+#: **des deux cotes** : un sous-ensemble entierement contenu dans un autre n'est
+#: pas le meme echantillon, c'est une partie de celui-ci.
+COLLINEAR_SHARE = 0.95
+
+#: Part du volume au-dela de laquelle une echelle se comporte comme si elle
+#: comptait moins de niveaux qu'elle n'en a. Mesure qui l'a fixee : 95 des 96
+#: selections portent une confiance 3 ou 4, et 89 des 96 un palier SAFE ou FUN.
+CONCENTRATION_SHARE = 0.80
+
+#: Nombre de niveaux sur lesquels cette part se mesure.
+CONCENTRATION_LEVELS = 2
+
+#: Les cinq niveaux de confiance, **tous rendus meme jamais employes**. C'est
+#: precisement le niveau qui ne sert jamais qui decrit la facon d'etiqueter :
+#: omettre une confiance 5 a zero ferait lire une echelle a quatre crans, et
+#: l'echelle n'aurait plus l'air d'etre sous-employee.
+CONFIDENCE_SCALE = (5, 4, 3, 2, 1)
+
+#: Sous ce nombre de paris tranches, un marche n'est pas liste : la longue
+#: traine des libelles vus une fois noierait les marches qui comptent. C'est le
+#: seul cas ou la page ecarte vraiment une ligne, et il ne contredit pas la
+#: regle ci-dessus : un libelle vu une fois n'est pas un taux fragile, c'est du
+#: bruit d'orthographe. Le compte des ecartes est annonce (`hidden_markets`).
+ANALYSIS_MIN_MARKET = 2
+
+
 @dataclass
 class Band:
     """Bande cible d'un niveau de confiance, en points de pourcentage.
@@ -348,6 +436,10 @@ class RateRow:
     label: str
     won: int = 0
     lost: int = 0
+    #: Sous ce compte, le taux ne decrit que le hasard. **Porte par la ligne et
+    #: non lu d'une constante** : il se regle, et une propriete qui irait le
+    #: chercher elle-meme rendrait la classe intestable hors d'une base.
+    minimum: int = ANALYSIS_MIN_ROWS
     void: int = 0
     pending: int = 0
     #: Selections tranchees du regroupement qui portent une cote. Tenu a part
@@ -400,11 +492,24 @@ class RateRow:
     @property
     def thin(self) -> bool:
         """Trop peu de paris tranches pour que le taux decrive autre chose que
-        le hasard. Meme seuil que le prompt, reaction differente : le bloc du
-        prompt tait la ligne, la page la garde et la marque — l'utilisateur
-        vient justement y regarder ses propres donnees.
+        le hasard. **Meme seuil que le prompt, presentation differente**, et les
+        deux sont justes : le prompt tait la ligne — « effectif insuffisant »
+        n'y sert ni a dire ou chercher, ni ou relever l'exigence, les deux
+        seules choses que ce bloc fasse — quand la page la garde et affiche son
+        effectif, un humain devant savoir qu'une case est vide parce qu'elle est
+        maigre et non parce qu'elle est nulle.
         """
-        return 0 < self.settled < ANALYSIS_MIN_ROWS
+        return 0 < self.settled < self.minimum
+
+    @property
+    def readable(self) -> bool:
+        """Assez fourni pour qu'un taux se lise comme autre chose qu'un hasard."""
+        return self.settled >= self.minimum
+
+    @property
+    def thin_label(self) -> str:
+        """« 3 sélections, effectif insuffisant » — ce qui remplace le taux."""
+        return f"{self.settled} sélection(s), effectif insuffisant"
 
     def merge(self, other: RateRow) -> None:
         """Ajoute un regroupement a celui-ci, champ par champ.
@@ -494,7 +599,7 @@ class RateRow:
         Meme seuil de lecture que le taux constate : sous `ANALYSIS_MIN_ROWS`
         cotes, la moyenne decrit une poignee de prix et non un regroupement.
         """
-        if self.priced < ANALYSIS_MIN_ROWS:
+        if self.priced < self.minimum:
             return None
         return self.implied_sum / self.priced
 
@@ -1388,94 +1493,6 @@ def stats(settings: Settings | None = None) -> Stats:
     return Stats(by_tier=by_tier, by_sport=by_sport, overall=overall, quarantined=quarantined)
 
 
-# -- Seuils de lecture, communs aux deux surfaces ---------------------------
-#
-# Sous quel compte un taux ne veut plus rien dire est une propriete des
-# **donnees**, pas de l'endroit qui les affiche : les seuils sont donc ecrits
-# une seule fois. Les copier des deux cotes les aurait fait diverger, et la
-# page aurait fini par publier ce que le prompt refuse.
-#
-# Ce qui differe, c'est la **reaction**, et les deux sont justes :
-#   · le prompt se tait. Claude n'a aucun moyen de savoir qu'il lit une semaine
-#     de paris plutot qu'un historique, et un chiffre faux oriente plus
-#     surement que pas de chiffre du tout ;
-#   · la page le dit. C'est la surface ou l'utilisateur vient regarder ses
-#     propres donnees : les lui cacher repondrait a cote de la question posee.
-#     La ligne reste affichee et porte sa faiblesse, le detail chiffre sous le
-#     graphique restant complet en toutes circonstances.
-
-#: Sous ce total, aucun taux n'est publie. Un 2/3 se lit « 67 % » et n'apprend
-#: rien ; dire qu'il manque du recul est en revanche une information juste.
-#:
-#: Releve a 40 apres coup : a 17 selections tranchees, le bloc publiait un
-#: 2/6 en ATP contre 5/7 en WTA qui ne reposait que sur treize matchs d'un
-#: seul tournoi, joues la meme nuit. Ce n'est pas « je lis mieux la WTA »,
-#: c'est « une soiree s'est mal passee », et le prompt le presentait comme un
-#: ordre de passage. Un chiffre faux oriente plus surement que pas de chiffre.
-#: **Defaut**, et non plus la valeur en vigueur : les deux nombres qui decident
-#: si le bloc se transmet sont exactement ce que la table des seuils heberge —
-#: « des nombres qui decident d'une regle sans etre une donnee ». Ils se reglent
-#: donc dans l'ecran, et `value_of` rend celui-ci quand rien n'est saisi.
-FEEDBACK_MIN_TOTAL = 40
-
-#: Meme regle a l'echelle d'une ligne : un regroupement vu sept fois reste tu.
-FEEDBACK_MIN_ROWS = 8
-
-#: Journees d'analyse distinctes sous lesquelles aucun detail n'est publie.
-#:
-#: `FEEDBACK_MIN_TOTAL` garde le **volume**, ce garde-fou garde l'**etalement**,
-#: et les deux ne se remplacent pas : 63 selections tranchees prises en quatre
-#: jours restent une semaine de paris, pas un historique. Mesure sur les donnees
-#: reelles — les 60 selections de la fenetre couvraient du 5 au 8 aout, un seul
-#: tournoi de tennis en deux tableaux et une seule soiree de coupes d'Europe.
-#: Le bloc annoncait alors « Masters 1000 13/30 » et « Tennis 13/30 » comme deux
-#: observations independantes, la ou c'etaient les memes matchs sous deux noms,
-#: et « Conference League 11 » sur une unique soiree.
-#:
-#: Une concentration ne se mesure pas par competition : les deux tableaux du
-#: Canadian Open sont deux competitions distinctes en base, si bien qu'un compte
-#: de competitions aurait declare l'echantillon varie. C'est le calendrier qui
-#: la dit — dix journees ne tiennent pas dans une semaine de tournoi.
-FEEDBACK_MIN_DAYS = 10
-
-#: La page reprend les seuils du prompt, sans en inventer d'autres. Le meme
-#: 46 % sur 35 selections d'un seul tournoi est trompeur des deux cotes ; seule
-#: change la facon de le dire.
-ANALYSIS_MIN_TOTAL = FEEDBACK_MIN_TOTAL
-ANALYSIS_MIN_ROWS = FEEDBACK_MIN_ROWS
-ANALYSIS_MIN_DAYS = FEEDBACK_MIN_DAYS
-
-
-# -- Ce que vaut l'analyse --------------------------------------------------
-
-#: Part de recouvrement au-dela de laquelle deux regroupements de deux axes
-#: differents decrivent le meme echantillon sous deux noms. Elle se mesure
-#: **des deux cotes** : un sous-ensemble entierement contenu dans un autre n'est
-#: pas le meme echantillon, c'est une partie de celui-ci.
-COLLINEAR_SHARE = 0.95
-
-#: Part du volume au-dela de laquelle une echelle se comporte comme si elle
-#: comptait moins de niveaux qu'elle n'en a. Mesure qui l'a fixee : 95 des 96
-#: selections portent une confiance 3 ou 4, et 89 des 96 un palier SAFE ou FUN.
-CONCENTRATION_SHARE = 0.80
-
-#: Nombre de niveaux sur lesquels cette part se mesure.
-CONCENTRATION_LEVELS = 2
-
-#: Les cinq niveaux de confiance, **tous rendus meme jamais employes**. C'est
-#: precisement le niveau qui ne sert jamais qui decrit la facon d'etiqueter :
-#: omettre une confiance 5 a zero ferait lire une echelle a quatre crans, et
-#: l'echelle n'aurait plus l'air d'etre sous-employee.
-CONFIDENCE_SCALE = (5, 4, 3, 2, 1)
-
-#: Sous ce nombre de paris tranches, un marche n'est pas liste : la longue
-#: traine des libelles vus une fois noierait les marches qui comptent. C'est le
-#: seul cas ou la page ecarte vraiment une ligne, et il ne contredit pas la
-#: regle ci-dessus : un libelle vu une fois n'est pas un taux fragile, c'est du
-#: bruit d'orthographe. Le compte des ecartes est annonce (`hidden_markets`).
-ANALYSIS_MIN_MARKET = 2
-
-
 @dataclass
 class SessionRate:
     """Une session : ce qu'elle a vu, ce qu'elle a retenu, ce que ca a donne.
@@ -2121,11 +2138,24 @@ def labelling(settings: Settings | None = None) -> list[Mix]:
     return [confiance, palier]
 
 
-def _rate_tally(entries: list[tuple[str, str, str, Any]], minimum: int = 1) -> list[RateRow]:
-    """Agrege des quadruplets (cle, libelle, resultat, ligne) en lignes de taux."""
+def _rate_tally(
+    entries: list[tuple[str, str, str, Any]],
+    minimum: int = 1,
+    readable: int = ANALYSIS_MIN_ROWS,
+) -> list[RateRow]:
+    """Agrege des quadruplets (cle, libelle, resultat, ligne) en lignes de taux.
+
+    `minimum` **retire** une ligne du regroupement — la longue traine des
+    libelles vus une fois. `readable` ne retire rien : il dit a partir de quel
+    effectif le taux se lit, et la page affiche l'effectif en dessous. Les deux
+    ne se confondent pas : la premiere est du bruit d'orthographe, la seconde
+    une mesure trop courte.
+    """
     grouped: dict[str, RateRow] = {}
     for key, label, result, row in entries:
-        _count(grouped.setdefault(key, RateRow(key=key, label=label)), result, row)
+        _count(
+            grouped.setdefault(key, RateRow(key=key, label=label, minimum=readable)), result, row
+        )
     return [row for row in grouped.values() if row.settled >= minimum]
 
 
@@ -2254,6 +2284,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
 
     report = Analysis()
     report.minimum, report.minimum_days = reach(settings)
+    report.minimum_rows = threshold_value("feedback_min_rows", settings)
     report.recorded = int(recorded)
     report.by_session = _by_session(sessions, rows, lots(settings), sport_labels, settings.tz)
     if not rows:
@@ -2287,7 +2318,8 @@ def analysis(settings: Settings | None = None) -> Analysis:
             (_tier_of(row), tier_labels.get(_tier_of(row), _tier_of(row)), result, row)
             for row, result in zip(rows, results, strict=True)
             if not _quarantined(row)
-        ]
+        ],
+        readable=report.minimum_rows,
     )
     report.by_tier.sort(
         key=lambda item: tier_order.index(item.key) if item.key in tier_order else 99
@@ -2299,7 +2331,8 @@ def analysis(settings: Settings | None = None) -> Analysis:
                 (str(row["confidence"]), f"confiance {row['confidence']}", result, row)
                 for row, result in zip(rows, results, strict=True)
                 if row["confidence"] is not None
-            ]
+            ],
+            readable=report.minimum_rows,
         ),
         key=lambda item: item.key,
         reverse=True,
@@ -2320,7 +2353,8 @@ def analysis(settings: Settings | None = None) -> Analysis:
                     row,
                 )
                 for row, result in zip(rows, results, strict=True)
-            ]
+            ],
+            readable=report.minimum_rows,
         ),
         key=lambda item: item.label,
     )
@@ -2336,7 +2370,8 @@ def analysis(settings: Settings | None = None) -> Analysis:
                 (row["category"], category_label(row["category"]), result, row)
                 for row, result in zip(rows, results, strict=True)
                 if row["category"]
-            ]
+            ],
+            readable=report.minimum_rows,
         ),
         key=lambda item: category_rank(item.key),
     )
@@ -2357,7 +2392,8 @@ def analysis(settings: Settings | None = None) -> Analysis:
                 (row["angle"], ANGLES[row["angle"]], result, row)
                 for row, result in zip(rows, results, strict=True)
                 if row["angle"] in ANGLES
-            ]
+            ],
+            readable=report.minimum_rows,
         ),
         key=lambda item: list(ANGLES).index(item.key),
     )
@@ -2367,7 +2403,8 @@ def analysis(settings: Settings | None = None) -> Analysis:
                 (row["source_level"], SOURCE_LEVELS[row["source_level"]], result, row)
                 for row, result in zip(rows, results, strict=True)
                 if row["source_level"] in SOURCE_LEVELS
-            ]
+            ],
+            readable=report.minimum_rows,
         ),
         key=lambda item: list(SOURCE_LEVELS).index(item.key),
     )
@@ -2400,7 +2437,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
     # Un seul comptage, deux vues : la carte fine applique son seuil, le deplie
     # d'une famille non. Les recalculer separement les aurait fait diverger, et
     # la somme du deplie n'aurait plus tombe juste sur sa ligne de famille.
-    tally = _rate_tally(markets)
+    tally = _rate_tally(markets, readable=report.minimum_rows)
     report.by_market = sorted(
         (entry for entry in tally if entry.settled >= ANALYSIS_MIN_MARKET),
         key=lambda item: (-item.settled, item.label),
@@ -2757,12 +2794,19 @@ class Feedback:
         return self.settled >= self.minimum and self.days >= self.minimum_days
 
 
-def _feedback_tally(entries: list[tuple[str, str, str]]) -> list[FeedbackRow]:
+def _feedback_tally(
+    entries: list[tuple[str, str, str]], minimum: int = FEEDBACK_MIN_ROWS
+) -> list[FeedbackRow]:
     """Agrege des triplets (cle, libelle, resultat) en lignes exploitables.
 
-    Les regroupements trop peu fournis sont ecartes : sur trois paris, le taux
-    mesure le hasard. Les entrees arrivant du plus recent au plus ancien, le
-    libelle retenu est la derniere orthographe employee.
+    Les regroupements trop peu fournis sont **ecartes**, et non pas marques : le
+    bloc du prompt sert selon son propre texte a deux choses et a rien d'autre —
+    dire ou chercher en premier, et ou relever l'exigence. Une ligne « effectif
+    insuffisant » ne sert ni l'une ni l'autre. La page, elle, la garde : son
+    lecteur n'est pas le meme.
+
+    Les entrees arrivant du plus recent au plus ancien, le libelle retenu est la
+    derniere orthographe employee.
     """
     grouped: dict[str, FeedbackRow] = {}
     for key, label, result in entries:
@@ -2771,7 +2815,7 @@ def _feedback_tally(entries: list[tuple[str, str, str]]) -> list[FeedbackRow]:
             row.won += 1
         else:
             row.lost += 1
-    return [row for row in grouped.values() if row.settled >= FEEDBACK_MIN_ROWS]
+    return [row for row in grouped.values() if row.settled >= minimum]
 
 
 def _selection_median(settings: Settings) -> tuple[float | None, int]:
@@ -2876,6 +2920,7 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
         ).fetchone()["n"]
 
     minimum, minimum_days = reach(settings)
+    minimum_rows = threshold_value("feedback_min_rows", settings)
     report = Feedback(
         settled=len(rows),
         days=len({str(row["created_at"])[:10] for row in rows}),
@@ -2904,7 +2949,8 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
             (_tier_of(row), tier_labels.get(_tier_of(row), _tier_of(row)), row["result"])
             for row in rows
             if not _quarantined(row)
-        ]
+        ],
+        minimum_rows,
     )
     report.by_tier.sort(
         key=lambda item: tier_order.index(item.key) if item.key in tier_order else 99
@@ -2915,7 +2961,8 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
             (str(row["confidence"]), f"confiance {row['confidence']}", row["result"])
             for row in rows
             if row["confidence"] is not None
-        ]
+        ],
+        minimum_rows,
     )
     report.by_confidence.sort(key=lambda item: item.key, reverse=True)
     # La bande cible se rattache ici et nulle part ailleurs, comme sur la page :
@@ -2935,7 +2982,8 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
                     row["result"],
                 )
                 for row in rows
-            ]
+            ],
+            minimum_rows,
         ),
         key=lambda item: item.label,
     )
@@ -2946,7 +2994,8 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
                 (_market_key(row["market"]), (row["market"] or "").strip(), row["result"])
                 for row in rows
                 if _market_key(row["market"])
-            ]
+            ],
+            minimum_rows,
         ),
         key=lambda item: (-item.settled, item.label),
     )
@@ -2960,7 +3009,8 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
                 (row["category"], category_label(row["category"]), row["result"])
                 for row in rows
                 if row["category"]
-            ]
+            ],
+            minimum_rows,
         ),
         key=lambda item: category_rank(item.key),
     )
@@ -2973,7 +3023,8 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
                 (row["competition"], row["competition"], row["result"])
                 for row in rows
                 if row["competition"]
-            ]
+            ],
+            minimum_rows,
         ),
         key=lambda item: (-item.settled, item.label),
     )
