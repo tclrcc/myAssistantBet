@@ -419,6 +419,140 @@ class Unclassified:
     active: bool = False
 
 
+#: Fiche de depart d'une competition, par cle The Odds API.
+#:
+#: Un lot de cinq matchs portait trois fiches — Allsvenskan, Superliga danoise,
+#: Primeira Liga — et **aucune pour l'EFL Cup**, qui etait le match le plus
+#: atypique du lot : un tour de coupe anglaise est le format ou la rotation
+#: d'effectif est la regle et non l'exception, exactement le fait de format et de
+#: calendrier que ces fiches ont pour role de porter.
+#:
+#: Ce qui est ecrit ici est **structurel et durable** : nombre de manches, tour
+#: d'entree des grands clubs, terrain du match, ecart de niveau attendu. Rien qui
+#: change d'une saison a l'autre — un fait perime dans le prompt coute plus
+#: qu'une fiche absente, et la phase en cours se lit deja sur le match.
+#:
+#: **Aucune migration ne les rejoue**, contrairement aux niveaux : c'est de la
+#: prose de plusieurs lignes, et la tenir a jour des deux cotes la ferait
+#: diverger au premier ajustement. La synchronisation comble le manque sur les
+#: competitions existantes — elle tourne tous les jours avec le lot gratuit —
+#: et n'ecrase jamais une fiche ecrite a la main.
+COMPETITION_NOTES: dict[str, str] = {
+    "soccer_england_efl_cup": (
+        "Élimination directe, un match sec (demi-finales en aller-retour). Les clubs "
+        "engagés en Europe entrent au 3e tour. Rotation d'effectif systématique sur les "
+        "tours précoces : l'équipe alignée n'est pas celle du championnat, et les "
+        "compositions sortent souvent tard."
+    ),
+    "soccer_fa_cup": (
+        "Élimination directe, un match sec. Les clubs de Premier League et de Championship "
+        "entrent au 3e tour. Écarts de division fréquents et rotation d'effectif sur les "
+        "tours précoces."
+    ),
+    "soccer_france_coupe_de_france": (
+        "Élimination directe, un match sec chez le club le moins bien classé : l'avantage "
+        "du terrain va au petit. Les clubs de Ligue 1 entrent en 32es. Écarts de division "
+        "extrêmes, pelouses et conditions très variables."
+    ),
+    "soccer_spain_copa_del_rey": (
+        "Élimination directe, un match sec chez le club le moins bien classé "
+        "(demi-finales en aller-retour). Écarts de division extrêmes sur les tours "
+        "précoces, et rotation d'effectif marquée."
+    ),
+    "soccer_germany_dfb_pokal": (
+        "Élimination directe, un match sec chez le club le moins bien classé, prolongation "
+        "puis tirs au but. Les clubs de Bundesliga entrent au 1er tour et se déplacent chez "
+        "des amateurs : écarts de niveau extrêmes."
+    ),
+    "soccer_italy_coppa_italia": (
+        "Élimination directe, un match sec chez le mieux classé, prolongation puis tirs au "
+        "but. Les têtes de série de Serie A entrent tard : les tours précoces opposent des "
+        "clubs de niveaux proches."
+    ),
+    "soccer_concacaf_leagues_cup": (
+        "Tournoi estival opposant clubs de MLS et de Liga MX. Décalage de préparation : la "
+        "MLS est en pleine saison, le championnat mexicain en début de tournoi. Format "
+        "court, pas de prolongation — tirs au but directs."
+    ),
+    # Les trois competitions UEFA couvrent leurs tours preliminaires sous la meme
+    # cle : la fiche vaut donc pour la qualification comme pour la phase de ligue,
+    # et c'est le tour du match qui dit ou l'on en est.
+    "soccer_uefa_champs_league_qualification": (
+        "Tours préliminaires en aller-retour, puis phase de ligue. En qualification, les "
+        "écarts de niveau et de calendrier sont importants : un club déjà lancé en "
+        "championnat affronte souvent un club en reprise ou en fin de saison. Le score de "
+        "l'aller commande le scénario du retour."
+    ),
+    "soccer_uefa_europa_league": (
+        "Tours préliminaires en aller-retour, puis phase de ligue. En qualification, les "
+        "écarts de niveau et de calendrier sont importants : un club déjà lancé en "
+        "championnat affronte souvent un club en reprise ou en fin de saison. Le score de "
+        "l'aller commande le scénario du retour."
+    ),
+    "soccer_uefa_europa_conference_league": (
+        "Tours préliminaires en aller-retour, puis phase de ligue. En qualification, les "
+        "écarts de niveau et de calendrier sont importants : un club déjà lancé en "
+        "championnat affronte souvent un club en reprise ou en fin de saison. Le score de "
+        "l'aller commande le scénario du retour."
+    ),
+}
+
+
+@dataclass
+class MissingNote:
+    """Une competition passee dans un prompt sans fiche.
+
+    Un lot de cinq matchs portait trois fiches et **aucune pour l'EFL Cup**,
+    qui etait le match le plus atypique du lot : un tour de coupe anglaise est
+    le format ou la rotation d'effectif est la regle et non l'exception.
+
+    Le compte vient de `prompt_events` : ce sont des matchs **reellement partis
+    a l'analyse** sans que le format de leur competition soit dit. Une
+    competition active mais jamais analysee est signalee sans compte — il n'y a
+    rien a rattraper, seulement quelque chose a preparer.
+    """
+
+    competition_id: int
+    label: str
+    sport_label: str
+    #: Matchs de cette competition deja entres dans un prompt.
+    analysed: int = 0
+    active: bool = False
+
+
+def without_notes(settings: Settings | None = None) -> list[MissingNote]:
+    """Competitions sans fiche, et ce qu'elles ont deja coute d'analyses muettes.
+
+    Meme logique que les cles non classees : ce qui manque doit se voir dans
+    l'interface, pas se decouvrir dans le prompt.
+    """
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT c.id, c.label, c.active, s.label AS sport_label, "
+            "  (SELECT COUNT(DISTINCT pe.event_id) FROM prompt_events pe "
+            "     JOIN events e ON e.id = pe.event_id "
+            "    WHERE e.competition_id = c.id) AS analysed "
+            "FROM competitions c JOIN sports s ON s.id = c.sport_id "
+            "WHERE TRIM(COALESCE(c.notes, '')) = ''"
+        ).fetchall()
+
+    found = [
+        MissingNote(
+            competition_id=row["id"],
+            label=row["label"],
+            sport_label=row["sport_label"],
+            analysed=int(row["analysed"] or 0),
+            active=bool(row["active"]),
+        )
+        for row in rows
+        if row["analysed"] or row["active"]
+    ]
+    # Les plus couteuses d'abord : une competition deja passee douze fois dans un
+    # prompt sans fiche a douze analyses muettes derriere elle.
+    found.sort(key=lambda item: (-item.analysed, sort_key(item.label)))
+    return found
+
+
 def unclassified(settings: Settings | None = None) -> list[Unclassified]:
     """Competitions a classer : sans niveau, mais qui en attendent un.
 
@@ -645,17 +779,18 @@ async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None)
             league_id = APIFOOTBALL_LEAGUES.get(oddsapi_key)
             tournaments = TENNISDATA_TOURNAMENTS.get(oddsapi_key)
             category = COMPETITION_CATEGORIES.get(oddsapi_key)
+            note = COMPETITION_NOTES.get(oddsapi_key)
             existing = conn.execute(
                 "SELECT id, label, api_active, apifootball_league_id, tennisdata_tournaments, "
-                "       category FROM competitions WHERE oddsapi_key = ?",
+                "       category, notes FROM competitions WHERE oddsapi_key = ?",
                 (oddsapi_key,),
             ).fetchone()
             if existing is None:
                 conn.execute(
                     "INSERT INTO competitions (sport_id, oddsapi_key, label, priority, active, "
                     "                          api_active, apifootball_league_id, "
-                    "                          tennisdata_tournaments, category) "
-                    "VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?)",
+                    "                          tennisdata_tournaments, category, notes) "
+                    "VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?, ?)",
                     (
                         sport_ids[sport_key],
                         oddsapi_key,
@@ -664,6 +799,7 @@ async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None)
                         league_id,
                         tournaments,
                         category,
+                        note,
                     ),
                 )
                 report.created.append(f"{title} ({oddsapi_key})")
@@ -683,6 +819,14 @@ async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None)
                 conn.execute(
                     "UPDATE competitions SET tennisdata_tournaments = ? WHERE id = ?",
                     (tournaments, existing["id"]),
+                )
+
+            if note is not None and not (existing["notes"] or "").strip():
+                # Meme regle que le reste : comble un manque, n'ecrase jamais une
+                # fiche ecrite a la main. C'est de la prose, et celle de
+                # l'utilisateur vaut toujours mieux que la notre.
+                conn.execute(
+                    "UPDATE competitions SET notes = ? WHERE id = ?", (note, existing["id"])
                 )
 
             if category is not None and not existing["category"]:

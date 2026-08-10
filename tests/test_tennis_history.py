@@ -680,7 +680,11 @@ async def test_la_fiche_montre_le_detail_que_la_ligne_forme_ne_peut_pas_dire(
         settings=migrated,
     )
     db.execute("INSERT INTO session_events (session_id, event_id) VALUES (9, 1)", settings=migrated)
-    corps = build_prompt(9, settings=migrated).body
+    # `now=NOW` et pas l'heure reelle : `COMMENCE` est une date fixe, et sans
+    # cet ancrage le test cessait de passer a la minute ou elle tombait dans le
+    # passe — le match quittait le prompt, et l'assertion accusait le rendu.
+    # Constate en direct, une minute apres 13h00 UTC le 10/08.
+    corps = build_prompt(9, settings=migrated, now=NOW).body
     assert "7-5 6-4" in corps, "le score figure dans la ligne H2H ici"
     assert "Derniers matchs" not in corps, "mais pas la liste detaillee"
 

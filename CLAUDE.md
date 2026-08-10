@@ -1383,6 +1383,31 @@ qui les rend chercheuses.
   selections. Sous `combo_min_lot`, le prompt n'en demande qu'un, et les deux
   paragraphes qui supposent deux combines se gardent avec.
 
+## Les fiches de competition, et ce qui manque doit se voir
+
+Un lot de cinq matchs portait trois fiches — Allsvenskan, Superliga danoise, Primeira
+Liga — et **aucune pour l'EFL Cup**, qui etait le match le plus atypique du lot : un tour
+de coupe anglaise est le format ou la rotation d'effectif est la regle et non l'exception,
+exactement le fait de format et de calendrier que ces fiches ont pour role de porter.
+
+- `COMPETITION_NOTES` seede les coupes nationales et continentales. Ce qui y est ecrit est
+  **structurel et durable** — nombre de manches, tour d'entree des grands clubs, terrain du
+  match, ecart de niveau attendu. Rien qui change d'une saison a l'autre : un fait perime
+  dans le prompt coute plus qu'une fiche absente, et la phase en cours se lit deja sur le
+  match.
+- **Aucune migration ne les rejoue**, contrairement aux niveaux, et c'est un arbitrage :
+  c'est de la prose de plusieurs lignes, et la tenir a jour des deux cotes la ferait
+  diverger au premier ajustement. La synchronisation comble le manque — elle tourne tous
+  les jours avec le lot gratuit — et **n'ecrase jamais une fiche ecrite a la main** : celle
+  de l'utilisateur vaut toujours mieux que la notre.
+- **`without_notes()` reclame ce qui manque, avec ce que ca a deja coute.** Le compte vient
+  de `prompt_events` : ce sont des matchs **reellement partis a l'analyse** sans que le
+  format de leur competition soit dit. Une competition active mais jamais analysee est
+  signalee sans compte — il n'y a rien a rattraper, seulement quelque chose a preparer ;
+  une competition inactive et jamais analysee ne figure pas du tout, elle serait du bruit
+  sur tout le catalogue. Meme logique que les cles non classees : ce qui manque doit se
+  voir dans l'interface, pas se decouvrir dans le prompt.
+
 ## Deux lignes disaient plus que ce qu'elles savaient
 
 - **`Forme 5` melange deux fenetres, et chaque moitie porte desormais son propre

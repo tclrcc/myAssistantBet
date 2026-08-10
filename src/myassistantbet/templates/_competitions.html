@@ -92,6 +92,28 @@
   </div>
   {% endif %}
 
+  {# Un lot de cinq matchs portait trois fiches et aucune pour l'EFL Cup, qui
+     était le match le plus atypique du lot : un tour de coupe anglaise est le
+     format où la rotation d'effectif est la règle. Ce qui manque doit se voir
+     ici, pas se découvrir dans le prompt. #}
+  {% if missing_notes %}
+  <div class="report report-warn">
+    <b>{{ missing_notes | length }} compétition(s) sans fiche.</b>
+    La fiche donne le format, la phase et les particularités — elle est injectée une
+    fois par lot, et c'est elle qui dit qu'un tour de coupe se joue en équipe B.
+    <ul class="failures">
+      {% for row in missing_notes %}
+      <li>
+        {{ row.sport_label }} · <b>{{ row.label }}</b>
+        {%- if row.analysed %}
+          — {{ row.analysed }} match(s) déjà analysé(s) sans elle
+        {%- else %} — active, jamais analysée{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
   <div class="filters">
     <label class="grow">
       Rechercher une compétition

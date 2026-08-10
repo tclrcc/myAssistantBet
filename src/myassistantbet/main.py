@@ -601,6 +601,10 @@ def _competitions_context(
         # pas dans le meme menu, et la saisie refuse deja le melange.
         "categories": competitions_service.CATEGORIES_BY_SPORT,
         "unclassified": competitions_service.unclassified(settings),
+        # Ce qui manque doit se voir dans l'interface, pas se decouvrir dans le
+        # prompt : une competition passee a l'analyse sans fiche est une analyse
+        # muette sur le format, et le compte dit combien il y en a eu.
+        "missing_notes": competitions_service.without_notes(settings),
         "elo_state": elo_service.state(settings),
     }
 

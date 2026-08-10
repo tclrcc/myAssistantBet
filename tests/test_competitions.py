@@ -19,13 +19,16 @@ from myassistantbet.services.competitions import (
     CATEGORIES,
     CATEGORIES_BY_SPORT,
     COMPETITION_CATEGORIES,
+    COMPETITION_NOTES,
     categories_for,
     list_all,
     set_active,
     set_apifootball_league,
     set_category,
+    set_notes,
     sync_from_api,
     unclassified,
+    without_notes,
 )
 from myassistantbet.services.labels import has_sport_icon
 from myassistantbet.services.scan import active_competitions
@@ -750,3 +753,166 @@ def test_le_champ_de_ligue_ne_sert_qu_au_football(client: TestClient) -> None:
     assert 'name="apifootball_league_id"' in page
     tennis = [ligne for ligne in page.splitlines() if "Wimbledon" in ligne]
     assert tennis and all("apifootball_league_id" not in ligne for ligne in tennis)
+
+
+# -- Fiches de competition manquantes ---------------------------------------
+
+
+@respx.mock
+async def test_une_coupe_decouverte_arrive_avec_sa_fiche(
+    odds_client: OddsAPIClient, migrated: Settings
+) -> None:
+    """Un lot de cinq matchs portait trois fiches et **aucune pour l'EFL Cup**,
+    le match le plus atypique du lot : un tour de coupe anglaise est le format ou
+    la rotation d'effectif est la regle et non l'exception.
+
+    Aucune migration ne rejoue ces fiches — c'est de la prose de plusieurs
+    lignes, et la tenir a jour des deux cotes la ferait diverger. C'est la
+    synchronisation qui les pose, sur les competitions creees comme sur celles
+    qui n'en ont pas.
+    """
+    respx.get(f"{BASE_URL}/sports").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"key": "soccer_england_efl_cup", "title": "EFL Cup"}],
+            headers=QUOTA_HEADERS,
+        )
+    )
+
+    await sync_from_api(odds_client, migrated)
+
+    notes = db.query_one(
+        "SELECT notes FROM competitions WHERE oddsapi_key = 'soccer_england_efl_cup'",
+        settings=migrated,
+    )["notes"]
+    assert "Rotation d'effectif systématique" in notes
+
+
+@respx.mock
+async def test_la_fiche_comble_un_manque_sur_une_competition_existante(
+    odds_client: OddsAPIClient, migrated: Settings
+) -> None:
+    respx.get(f"{BASE_URL}/sports").mock(
+        return_value=httpx.Response(
+            200, json=[{"key": "soccer_epl", "title": "EPL"}], headers=QUOTA_HEADERS
+        )
+    )
+    db.execute(
+        "UPDATE competitions SET oddsapi_key = 'soccer_epl', notes = NULL "
+        "WHERE oddsapi_key = 'soccer_epl'",
+        settings=migrated,
+    )
+
+    await sync_from_api(odds_client, migrated)
+
+    # La Premier League n'est pas dans la table : rien ne lui est invente.
+    assert (
+        db.query_one(
+            "SELECT notes FROM competitions WHERE oddsapi_key = 'soccer_epl'", settings=migrated
+        )["notes"]
+        is None
+    )
+
+
+def test_toutes_les_fiches_seedees_visent_une_cle_football() -> None:
+    """Une faute de frappe dans une cle ne casserait rien : la fiche ne se
+    poserait jamais, et la competition resterait reclamee sans qu'on comprenne
+    pourquoi."""
+    for cle in COMPETITION_NOTES:
+        assert cle.startswith("soccer_"), cle
+        assert cle in COMPETITION_CATEGORIES, f"{cle} devrait aussi porter un niveau"
+
+
+@respx.mock
+async def test_une_fiche_saisie_a_la_main_n_est_jamais_ecrasee(
+    odds_client: OddsAPIClient, migrated: Settings
+) -> None:
+    """Meme regle que la taxonomie et les ligues API-Football. Ici elle compte
+    doublement : c'est de la prose, et celle de l'utilisateur vaut toujours mieux
+    que la notre."""
+    respx.get(f"{BASE_URL}/sports").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"key": "soccer_england_efl_cup", "title": "EFL Cup"}],
+            headers=QUOTA_HEADERS,
+        )
+    )
+    await sync_from_api(odds_client, migrated)
+    competition = db.query_one(
+        "SELECT id FROM competitions WHERE oddsapi_key = 'soccer_england_efl_cup'",
+        settings=migrated,
+    )
+    set_notes(competition["id"], "ma fiche à moi", migrated)
+
+    await sync_from_api(odds_client, migrated)
+
+    assert (
+        db.query_one(
+            "SELECT notes FROM competitions WHERE id = ?", (competition["id"],), settings=migrated
+        )["notes"]
+        == "ma fiche à moi"
+    )
+
+
+def test_une_competition_analysee_sans_fiche_est_reclamee(migrated: Settings) -> None:
+    """Le compte vient de `prompt_events` : ce sont des matchs **reellement
+    partis a l'analyse** sans que le format de leur competition soit dit."""
+    competition = db.query_one(
+        "SELECT id FROM competitions WHERE oddsapi_key = 'soccer_epl'", settings=migrated
+    )
+    db.execute(
+        "UPDATE competitions SET notes = NULL, active = 0 WHERE id = ?",
+        (competition["id"],),
+        settings=migrated,
+    )
+    db.execute(
+        "INSERT INTO events (sport_id, competition_id, home, away, commence_time, created_at) "
+        "SELECT sport_id, id, 'A', 'B', '2026-08-04T18:00:00Z', '2026-08-04T10:00:00Z' "
+        "FROM competitions WHERE id = ?",
+        (competition["id"],),
+        settings=migrated,
+    )
+    db.execute(
+        "INSERT INTO sessions (label, created_at) VALUES ('t', '2026-08-04T10:00:00Z')",
+        settings=migrated,
+    )
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES ((SELECT MAX(id) FROM sessions), 't', '', 10, '2026-08-04T10:00:00Z')",
+        settings=migrated,
+    )
+    db.execute(
+        "INSERT INTO prompt_events (prompt_id, event_id) "
+        "VALUES ((SELECT MAX(id) FROM prompts), (SELECT MAX(id) FROM events))",
+        settings=migrated,
+    )
+
+    ligne = next(row for row in without_notes(migrated) if row.label == "Premier League")
+
+    assert ligne.analysed == 1
+    assert without_notes(migrated)[0].label == "Premier League", "les plus coûteuses d'abord"
+
+
+def test_une_competition_inactive_et_jamais_analysee_ne_gene_pas(migrated: Settings) -> None:
+    """Il n'y a rien a rattraper : ni analyse muette derriere elle, ni match a
+    venir devant. La reclamer serait du bruit sur tout le catalogue."""
+    db.execute(
+        "UPDATE competitions SET notes = NULL, active = 0 WHERE oddsapi_key = 'soccer_fa_cup'",
+        settings=migrated,
+    )
+
+    assert all(row.label != "FA Cup" for row in without_notes(migrated))
+
+
+def test_les_fiches_manquantes_sont_affichees(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    db.execute(
+        "UPDATE competitions SET notes = NULL, active = 1 WHERE oddsapi_key = 'soccer_epl'",
+        settings=isolated_settings,
+    )
+
+    page = " ".join(client.get("/competitions").text.split())
+
+    assert "compétition(s) sans fiche" in page
+    assert "active, jamais analysée" in page
