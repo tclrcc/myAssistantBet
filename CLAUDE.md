@@ -1492,6 +1492,153 @@ le calcul a faire. **Une borne qu'il faut recalculer soi-meme ne contraint rien.
   juste mais ne dit rien d'une saisie — celui qui verifie qu'une bande modifiee atteint le
   prompt monte donc un lot de la taille de reference.
 
+## Ne proposer que les paliers atteignables
+
+Sur un lot de quatre quarts de finale, la cote la plus haute valait **3.40** : 🔴 GIGA FUN
+et 💥 GIGA+ etaient hors d'atteinte avant que l'analyse commence. Le prompt injectait
+pourtant `0-1 🔴, 0-0 💥`, puis exigeait qu'un palier vide soit commente « en nommant ce
+qu'il aurait fallu trouver » — une ligne d'excuse pour une case impossible. Symetriquement,
+un bloc dont la cote la plus basse valait 1.71 ne pouvait porter aucun 🟢 SAFE, et rien ne
+le disait.
+
+- **L'atteignabilite se mesure sur les cotes reellement offertes, pas sur l'intervalle
+  qu'elles couvrent.** Un lot a 1.50 et 3.00 ne porte aucun prix entre les deux : declarer
+  FUN atteignable parce qu'il « tombe entre » ferait chercher un prix qui n'existe nulle
+  part. Une selection recopie **une** cote d'**un** bloc, jamais un intervalle.
+- La section C annonce les bornes du lot **avec leur emplacement** (`3.40 (M2 · Vainqueur
+  Diana Shnaider)`) : une borne sans l'endroit ou elle se lit oblige a relire tous les
+  blocs, et personne ne le fait.
+- Chaque bloc ferme sur une ligne `Paliers`. Sa **parenthese ne parait que s'il restreint
+  au-dela du lot** — ce que le lot exclut partout est deja dit une fois.
+- Un palier dont le quota **regle** vaut zero n'est jamais annonce : proposer une case
+  qu'on s'est deja interdit de remplir n'a pas de sens.
+- `Tier.covers()` porte la convention « la borne haute appartient au palier suivant ».
+  Elle est ecrite **deux fois** — ici et dans `history.tier_for_price`, le module du prompt
+  important celui de l'historique — et un test compare les deux implementations.
+
+## La ligne `Fraicheur`, ou ce que le retard de l'historique coute en matchs
+
+`Historique` disait jusqu'ou allait le jeu de donnees et `Parcours` nommait les adversaires
+du tournoi en cours : il fallait croiser les deux, de tete et a deux cent cinquante lignes
+d'ecart, pour comprendre que trois matchs d'un quart de finaliste n'entraient dans aucune
+des cinq lignes qui le decrivent. L'« Usure 30.5 jeux/match » de Jodar ignorait le tournoi
+qu'il venait de disputer.
+
+- Le compte dort dans **nos propres scans** : les tours precedents ont ete vus les jours
+  d'avant. Aucun appel, aucune cle.
+- Le rapprochement se fait sur la **journee de tournoi**, comme le repos : le fichier de
+  resultats date un match du jour ou il se joue sur place, et une session du soir a
+  Montreal part apres minuit a Paris.
+- Elle est le corollaire d'`Historique` : sans retard, aucune ligne — dire « rien ne
+  manque » ferait douter de donnees completes. A compte nul, elle ecrit
+  « toutes les lignes a jour ». Elle n'entre donc **pas** dans `CONTEXT_EXPECTED`, qui
+  compte deja `Historique`.
+- **`tennis_round.truncated()` ne dit qu'un booleen, et c'est deliberе.** Le nombre de
+  tours manquants demanderait la taille du tableau, exactement ce qui empeche ce module de
+  nommer un tour par son ordinal. Le seul signal sur est qu'un nombre de joueurs vus ne
+  soit **la taille d'aucun tableau** : 79 au Canadian Open masculin. Faux negatif assume
+  cote feminin — 64 joueuses vues sur un tableau de 96 forment un compte plausible, et un
+  silence vaut mieux qu'une affirmation fausse.
+
+## L'echelle des sources classe par editeur
+
+Elle placait « ATP/WTA, site du tournoi » en niveau 1 et « feuilles de match, ordre du
+jeu » en niveau 3. Or la recherche que le prompt designe lui-meme comme **la plus rentable
+du lot** — les statistiques de service derriere l'onglet Stats d'`atptour.com` — est les
+deux a la fois : selon la lecture, elle valait 1, donc confiance 4-5 accessible, ou 3, donc
+plafonnee a 2 et jamais de palier haut au tennis.
+
+Le critere est donc **qui publie**, jamais ce que la page contient. Corollaire non evident :
+la consigne de la colonne `Source`, deux sections plus bas, portait la meme contradiction —
+elle definissait le niveau 3 comme « une feuille de match, un ordre du jeu, un releve
+officiel ». Corriger l'echelle sans elle aurait deplace l'ambiguite au lieu de la lever.
+
+## Les rappels `(ref.)` se calculent, la section F ne les reclame plus
+
+F est plafonnee a **trois lignes** et doit porter les marches manquants ; avec deux ou
+trois selections de reference, elle etait pleine avant d'avoir rien dit d'utile — les
+quatre blocs du 10/08 portaient tous « A relever : Hand. jeux, Jeux O/U ».
+
+`prompt.reference_notes()` couvre **deux cas**, et le second n'a aucune ligne « A relever »
+pour le signaler : un bloc ordinaire dont certains marches n'ont pas de prix maison, et un
+bloc dont la **source principale** est elle-meme un book de reference — releve de
+substitution, ou competition que Betclic ne sert pas. Tous ses prix etant de reference par
+construction, aucun ne se detache. `labels.is_reference()` lit le suffixe « (ref.) » des
+libelles plutot que de retaper la liste des books.
+
+## Le conflit entre l'angle declare et le marche rendu
+
+Le prompt demandait a l'analyse de s'auto-auditer : « compte tes lignes avant de rendre, si
+plus de la moitie du tableau porte sur le vainqueur, relis-les avec leur colonne Type ». Or
+les deux colonnes sont **en base** — `angle` depuis la migration 026, la famille du marche
+depuis la 027 — et `maniere` contre famille `Issue` se detecte en une requete. Une regle
+deterministe laissee au modele coute des tokens, se refait a chaque session et ne se mesure
+jamais.
+
+- **Calcule a la lecture, jamais recopie sur la selection** : c'est ce qui rend la
+  taxonomie corrigeable — reclasser un marche reclasse tout l'historique, sans migration.
+- **Une mesure de la qualite du rendu, jamais un blocage.** Une telle selection reste
+  valable, simplement moins fidele a son propre raisonnement.
+- Ce qui reste dans le prompt est la consigne de fond : le mot qui choisit le marche, et le
+  rappel qu'un angle sur une maniere se traduit mieux en handicap ou en total.
+
+## Le score exact en sets (`services/set_scores.py`)
+
+La section D l'impose a chaque session de tennis ; il n'etait **ni enregistre ni verifie** —
+ecrit dans le rendu, lu une fois, puis perdu, le sort exact de l'effectif collecte des mois
+sans lecteur. C'est pourtant la **seule mesure de la lecture de la maniere qui soit
+independante de tout prix** : quatre issues, verifiables sur n'importe quelle feuille de
+match, et aucune cote n'existe pour ce marche chez le fournisseur.
+
+- **Saisie a la main, jamais parsee du rendu**, et le choix est assume : le prompt interdit
+  d'en faire une ligne du tableau C, ces scores arrivent donc en prose libre, et un parseur
+  se tromperait en silence sur le taux qu'on cherche justement a mesurer. Meme regle que
+  `angle` et `source_level` — quatre issues, quatre options d'un menu ferme.
+- La liste porte sur le **lot** (`prompt_events`) et non sur la shortlist, qui se vide a
+  mesure qu'on decoche.
+- Un score annonce vide **retire la ligne** : `PASSE` est une reponse attendue, et
+  l'enregistrer ferait compter au denominateur un match sans annonce.
+- **L'issue juste avec la maniere fausse est le chiffre le plus interessant du bloc** : le
+  bon vainqueur, le mauvais nombre de sets. Il dit qu'un raisonnement sur le rythme n'a pas
+  porte, et il le dit meme quand la selection a gagne.
+- Le second scenario est compte **a part** : deux scores proposes ne valent pas une lecture
+  deux fois plus juste.
+
+## Cote de reference contre cote obtenue (migration 030)
+
+Sur les quatre blocs du 10/08, « A relever : Hand. jeux, Jeux O/U » apparaissait 4 fois sur
+4. Ce n'est pas un accident de collecte : sur 127 matchs de tennis a venir, Betclic ne sert
+que le vainqueur via The Odds API. **Toute selection de maniere au tennis etait donc
+enregistree a un prix Pinnacle** quand le football l'etait a un prix Betclic — et le prompt
+affirme que le palier « sert a calculer un taux de reussite par bande de cote dans le
+temps ». Un 1.92 Pinnacle et un 1.92 Betclic ne decrivent pas le meme marche, et pres des
+bornes (1.70, 2.30) l'ecart de marge fait basculer de palier.
+
+- **Trois colonnes, aucun renommage.** `price` **est** deja la cote de reference — le prompt
+  impose de la recopier du bloc au centime pres. S'y ajoutent `price_source`, `price_real`
+  et `tier_real`. Renommer `price` et `tier` aurait touche six templates, quatre services et
+  la moitie des tests pour un gain nul, et un `NOT NULL` aurait ete faux sur l'existant.
+- **Le palier de la cote obtenue est fige a l'ecriture**, contrairement a la famille d'un
+  marche qui se resout a la lecture. Les deux traitements sont justes : une famille est un
+  classement corrigeable, un palier decrit une **decision datee** — le pari a ete pose a ce
+  prix-la, ce jour-la, et un reglage de bande change plus tard ne doit pas le reclasser.
+- **L'exclusion est ciblee, et c'est un arbitrage.** Sortent des taux par bande de cote les
+  seules selections dont le prix vient d'un book de **reference** et dont la cote obtenue
+  manque. Une cote du book principal est sa propre cote reelle ; exclure tout ce qui n'a pas
+  de `price_real` aurait vide la page et le bloc de retour d'experience d'un coup, en
+  quarantainant surtout du football. Le compte des exclues est affiche des deux cotes et
+  ferme `_audit`.
+- **Rien n'est retro-rempli** : deduire la source d'une selection ancienne demanderait de
+  rapprocher un libelle ecrit a la main d'une ligne de `odds`, des mois apres le releve.
+  `NULL` veut dire « on ne sait pas », et c'est la verite.
+- La cote obtenue **ne se releve jamais toute seule** : ce serait une integration
+  transactionnelle avec un bookmaker, interdit n°7. Elle se saisit sur la feuille de
+  session ; la mention `(ref.)` que le prompt impose deja alimente `price_source` a
+  l'import.
+- **Piste ecartee, et ce n'est pas une question de cout** : le module d'extraction vision
+  d'`edgelab` instancie un client `anthropic`. Le reutiliser ferait de cette application un
+  appelant de l'API Anthropic — interdit n°6, sans exception possible.
+
 ## Les seuils reglables (`services/thresholds.py`)
 
 Des nombres qui decident d'une regle sans etre ni une constante du projet ni une donnee :
