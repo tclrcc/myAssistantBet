@@ -17,13 +17,24 @@
   {# Le bloc n'apparait dans le prompt que lorsque le retour d'experience publie
      son detail — assez de selections tranchees **et** assez de journees. Sans
      cette phrase, l'ecran promettait au prompt un bloc qui n'y figurait pas, et
-     l'absence se lisait comme un defaut de conditionnement. #}
+     l'absence se lisait comme un defaut de conditionnement.
+
+     Les deux nombres se **reglent** desormais : ils sont exactement ce que la
+     table des seuils heberge, et ils sont cites depuis elle plutot qu'en dur. #}
   <p class="muted small">
-    Dans le prompt, elles n'apparaissent qu'<strong>avec le reste des taux</strong> :
-    sous {{ analysis_min_total }} sélections tranchées ou {{ analysis_min_days }} journées
-    d'analyse distinctes, le bloc annonce qu'il manque du recul et ne transmet aucun
-    chiffre — cible comprise. Une cible affichée à côté d'un 3/4 ferait resserrer une
-    notation sur quatre paris.
+    Dans le prompt, elles n'apparaissent qu'<strong>avec le reste des taux</strong>, et
+    les taux attendent le recul réglé plus bas dans
+    <a href="#thresholds">Seuils</a> : en dessous, le bloc annonce qu'il manque du recul
+    et ne transmet aucun chiffre — cible comprise. Une cible affichée à côté d'un 3/4
+    ferait resserrer une notation sur quatre paris.
+  </p>
+
+  {# **Le seul réglage dont l'effet est différé**, et le seul dont on ne pouvait
+     pas mesurer la distance à l'activation. Les deux nombres vivaient dans le
+     code, l'écran les citait en dur, et rien ne disait où en était le compte. #}
+  <p class="report{% if not feedback.enough %} report-warn{% endif %}">
+    <strong>Recul actuel : {{ feedback.reach_line }}.</strong>
+    {{ feedback.missing_line }}
   </p>
   <p class="muted small">
     Des deux côtés, un niveau n'est signalé <strong>hors de sa bande</strong> que si son

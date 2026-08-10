@@ -25,6 +25,7 @@ from .labels import affiche, sort_key
 from .market_families import family_key, family_label, family_of, family_rank
 from .market_families import load as load_families
 from .market_families import market_key as _market_key
+from .thresholds import value_of as threshold_value
 
 logger = logging.getLogger(__name__)
 
@@ -1355,6 +1356,10 @@ def stats(settings: Settings | None = None) -> Stats:
 #: seul tournoi, joues la meme nuit. Ce n'est pas « je lis mieux la WTA »,
 #: c'est « une soiree s'est mal passee », et le prompt le presentait comme un
 #: ordre de passage. Un chiffre faux oriente plus surement que pas de chiffre.
+#: **Defaut**, et non plus la valeur en vigueur : les deux nombres qui decident
+#: si le bloc se transmet sont exactement ce que la table des seuils heberge —
+#: « des nombres qui decident d'une regle sans etre une donnee ». Ils se reglent
+#: donc dans l'ecran, et `value_of` rend celui-ci quand rien n'est saisi.
 FEEDBACK_MIN_TOTAL = 40
 
 #: Meme regle a l'echelle d'une ligne : un regroupement vu sept fois reste tu.
@@ -2192,6 +2197,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
         ).fetchall()
 
     report = Analysis()
+    report.minimum, report.minimum_days = reach(settings)
     report.recorded = int(recorded)
     report.by_session = _by_session(sessions, rows, lots(settings), sport_labels, settings.tz)
     if not rows:
@@ -2647,6 +2653,32 @@ class Feedback:
         )
 
     @property
+    def reach_line(self) -> str:
+        """« 60 / 40 sélections tranchées · 4 / 10 journées distinctes ».
+
+        C'est le **seul reglage dont l'effet est differe**, et le seul dont on ne
+        pouvait pas mesurer la distance a l'activation : les deux nombres
+        vivaient dans le code, l'ecran les citait en dur, et rien ne disait ou en
+        etait le compte.
+        """
+        return (
+            f"{self.settled} / {self.minimum} sélection(s) tranchée(s) · "
+            f"{self.days} / {self.minimum_days} journée(s) distincte(s)"
+        )
+
+    @property
+    def missing_line(self) -> str:
+        """Ce qu'il reste a franchir, ou l'annonce que les taux passent."""
+        if self.enough:
+            return "Les taux sont transmis au prompt."
+        manque = []
+        if self.settled < self.minimum:
+            manque.append(f"{self.minimum - self.settled} sélection(s) tranchée(s)")
+        if self.days < self.minimum_days:
+            manque.append(f"{self.minimum_days - self.days} journée(s) d'analyse")
+        return f"Il manque {' et '.join(manque)}. Les taux ne sont pas transmis au prompt."
+
+    @property
     def any_band(self) -> bool:
         """Au moins un cran porte une cible.
 
@@ -2726,6 +2758,21 @@ def _selection_median(settings: Settings) -> tuple[float | None, int]:
     return median, len(parts)
 
 
+def reach(settings: Settings | None = None) -> tuple[int, int]:
+    """Les deux seuils du gate, tels qu'ils sont regles.
+
+    Ecrits **une seule fois** et lus par les deux surfaces : sous quel compte un
+    taux ne veut plus rien dire est une propriete des donnees, pas de l'endroit
+    qui les affiche. Les copier des deux cotes les aurait fait diverger, et la
+    page aurait fini par publier ce que le prompt refuse.
+    """
+    settings = settings or get_settings()
+    return (
+        threshold_value("feedback_min_total", settings),
+        threshold_value("feedback_min_days", settings),
+    )
+
+
 def feedback(settings: Settings | None = None, played_only: bool = False) -> Feedback:
     """Taux de reussite des dernieres selections tranchees, pour nourrir le prompt.
 
@@ -2772,10 +2819,13 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
             + (" AND played = 1" if played_only else "")
         ).fetchone()["n"]
 
+    minimum, minimum_days = reach(settings)
     report = Feedback(
         settled=len(rows),
         days=len({str(row["created_at"])[:10] for row in rows}),
         recorded=int(recorded),
+        minimum=minimum,
+        minimum_days=minimum_days,
     )
     # Le taux de selection est publie **hors** des trois garde-fous ci-dessous,
     # et ce n'est pas un oubli : eux protegent des taux de reussite, qui

@@ -10,7 +10,7 @@ from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services import thresholds
-from myassistantbet.services.history import ANALYSIS_MIN_DAYS, ANALYSIS_MIN_TOTAL
+from myassistantbet.services.history import analysis, feedback, reach
 from myassistantbet.services.history import load_bands as bandes_reglees
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import (
@@ -27,6 +27,8 @@ from myassistantbet.services.prompt import (
     save_tiers,
     template_path,
 )
+
+from .helpers import lot_avec_recul
 
 
 @pytest.fixture
@@ -370,13 +372,17 @@ def test_l_ecran_des_bandes_dit_quand_elles_atteignent_le_prompt(client: TestCli
     conditionnement etait juste : les bandes voyagent avec les taux, et les taux
     attendent assez de selections tranchees **et** assez de journees d'analyse.
 
-    C'etait donc le libelle qui mentait par omission, pas le code."""
+    C'etait donc le libelle qui mentait par omission, pas le code.
+
+    **Il ne cite plus les deux nombres en dur** : ils se reglent, et l'ecran
+    renvoie au seuil plutot que d'en recopier une valeur qui divergerait au
+    premier reglage."""
     page = client.get("/settings").text
 
     assert "ici et dans le prompt" in page
-    assert f"sous {ANALYSIS_MIN_TOTAL} sélections tranchées" in page
-    assert f"{ANALYSIS_MIN_DAYS} journées" in page
+    assert "les taux attendent le recul réglé plus bas" in page
     assert "manque du recul" in page
+    assert "sous 40 sélections tranchées" not in page, "plus aucun nombre en dur"
 
 
 # -- L'etat « pas de cible » -------------------------------------------------
@@ -424,3 +430,69 @@ def test_l_ecran_explique_l_etat_sans_cible(client: TestClient) -> None:
         "C'est le réglage attendu sur les crans" in page
     )
     assert "borne haute seule</strong> reste refusée" in page
+
+
+# -- Le gate de recul, regle et mesure ---------------------------------------
+
+
+def test_les_deux_seuils_du_gate_sont_reglables(migrated: Settings) -> None:
+    """Ils vivaient dans le code et l'ecran les citait en dur, alors qu'ils sont
+    exactement ce que la table des seuils heberge : des nombres qui decident
+    d'une regle sans etre une donnee."""
+    assert reach(migrated) == (40, 10), "les defauts, tant que rien n'est saisi"
+
+    thresholds.save("feedback_min_total", "25", migrated)
+    thresholds.save("feedback_min_days", "4", migrated)
+
+    assert reach(migrated) == (25, 4)
+
+
+def test_le_seuil_regle_ouvre_reellement_le_gate(migrated: Settings) -> None:
+    """Un seuil qui se regle sans rien changer au comportement ne serait qu'un
+    champ de plus. Le meme lot, ferme puis ouvert par la seule saisie."""
+    lot_avec_recul(migrated, confiances={3: (6, 6)})
+
+    assert not feedback(migrated).enough, "12 tranchees sur 40"
+
+    thresholds.save("feedback_min_total", "10", migrated)
+
+    assert feedback(migrated).enough
+
+
+def test_les_deux_surfaces_lisent_le_meme_seuil(migrated: Settings) -> None:
+    """Sous quel compte un taux ne veut plus rien dire est une propriete des
+    donnees, pas de la surface qui les affiche. Les copier des deux cotes les
+    aurait fait diverger, et la page aurait fini par publier ce que le prompt
+    refuse."""
+    thresholds.save("feedback_min_total", "33", migrated)
+    thresholds.save("feedback_min_days", "7", migrated)
+
+    report, page = feedback(migrated), analysis(migrated)
+
+    assert (report.minimum, report.minimum_days) == (33, 7)
+    assert (page.minimum, page.minimum_days) == (33, 7)
+
+
+def test_l_ecran_affiche_l_avancement_du_recul(client: TestClient, migrated: Settings) -> None:
+    """C'est le **seul reglage dont l'effet est differe**, et le seul dont on ne
+    pouvait pas mesurer la distance a l'activation."""
+    lot_avec_recul(migrated, confiances={3: (10, 10)})
+    db.execute("UPDATE picks SET created_at = '2026-07-01T12:00:00Z'", settings=migrated)
+
+    page = client.get("/settings").text
+
+    assert (
+        "Recul actuel : 20 / 40 sélection(s) tranchée(s) · 1 / 10 journée(s) distincte(s)" in page
+    )
+    assert "Il manque 20 sélection(s) tranchée(s) et 9 journée(s) d" in page
+    assert "ne sont pas transmis au prompt" in page
+
+
+def test_l_ecran_dit_quand_les_taux_passent(client: TestClient, migrated: Settings) -> None:
+    """Le pendant du precedent : franchi, l'avancement doit cesser d'alarmer."""
+    lot_avec_recul(migrated)
+
+    page = client.get("/settings").text
+
+    assert "Les taux sont transmis au prompt." in page
+    assert "Recul actuel : 60 / 40" in page

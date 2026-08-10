@@ -74,6 +74,33 @@ THRESHOLDS: dict[str, Threshold] = {
             "qu'elle était insatisfiable."
         ),
     ),
+    "feedback_min_total": Threshold(
+        key="feedback_min_total",
+        label="Sélections tranchées avant transmission des taux",
+        default=40,
+        low=10,
+        high=500,
+        note=(
+            "En dessous, le prompt annonce qu'il manque du recul et ne transmet aucun taux. "
+            "Relevé à 40 après observation : à 17 sélections tranchées, le bloc publiait "
+            "« ATP 2/6 contre WTA 5/7 » — treize matchs d'un seul tournoi, joués la même "
+            "nuit. Présenté comme un ordre de passage, un chiffre faux oriente plus sûrement "
+            "que pas de chiffre du tout."
+        ),
+    ),
+    "feedback_min_days": Threshold(
+        key="feedback_min_days",
+        label="Journées d'analyse distinctes avant transmission",
+        default=10,
+        low=3,
+        high=100,
+        note=(
+            "L'autre moitié du même garde-fou, et il faut les deux : soixante sélections "
+            "prises en quatre jours mesurent ces quatre jours-là — un tournoi, une soirée de "
+            "coupe, une météo — et non une façon d'analyser. C'est la journée de décision "
+            "qui compte, pas celle du match."
+        ),
+    ),
     "enjeu_min_journees": Threshold(
         key="enjeu_min_journees",
         label="Journées avant qu'un enjeu de classement compte",
