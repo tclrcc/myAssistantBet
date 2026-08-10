@@ -72,6 +72,12 @@ ROUND_NAMES = {
 }
 
 
+#: Tailles de tableau qui existent vraiment sur le circuit. Les puissances de
+#: deux, plus les tableaux a exemptions — 24, 28, 48, 56 et 96 — ou les tetes de
+#: serie entrent au deuxieme tour.
+PLAUSIBLE_DRAWS = frozenset({4, 8, 16, 24, 28, 32, 48, 56, 64, 96, 128})
+
+
 @dataclass(frozen=True)
 class Edition:
     """Les matchs d'une meme edition d'un tournoi, tels que nous les avons vus."""
@@ -175,6 +181,42 @@ def round_for(
             (competition_id,),
         ).fetchall()
     return label_for(edition_for(rows, commence_time), commence_time)
+
+
+def truncated(
+    competition_id: int | None,
+    commence_time: str,
+    settings: Settings | None = None,
+) -> bool:
+    """Vrai si notre vue de cette edition a **provablement** manque des tours.
+
+    Le seul signal sur : le nombre de joueurs vus n'est **pas** une taille de
+    tableau qui existe. Mesure en reel — le Canadian Open masculin en a montre
+    **79**, ce qui ne forme aucun tableau, donc ses premieres journees precedent
+    notre fenetre de scan.
+
+    **Le compte des tours manquants, lui, n'est pas derivable**, et c'est la
+    meme raison qui fait que ce module ne nomme jamais « 2e tour » : il faudrait
+    la taille du tableau, et une vue qui commence a une frontiere de tour est
+    indiscernable d'un tableau plus petit vu en entier. D'ou un booleen et non un
+    nombre.
+
+    **Faux negatif assume**, pour cette raison exacte : le tableau feminin du
+    meme tournoi n'a montre que **64** joueuses sur 96, et 64 etant une taille de
+    tableau valide, rien ne permet de le savoir. Un silence vaut mieux qu'une
+    affirmation fausse — c'est la regle du module.
+    """
+    if not competition_id or not commence_time:
+        return False
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT home, away, commence_time FROM events WHERE competition_id = ? "
+            "ORDER BY commence_time",
+            (competition_id,),
+        ).fetchall()
+    players = edition_for(rows, commence_time).players
+    return players > 1 and players not in PLAUSIBLE_DRAWS
 
 
 def lines(

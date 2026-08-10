@@ -113,6 +113,9 @@ CONTEXT_ICONS = {
     "Niveau adv.": "jauge",
     "Marge": "relief",
     "Historique": "horloge",
+    # Ce que le retard de l'historique coute en matchs. Meme horloge que la ligne
+    # dont elle tire la consequence : les deux parlent du temps, pas du match.
+    "Fraicheur": "horloge",
     # Huit libelles sortaient sans pictogramme, releves en rendant le bloc de
     # 250 evenements reels : la colonne se vidait sans rien dire, exactement le
     # defaut que le sprite devait supprimer. Les doublons sont assumes — deux

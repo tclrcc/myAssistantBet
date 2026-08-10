@@ -1123,6 +1123,96 @@ def test_la_ligne_n_affirme_jamais_que_ce_tournoi_manque(migrated: Settings) -> 
     assert valeur.startswith("dernier match connu le ")
 
 
+def _tournoi(settings: Settings, *jours: str) -> int:
+    """Un tournoi scanne : un match de Jiri Lehecka par journee donnee."""
+    competition = db.query_one(
+        "SELECT id FROM competitions WHERE oddsapi_key = 'tennis_atp_us_open'", settings=settings
+    )
+    sport = db.query_one("SELECT id FROM sports WHERE key = 'tennis'", settings=settings)
+    for index, jour in enumerate(jours):
+        db.execute(
+            "INSERT INTO events (sport_id, competition_id, home, away, commence_time, source, "
+            "created_at) VALUES (?, ?, 'Jiri Lehecka', ?, ?, 'api', ?)",
+            (sport["id"], competition["id"], f"Adversaire {index}", jour, db.utcnow()),
+            settings=settings,
+        )
+    return int(competition["id"])
+
+
+def test_la_fraicheur_compte_ce_que_l_historique_ignore(migrated: Settings) -> None:
+    """« Historique » disait jusqu'ou allait le jeu de donnees et « Parcours »
+    nommait les adversaires du tournoi en cours : il fallait croiser les deux, de
+    tete et a deux cents lignes d'ecart, pour comprendre que trois matchs de ce
+    quart de finaliste n'entraient dans aucune des cinq lignes qui le decrivent.
+
+    Mesure qui l'a fait naitre : l'« Usure 30.5 jeux/match » de Jodar ignorait
+    les trois matchs qu'il venait de disputer a Montreal."""
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+    competition_id = _tournoi(
+        migrated, "2026-08-06T18:00:00Z", "2026-08-08T18:00:00Z", "2026-08-09T18:00:00Z"
+    )
+
+    lignes = dict(
+        tennis_history.lines(
+            "Jiri Lehecka", "Vit Kopriva", "clay", COMMENCE, migrated, competition_id
+        )
+    )
+
+    assert lignes["Fraicheur"].startswith(
+        "Forme/Usure/Profil/Marge/Niveau adv. arretees au 05/07\n"
+    )
+    assert "Jiri Lehecka 3 matchs de ce tournoi non comptes" in lignes["Fraicheur"]
+
+
+def test_un_historique_a_jour_sur_le_tournoi_le_dit(migrated: Settings) -> None:
+    """Compte a zero, la ligne s'ecrit « toutes les lignes a jour » : l'omettre
+    laisserait chercher un trou la ou il n'y en a pas."""
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+    competition_id = _tournoi(migrated, "2026-07-03T18:00:00Z")
+
+    lignes = dict(
+        tennis_history.lines(
+            "Jiri Lehecka", "Vit Kopriva", "clay", COMMENCE, migrated, competition_id
+        )
+    )
+
+    assert lignes["Fraicheur"].endswith("toutes les lignes a jour")
+
+
+def test_la_fraicheur_ne_parait_pas_sans_retard(migrated: Settings) -> None:
+    """Elle est le corollaire d'« Historique » : sans retard, rien ne manque, et
+    une ligne qui dit « rien ne manque » ferait douter de donnees completes."""
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+    _joue(migrated, "2026-08-09", "6-4 6-4", won=True)
+
+    assert "Fraicheur" not in _lines(migrated, "Jiri Lehecka", "Vit Kopriva")
+
+
+def test_la_fraicheur_signale_un_debut_de_tableau_jamais_vu(migrated: Settings) -> None:
+    """79 joueurs vus ne forment aucun tableau : les premieres journees du
+    tournoi precedent notre fenetre de scan. Le **nombre** de tours manquants
+    n'est pas derivable — il demanderait la taille du tableau — le fait, lui,
+    l'est."""
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+    competition_id = _tournoi(migrated, "2026-08-08T18:00:00Z")
+    sport = db.query_one("SELECT id FROM sports WHERE key = 'tennis'", settings=migrated)
+    for index in range(38):
+        db.execute(
+            "INSERT INTO events (sport_id, competition_id, home, away, commence_time, source, "
+            "created_at) VALUES (?, ?, ?, ?, '2026-08-07T12:00:00Z', 'api', ?)",
+            (sport["id"], competition_id, f"P{index}", f"Q{index}", db.utcnow()),
+            settings=migrated,
+        )
+
+    lignes = dict(
+        tennis_history.lines(
+            "Jiri Lehecka", "Vit Kopriva", "clay", COMMENCE, migrated, competition_id
+        )
+    )
+
+    assert "tours anterieurs non scannes" in lignes["Fraicheur"]
+
+
 def test_le_preambule_dit_ce_que_le_retard_implique(migrated: Settings) -> None:
     """La ligne donne une date ; c'est le preambule qui dit que « Forme » peut
     ignorer deux victoires de la semaine, et que « Parcours » comble le trou.
@@ -1252,3 +1342,17 @@ def test_le_score_exact_en_sets_ne_sort_pas_sur_un_lot_de_football(migrated: Set
     corps = build_prompt(_lot(migrated, "football"), settings=migrated).body
 
     assert "Score exact en sets" not in corps
+
+
+def test_le_preambule_fait_lire_la_fraicheur_au_lieu_de_la_calculer(migrated: Settings) -> None:
+    """Le mode d'emploi demandait de croiser « Historique » avec « Parcours »,
+    deux cent cinquante lignes plus haut. L'application sait compter : elle
+    compte, et le chapitre ne fait plus que renvoyer au nombre."""
+    from myassistantbet.services.prompt import build_prompt
+
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+    session = _lot(migrated, "tennis", "Jiri Lehecka", "Vit Kopriva", COMMENCE)
+    corps = " ".join(build_prompt(session, settings=migrated, now=NOW).body.split())
+
+    assert "**« Fraicheur »** dit ce que ça coûte" in corps
+    assert "Rien à recalculer, le compte est écrit." in corps

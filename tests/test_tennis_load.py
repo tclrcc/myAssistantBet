@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 from myassistantbet import db
 from myassistantbet.config import Settings
 from myassistantbet.services import tennis_load
@@ -158,3 +160,42 @@ def test_le_parcours_dit_depuis_quand_il_voit(migrated: Settings) -> None:
     )
 
     assert lignes["Parcours"].endswith("[vu depuis le 05/08]")
+
+
+def test_les_journees_des_apparitions_sont_gardees(migrated: Settings) -> None:
+    """Elles servent la ligne « Fraicheur », qui compte les matchs du tournoi que
+    l'historique ne connait pas encore. Des **journees de tournoi** et non des
+    dates civiles, pour la meme raison que le repos : a Montreal, un match de la
+    session du soir part apres minuit a Paris."""
+    _match(migrated, "Fils", "Svajda", "2026-08-05T18:00:00Z")
+    _match(migrated, "Fils", "Navone", "2026-08-07T18:00:00Z")
+
+    charge = tennis_load.load_for("Fils", _competition(migrated), "2026-08-09T18:00:00Z", migrated)
+
+    assert charge.days == ("2026-08-05", "2026-08-07")
+
+
+def test_les_matchs_joues_depuis_la_collecte_se_comptent(migrated: Settings) -> None:
+    """Le compte de la ligne « Fraicheur » : trois matchs de ce tournoi joues
+    apres la derniere date connue de l'historique sont trois matchs absents de
+    « Forme », « Usure », « Profil », « Marge » et « Niveau adv. »."""
+    for jour in ("04", "06", "08"):
+        _match(migrated, "Fils", f"Adversaire {jour}", f"2026-08-{jour}T18:00:00Z")
+
+    depuis = tennis_load.played_since(
+        "Fils", _competition(migrated), "2026-08-09T18:00:00Z", date(2026, 8, 3), migrated
+    )
+
+    assert depuis == 3
+
+
+def test_un_match_anterieur_a_la_collecte_ne_compte_pas(migrated: Settings) -> None:
+    """L'historique le connait deja : le compter ferait douter d'une ligne juste."""
+    _match(migrated, "Fils", "Svajda", "2026-08-04T18:00:00Z")
+    _match(migrated, "Fils", "Navone", "2026-08-06T18:00:00Z")
+
+    depuis = tennis_load.played_since(
+        "Fils", _competition(migrated), "2026-08-08T18:00:00Z", date(2026, 8, 5), migrated
+    )
+
+    assert depuis == 1

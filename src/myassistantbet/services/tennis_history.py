@@ -32,6 +32,7 @@ from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.base import ProviderError
 from ..providers.tennisdata import TOURS, RawMatch, TennisDataClient
+from . import tennis_load, tennis_round
 
 logger = logging.getLogger(__name__)
 
@@ -760,29 +761,84 @@ def horizon(tours: set[str], settings: Settings | None = None) -> str | None:
     return str(row["dernier"]) if row and row["dernier"] else None
 
 
-def _late_fragment(matches: list[Match], start: datetime, settings: Settings) -> str:
+def _collected_on(matches: list[Match], settings: Settings) -> date | None:
+    """Date du dernier match collecte sur les circuits de ces joueurs."""
+    last = horizon({match.tour.casefold() for match in matches if match.tour}, settings)
+    if not last:
+        return None
+    try:
+        return date.fromisoformat(last)
+    except ValueError:
+        return None
+
+
+def _late_fragment(collected: date | None, start: datetime) -> str:
     """`dernier match connu le 03/08, soit 6j avant celui-ci` — ou rien.
 
     La ligne enonce un fait et **s'arrete la**. Elle ne dit pas « ce tournoi n'y
     figure pas » : ce serait faux d'un tournoi commence avant la date de
     collecte, et une affirmation fausse dans une ligne qui sert a douter est le
-    pire endroit ou en mettre une. Le template en tire la consequence.
+    pire endroit ou en mettre une. C'est « Fraicheur », juste en dessous, qui en
+    tire la consequence — et elle la **compte** au lieu de la faire deviner.
 
     Ni apostrophe ni accent, comme toutes les valeurs rendues par ce module.
     Elles traversent un template Jinja pour la fiche d'un match, qui les echappe,
     et le test de parite fiche/prompt compare deux textes bruts.
     """
-    last = horizon({match.tour.casefold() for match in matches if match.tour}, settings)
-    if not last:
-        return ""
-    try:
-        collected = date.fromisoformat(last)
-    except ValueError:
+    if collected is None:
         return ""
     days = (start.date() - collected).days
     if days < HISTORY_LATE_DAYS:
         return ""
-    return f"dernier match connu le {_short(last)}, soit {days}j avant celui-ci"
+    return f"dernier match connu le {_short(collected.isoformat())}, soit {days}j avant celui-ci"
+
+
+#: Les lignes que l'historique alimente, et qui s'arretent donc ou il s'arrete.
+#: Nommees plutot que resumees : « les lignes ci-dessus » obligeait a remonter
+#: le bloc pour savoir lesquelles, et la reponse decidait de leur credit.
+STALE_LINES = "Forme/Usure/Profil/Marge/Niveau adv."
+
+
+def _freshness_line(
+    home: str,
+    away: str,
+    competition_id: int | None,
+    commence_time: str,
+    collected: date | None,
+    settings: Settings,
+) -> tuple[str, str] | None:
+    """Ligne « Fraicheur » : ce que l'historique ne compte pas encore.
+
+    « Historique » disait jusqu'ou allait le jeu de donnees et « Parcours »
+    nommait les adversaires du tournoi en cours : il fallait croiser les deux,
+    de tete, pour comprendre que trois matchs de ce quart de finaliste
+    n'entraient dans aucune des cinq lignes qui le decrivent. L'application sait
+    les compter, donc elle les compte.
+
+    Le rapprochement se fait sur la **journee de tournoi** : le fichier de
+    resultats date un match du jour ou il se joue sur place, et une session du
+    soir a Montreal part apres minuit a Paris.
+    """
+    if collected is None:
+        return None
+    fragments = []
+    for player in (home, away):
+        if not player:
+            continue
+        played = tennis_load.played_since(
+            player, competition_id, commence_time, collected, settings
+        )
+        if played:
+            suffixe = " de ce tournoi non comptes" if not fragments else ""
+            fragments.append(f"{player} {played} matchs{suffixe}")
+
+    detail = " | ".join(fragments) if fragments else "toutes les lignes a jour"
+    rows = [f"{STALE_LINES} arretees au {_short(collected.isoformat())}", detail]
+    if tennis_round.truncated(competition_id, commence_time, settings):
+        # Le **nombre** de tours manquants n'est pas derivable : il demanderait
+        # la taille du tableau, que rien ne donne. Le fait, lui, l'est.
+        rows.append("tours anterieurs non scannes — le debut du tableau nous echappe")
+    return ("Fraicheur", "\n".join(rows))
 
 
 def ratings_by_key(
@@ -959,9 +1015,16 @@ def lines(
     # En tete des lignes qu'elle qualifie : toutes celles qui suivent sortent de
     # l'historique, et s'arretent donc ou il s'arrete. La taire faisait lire un
     # tournoi manquant comme un rapprochement rate.
-    late = _late_fragment(everything[home] + everything[away], start, settings)
+    collected = _collected_on(everything[home] + everything[away], settings)
+    late = _late_fragment(collected, start)
     if late:
         rendered.append(("Historique", late))
+        # Ce que ce retard coute **en matchs**, joueur par joueur. Le compte
+        # dormait dans nos propres scans : les tours precedents du tournoi ont
+        # ete vus les jours d'avant. Aucun appel.
+        fraicheur = _freshness_line(home, away, competition_id, commence_time, collected, settings)
+        if fraicheur:
+            rendered.append(fraicheur)
 
     meetings = _meetings(home_keys, away_keys, until, settings)
     meeting_line = _h2h_line(home, away, meetings)

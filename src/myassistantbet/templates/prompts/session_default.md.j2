@@ -818,13 +818,15 @@ sur les trois dernières saisons, ATP et WTA :
     ligne du bloc qui en parle. Les deux sens sont séparés parce qu'une moyenne
     unique les annule.
 
-{% if 'Historique' in context_labels %}La ligne **« Historique »** dit jusqu'où va le jeu de données, donc jusqu'où vont
-toutes les lignes ci-dessus. La source est **hebdomadaire et publiée après coup** :
-les matchs joués depuis — y compris ceux de ce tournoi-ci — ne sont dans aucune
-d'elles. « Forme » peut ignorer deux victoires de la semaine, « Précédent » nommer
-l'avant-dernier tournoi. Seules **« Tour », « Repos » et « Parcours »** portent le
-tournoi en cours, et elles n'en donnent aucun résultat : c'est la première
-recherche à faire.
+{% if 'Historique' in context_labels %}La ligne **« Historique »** dit jusqu'où va le jeu de données — la source est
+hebdomadaire et publiée après coup. **« Fraicheur »** dit ce que ça coûte : elle
+nomme les lignes concernées et **compte**, joueur par joueur, les matchs de ce
+tournoi qui n'y sont pas encore. Rien à recalculer, le compte est écrit. Une
+mention « tours anterieurs non scannes » ajoute que le début du tableau précède
+notre fenêtre de collecte.
+
+Seules **« Tour », « Repos » et « Parcours »** portent le tournoi en cours, et
+elles n'en donnent aucun résultat : c'est la première recherche à faire.
 
 {% endif %}
 « Profil » et « Marge » écartent les matchs au **meilleur des cinq sets** — les

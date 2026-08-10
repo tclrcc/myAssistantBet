@@ -50,6 +50,12 @@ class Load:
     #: Premiere journee de tournoi que nos scans ont vue, au format ISO. Ce que
     #: le tournoi a joue avant elle n'existe nulle part chez nous.
     first_day: str = ""
+    #: **Journees de tournoi** de chaque apparition precedente, au format ISO.
+    #: Des journees de tournoi et non des dates civiles, pour la meme raison que
+    #: le repos : a Montreal, un match de la session du soir part apres minuit a
+    #: Paris. C'est aussi l'echelle du fichier de resultats, qui date un match du
+    #: jour ou il se joue sur place — les deux se comparent donc directement.
+    days: tuple[str, ...] = ()
 
     @property
     def fragment(self) -> str:
@@ -136,6 +142,7 @@ def load_for(
         days_rest=_rest(ici, [jour for jour in veilles if jour]),
         opponents=tuple(nom for _, nom in sorted(faced)),
         first_day=min(connues) if connues else "",
+        days=tuple(sorted(jour for jour in veilles if jour)),
     )
 
 
@@ -213,6 +220,27 @@ def path_lines(
     if not fragments:
         return []
     return [("Parcours", " | ".join(fragments) + _since(debut))]
+
+
+def played_since(
+    player: str,
+    competition_id: int | None,
+    commence_time: str,
+    cutoff: date,
+    settings: Settings | None = None,
+) -> int:
+    """Matchs de ce tournoi joues par ce joueur **apres** la date de collecte.
+
+    C'est le nombre de matchs que l'historique ne connait pas encore, donc que
+    « Forme », « Usure », « Profil », « Marge » et « Niveau adv. » ne comptent
+    pas. Sur un quart de finale, il vaut trois : l'usure affichee ignore alors
+    tout le tournoi en cours, et rien ne le disait.
+
+    Aucun appel, aucune cle : les tours precedents ont ete scannes les jours
+    d'avant, et leurs journees de tournoi sont deja calculees pour le repos.
+    """
+    charge = load_for(player, competition_id, commence_time, settings)
+    return sum(1 for jour in charge.days if jour > cutoff.isoformat())
 
 
 def _since(first_day: str) -> str:

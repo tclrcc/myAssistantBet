@@ -154,3 +154,45 @@ def test_un_tour_qui_demanderait_plus_de_joueurs_que_vus_est_refuse() -> None:
     # Des que les exemptions sont purgees, le compte redevient une puissance de
     # deux et le tour se nomme.
     assert tennis_round.label_for(_edition(96, 32), "2026-08-08T12:00:00Z") == "32e de finale"
+
+
+def _vus(settings: Settings, joueurs: int) -> int:
+    """`joueurs` joueurs distincts vus dans ce tournoi, avant le match analyse."""
+    noms = [f"J{index}" for index in range(joueurs)]
+    competition_id = 0
+    for index in range(0, len(noms) - 1, 2):
+        competition_id = _match(settings, noms[index], noms[index + 1], "2026-08-07T12:00:00Z")
+    if len(noms) % 2:
+        # Un joueur revu au tour suivant : c'est ce qui rend le compte impair.
+        competition_id = _match(settings, noms[-1], noms[0], "2026-08-07T13:00:00Z")
+    return competition_id
+
+
+def test_une_vue_tronquee_se_declare_quand_elle_est_prouvable(migrated: Settings) -> None:
+    """Le seul signal sur : le nombre de joueurs vus n'est pas une taille de
+    tableau qui existe. Mesure en reel — le Canadian Open masculin en a montre
+    **79**, ce qui ne forme aucun tableau, donc ses premieres journees precedent
+    notre fenetre de scan.
+
+    Le **nombre** de tours manquants, lui, n'est pas derivable : il demanderait
+    la taille du tableau, et c'est la meme raison qui fait que ce module ne nomme
+    jamais « 2e tour ». D'ou un booleen.
+    """
+    competition_id = _vus(migrated, 79)
+
+    assert tennis_round.truncated(competition_id, "2026-08-10T22:00:00Z", migrated) is True
+
+
+def test_une_vue_complete_ne_declare_rien(migrated: Settings) -> None:
+    """**Faux negatif assume**, et c'est la meme limite qu'ailleurs : le tableau
+    feminin du meme tournoi n'a montre que 64 joueuses sur 96, et 64 etant une
+    taille de tableau valide, rien ne permet de le savoir. Un silence vaut mieux
+    qu'une affirmation fausse, c'est la regle du module."""
+    competition_id = _vus(migrated, 64)
+
+    assert tennis_round.truncated(competition_id, "2026-08-10T22:00:00Z", migrated) is False
+
+
+def test_un_tournoi_inconnu_ne_declare_rien(migrated: Settings) -> None:
+    """Sans competition, il n'y a pas de vue du tout — donc rien a declarer."""
+    assert tennis_round.truncated(None, "2026-08-10T22:00:00Z", migrated) is False
