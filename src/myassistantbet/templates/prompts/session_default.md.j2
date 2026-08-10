@@ -285,7 +285,11 @@ Ce qu'il ne fait **jamais**, sans exception :
     rend aucune affiche de ce lot plus probable, et un marché à 20 % ne
     disqualifie aucun angle qui tient debout par ailleurs ;
   · il ne remplace pas un angle manquant. Si aucun match ne porte de sélection
-    solide dans une catégorie qui réussit d'habitude, la réponse reste PASSE.
+    solide dans une catégorie qui réussit d'habitude, la réponse reste PASSE ;
+  · **rien de ce qui précède ne vise le taux de sélection** en tête de chapitre.
+    Ces réserves portent sur des taux de réussite ; lui décrit mon tri, ne
+    dépend d'aucun résultat, et attend sa ligne quand le lot sort de
+    l'ordinaire.
 
 Le signal le plus utile de tout le bloc reste l'écart à la bande cible, décrit
 plus haut : c'est le seul qui porte sur ma façon de noter plutôt que sur les
@@ -302,7 +306,10 @@ tournoi, une soirée de coupe, une météo — et non ma façon d'analyser. Écr
 un nom large comme « Masters 1000 » ou « Tennis », il ferait passer une semaine
 pour une tendance.
 
-N'en tire aucune tendance, et n'écris rien à ce sujet.
+N'en tire aucune tendance et n'écris rien **sur ces taux**. Le constat sur le
+taux de sélection, en tête de ce chapitre, n'est pas concerné : il ne dépend
+d'aucun résultat, il décrit mon tri — et il attend toujours sa ligne quand le
+lot sort de l'ordinaire.
 {% endif %}
 {% endif %}## SORTIE ATTENDUE
 
@@ -367,13 +374,20 @@ défini par ce que portent les sections A et B — donc **vérifiable**, et pas
 laissé à l'appréciation :
 
   5  ≥ 2 facteurs indépendants, tous vérifiés sur une source de niveau 1-2,
-     et « Ce qui manque » vide sur ce match
+     et aucun manque de la section A ne touche ces facteurs
   4  1 facteur dominant vérifié en niveau 1-2, le reste neutre, et aucun
      manque de la section A ne touche ce facteur
   3  1 facteur dominant vérifié, mais un manque de la section A touche
      ce facteur
   2  information partielle, ou fait principal issu d'une source de niveau 3-4
   1  aucun fait daté — lecture des blocs seuls
+
+Les crans 4 et 5 se lisent bien « aucun manque **ne touche ce facteur** », et
+non « aucun manque » : la section A demande de nommer tout ce qu'on n'a pas
+trouvé, si bien qu'une colonne « Ce qui manque » vide n'existe pratiquement
+jamais. Exiger le vide rendrait le cran 5 inatteignable — le défaut même que
+cette table corrige. Ce qui compte est que le trou soit **sans rapport** avec ce
+qui porte la sélection.
 
 Les crans 2 et 4 n'avaient aucune définition, et tout tombait donc en 3 : sur
 cent sélections, 99 % portaient un 3 ou un 4, et les crans 1 et 5 n'ont jamais
@@ -437,10 +451,15 @@ résultat ; un palier vide non commenté est un oubli, et rien ne distingue alor
 un lot qui n'offrait rien d'un lot qu'on a mal cherché.
 
 ### D. Combinés
-- Un combiné « solide » : 3-4 sélections des deux paliers les plus sûrs,
+{% if event_blocks | length >= combo_min_lot %}- Un combiné « solide » : 3-4 sélections des deux paliers les plus sûrs,
   cote cible 6-12
 - Un combiné « frisson » : 4-5 sélections, cote cible 25-80
-{% if exact_scores %}- Optionnel : un multichoix scores exacts sur le match le plus lisible
+{% else %}**Un seul combiné**, et seulement si trois sélections reposant sur des causes
+indépendantes existent. Ce lot porte {{ event_blocks | length }} match(s) : une
+seule sélection par match, et une partie du lot passera. Si les trois n'y sont
+pas, écris en une ligne que le lot ne portait pas de quoi en construire un — et
+n'ajoute aucune jambe pour faire le compte.
+{% endif %}{% if exact_scores %}- Optionnel : un multichoix scores exacts sur le match le plus lisible
 {% endif %}Contrainte : une seule sélection par match dans un combiné.
 {% if 'tennis' in sports %}
 **Score exact en sets** — obligatoire, une ligne par match du lot où un scénario
@@ -462,11 +481,11 @@ combiné plus court, donne sa cote réelle, et écris en une ligne pourquoi la
 cible n'était pas atteignable aujourd'hui. Un combiné honnête à 5.30 vaut mieux
 qu'un combiné à 8.50 dont une jambe n'existe que pour faire le compte.
 
-Les deux combinés doivent être **réellement différents**. Si le second n'est que
+{% if event_blocks | length >= combo_min_lot %}Les deux combinés doivent être **réellement différents**. Si le second n'est que
 le premier plus une jambe, ce n'est pas un second combiné : n'en propose qu'un,
 et dis que le lot ne portait pas de quoi en construire deux.
 
-Pour chaque combiné : nomme le maillon le plus fragile, et dis si deux
+{% endif %}Pour chaque combiné : nomme le maillon le plus fragile, et dis si deux
 sélections reposent sur la même cause — mêmes conditions, même tournoi, même
 type de scénario. Deux maillons qui tombent ensemble n'en font qu'un.
 

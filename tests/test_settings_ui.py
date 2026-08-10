@@ -5,9 +5,11 @@ from collections.abc import Iterator
 import pytest
 from fastapi.testclient import TestClient
 
+from myassistantbet import db
 from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
+from myassistantbet.services import thresholds
 from myassistantbet.services.prompt import (
     DEFAULT_TEMPLATE,
     CustomizationError,
@@ -297,3 +299,34 @@ def test_paliers_incoherents_refuses_via_htmx(
 
     assert "borne haute" in response.text
     assert load_tiers(isolated_settings)[0].max_price == 1.70
+
+
+def test_un_seuil_se_regle_depuis_l_ecran(client: TestClient, isolated_settings: Settings) -> None:
+    """« A partir de combien de matchs un lot porte-t-il deux combines » est une
+    decision de l'utilisateur, pas une constante du projet : la coder en dur
+    obligerait a redeployer pour changer d'avis."""
+    page = " ".join(client.get("/settings").text.split())
+    assert "Lot minimum pour deux combinés" in page
+
+    response = client.post("/settings/thresholds", data={"key": "combo_min_lot", "value": "8"})
+
+    assert response.status_code == 200
+    assert response.text.strip().startswith('<div id="thresholds">')
+    assert thresholds.value_of("combo_min_lot", isolated_settings) == 8
+
+
+def test_un_seuil_illisible_revient_au_defaut(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Le retour au defaut est **ecrit en base** et pas seulement a la lecture :
+    sinon le champ afficherait le defaut quand la table porte la saisie refusee.
+    """
+    client.post("/settings/thresholds", data={"key": "combo_min_lot", "value": "beaucoup"})
+
+    defaut = thresholds.THRESHOLDS["combo_min_lot"].default
+    assert thresholds.value_of("combo_min_lot", isolated_settings) == defaut
+    assert db.query_one(
+        "SELECT value FROM preferences WHERE key = ?",
+        (thresholds.PREFIX + "combo_min_lot",),
+        settings=isolated_settings,
+    )["value"] == str(defaut)

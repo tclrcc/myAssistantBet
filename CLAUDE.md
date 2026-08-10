@@ -1360,6 +1360,48 @@ l'avait franchi depuis des mois sans que rien ne bronche.
   panne exacte qui a fait echouer la premiere version de cette fixture. Un
   enrichissement complet se simule donc de bout en bout avec `DOSSIER_RATE_HEADERS`.
 
+## Trois regles du gabarit s'annulaient l'une l'autre
+
+Toutes trois nees d'ajouts faits a des endroits differents sans relecture croisee.
+Chacune annulait une consigne voisine, et aucune ne cassait quoi que ce soit — c'est ce
+qui les rend chercheuses.
+
+- **Le cran de confiance 5 etait inatteignable.** Il exigeait « Ce qui manque » vide,
+  quand la section A demande de nommer **tout** ce qu'on n'a pas trouve : la colonne
+  n'est pratiquement jamais vide. Le cran s'aligne donc sur le 4, qui avait deja la bonne
+  formulation — le trou doit etre **sans rapport** avec ce qui porte la selection, pas
+  absent. C'est exactement le defaut que la table des crans devait corriger.
+- **La clause de silence fermait tout le chapitre.** « N'en tire aucune tendance, et
+  n'ecris rien a ce sujet » couvrait, seize lignes plus haut, la demande de commenter un
+  lot dont le taux de selection sort de l'ordinaire. Elle est **portee sur les seuls
+  taux**, et la meme clause de perimetre figure dans la branche « assez de recul » —
+  sans quoi le probleme reapparaitrait le jour ou le seuil est franchi. Un test lit
+  cette branche-la directement dans le gabarit.
+- **La section D etait insatisfiable sur un petit lot.** Elle reclamait un combine de
+  3-4 jambes **et** un second de 4-5, une seule selection par match — sur cinq matchs et
+  un taux de selection median de 36 %, la sortie attendue tourne autour de deux
+  selections. Sous `combo_min_lot`, le prompt n'en demande qu'un, et les deux
+  paragraphes qui supposent deux combines se gardent avec.
+
+## Les seuils reglables (`services/thresholds.py`)
+
+Des nombres qui decident d'une regle sans etre ni une constante du projet ni une donnee :
+« a partir de combien de matchs un lot porte-t-il deux combines ». Ce sont des decisions
+de l'utilisateur, au meme titre que les bandes de cote, et les coder en dur obligerait a
+redeployer pour changer d'avis.
+
+- Ils vivent dans `preferences`, la table cle/valeur qui porte deja les consignes
+  permanentes, sous le prefixe `seuil_` — sans lui, un seuil et une consigne de texte se
+  disputeraient un nom.
+- **Un registre les declare** — libelle, defaut, bornes, et *ce que le seuil decide*.
+  L'ecran des reglages les rend sans les connaitre un par un : un seuil ajoute demain n'a
+  pas a toucher au gabarit. La note n'est pas decorative : un nombre sans son effet ne se
+  regle pas, il se subit.
+- **Une valeur illisible ou hors bornes vaut le defaut**, jamais une erreur : refuser de
+  servir une page parce qu'un nombre a ete mal saisi serait hors de proportion. Le retour
+  au defaut est **ecrit en base** et pas seulement applique a la lecture, sans quoi le
+  champ afficherait le defaut quand la table porte encore la saisie refusee.
+
 ## Le denominateur ne peut pas baisser, et il le prouve
 
 **Une fenetre glissante s'est lue comme un total, et a fait croire a une perte de

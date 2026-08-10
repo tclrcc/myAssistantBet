@@ -21,6 +21,7 @@ from myassistantbet.services.enrich import run_enrich
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import (
     DEFAULT_TEMPLATE,
+    TEMPLATES_DIR,
     build_prompt,
     date_fr,
     list_templates,
@@ -28,6 +29,9 @@ from myassistantbet.services.prompt import (
     save_prompt,
 )
 from myassistantbet.services.scan import active_competitions, run_scan
+from myassistantbet.services.thresholds import THRESHOLDS
+from myassistantbet.services.thresholds import save as save_threshold
+from myassistantbet.services.thresholds import value_of as threshold_value
 
 from .helpers import (
     DOSSIER_RATE_HEADERS,
@@ -922,3 +926,94 @@ def test_le_renvoi_se_garde_comme_le_chapitre_qu_il_annonce(migrated: Settings) 
     assert "Le mode d'emploi des lignes de contexte" not in vide
     assert "COMMENT LIRE LES BLOCS" in football
     assert "Le mode d'emploi des lignes de contexte" in football
+
+
+# -- Trois contradictions internes du gabarit -------------------------------
+
+
+def test_le_cran_5_est_atteignable(migrated: Settings) -> None:
+    """La section A demande de nommer **tout** ce qu'on n'a pas trouve : une
+    colonne « Ce qui manque » vide n'existe pratiquement jamais.
+
+    Exiger le vide au cran 5 le rendait structurellement inaccessible — le
+    defaut meme que la table des crans devait corriger. Ce qui compte est que le
+    trou soit **sans rapport** avec ce qui porte la selection, comme au cran 4.
+    """
+    corps = " ".join(build_prompt(_lot_de(migrated, 3), settings=migrated, now=NOW).body.split())
+
+    assert "« Ce qui manque » vide sur ce match" not in corps
+    assert "aucun manque de la section A ne touche ces facteurs" in corps
+    assert "Exiger le vide rendrait le cran 5 inatteignable" in corps
+
+
+def test_la_clause_de_silence_ne_couvre_que_les_taux(migrated: Settings) -> None:
+    """« N'en tire aucune tendance, et n'ecris rien a ce sujet » fermait le
+    chapitre et annulait, seize lignes plus haut, la demande de commenter un lot
+    dont le taux de selection sort de l'ordinaire.
+    """
+    # Le gabarit est relu a plat : ses phrases sont coupees en lignes de 80.
+    gabarit = " ".join((TEMPLATES_DIR / DEFAULT_TEMPLATE).read_text(encoding="utf-8").split())
+
+    assert "N'en tire aucune tendance, et n'écris rien à ce sujet." not in gabarit
+    assert "n'écris rien **sur ces taux**" in gabarit
+    assert "Le constat sur le taux de sélection, en tête de ce chapitre, n'est pas" in gabarit
+
+
+def test_la_clause_de_perimetre_existe_aussi_quand_le_recul_suffit(migrated: Settings) -> None:
+    """Sans elle, le probleme reapparaitrait le jour ou le seuil est franchi —
+    la liste « ce qu'il ne fait jamais » se lirait alors comme couvrant tout."""
+    gabarit = (TEMPLATES_DIR / DEFAULT_TEMPLATE).read_text(encoding="utf-8")
+    enough = " ".join(
+        gabarit.split("{% if feedback.enough %}", 1)[1].split("{% else %}", 1)[0].split()
+    )
+
+    assert "rien de ce qui précède ne vise le taux de sélection" in enough
+
+
+def test_un_petit_lot_ne_demande_qu_un_combine(migrated: Settings) -> None:
+    """Sur cinq matchs et un taux de selection median de 36 %, la sortie
+    attendue tourne autour de deux selections : reclamer un combine de 3-4
+    jambes **et** un second de 4-5, une seule selection par match, etait
+    insatisfiable avant meme que l'analyse commence."""
+    seuil = threshold_value("combo_min_lot", migrated)
+
+    corps = " ".join(
+        build_prompt(_lot_de(migrated, seuil - 1), settings=migrated, now=NOW).body.split()
+    )
+
+    assert "**Un seul combiné**" in corps
+    assert "combiné « frisson »" not in corps
+    assert "réellement différents" not in corps, "le paragraphe suppose deux combinés"
+    assert "n'ajoute aucune jambe pour faire le compte" in corps
+
+
+def test_un_lot_assez_grand_garde_les_deux_combines(migrated: Settings) -> None:
+    seuil = threshold_value("combo_min_lot", migrated)
+
+    corps = " ".join(
+        build_prompt(_lot_de(migrated, seuil), settings=migrated, now=NOW).body.split()
+    )
+
+    assert "combiné « solide »" in corps and "combiné « frisson »" in corps
+    assert "**Un seul combiné**" not in corps
+    assert "réellement différents" in corps
+
+
+def test_le_seuil_des_combines_se_lit_dans_les_reglages(migrated: Settings) -> None:
+    """« A partir de combien de matchs un lot porte-t-il deux combines » est une
+    decision de l'utilisateur, pas une constante du projet."""
+    save_threshold("combo_min_lot", "3", migrated)
+
+    corps = " ".join(build_prompt(_lot_de(migrated, 4), settings=migrated, now=NOW).body.split())
+
+    assert "combiné « frisson »" in corps, "quatre matchs passent le seuil abaissé"
+
+
+def test_un_seuil_hors_bornes_revient_au_defaut(migrated: Settings) -> None:
+    """Un seuil mal saisi doit degrader vers un comportement connu, pas casser
+    une generation de prompt."""
+    save_threshold("combo_min_lot", "beaucoup", migrated)
+    assert threshold_value("combo_min_lot", migrated) == THRESHOLDS["combo_min_lot"].default
+
+    save_threshold("combo_min_lot", "9999", migrated)
+    assert threshold_value("combo_min_lot", migrated) == THRESHOLDS["combo_min_lot"].default

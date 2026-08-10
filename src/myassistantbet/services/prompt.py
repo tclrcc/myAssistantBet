@@ -29,6 +29,7 @@ from .enrich import markets_for
 from .history import feedback
 from .render import estimate_tokens, ordered_labels, render_event
 from .session import has_started, renderable_events, session_label, started_labels
+from .thresholds import value_of as threshold
 
 logger = logging.getLogger(__name__)
 
@@ -331,6 +332,10 @@ def build_prompt(
             # Le multichoix scores exacts n'a de sens que si un bloc sert
             # vraiment ce marche : l'imposer a un lot de tennis fait ecrire
             # « impossible » a chaque session, ce qui n'apprend rien.
+            # Le seuil se lit dans les reglages : « a partir de combien de
+            # matchs un lot porte-t-il deux combines » est une decision de
+            # l'utilisateur, pas une constante du projet.
+            combo_min_lot=threshold("combo_min_lot", settings),
             exact_scores=any(
                 key.startswith("correct_score") for event in events for key in event.markets
             ),

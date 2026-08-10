@@ -45,6 +45,7 @@ from .services import picks_import as picks_import_service
 from .services import prompt as prompt_service
 from .services import session as session_service
 from .services import tennis_history as tennis_history_service
+from .services import thresholds as thresholds_service
 from .services.scan import run_scan
 
 logging.basicConfig(
@@ -1191,6 +1192,10 @@ def _settings_context(**overrides: object) -> dict[str, object]:
         "market_todo": market_families_service.unclassified(settings),
         "market_family_options": market_families_service.FAMILIES,
         "families_saved": False,
+        # Les seuils numeriques : le registre les declare, l'ecran les rend
+        # sans les connaitre un par un.
+        "thresholds": thresholds_service.current(settings),
+        "thresholds_saved": False,
     }
     context.update(overrides)
     return context
@@ -1247,6 +1252,16 @@ def save_preferences(request: Request, preferences: str = Form(default="")) -> H
         )
     return templates.TemplateResponse(
         request, "_preferences.html", _settings_context(preferences_saved=True)
+    )
+
+
+@app.post("/settings/thresholds", response_class=HTMLResponse)
+async def save_threshold(request: Request) -> HTMLResponse:
+    """Enregistre un seuil numerique. Hors bornes, il revient a son defaut."""
+    form = await request.form()
+    thresholds_service.save(str(form.get("key", "")), str(form.get("value", "")), get_settings())
+    return templates.TemplateResponse(
+        request, "_thresholds.html", _settings_context(thresholds_saved=True)
     )
 
 

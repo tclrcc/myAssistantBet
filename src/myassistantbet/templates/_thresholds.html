@@ -1,0 +1,39 @@
+<div id="thresholds">
+  {% if thresholds_saved %}<div class="report">Seuil enregistré.</div>{% endif %}
+
+  <p class="muted small">
+    Des nombres qui ne sont ni une constante du projet ni une donnée : ils décident
+    d'une règle du prompt ou d'un rendu, et c'est à toi de les fixer. Une valeur hors
+    bornes ou illisible revient au défaut plutôt que de casser une génération.
+  </p>
+
+  <table class="board">
+    <thead>
+      <tr>
+        <th>Seuil</th>
+        <th class="num">Valeur</th>
+        <th>Ce qu'il décide</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for threshold, value in thresholds %}
+      <tr>
+        <td class="affiche">{{ threshold.label }}</td>
+        <td class="num">
+          <form class="tiers-form" hx-post="/settings/thresholds"
+                hx-target="#thresholds" hx-swap="outerHTML">
+            <input type="hidden" name="key" value="{{ threshold.key }}">
+            <input class="tiny" type="text" inputmode="numeric" name="value"
+                   aria-label="{{ threshold.label }}" value="{{ value }}">
+            <button type="submit" class="link-action">ok</button>
+          </form>
+        </td>
+        <td class="small muted">
+          {{ threshold.note }}
+          <br>Entre {{ threshold.low }} et {{ threshold.high }}, défaut {{ threshold.default }}.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
