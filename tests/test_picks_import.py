@@ -589,3 +589,24 @@ def test_sans_justification_l_import_refuse_la_ligne(
     assert db.query_one("SELECT COUNT(*) AS n FROM picks", settings=isolated_settings)["n"] == 1, (
         "seule la première ligne entre"
     )
+
+
+def test_l_import_lit_la_mention_de_cote_de_reference(migrated: Settings) -> None:
+    """Le prompt impose « (ref.) » dans la colonne Cote des la premiere ligne du
+    preambule, et la liste des prix a relever sous le tableau C la reprend. Elle
+    etait ecrite, lue, puis jetee — alors que c'est elle qui dit qu'un palier
+    repose sur un prix qu'on n'obtiendra pas.
+
+    Une cote sans mention vient du bookmaker principal : c'est la regle du bloc,
+    pas une supposition."""
+    table = (
+        "| # | Match | Marché | Sélection | Cote | Palier | Conf/5 |\n"
+        "|---|---|---|---|---|---|---|\n"
+        "| 1 | Moutet – Bergs | Hand. jeux | Moutet -2.5 | 1.92 (ref.) | 🔵 FUN | 3 |\n"
+        "| 2 | Moutet – Bergs | Vainqueur | Moutet | 1.85 | 🔵 FUN | 3 |\n"
+    )
+
+    preview = picks_import.build_preview(0, table, migrated)
+
+    assert [pick.price_source for pick in preview.picks] == ["reference", "betclic"]
+    assert [pick.price for pick in preview.picks] == ["1.92", "1.85"]

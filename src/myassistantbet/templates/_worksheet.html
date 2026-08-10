@@ -61,7 +61,33 @@
         </span>
         {%- endif %}
       </td>
-      <td class="num">{{ '%.2f'|format(pick.price) if pick.price else '·' }}</td>
+      <td class="num">
+        {{ '%.2f'|format(pick.price) if pick.price else '·' }}
+        {# La cote **obtenue**, saisie après avoir posé le pari — elle ne se
+           relève jamais toute seule, ce serait une intégration transactionnelle
+           avec un bookmaker. Réclamée là où elle manque et où elle décide : une
+           sélection assise sur un prix de référence sort des taux par bande de
+           cote tant qu'elle n'est pas renseignée. #}
+        {% if pick.price_source == 'reference' %}
+        <form hx-post="/picks/{{ pick.pick_id }}/real-price"
+              hx-target="#worksheet" hx-swap="outerHTML">
+          <input class="tiny" type="text" name="price" inputmode="decimal"
+                 value="{{ '%.2f'|format(pick.price_real) if pick.price_real else '' }}"
+                 placeholder="obtenue"
+                 aria-label="Cote obtenue — {{ pick.selection }}"
+                 title="Cote obtenue chez le bookmaker principal">
+        </form>
+        {% if pick.tier_real and pick.tier_real != pick.tier %}
+        <span class="badge warn" title="Le palier a changé une fois le prix relevé">
+          palier revu
+        </span>
+        {% elif pick.quarantined %}
+        <span class="badge" title="Sort des taux par bande de cote tant qu'elle manque">
+          (ref.)
+        </span>
+        {% endif %}
+        {% endif %}
+      </td>
       <td class="num muted">{{ pick.confidence or '·' }}</td>
       <td>
         <div class="segmented" role="group" aria-label="Résultat">

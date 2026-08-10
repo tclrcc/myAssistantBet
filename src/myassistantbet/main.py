@@ -877,6 +877,10 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         # de son regroupement sans un mot.
         "angles": history_service.ANGLES,
         "source_levels": history_service.SOURCE_LEVELS,
+        # D'ou vient la cote recopiee. Un 1.92 de reference et un 1.92 du book
+        # principal ne decrivent pas le meme marche : sans cette colonne, le
+        # taux par bande de cote melangeait deux populations.
+        "price_sources": history_service.PRICE_SOURCES,
         "picks": history_service.list_picks(session_id, settings),
         "worksheet": history_service.worksheet(session_id, settings),
         "result_labels": list(history_service.RESULT_LABELS.items()),
@@ -950,6 +954,7 @@ async def add_pick(request: Request, session_id: int) -> HTMLResponse:
             stake=form.get("stake", ""),
             angle=form.get("angle", ""),
             source_level=form.get("source_level", ""),
+            price_source=form.get("price_source", ""),
             independence_note=form.get("independence_note", ""),
             settings=get_settings(),
         )
@@ -992,6 +997,7 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
                 confidence=form.get(f"confidence_{index}", ""),
                 angle=form.get(f"angle_{index}", ""),
                 source_level=form.get(f"source_{index}", ""),
+                price_source=form.get(f"price_source_{index}", ""),
                 independence_note=form.get(f"independence_{index}", ""),
                 settings=settings,
             )
@@ -1145,6 +1151,25 @@ def set_pick_result(
         history_service.set_result(pick_id, result, settings)
     except history_service.HistoryError as exc:
         logger.warning("Resultat refuse : %s", exc)
+    return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
+
+
+@app.post("/picks/{pick_id}/real-price", response_class=HTMLResponse)
+def set_pick_real_price(
+    request: Request, pick_id: int, price: str = Form(default="")
+) -> HTMLResponse:
+    """Enregistre la cote **obtenue** chez le bookmaker principal.
+
+    Elle ne se releve jamais toute seule : ce serait une integration
+    transactionnelle avec un bookmaker, interdit n°7 de SPEC.md. Le palier est
+    recalcule dessus a l'ecriture.
+    """
+    settings = get_settings()
+    session_id = _pick_session(pick_id)
+    try:
+        history_service.set_real_price(pick_id, price, settings)
+    except history_service.HistoryError as exc:
+        logger.warning("Cote obtenue refusee : %s", exc)
     return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
 
 

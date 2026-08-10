@@ -98,7 +98,19 @@
              sinon la page crierait à la dérive sur du bruit.",
             "Aucune confiance annoncée sur les sélections tranchées.",
             comparison=analysis.confidence_comparison) }}
-    {{ card("Par palier", analysis.by_tier, comparison=analysis.tier_comparison) }}
+    {# Un palier est une bande de cote, et le prompt affirme qu'il « sert à
+       calculer un taux de réussite par bande de cote dans le temps ». Un 1.92
+       de référence et un 1.92 du book principal ne décrivent pas le même
+       marché, et près des bornes l'écart de marge fait basculer de bande : les
+       sélections dont le prix reste à relever sortent de cet axe, et de
+       celui-là seulement. #}
+    {{ card("Par palier", analysis.by_tier,
+            ("Lu sur la cote obtenue quand elle est saisie, sinon sur la cote du bloc. "
+             ~ analysis.quarantined ~ " sélection(s) tranchée(s) assise(s) sur une cote de
+             référence attendent leur prix réel : leur palier reposerait sur un prix qu'on
+             n'aurait pas obtenu. Elles comptent partout ailleurs.")
+            if analysis.quarantined else "",
+            comparison=analysis.tier_comparison) }}
     {{ card("Par sport", analysis.by_sport) }}
     {# Le niveau est la seule dimension qui tienne entre le sport, trop large, et
        la compétition, trop fine. Il est aussi la seule qui dépende d'une saisie :
@@ -607,7 +619,10 @@
   {% endif %}
 
   <div class="charts">
-    {{ card("Par palier", stats.by_tier) }}
+    {{ card("Par palier", stats.by_tier,
+            (stats.quarantined ~ " pari(s) posé(s) à une cote de référence dont le prix
+             obtenu n'est pas saisi : hors de cet axe, comptés partout ailleurs.")
+            if stats.quarantined else "") }}
     {{ card("Par sport", stats.by_sport) }}
   </div>
 

@@ -1,0 +1,53 @@
+-- 030_cote_de_reference.sql — separer la cote recopiee et la cote obtenue.
+--
+-- **Le defaut le plus grave releve sur le prompt du 10/08.** Sur les quatre
+-- blocs du lot, la ligne « A relever : Hand. jeux, Jeux O/U » apparaissait 4
+-- fois sur 4. Ce n'est pas un accident de collecte : c'est l'etat permanent du
+-- tennis dans le pipeline — sur 127 matchs a venir, `betclic_fr` ne sert que le
+-- `h2h` via The Odds API, tout le handicap jeux et tout le total de jeux venant
+-- de Pinnacle.
+--
+-- Consequence : **toute selection de type « maniere » au tennis est enregistree
+-- a un prix Pinnacle**, quand le football l'est a un prix Betclic. Or le prompt
+-- affirme que le palier « sert a calculer un taux de reussite par bande de cote
+-- dans le temps ». Un 1.92 Pinnacle et un 1.92 Betclic ne decrivent pas le meme
+-- marche, et pres des bornes — 1.70, 2.30 — l'ecart de marge fait basculer de
+-- palier. La serie longue ne mesurait plus une bande de cote : elle melangeait
+-- deux populations.
+--
+-- **Trois colonnes, aucun renommage.** La table demandee separait `cote_ref` de
+-- `cote_reelle` et `palier_provisoire` de `palier` ; renommer `price` et `tier`
+-- aurait touche six templates, quatre services et la moitie des tests pour un
+-- gain nul, et `cote_ref NOT NULL` aurait ete faux sur les selections anciennes
+-- qui n'en portent pas. `price` **est** deja la cote de reference : le prompt
+-- impose de la recopier du bloc au centime pres. On lui ajoute donc d'ou elle
+-- vient et ce qu'on a obtenu.
+--
+--   · `price_source` — `betclic` | `reference` | `manuelle`, ou NULL quand la
+--     selection est anterieure a cette colonne. Le prompt exige deja la mention
+--     « (ref.) » dans la colonne Cote du tableau : l'import la lit.
+--   · `price_real`   — la cote obtenue chez le bookmaker principal, saisie
+--     apres coup. Elle n'est **jamais** relevee automatiquement : ce serait une
+--     integration transactionnelle avec un bookmaker (interdit n°7).
+--   · `tier_real`    — le palier recalcule sur `price_real` des qu'elle existe.
+--     `tier` reste le palier provisoire, calcule sur la cote de reference a
+--     l'enregistrement, et c'est lui qui sert tant que rien n'est releve.
+--
+-- **Aucun retro-remplissage.** Deduire la source d'une selection ancienne
+-- demanderait de rapprocher un libelle de marche ecrit a la main d'une ligne de
+-- la table `odds`, et de le faire des mois apres le releve : la reponse serait
+-- fausse une fois sur combien, personne ne peut le dire. NULL veut dire « on ne
+-- sait pas », et c'est la verite.
+--
+-- **Ce que l'exclusion des taux vise, et ce qu'elle epargne.** Seules sortent
+-- des taux par bande de cote les selections dont la cote vient d'un book de
+-- **reference** et dont la cote reelle manque : leur palier est bati sur un
+-- prix qu'on n'aurait pas obtenu. Une cote Betclic est sa propre cote reelle,
+-- et une selection anterieure a la colonne n'a aucune raison d'etre suspectee —
+-- exclure tout ce qui n'a pas de `price_real` aurait vide la page et le bloc de
+-- retour d'experience d'un coup, pour quarantainer surtout du football servi
+-- par le book principal.
+
+ALTER TABLE picks ADD COLUMN price_source TEXT;  -- betclic | reference | manuelle | NULL
+ALTER TABLE picks ADD COLUMN price_real REAL;    -- cote obtenue chez le book principal
+ALTER TABLE picks ADD COLUMN tier_real TEXT;     -- palier recalcule sur price_real

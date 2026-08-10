@@ -75,6 +75,12 @@
           <td><input type="text" name="selection_{{ pick.index }}" value="{{ pick.selection }}"></td>
           <td class="num">
             <input type="text" class="tiny" name="price_{{ pick.index }}" value="{{ pick.price }}">
+            {# La mention « (ref.) » du tableau : elle était lue puis jetée, alors
+               qu'elle dit qu'un palier repose sur un prix qu'on n'obtiendra pas. #}
+            <input type="hidden" name="price_source_{{ pick.index }}" value="{{ pick.price_source }}">
+            {% if pick.price_source == 'reference' %}
+            <span class="badge" title="Cote de référence : le prix obtenu reste à saisir">(ref.)</span>
+            {% endif %}
           </td>
           <td>
             <select name="tier_{{ pick.index }}">
@@ -172,6 +178,17 @@
     <label class="grow">Sélection
       <input type="text" name="selection" required placeholder="Over 2.5"></label>
     <label class="narrow">Cote<input type="text" name="price" inputmode="decimal" placeholder="1.72"></label>
+    {# D'où vient cette cote. Une cote de référence ne décrit pas le même marché
+       qu'une cote du book principal, et près des bornes d'un palier l'écart de
+       marge fait basculer de bande : sans cette colonne, la série longue
+       mélangeait deux populations. #}
+    <label class="narrow">Source cote
+      <select name="price_source">
+        <option value="">—</option>
+        {% for key, label in price_sources.items() %}
+          <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select></label>
     <label class="narrow">Conf/5
       <input type="text" name="confidence" inputmode="numeric" placeholder="3"></label>
     {# Facultatifs : cent sélections en base n'en portent aucun, et alourdir la

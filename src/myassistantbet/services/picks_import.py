@@ -60,6 +60,8 @@ class ParsedPick:
     market: str = ""
     selection: str = ""
     price: str = ""
+    #: D'ou vient cette cote — lu sur la mention « (ref.) » que le prompt impose.
+    price_source: str = ""
     tier: str = ""
     tier_text: str = ""
     confidence: str = ""
@@ -205,6 +207,25 @@ def _price(text: str) -> str:
     return match.group(0).replace(",", ".") if match else ""
 
 
+#: La mention que le prompt impose dans la colonne Cote quand le prix ne vient
+#: pas du bookmaker principal. Elle etait ecrite, lue, puis jetee : c'est
+#: pourtant elle qui dit qu'un palier repose sur un prix qu'on n'obtiendra pas.
+REFERENCE_MARK = re.compile(r"\(\s*ref\.?\s*\)", re.IGNORECASE)
+
+
+def _price_source(text: str) -> str:
+    """`reference` si la cellule porte « (ref.) », `betclic` sinon.
+
+    Le prompt exige la mention des la premiere ligne du preambule, et la liste
+    des prix a relever, sous le tableau C, la reprend. Sans elle, une cote est
+    celle du bookmaker principal — c'est la regle du bloc, pas une supposition.
+    Une cellule vide ne dit rien : elle ne porte pas de cote du tout.
+    """
+    if not (text or "").strip():
+        return ""
+    return "reference" if REFERENCE_MARK.search(text) else "betclic"
+
+
 def _confidence(text: str) -> str:
     """Extrait la note de confiance. `4`, `4/5` et `⭐⭐⭐⭐` donnent tous 4."""
     match = re.search(r"[1-5]", text or "")
@@ -328,6 +349,7 @@ def parse_table(
                 market=values["market"],
                 selection=values["selection"],
                 price=_price(values["price"]),
+                price_source=_price_source(values["price"]),
                 tier=_resolve_tier(values["tier"], tiers),
                 tier_text=values["tier"],
                 confidence=_confidence(values["confidence"]),

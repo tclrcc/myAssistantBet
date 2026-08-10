@@ -52,6 +52,27 @@ ANGLES = {
 #: c'est elle que le detecteur de conflit compare a la famille du marche rendu.
 ANGLE_MANNER = "maniere"
 
+#: D'ou vient la cote **recopiee du bloc**. Le palier est une bande de cote, et
+#: il « sert a calculer un taux de reussite par bande de cote dans le temps » :
+#: un 1.92 Pinnacle et un 1.92 Betclic ne decrivent pas le meme marche, et pres
+#: des bornes l'ecart de marge fait basculer de palier. Sans cette colonne, la
+#: serie longue melangeait deux populations — au tennis, **toute** selection de
+#: maniere est enregistree a un prix de reference, le book principal n'y servant
+#: que le vainqueur.
+#:
+#: `NULL` veut dire « on ne sait pas » : les selections anterieures a la colonne
+#: n'ont pas ete devinees apres coup, un rapprochement de libelles fait des mois
+#: plus tard se trompant sans qu'on puisse dire combien de fois.
+PRICE_SOURCES = {
+    "betclic": "Bookmaker principal",
+    "reference": "Book de référence",
+    "manuelle": "Saisie manuelle",
+}
+
+#: La seule source dont le prix n'est **pas** celui qu'on obtiendra. C'est elle
+#: qui met une selection en quarantaine tant que sa cote reelle manque.
+PRICE_REFERENCE = "reference"
+
 #: Niveau de la source qui porte le fait principal, sur l'echelle a quatre crans
 #: du preambule. `lecture` n'est pas une absence de valeur mais une valeur de
 #: l'echelle : l'analyse declare qu'aucun fait date ne porte la selection. La
@@ -126,6 +147,12 @@ class Pick:
     #: lecteur. C'est en la relisant qu'on voit si deux angles etaient vraiment
     #: independants ou deux facons de dire la meme chose.
     independence_note: str = ""
+    #: D'ou vient la cote recopiee, ce qu'on a reellement obtenu, et le palier
+    #: recalcule dessus. `tier` reste le palier **provisoire** : il vaut tant
+    #: qu'aucun prix n'a ete releve, ce qui est le cas ordinaire.
+    price_source: str = ""
+    price_real: float | None = None
+    tier_real: str = ""
     #: Renseignes par `list_picks`, qui range les selections par competition.
     competition: str = ""
     sport_order: int = 99
@@ -137,6 +164,22 @@ class Pick:
         if not self.competition:
             return NO_COMPETITION
         return f"{self.sport_label} · {self.competition}"
+
+    @property
+    def tier_effective(self) -> str:
+        """Le palier qui fait foi : celui de la cote obtenue, sinon le provisoire."""
+        return self.tier_real or self.tier
+
+    @property
+    def quarantined(self) -> bool:
+        """Sa cote vient d'un book de reference et rien n'a ete releve depuis.
+
+        Son palier est bati sur un prix qu'on n'aurait pas obtenu : il sort des
+        taux **par bande de cote**, et de ceux-la seulement. La selection compte
+        partout ailleurs — l'angle qui la portait ne devient pas faux parce que
+        le prix reste a verifier.
+        """
+        return self.price_source == PRICE_REFERENCE and self.price_real is None
 
     @property
     def settled(self) -> bool:
@@ -479,6 +522,9 @@ class Stats:
     by_tier: list[RateRow] = field(default_factory=list)
     by_sport: list[RateRow] = field(default_factory=list)
     overall: RateRow = field(default_factory=lambda: RateRow("all", "Tous"))
+    #: Paris poses a un prix de **reference** dont la cote obtenue n'a pas ete
+    #: relevee. Ils sortent des taux par bande de cote, jamais du reste.
+    quarantined: int = 0
 
     @property
     def empty(self) -> bool:
@@ -632,6 +678,9 @@ def _pick(row: Any, tier_labels: dict[str, str], tz: str = "") -> Pick:
         stake=row["stake"],
         result=row["result"] or "pending",
         coupon_id=row["coupon_id"],
+        price_source=_column(row, "price_source") or "",
+        price_real=_column(row, "price_real"),
+        tier_real=_column(row, "tier_real") or "",
         independence_note=_column(row, "independence_note") or "",
         sport_label=_column(row, "sport_label") or "",
         competition=_column(row, "competition") or "",
@@ -922,6 +971,26 @@ def tiers(settings: Settings | None = None) -> list[dict[str, str]]:
         ]
 
 
+def tier_for_price(price: float | None, settings: Settings | None = None) -> str | None:
+    """Palier d'une cote, lu sur les bandes reglees.
+
+    **La borne haute appartient au palier suivant** : une cote a 1.70 est FUN et
+    non SAFE. La regle est celle du prompt, et elle est ecrite ici une seconde
+    fois parce que `prompt.py` importe ce module — l'inverse ferait un cycle. Un
+    test compare les deux implementations plutot que d'esperer qu'elles ne
+    divergent pas.
+    """
+    if price is None:
+        return None
+    with connect(settings) as conn:
+        for row in conn.execute("SELECT key, min_price, max_price FROM tiers ORDER BY position"):
+            if price < float(row["min_price"]):
+                continue
+            if row["max_price"] is None or price < float(row["max_price"]):
+                return str(row["key"])
+    return None
+
+
 # -- Ecriture ---------------------------------------------------------------
 
 
@@ -965,6 +1034,7 @@ def add_pick(
     stake: str = "",
     angle: str = "",
     source_level: str = "",
+    price_source: str = "",
     independence_note: str = "",
     played: bool = False,
     result: str = "pending",
@@ -1006,6 +1076,9 @@ def add_pick(
     # les statistiques, comme pour un niveau de competition.
     angle_value = _vocabulary(angle, ANGLES)
     source_value = _vocabulary(source_level, SOURCE_LEVELS)
+    # D'ou vient la cote recopiee. Facultative comme les deux precedentes : une
+    # valeur inconnue vaut « on ne sait pas », jamais un refus.
+    price_origin = _vocabulary(price_source, PRICE_SOURCES)
 
     attached = int(event_id) if str(event_id).strip().isdigit() else None
     with connect(settings) as conn:
@@ -1036,8 +1109,8 @@ def add_pick(
         cursor = conn.execute(
             "INSERT INTO picks (session_id, event_id, tier, market, selection, price, "
             "                   confidence, played, stake, result, angle, source_level, "
-            "                   independence_note, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "                   price_source, independence_note, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 attached,
@@ -1051,6 +1124,7 @@ def add_pick(
                 result,
                 angle_value,
                 source_value,
+                price_origin,
                 note or None,
                 utcnow(),
             ),
@@ -1064,6 +1138,35 @@ def set_result(pick_id: int, result: str, settings: Settings | None = None) -> N
         raise HistoryError(f"Résultat inconnu : {result}")
     with connect(settings) as conn:
         conn.execute("UPDATE picks SET result = ? WHERE id = ?", (result, pick_id))
+
+
+def set_real_price(pick_id: int, price: str = "", settings: Settings | None = None) -> None:
+    """Enregistre la cote **obtenue chez le bookmaker principal**, et son palier.
+
+    Elle ne se releve jamais toute seule : ce serait une integration
+    transactionnelle avec un bookmaker, interdit n°7 de SPEC.md. Elle se saisit
+    apres avoir pose le pari, la ou l'on a le ticket sous les yeux.
+
+    Le palier est recalcule **a l'ecriture** et non a la lecture, contrairement
+    a la famille d'un marche : la selection a ete posee a ce prix-la, un jour
+    donne, et un reglage de bande change plus tard ne doit pas reclasser un pari
+    deja joue. C'est exactement l'inverse de la taxonomie, et pour la meme
+    raison — l'une decrit une decision datee, l'autre un classement corrigeable.
+
+    Une saisie vide efface la cote **et** son palier : sans elle, le palier
+    recalcule resterait comme la trace d'un prix qui n'existe plus.
+    """
+    settings = settings or get_settings()
+    value = _as_float(price, "Cote obtenue")
+    if value is not None and value <= 1.0:
+        raise HistoryError("« Cote obtenue » doit être supérieure à 1.00.")
+    tier = tier_for_price(value, settings)
+    with connect(settings) as conn:
+        conn.execute(
+            "UPDATE picks SET price_real = ?, tier_real = ? WHERE id = ?",
+            (value, tier, pick_id),
+        )
+    logger.info("Cote obtenue sur le pick %d : %s (palier %s)", pick_id, value, tier or "—")
 
 
 def set_event(pick_id: int, event_id: str = "", settings: Settings | None = None) -> None:
@@ -1093,6 +1196,24 @@ def delete_pick(pick_id: int, settings: Settings | None = None) -> None:
 
 
 # -- Statistiques -----------------------------------------------------------
+
+
+def _quarantined(row: Any) -> bool:
+    """La cote vient d'un book de reference et rien n'a ete releve depuis.
+
+    Son palier est bati sur un prix qu'on n'aurait pas obtenu : elle sort des
+    taux **par bande de cote**, et de ceux-la seulement. Une cote du book
+    principal est sa propre cote reelle, et une selection anterieure a la
+    colonne n'a aucune raison d'etre suspectee — exclure tout ce qui n'a pas de
+    `price_real` aurait vide la page d'un coup, en quarantainant surtout du
+    football servi par le book principal.
+    """
+    return _column(row, "price_source") == PRICE_REFERENCE and _column(row, "price_real") is None
+
+
+def _tier_of(row: Any) -> str:
+    """Le palier qui fait foi : celui de la cote obtenue, sinon le provisoire."""
+    return _column(row, "tier_real") or row["tier"]
 
 
 def _count(entry: RateRow, result: str, row: Any = None) -> None:
@@ -1140,7 +1261,10 @@ def _count(entry: RateRow, result: str, row: Any = None) -> None:
 def _tally(rows: list[Any], key_field: str, labels: dict[str, str]) -> list[RateRow]:
     grouped: dict[str, RateRow] = {}
     for row in rows:
-        key = row[key_field] or NO_SPORT
+        # `tier_effective` n'est pas une colonne : c'est le palier de la cote
+        # obtenue quand elle existe, sinon le provisoire. Le resoudre ici evite
+        # de dupliquer la regle dans chaque appelant.
+        key = (_tier_of(row) if key_field == "tier_effective" else row[key_field]) or NO_SPORT
         entry = grouped.setdefault(key, RateRow(key=key, label=labels.get(key, key)))
         _count(entry, row["result"] or "pending", row)
     return list(grouped.values())
@@ -1164,13 +1288,19 @@ def stats(settings: Settings | None = None) -> Stats:
             row["key"]: row["label"] for row in conn.execute("SELECT key, label FROM sports")
         }
         rows = conn.execute(
-            "SELECT k.id, k.tier, k.result, k.price, k.event_id, s.key AS sport_key FROM picks k "
+            "SELECT k.id, k.tier, k.result, k.price, k.event_id, "
+            "       k.price_source, k.price_real, k.tier_real, s.key AS sport_key FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
             "WHERE k.played = 1"
         ).fetchall()
 
-    by_tier = _tally(rows, "tier", tier_labels)
+    # Meme regle que sur les deux autres vues : un palier est une bande de cote,
+    # donc il se lit sur la cote obtenue quand elle existe, et une selection
+    # posee a un prix de reference jamais releve n'y a pas sa place. Le sport,
+    # lui, garde tout le monde : il ne mesure pas un prix.
+    quarantined = sum(1 for row in rows if _quarantined(row))
+    by_tier = _tally([row for row in rows if not _quarantined(row)], "tier_effective", tier_labels)
     by_tier.sort(key=lambda item: tier_order.index(item.key) if item.key in tier_order else 99)
     by_sport = sorted(_tally(rows, "sport_key", sport_labels), key=lambda item: item.label)
 
@@ -1178,7 +1308,7 @@ def stats(settings: Settings | None = None) -> Stats:
     for entry in by_tier:
         overall.merge(entry)
 
-    return Stats(by_tier=by_tier, by_sport=by_sport, overall=overall)
+    return Stats(by_tier=by_tier, by_sport=by_sport, overall=overall, quarantined=quarantined)
 
 
 # -- Seuils de lecture, communs aux deux surfaces ---------------------------
@@ -1447,6 +1577,11 @@ class Analysis:
     skipped: RateRow = field(default_factory=lambda: RateRow("skipped", "Écartées"))
     #: Marches ecartes faute d'echantillon. Annonce plutot que tue en silence.
     hidden_markets: int = 0
+    #: Selections tranchees dont la cote vient d'un book de **reference** et dont
+    #: la cote obtenue n'a pas ete relevee. Elles sortent des taux **par bande de
+    #: cote** — leur palier est bati sur un prix qu'on n'aurait pas obtenu — et
+    #: de ceux-la seulement. Le compte ferme l'addition, comme partout ailleurs.
+    quarantined: int = 0
     #: Regroupements de deux axes differents qui portent les memes selections.
     #: Signales, jamais masques : le bloc reste affiche, c'est sa redondance qui
     #: est dite. Le masquer choisirait a la place du lecteur lequel des deux
@@ -2012,6 +2147,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
         rows = conn.execute(
             "SELECT k.id, k.session_id, k.tier, k.result, k.market, k.confidence, k.played, "
             "       k.event_id, k.created_at, k.price, k.angle, k.source_level, "
+            "       k.price_source, k.price_real, k.tier_real, "
             "       s.key AS sport_key, c.category FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
@@ -2054,10 +2190,21 @@ def analysis(settings: Settings | None = None) -> Analysis:
         }
     )
 
+    # **Le palier se lit sur la cote obtenue quand elle existe**, sinon sur la
+    # cote de reference. Et une selection dont le prix vient d'un book de
+    # reference sans releve **sort de cet axe** : son palier est bati sur un
+    # prix qu'on n'aurait pas obtenu, et pres des bornes — 1.70, 2.30 — l'ecart
+    # de marge fait basculer de bande. Elle compte partout ailleurs.
+    report.quarantined = sum(
+        1
+        for row, result in zip(rows, results, strict=True)
+        if result in ("win", "loss") and _quarantined(row)
+    )
     report.by_tier = _rate_tally(
         [
-            (row["tier"], tier_labels.get(row["tier"], row["tier"]), result, row)
+            (_tier_of(row), tier_labels.get(_tier_of(row), _tier_of(row)), result, row)
             for row, result in zip(rows, results, strict=True)
+            if not _quarantined(row)
         ]
     )
     report.by_tier.sort(
@@ -2223,7 +2370,12 @@ def _audit(report: Analysis, tally: list[RateRow]) -> list[AxisGap]:
     """
     total = report.recorded
     axes = [
-        ("Palier", sum(row.settled for row in report.by_tier), 0, "palier inconnu"),
+        (
+            "Palier",
+            sum(row.settled for row in report.by_tier),
+            report.quarantined,
+            "cote de référence non relevée",
+        ),
         (
             "Confiance",
             sum(row.settled for row in report.by_confidence),
@@ -2568,6 +2720,7 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
         }
         rows = conn.execute(
             "SELECT k.tier, k.result, k.market, k.confidence, k.created_at, s.key AS sport_key, "
+            "       k.price_source, k.price_real, k.tier_real, "
             "       c.category, COALESCE(c.label, '') AS competition FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
@@ -2604,8 +2757,16 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
         # dira ce qui manque, ce qui vaut mieux qu'un pourcentage trompeur.
         return report
 
+    # Meme regle que sur la page : le palier se lit sur la cote obtenue quand
+    # elle existe, et une selection assise sur un prix de reference jamais releve
+    # sort de cet axe. Un 1.92 Pinnacle et un 1.92 Betclic ne decrivent pas le
+    # meme marche, et le prompt affirme que ce palier mesure une bande de cote.
     report.by_tier = _feedback_tally(
-        [(row["tier"], tier_labels.get(row["tier"], row["tier"]), row["result"]) for row in rows]
+        [
+            (_tier_of(row), tier_labels.get(_tier_of(row), _tier_of(row)), row["result"])
+            for row in rows
+            if not _quarantined(row)
+        ]
     )
     report.by_tier.sort(
         key=lambda item: tier_order.index(item.key) if item.key in tier_order else 99

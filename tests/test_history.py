@@ -24,10 +24,12 @@ from myassistantbet.services.history import (
     Analysis,
     HistoryError,
     Lot,
+    Pick,
     _overlaps,
     add_pick,
     analysis,
     delete_pick,
+    get_pick,
     labelling,
     list_picks,
     list_sessions,
@@ -37,8 +39,10 @@ from myassistantbet.services.history import (
     pickable_groups,
     required_sample,
     set_event,
+    set_real_price,
     set_result,
     stats,
+    tier_for_price,
     wilson,
     worksheet,
 )
@@ -2529,3 +2533,221 @@ def test_la_page_rend_le_conflit_angle_marche(client: TestClient, migrated: Sett
 
     assert "Angle « manière » rendu en vainqueur" in page
     assert "une usure, un déséquilibre" in page
+
+
+# -- Cote de reference contre cote obtenue -----------------------------------
+
+
+def test_le_palier_se_lit_sur_la_cote_obtenue(migrated: Settings) -> None:
+    """Une selection enregistree a 2.28 chez un book de reference et obtenue a
+    2.35 change de palier : FUN devient ULTRA FUN. C'est tout l'objet du lot —
+    un 1.92 Pinnacle et un 1.92 Betclic ne decrivent pas le meme marche, et pres
+    des bornes l'ecart de marge fait basculer de bande."""
+    session_id, event_id = _session_avec_match(migrated)
+    pick_id = add_pick(
+        session_id,
+        tier="fun",
+        market="Hand. jeux",
+        selection="Moutet -2.5",
+        event_id=str(event_id),
+        price="2.55",
+        price_source="reference",
+        settings=migrated,
+    )
+    set_result(pick_id, "win", migrated)
+
+    set_real_price(pick_id, "2.75", migrated)
+
+    pick = get_pick(pick_id, migrated)
+    assert pick is not None
+    assert pick.tier == "fun", "le palier provisoire ne bouge pas"
+    assert pick.tier_real == "ultra_fun"
+    assert pick.tier_effective == "ultra_fun"
+    assert not pick.quarantined
+    assert [row.key for row in analysis(migrated).by_tier] == ["ultra_fun"]
+
+
+def test_une_cote_de_reference_non_relevee_sort_des_taux_par_palier(migrated: Settings) -> None:
+    """Son palier reposerait sur un prix qu'on n'aurait pas obtenu. Elle compte
+    **partout ailleurs** : l'angle qui la portait ne devient pas faux parce que
+    le prix reste a verifier."""
+    session_id, event_id = _session_avec_match(migrated)
+    _pick(migrated, session_id, event_id, market="Jeux O/U", result="win")
+    reference = add_pick(
+        session_id,
+        tier="fun",
+        market="Hand. jeux",
+        selection="Moutet -2.5",
+        event_id=str(event_id),
+        price="1.92",
+        price_source="reference",
+        settings=migrated,
+        **INDEP,
+    )
+    set_result(reference, "loss", migrated)
+
+    report = analysis(migrated)
+
+    assert report.quarantined == 1
+    assert sum(row.settled for row in report.by_tier) == 1, "une seule ligne dans l'axe"
+    assert report.settled == 2, "les deux comptent au total"
+    assert sum(row.settled for row in report.by_sport) == 2, "et dans les autres axes"
+    assert report.consistent, "l'addition se ferme, l'exclusion etant declaree"
+
+
+def test_une_cote_du_book_principal_n_est_jamais_ecartee(migrated: Settings) -> None:
+    """Elle est sa propre cote reelle. Exclure tout ce qui n'a pas de prix releve
+    aurait vide la page d'un coup, en quarantainant surtout du football servi par
+    le book principal — et les cent selections anterieures a la colonne."""
+    session_id, event_id = _session_avec_match(migrated)
+    for source in ("betclic", "manuelle", ""):
+        pick_id = add_pick(
+            session_id,
+            tier="safe",
+            market="1N2",
+            selection="Lyon",
+            event_id=str(event_id),
+            price="1.50",
+            price_source=source,
+            settings=migrated,
+            **INDEP,
+        )
+        set_result(pick_id, "win", migrated)
+
+    report = analysis(migrated)
+
+    assert report.quarantined == 0
+    assert sum(row.settled for row in report.by_tier) == 3
+
+
+def test_le_palier_recalcule_ne_bouge_plus_si_les_bandes_changent(migrated: Settings) -> None:
+    """Le palier de la cote obtenue est fige **a l'ecriture**, contrairement a la
+    famille d'un marche qui se resout a la lecture. Les deux traitements sont
+    justes : une famille est un classement corrigeable, un palier decrit une
+    decision datee — le pari a ete pose a ce prix-la, ce jour-la."""
+    session_id, event_id = _session_avec_match(migrated)
+    pick_id = add_pick(
+        session_id,
+        tier="fun",
+        market="Hand. jeux",
+        selection="Moutet -2.5",
+        event_id=str(event_id),
+        price="1.92",
+        price_source="reference",
+        settings=migrated,
+    )
+    set_real_price(pick_id, "1.95", migrated)
+    db.execute(
+        "UPDATE tiers SET min_price = 1.10, max_price = 1.20 WHERE key = 'fun'", settings=migrated
+    )
+
+    pick = get_pick(pick_id, migrated)
+    assert pick is not None
+    assert pick.tier_real == "fun", "le classement du jour reste"
+
+
+def test_une_cote_obtenue_vide_efface_aussi_son_palier(migrated: Settings) -> None:
+    """Sans quoi le palier recalcule resterait la trace d'un prix qui n'existe
+    plus, et la selection sortirait de la quarantaine pour rien."""
+    session_id, event_id = _session_avec_match(migrated)
+    pick_id = add_pick(
+        session_id,
+        tier="fun",
+        market="Hand. jeux",
+        selection="Moutet -2.5",
+        event_id=str(event_id),
+        price="1.92",
+        price_source="reference",
+        settings=migrated,
+    )
+    set_real_price(pick_id, "2.75", migrated)
+
+    set_real_price(pick_id, "", migrated)
+
+    pick = get_pick(pick_id, migrated)
+    assert pick is not None
+    assert (pick.price_real, pick.tier_real) == (None, "")
+    assert pick.quarantined
+
+
+def test_une_cote_obtenue_impossible_est_refusee(migrated: Settings) -> None:
+    """1.00 ou moins n'est pas une cote : ce serait un taux implicite d'au moins
+    cent pour cent. Meme controle que sur la cote du bloc."""
+    session_id, event_id = _session_avec_match(migrated)
+    pick_id = add_pick(
+        session_id, tier="fun", market="Hand. jeux", selection="X", price="1.92", settings=migrated
+    )
+
+    with pytest.raises(HistoryError, match="Cote obtenue"):
+        set_real_price(pick_id, "0.90", migrated)
+
+
+def test_le_palier_d_une_cote_suit_la_convention_du_prompt(migrated: Settings) -> None:
+    """**La borne haute appartient au palier suivant** : une cote a 1.70 est FUN
+    et non SAFE. La regle est ecrite deux fois — ici et dans `prompt.Tier` — le
+    module du prompt important celui-ci, l'inverse ferait un cycle. Ce test
+    compare les deux plutot que d'esperer qu'elles ne divergent pas.
+    """
+    from myassistantbet.services.prompt import load_tiers
+
+    for price in (1.24, 1.25, 1.69, 1.70, 2.59, 2.60, 14.99, 15.00, 99.0):
+        attendu = next(
+            (tier.key for tier in load_tiers(migrated) if tier.covers(price)),
+            None,
+        )
+        assert tier_for_price(price, migrated) == attendu, f"cote {price}"
+
+
+def test_la_feuille_reclame_la_cote_obtenue_sur_une_cote_de_reference(
+    client: TestClient, migrated: Settings
+) -> None:
+    """Elle ne se releve jamais toute seule — ce serait une integration
+    transactionnelle avec un bookmaker, interdit n°7. Elle est donc reclamee la
+    ou elle manque, et **seulement** la : sur une cote du book principal, il n'y
+    a rien a saisir."""
+    session_id, event_id = _session_avec_match(migrated)
+    add_pick(
+        session_id,
+        tier="fun",
+        market="Hand. jeux",
+        selection="Moutet -2.5",
+        event_id=str(event_id),
+        price="1.92",
+        price_source="reference",
+        settings=migrated,
+    )
+
+    page = client.get(f"/history/{session_id}").text
+
+    assert "real-price" in page
+    assert 'placeholder="obtenue"' in page
+
+
+def test_la_saisie_de_la_cote_obtenue_rend_le_fragment(
+    client: TestClient, migrated: Settings
+) -> None:
+    session_id, event_id = _session_avec_match(migrated)
+    pick_id = add_pick(
+        session_id,
+        tier="fun",
+        market="Hand. jeux",
+        selection="Moutet -2.5",
+        event_id=str(event_id),
+        price="1.92",
+        price_source="reference",
+        settings=migrated,
+    )
+
+    response = client.post(f"/picks/{pick_id}/real-price", data={"price": "2.75"})
+
+    assert response.status_code == 200
+    assert "<html" not in response.text
+    assert get_pick(pick_id, migrated).tier_real == "ultra_fun"
+
+
+def test_aucun_champ_financier_n_arrive_avec_la_cote_obtenue() -> None:
+    """Elle situe un palier, elle ne se multiplie par rien (SPEC.md section 9)."""
+    noms = {champ.name for champ in fields(Pick)}
+
+    assert "price_real" in noms
+    assert not noms & {"roi", "profit", "gain", "retour", "benefice"}
