@@ -114,7 +114,8 @@ Pour tout sport, et d'abord — c'est bloquant :
     le site du tournoi ou de l'ATP/WTA les publie, les statistiques de service
     (aces, doubles fautes, % de première balle, balles de break sauvées et
     converties) — elles vivent derrière l'onglet « Stats » de la feuille de match
-    sur atptour.com et wtatennis.com. Deux victoires en trois sets accrochés et deux victoires
+    sur atptour.com et wtatennis.com, et c'est l'instance qui les publie : **niveau
+    1**. Deux victoires en trois sets accrochés et deux victoires
     expédiées ne laissent pas le même joueur ce soir, et « Repos » ne sait pas
     les distinguer. Un tour non trouvé s'écrit « non trouvé ».
   · Ordre du jeu réel : sur un tournoi perturbé (pluie, tours reportés), les
@@ -151,12 +152,27 @@ Règles de recherche, non négociables :
     par la recherche, pas une fatalité.
 
 Qualité des sources — une blessure ou une absence décide d'un pari à elle
-seule, elle mérite mieux qu'un site d'agrégation :
-  1. Officiel : fédération, ATP/WTA, site du tournoi, club, joueur, entraîneur
-  2. Presse sportive établie, journaliste identifié couvrant la discipline
-  3. Statistiques de référence, feuilles de match, ordre du jeu
-  4. Agrégateurs, sites de pronostics, comparateurs de cotes, forums
-
+seule, elle mérite mieux qu'un site d'agrégation. **L'échelle classe par
+éditeur, jamais par nature du contenu** : c'est *qui publie* qui donne le
+niveau.
+  1. L'organisateur ou l'instance : fédération, ligue, {% if 'tennis' in sports %}ATP/WTA,
+     site du tournoi, {% endif %}club, compte officiel du joueur ou de
+     l'entraîneur. Une feuille de match, une composition ou un ordre du jeu
+     publiés là sont un **niveau 1**.
+  2. Presse sportive établie, journaliste identifié couvrant la discipline.
+  3. Statistique **tierce** : {% if 'tennis' in sports %}Tennis Abstract, Flashscore,
+     {% endif %}{% if 'football' in sports %}FBref, Sofascore, {% endif %}bases de
+     résultats indépendantes.
+  4. Agrégateurs, sites de pronostics, comparateurs de cotes, forums.
+{% if 'tennis' in sports %}
+Les statistiques de service derrière l'onglet « Stats » d'atptour.com sont donc
+un **niveau 1** : l'instance les publie. Lues comme un niveau 3, elles
+plafonnaient à confiance 2 la recherche la plus rentable du lot.
+{% elif 'football' in sports %}
+Ainsi la feuille de match publiée par le club est un **niveau 1**, et non un
+niveau 3 parce que c'est une feuille de match : lue ainsi, elle plafonnerait à
+confiance 2 un fait que l'instance publie elle-même.
+{% endif %}
 Cite la source et son niveau. Une information de niveau 4 n'est **jamais**
 présentée comme un fait établi : elle s'écrit « rapporté par X, non confirmé ».
 Si un site est hors sujet pour la discipline, ne t'en sers pas : mieux vaut
@@ -357,10 +373,11 @@ aucun fait daté ne porte la sélection et qu'elle repose sur les blocs seuls.
 départ, commune à toutes les sélections. Une sélection qui n'ajoute rien à ce
 qu'ils contiennent est une `lecture`, quelle que soit la qualité du
 fournisseur. Le niveau `3` désigne une statistique que **ta recherche** a
-rapportée et que les blocs ne portaient pas — une feuille de match, un ordre du
-jeu, un relevé officiel de la compétition. Sans cette règle, la même sélection
-pourrait se déclarer `3` ou `lecture` au hasard, et ces deux colonnes ne
-mesureraient plus rien.
+rapportée d'un **éditeur tiers** et que les blocs ne portaient pas. Ce que
+publie l'instance — feuille de match, composition, ordre du jeu, relevé
+officiel — est un `1`, même quand c'est une statistique. Sans ces deux règles,
+la même sélection pourrait se déclarer `1`, `3` ou `lecture` au hasard, et ces
+deux colonnes ne mesureraient plus rien.
 `lecture` est une réponse **normale et fréquente**, pas un aveu : la déclarer
 franchement vaut mieux que de promouvoir un bloc de contexte au rang de source
 citée. Ce que ces deux colonnes mesurent est précisément si une sélection
@@ -433,10 +450,8 @@ Deux lignes qui tombent ensemble n'en font qu'une.
   {{ tier.emoji }} {{ '%-12s'|format(tier.label) }} {{ tier.range_label }}
 {%- endfor %}
 
-La ligne **« Paliers »** qui ferme chaque bloc dit ce que **ses** cotes rendent
-atteignable. Un bloc dont la cote la plus basse vaut 1.71 ne portera jamais de
-sélection SAFE, quel que soit l'angle : la parenthèse le nomme quand ce bloc
-restreint au-delà du lot, et rien n'apparaît quand il ne restreint pas.
+La ligne **« Paliers »** qui ferme chaque bloc dit ce que **ses** cotes
+atteignent ; sa parenthèse ne paraît que s'il restreint au-delà du lot.
 
 **La cote décide seule, et la borne haute appartient au palier suivant** : une
 cote à 1.70 est FUN, pas SAFE. N'invente aucune autre règle, et surtout n'y fais
@@ -460,15 +475,13 @@ Ne remplis jamais un palier avec une sélection qui appartient à un palier
 inférieur : c'est l'erreur la plus coûteuse que tu puisses commettre ici.
 
 **Un palier vide se commente, en une ligne sous le tableau — mais seulement
-parmi ceux listés ci-dessus.** Un palier qu'aucune cote du lot n'atteint n'est
-pas resté vide, il n'a jamais été proposé : le commenter produirait une ligne
-d'excuse pour une case impossible. Pour les autres, si aucun fait nommé et daté
-de la section A ne porte de sélection au-dessus de la borne haute du second
-palier, laisse-les vides et écris-le, en nommant ce qu'il aurait fallu trouver —
-« aucun retour de blessure daté, aucun enjeu asymétrique, aucune charge anormale
-sur ce lot ». Un palier vide est un résultat ; un palier vide non commenté est
-un oubli, et rien ne distingue alors un lot qui n'offrait rien d'un lot qu'on a
-mal cherché.
+parmi ceux listés ci-dessus** : un palier qu'aucune cote du lot n'atteint n'est
+pas resté vide, il n'a jamais été proposé. Pour les autres, si aucun fait nommé
+et daté de la section A ne porte de sélection au-dessus de la borne haute du
+second palier, laisse-les vides et écris-le, en nommant ce qu'il aurait fallu
+trouver — « aucun retour de blessure daté, aucun enjeu asymétrique, aucune
+charge anormale sur ce lot ». Un palier vide est un résultat ; un palier vide
+non commenté est un oubli.
 
 ### D. Combinés
 {% if event_blocks | length >= combo_min_lot %}- Un combiné « solide » : 3-4 sélections des deux paliers les plus sûrs,

@@ -1044,6 +1044,54 @@ def test_les_blocs_ne_sont_jamais_une_source(migrated: Settings) -> None:
     assert "ces deux colonnes ne mesureraient plus rien" in corps
 
 
+# -- L'echelle des sources classe par editeur --------------------------------
+
+
+def test_l_echelle_des_sources_classe_par_editeur(migrated: Settings) -> None:
+    """L'ancienne echelle plaçait « ATP/WTA, site du tournoi » en niveau 1 et
+    « feuilles de match » en niveau 3. La recherche que ce prompt designe
+    lui-meme comme la plus rentable du lot — les statistiques de service
+    derriere l'onglet Stats d'atptour.com — est **les deux a la fois** : selon
+    la lecture retenue elle valait 1, donc confiance 4-5 accessible, ou 3, donc
+    plafonnee a confiance 2. C'est exactement le « repondre au petit bonheur »
+    que ce prompt denonce par ailleurs.
+
+    Le critere est donc l'**editeur**, jamais la nature du contenu.
+    """
+    corps = " ".join(build_prompt(_lot_de(migrated, 3), settings=migrated, now=NOW).body.split())
+
+    assert "**L'échelle classe par éditeur, jamais par nature du contenu**" in corps
+    assert "L'organisateur ou l'instance" in corps
+    assert "un ordre du jeu publiés là sont un **niveau 1**" in corps
+    assert "Statistique **tierce**" in corps
+    assert "feuilles de match, ordre du jeu" not in corps, "le niveau 3 ne les revendique plus"
+
+
+def test_le_niveau_1_prime_sur_la_nature_de_la_statistique(migrated: Settings) -> None:
+    """La colonne Source de la section C portait la contradiction : elle
+    definissait le niveau 3 comme « une feuille de match, un ordre du jeu, un
+    releve officiel de la competition », soit trois choses que l'echelle range
+    desormais en niveau 1. Corriger l'echelle sans corriger sa consigne aurait
+    laisse la meme ambiguite deux sections plus bas."""
+    corps = " ".join(build_prompt(_lot_de(migrated, 3), settings=migrated, now=NOW).body.split())
+
+    assert "rapportée d'un **éditeur tiers**" in corps
+    assert "est un `1`, même quand c'est une statistique" in corps
+
+
+def test_l_exemple_de_l_echelle_suit_le_sport_du_lot(migrated: Settings) -> None:
+    """Un lot de football ne paie pas l'exemple d'atptour.com, et n'ecope pas
+    d'exemples de sources tennis dans son niveau 3. Meme regle que partout : ce
+    qui n'a pas de donnee est omis."""
+    football = build_prompt(_lot_de(migrated, 3), settings=migrated, now=NOW).body
+
+    assert "atptour.com" not in football
+    assert "Tennis Abstract" not in football
+    assert "la feuille de match publiée par le club est un **niveau 1**" in " ".join(
+        football.split()
+    )
+
+
 # -- Les quotas se calculent, ils ne s'expliquent plus -----------------------
 
 
