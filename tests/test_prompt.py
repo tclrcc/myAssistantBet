@@ -195,23 +195,27 @@ def _lot_de(migrated: Settings, matchs: int) -> int:
     return session_id
 
 
-def test_le_prompt_fait_compter_les_lignes_de_vainqueur(migrated: Settings) -> None:
-    """Section B rappelait deja que le vainqueur est le plus grossier des
-    debouches, sans que rien ne verifie jamais la forme du tableau rendu. Mesure
-    sur les selections reelles : 28 des 35 selections tennis tranchees portaient
-    sur un « Vainqueur », a 13/28 — le plus gros regroupement de la base et le
-    plus faible, quand il ne restait que six handicaps jeux et un total.
+def test_le_comptage_des_vainqueurs_ne_se_demande_plus_a_l_analyse(
+    migrated: Settings,
+) -> None:
+    """Le prompt faisait s'auto-auditer l'analyse : « compte tes lignes avant de
+    rendre, si plus de la moitie du tableau porte sur le vainqueur, relis-les
+    avec leur colonne Type ». Or les deux colonnes sont **en base** — l'angle
+    depuis la migration 026, la famille du marche depuis la 027 — et le conflit
+    se detecte en une requete.
 
-    Le controle porte sur le **lot** et jamais sur une selection prise seule : si
-    tous les angles decrivent bien une issue, le tableau est juste et le dit."""
-    # Le texte est justifie a une largeur fixe : chercher une phrase entiere
-    # dans le corps brut la couperait a la premiere fin de ligne.
+    Une regle deterministe laissee au modele coute des tokens, se refait a chaque
+    session et ne se mesure jamais. Ce qui reste dans le prompt, c'est la
+    **consigne de fond** : le mot qui choisit le marche, et le rappel qu'un
+    angle sur une maniere se traduit mieux ailleurs.
+    """
     corps = " ".join(build_prompt(_lot_de(migrated, 4), settings=migrated, now=NOW).body.split())
 
+    assert "Compte tes lignes avant de rendre" not in corps
+    assert "plus de la moitié du tableau porte sur le marché du vainqueur" not in corps
     assert "sa **nature en un mot — « issue » ou « manière »**" in corps
-    assert "Compte tes lignes avant de rendre" in corps
-    assert "plus de la moitié du tableau porte sur le marché du vainqueur" in corps
-    assert "garde-les et dis-le en une ligne sous le tableau" in corps
+    assert "le plus grossier des débouchés d'une analyse" in corps
+    assert "reprend le mot de la section B" in corps
 
 
 def test_le_prompt_refuse_les_lignes_en_quart_au_football(migrated: Settings) -> None:

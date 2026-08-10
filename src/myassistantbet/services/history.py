@@ -22,7 +22,7 @@ from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from .competitions import category_label, category_rank
 from .labels import affiche, sort_key
-from .market_families import family_key, family_label, family_rank
+from .market_families import family_key, family_label, family_of, family_rank
 from .market_families import load as load_families
 from .market_families import market_key as _market_key
 
@@ -47,6 +47,10 @@ ANGLES = {
     "issue": "Issue",
     "maniere": "Manière",
 }
+
+#: La cle de l'angle qui decrit une **maniere**. Nommee plutot que recopiee :
+#: c'est elle que le detecteur de conflit compare a la famille du marche rendu.
+ANGLE_MANNER = "maniere"
 
 #: Niveau de la source qui porte le fait principal, sur l'echelle a quatre crans
 #: du preambule. `lecture` n'est pas une absence de valeur mais une valeur de
@@ -1448,6 +1452,11 @@ class Analysis:
     #: est dite. Le masquer choisirait a la place du lecteur lequel des deux
     #: axes est le bon, et rien ici ne permet de trancher ca.
     overlaps: list[Overlap] = field(default_factory=list)
+    #: Selections dont l'angle declare est une **maniere** et dont le marche
+    #: rendu appartient a la famille `Issue`. Le prompt demandait a l'analyse de
+    #: compter ces lignes elle-meme ; les deux colonnes etant en base, le compte
+    #: se fait ici — et se mesure enfin dans le temps.
+    conflicts: Conflict = field(default_factory=lambda: Conflict())
 
     @property
     def empty(self) -> bool:
@@ -1572,6 +1581,75 @@ class Analysis:
         for entry in (self.played, self.skipped):
             total.merge(entry)
         return total
+
+
+#: Famille de marches qui ne retient d'un raisonnement que le nom d'un camp.
+#: Un angle declare sur une **maniere** — un rythme, une usure, un desequilibre
+#: au service — qui sort en `Issue` a perdu en route ce qu'il avait compris.
+ISSUE_FAMILY = "issue"
+
+
+@dataclass
+class Conflict:
+    """Selections dont l'angle declare et le marche rendu ne s'accordent pas.
+
+    Le prompt demandait a l'analyse de s'auto-auditer : « compte tes lignes
+    avant de rendre, si plus de la moitie du tableau porte sur le vainqueur,
+    relis-les avec leur colonne Type ». Or les deux colonnes sont **en base** —
+    `angle` depuis la migration 026, la famille du marche depuis la 027 — et le
+    conflit se detecte en une requete. Une regle deterministe laissee au modele
+    coute des tokens, se refait a chaque session et ne se mesure jamais.
+
+    **C'est une mesure de la qualite du rendu, jamais un blocage** : un angle de
+    maniere rendu en vainqueur reste une selection valable, simplement moins
+    fidele a son propre raisonnement. On la compte, on ne la refuse pas.
+    """
+
+    #: Selections tranchees portant `maniere` et rendues dans la famille `Issue`.
+    count: int = 0
+    #: Selections tranchees portant `maniere`, quel que soit le marche rendu.
+    labelled: int = 0
+    #: Le meme compte par sport, puis par session — « dans le temps » etant la
+    #: seule facon de voir si la consigne porte, ou si elle s'use.
+    by_sport: list[tuple[str, int, int]] = field(default_factory=list)
+    by_session: list[tuple[str, int, int]] = field(default_factory=list)
+
+    @property
+    def known(self) -> bool:
+        """Au moins une selection declare son angle. Sinon rien ne se mesure."""
+        return self.labelled > 0
+
+    @property
+    def rate(self) -> float | None:
+        return None if not self.labelled else self.count / self.labelled
+
+
+def conflicts(rows: list[Any], families: dict[str, str], tz: str) -> Conflict:
+    """Compte les selections `maniere` rendues dans la famille `Issue`.
+
+    Calcule **a la lecture**, jamais recopie sur la selection : c'est la regle du
+    module — reclasser un marche reclasse tout l'historique, sans migration ni
+    reprise de donnees. Stocker le conflit figerait la taxonomie du jour ou la
+    ligne a ete saisie.
+    """
+    report = Conflict()
+    par_sport: dict[str, list[int]] = {}
+    par_session: dict[str, list[int]] = {}
+    for row in rows:
+        if row["result"] not in ("win", "loss") or row["angle"] != ANGLE_MANNER:
+            continue
+        report.labelled += 1
+        heurte = family_of(row["market"] or "", families) == ISSUE_FAMILY
+        report.count += 1 if heurte else 0
+        sport = _column(row, "sport_key") or NO_SPORT
+        jour = _local(str(row["created_at"]), tz).strftime("%d/%m")
+        for cle, table in ((sport, par_sport), (jour, par_session)):
+            compte = table.setdefault(cle, [0, 0])
+            compte[0] += 1 if heurte else 0
+            compte[1] += 1
+    report.by_sport = sorted((cle, *valeurs) for cle, valeurs in par_sport.items())
+    report.by_session = [(cle, *par_session[cle]) for cle in sorted(par_session, reverse=True)]
+    return report
 
 
 @dataclass
@@ -2121,6 +2199,11 @@ def analysis(settings: Settings | None = None) -> Analysis:
             ("source", report.by_source),
         ]
     )
+
+    # Le conflit entre l'angle declare et le marche rendu. Calcule a la lecture
+    # comme la famille elle-meme : reclasser un marche reclasse tout
+    # l'historique, et le figer sur la selection perdrait cette propriete.
+    report.conflicts = conflicts(rows, load_families(settings), settings.tz)
 
     report.gaps = _audit(report, tally)
     return report

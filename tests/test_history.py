@@ -12,6 +12,7 @@ from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services import coupons as coupons_service
+from myassistantbet.services import market_families
 from myassistantbet.services.competitions import set_category
 from myassistantbet.services.history import (
     ANALYSIS_MIN_DAYS,
@@ -2443,3 +2444,88 @@ def test_l_ecart_est_annonce_en_clair(client: TestClient, isolated_settings: Set
     page = " ".join(client.get("/stats").text.split())
 
     assert "ne retombe pas sur ce que porte la base" not in page, "rien a signaler ici"
+
+
+# -- Angle declare contre marche rendu ---------------------------------------
+
+
+def _pick(
+    settings: Settings,
+    session_id: int,
+    event_id: int,
+    *,
+    market: str,
+    result: str,
+    angle: str = "",
+) -> None:
+    """Une selection tranchee, avec son angle declare quand il y en a un."""
+    pick_id = add_pick(
+        session_id,
+        tier="fun",
+        market=market,
+        selection="Peu importe",
+        event_id=str(event_id),
+        angle=angle,
+        settings=settings,
+        **INDEP,
+    )
+    set_result(pick_id, result, settings)
+
+
+def test_un_angle_de_maniere_rendu_en_vainqueur_est_compte(migrated: Settings) -> None:
+    """Le prompt demandait a l'analyse de compter ces lignes elle-meme. Les deux
+    colonnes sont en base — l'angle depuis la migration 026, la famille du
+    marche depuis la 027 — et le conflit se detecte en une requete.
+
+    C'est une mesure de la **qualite du rendu**, jamais un blocage : la
+    selection reste valable, simplement moins fidele a son propre raisonnement.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    _pick(migrated, session_id, event_id, market="Vainqueur", angle="maniere", result="win")
+    _pick(migrated, session_id, event_id, market="Jeux O/U 22.5", angle="maniere", result="loss")
+    _pick(migrated, session_id, event_id, market="Vainqueur", angle="issue", result="win")
+
+    report = analysis(migrated)
+
+    assert report.conflicts.labelled == 2, "seules les manieres entrent au denominateur"
+    assert report.conflicts.count == 1
+    assert report.conflicts.rate == 0.5
+    assert report.conflicts.known
+
+
+def test_le_conflit_suit_le_reclassement_d_un_marche(migrated: Settings) -> None:
+    """Il se calcule **a la lecture**, jamais recopie sur la selection : c'est la
+    regle du module, et c'est elle qui rend la taxonomie corrigeable. Stocker le
+    conflit figerait le classement du jour ou la ligne a ete saisie."""
+    session_id, event_id = _session_avec_match(migrated)
+    _pick(migrated, session_id, event_id, market="Vainqueur", angle="maniere", result="win")
+
+    assert analysis(migrated).conflicts.count == 1
+
+    market_families.set_family("vainqueur", "total", migrated)
+
+    assert analysis(migrated).conflicts.count == 0, "le reclassement vaut pour tout l'historique"
+
+
+def test_sans_angle_declare_rien_ne_se_mesure(migrated: Settings) -> None:
+    """Les cent premieres selections n'en portent aucun : un taux sur zero ligne
+    inventerait une mesure, et la carte ne se rend pas du tout."""
+    session_id, event_id = _session_avec_match(migrated)
+    _pick(migrated, session_id, event_id, market="Vainqueur", result="win")
+
+    report = analysis(migrated)
+
+    assert not report.conflicts.known
+    assert report.conflicts.rate is None
+
+
+def test_la_page_rend_le_conflit_angle_marche(client: TestClient, migrated: Settings) -> None:
+    """C'est une mesure de la qualite du rendu, pas un blocage : la page la
+    montre, elle ne refuse rien."""
+    session_id, event_id = _session_avec_match(migrated)
+    _pick(migrated, session_id, event_id, market="Vainqueur", angle="maniere", result="win")
+
+    page = client.get("/stats").text
+
+    assert "Angle « manière » rendu en vainqueur" in page
+    assert "une usure, un déséquilibre" in page

@@ -160,6 +160,54 @@
     {% endif %}
   </div>
 
+  {# Le prompt demandait à l'analyse de compter ces lignes elle-même — « si plus
+     de la moitié du tableau porte sur le vainqueur, relis-les avec leur colonne
+     Type ». Les deux colonnes sont en base : le compte se fait ici, une fois,
+     et se mesure enfin dans le temps. C'est une mesure de la qualité du rendu,
+     pas un blocage : une telle sélection reste valable, simplement moins fidèle
+     à son propre raisonnement. #}
+  {% if analysis.conflicts.known %}
+  <article class="chart-card">
+    <h3>Angle « manière » rendu en vainqueur</h3>
+    <p class="chart-note">
+      Une sélection dont l'angle déclaré décrit une <strong>manière</strong> — un
+      rythme, une usure, un déséquilibre — et dont le marché rendu appartient à la
+      famille <strong>Issue</strong> ne retient du raisonnement que le nom d'un
+      camp. Ce n'est pas une faute : c'est l'écart entre ce qui a été compris et ce
+      qui a été posé, et il se corrige en section B, pas après coup.
+    </p>
+    <p class="chart-note">
+      <strong>{{ analysis.conflicts.count }}</strong> sur
+      {{ analysis.conflicts.labelled }} sélection(s) tranchée(s) déclarant une
+      manière{% if analysis.conflicts.rate is not none %} —
+      {{ (analysis.conflicts.rate * 100) | round | int }} %{% endif %}.
+    </p>
+    {% if analysis.conflicts.by_sport | length > 1 %}
+    <table class="board">
+      <thead><tr><th>Sport</th><th class="num">En conflit</th><th class="num">Manières</th></tr></thead>
+      <tbody>
+        {% for sport, conflit, total in analysis.conflicts.by_sport %}
+        <tr><td class="muted">{{ sport }}</td><td class="num">{{ conflit }}</td><td class="num">{{ total }}</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    {% if analysis.conflicts.by_session | length > 1 %}
+    <details>
+      <summary>Dans le temps</summary>
+      <table class="board">
+        <thead><tr><th>Journée</th><th class="num">En conflit</th><th class="num">Manières</th></tr></thead>
+        <tbody>
+          {% for jour, conflit, total in analysis.conflicts.by_session %}
+          <tr><td class="muted">{{ jour }}</td><td class="num">{{ conflit }}</td><td class="num">{{ total }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </details>
+    {% endif %}
+  </article>
+  {% endif %}
+
   {# Une barre pâlit pour deux raisons distinctes, et la note ne peut donc pas
      promettre que le pâlissement identifie l'une d'elles : au volume actuel
      seize lignes sur dix-sept sont indécises, si bien que tout le graphique

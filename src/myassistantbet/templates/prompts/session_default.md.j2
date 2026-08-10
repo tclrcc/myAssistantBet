@@ -398,14 +398,7 @@ deux paliers les plus sûrs ne se prend pas sur une lecture : il lui faut un
 Sans ce fait, il n'y a pas d'outsider à jouer : il y a un favori qu'on n'a pas
 envie de jouer, ce qui n'est pas la même chose, et c'est un PASSE.
 
-{% if event_blocks | length >= 4 -%}
-**Compte tes lignes avant de rendre.** Si plus de la moitié du tableau porte sur
-le marché du vainqueur, relis ces sélections avec leur colonne « Type » : celle
-qui porte `manière` et sort en vainqueur se traduit ailleurs. Si elles portent
-toutes `issue`, garde-les et dis-le en une ligne sous le tableau — c'est une
-information sur le lot, pas une faute.
-
-{% endif %}Si deux sélections du tableau reposent sur la **même cause**, dis-le en une ligne
+Si deux sélections du tableau reposent sur la **même cause**, dis-le en une ligne
 sous le tableau. Deux lignes qui tombent ensemble n'en font qu'une. La même
 cause, c'est **le même {% if 'tennis' in sports %}joueur{% else %}protagoniste{% endif %}**
 ou **un facteur nommément désigné comme moteur des deux angles** — même météo
