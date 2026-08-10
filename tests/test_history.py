@@ -870,6 +870,76 @@ def test_l_echelle_rend_ses_niveaux_jamais_employes(migrated: Settings) -> None:
     assert confiance.levels == 5
 
 
+def test_la_vacance_d_un_palier_se_compte_en_sessions(migrated: Settings) -> None:
+    """ULTRA FUN est a 0/7, GIGA FUN et GIGA+ n'ont jamais servi en cent
+    selections. Le prompt les annonce pourtant a chaque session.
+
+    On ne force pas leur remplissage — un quota rempli avec du vide est l'erreur
+    que le prompt nomme lui-meme comme la plus couteuse. On mesure la vacance,
+    et **en sessions** : une part de volume a zero dit qu'un palier ne sert
+    jamais, elle ne dit pas a quel rythme. Un palier absent de cinq sessions sur
+    cinq n'est pas dans le meme etat qu'un palier employe une fois sur deux, et
+    c'est cette difference qui decidera un jour de raccourcir l'echelle.
+
+    Mesuree sans rien parser : l'application ne lit pas la prose du rendu, mais
+    un palier qu'aucune selection de la session ne porte **est** un palier laisse
+    vide ce jour-la.
+    """
+    premiere, event_id = _session_avec_match(migrated)
+    _propose(migrated, premiere, event_id, "safe", "win")
+    _propose(migrated, premiere, event_id, "fun", "win")
+    seconde = db.query_one(
+        "SELECT id FROM sessions WHERE id != ? ORDER BY id DESC", (premiere,), settings=migrated
+    )
+    if seconde is None:
+        with db.connect(migrated) as conn:
+            seconde = {
+                "id": int(
+                    conn.execute(
+                        "INSERT INTO sessions (label, created_at) "
+                        "VALUES ('S2', '2026-08-05T10:00:00Z')"
+                    ).lastrowid
+                )
+            }
+    _propose(migrated, int(seconde["id"]), event_id, "safe", "loss")
+
+    palier = _mix(labelling(migrated), "tier")
+    par_cle = {row.key: row for row in palier.rows}
+
+    assert palier.sessions == 2
+    assert par_cle["safe"].absent_sessions == 0, "employe partout"
+    assert par_cle["fun"].absent_sessions == 1, "employe une session sur deux"
+    assert par_cle["giga_plus"].absent_sessions == 2, "jamais employe"
+
+
+def test_la_vacance_vaut_aussi_pour_la_confiance(migrated: Settings) -> None:
+    """Meme forme, meme calcul : 99 % du volume tenait sur deux crans, et les
+    crans 1 et 5 n'ont jamais servi. Le compte le dit de la meme facon."""
+    session_id, event_id = _session_avec_match(migrated)
+    _propose(migrated, session_id, event_id, "safe", "win", confidence="3")
+
+    confiance = _mix(labelling(migrated), "confidence")
+    par_cle = {row.key: row for row in confiance.rows}
+
+    assert par_cle["3"].absent_sessions == 0
+    assert par_cle["5"].absent_sessions == 1
+
+
+def test_la_page_dit_les_niveaux_sans_emploi(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Un niveau vide est un resultat, pas une anomalie : c'est sa persistance
+    qui dira s'il est inatteignable — auquel cas c'est l'echelle qu'il faudra
+    raccourcir, pas les selections qu'il faudra y pousser."""
+    session_id, event_id = _session_avec_match(isolated_settings)
+    _propose(isolated_settings, session_id, event_id, "safe", "win")
+
+    page = " ".join(client.get("/stats").text.split())
+
+    assert "sans emploi sur 1 session(s)" in page
+    assert "c'est l'échelle qu'il faudra raccourcir" in page
+
+
 def test_la_repartition_compte_les_selections_non_tranchees(migrated: Settings) -> None:
     """Une confiance annoncee est un geste pose a l'analyse : le resultat n'y
     change rien, et attendre qu'il tombe ferait taire le bloc le plus sur."""

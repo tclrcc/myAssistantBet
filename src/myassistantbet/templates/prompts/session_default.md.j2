@@ -471,9 +471,11 @@ seule, elle mérite mieux qu'un site d'agrégation :
   4. Agrégateurs, sites de pronostics, comparateurs de cotes, forums
 
 Cite la source et son niveau. Une information de niveau 4 n'est **jamais**
-présentée comme un fait établi : elle s'écrit « rapporté par X, non confirmé »
-et plafonne la confiance de la sélection à 2. Si un site est hors sujet pour la
-discipline, ne t'en sers pas : mieux vaut « non trouvé ».
+présentée comme un fait établi : elle s'écrit « rapporté par X, non confirmé ».
+Si un site est hors sujet pour la discipline, ne t'en sers pas : mieux vaut
+« non trouvé ». Ce niveau se reporte dans la colonne « Source » du tableau des
+sélections, et c'est la table des crans de confiance — section C — qui dit ce
+qu'il autorise.
 
 ## MATCHS
 
@@ -666,11 +668,26 @@ réussite. Sa traduction se donne sous le tableau, sans cote et hors de tout
 combiné — une proposition à tarifer sur place.
 {% endif %}
 
-Conf/5 mesure la solidité du faisceau sportif, pas ton envie :
-  5  plusieurs facteurs indépendants concordent, tous vérifiés
-  3  un facteur dominant vérifié, le reste neutre
-  1  intuition, information partielle
-Une sélection dont la fiche porte un manque important ne dépasse pas 2.
+Conf/5 mesure la solidité du faisceau sportif, pas ton envie. Chaque cran est
+défini par ce que portent les sections A et B — donc **vérifiable**, et pas
+laissé à l'appréciation :
+
+  5  ≥ 2 facteurs indépendants, tous vérifiés sur une source de niveau 1-2,
+     et « Ce qui manque » vide sur ce match
+  4  1 facteur dominant vérifié en niveau 1-2, le reste neutre, et aucun
+     manque de la section A ne touche ce facteur
+  3  1 facteur dominant vérifié, mais un manque de la section A touche
+     ce facteur
+  2  information partielle, ou fait principal issu d'une source de niveau 3-4
+  1  aucun fait daté — lecture des blocs seuls
+
+Les crans 2 et 4 n'avaient aucune définition, et tout tombait donc en 3 : sur
+cent sélections, 99 % portaient un 3 ou un 4, et les crans 1 et 5 n'ont jamais
+servi. Une échelle dont deux crans sur cinq portent tout ne note plus rien.
+
+La colonne « Source » du tableau et ce cran se lisent ensemble : `lecture` va
+avec 1, une source de niveau 3-4 plafonne à 2. S'ils se contredisent, c'est le
+cran qu'il faut corriger.
 
 **Les paliers hauts se méritent, et pas d'un cran.** Une sélection qui sort des
 deux paliers les plus sûrs ne se prend pas sur une lecture : il lui faut un
@@ -695,12 +712,12 @@ Paliers, définis par bande de cote :
   {{ tier.emoji }} {{ '%-12s'|format(tier.label) }} {{ tier.range_label }}
 {%- endfor %}
 
-Ces bandes se chevauchent, et l'arbitrage n'est pas laissé à ton appréciation :
-**dans une zone commune à deux paliers, la confiance tranche** — confiance 4 ou
-5 → le palier le plus sûr des deux, confiance 3 ou moins → le plus haut. Hors
-chevauchement, la cote décide seule. N'invente aucune autre règle : ce palier
-est enregistré avec la sélection et sert à calculer un taux de réussite par
-palier dans le temps, qu'une classification variable rendrait ininterprétable.
+**La cote décide seule, et la borne haute appartient au palier suivant** : une
+cote à 1.70 est FUN, pas SAFE. N'invente aucune autre règle, et surtout n'y fais
+pas entrer la confiance : ce palier est enregistré avec la sélection et sert à
+calculer un taux de réussite par bande de cote dans le temps. Deux sélections au
+même prix doivent tomber dans le même palier, sans quoi ce taux ne mesure plus
+une bande de cote — et la confiance a déjà son propre axe.
 
 Quotas indicatifs : {{ tiers | map(attribute='quota_label') | join(', ') }}.
 Ces quotas supposent un lot d'une dizaine de matchs ou plus, et **se réduisent
@@ -716,6 +733,14 @@ est une façon déguisée de remplir un palier avec du vide.
 Si la matière manque pour remplir un palier, laisse-le vide.
 Ne remplis jamais un palier avec une sélection qui appartient à un palier
 inférieur : c'est l'erreur la plus coûteuse que tu puisses commettre ici.
+
+**Un palier vide se commente, en une ligne sous le tableau.** Si aucun fait
+nommé et daté de la section A ne porte de sélection au-dessus de la borne haute
+du second palier, laisse les paliers supérieurs vides et écris-le, en nommant ce
+qu'il aurait fallu trouver — « aucun retour de blessure daté, aucun enjeu
+asymétrique, aucune charge anormale sur ce lot ». Un palier vide est un
+résultat ; un palier vide non commenté est un oubli, et rien ne distingue alors
+un lot qui n'offrait rien d'un lot qu'on a mal cherché.
 
 ### D. Combinés
 - Un combiné « solide » : 3-4 sélections des deux paliers les plus sûrs,

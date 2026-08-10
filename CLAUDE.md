@@ -1360,6 +1360,46 @@ l'avait franchi depuis des mois sans que rien ne bronche.
   panne exacte qui a fait echouer la premiere version de cette fixture. Un
   enrichissement complet se simule donc de bout en bout avec `DOSSIER_RATE_HEADERS`.
 
+## Les crans de confiance, et les paliers qu'on n'atteint pas
+
+- **Les crans 2 et 4 n'avaient aucune definition**, et tout tombait donc en 3 : le prompt
+  n'ancrait que 5, 3 et 1. Mesure sur cent selections — **99 % du volume sur deux crans**,
+  et les crans 1 et 5 jamais employes. Une echelle dont deux crans sur cinq portent tout
+  ne note plus rien. Les cinq crans sont desormais definis par ce que portent les
+  sections A et B, donc **verifiables** au lieu d'etre laisses a l'appreciation.
+  - **Une seule echelle de sources dans tout le prompt** : celle du preambule nourrit la
+    colonne `Source` du tableau, qui nourrit le cran. `lecture` va avec 1, une source de
+    niveau 3-4 plafonne a 2. Trois ecritures de la meme notion se seraient contredites.
+  - **Les deux plafonds en doublon ont ete retires** — « un manque important ne depasse
+    pas 2 » et « niveau 4 plafonne a 2 » : la table les porte tous les deux, et les
+    laisser a cote aurait donne deux regles pour un meme cas sans dire laquelle gagne. Ce
+    que la phrase sur les sources de niveau 4 disait **en propre** — ne jamais la
+    presenter comme un fait — reste ecrit.
+- **Les bandes de cote ne se chevauchent pas, et le paragraphe d'arbitrage a ete
+  supprime.** Il faisait trancher la confiance « dans une zone commune a deux paliers »,
+  sauf que les bandes ne se touchent qu'en un **point exact** (1.70, 2.30, 3.60, 8.00) :
+  sur cent selections, aucune cote n'y est jamais tombee. Deux cents mots pour un cas qui
+  ne se produit pas.
+  - Et s'il s'etait produit, la regle aurait ete nuisible : le palier sert a calculer un
+    taux par **bande de cote**, et l'y faire dependre de la confiance aurait mis deux
+    selections au meme prix dans deux paliers differents. Le prompt le disait lui-meme
+    deux phrases plus bas — « une classification variable rendrait ce taux
+    ininterpretable » — et la confiance a deja son propre axe.
+  - Reste une convention, ecrite une fois : **la borne haute appartient au palier
+    suivant**. Une cote a 1.70 est FUN, pas SAFE.
+- **Un palier vide se commente.** ULTRA FUN est a 0/7, GIGA FUN et GIGA+ n'ont jamais
+  servi en cent selections, et le prompt les annonce pourtant a chaque session. On ne
+  force pas leur remplissage — un quota rempli avec du vide est l'erreur que le prompt
+  nomme lui-meme comme la plus couteuse — on rend la **vacance sortante** : un palier vide
+  est un resultat, un palier vide non commente est un oubli.
+- **La vacance se mesure en sessions, et sans rien parser.** L'application ne lit pas la
+  prose du rendu, seulement le tableau des selections ; mais un palier qu'aucune selection
+  de la session ne porte **est** un palier laisse vide ce jour-la. `MixRow.absent_sessions`
+  le compte. Une part de volume a zero dit qu'un niveau ne sert jamais, ce compte-ci dit
+  **a quel rythme** — et c'est cette difference qui decidera un jour de raccourcir
+  l'echelle plutot que d'y pousser des selections. Mesure actuelle : GIGA FUN et GIGA+
+  absents de 5 sessions sur 5, confiance 5 et 1 aussi, confiance 2 de 4 sur 5.
+
 ## Familles de marches (`services/market_families.py`)
 
 Neuf regroupements de marches sur cent selections, **dont six vus une seule fois** :

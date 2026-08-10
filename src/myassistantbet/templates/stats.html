@@ -415,6 +415,19 @@
         {{ block.unlabelled }} sélection(s) sans {{ block.label }} ne comptent pas ici :
         ne pas étiqueter n'est pas un niveau de l'échelle.
         {%- endif %}
+        {# La vacance, mesurée sans rien parser : un niveau qu'aucune sélection
+           de la session ne porte est un niveau laissé vide ce jour-là. Ce n'est
+           pas encore une conclusion — il faut du temps pour distinguer un niveau
+           que les lots n'offrent pas d'un niveau qu'on ne cherche plus. #}
+        {%- set jamais = block.rows | rejectattr('count') | list %}
+        {%- if jamais and block.sessions %}
+        <strong>{{ jamais | map(attribute='label') | join(', ') }}</strong>
+        {{ 'reste' if jamais | length == 1 else 'restent' }} sans emploi sur
+        {{ block.sessions }} session(s). Un niveau vide est un résultat, pas une
+        anomalie : c'est sa persistance dans le temps qui dira s'il est
+        inatteignable — auquel cas c'est l'échelle qu'il faudra raccourcir, pas
+        les sélections qu'il faudra y pousser.
+        {%- endif %}
       </p>
     </article>
     {% endfor %}

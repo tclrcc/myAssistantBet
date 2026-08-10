@@ -710,15 +710,30 @@ async def test_le_multichoix_n_est_propose_que_si_le_marche_existe(
 
 
 @respx.mock
-async def test_l_arbitrage_des_paliers_est_ecrit(
+async def test_le_palier_se_lit_sur_la_cote_seule(
     odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
 ) -> None:
-    """Les bandes se chevauchent : sans regle, le modele en invente une par session."""
+    """Les bandes **ne se chevauchent pas**, et l'arbitrage a ete retire.
+
+    Le paragraphe faisait trancher la confiance « dans une zone commune a deux
+    paliers » — sauf que les bandes ne se touchent qu'en un point exact (1.70,
+    2.30, 3.60, 8.00) : sur cent selections, aucune cote n'y est jamais tombee.
+    Deux cents mots de consigne pour un cas qui ne se produit pas.
+
+    Et s'il s'etait produit, la regle aurait ete nuisible : ce palier sert a
+    calculer un taux par **bande de cote**, et faire dependre le classement de
+    la confiance aurait mis deux selections au meme prix dans deux paliers
+    differents. Le prompt le disait lui-meme deux phrases plus bas — « une
+    classification variable rendrait ce taux ininterpretable ».
+    """
     session_id = await _session_enrichie(odds_client, migrated, load_fixture, enrich=False)
 
     body = build_prompt(session_id, settings=migrated, now=NOW).body
 
-    assert "la confiance tranche" in body
+    assert "la confiance tranche" not in body
+    assert "La cote décide seule" in body
+    assert "la borne haute appartient au palier suivant" in body
+    assert "la confiance a déjà son propre axe" in body
 
 
 def test_chaque_porte_du_preambule_vise_un_libelle_qui_existe() -> None:
@@ -760,3 +775,62 @@ def test_aucun_libelle_de_contexte_ne_remplit_sa_colonne() -> None:
     assert not trop_longs, f"libelles sans separateur possible : {sorted(trop_longs)}"
     for label in CONTEXT_ICONS:
         assert line(label, "valeur").endswith(" valeur"), label
+
+
+# -- Les crans de confiance, et les paliers qu'on n'atteint pas --------------
+
+
+def test_les_cinq_crans_de_confiance_sont_definis(migrated: Settings) -> None:
+    """Le prompt n'ancrait que 5, 3 et 1 : les crans 2 et 4 n'avaient aucune
+    definition, et tout tombait donc en 3. Mesure sur cent selections — 99 %
+    portaient un 3 ou un 4, et les crans 1 et 5 n'ont jamais servi. Une echelle
+    dont deux crans sur cinq portent tout ne note plus rien."""
+    corps = " ".join(build_prompt(_lot_de(migrated, 3), settings=migrated, now=NOW).body.split())
+
+    for ancre in (
+        "≥ 2 facteurs indépendants",
+        "1 facteur dominant vérifié en niveau 1-2",
+        "mais un manque de la section A touche ce facteur",
+        "fait principal issu d'une source de niveau 3-4",
+        "aucun fait daté — lecture des blocs seuls",
+    ):
+        assert ancre in corps, f"le cran « {ancre} » doit être ancré"
+
+
+def test_les_crans_se_lisent_avec_la_colonne_source(migrated: Settings) -> None:
+    """Une seule echelle de sources dans tout le prompt : celle du preambule
+    nourrit la colonne du tableau, qui nourrit le cran de confiance. Trois
+    ecritures de la meme notion se seraient contredites."""
+    corps = " ".join(build_prompt(_lot_de(migrated, 3), settings=migrated, now=NOW).body.split())
+
+    assert "`lecture` va avec 1, une source de niveau 3-4 plafonne à 2" in corps
+    assert "c'est le cran qu'il faut corriger" in corps
+
+
+def test_les_deux_plafonds_en_doublon_ont_disparu(migrated: Settings) -> None:
+    """La table des crans les porte desormais tous les deux ; les laisser a cote
+    aurait donne deux regles pour un meme cas, sans dire laquelle gagne.
+
+    Ce qui reste de la phrase sur les sources de niveau 4, c'est ce qu'elle
+    disait en propre : ne jamais presenter une telle information comme un fait.
+    """
+    corps = " ".join(build_prompt(_lot_de(migrated, 3), settings=migrated, now=NOW).body.split())
+
+    assert "ne dépasse pas 2" not in corps
+    assert "plafonne la confiance de la sélection à 2" not in corps
+    assert "rapporté par X, non confirmé" in corps, "le fond de la règle reste"
+
+
+def test_un_palier_vide_se_commente(migrated: Settings) -> None:
+    """ULTRA FUN est a 0/7, GIGA FUN et GIGA+ n'ont jamais servi en cent
+    selections. On ne force pas leur remplissage — un quota rempli avec du vide
+    est l'erreur que le prompt nomme lui-meme comme la plus couteuse — on rend
+    la vacance sortante : un palier vide est un resultat, un palier vide non
+    commente est un oubli."""
+    corps = " ".join(build_prompt(_lot_de(migrated, 3), settings=migrated, now=NOW).body.split())
+
+    assert "Un palier vide se commente, en une ligne sous le tableau" in corps
+    assert "en nommant ce qu'il aurait fallu trouver" in corps
+    assert "un palier vide non commenté est un oubli" in corps
+    # Et surtout : rien qui invite a le remplir.
+    assert "Ne remplis jamais un palier avec une sélection qui appartient" in corps

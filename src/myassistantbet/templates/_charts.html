@@ -79,7 +79,12 @@
         {% endif %}
       </span>
       <b class="bar-value">{{ row.share_label }}</b>
-      <span class="bar-count">{{ row.count }}</span>
+      {# La part dit qu'un niveau ne sert pas ; le compte de sessions dit à quel
+         rythme. Un palier absent de 5 sessions sur 5 n'est pas dans le même état
+         qu'un palier employé une fois sur deux, et c'est cette différence qui
+         décidera un jour de réduire l'échelle. Rien quand il a servi partout :
+         « absent de 0 session » serait du bruit sur chaque ligne. #}
+      <span class="bar-count">{{ row.count }}{% if row.absent_sessions %}<i class="units">· absent de {{ row.absent_sessions }}/{{ block.sessions }} session(s)</i>{% endif %}</span>
     </div>
     {% endfor %}
   </div>

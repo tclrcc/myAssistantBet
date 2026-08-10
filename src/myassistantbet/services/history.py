@@ -1575,6 +1575,12 @@ class MixRow:
     label: str
     count: int = 0
     total: int = 0
+    #: Sessions ou ce niveau n'a **pas** ete employe, sur celles qui portent au
+    #: moins une selection. C'est la mesure de la **vacance** : une part de
+    #: volume a zero dit qu'un niveau ne sert jamais, elle ne dit pas si c'est
+    #: parce qu'un lot ne l'offrait pas ou parce qu'on ne l'a jamais cherche.
+    #: Compte des sessions, la ou la part compte des lignes.
+    absent_sessions: int = 0
 
     @property
     def share(self) -> float | None:
@@ -1605,6 +1611,8 @@ class Mix:
     #: Selections ne portant aucune valeur sur cette echelle. Tenues hors du
     #: total : ne pas etiqueter n'est pas un niveau de l'echelle.
     unlabelled: int = 0
+    #: Sessions portant au moins une selection — le denominateur de la vacance.
+    sessions: int = 0
 
     @property
     def levels(self) -> int:
@@ -1663,6 +1671,33 @@ def load_bands(settings: Settings | None = None) -> dict[int, Band]:
     }
 
 
+def _count_vacancy(block: Mix, rows: list[Any], column: str) -> None:
+    """Compte, par niveau, les sessions qui ne l'ont pas employe.
+
+    Le brief demandait de compter les lignes de vacance ecrites sous le tableau ;
+    l'application ne lit pas la prose du rendu, seulement le tableau des
+    selections. Mais la vacance **est** dans les donnees : un palier qu'aucune
+    selection de la session ne porte est un palier laisse vide ce jour-la.
+    C'est la meme grandeur, mesuree sans rien parser.
+
+    Une part de volume a zero dit qu'un niveau ne sert jamais. Ce compte-ci dit
+    **a quel rythme** : un palier absent de cinq sessions sur cinq n'est pas dans
+    le meme etat qu'un palier employe une fois sur deux, et c'est cette
+    difference qui decidera un jour de reduire l'echelle.
+    """
+    sessions: dict[str, set[int]] = {}
+    seen: set[int] = set()
+    for row in rows:
+        session_id = int(row["session_id"])
+        seen.add(session_id)
+        value = row[column]
+        if value is not None:
+            sessions.setdefault(str(value), set()).add(session_id)
+    block.sessions = len(seen)
+    for entry in block.rows:
+        entry.absent_sessions = block.sessions - len(sessions.get(entry.key, set()))
+
+
 def labelling(settings: Settings | None = None) -> list[Mix]:
     """Comment les selections sont etiquetees, sans regarder ce qu'elles valent.
 
@@ -1675,7 +1710,7 @@ def labelling(settings: Settings | None = None) -> list[Mix]:
     with connect(settings) as conn:
         tier_labels = _tier_labels(conn)
         tier_order = [row["key"] for row in conn.execute("SELECT key FROM tiers ORDER BY position")]
-        rows = conn.execute("SELECT tier, confidence FROM picks").fetchall()
+        rows = conn.execute("SELECT session_id, tier, confidence FROM picks").fetchall()
 
     # Aucune selection : aucune echelle a decrire. Rendre deux echelles a zero
     # ferait lire « je n'emploie aucun niveau » la ou il n'y a rien du tout.
@@ -1701,6 +1736,7 @@ def labelling(settings: Settings | None = None) -> list[Mix]:
         MixRow(key=key, label=f"confiance {key}", count=count, total=confiance.total)
         for key, count in niveaux.items()
     ]
+    _count_vacancy(confiance, rows, "confidence")
 
     palier = Mix(key="tier", label="palier")
     compte = dict.fromkeys(tier_order, 0)
@@ -1714,6 +1750,7 @@ def labelling(settings: Settings | None = None) -> list[Mix]:
         MixRow(key=key, label=tier_labels.get(key, key), count=count, total=palier.total)
         for key, count in compte.items()
     ]
+    _count_vacancy(palier, rows, "tier")
 
     return [confiance, palier]
 
