@@ -1048,17 +1048,52 @@ se deduit donc, ou ne se dit pas.
   continue de trier les lignes du board, ou elle a un sens. Le groupement est fait en
   Python et non par le filtre `groupby` de Jinja, qui retrierait les groupes par ordre
   alphabetique et remettrait « ATP/WTA 500 » devant « Grand Chelem ».
-- `competitions.CATEGORIES` : le **niveau** d'un tournoi (Grand Chelem, Masters 1000,
-  500, 250, Challenger, ITF). Meme regle que la surface — **rien n'est deduit d'un
-  libelle a l'execution** : « Masters » vaut pour Monte-Carlo comme pour le tournoi de
-  fin d'annee. Le seed de la migration 013 est en revanche une decision humaine,
-  verifiee tournoi par tournoi contre les calendriers ATP et WTA, cle par cle ; le reste
-  se saisit depuis `/competitions`, et seulement pour le tennis (les valeurs proposees
-  sont celles des circuits ATP et WTA). `masters_1000` couvre les Masters 1000 de l'ATP
-  **et** les WTA 1000 : meme etage de la hierarchie, et le circuit se lit deja dans le
-  libelle — les separer diviserait par deux des echantillons deja courts. Un niveau non
-  renseigne ne produit **aucune ligne** de statistiques : « non renseigne » ne dirait
-  rien sur les matchs, seulement sur la saisie.
+- `competitions.CATEGORIES` : le **niveau** d'une competition. Meme regle que la
+  surface — **rien n'est deduit d'un libelle a l'execution** : « Masters » vaut pour
+  Monte-Carlo comme pour le tournoi de fin d'annee, et « Super League » pour la Chine
+  comme pour la Grece. Les seeds des migrations 013 et 024 sont en revanche des
+  decisions humaines, verifiees cle par cle ; le reste se saisit depuis
+  `/competitions`. Un niveau non renseigne ne produit **aucune ligne** de statistiques :
+  « non renseigne » ne dirait rien sur les matchs, seulement sur la saisie.
+  - **Une taxonomie par sport** (`CATEGORIES_BY_SPORT`), et la saisie valide contre
+    celle du sport et non contre la liste a plat : depuis que le football a la sienne,
+    `grand_slam` est une cle connue, et l'accepter sur une Ligue 1 produirait un
+    regroupement que plus rien ne distinguerait d'un vrai tournoi. Un sport sans
+    taxonomie — le cyclisme — n'affiche aucun menu.
+  - `masters_1000` couvre les Masters 1000 de l'ATP **et** les WTA 1000 : meme etage de
+    la hierarchie, et le circuit se lit deja dans le libelle — les separer diviserait
+    par deux des echantillons deja courts. Meme arbitrage au football pour `d2`, qui
+    couvre la deuxieme division **et en dessous** : League 2 anglaise et 3. Liga
+    n'auraient chacune aucune selection, et le libelle annonce l'amalgame.
+  - **Le football n'en avait aucun, et c'est ce qui a rendu 59 selections invisibles.**
+    Le regroupement « par niveau » portait exactement l'effectif du tennis, et les
+    selections football se repartissaient sur douze championnats de une a six lignes —
+    donc sous le seuil de lecture par competition, et noyees ensemble sous « Football ».
+    Le seul etage intermediaire manquait. Mesure apres le seed : 5 lignes football,
+    dont `1re division — Europe` 13/29 et `Coupe continentale` 11/21.
+  - **Les qualifications europeennes ne recoivent pas de niveau distinct**, et ce n'est
+    pas un arbitrage : The Odds API sert les tours preliminaires et la phase de ligue
+    **sous la meme cle** pour l'Europa League comme pour la Conference League. Un niveau
+    se pose sur une cle, donc les separer est hors de portee.
+  - **`COMPETITION_CATEGORIES` double les migrations, comme `APIFOOTBALL_LEAGUES`.**
+    Une migration ne classe que ce qui est **deja en base quand elle tourne**, et la
+    synchronisation decouvre en permanence : sans cette table, chaque competition
+    apparue apres le seed arriverait sans niveau. Elle comble un manque, n'ecrase jamais
+    une saisie. Un test relit les deux fichiers de migration et les compare a la table
+    plutot que d'en recopier la regle — trois ecritures de la meme decision divergeraient
+    sans un mot, un niveau ne se voyant nulle part sur le board.
+  - **Le niveau se resout a la lecture**, il n'est jamais recopie sur la selection. C'est
+    ce qui rend la taxonomie corrigeable : reclasser une competition reclasse tout son
+    historique, sans migration ni reprise de donnees.
+  - **Une cle non classee ne disparait pas en silence** : `unclassified()` la reclame
+    dans `/competitions`, avec ce qu'elle porte deja de selections — classer une
+    competition a onze paris repare onze lignes, classer une competition vierge n'en
+    repare aucune. Les sports sans taxonomie n'y figurent jamais.
+  - **`Analysis.uncategorised` ferme l'addition** : la somme des niveaux plus les non
+    classees vaut le total tranche. C'est un **compte, jamais une barre** — un taux
+    moyen de tout ce qui n'a pas ete saisi n'a aucune coherence sportive et ne dirait
+    rien des matchs, alors que le compte, lui, est juste. Sans lui, des selections
+    quittaient le regroupement sans qu'une seule ligne ne le signale.
 
 ## Le preambule ne documente que les sports du lot
 

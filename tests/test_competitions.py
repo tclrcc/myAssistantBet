@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
+from pathlib import Path
 
 import httpx
 import pytest
@@ -11,13 +13,19 @@ from myassistantbet import db
 from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.providers.oddsapi import BASE_URL, OddsAPIClient
+from myassistantbet.services import competitions as competitions_module
 from myassistantbet.services.competitions import (
     APIFOOTBALL_LEAGUES,
+    CATEGORIES,
+    CATEGORIES_BY_SPORT,
+    COMPETITION_CATEGORIES,
+    categories_for,
     list_all,
     set_active,
     set_apifootball_league,
     set_category,
     sync_from_api,
+    unclassified,
 )
 from myassistantbet.services.labels import has_sport_icon
 from myassistantbet.services.scan import active_competitions
@@ -343,7 +351,122 @@ def test_les_grands_chelems_sont_seedes_avec_leur_niveau(migrated: Settings) -> 
 
     assert par_cle["tennis_atp_wimbledon"] == "grand_slam"
     assert par_cle["tennis_wta_us_open"] == "grand_slam"
-    assert par_cle["soccer_epl"] is None, "le niveau ne concerne que le tennis pour l'instant"
+
+
+def test_les_competitions_football_sont_seedees_avec_leur_niveau(migrated: Settings) -> None:
+    """Sans niveau, cinquante-neuf selections football etaient invisibles.
+
+    Elles se repartissaient sur douze championnats de une a six lignes, donc
+    sous le seuil de lecture par competition et noyees ensemble sous
+    « Football » : le seul regroupement intermediaire manquait.
+
+    Seules les competitions livrees par la migration 002 sont en base ici ; le
+    reste du catalogue arrive par la synchronisation, et c'est
+    `COMPETITION_CATEGORIES` qui le classe.
+    """
+    par_cle = {
+        row["oddsapi_key"]: row["category"]
+        for row in db.query("SELECT oddsapi_key, category FROM competitions", settings=migrated)
+    }
+
+    assert par_cle["soccer_epl"] == "d1_top5"
+    assert par_cle["soccer_france_ligue_one"] == "d1_top5"
+    assert par_cle["soccer_sweden_allsvenskan"] == "d1_europe"
+    assert par_cle["soccer_norway_eliteserien"] == "d1_europe"
+    assert par_cle["soccer_china_superleague"] == "d1_hors_europe"
+
+
+def test_les_migrations_rejouent_la_table_des_niveaux() -> None:
+    """Trois ecritures de la meme decision : elles doivent dire la meme chose.
+
+    Les migrations classent ce qui est **deja en base** quand elles tournent, la
+    table Python ce que la synchronisation decouvre ensuite. Les laisser diverger
+    donnerait deux niveaux differents a la meme competition selon la date
+    d'installation — et personne ne s'en apercevrait, un niveau ne se voyant
+    nulle part sur le board.
+
+    Le test relit les fichiers de migration plutot que d'en recopier la regle,
+    comme celui de la migration 021.
+    """
+    seeds: dict[str, str] = {}
+    racine = Path(competitions_module.__file__).parent.parent / "migrations"
+    for nom in ("013_competition_category.sql", "024_niveaux_football.sql"):
+        sql = (racine / nom).read_text(encoding="utf-8")
+        for bloc in re.finditer(
+            r"SET category = '(\w+)'.*?IN \((.*?)\);", sql, flags=re.DOTALL | re.IGNORECASE
+        ):
+            for cle in re.findall(r"'([a-z0-9_]+)'", bloc.group(2)):
+                seeds[cle] = bloc.group(1)
+
+    assert seeds, "les migrations classent bien des competitions"
+    assert seeds == COMPETITION_CATEGORIES
+
+
+def test_les_qualifications_europeennes_suivent_leur_competition() -> None:
+    """Pas un arbitrage, une contrainte de la source.
+
+    The Odds API sert les tours preliminaires et la phase de ligue **sous la
+    meme cle** pour l'Europa League comme pour la Conference League : un niveau
+    se pose sur une cle, donc les separer est hors de portee. La qualification
+    de Ligue des champions, elle, a bien sa cle, et rien ne justifierait de la
+    ranger ailleurs que sa competition.
+    """
+    assert COMPETITION_CATEGORIES["soccer_uefa_champs_league"] == "coupe_continentale"
+    assert COMPETITION_CATEGORIES["soccer_uefa_champs_league_qualification"] == "coupe_continentale"
+
+
+def test_tout_niveau_seede_existe_dans_la_taxonomie_de_son_sport() -> None:
+    """Une faute de frappe dans une cle ne casserait rien, et c'est le danger.
+
+    La competition sortirait avec un niveau qu'aucun libelle ne nomme : ligne
+    sans nom dans les statistiques, et jamais reclamee dans « a classer »
+    puisqu'elle porte bien une valeur.
+    """
+    for cle, niveau in COMPETITION_CATEGORIES.items():
+        sport = "tennis" if cle.startswith("tennis_") else "football"
+        assert niveau in categories_for(sport), f"{cle} porte un niveau inconnu de {sport}"
+
+
+@respx.mock
+async def test_une_competition_decouverte_arrive_avec_son_niveau(
+    odds_client: OddsAPIClient, migrated: Settings
+) -> None:
+    """Les migrations ne classent que l'existant ; la synchronisation decouvre.
+
+    Sans cette table, chaque competition apparue apres le seed arriverait sans
+    niveau — donc reclamee dans « a classer » alors que sa place ne fait aucun
+    doute.
+    """
+    respx.get(f"{BASE_URL}/sports").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"key": "soccer_uefa_europa_league", "title": "UEFA Europa League"}],
+            headers=QUOTA_HEADERS,
+        )
+    )
+
+    await sync_from_api(odds_client, migrated)
+
+    assert (
+        db.query_one(
+            "SELECT category FROM competitions WHERE oddsapi_key = 'soccer_uefa_europa_league'",
+            settings=migrated,
+        )["category"]
+        == "coupe_continentale"
+    )
+
+
+def test_les_cles_de_niveau_ne_se_chevauchent_pas_entre_sports() -> None:
+    """`CATEGORIES` fusionne les deux tables : une cle commune en perdrait une.
+
+    Le degat serait muet — un niveau de football rendu sous un libelle de
+    tennis — et c'est exactement la sorte d'erreur que ce projet refuse de
+    laisser passer sans un mot.
+    """
+    plat = sum(len(niveaux) for niveaux in CATEGORIES_BY_SPORT.values())
+
+    assert len(CATEGORIES) == plat
+    assert categories_for("cycling") == {}, "un sport sans taxonomie ne propose rien"
 
 
 def test_le_niveau_se_saisit_et_se_retire(migrated: Settings) -> None:
@@ -376,19 +499,120 @@ def test_les_competitions_sont_rangees_par_niveau(migrated: Settings) -> None:
     assert ordre.index("grand_slam") < ordre.index("level_250")
 
 
-def test_le_selecteur_de_niveau_ne_sert_qu_au_tennis(client: TestClient) -> None:
-    """« ATP/WTA 500 » sur une Ligue 1 n'aurait aucun sens."""
+def test_le_selecteur_de_niveau_sert_les_sports_qui_ont_une_taxonomie(client: TestClient) -> None:
+    """Un menu par sport, et aucun menu la ou il n'y a rien a proposer.
+
+    Le cyclisme n'a pas de niveaux : lui en afficher un vide reclamerait une
+    saisie impossible a faire, et la liste « a classer » le reclamerait ensuite
+    tous les jours.
+    """
     page = client.get("/competitions").text
 
-    assert 'name="category"' in page
     assert "Masters 1000" in page
+    assert "1re division — top 5" in page
     assert (
         page.count('name="category"')
         == db.query_one(
             "SELECT COUNT(*) AS n FROM competitions c JOIN sports s ON s.id = c.sport_id "
-            "WHERE s.key = 'tennis'"
+            "WHERE s.key IN ('tennis', 'football')"
         )["n"]
     )
+
+
+def test_un_niveau_de_tennis_est_refuse_sur_une_competition_football(migrated: Settings) -> None:
+    """La validation lit la taxonomie **du sport**, pas la liste a plat.
+
+    Depuis que le football a la sienne, « grand_slam » est une cle connue :
+    l'accepter sur une Ligue 1 produirait un regroupement que plus rien ne
+    distinguerait d'un vrai tournoi.
+    """
+    football = next(row for row in list_all(migrated) if row["sport_key"] == "football")
+
+    set_category(football["id"], "d1_top5", migrated)
+    assert _category(migrated, football["id"]) == "d1_top5"
+
+    set_category(football["id"], "grand_slam", migrated)
+    assert _category(migrated, football["id"]) is None
+
+
+# -- La liste « a classer » -------------------------------------------------
+
+
+def _pick_sur(settings: Settings, oddsapi_key: str, result: str = "win") -> None:
+    """Une selection rattachee a un match de cette competition."""
+    db.execute(
+        "INSERT INTO sessions (label, created_at) VALUES ('t', '2026-08-04T10:00:00Z')",
+        settings=settings,
+    )
+    db.execute(
+        "INSERT INTO events (sport_id, competition_id, home, away, commence_time, created_at) "
+        "SELECT c.sport_id, c.id, 'A', 'B', '2026-08-04T18:00:00Z', '2026-08-04T10:00:00Z' "
+        "FROM competitions c WHERE c.oddsapi_key = ?",
+        (oddsapi_key,),
+        settings=settings,
+    )
+    db.execute(
+        "INSERT INTO picks (session_id, event_id, tier, market, selection, result, created_at) "
+        "SELECT (SELECT MAX(id) FROM sessions), (SELECT MAX(id) FROM events), "
+        "       'safe', 'O/U', 'Over', ?, '2026-08-04T10:00:00Z'",
+        (result,),
+        settings=settings,
+    )
+
+
+def test_une_competition_non_classee_qui_porte_des_selections_est_reclamee(
+    migrated: Settings,
+) -> None:
+    """Une cle non classee ne doit jamais disparaitre en silence.
+
+    Sans niveau, ses selections sortent du regroupement « par niveau » sans
+    qu'aucune ligne ne le dise — c'est ainsi que cinquante-neuf selections
+    football sont restees invisibles cent paris durant.
+    """
+    db.execute(
+        "UPDATE competitions SET category = NULL, active = 0 WHERE oddsapi_key = 'soccer_epl'",
+        settings=migrated,
+    )
+    _pick_sur(migrated, "soccer_epl")
+    _pick_sur(migrated, "soccer_epl", result="pending")
+
+    a_classer = unclassified(migrated)
+
+    ligne = next(row for row in a_classer if row.label == "Premier League")
+    assert (ligne.picks, ligne.settled) == (2, 1)
+    # Rangee en tete : classer une competition a deux paris repare deux lignes,
+    # classer une competition vierge n'en repare aucune.
+    assert a_classer[0].competition_id == ligne.competition_id
+
+
+def test_une_competition_classee_ne_figure_pas_a_classer(migrated: Settings) -> None:
+    _pick_sur(migrated, "soccer_epl")
+
+    assert all(row.label != "Premier League" for row in unclassified(migrated))
+
+
+def test_un_sport_sans_taxonomie_n_est_jamais_reclame(migrated: Settings) -> None:
+    """Le cyclisme n'a pas de niveaux : le reclamer serait une tache impossible."""
+    db.execute(
+        "UPDATE competitions SET active = 1 "
+        "WHERE sport_id = (SELECT id FROM sports WHERE key = 'cycling')",
+        settings=migrated,
+    )
+
+    assert all(row.sport_key != "cycling" for row in unclassified(migrated))
+
+
+def test_la_liste_a_classer_est_affichee(client: TestClient, isolated_settings: Settings) -> None:
+    db.execute(
+        "UPDATE competitions SET category = NULL WHERE oddsapi_key = 'soccer_epl'",
+        settings=isolated_settings,
+    )
+    _pick_sur(isolated_settings, "soccer_epl")
+
+    page = " ".join(client.get("/competitions").text.split())
+
+    assert "à classer" in page
+    assert "Premier League</b> — 1 sélection(s)" in page
 
 
 def test_niveau_via_htmx(client: TestClient, isolated_settings: Settings) -> None:

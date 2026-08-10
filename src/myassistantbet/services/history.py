@@ -1130,9 +1130,18 @@ class Analysis:
     by_tier: list[RateRow] = field(default_factory=list)
     by_confidence: list[RateRow] = field(default_factory=list)
     by_sport: list[RateRow] = field(default_factory=list)
-    #: Niveau de tournoi. Un Grand Chelem et un 250 ne se jouent ni sur le meme
-    #: format ni contre les memes joueurs : leurs taux ne se melangent pas.
+    #: Niveau de competition. Un Grand Chelem et un 250 ne se jouent ni sur le
+    #: meme format ni contre les memes joueurs, une Ligue des champions et une
+    #: deuxieme division non plus : leurs taux ne se melangent pas.
     by_category: list[RateRow] = field(default_factory=list)
+    #: Selections tranchees qu'aucun niveau ne porte — competition non classee,
+    #: ou selection sans match rattache. **Comptees, jamais mises en barre** :
+    #: un taux sur cet ensemble melangerait des competitions qui n'ont en commun
+    #: que de n'avoir pas ete saisies, ce qui ne dit rien des matchs. Le compte,
+    #: lui, ferme l'addition — sans lui, des selections quittaient le
+    #: regroupement sans qu'une seule ligne ne le signale, et c'est ainsi que
+    #: tout le football est reste invisible cent paris durant.
+    uncategorised: int = 0
     by_market: list[RateRow] = field(default_factory=list)
     played: RateRow = field(default_factory=lambda: RateRow("played", "Jouées"))
     skipped: RateRow = field(default_factory=lambda: RateRow("skipped", "Écartées"))
@@ -1573,8 +1582,11 @@ def analysis(settings: Settings | None = None) -> Analysis:
         key=lambda item: item.label,
     )
 
-    # Le niveau de tournoi n'existe que la ou il a ete renseigne : une ligne
-    # « non renseigne » ne dirait rien sur les matchs, seulement sur la saisie.
+    # Le niveau n'existe que la ou il a ete renseigne : une **barre** « non
+    # renseigne » ne dirait rien sur les matchs, seulement sur la saisie — un
+    # taux moyen de tout ce qui n'a pas ete classe n'a aucune coherence
+    # sportive. Le **compte**, lui, est une information juste, et il ferme
+    # l'addition : la somme des niveaux plus `uncategorised` vaut `settled`.
     report.by_category = sorted(
         _rate_tally(
             [
@@ -1584,6 +1596,11 @@ def analysis(settings: Settings | None = None) -> Analysis:
             ]
         ),
         key=lambda item: category_rank(item.key),
+    )
+    report.uncategorised = sum(
+        1
+        for row, result in zip(rows, results, strict=True)
+        if result in ("win", "loss") and not row["category"]
     )
 
     markets = [

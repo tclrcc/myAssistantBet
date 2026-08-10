@@ -207,10 +207,16 @@ def test_les_competitions_sont_groupees_par_sport_et_triees(migrated: Settings) 
     )
     options = board_service.filter_options(migrated)
 
+    groups = [group["label"] for group in options["competition_groups"]]
+    # Depuis que le football a ses propres niveaux, les deux sports se
+    # decoupent de la meme facon — ce qui est le but : « 1re division — top 5 »
+    # et « Coupe continentale » ne se cherchent pas au meme endroit. Ce que le
+    # groupement garantit reste le meme : tout le football avant tout le tennis.
+    assert groups == sorted(groups, key=lambda label: label.startswith("Tennis"))
+    assert any(label.startswith("Football · ") for label in groups)
+    assert any(label.startswith("Tennis · ") for label in groups)
+
     groups = options["competition_groups"]
-    # Le football n'a pas de niveau : le sport seul titre son groupe. Les
-    # tournois de tennis livres par les migrations sont tous des Grands Chelems.
-    assert [group["label"] for group in groups] == ["Football", "Tennis · Grand Chelem"]
     # Les groupes suivent l'ordre des sports, les competitions l'alphabet.
     for group in groups:
         labels = [row["label"] for row in group["competitions"]]
@@ -248,10 +254,18 @@ def test_les_tournois_sont_groupes_par_niveau(migrated: Settings) -> None:
 
 
 def test_le_tri_des_competitions_ignore_les_accents(migrated: Settings) -> None:
-    """Sans cela « Série A » tomberait apres « Super Lig », a la fin de la liste."""
+    """Sans cela « Série A » tomberait apres « Super Lig », a la fin de la liste.
+
+    Les deux competitions portent le **meme niveau** : depuis que le football en
+    a, l'alphabet ne trie qu'a l'interieur d'un groupe, et deux niveaux
+    differents se compareraient sur leur rang de hierarchie sans que l'accent
+    n'entre jamais en jeu.
+    """
     db.execute(
-        "INSERT INTO competitions (sport_id, oddsapi_key, label, priority, active) "
-        "SELECT id, 'soccer_italy_serie_a', 'Série A', 10, 1 FROM sports WHERE key = 'football'",
+        "INSERT INTO competitions (sport_id, oddsapi_key, label, priority, active, category) "
+        "SELECT id, 'soccer_italy_serie_a', 'Série A', 10, 1, "
+        "       (SELECT category FROM competitions WHERE label = 'Super Lig') "
+        "FROM sports WHERE key = 'football'",
         settings=migrated,
     )
 

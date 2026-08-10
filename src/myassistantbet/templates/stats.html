@@ -98,11 +98,20 @@
             comparison=analysis.confidence_comparison) }}
     {{ card("Par palier", analysis.by_tier, comparison=analysis.tier_comparison) }}
     {{ card("Par sport", analysis.by_sport) }}
+    {# Le niveau est la seule dimension qui tienne entre le sport, trop large, et
+       la compétition, trop fine. Il est aussi la seule qui dépende d'une saisie :
+       le compte des non classées suit donc la carte, pour que l'addition se
+       ferme à l'œil. #}
     {% if analysis.by_category %}
-      {{ card("Par niveau de tournoi", analysis.by_category,
-              "Un Grand Chelem se joue sur un autre format et contre d'autres
-               joueurs qu'un 250 : leurs taux ne se mélangent pas. Seules les
-               compétitions dont le niveau est renseigné apparaissent ici.") }}
+      {{ card("Par niveau de compétition", analysis.by_category,
+              "Un Grand Chelem ne se joue ni sur le format ni contre les joueurs
+               d'un 250 ; une coupe continentale et une 2e division n'ont pas
+               davantage en commun. Leurs taux ne se mélangent pas."
+              ~ ((" " ~ analysis.uncategorised ~ " sélection(s) tranchée(s) ne portent
+                   aucun niveau — compétition à classer dans les réglages, ou sélection
+                   sans match rattaché. Elles sont comptées ici, jamais mises en barre :
+                   un taux moyen de ce qui n'a pas été saisi ne dirait rien des matchs.")
+                 if analysis.uncategorised else "")) }}
     {% endif %}
     {% if analysis.by_market %}
       {{ card("Par marché", analysis.by_market,
@@ -190,10 +199,16 @@
       </div>
       {% if analysis.by_category %}
       <div>
-        <h3>Par niveau de tournoi</h3>
+        <h3>Par niveau de compétition</h3>
         {% with rows = analysis.by_category, heading = "Niveau" %}
           {% include "_rates.html" %}
         {% endwith %}
+        {% if analysis.uncategorised %}
+        <p class="muted small">
+          + {{ analysis.uncategorised }} sans niveau, sur {{ analysis.settled }} tranchée(s).
+          <a href="/competitions">Classer les compétitions</a>
+        </p>
+        {% endif %}
       </div>
       {% endif %}
       {% if analysis.by_market %}

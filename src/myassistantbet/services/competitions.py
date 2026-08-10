@@ -38,7 +38,7 @@ SURFACES = {"hard": "Dur", "clay": "Terre battue", "grass": "Gazon"}
 #: `masters_1000` couvre les Masters 1000 de l'ATP **et** les WTA 1000 : c'est
 #: le meme etage de la hierarchie, et le circuit se lit deja dans le libelle.
 #: Les separer diviserait par deux des echantillons deja courts.
-CATEGORIES = {
+TENNIS_CATEGORIES = {
     "grand_slam": "Grand Chelem",
     "finals": "Masters de fin d'année",
     "masters_1000": "Masters 1000",
@@ -48,14 +48,191 @@ CATEGORIES = {
     "itf": "ITF",
 }
 
+#: Meme echelle au football, et elle repare un angle mort mesure : le niveau
+#: n'etait renseigne que sur le tennis, si bien que le regroupement « par
+#: niveau » portait exactement l'effectif du tennis. Les 59 selections
+#: football tranchees se repartissaient sur douze championnats, chacun sous le
+#: seuil de lecture — donc invisibles a **tous** les etages d'agregation : trop
+#: fines par competition, noyees par sport.
+#:
+#: Le decoupage suit ce qui change la lecture d'un match, pas la geographie :
+#: un championnat du top 5 se joue devant des donnees abondantes et un marche
+#: serre ; une premiere division scandinave, non. Une coupe continentale melange
+#: deux niveaux economiques dans un format aller-retour.
+#:
+#: `d2` couvre la deuxieme division **et en dessous** — League 2 anglaise,
+#: 3. Liga allemande. Les separer creerait des niveaux qu'aucune selection ne
+#: peuple, et le libelle le dit plutot que de laisser croire a un pur echelon 2.
+FOOTBALL_CATEGORIES = {
+    "d1_top5": "1re division — top 5",
+    "d1_europe": "1re division — Europe",
+    "d1_hors_europe": "1re division — hors Europe",
+    "d2": "2e division et moins",
+    "coupe_nationale": "Coupe nationale",
+    "coupe_continentale": "Coupe continentale",
+    "selection": "Sélections",
+}
+
+#: Les niveaux proposes pour un sport donne. Ils ne se melangent pas : « ATP/WTA
+#: 500 » sur une Ligue 1 n'a aucun sens, et l'ecran de gestion comme la
+#: validation de la saisie lisent cette table plutot que la liste a plat.
+#: Un sport absent n'a pas de taxonomie — le cyclisme n'en a jamais eu — et ses
+#: competitions ne sont donc jamais reclamees dans la liste « a classer ».
+CATEGORIES_BY_SPORT = {
+    "tennis": TENNIS_CATEGORIES,
+    "football": FOOTBALL_CATEGORIES,
+}
+
+#: Tous les niveaux a plat, pour les lectures qui n'ont que la cle sous la main
+#: — un libelle a rendre, un rang de tri. Les cles sont uniques d'un sport a
+#: l'autre, sans quoi cette fusion perdrait silencieusement une entree ; un test
+#: le verifie.
+CATEGORIES = {**TENNIS_CATEGORIES, **FOOTBALL_CATEGORIES}
+
 #: Rang d'affichage d'un niveau. Une competition sans niveau ferme la marche
-#: plutot que de s'intercaler au hasard.
+#: plutot que de s'intercaler au hasard. L'ordre de `CATEGORIES` groupe les
+#: niveaux par sport, ce qui suffit a ne pas intercaler un Grand Chelem entre
+#: deux divisions.
 CATEGORY_ORDER = {key: index for index, key in enumerate(CATEGORIES)}
 
 
 def category_label(key: str | None) -> str:
     """Libelle d'un niveau, chaine vide s'il n'est pas renseigne."""
     return CATEGORIES.get(key or "", "")
+
+
+def categories_for(sport_key: str | None) -> dict[str, str]:
+    """Niveaux proposes pour un sport. Vide s'il n'a pas de taxonomie."""
+    return CATEGORIES_BY_SPORT.get(sport_key or "", {})
+
+
+#: Niveau connu par cle The Odds API. Meme role que `APIFOOTBALL_LEAGUES`, et
+#: pour la meme raison : les migrations 013 et 024 ne classent que les
+#: competitions **deja en base au moment ou elles tournent**, et la
+#: synchronisation en decouvre en permanence. Sans cette table, chaque
+#: competition apparue apres le seed arriverait sans niveau — donc reclamee dans
+#: la liste « a classer » alors que sa place ne fait aucun doute.
+#:
+#: Rien n'y est deduit d'un libelle, ici non plus : chaque ligne est une
+#: decision humaine, verifiee cle par cle contre les calendriers. Une cle absente
+#: se saisit depuis /competitions.
+#:
+#: Les deux migrations rejouent exactement cette table ; un test compare les
+#: trois ecritures plutot que de faire confiance a une relecture.
+COMPETITION_CATEGORIES: dict[str, str] = {
+    # -- Tennis (seed de la migration 013) --------------------------------
+    "tennis_atp_aus_open_singles": "grand_slam",
+    "tennis_atp_french_open": "grand_slam",
+    "tennis_atp_wimbledon": "grand_slam",
+    "tennis_atp_us_open": "grand_slam",
+    "tennis_wta_aus_open_singles": "grand_slam",
+    "tennis_wta_french_open": "grand_slam",
+    "tennis_wta_wimbledon": "grand_slam",
+    "tennis_wta_us_open": "grand_slam",
+    "tennis_atp_indian_wells": "masters_1000",
+    "tennis_atp_miami_open": "masters_1000",
+    "tennis_atp_monte_carlo_masters": "masters_1000",
+    "tennis_atp_madrid_open": "masters_1000",
+    "tennis_atp_italian_open": "masters_1000",
+    "tennis_atp_canadian_open": "masters_1000",
+    "tennis_atp_cincinnati_open": "masters_1000",
+    "tennis_atp_shanghai_masters": "masters_1000",
+    "tennis_atp_paris_masters": "masters_1000",
+    "tennis_wta_qatar_open": "masters_1000",
+    "tennis_wta_dubai": "masters_1000",
+    "tennis_wta_indian_wells": "masters_1000",
+    "tennis_wta_miami_open": "masters_1000",
+    "tennis_wta_madrid_open": "masters_1000",
+    "tennis_wta_italian_open": "masters_1000",
+    "tennis_wta_canadian_open": "masters_1000",
+    "tennis_wta_cincinnati_open": "masters_1000",
+    "tennis_wta_china_open": "masters_1000",
+    "tennis_wta_wuhan_open": "masters_1000",
+    "tennis_atp_dubai": "level_500",
+    "tennis_atp_qatar_open": "level_500",
+    "tennis_atp_barcelona_open": "level_500",
+    "tennis_atp_munich": "level_500",
+    "tennis_atp_hamburg_open": "level_500",
+    "tennis_atp_queens_club_champ": "level_500",
+    "tennis_atp_halle_open": "level_500",
+    "tennis_atp_washington_open": "level_500",
+    "tennis_atp_china_open": "level_500",
+    "tennis_wta_german_open": "level_500",
+    "tennis_wta_charleston_open": "level_500",
+    "tennis_wta_stuttgart_open": "level_500",
+    "tennis_wta_strasbourg": "level_500",
+    "tennis_wta_bad_homburg_open": "level_500",
+    "tennis_wta_queens_club_champ": "level_500",
+    "tennis_wta_washington_open": "level_500",
+    # -- Football (seed de la migration 024) ------------------------------
+    "soccer_epl": "d1_top5",
+    "soccer_spain_la_liga": "d1_top5",
+    "soccer_italy_serie_a": "d1_top5",
+    "soccer_germany_bundesliga": "d1_top5",
+    "soccer_france_ligue_one": "d1_top5",
+    "soccer_austria_bundesliga": "d1_europe",
+    "soccer_belgium_first_div": "d1_europe",
+    "soccer_denmark_superliga": "d1_europe",
+    "soccer_finland_veikkausliiga": "d1_europe",
+    "soccer_germany_bundesliga_women": "d1_europe",
+    "soccer_greece_super_league": "d1_europe",
+    "soccer_league_of_ireland": "d1_europe",
+    "soccer_netherlands_eredivisie": "d1_europe",
+    "soccer_norway_eliteserien": "d1_europe",
+    "soccer_poland_ekstraklasa": "d1_europe",
+    "soccer_portugal_primeira_liga": "d1_europe",
+    "soccer_russia_premier_league": "d1_europe",
+    "soccer_spl": "d1_europe",
+    "soccer_sweden_allsvenskan": "d1_europe",
+    "soccer_switzerland_superleague": "d1_europe",
+    "soccer_turkey_super_league": "d1_europe",
+    "soccer_argentina_primera_division": "d1_hors_europe",
+    "soccer_australia_aleague": "d1_hors_europe",
+    "soccer_brazil_campeonato": "d1_hors_europe",
+    "soccer_chile_campeonato": "d1_hors_europe",
+    "soccer_china_superleague": "d1_hors_europe",
+    "soccer_japan_j_league": "d1_hors_europe",
+    "soccer_korea_kleague1": "d1_hors_europe",
+    "soccer_mexico_ligamx": "d1_hors_europe",
+    "soccer_saudi_arabia_pro_league": "d1_hors_europe",
+    "soccer_usa_mls": "d1_hors_europe",
+    "soccer_brazil_serie_b": "d2",
+    "soccer_efl_champ": "d2",
+    "soccer_england_league1": "d2",
+    "soccer_england_league2": "d2",
+    "soccer_france_ligue_two": "d2",
+    "soccer_germany_bundesliga2": "d2",
+    "soccer_germany_liga3": "d2",
+    "soccer_italy_serie_b": "d2",
+    "soccer_spain_segunda_division": "d2",
+    "soccer_sweden_superettan": "d2",
+    "soccer_england_efl_cup": "coupe_nationale",
+    "soccer_fa_cup": "coupe_nationale",
+    "soccer_france_coupe_de_france": "coupe_nationale",
+    "soccer_germany_dfb_pokal": "coupe_nationale",
+    "soccer_italy_coppa_italia": "coupe_nationale",
+    "soccer_spain_copa_del_rey": "coupe_nationale",
+    "soccer_concacaf_leagues_cup": "coupe_continentale",
+    "soccer_conmebol_copa_libertadores": "coupe_continentale",
+    "soccer_conmebol_copa_sudamericana": "coupe_continentale",
+    "soccer_fifa_club_world_cup": "coupe_continentale",
+    "soccer_uefa_champs_league": "coupe_continentale",
+    "soccer_uefa_champs_league_qualification": "coupe_continentale",
+    "soccer_uefa_champs_league_women": "coupe_continentale",
+    "soccer_uefa_europa_conference_league": "coupe_continentale",
+    "soccer_uefa_europa_league": "coupe_continentale",
+    "soccer_africa_cup_of_nations": "selection",
+    "soccer_concacaf_gold_cup": "selection",
+    "soccer_conmebol_copa_america": "selection",
+    "soccer_fifa_world_cup": "selection",
+    "soccer_fifa_world_cup_qualifiers_europe": "selection",
+    "soccer_fifa_world_cup_qualifiers_south_america": "selection",
+    "soccer_fifa_world_cup_winner": "selection",
+    "soccer_fifa_world_cup_womens": "selection",
+    "soccer_uefa_euro_qualification": "selection",
+    "soccer_uefa_european_championship": "selection",
+    "soccer_uefa_nations_league": "selection",
+}
 
 
 def category_rank(key: str | None) -> int:
@@ -198,14 +375,89 @@ def set_category(competition_id: int, category: str, settings: Settings | None =
     « Masters » dans un libelle marcherait pour Monte-Carlo et se tromperait sur
     le Masters de fin d'annee. Une valeur inconnue vaut « non renseigne » plutot
     qu'une erreur : le seul effet est une ligne de moins dans les statistiques.
+
+    La valeur est verifiee **contre la taxonomie du sport** et non contre la
+    liste a plat : depuis que le football a la sienne, « ATP/WTA 500 » est une
+    cle connue, et l'accepter sur une Ligue 1 produirait un regroupement que
+    plus rien ne pourrait distinguer d'un vrai tournoi.
     """
     value = (category or "").strip().lower()
     with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT s.key AS sport_key FROM competitions c JOIN sports s ON s.id = c.sport_id "
+            "WHERE c.id = ?",
+            (competition_id,),
+        ).fetchone()
+        allowed = categories_for(row["sport_key"] if row else None)
         conn.execute(
             "UPDATE competitions SET category = ? WHERE id = ?",
-            (value if value in CATEGORIES else None, competition_id),
+            (value if value in allowed else None, competition_id),
         )
     logger.info("Niveau de la competition %d : %s", competition_id, value or "non renseigne")
+
+
+@dataclass
+class Unclassified:
+    """Une competition sans niveau, et ce qu'elle porte deja d'historique.
+
+    Une cle non classee ne doit jamais disparaitre en silence : sans niveau,
+    ses selections sortent du regroupement « par niveau » sans qu'aucune ligne
+    ne le dise, et c'est exactement ce qui a rendu 59 selections football
+    invisibles pendant cent paris.
+    """
+
+    competition_id: int
+    label: str
+    sport_key: str
+    sport_label: str
+    #: Selections deja rattachees a cette competition, tranchees ou non. C'est
+    #: ce qui range la liste : classer une competition qui porte onze paris
+    #: repare onze lignes de statistiques, classer une competition vierge n'en
+    #: repare aucune.
+    picks: int = 0
+    settled: int = 0
+    active: bool = False
+
+
+def unclassified(settings: Settings | None = None) -> list[Unclassified]:
+    """Competitions a classer : sans niveau, mais qui en attendent un.
+
+    Deux populations, et il faut les deux : celles qui **portent deja des
+    selections** — leur historique est muet tant qu'elles ne sont pas classees —
+    et celles qui sont **actives**, donc sur le point d'en porter.
+
+    Un sport sans taxonomie n'y figure jamais : le cyclisme n'a pas de niveaux,
+    et l'y reclamer chaque jour serait une tache qu'on ne peut pas accomplir.
+    """
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT c.id, c.label, c.active, s.key AS sport_key, s.label AS sport_label, "
+            "       COUNT(k.id) AS picks, "
+            "       SUM(CASE WHEN k.result IN ('win', 'loss') THEN 1 ELSE 0 END) AS settled "
+            "FROM competitions c "
+            "JOIN sports s ON s.id = c.sport_id "
+            "LEFT JOIN events e ON e.competition_id = c.id "
+            "LEFT JOIN picks k ON k.event_id = e.id "
+            "WHERE c.category IS NULL OR c.category = '' "
+            "GROUP BY c.id"
+        ).fetchall()
+    found = [
+        Unclassified(
+            competition_id=row["id"],
+            label=row["label"],
+            sport_key=row["sport_key"],
+            sport_label=row["sport_label"],
+            picks=row["picks"] or 0,
+            settled=row["settled"] or 0,
+            active=bool(row["active"]),
+        )
+        for row in rows
+        if categories_for(row["sport_key"]) and (row["picks"] or row["active"])
+    ]
+    # Les plus lourdes d'historique d'abord : c'est l'ordre dans lequel les
+    # classer rend le plus de lignes lisibles.
+    found.sort(key=lambda item: (-item.picks, item.sport_key, sort_key(item.label)))
+    return found
 
 
 #: Correspondance entre une cle The Odds API et une ligue API-Football.
@@ -392,18 +644,27 @@ async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None)
 
             league_id = APIFOOTBALL_LEAGUES.get(oddsapi_key)
             tournaments = TENNISDATA_TOURNAMENTS.get(oddsapi_key)
+            category = COMPETITION_CATEGORIES.get(oddsapi_key)
             existing = conn.execute(
-                "SELECT id, label, api_active, apifootball_league_id, tennisdata_tournaments "
-                "FROM competitions WHERE oddsapi_key = ?",
+                "SELECT id, label, api_active, apifootball_league_id, tennisdata_tournaments, "
+                "       category FROM competitions WHERE oddsapi_key = ?",
                 (oddsapi_key,),
             ).fetchone()
             if existing is None:
                 conn.execute(
                     "INSERT INTO competitions (sport_id, oddsapi_key, label, priority, active, "
                     "                          api_active, apifootball_league_id, "
-                    "                          tennisdata_tournaments) "
-                    "VALUES (?, ?, ?, 0, 0, ?, ?, ?)",
-                    (sport_ids[sport_key], oddsapi_key, title, served, league_id, tournaments),
+                    "                          tennisdata_tournaments, category) "
+                    "VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?)",
+                    (
+                        sport_ids[sport_key],
+                        oddsapi_key,
+                        title,
+                        served,
+                        league_id,
+                        tournaments,
+                        category,
+                    ),
                 )
                 report.created.append(f"{title} ({oddsapi_key})")
                 continue
@@ -422,6 +683,15 @@ async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None)
                 conn.execute(
                     "UPDATE competitions SET tennisdata_tournaments = ? WHERE id = ?",
                     (tournaments, existing["id"]),
+                )
+
+            if category is not None and not existing["category"]:
+                # Meme regle encore. Elle compte doublement ici : un niveau
+                # manquant ne se voit nulle part sur le board, seulement dans un
+                # regroupement de statistiques qui s'appauvrit en silence.
+                conn.execute(
+                    "UPDATE competitions SET category = ? WHERE id = ?",
+                    (category, existing["id"]),
                 )
 
             if existing["label"] != title or existing["api_active"] != served:

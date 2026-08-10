@@ -65,6 +65,33 @@
     </form>
   </div>
 
+  {# Une compétition sans niveau sort du regroupement « par niveau » des
+     statistiques sans qu'aucune ligne ne le dise — c'est ainsi que 59
+     sélections football sont restées invisibles cent paris durant. Elle est
+     donc réclamée ici, avec ce qu'elle porte déjà : classer une compétition à
+     onze paris répare onze lignes, classer une compétition vierge n'en répare
+     aucune. Les sports sans taxonomie n'y figurent pas — le cyclisme n'a pas de
+     niveaux, et le réclamer chaque jour serait une tâche impossible à finir. #}
+  {% if unclassified %}
+  <div class="report report-warn">
+    <b>{{ unclassified | length }} compétition(s) à classer.</b>
+    Tant qu'une compétition n'a pas de niveau, ses sélections sont comptées à part
+    sur la page Statistiques au lieu de rejoindre un regroupement lisible.
+    <ul class="failures">
+      {% for row in unclassified %}
+      <li>
+        {{ row.sport_label }} · <b>{{ row.label }}</b>
+        {% if row.picks %}
+          — {{ row.picks }} sélection(s){% if row.settled %}, dont {{ row.settled }} tranchée(s){% endif %}
+        {% elif row.active %}
+          — active, aucune sélection pour l'instant
+        {% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
   <div class="filters">
     <label class="grow">
       Rechercher une compétition
@@ -146,17 +173,19 @@
         <td class="affiche">{{ competition.label }}</td>
         <td class="muted">{{ competition.oddsapi_key or '—' }}</td>
         {# Le niveau ne se deduit pas d'un libelle : « Masters » vaut pour
-           Monte-Carlo comme pour le Masters de fin d'annee. Il se saisit, comme
-           la surface. Reserve au tennis : les valeurs proposees sont celles des
-           circuits ATP et WTA, et « ATP/WTA 500 » sur une Ligue 1 n'aurait
-           aucun sens. #}
+           Monte-Carlo comme pour le Masters de fin d'annee, et « Super League »
+           pour la Chine comme pour la Grece. Il se saisit, comme la surface.
+           Les valeurs proposees sont **celles du sport** : un Grand Chelem sur
+           une Ligue 1 n'a aucun sens, et la saisie le refuse aussi. Un sport
+           sans taxonomie — le cyclisme — n'affiche pas de menu du tout. #}
+        {% set niveaux = categories.get(competition.sport_key, {}) %}
         <td class="small">
-          {% if competition.sport_key == 'tennis' %}
+          {% if niveaux %}
           <select class="niveau" name="category" aria-label="Niveau de {{ competition.label }}"
                   hx-trigger="change" hx-post="/competitions/{{ competition.id }}/category"
                   hx-target="#competitions" hx-swap="outerHTML">
             <option value="">Niveau —</option>
-            {% for key, label in categories.items() %}
+            {% for key, label in niveaux.items() %}
             <option value="{{ key }}" {% if competition.category == key %}selected{% endif %}>{{ label }}</option>
             {% endfor %}
           </select>

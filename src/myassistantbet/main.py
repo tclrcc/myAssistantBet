@@ -569,7 +569,10 @@ def _competitions_context(
         "elo_report": elo_report,
         "import_report": import_report,
         "surfaces": competitions_service.SURFACES,
-        "categories": competitions_service.CATEGORIES,
+        # Par sport : les niveaux du tennis et ceux du football ne se proposent
+        # pas dans le meme menu, et la saisie refuse deja le melange.
+        "categories": competitions_service.CATEGORIES_BY_SPORT,
+        "unclassified": competitions_service.unclassified(settings),
         "elo_state": elo_service.state(settings),
     }
 

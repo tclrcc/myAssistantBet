@@ -12,6 +12,7 @@ from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services import coupons as coupons_service
+from myassistantbet.services.competitions import set_category
 from myassistantbet.services.history import (
     ANALYSIS_MIN_DAYS,
     ANALYSIS_MIN_ROWS,
@@ -1352,7 +1353,7 @@ def test_le_bloc_colineaire_est_signale_jamais_masque(
     page = " ".join(client.get("/stats").text.split())
 
     assert "décrivent les mêmes" in page
-    assert "Par niveau de tournoi" in page, "le bloc reste affiche"
+    assert "Par niveau de compétition" in page, "le bloc reste affiche"
     assert "compter deux fois la même chose" in page
 
 
@@ -1749,7 +1750,7 @@ def test_le_taux_par_niveau_de_tournoi(client: TestClient, isolated_settings: Se
     report = analysis(isolated_settings)
 
     assert [row.label for row in report.by_category] == ["Grand Chelem"]
-    assert "Par niveau de tournoi" in client.get("/stats").text
+    assert "Par niveau de compétition" in client.get("/stats").text
 
 
 def test_un_niveau_absent_ne_produit_pas_de_ligne(
@@ -1760,7 +1761,63 @@ def test_un_niveau_absent_ne_produit_pas_de_ligne(
     _propose(isolated_settings, session_id, event_id, "safe", "win")
 
     assert analysis(isolated_settings).by_category == []
-    assert "Par niveau de tournoi" not in client.get("/stats").text
+    assert "Par niveau de compétition" not in client.get("/stats").text
+
+
+def test_reclasser_une_competition_reclasse_tout_son_historique(migrated: Settings) -> None:
+    """Le niveau se resout **a la lecture**, il n'est jamais recopie sur le pick.
+
+    C'est ce qui rend une taxonomie corrigeable : reclasser une competition
+    doit reclasser tout ce qu'elle porte, sans migration et sans reprise de
+    donnees. Denormalise sur la selection, il aurait fallu repasser sur cent
+    lignes a chaque hesitation de decoupage.
+    """
+    session_id, event_id = _session_avec_match(migrated, "tennis")
+    _propose(migrated, session_id, event_id, "safe", "win")
+    competition = db.query_one(
+        "SELECT competition_id AS id FROM events WHERE id = ?",
+        (event_id,),
+        settings=migrated,
+    )["id"]
+
+    set_category(competition, "grand_slam", migrated)
+    assert [row.label for row in analysis(migrated).by_category] == ["Grand Chelem"]
+
+    set_category(competition, "level_250", migrated)
+    assert [row.label for row in analysis(migrated).by_category] == ["ATP/WTA 250"]
+
+
+def test_aucune_selection_ne_sort_du_compte_par_niveau(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """L'addition se ferme : la somme des niveaux plus les non classees.
+
+    Une barre « non renseigne » n'aurait aucune coherence sportive, mais un
+    **compte** est une information juste. Sans lui, des selections quittaient le
+    regroupement sans qu'une seule ligne ne le signale — exactement ce qui a
+    rendu tout le football invisible.
+    """
+    session_id, classe = _session_avec_match(isolated_settings, "tennis")
+    _, sans_niveau = _session_avec_match(isolated_settings)
+    db.execute(
+        "UPDATE competitions SET category = 'grand_slam' "
+        "WHERE id = (SELECT competition_id FROM events WHERE id = ?)",
+        (classe,),
+        settings=isolated_settings,
+    )
+    _propose(isolated_settings, session_id, classe, "safe", "win")
+    _propose(isolated_settings, session_id, sans_niveau, "safe", "loss")
+    # Une selection qu'aucun match ne porte : deuxieme cause d'absence de niveau.
+    orpheline = add_pick(session_id, "safe", "O/U", "Over", settings=isolated_settings)
+    set_result(orpheline, "loss", isolated_settings)
+
+    report = analysis(isolated_settings)
+
+    assert sum(row.settled for row in report.by_category) + report.uncategorised == report.settled
+    assert report.uncategorised == 2
+    assert "2 sélection(s) tranchée(s) ne portent aucun niveau" in " ".join(
+        client.get("/stats").text.split()
+    )
 
 
 def test_la_page_de_stats_porte_l_interdiction(
