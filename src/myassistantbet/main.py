@@ -1209,6 +1209,12 @@ def _settings_context(**overrides: object) -> dict[str, object]:
         "bands": prompt_service.load_bands(settings),
         "bands_error": None,
         "bands_saved": False,
+        # Les seuils sous lesquels aucun taux n'est publie. L'ecran des bandes
+        # annoncait qu'elles servent « ici et au prompt » sans dire que le bloc
+        # attend d'abord assez de recul : l'absence se lisait comme un defaut de
+        # conditionnement. Les nombres viennent du module, jamais du gabarit.
+        "analysis_min_total": history_service.ANALYSIS_MIN_TOTAL,
+        "analysis_min_days": history_service.ANALYSIS_MIN_DAYS,
         "preferences": prompt_service.read_preference(prompt_service.PREFERENCE_NOTES, settings),
         "preferences_error": None,
         "preferences_saved": False,

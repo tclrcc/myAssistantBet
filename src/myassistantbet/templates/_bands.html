@@ -14,6 +14,17 @@
     d'expérience affiche la cible de chaque cran et l'écart constaté, et c'est ce qui
     permet à l'analyse de resserrer un cran employé trop largement.
   </p>
+  {# Le bloc n'apparait dans le prompt que lorsque le retour d'experience publie
+     son detail — assez de selections tranchees **et** assez de journees. Sans
+     cette phrase, l'ecran promettait au prompt un bloc qui n'y figurait pas, et
+     l'absence se lisait comme un defaut de conditionnement. #}
+  <p class="muted small">
+    Dans le prompt, elles n'apparaissent qu'<strong>avec le reste des taux</strong> :
+    sous {{ analysis_min_total }} sélections tranchées ou {{ analysis_min_days }} journées
+    d'analyse distinctes, le bloc annonce qu'il manque du recul et ne transmet aucun
+    chiffre — cible comprise. Une cible affichée à côté d'un 3/4 ferait resserrer une
+    notation sur quatre paris.
+  </p>
   <p class="muted small">
     Des deux côtés, un niveau n'est signalé <strong>hors de sa bande</strong> que si son
     intervalle de confiance en sort <strong>entièrement</strong> — sinon on crierait à la

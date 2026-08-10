@@ -208,31 +208,21 @@ pas des angles : dis ce qu'ils changent sur un match précis, ou ne les cite pas
 Part du lot que je sélectionne : **{{ feedback.selection_line }}**. Le reste est
 passé — un match vu, analysé, et laissé de côté.
 
-C'est un **constat sur mon tri, pas un quota**. Il ne te demande ni de passer
-davantage, ni de passer moins : écarter un match pour approcher un chiffre
-serait exactement l'erreur que ce prompt nomme ailleurs comme la plus coûteuse,
-remplir une case avec du vide. Il te dit seulement à quoi ressemble d'habitude
-la sortie, pour qu'un lot où tu sélectionnes tout, ou presque rien, se remarque
-et s'explique en une ligne plutôt que de passer inaperçu.
-
-Ce compte-là ne lit pas la même population que les taux ci-dessous : il porte
-sur mes dernières **sessions ayant produit un prompt**, qu'un résultat y soit
-saisi ou non, quand les taux ne comptent que des sélections déjà tranchées. Deux
-nombres différents à quelques lignes d'écart sont donc normaux.
-
-Il ne se compare à aucune cote, comme le reste de ce bloc.
+C'est un **constat sur mon tri, pas un quota** : écarter un match pour approcher
+ce chiffre serait remplir une case avec du vide, l'erreur que ce prompt nomme
+ailleurs comme la plus coûteuse. Un lot où tu sélectionnes tout, ou presque
+rien, s'explique en une ligne. Il ne se compare à aucune cote.
 {% endif %}
 {% if feedback.enough %}
 Taux de réussite de {{ feedback.scope_line }}, jouées ou non :
-gagnées / (gagnées + perdues). Ce bloc lit une **fenêtre glissante** — les
-{{ feedback.window }} dernières — et non tout l'historique : son compte plafonne
-donc, et ne se lit pas comme un total. Les annulées et celles encore en attente
-sont exclues du dénominateur. Les regroupements de moins de quatre
-sélections ne sont pas listés — ils ne mesureraient que le hasard.
+gagnées / (gagnées + perdues), sur une **fenêtre glissante** — les
+{{ feedback.window }} dernières, et non tout l'historique : ce compte plafonne,
+il ne se lit pas comme un total. Annulées et en attente hors dénominateur, et
+les regroupements trop peu fournis ne sont pas listés.
 
-Ce sont **tes propres analyses passées**, confrontées au terrain. Elles ne
-disent pas ce qui va gagner aujourd'hui ; elles disent où ton jugement a porté
-et où il a glissé.
+Ce compte-là ne lit pas la même population que le taux de sélection ci-dessus,
+qui porte sur mes **sessions ayant produit un prompt**, résultat saisi ou non.
+Deux nombres différents à quelques lignes d'écart sont donc normaux.
 {% if feedback.by_tier %}
 Par palier :
 {%- for row in feedback.by_tier %}
@@ -246,16 +236,11 @@ Par confiance annoncée à l'époque :
 {%- endfor %}
 
 L'écart à la bande cible est le **seul chiffre de ce bloc qui parle de ma
-notation plutôt que des matchs**. La bande est ce que j'attends d'un cran : un
-cran nettement sous la sienne veut dire que je l'ai employé trop largement, et
-c'est à toi de le resserrer dès la section C — même faisceau, un cran de moins.
-Au-dessus, l'inverse : j'ai été trop avare d'un cran qui tenait.
-
-Un écart marqué **« hors bande »** est confirmé par le volume : agis dessus. Un
-écart sans cette mention est encore dans ce que ce nombre de sélections ne permet
-pas de séparer — lis-le, n'en fais pas une règle.
-
-Comme le reste du bloc, il ne se compare à aucune cote.
+notation plutôt que des matchs** : un cran nettement sous la sienne a été
+employé trop largement, et c'est à toi de le resserrer dès la section C — même
+faisceau, un cran de moins. Au-dessus, l'inverse. Un écart marqué **« hors
+bande »** est confirmé par le volume : agis dessus. Sans cette mention, lis-le,
+n'en fais pas une règle. Comme le reste du bloc, il ne se compare à aucune cote.
 {% endif %}
 {%- if feedback.by_sport %}
 Par sport :
@@ -281,51 +266,27 @@ Par marché :
   {{ row.line }}
 {%- endfor %}
 {% endif %}
-Ce bloc est une observation sur mes analyses passées, pas un modèle. Il sert à
-**deux choses, et à rien d'autre** :
+Ce bloc sert à **deux choses, et à rien d'autre** : dire **où chercher en
+priorité** — c'est un ordre de passage, pas un argument, une sélection se prend
+parce qu'un angle sportif la porte, jamais parce que la catégorie a bien
+marché — et **où relever l'exigence**, là où le passé est mauvais : confiance 4
+ou 5, ou rien.
 
-  1. **Où chercher en priorité.** Un marché, une compétition ou un sport où le
-     passé est bon mérite que tu y consacres ta recherche d'abord. C'est un
-     ordre de passage, pas un argument : une sélection s'y prend toujours parce
-     qu'un angle sportif la porte, jamais parce que la catégorie a bien marché.
-  2. **Où relever le niveau d'exigence.** Là où le passé est mauvais, une
-     sélection à confiance 3 ne suffit plus : il en faut une à 4 ou 5, ou rien.
-
-Ce qu'il ne fait **jamais**, sans exception :
-  · il ne se compare **jamais** à une cote. Rapprocher un taux de réussite d'un
-    prix, c'est calculer une espérance ; c'est interdit ici, et le fait que le
-    chiffre vienne de mon propre historique n'y change rien ;
-  · il ne redéfinit aucun palier — un palier reste une bande de cote, et la
-    règle d'arbitrage de la section C ne bouge pas d'un pouce ;
-  · il ne dit rien sur l'issue des matchs d'aujourd'hui. Un marché à 70 % ne
-    rend aucune affiche de ce lot plus probable, et un marché à 20 % ne
-    disqualifie aucun angle qui tient debout par ailleurs ;
-  · il ne remplace pas un angle manquant. Si aucun match ne porte de sélection
-    solide dans une catégorie qui réussit d'habitude, la réponse reste PASSE ;
-  · **rien de ce qui précède ne vise le taux de sélection** en tête de chapitre.
-    Ces réserves portent sur des taux de réussite ; lui décrit mon tri, ne
-    dépend d'aucun résultat, et attend sa ligne quand le lot sort de
-    l'ordinaire.
-
-Le signal le plus utile de tout le bloc reste l'écart à la bande cible, décrit
-plus haut : c'est le seul qui porte sur ma façon de noter plutôt que sur les
-matchs, donc le seul sur lequel la section C peut agir tout de suite.
+Ce qu'il ne fait **jamais** : il ne se compare **jamais** à une cote —
+rapprocher un taux de réussite d'un prix, c'est calculer une espérance, et le
+fait que le chiffre vienne de mon propre historique n'y change rien ; il ne
+redéfinit aucun palier ; il ne dit rien de l'issue des matchs d'aujourd'hui ; il
+ne remplace pas un angle manquant — sans angle, la réponse reste PASSE. Et
+**rien de ce qui précède ne vise le taux de sélection** en tête de chapitre : il
+décrit mon tri et ne dépend d'aucun résultat.
 {% else %}
-Trop peu de recul. Ce bloc lit une **fenêtre glissante** — les
-{{ feedback.window }} dernières, et non tout l'historique : {{ feedback.scope_line }},
-réparties sur {{ feedback.days }} journée(s) d'analyse. Pour qu'un taux veuille
-dire quelque chose, {{ feedback.missing_note }}.
-
-Les deux conditions comptent, et le nombre de journées n'est pas une formalité :
-un lot nombreux mais concentré sur quelques jours mesure ces jours-là — un
-tournoi, une soirée de coupe, une météo — et non ma façon d'analyser. Écrit sous
-un nom large comme « Masters 1000 » ou « Tennis », il ferait passer une semaine
-pour une tendance.
+Taux par palier et par confiance : **recul insuffisant, non transmis**.
+Ce bloc lit une **fenêtre glissante** : {{ feedback.scope_line }}, sur
+{{ feedback.days }} journée(s) d'analyse — {{ feedback.missing_note }}.
 
 N'en tire aucune tendance et n'écris rien **sur ces taux**. Le constat sur le
 taux de sélection, en tête de ce chapitre, n'est pas concerné : il ne dépend
-d'aucun résultat, il décrit mon tri — et il attend toujours sa ligne quand le
-lot sort de l'ordinaire.
+d'aucun résultat.
 {% endif %}
 {% endif %}## SORTIE ATTENDUE
 

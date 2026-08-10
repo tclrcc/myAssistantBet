@@ -32,7 +32,9 @@ from myassistantbet.services.history import (
 )
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import (
+    DEFAULT_TEMPLATE,
     PREFERENCE_NOTES,
+    TEMPLATES_DIR,
     CustomizationError,
     build_prompt,
     competition_notes,
@@ -300,8 +302,14 @@ def test_le_prompt_annonce_le_manque_de_recul(migrated: Settings) -> None:
     body = build_prompt(session_id, settings=migrated, now=NOW).body
 
     assert "CE QUE L'HISTORIQUE DIT" in body
-    assert "Trop peu de recul" in body
-    assert "%" not in body.split("CE QUE L'HISTORIQUE DIT")[1].split("## SORTIE")[0]
+    bloc = body.split("CE QUE L'HISTORIQUE DIT")[1].split("## SORTIE")[0]
+    assert "recul insuffisant, non transmis" in bloc
+    assert "%" not in bloc
+    # Le chapitre consommait vingt-cinq lignes pour expliquer qu'il manque du
+    # recul, puis interdisait d'en tirer quoi que ce soit : des tokens pour
+    # transmettre une information qu'il defend ensuite d'utiliser. Le texte
+    # pedagogique vit desormais dans CLAUDE.md.
+    assert len(bloc.strip().splitlines()) <= 8, "le bloc reste court quand il n'a rien a dire"
 
 
 def test_le_prompt_publie_les_taux_et_interdit_la_comparaison(migrated: Settings) -> None:
@@ -908,15 +916,22 @@ def test_le_manque_nomme_les_deux_quand_les_deux_manquent(migrated: Settings) ->
     assert f"{FEEDBACK_MIN_DAYS} journées" in note
 
 
-def test_le_taux_de_selection_dit_qu_il_compte_autre_chose(migrated: Settings) -> None:
-    """« 36 % sur 6 sessions » et « 60 sélections sur 4 journées » a quatre
-    paragraphes d'ecart se lisent comme un seul compte qui se contredit. Les
-    deux populations sont differentes, et le texte le dit."""
-    for jour, (retenus, lot) in enumerate(((1, 4), (2, 4), (3, 4)), start=4):
-        session_id = _session_de_lot(migrated, retenus, lot, jour)
+def test_le_taux_de_selection_dit_qu_il_compte_autre_chose() -> None:
+    """« 36 % sur 6 sessions » et « 60 sélections sur 4 journées » a quelques
+    lignes d'ecart se lisent comme un seul compte qui se contredit. Les deux
+    populations sont differentes, et le texte le dit.
 
-    corps = " ".join(build_prompt(session_id, settings=migrated, now=NOW).body.split())
+    **La phrase vit desormais dans la seule branche « assez de recul »**, et le
+    test la lit dans le gabarit plutot que dans un rendu : c'est la que les deux
+    nombres coexistent. Sous le seuil, aucun taux n'est publie — il n'y a qu'un
+    nombre, donc rien a confondre, et l'expliquer couterait des tokens pour
+    lever une ambiguite absente.
+    """
+    gabarit = (TEMPLATES_DIR / DEFAULT_TEMPLATE).read_text(encoding="utf-8")
+    enough = " ".join(
+        gabarit.split("{% if feedback.enough %}", 1)[1].split("{% else %}", 1)[0].split()
+    )
 
-    assert "ne lit pas la même population que les taux ci-dessous" in corps
-    assert "sessions ayant produit un prompt" in corps
-    assert "Deux nombres différents à quelques lignes d'écart sont donc normaux" in corps
+    assert "ne lit pas la même population que le taux de sélection" in enough
+    assert "sessions ayant produit un prompt" in enough
+    assert "Deux nombres différents à quelques lignes d'écart sont donc normaux" in enough

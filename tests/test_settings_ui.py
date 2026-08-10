@@ -10,6 +10,7 @@ from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services import thresholds
+from myassistantbet.services.history import ANALYSIS_MIN_DAYS, ANALYSIS_MIN_TOTAL
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import (
     DEFAULT_TEMPLATE,
@@ -359,3 +360,18 @@ def test_un_seuil_illisible_revient_au_defaut(
         (thresholds.PREFIX + "combo_min_lot",),
         settings=isolated_settings,
     )["value"] == str(defaut)
+
+
+def test_l_ecran_des_bandes_dit_quand_elles_atteignent_le_prompt(client: TestClient) -> None:
+    """L'ecran annoncait qu'elles servent « ici et au prompt », et le bloc
+    n'apparaissait nulle part dans le prompt rendu. Verification faite, le
+    conditionnement etait juste : les bandes voyagent avec les taux, et les taux
+    attendent assez de selections tranchees **et** assez de journees d'analyse.
+
+    C'etait donc le libelle qui mentait par omission, pas le code."""
+    page = client.get("/settings").text
+
+    assert "ici et dans le prompt" in page
+    assert f"sous {ANALYSIS_MIN_TOTAL} sélections tranchées" in page
+    assert f"{ANALYSIS_MIN_DAYS} journées" in page
+    assert "manque du recul" in page

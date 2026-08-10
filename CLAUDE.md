@@ -1529,6 +1529,22 @@ tout l'historique. Verifie : rien n'avait disparu, `analysis()` comptait bien 10
   prompt, resultat saisi ou non, quand les taux ne comptent que du tranche. Deux nombres
   differents a quatre paragraphes d'ecart se lisaient comme un seul qui se contredit.
 
+**Le chapitre du prompt ne transmet plus la pedagogie de son propre silence.** Il
+consommait vingt-cinq lignes pour expliquer *pourquoi* il manque du recul — les deux
+conditions, ce qu'un lot concentre mesure vraiment, pourquoi deux nombres different —
+puis concluait par « n'ecris rien sur ces taux ». Des tokens payes pour transmettre une
+information qu'il interdit ensuite d'employer. Sous le seuil, il annonce donc le fait en
+trois lignes et s'arrete. Le raisonnement, lui, vit ici :
+
+- **les deux conditions comptent, et l'etalement n'est pas une formalite** : un lot
+  nombreux mais concentre sur quelques jours mesure ces jours-la — un tournoi, une
+  soiree de coupe, une meteo — et non une facon d'analyser. Ecrit sous un nom large
+  comme « Masters 1000 » ou « Tennis », il ferait passer une semaine pour une tendance ;
+- **les deux populations different**, et cette phrase-la reste dans le prompt — mais
+  **seulement dans la branche « assez de recul »**, la seule ou les deux nombres
+  coexistent. Sous le seuil il n'y a qu'un nombre, donc rien a confondre, et lever une
+  ambiguite absente coute des tokens pour rien.
+
 **Le controle d'integrite** (`Analysis.recorded`, `gaps`, `consistent`) rend la vraie
 panne impossible a taire :
 
