@@ -15,7 +15,14 @@ from ..db import connect
 from ..providers.oddsapi import DEFAULT_BOOKMAKER, SCAN_MARKETS
 from . import coverage, dossier, elo, tennis_history, tennis_load, tennis_round
 from .context import context_lines
-from .labels import UNTIMED_BOOKMAKERS, affiche, bookmaker_label, primary_book
+from .labels import (
+    UNTIMED_BOOKMAKERS,
+    affiche,
+    bookmaker_label,
+    context_family,
+    expected_context,
+    primary_book,
+)
 from .markets import markets_for
 from .render import (
     MARKET_ORDER,
@@ -49,6 +56,53 @@ def has_started(commence_time: str, now: datetime | None = None) -> bool:
 
 
 @dataclass
+class Density:
+    """Ce que le bloc CONTEXTE porte, sur ce qu'il devrait porter.
+
+    Mesure qui l'a rendue necessaire : sur un lot de cinq matchs, la shortlist
+    affichait le meme badge « 3 marches » pour tous, quand deux blocs etaient
+    complets, deux tres pauvres — championnats a leur deuxieme journee — et un
+    **entierement vide**. Ce match-la avait consomme son credit d'enrichissement
+    pour ne rien rapporter, sans que rien ne le signale avant le prompt.
+
+    Elle separe mieux que n'importe quelle taxonomie de niveau, et sans aucun
+    arbitrage manuel : c'est l'avancee reelle dans la saison et la couverture du
+    fournisseur, mesurees ensemble.
+    """
+
+    filled: int = 0
+    expected: int = 0
+
+    @property
+    def known(self) -> bool:
+        """Le sport a un referentiel. Le cyclisme n'en a pas."""
+        return self.expected > 0
+
+    @property
+    def ratio(self) -> float:
+        return 0.0 if not self.known else self.filled / self.expected
+
+    @property
+    def label(self) -> str:
+        return f"{self.filled}/{self.expected}" if self.known else "—"
+
+    @property
+    def empty(self) -> bool:
+        """Aucune ligne : l'enrichissement n'a rien rapporte sur ce match."""
+        return self.known and self.filled == 0
+
+    @property
+    def thin(self) -> bool:
+        """Moins de la moitie du referentiel — un bloc qui se lira maigre.
+
+        La moitie et pas un seuil reglable : ce badge oriente un coup d'oeil, il
+        ne decide de rien. Un seuil de plus a regler couterait plus qu'il ne
+        rapporte.
+        """
+        return self.known and 0 < self.ratio < 0.5
+
+
+@dataclass
 class ShortlistEvent:
     """Un evenement de la shortlist, avec son etat d'enrichissement."""
 
@@ -64,6 +118,8 @@ class ShortlistEvent:
     deep_markets: int = 0
     #: Le match a commence : conserve dans la liste, exclu du prompt.
     started: bool = False
+    #: Lignes de contexte peuplees sur celles attendues pour ce sport.
+    density: Density = field(default_factory=Density)
 
     @property
     def affiche(self) -> str:
@@ -81,6 +137,9 @@ class SessionView:
     session_id: int
     label: str
     groups: list[tuple[str, list[ShortlistEvent]]] = field(default_factory=list)
+    #: Tri et filtre courants, pour que l'ecran les rende selectionnes.
+    order: str = "time"
+    thin_only: bool = False
 
     @property
     def count(self) -> int:
@@ -95,6 +154,15 @@ class SessionView:
     def started_count(self) -> int:
         return self.count - self.upcoming
 
+    @property
+    def empty_context(self) -> list[ShortlistEvent]:
+        """Matchs dont le bloc CONTEXTE est entierement vide.
+
+        Ils ont consomme leur credit d'enrichissement pour ne rien rapporter, et
+        rien ne le signalait avant la generation du prompt.
+        """
+        return [event for _, events in self.groups for event in events if event.density.empty]
+
 
 def _local(value: str, tz: str) -> datetime:
     moment = datetime.fromisoformat(value.replace("Z", "+00:00"))
@@ -106,8 +174,9 @@ def _local(value: str, tz: str) -> datetime:
 def _rows(session_id: int, settings: Settings) -> list[Any]:
     with connect(settings) as conn:
         return conn.execute(
-            "SELECT e.id, e.home, e.away, e.commence_time, se.note, "
+            "SELECT e.id, e.home, e.away, e.commence_time, e.competition_id, se.note, "
             "       s.key AS sport_key, s.label AS sport_label, "
+            "       c.oddsapi_key, c.surface, "
             "       COALESCE(c.label, '—') AS competition "
             "FROM session_events se "
             "JOIN events e ON e.id = se.event_id "
@@ -182,16 +251,34 @@ def started_labels(
     ]
 
 
+#: Tris proposes sur la shortlist. L'heure reste le defaut : c'est l'ordre dans
+#: lequel la journee se joue, et celui qu'on relit le plus souvent.
+SHORTLIST_ORDERS = {
+    "time": "Heure",
+    "density": "Contexte le plus pauvre d'abord",
+}
+
+
 def build_view(
     session_id: int,
     settings: Settings | None = None,
     now: datetime | None = None,
+    *,
+    order: str = "time",
+    thin_only: bool = False,
 ) -> SessionView:
-    """Shortlist de la session, regroupee par sport."""
+    """Shortlist de la session, regroupee par sport.
+
+    `order` et `thin_only` portent sur la **densite de contexte** : sur un lot de
+    cinq matchs, deux blocs etaient complets, deux tres pauvres et un vide, et
+    rien ne les distinguait a l'ecran. Trier par densite met en tete ce qu'il
+    faut regarder ; filtrer ne garde que ca.
+    """
     settings = settings or get_settings()
     rows = _rows(session_id, settings)
 
     counts = _market_counts([int(row["id"]) for row in rows], settings)
+    densities = _densities(rows, settings)
     groups: dict[str, list[ShortlistEvent]] = {}
     for row in rows:
         event_id = int(row["id"])
@@ -209,14 +296,86 @@ def build_view(
                 markets=all_markets,
                 deep_markets=deep,
                 started=has_started(row["commence_time"], now),
+                density=densities.get(event_id, Density()),
             )
         )
+
+    if thin_only:
+        # Un match sans referentiel — le cyclisme — n'est jamais « pauvre » : il
+        # n'a pas de densite, et le retirer sur ce filtre serait un jugement.
+        groups = {
+            sport: kept
+            for sport, events in groups.items()
+            if (kept := [event for event in events if event.density.thin or event.density.empty])
+        }
+    if order == "density":
+        for events in groups.values():
+            events.sort(key=lambda event: (event.density.ratio, event.local_time))
 
     return SessionView(
         session_id=session_id,
         label=session_label(session_id, settings),
         groups=list(groups.items()),
+        order=order,
+        thin_only=thin_only,
     )
+
+
+def context_density(
+    labels: list[str] | set[str], sport_key: str, settings: Settings | None = None
+) -> Density:
+    """Densite du bloc CONTEXTE : lignes peuplees sur lignes attendues.
+
+    Le rapprochement passe par `context_family` : « H2H (5) » et « H2H (1) »
+    sont la meme ligne, seul le nombre de confrontations change.
+
+    L'intersection est prise dans les deux sens — une ligne **hors** du
+    referentiel, comme `Aller` sur une manche retour, ne fait pas monter la
+    densite au-dessus de son plafond. C'est un bonus, pas un du.
+    """
+    expected = expected_context(sport_key)
+    if not expected:
+        return Density()
+    present = {context_family(label) for label in labels}
+    return Density(filled=sum(1 for label in expected if label in present), expected=len(expected))
+
+
+def _densities(rows: list[Any], settings: Settings) -> dict[int, Density]:
+    """Densite de chaque evenement de la shortlist.
+
+    Un appel de `context_block` par match : c'est le meme travail que la
+    generation du prompt, sur le meme lot, et il n'y a pas d'autre facon de
+    savoir ce que le bloc portera vraiment. Aucun appel reseau.
+    """
+    found: dict[int, Density] = {}
+    # Un seul cache pour tout le lot : le classement Elo est le meme pour tous
+    # les matchs, et le resoudre par evenement rendait la page lente a mesure
+    # que la shortlist grandissait.
+    cache: dict[str, Any] = {}
+    for row in rows:
+        event_id = int(row["id"])
+        lines = context_block(
+            event_id,
+            row["home"],
+            row["away"],
+            row["commence_time"],
+            row["sport_key"],
+            oddsapi_key=_column(row, "oddsapi_key"),
+            surface=_column(row, "surface"),
+            competition_id=_column(row, "competition_id"),
+            settings=settings,
+            cache=cache,
+        )
+        found[event_id] = context_density([label for label, _ in lines], row["sport_key"], settings)
+    return found
+
+
+def _column(row: Any, name: str) -> Any:
+    """Colonne optionnelle d'une ligne SQLite, `None` si la requete ne l'a pas."""
+    try:
+        return row[name]
+    except (IndexError, KeyError):
+        return None
 
 
 def _market_counts(event_ids: list[int], settings: Settings) -> dict[int, tuple[int, int]]:
@@ -251,6 +410,7 @@ def context_block(
     surface: str | None = None,
     competition_id: int | None = None,
     settings: Settings | None = None,
+    cache: dict[str, Any] | None = None,
 ) -> list[tuple[str, str]]:
     """Lignes du bloc CONTEXTE, toutes sources confondues.
 
@@ -290,13 +450,25 @@ def context_block(
         )
         # L'historique des matchs joues : confrontations directes, palmares dans
         # ce tournoi, forme, bilan de surface et abandons.
-        lines += tennis_history.lines(home, away, surface, commence_time, settings, competition_id)
+        lines += tennis_history.lines(
+            home, away, surface, commence_time, settings, competition_id, cache
+        )
     return lines
 
 
-def _context_for(row: Any, settings: Settings) -> list[tuple[str, str]]:
-    """Adaptateur pour une ligne de la requete de session."""
-    return context_block(
+def _context_for(
+    row: Any, settings: Settings, cache: dict[str, Any] | None = None
+) -> list[tuple[str, str]]:
+    """Adaptateur pour une ligne de la requete de session.
+
+    Ajoute une ligne **`Densite`** en fin de bloc quand celui-ci est maigre ou
+    vide. Sans elle, un match a 3 lignes sur 24 se lit comme un match sur lequel
+    il n'y avait rien a dire, alors que c'est notre collecte qui n'a rien
+    rapporte — un championnat a sa deuxieme journee, une competition que le
+    fournisseur de contexte ne couvre pas. L'analyse doit savoir laquelle des
+    deux, parce que la reponse decide si la recherche web peut combler le trou.
+    """
+    lines = context_block(
         int(row["id"]),
         row["home"],
         row["away"],
@@ -306,6 +478,25 @@ def _context_for(row: Any, settings: Settings) -> list[tuple[str, str]]:
         surface=row["surface"],
         competition_id=row["competition_id"],
         settings=settings,
+        cache=cache,
+    )
+    density = context_density([label for label, _ in lines], row["sport_key"], settings)
+    if density.known and (density.empty or density.thin):
+        lines.append(("Densite", _density_note(density)))
+    return lines
+
+
+def _density_note(density: Density) -> str:
+    """« 3/24 lignes — bloc pauvre, la recherche web a plus a apporter qu'ailleurs »."""
+    if density.empty:
+        return (
+            f"{density.label} ligne — aucun contexte récupéré sur ce match. "
+            "Tout ce qui suit vient des cotes seules."
+        )
+    return (
+        f"{density.label} lignes — bloc pauvre. Ce qui manque n'a pas été "
+        "collecté, ce n'est pas un match sans histoire : la recherche web y a "
+        "plus à apporter qu'ailleurs."
     )
 
 
@@ -420,6 +611,10 @@ def renderable_events(
         [row["competition_id"] for row in upcoming if row["competition_id"]], settings
     )
 
+    # Un seul cache pour tout le lot, comme sur la shortlist : le classement Elo
+    # est le meme d'un match a l'autre, et le resoudre par evenement coutait
+    # l'essentiel du temps de generation sur un lot de tennis.
+    cache: dict[str, Any] = {}
     with connect(settings) as conn:
         events: list[RenderableEvent] = []
         for index, row in enumerate(upcoming, start=1):
@@ -463,7 +658,7 @@ def renderable_events(
                     away=row["away"],
                     commence_local=_local(row["commence_time"], settings.tz),
                     markets=markets,
-                    context_lines=_context_for(row, settings),
+                    context_lines=_context_for(row, settings, cache),
                     note=row["note"] or None,
                     # L'en-tete ne nomme que la source principale : les autres
                     # sont portees ligne par ligne. Un en-tete « Betclic +

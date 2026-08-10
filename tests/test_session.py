@@ -16,8 +16,9 @@ from myassistantbet import db
 from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
-from myassistantbet.services import coverage
+from myassistantbet.services import coverage, labels
 from myassistantbet.services import session as session_service
+from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import build_prompt
 from myassistantbet.services.session import render_blocks
 
@@ -432,3 +433,82 @@ def test_les_props_buteurs_ont_un_libelle(migrated: Settings) -> None:
 
     assert not [item for item in manquants if item.startswith("player_")]
     assert {"Buteur", "1er buteur"} <= set(manquants)
+
+
+# -- Densite du bloc CONTEXTE -----------------------------------------------
+
+
+def test_la_densite_compte_les_lignes_attendues_du_sport() -> None:
+    """Sur un lot de cinq matchs, la shortlist affichait le meme badge
+    « 3 marches » pour tous, quand deux blocs etaient complets, deux tres pauvres
+    et un entierement vide."""
+    plein = session_service.context_density(list(labels.CONTEXT_EXPECTED["football"]), "football")
+
+    assert plein.filled == plein.expected == len(labels.CONTEXT_EXPECTED["football"])
+    assert plein.label == f"{plein.expected}/{plein.expected}"
+    assert not plein.thin and not plein.empty
+
+
+def test_un_h2h_compte_quel_que_soit_son_nombre() -> None:
+    """« H2H (5) » et « H2H (1) » sont la meme ligne : seul le nombre de
+    confrontations change, et il varie d'un match a l'autre."""
+    assert session_service.context_density(["H2H (5)"], "football").filled == 1
+    assert session_service.context_density(["H2H (1)"], "football").filled == 1
+
+
+def test_une_ligne_hors_referentiel_ne_fait_pas_monter_la_densite() -> None:
+    """« Aller » n'existe que sur une manche retour : c'est un bonus, pas un dû,
+    et le compter ferait passer un bloc au-dessus de son plafond."""
+    densite = session_service.context_density(["Classement", "Aller", "Statut"], "football")
+
+    assert densite.filled == 1, "seul « Classement » est attendu"
+
+
+def test_un_sport_sans_referentiel_n_a_pas_de_densite() -> None:
+    """Le cyclisme est saisi a la main : une densite y mesurerait la saisie."""
+    densite = session_service.context_density(["Infos", "Profil"], "cycling")
+
+    assert not densite.known
+    assert densite.label == "—"
+    assert not densite.empty and not densite.thin, "sans referentiel, aucun jugement"
+
+
+def test_un_bloc_vide_se_distingue_d_un_bloc_pauvre() -> None:
+    vide = session_service.context_density([], "football")
+    pauvre = session_service.context_density(["Classement", "Forme 5"], "football")
+
+    assert vide.empty and not vide.thin
+    assert pauvre.thin and not pauvre.empty
+
+
+def test_le_bloc_pauvre_porte_sa_ligne_de_densite(migrated: Settings) -> None:
+    """Un match a 0 ligne sur 24 se lisait comme un match sur lequel il n'y avait
+    rien a dire, alors que c'est notre collecte qui n'a rien rapporte."""
+    event_id = save(
+        build(
+            "football",
+            "Amical",
+            "Lyon",
+            "Nice",
+            "2026-08-04",
+            "20:45",
+            "Lyon 2.10",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+    session_id = board_service.toggle_selection(event_id, True, migrated)
+
+    event = session_service.renderable_events(session_id, migrated, NOW)[0]
+    lignes = dict(event.context_lines)
+
+    assert "Densite" in lignes
+    assert "aucun contexte récupéré" in lignes["Densite"]
+
+
+def test_la_densite_a_son_pictogramme() -> None:
+    """Toute ligne ajoutee a un bloc entre dans `CONTEXT_ICONS` le meme jour :
+    sans quoi la colonne se vide sans rien dire."""
+    assert labels.context_icon("Densite")

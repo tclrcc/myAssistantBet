@@ -1383,6 +1383,45 @@ qui les rend chercheuses.
   selections. Sous `combo_min_lot`, le prompt n'en demande qu'un, et les deux
   paragraphes qui supposent deux combines se gardent avec.
 
+## La densite du bloc CONTEXTE (`session.context_density`)
+
+Sur un lot de cinq matchs, la shortlist affichait le **meme badge « 3 marches »** pour
+tous, quand deux blocs etaient complets, deux tres pauvres — championnats a leur deuxieme
+journee — et un **entierement vide**. Ce dernier avait consomme son credit
+d'enrichissement pour ne rien rapporter, sans que rien ne le signale avant le prompt.
+
+- La densite compte les lignes **reellement peuplees** sur celles qu'un match pleinement
+  servi porte dans ce sport (`labels.CONTEXT_EXPECTED`). Mesure sur le lot du 10/08 :
+  24/24, 24/24, 10/24, **0/24**, 6/24 — elle separe mieux que n'importe quelle taxonomie
+  de niveau, et sans aucun arbitrage manuel : c'est l'avancee dans la saison et la
+  couverture du fournisseur, mesurees ensemble.
+- **Le referentiel exclut les lignes structurellement conditionnelles** — `Aller` (manche
+  retour), `Statut` (report), `Lieu` (delocalisation), `Pelouse` (synthetique), `Compos`
+  (fenetre horaire), `Effectif` (substitut la ou `/injuries` ne couvre pas), `Abandons` et
+  `H2H ici` au tennis. Sans quoi chaque match paraitrait pauvre pour de mauvaises raisons.
+  `Stats match` en est exclue pour une raison de plus : c'est une ligne **negative**, et la
+  compter recompenserait une absence.
+- **Une ligne hors referentiel ne fait pas monter la densite** au-dessus de son plafond :
+  `Aller` est un bonus, pas un du.
+- Le rapprochement passe par `context_family` : « H2H (5) » et « H2H (1) » sont la meme
+  ligne, seul le nombre de confrontations change.
+- **Un sport sans referentiel n'a pas de densite** : le cyclisme est saisi a la main, une
+  densite y mesurerait la saisie. Il n'est donc jamais « pauvre », et le filtre ne
+  l'ecarte pas — ce serait un jugement plutot qu'une mesure.
+- **Le bloc du match porte sa densite quand elle est basse.** Un match a 0 sur 24 se lisait
+  comme un match sur lequel il n'y avait rien a dire, alors que c'est notre collecte qui
+  n'a rien rapporte. La distinction decide de la suite : ce qui manque la est justement ce
+  que la recherche web a le plus a apporter.
+- **Un enrichissement vide est annonce sur la shortlist**, avec un bouton pour sortir le
+  match du lot. Il reste selectionnable — mais par choix explicite, pas par defaut.
+- **Cout, et ce qu'il a fallu corriger** : la densite appelle `context_block` par match,
+  le seul assembleur — un second chemin aurait diverge, comme deja deux fois. Le premier
+  jet tenait 377 ms pour quatre matchs de tennis, `ratings_by_key` resolvant le classement
+  entier **par evenement**. Un cache passe par l'appelant et vivant le temps d'un lot le
+  ramene a 245 ms, et sert aussi la generation du prompt. Pas de memo global : son
+  invalidation apres un rafraichissement d'Elo serait a inventer. Mesure finale : 14 ms
+  par match de football, 37 a 77 en tennis.
+
 ## Les quotas de palier se calculent, ils ne s'expliquent plus
 
 Le prompt affichait les bornes d'un lot de dix — `0-6 🟢, 0-5 🔵, 0-3 🟠…` — sur un lot de

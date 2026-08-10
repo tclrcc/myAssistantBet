@@ -13,6 +13,9 @@ from myassistantbet import db
 from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.providers.oddsapi import BASE_URL
+from myassistantbet.services import board as board_service
+from myassistantbet.services import session as session_service
+from myassistantbet.services.manual import build, save
 from myassistantbet.services.scan import active_competitions
 
 from .helpers import QUOTA_HEADERS
@@ -391,3 +394,87 @@ def test_chaque_pictogramme_vise_un_symbole_existant(client: TestClient) -> None
     assert disponibles >= SPORT_ICONS
     manquants = set(CONTEXT_ICONS.values()) - disponibles
     assert not manquants, f"symboles absents du sprite : {sorted(manquants)}"
+
+
+# -- Shortlist : densite de contexte ----------------------------------------
+
+
+def _lot_pauvre(settings: Settings) -> int:
+    """Un match sans aucun contexte : son bloc ne portera que des cotes."""
+    event_id = save(
+        build(
+            "football",
+            "Amical",
+            "Lyon",
+            "Nice",
+            "2026-08-04",
+            "20:45",
+            "Lyon 2.10",
+            "",
+            "",
+            settings=settings,
+        ),
+        settings,
+    )
+    return board_service.toggle_selection(event_id, True, settings)
+
+
+def test_la_shortlist_affiche_la_densite(client: TestClient, isolated_settings: Settings) -> None:
+    session_id = _lot_pauvre(isolated_settings)
+
+    page = " ".join(client.get(f"/session/{session_id}").text.split())
+
+    assert "<th>Contexte</th>" in page
+    assert "0/24" in page
+
+
+def test_un_enrichissement_vide_est_annonce(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Le match avait consomme son credit pour ne rien rapporter, et rien ne le
+    signalait avant la generation du prompt. Il reste selectionnable — mais par
+    choix explicite, pas par defaut."""
+    session_id = _lot_pauvre(isolated_settings)
+
+    page = " ".join(client.get(f"/session/{session_id}").text.split())
+
+    assert "sans aucune ligne de contexte" in page
+    assert "retirer du lot" in page
+
+
+def test_la_shortlist_se_trie_et_se_filtre(client: TestClient, isolated_settings: Settings) -> None:
+    session_id = _lot_pauvre(isolated_settings)
+
+    response = client.get(
+        f"/session/{session_id}/shortlist", params={"order": "density", "thin_only": "1"}
+    )
+
+    assert response.status_code == 200
+    assert response.text.strip().startswith('<div id="shortlist">')
+    assert "Lyon" in response.text, "le bloc pauvre passe le filtre"
+
+
+def test_le_filtre_des_blocs_pauvres_ecarte_les_autres(migrated: Settings) -> None:
+    session_id = _lot_pauvre(migrated)
+    riche = save(
+        build(
+            "cycling",
+            "Tour",
+            "Étape 5",
+            "",
+            "2026-08-04",
+            "14:00",
+            "Pogacar 2.10",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+    board_service.toggle_selection(riche, True, migrated)
+
+    vue = session_service.build_view(session_id, migrated, thin_only=True)
+
+    # Le cyclisme n'a pas de referentiel : il n'est jamais « pauvre », et le
+    # retirer sur ce filtre serait un jugement plutot qu'une mesure.
+    assert [event.sport_key for _, events in vue.groups for event in events] == ["football"]

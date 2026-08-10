@@ -26,6 +26,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from statistics import median
+from typing import Any
 
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
@@ -785,7 +786,9 @@ def _late_fragment(matches: list[Match], start: datetime, settings: Settings) ->
 
 
 def ratings_by_key(
-    index: dict[str, set[str]], settings: Settings | None = None
+    index: dict[str, set[str]],
+    settings: Settings | None = None,
+    cache: dict[str, Any] | None = None,
 ) -> dict[tuple[str, str], float]:
     """Elo de chaque identite du fichier de resultats, indexee par circuit et cle.
 
@@ -800,6 +803,15 @@ def ratings_by_key(
     l'erreur silencieuse le jour ou deux homonymes apparaissent, et une ligne
     absente vaut mieux qu'une ligne fausse.
     """
+    # Ce rapprochement porte sur le **classement entier**, identique pour tous
+    # les matchs d'un lot : il resout treize mille noms par evenement, et c'est
+    # ce qui rendait la shortlist lente des que la densite l'a fait tourner sur
+    # chaque ligne. Le cache est fourni par l'appelant et vit le temps d'un lot —
+    # pas de memo global, dont l'invalidation apres un rafraichissement d'Elo
+    # serait a inventer.
+    if cache is not None and "ratings" in cache:
+        return cache["ratings"]
+
     found: dict[tuple[str, str], set[float]] = defaultdict(set)
     with connect(settings) as conn:
         rows = conn.execute(
@@ -808,7 +820,10 @@ def ratings_by_key(
     for row in rows:
         for key in resolve(row["player"], index):
             found[(str(row["tour"]).casefold(), key)].add(float(row["elo"]))
-    return {key: next(iter(values)) for key, values in found.items() if len(values) == 1}
+    ratings = {key: next(iter(values)) for key, values in found.items() if len(values) == 1}
+    if cache is not None:
+        cache["ratings"] = ratings
+    return ratings
 
 
 def _surface_fragment(player: str, matches: list[Match], surface: str) -> str:
@@ -903,6 +918,7 @@ def lines(
     commence_time: str,
     settings: Settings | None = None,
     competition_id: int | None = None,
+    cache: dict[str, Any] | None = None,
 ) -> list[tuple[str, str]]:
     """Lignes d'historique tennis, pretes pour `render_event`.
 
@@ -981,7 +997,7 @@ def lines(
 
     # Le niveau des adversaires suit immediatement la forme : c'est elle qu'il
     # corrige. Une seule lecture du classement sert les deux joueurs.
-    ratings = ratings_by_key(index, settings)
+    ratings = ratings_by_key(index, settings, cache)
     level = _pair(
         _level_fragment(home, recent[home], ratings),
         _level_fragment(away, recent[away], ratings),

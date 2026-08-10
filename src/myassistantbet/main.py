@@ -331,12 +331,15 @@ ENRICH_PROGRESS: dict[int, enrich_service.EnrichReport] = {}
 ENRICH_TASKS: set[asyncio.Task[None]] = set()
 
 
-def _shortlist_context(session_id: int) -> dict[str, object]:
+def _shortlist_context(
+    session_id: int, order: str = "time", thin_only: bool = False
+) -> dict[str, object]:
     settings = get_settings()
     return {
-        "view": session_service.build_view(session_id, settings),
+        "view": session_service.build_view(session_id, settings, order=order, thin_only=thin_only),
         "estimate": enrich_service.build_estimate(session_id, settings),
         "progress": ENRICH_PROGRESS.get(session_id),
+        "orders": session_service.SHORTLIST_ORDERS,
     }
 
 
@@ -349,7 +352,30 @@ def _require_session(session_id: int) -> None:
 def shortlist(request: Request, session_id: int) -> HTMLResponse:
     """Shortlist : les matchs coches, regroupes par sport."""
     _require_session(session_id)
-    return templates.TemplateResponse(request, "shortlist.html", _shortlist_context(session_id))
+    return templates.TemplateResponse(
+        request,
+        "shortlist.html",
+        _shortlist_context(
+            session_id,
+            str(request.query_params.get("order", "time")),
+            bool(request.query_params.get("thin_only")),
+        ),
+    )
+
+
+@app.get("/session/{session_id}/shortlist", response_class=HTMLResponse)
+def shortlist_fragment(request: Request, session_id: int) -> HTMLResponse:
+    """Fragment de la shortlist, recharge a chaque changement de tri ou de filtre."""
+    _require_session(session_id)
+    return templates.TemplateResponse(
+        request,
+        "_shortlist.html",
+        _shortlist_context(
+            session_id,
+            str(request.query_params.get("order", "time")),
+            bool(request.query_params.get("thin_only")),
+        ),
+    )
 
 
 def _grid_context(session_id: int, **extra: object) -> dict[str, object]:

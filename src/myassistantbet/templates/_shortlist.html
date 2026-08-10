@@ -4,6 +4,28 @@
 
   {% include "_enrich.html" %}
 
+  {# Un match dont l'enrichissement n'a rien rapporte a consomme son crédit pour
+     rien, et rien ne le signalait avant la génération du prompt. Il reste
+     sélectionnable — mais par choix explicite, pas par défaut. #}
+  {% if view.empty_context %}
+  <div class="report report-warn">
+    <b>{{ view.empty_context | length }} match(s) sans aucune ligne de contexte.</b>
+    L'enrichissement n'a rien rapporté sur eux : ni classement, ni forme, ni absents.
+    Leur bloc ne portera que des cotes.
+    <ul class="failures">
+      {% for event in view.empty_context %}
+      <li>
+        {{ event.competition }} · <b>{{ event.affiche }}</b>
+        <button type="button" class="link-danger"
+                title="Retirer de la sélection"
+                hx-post="/session/{{ view.session_id }}/events/{{ event.event_id }}/remove"
+                hx-target="#shortlist" hx-swap="outerHTML">retirer du lot</button>
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
   {% if view.count == 0 %}
     <p class="empty">Aucun match sélectionné. Retourne au board pour en cocher.</p>
   {% elif view.started_count %}
@@ -11,6 +33,33 @@
       {{ view.started_count }} match(s) déjà commencé(s) : gardés ici pour l'historique,
       mais exclus du prompt et de l'enrichissement.
     </p>
+  {% endif %}
+
+  {# Tri et filtre sur la densité : ils portent sur ce que le bloc contiendra,
+     la seule chose que la colonne « Marchés » ne dit pas. #}
+  {% if view.count %}
+  <div class="filters">
+    <label>
+      Ordre
+      <select name="order" hx-get="/session/{{ view.session_id }}/shortlist"
+              hx-include="[name='thin_only']" hx-target="#shortlist" hx-swap="outerHTML">
+        {% for key, label in orders.items() %}
+        <option value="{{ key }}" {% if key == view.order %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label class="inline">
+      <input type="checkbox" name="thin_only" value="1"
+             {% if view.thin_only %}checked{% endif %}
+             hx-get="/session/{{ view.session_id }}/shortlist"
+             hx-include="[name='order']" hx-target="#shortlist" hx-swap="outerHTML">
+      Seulement les blocs pauvres
+    </label>
+    <span class="muted small">
+      La densité compte les lignes du bloc CONTEXTE réellement peuplées, sur celles
+      qu'un match pleinement servi porte dans ce sport.
+    </span>
+  </div>
   {% endif %}
 
   {% for sport_label, events in view.groups %}
@@ -23,6 +72,7 @@
           <th>Compétition</th>
           <th>Affiche</th>
           <th>Marchés</th>
+          <th>Contexte</th>
           <th>Note perso</th>
           <th></th>
         </tr>
@@ -40,6 +90,12 @@
             <a href="/events/{{ event.event_id }}"
                class="badge {% if event.enriched %}ok{% endif %}"
                title="Voir toutes les cotes">{{ event.markets }}</a>
+          </td>
+          <td class="num">
+            <span class="badge {% if event.density.empty %}warn{% elif not event.density.thin and event.density.known %}ok{% endif %}"
+                  title="Lignes du bloc CONTEXTE peuplées sur celles attendues en {{ event.sport_label|lower }}">
+              {{ event.density.label }}
+            </span>
           </td>
           <td>
             <textarea name="note" rows="1" placeholder="injectée telle quelle dans le prompt"

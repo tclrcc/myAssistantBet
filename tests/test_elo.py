@@ -389,7 +389,11 @@ def test_le_football_n_est_pas_touche(migrated: Settings) -> None:
 
     event = renderable_events(session_id, migrated, NOW)[0]
 
-    assert [label for label, _ in event.context_lines] == []
+    labels = [label for label, _ in event.context_lines]
+    assert "Elo" not in labels and "Surface" not in labels
+    # Le bloc n'a **que** sa ligne de densite : sans contexte recupere, elle dit
+    # que rien n'a ete collecte plutot que de laisser lire un match sans histoire.
+    assert labels == ["Densite"]
 
 
 def test_le_prompt_interdit_la_conversion_en_probabilite(migrated: Settings) -> None:

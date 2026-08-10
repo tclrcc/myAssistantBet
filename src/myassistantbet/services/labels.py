@@ -128,7 +128,96 @@ CONTEXT_ICONS = {
     "Pelouse": "stade",
     "References": "lien",
     "Infos": "note",
+    # La densite du bloc lui-meme : combien de ses lignes ont ete peuplees. Une
+    # jauge, parce que c'est une mesure de remplissage et non une donnee sur le
+    # match — elle dit ce que la collecte a rapporte, pas ce que les equipes
+    # valent.
+    "Densite": "jauge",
 }
+
+
+#: Lignes de contexte qu'un match **pleinement servi** porte, par sport. C'est le
+#: denominateur de la densite affichee sur la shortlist.
+#:
+#: Mesure qui les fixe : sur 128 evenements de football en base, les blocs les
+#: mieux servis en portent 24 — Vasteras SK en Allsvenskan, Yunnan Yukun en Super
+#: League chinoise. Cote tennis, huit lignes sortent sur 100 % des 135 evenements
+#: et six autres sur la majorite.
+#:
+#: **Les lignes structurellement conditionnelles en sont exclues**, sans quoi
+#: chaque match paraitrait pauvre pour de mauvaises raisons :
+#:
+#:   · `Aller` n'existe que sur une manche retour, `Statut` que sur un report,
+#:     `Lieu` que sur une delocalisation, `Pelouse` que sur un synthetique ;
+#:   · `Compos` depend de l'**heure** — elles paraissent une heure avant le coup
+#:     d'envoi, et un match du lendemain n'en aura jamais a la generation ;
+#:   · `Effectif` est le substitut employe la ou `/injuries` ne couvre pas : le
+#:     compter ferait baisser la densite des matchs bien couverts ;
+#:   · `Stats match` est une ligne **negative** — elle dit que le fournisseur ne
+#:     publie rien — et la compter recompenserait une absence ;
+#:   · `Abandons` et `H2H ici` au tennis ne sortent que si le passe s'y prete.
+CONTEXT_EXPECTED: dict[str, tuple[str, ...]] = {
+    "football": (
+        "Classement",
+        "Enjeu",
+        "Forme 5",
+        "Dom/Ext",
+        "H2H",
+        "Absents",
+        "Repos",
+        "Buts marq.",
+        "Buts pris",
+        "Clean sheet",
+        "1re MT",
+        "Buts tard.",
+        "Cartons tps",
+        "Formations",
+        "Corners",
+        "Cartons",
+        "Tirs",
+        "Fautes",
+        "Possession",
+        "xG",
+        "Entraineur",
+        "Total buts",
+        "Serie",
+        "Calendrier",
+    ),
+    "tennis": (
+        "Elo",
+        "Surface",
+        "Forme",
+        "Profil",
+        "Marge",
+        "Niveau adv.",
+        "Usure",
+        "Precedent",
+        "Palmares",
+        "Tour",
+        "Repos",
+        "Parcours",
+        "Historique",
+        "H2H",
+    ),
+}
+
+
+def context_family(label: str) -> str:
+    """Libelle sans son compte : « H2H (5) » et « H2H (1) » sont la meme ligne.
+
+    Meme rapprochement que `context_icon`, et pour la meme raison : le nombre de
+    confrontations varie d'un match a l'autre, la ligne non.
+    """
+    return (label or "").split(" (")[0].strip()
+
+
+def expected_context(sport_key: str | None) -> tuple[str, ...]:
+    """Lignes attendues pour ce sport. Vide s'il n'a pas de referentiel.
+
+    Le cyclisme n'en a pas : ses trois lignes sont saisies a la main, et une
+    densite y mesurerait la saisie plutot que la collecte.
+    """
+    return CONTEXT_EXPECTED.get(sport_key or "", ())
 
 
 def context_icon(label: str) -> str:
