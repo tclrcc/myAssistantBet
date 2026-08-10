@@ -1017,3 +1017,20 @@ def test_un_seuil_hors_bornes_revient_au_defaut(migrated: Settings) -> None:
 
     save_threshold("combo_min_lot", "9999", migrated)
     assert threshold_value("combo_min_lot", migrated) == THRESHOLDS["combo_min_lot"].default
+
+
+def test_les_blocs_ne_sont_jamais_une_source(migrated: Settings) -> None:
+    """L'echelle definit le niveau 3 comme « statistiques de reference, feuilles
+    de match, ordre du jeu ». Or les blocs CONTEXTE **sont** des statistiques de
+    fournisseur : une selection qui ne repose que sur eux pouvait se declarer
+    `3` — plafond confiance 2 — ou `lecture` — plafond confiance 1, au hasard.
+
+    C'est precisement la comparaison que les colonnes Type et Source existent
+    pour mesurer. Sans arbitrage, elles ne mesurent rien.
+    """
+    corps = " ".join(build_prompt(_lot_de(migrated, 3), settings=migrated, now=NOW).body.split())
+
+    assert "**Les blocs de ce prompt ne sont jamais une source**" in corps
+    assert "est une `lecture`, quelle que soit la qualité du fournisseur" in corps
+    assert "une statistique que **ta recherche** a rapportée" in corps
+    assert "ces deux colonnes ne mesureraient plus rien" in corps
