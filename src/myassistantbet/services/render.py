@@ -95,6 +95,10 @@ class RenderableEvent:
     home: str
     away: str
     commence_local: datetime
+    #: Identifiant du match. Le rendu ne s'en sert pas — un bloc se lit sans —
+    #: mais le prompt archive ses matchs pour se donner un denominateur de taux
+    #: de selection, et il ne peut le faire qu'a partir de ce qu'il a rendu.
+    event_id: int = 0
     markets: dict[str, list[Outcome]] = field(default_factory=dict)
     #: Lignes de contexte deja formatees : (libelle, valeur). Alimentees en phase 3.
     context_lines: list[tuple[str, str]] = field(default_factory=list)

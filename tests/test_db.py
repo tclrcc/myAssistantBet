@@ -27,6 +27,7 @@ EXPECTED_TABLES = {
     "picks",
     "player_context",
     "preferences",
+    "prompt_events",
     "prompts",
     "schema_migrations",
     "session_events",

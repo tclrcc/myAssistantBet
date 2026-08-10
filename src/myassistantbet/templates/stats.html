@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_charts.html" import bars, card, tile, hero, mix %}
+{% from "_charts.html" import bars, card, tile, hero, mix, sessions %}
 {% block title %}Statistiques — MyAssistantBet{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -223,6 +223,95 @@
     {% with minimum_rows = analysis.minimum_rows %}
       {% include "_rates_note.html" %}
     {% endwith %}
+  </details>
+</section>
+{% endif %}
+
+{# Le seul bloc qui mesure le **tri** et non les sélections. Le prompt annonce
+   que passer est un résultat valable et attendu sur une partie du lot ; sans
+   dénominateur, cette phrase n'était ni vérifiable ni suivie.
+
+   Hors de « Ce que vaut l'analyse » à dessein : il ne décrit pas ce que valent
+   les sélections mais le geste qui les précède, comme « Comment tu étiquettes »
+   juste en dessous — et il ne dépend, comme lui, d'aucun résultat saisi. #}
+{% if analysis.by_session %}
+<section class="stats-block">
+  <div class="block-head">
+    <h2>Ce que tu écartes</h2>
+    <span class="muted small">
+      part du lot retenue — matchs sélectionnés / matchs entrés dans un prompt
+    </span>
+  </div>
+
+  <div class="charts">
+    <article class="chart-card">
+      <h3>Par session</h3>
+      {{ sessions(analysis.by_session) }}
+      <p class="chart-note">
+        Le lot est l'ensemble des matchs <strong>distincts</strong> entrés dans un
+        prompt de la session : régénérer le même lot ne le gonfle pas, il ne grossit
+        que lorsqu'un scan y ajoute un match. Ce n'est pas la shortlist, qui se vide
+        à mesure qu'on décoche — une session réelle porte 4 lignes de shortlist pour
+        29 sélections.
+        {% set anciennes = analysis.by_session | selectattr('reconstructed') | list %}
+        {% if anciennes %}
+          {{ anciennes | length }} session(s) sont marquées « reconstruit » : leur lot
+          n'a pas été enregistré à l'époque, il est recalculé depuis les prompts
+          archivés. Un match n'y figure que par son libellé, donc deux rencontres
+          homonymes le même jour n'en feraient qu'une.
+        {% endif %}
+      </p>
+    </article>
+  </div>
+
+  <details class="panel">
+    <summary>
+      Le détail par session
+      <span class="muted small">lot, retenus, passés, réussite, poids du prompt</span>
+    </summary>
+    <table class="board">
+      <thead>
+        <tr>
+          <th>Session</th>
+          <th>Sports</th>
+          <th class="num">Lot</th>
+          <th class="num">Retenus</th>
+          <th class="num">Passés</th>
+          <th class="num">Sélections</th>
+          <th class="num">Réussite</th>
+          <th class="num">Prompt</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in analysis.by_session %}
+        <tr>
+          <td>{{ row.day }}{% if row.reconstructed %}
+            <span class="muted small">reconstruit</span>{% endif %}</td>
+          <td class="small">{{ row.sports or '—' }}</td>
+          <td class="num">{{ row.lot if row.lot is not none else '—' }}</td>
+          <td class="num">{{ row.covered }}</td>
+          <td class="num">{{ row.passed if row.passed is not none else '—' }}</td>
+          <td class="num">{{ row.picks }}{% if row.outside %}
+            <span class="muted small">dont {{ row.outside }} hors lot</span>{% endif %}</td>
+          {# Même politique de petit effectif que partout : la réussite d'une
+             session est un taux, et une session courte n'en fait pas un. #}
+          <td class="num">
+            {%- if row.rates.settled %}{{ row.rates.won }}/{{ row.rates.settled }}
+              {%- if row.rates.thin %} <span class="muted small">peu</span>{% endif %}
+            {%- else %}—{% endif %}
+          </td>
+          <td class="num">{{ row.tokens or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="block-note">
+      « Passés » compte les matchs du lot qu'aucune sélection ne porte. « Hors lot »
+      compte l'inverse : une sélection rattachée à un match qui n'était dans aucun
+      prompt — le voisinage proposé au rattachement en offre. Les deux sont dits
+      plutôt que rabotés, et un « hors lot » nombreux signale un lot sous-enregistré
+      plutôt qu'une erreur de saisie.
+    </p>
   </details>
 </section>
 {% endif %}

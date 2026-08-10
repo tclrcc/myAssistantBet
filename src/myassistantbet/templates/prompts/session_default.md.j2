@@ -499,6 +499,19 @@ pas des angles : dis ce qu'ils changent sur un match précis, ou ne les cite pas
 {% endfor %}
 
 {% if not feedback.empty %}## CE QUE L'HISTORIQUE DIT
+{% if feedback.selection_line %}
+Part du lot que je sélectionne : **{{ feedback.selection_line }}**. Le reste est
+passé — un match vu, analysé, et laissé de côté.
+
+C'est un **constat sur mon tri, pas un quota**. Il ne te demande ni de passer
+davantage, ni de passer moins : écarter un match pour approcher un chiffre
+serait exactement l'erreur que ce prompt nomme ailleurs comme la plus coûteuse,
+remplir une case avec du vide. Il te dit seulement à quoi ressemble d'habitude
+la sortie, pour qu'un lot où tu sélectionnes tout, ou presque rien, se remarque
+et s'explique en une ligne plutôt que de passer inaperçu.
+
+Il ne se compare à aucune cote, comme le reste de ce bloc.
+{% endif %}
 {% if feedback.enough %}
 Taux de réussite de mes {{ feedback.settled }} dernières sélections tranchées,
 jouées ou non : gagnées / (gagnées + perdues). Les annulées et celles encore en

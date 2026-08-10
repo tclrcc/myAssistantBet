@@ -453,6 +453,57 @@ def test_prompt_sauvegarde_en_base(migrated: Settings) -> None:
     assert row["token_estimate"] == prompt.token_estimate > 0
 
 
+@respx.mock
+async def test_le_prompt_archive_les_matchs_qu_il_porte(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Le denominateur du taux de selection s'enregistre a la generation.
+
+    La shortlist ne peut pas le fournir : elle se vide a mesure qu'on decoche,
+    et une session reelle porte 4 lignes de shortlist pour 29 selections.
+    """
+    session_id = await _session_enrichie(odds_client, migrated, load_fixture, enrich=False)
+    prompt = build_prompt(session_id, settings=migrated, now=NOW)
+
+    prompt_id = save_prompt(session_id, prompt, migrated)
+
+    archives = {
+        row["event_id"]
+        for row in db.query(
+            "SELECT event_id FROM prompt_events WHERE prompt_id = ?",
+            (prompt_id,),
+            settings=migrated,
+        )
+    }
+    assert archives == set(prompt.event_ids)
+    assert len(archives) == prompt.blocks > 0
+
+
+@respx.mock
+async def test_regenerer_le_meme_lot_ne_le_gonfle_pas(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Le lot compte des **matchs**, pas des prompts.
+
+    C'est ce qui le rend juste sur une journee reelle : le 09/08, seize prompts
+    ont ete generes, et le lot ne doit valoir que le nombre de matchs distincts
+    qui y sont entres.
+    """
+    session_id = await _session_enrichie(odds_client, migrated, load_fixture, enrich=False)
+    prompt = build_prompt(session_id, settings=migrated, now=NOW)
+    for _ in range(3):
+        save_prompt(session_id, prompt, migrated)
+
+    lot = db.query_one(
+        "SELECT COUNT(DISTINCT pe.event_id) AS lot FROM prompts p "
+        "JOIN prompt_events pe ON pe.prompt_id = p.id WHERE p.session_id = ?",
+        (session_id,),
+        settings=migrated,
+    )["lot"]
+
+    assert lot == prompt.blocks
+
+
 # -- Contexte sportif dans le prompt ----------------------------------------
 
 

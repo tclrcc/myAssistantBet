@@ -456,6 +456,7 @@ def renderable_events(
             events.append(
                 RenderableEvent(
                     index=index,
+                    event_id=row["id"],
                     sport_key=row["sport_key"],
                     competition=row["competition"],
                     home=row["home"],

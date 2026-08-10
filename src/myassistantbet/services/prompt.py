@@ -134,6 +134,13 @@ class RenderedPrompt:
     #: Matchs de la session absents du prompt parce qu'ils ont commence. Une
     #: selection amputee en silence se remarquerait trop tard.
     started: list[str] = field(default_factory=list)
+    #: Les matchs que ce prompt porte vraiment. Archives avec lui, ils forment
+    #: le **denominateur du taux de selection** : sans eux, l'application
+    #: enregistrait ce qui avait ete selectionne et jamais ce qui avait ete
+    #: ecarte. La shortlist ne peut pas jouer ce role — elle se vide a mesure
+    #: qu'on decoche, et une session reelle porte 4 lignes de shortlist pour 29
+    #: selections.
+    event_ids: list[int] = field(default_factory=list)
 
     @property
     def token_estimate(self) -> int:
@@ -334,6 +341,7 @@ def build_prompt(
         body=_collapse_blank_lines(body),
         blocks=len(blocks),
         started=started_labels(session_id, settings, moment, competition_id),
+        event_ids=[event.event_id for event in events],
     )
 
 
@@ -352,6 +360,14 @@ def save_prompt(session_id: int, prompt: RenderedPrompt, settings: Settings | No
             ),
         )
         prompt_id = int(cursor.lastrowid)
+        # Les matchs partent avec le prompt : c'est ce qui donne au taux de
+        # selection son denominateur. La shortlist ne peut pas le fournir, elle
+        # se vide a mesure qu'on decoche — une session reelle porte 4 lignes de
+        # shortlist pour 29 selections, et son premier prompt en servait 12.
+        conn.executemany(
+            "INSERT OR IGNORE INTO prompt_events (prompt_id, event_id) VALUES (?, ?)",
+            [(prompt_id, event_id) for event_id in prompt.event_ids],
+        )
     logger.info(
         "Prompt genere pour la session %d : %d blocs, ~%d tokens",
         session_id,

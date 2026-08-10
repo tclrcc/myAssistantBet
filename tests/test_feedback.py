@@ -543,3 +543,115 @@ def test_le_prompt_exige_un_fait_date_pour_un_palier_haut(migrated: Settings) ->
     assert "fait nommé et daté" in corps
     assert "un favori qu'on n'a pas envie de jouer" in corps
     assert "Deux lignes qui tombent ensemble n'en font qu'une" in corps
+
+
+# -- Le taux de selection : ce que l'analyse ecarte --------------------------
+
+
+def _lot(settings: Settings, session_id: int, event_ids: list[int]) -> None:
+    """Archive un prompt portant ces matchs — le denominateur du taux."""
+    with db.connect(settings) as conn:
+        cursor = conn.execute(
+            "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+            "VALUES (?, 't', '', 10, '2026-08-04T10:00:00Z')",
+            (session_id,),
+        )
+        conn.executemany(
+            "INSERT INTO prompt_events (prompt_id, event_id) VALUES (?, ?)",
+            [(int(cursor.lastrowid), event_id) for event_id in event_ids],
+        )
+
+
+def _session_de_lot(settings: Settings, retenus: int, lot: int, jour: int = 4) -> int:
+    """Une session dont `lot` matchs sont entres au prompt, `retenus` selectionnes.
+
+    La session est creee explicitement : `toggle_selection` rend celle du jour,
+    si bien que trois appels d'affilee donneraient trois fois la meme.
+    """
+    with db.connect(settings) as conn:
+        session_id = int(
+            conn.execute(
+                "INSERT INTO sessions (label, created_at) VALUES (?, ?)",
+                (f"Session {jour}", f"2026-08-{jour:02d}T10:00:00Z"),
+            ).lastrowid
+        )
+    matchs = [_session_avec_match(settings)[1] for _ in range(lot)]
+    _lot(settings, session_id, matchs)
+    for event_id in matchs[:retenus]:
+        _regle(settings, session_id, event_id, "safe", "win")
+    return session_id
+
+
+def test_le_taux_de_selection_median_entre_dans_le_prompt(migrated: Settings) -> None:
+    """L'application enregistrait ce qui avait ete selectionne, jamais ce qui
+    avait ete ecarte. Le prompt annonce pourtant que passer est un resultat
+    valable et attendu sur une partie du lot : sans denominateur, cette phrase
+    n'etait ni verifiable ni suivie."""
+    for jour, (retenus, lot) in enumerate(((1, 4), (2, 4), (3, 4)), start=4):
+        _session_de_lot(migrated, retenus, lot, jour)
+
+    report = feedback(migrated)
+
+    assert report.selection_median == 0.5, "la mediane de 25, 50 et 75 %"
+    assert report.selection_sessions == 3
+    assert report.selection_line == "50 % en médiane, sur 3 sessions"
+
+
+def test_la_mediane_ignore_les_sessions_sans_lot(migrated: Settings) -> None:
+    """Une session qui n'a genere aucun prompt n'a rien soumis a l'analyse."""
+    for jour, (retenus, lot) in enumerate(((1, 4), (2, 4), (3, 4)), start=4):
+        _session_de_lot(migrated, retenus, lot, jour)
+    _session_avec_match(migrated)
+
+    assert feedback(migrated).selection_sessions == 3
+
+
+def test_sous_trois_sessions_aucune_mediane(migrated: Settings) -> None:
+    """Une mediane sur deux valeurs est la moyenne des deux, sur une seule c'est
+    cette session-la. Meme regle que partout : un chiffre faux oriente plus
+    surement que pas de chiffre du tout."""
+    for jour, (retenus, lot) in enumerate(((1, 4), (3, 4)), start=4):
+        _session_de_lot(migrated, retenus, lot, jour)
+
+    report = feedback(migrated)
+
+    assert report.selection_median is None
+    assert report.selection_line == ""
+
+
+def test_la_mediane_survit_au_manque_de_recul_sur_les_resultats(migrated: Settings) -> None:
+    """Les trois garde-fous du bloc protegent des **taux de reussite**.
+
+    Celui-ci decrit un comportement — comment je trie — et une part de lot ne
+    devient pas trompeuse parce que les resultats manquent. Meme exemption que
+    `labelling()` sur la page.
+    """
+    for jour, (retenus, lot) in enumerate(((1, 4), (2, 4), (3, 4)), start=4):
+        _session_de_lot(migrated, retenus, lot, jour)
+
+    report = feedback(migrated)
+
+    assert not report.enough, "trop peu de recul pour publier des taux"
+    assert report.by_tier == [], "et rien n'est publie de ce cote"
+    assert report.selection_line, "mais le tri, lui, se dit"
+
+
+def test_le_prompt_presente_le_taux_de_selection_comme_un_constat(migrated: Settings) -> None:
+    """Un quota de passes ferait ecarter un match pour remplir un compte —
+    l'erreur que le prompt nomme ailleurs comme la plus couteuse."""
+    for jour, (retenus, lot) in enumerate(((1, 4), (2, 4), (3, 4)), start=4):
+        session_id = _session_de_lot(migrated, retenus, lot, jour)
+
+    corps = " ".join(build_prompt(session_id, settings=migrated, now=NOW).body.split())
+
+    assert "Part du lot que je sélectionne" in corps
+    assert "50 % en médiane, sur 3 sessions" in corps
+    assert "constat sur mon tri, pas un quota" in corps
+    assert "Il ne se compare à aucune cote" in corps
+
+
+def test_le_taux_de_selection_ne_produit_aucun_champ_financier() -> None:
+    """Meme garde-fou que le reste du bloc (SPEC.md section 9)."""
+    noms = {field.name for field in fields(Feedback)}
+
+    assert not noms & {"roi", "profit", "stake", "mise", "gain", "bankroll"}

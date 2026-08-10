@@ -22,6 +22,7 @@ from myassistantbet.services.history import (
     FEEDBACK_MIN_TOTAL,
     Analysis,
     HistoryError,
+    Lot,
     _overlaps,
     add_pick,
     analysis,
@@ -30,6 +31,7 @@ from myassistantbet.services.history import (
     list_picks,
     list_sessions,
     load_bands,
+    lots,
     pickable_events,
     pickable_groups,
     required_sample,
@@ -1709,6 +1711,152 @@ def test_le_taux_global_reunit_joue_et_ecarte(migrated: Settings) -> None:
 
     assert (report.overall.won, report.overall.lost) == (1, 1)
     assert report.overall.won == report.played.won + report.skipped.won
+
+
+# -- Ce que j'ecarte : le lot d'une session ---------------------------------
+
+
+def _prompt_sur(settings: Settings, session_id: int, event_ids: list[int], body: str = "") -> int:
+    """Archive un prompt portant ces matchs-la."""
+    with db.connect(settings) as conn:
+        cursor = conn.execute(
+            "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+            "VALUES (?, 'session_default.md.j2', ?, 1000, '2026-08-04T10:00:00Z')",
+            (session_id, body),
+        )
+        prompt_id = int(cursor.lastrowid)
+        conn.executemany(
+            "INSERT INTO prompt_events (prompt_id, event_id) VALUES (?, ?)",
+            [(prompt_id, event_id) for event_id in event_ids],
+        )
+    return prompt_id
+
+
+def test_le_lot_est_l_union_des_matchs_entres_dans_un_prompt(migrated: Settings) -> None:
+    """Deux prompts par competition ne decrivent pas deux lots, mais un seul.
+
+    Un maximum par prompt ne verrait que le plus gros morceau : sur une session
+    scindee en 12 matchs de football et 18 de tennis, il annoncerait 18 la ou
+    l'analyse en a vu 30.
+    """
+    session_id, premier = _session_avec_match(migrated, "football")
+    _, second = _session_avec_match(migrated, "tennis")
+    _prompt_sur(migrated, session_id, [premier])
+    _prompt_sur(migrated, session_id, [second])
+    # Une regeneration a l'identique : elle ne doit rien ajouter.
+    _prompt_sur(migrated, session_id, [premier, second])
+
+    assert lots(migrated)[session_id] == Lot(size=2, reconstructed=False)
+
+
+def test_une_session_sans_prompt_n_a_pas_de_lot(migrated: Settings) -> None:
+    """Rien n'a ete soumis a l'analyse : lui preter un lot de zero inventerait
+    un taux de selection la ou il n'y a pas de mesure."""
+    session_id, _ = _session_avec_match(migrated)
+
+    assert session_id not in lots(migrated)
+    ligne = next(row for row in analysis(migrated).by_session if row.session_id == session_id)
+    assert (ligne.lot, ligne.selection_rate, ligne.passed) == (None, None, None)
+
+
+def test_un_lot_ancien_se_reconstruit_depuis_le_corps_archive(migrated: Settings) -> None:
+    """L'information dormait deja en base : les corps de prompts sont stockes.
+
+    Les prompts anterieurs a `prompt_events` n'ont aucune ligne de rattachement,
+    et leur lot serait sinon perdu — donc tout l'historique deviendrait muet sur
+    le seul chiffre que cette phase installe.
+    """
+    session_id, _ = _session_avec_match(migrated)
+    corps = (
+        "## MATCHS\n"
+        "### M1 · FOOT · Eredivisie · Sparta – Feyenoord · 09/08 12:15\n"
+        "### M2 · FOOT · Super League · Henan – Qingdao · 09/08 13:00\n"
+    )
+    suite = "### M1 · FOOT · Super League · Henan – Qingdao · 09/08 13:00\n"
+    with db.connect(migrated) as conn:
+        for body in (corps, suite):
+            conn.execute(
+                "INSERT INTO prompts (session_id, template_name, body, token_estimate, "
+                "created_at) VALUES (?, 't', ?, 10, '2026-08-04T10:00:00Z')",
+                (session_id, body),
+            )
+
+    # Deux matchs distincts : le second prompt renumerote Henan en M1, et c'est
+    # bien l'identite du match — pas son numero de bloc — qui les rapproche.
+    assert lots(migrated)[session_id] == Lot(size=2, reconstructed=True)
+
+
+def test_un_lot_enregistre_prime_sur_la_reconstruction(migrated: Settings) -> None:
+    """Sinon une session mi-ancienne mi-nouvelle compterait ses matchs deux fois."""
+    session_id, event_id = _session_avec_match(migrated)
+    _prompt_sur(migrated, session_id, [event_id], body="### M1 · FOOT · X · A – B · 09/08 12:15\n")
+
+    assert lots(migrated)[session_id] == Lot(size=1, reconstructed=False)
+
+
+def test_une_session_sans_selection_reste_visible_avec_zero(migrated: Settings) -> None:
+    """C'est le cas le plus interessant du bloc : un lot entierement passe.
+
+    Il existe dans l'historique reel — 0 selection sur 34 matchs — et le retirer
+    ferait disparaitre la seule session ou le tri a vraiment trie.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    _prompt_sur(migrated, session_id, [event_id])
+
+    ligne = next(row for row in analysis(migrated).by_session if row.session_id == session_id)
+
+    assert (ligne.lot, ligne.covered, ligne.passed) == (1, 0, 1)
+    assert ligne.selection_rate == 0.0
+
+
+def test_deux_selections_sur_un_match_ne_font_qu_un_match_retenu(migrated: Settings) -> None:
+    """« Ai-je passe ce match ? » se compte en matchs, jamais en lignes.
+
+    Sans cette regle, le taux de selection depasserait cent pour cent des qu'un
+    match porte un vainqueur et un total — ce qui arrive sur un lot sur trois.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    _, autre = _session_avec_match(migrated)
+    _prompt_sur(migrated, session_id, [event_id, autre])
+    _propose(migrated, session_id, event_id, "safe", "win", market="Vainqueur")
+    _propose(migrated, session_id, event_id, "fun", "loss", market="O/U")
+
+    ligne = next(row for row in analysis(migrated).by_session if row.session_id == session_id)
+
+    assert (ligne.picks, ligne.covered, ligne.lot) == (2, 1, 2)
+    assert ligne.selection_rate == 0.5
+
+
+def test_une_selection_hors_lot_est_dite_jamais_rabotee(migrated: Settings) -> None:
+    """Le voisinage propose au rattachement offre des matchs hors du lot.
+
+    Les compter au numerateur donnerait un taux au-dessus de cent ; les jeter
+    ferait disparaitre une selection reelle. Ils sont donc comptes a part.
+    """
+    session_id, dans_le_lot = _session_avec_match(migrated)
+    _, dehors = _session_avec_match(migrated)
+    _prompt_sur(migrated, session_id, [dans_le_lot])
+    _propose(migrated, session_id, dans_le_lot, "safe", "win")
+    _propose(migrated, session_id, dehors, "safe", "win")
+
+    ligne = next(row for row in analysis(migrated).by_session if row.session_id == session_id)
+
+    assert (ligne.lot, ligne.covered, ligne.outside) == (1, 2, 1)
+    assert ligne.passed == 0, "aucun match du lot n'a ete passe"
+
+
+def test_le_bloc_par_session_est_affiche(client: TestClient, isolated_settings: Settings) -> None:
+    session_id, event_id = _session_avec_match(isolated_settings)
+    _, passe = _session_avec_match(isolated_settings)
+    _prompt_sur(isolated_settings, session_id, [event_id, passe])
+    _propose(isolated_settings, session_id, event_id, "safe", "win")
+
+    page = " ".join(client.get("/stats").text.split())
+
+    assert "Ce que tu écartes" in page
+    assert "Par session" in page
+    assert "50 %" in page
+    assert "matchs entrés dans un prompt" in page
 
 
 # -- Graphiques de la page statistiques -------------------------------------

@@ -1360,6 +1360,55 @@ l'avait franchi depuis des mois sans que rien ne bronche.
   panne exacte qui a fait echouer la premiere version de cette fixture. Un
   enrichissement complet se simule donc de bout en bout avec `DOSSIER_RATE_HEADERS`.
 
+## Le lot d'une session, et ce qu'elle en a ecarte (`prompt_events`)
+
+L'application enregistrait ce qui avait ete **selectionne**, jamais ce qui avait ete
+**ecarte**. Le prompt annonce pourtant que passer est un resultat valable et attendu sur
+une partie du lot : sans denominateur, cette phrase n'etait ni verifiable ni suivie.
+
+- **`session_events` ne peut pas tenir ce role, et ce n'est pas un oubli** : c'est la
+  shortlist **courante**, elle se vide a mesure qu'on decoche. Mesure sur les donnees
+  reelles — la session du 09/08 porte 4 lignes de shortlist pour 29 selections sur 29
+  matchs distincts, et son premier prompt en servait 12. La shortlist decrit ou en est le
+  board, pas ce qui a ete analyse.
+- Le lot est donc l'**union des matchs entres dans un prompt**, enregistree par
+  `prompt_events` au moment de l'archivage. **Compter des matchs et non des prompts** est
+  ce qui la rend juste : regenerer vingt fois le meme lot ne l'agrandit pas d'une ligne,
+  il ne grossit que lorsqu'un match nouveau apparait — ce que le scan fait plusieurs fois
+  par jour.
+  - Un maximum par prompt ne suffirait pas : un prompt restreint a une competition n'en
+    verrait que le plus gros morceau, et l'union reconstitue le lot entier. Mesure : sur
+    la session du 09/08, seize prompts de 3 a 12 blocs, pour 57 matchs distincts.
+  - Limite assumee : un prompt genere puis jamais colle dans Claude compte quand meme ses
+    matchs comme passes. Aucune donnee ne permet de le savoir, et un bouton « celui-ci
+    part » ferait dependre toute la mesure d'un geste qu'on oublie.
+- **Les sessions anterieures a cette table reconstruisent leur lot a la lecture**, depuis
+  les corps de prompts archives (`_BLOCK_HEADER`). L'information dormait deja en base :
+  les corps sont stockes depuis toujours, personne ne les lisait. Elles sont **marquees
+  « reconstruit »** — un match n'y figure que par son libelle, donc deux rencontres
+  homonymes le meme jour n'en feraient qu'une. Ce chemin s'eteint de lui-meme, la requete
+  ne rendant plus aucune ligne des que chaque session a son enregistrement.
+- **Le taux de selection se compte en matchs, jamais en lignes** : deux selections sur la
+  meme rencontre sont un match retenu, pas deux. Sans cette regle il depasserait cent
+  pour cent des qu'un match porte un vainqueur et un total.
+  - Une selection rattachee a un match **hors du lot** — le voisinage de
+    `pickable_events` en offre — est comptee a part (`outside`) et jamais rabotee : elle
+    signale soit un rattachement au voisinage, soit un lot sous-enregistre.
+  - Une session **sans aucune selection garde sa ligne** (0 sur 34 dans l'historique
+    reel) : c'est la seule ou le tri a vraiment trie, et la retirer la ferait disparaitre.
+  - Une session **sans prompt n'a pas de lot du tout**, et surtout pas un lot de zero :
+    rien n'a ete soumis a l'analyse, et un taux de selection y serait invente.
+- **Le bloc du prompt echappe aux trois garde-fous de `feedback()`**, et c'est delibere :
+  eux protegent des **taux de reussite**, qui mesurent des issues. Une part de lot decrit
+  un **comportement** et ne devient pas trompeuse parce que les resultats manquent — meme
+  exemption que `labelling()` sur la page. Seul `FEEDBACK_MIN_SESSIONS` (3) le garde : en
+  dessous, « mediane » ne decrit pas autre chose que l'echantillon entier.
+  - **Mediane et non moyenne** : une session ou l'on n'a rien retenu tirerait la moyenne
+    vers une prudence qui n'existe pas le reste du temps.
+  - Le template le presente comme un **constat, jamais un quota**. Se fixer une part de
+    passes ferait ecarter un match pour remplir un compte — l'erreur que le prompt nomme
+    ailleurs comme la plus couteuse. Un test verifie que la phrase y est.
+
 ## Ce qui nourrit le prompt en dehors des cotes
 
 Trois sources locales, relues a chaque generation : aucun appel reseau, aucun credit,

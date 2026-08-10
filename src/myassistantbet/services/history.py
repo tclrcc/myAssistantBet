@@ -477,6 +477,78 @@ def list_sessions(settings: Settings | None = None) -> list[SessionSummary]:
     ]
 
 
+#: Un en-tete de bloc de match dans un prompt archive : `### M12 · TENNIS · …`.
+#: Sert **uniquement** a reconstruire le lot des sessions anterieures a la table
+#: `prompt_events`. Ce que le motif capture est l'identite du match — sport,
+#: competition, affiche, heure — et non le numero de bloc, qui change d'une
+#: generation a l'autre pour un meme match.
+_BLOCK_HEADER = re.compile(r"^### M\d+ · (.+)$", re.MULTILINE)
+
+
+@dataclass
+class Lot:
+    """Les matchs soumis a l'analyse au cours d'une session.
+
+    Ce n'est **pas** la shortlist : celle-ci decrit ou en est le board et se
+    vide a mesure qu'on decoche. Mesure sur les donnees reelles — la session du
+    09/08 porte 4 lignes de shortlist pour 29 selections, et son premier prompt
+    en servait 12.
+
+    C'est l'**union des matchs entres dans un prompt**. Compter des matchs et
+    non des prompts est ce qui rend la grandeur juste : regenerer vingt fois le
+    meme lot ne l'agrandit pas d'une ligne, il ne grossit que lorsqu'un match
+    nouveau apparait — ce que le scan fait plusieurs fois par jour.
+    """
+
+    size: int
+    #: Lot recalcule depuis les corps de prompts archives, faute d'avoir ete
+    #: enregistre a la generation. Dit plutot que tu : c'est la meme grandeur,
+    #: mais elle n'a pas la meme garantie — un match ne figure dans le corps
+    #: que par son libelle, et deux rencontres homonymes le meme jour n'en
+    #: feraient qu'une. Ce chemin s'eteint de lui-meme.
+    reconstructed: bool = False
+
+
+def lots(settings: Settings | None = None) -> dict[int, Lot]:
+    """Taille du lot analyse, par session.
+
+    Deux origines, et la seconde se retire d'elle-meme : ce que `prompt_events`
+    a enregistre, et — pour les sessions anterieures a cette table — ce que les
+    corps de prompts archives permettent de recompter. La reconstruction n'est
+    pas une invention : l'information dormait deja en base, elle n'etait juste
+    lue par personne.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        recorded = {
+            int(row["session_id"]): int(row["lot"])
+            for row in conn.execute(
+                "SELECT p.session_id, COUNT(DISTINCT pe.event_id) AS lot "
+                "FROM prompts p JOIN prompt_events pe ON pe.prompt_id = p.id "
+                "GROUP BY p.session_id"
+            )
+        }
+        # Les corps ne sont relus que pour les sessions qui n'ont rien
+        # d'enregistre : sur une base entierement passee a `prompt_events`,
+        # cette requete ne rend aucune ligne et rien n'est parcouru.
+        archived = conn.execute(
+            "SELECT p.session_id, p.body FROM prompts p "
+            "WHERE p.session_id NOT IN ("
+            "  SELECT DISTINCT session_id FROM prompts WHERE id IN ("
+            "    SELECT prompt_id FROM prompt_events))"
+        ).fetchall()
+
+    found = {session_id: Lot(size=size) for session_id, size in recorded.items()}
+    rebuilt: dict[int, set[str]] = {}
+    for row in archived:
+        rebuilt.setdefault(int(row["session_id"]), set()).update(
+            _BLOCK_HEADER.findall(row["body"] or "")
+        )
+    for session_id, matches in rebuilt.items():
+        found[session_id] = Lot(size=len(matches), reconstructed=True)
+    return found
+
+
 def list_prompts(session_id: int, settings: Settings | None = None) -> list[dict[str, Any]]:
     """Prompts generes pour une session, du plus recent au plus ancien."""
     settings = settings or get_settings()
@@ -1105,6 +1177,66 @@ ANALYSIS_MIN_MARKET = 2
 
 
 @dataclass
+class SessionRate:
+    """Une session : ce qu'elle a vu, ce qu'elle a retenu, ce que ca a donne.
+
+    Le seul bloc de la page qui mesure le **tri** plutot que les selections.
+    Passer est annonce par le prompt comme un resultat valable et attendu sur
+    une partie du lot ; sans denominateur, cette phrase n'etait ni verifiable
+    ni suivie.
+    """
+
+    session_id: int
+    label: str
+    day: str
+    #: Sports du lot, tels qu'ils titrent la ligne. Resolus a la lecture depuis
+    #: les matchs, jamais recopies sur la session : reclasser un sport ou
+    #: corriger un rattachement doit se voir ici sans reprise de donnees.
+    sports: str = ""
+    #: Matchs entres dans un prompt. `None` quand la session n'en a genere
+    #: aucun : elle n'a rien soumis a l'analyse, et lui preter un lot de zero
+    #: ferait lire un taux de selection la ou il n'y a pas de mesure.
+    lot: int | None = None
+    reconstructed: bool = False
+    #: Matchs distincts portant au moins une selection. C'est **lui** et non le
+    #: nombre de lignes qui repond a « ai-je passe ce match ? » : deux
+    #: selections sur la meme rencontre sont un match retenu, pas deux.
+    covered: int = 0
+    picks: int = 0
+    rates: RateRow = field(default_factory=lambda: RateRow("session", ""))
+    #: Le prompt le plus lourd de la session. Sert de garde-fou de poids, pas
+    #: de mesure de qualite.
+    tokens: int = 0
+
+    @property
+    def selection_rate(self) -> float | None:
+        return None if not self.lot else self.covered / self.lot
+
+    @property
+    def selection_label(self) -> str:
+        return "—" if self.selection_rate is None else f"{self.selection_rate * 100:.0f} %"
+
+    @property
+    def passed(self) -> int | None:
+        """Matchs du lot qu'aucune selection ne porte — le PASSE, enfin compte.
+
+        Jamais negatif : une selection rattachee a un match hors du lot — le
+        voisinage propose au rattachement en offre — fait monter `covered`
+        au-dela du lot sans qu'aucun match n'ait ete passe.
+        """
+        return None if self.lot is None else max(0, self.lot - self.covered)
+
+    @property
+    def outside(self) -> int:
+        """Selections portant sur un match absent du lot.
+
+        Dites plutot que rabotees : elles signalent soit un rattachement au
+        voisinage, soit un lot sous-enregistre, et les deux meritent d'etre vus.
+        """
+        return 0 if self.lot is None else max(0, self.covered - self.lot)
+
+
+@dataclass
 class Analysis:
     """Ce que vaut l'analyse, jouee ou non.
 
@@ -1143,6 +1275,12 @@ class Analysis:
     #: tout le football est reste invisible cent paris durant.
     uncategorised: int = 0
     by_market: list[RateRow] = field(default_factory=list)
+    #: Une ligne par session, la plus recente d'abord. Tenu hors de `groups` :
+    #: les autres axes decoupent **les selections**, celui-ci decoupe le
+    #: **travail**, et il porte une grandeur qu'aucun autre ne porte — le taux
+    #: de selection. Le passer au detecteur de recouvrement n'aurait rien dit :
+    #: une session ne recouvre par construction aucun palier ni aucun sport.
+    by_session: list[SessionRate] = field(default_factory=list)
     played: RateRow = field(default_factory=lambda: RateRow("played", "Jouées"))
     skipped: RateRow = field(default_factory=lambda: RateRow("skipped", "Écartées"))
     #: Marches ecartes faute d'echantillon. Annonce plutot que tue en silence.
@@ -1494,6 +1632,54 @@ def _rate_tally(entries: list[tuple[str, str, str, Any]], minimum: int = 1) -> l
     return [row for row in grouped.values() if row.settled >= minimum]
 
 
+def _by_session(
+    sessions: list[Any],
+    picks: list[Any],
+    known: dict[int, Lot],
+    sport_labels: dict[str, str],
+    tz: str,
+) -> list[SessionRate]:
+    """Une ligne par session : le lot vu, les matchs retenus, ce que ca a donne.
+
+    Les sessions sans lot connu sont **gardees et marquees**, jamais retirees :
+    une session qui n'a genere aucun prompt n'a rien soumis a l'analyse, et la
+    faire disparaitre laisserait croire qu'elle n'a pas eu lieu.
+    """
+    grouped: dict[int, list[Any]] = {}
+    for row in picks:
+        grouped.setdefault(int(row["session_id"]), []).append(row)
+
+    found = []
+    for row in sessions:
+        session_id = int(row["id"])
+        lot = known.get(session_id)
+        mine = grouped.get(session_id, [])
+        # Le lot dit les sports quand il est enregistre ; sinon les selections
+        # les disent, ce qui rate seulement une session ou l'on n'a rien retenu.
+        # Les deux valent mieux qu'une colonne vide sur tout l'historique.
+        sports = [name for name in (row["sports"] or "").split(",") if name] or sorted(
+            {sport_labels[key] for pick in mine if (key := pick["sport_key"]) in sport_labels}
+        )
+        entry = SessionRate(
+            session_id=session_id,
+            label=row["label"] or f"Session {session_id}",
+            day=_local(row["created_at"], tz).strftime("%d/%m"),
+            sports=" · ".join(sports),
+            lot=None if lot is None else lot.size,
+            reconstructed=bool(lot and lot.reconstructed),
+            # Les matchs distincts, et non les lignes : deux selections sur la
+            # meme rencontre sont un match retenu, pas deux.
+            covered=len({row["event_id"] for row in mine if row["event_id"]}),
+            picks=len(mine),
+            rates=RateRow(key=str(session_id), label=f"Session {session_id}"),
+            tokens=int(row["tokens"] or 0),
+        )
+        for pick in mine:
+            _count(entry.rates, pick["result"] or "pending", pick)
+        found.append(entry)
+    return found
+
+
 def analysis(settings: Settings | None = None) -> Analysis:
     """Taux de reussite de **toutes** les selections, jouees ou non.
 
@@ -1516,14 +1702,26 @@ def analysis(settings: Settings | None = None) -> Analysis:
             for row in conn.execute("SELECT level, low, high FROM confidence_bands")
         }
         rows = conn.execute(
-            "SELECT k.id, k.tier, k.result, k.market, k.confidence, k.played, k.event_id, "
-            "       k.created_at, k.price, s.key AS sport_key, c.category FROM picks k "
+            "SELECT k.id, k.session_id, k.tier, k.result, k.market, k.confidence, k.played, "
+            "       k.event_id, k.created_at, k.price, s.key AS sport_key, c.category FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
             "LEFT JOIN competitions c ON c.id = e.competition_id"
         ).fetchall()
+        sessions = conn.execute(
+            "SELECT s.id, s.label, s.created_at, "
+            "  (SELECT COALESCE(MAX(p.token_estimate), 0) FROM prompts p "
+            "     WHERE p.session_id = s.id) AS tokens, "
+            "  (SELECT GROUP_CONCAT(DISTINCT sp.label) FROM prompts p "
+            "     JOIN prompt_events pe ON pe.prompt_id = p.id "
+            "     JOIN events ev ON ev.id = pe.event_id "
+            "     JOIN sports sp ON sp.id = ev.sport_id "
+            "     WHERE p.session_id = s.id) AS sports "
+            "FROM sessions s ORDER BY s.created_at DESC, s.id DESC"
+        ).fetchall()
 
     report = Analysis()
+    report.by_session = _by_session(sessions, rows, lots(settings), sport_labels, settings.tz)
     if not rows:
         return report
 
@@ -1637,6 +1835,15 @@ def analysis(settings: Settings | None = None) -> Analysis:
 #: d'une autre saison, d'autres competitions et d'une autre facon de jouer.
 FEEDBACK_WINDOW = 60
 
+#: Sessions sur lesquelles se lit le taux de selection median injecte au prompt.
+FEEDBACK_SESSIONS = 10
+
+#: Sous ce nombre de sessions dotees d'un lot, aucun taux de selection n'est
+#: publie. Meme regle que partout : une mediane sur deux valeurs est la moyenne
+#: des deux, et sur une seule c'est cette session-la. Trois est le premier
+#: nombre ou le mot « mediane » decrit autre chose que l'echantillon entier.
+FEEDBACK_MIN_SESSIONS = 3
+
 # Les trois seuils de publication — volume, ligne, etalement — vivent avec ceux
 # de la page, plus haut : ils sont communs aux deux surfaces.
 
@@ -1698,11 +1905,40 @@ class Feedback:
     by_category: list[FeedbackRow] = field(default_factory=list)
     by_competition: list[FeedbackRow] = field(default_factory=list)
     by_market: list[FeedbackRow] = field(default_factory=list)
+    #: Part mediane du lot effectivement selectionnee sur les dernieres
+    #: sessions. C'est la seule grandeur du bloc qui ne parle pas de resultats
+    #: mais du **tri** : le prompt annonce que passer est un resultat valable et
+    #: attendu sur une partie du lot, et rien ne disait jusqu'ici ce qu'il en
+    #: etait. Elle se donne comme un constat, jamais comme un objectif — se
+    #: fixer un quota de passes ferait ecarter un match pour remplir un compte.
+    selection_median: float | None = None
+    #: Sessions derriere cette mediane. Le compte accompagne toujours le taux.
+    selection_sessions: int = 0
 
     @property
     def empty(self) -> bool:
-        """Aucun pari tranche : le bloc disparait entierement du prompt."""
-        return self.settled == 0
+        """Rien a dire du tout : le bloc disparait entierement du prompt.
+
+        Le taux de selection entre dans la condition parce qu'il ne depend
+        d'aucun resultat : une installation qui a monte trois sessions sans
+        encore saisir un seul resultat a bien quelque chose a dire sur son tri.
+        """
+        return self.settled == 0 and self.selection_median is None
+
+    @property
+    def selection_line(self) -> str:
+        """« 36 % en médiane, sur 6 sessions ». Vide sous le seuil.
+
+        Le compte accompagne le taux, comme partout ailleurs : une mediane sur
+        trois sessions et une mediane sur trente ne disent pas la meme chose.
+        """
+        if self.selection_median is None:
+            return ""
+        pluriel = "s" if self.selection_sessions > 1 else ""
+        return (
+            f"{self.selection_median * 100:.0f} % en médiane, "
+            f"sur {self.selection_sessions} session{pluriel}"
+        )
 
     @property
     def enough(self) -> bool:
@@ -1743,6 +1979,46 @@ def _feedback_tally(entries: list[tuple[str, str, str]]) -> list[FeedbackRow]:
         else:
             row.lost += 1
     return [row for row in grouped.values() if row.settled >= FEEDBACK_MIN_ROWS]
+
+
+def _selection_median(settings: Settings) -> tuple[float | None, int]:
+    """Part mediane du lot selectionnee sur les `FEEDBACK_SESSIONS` dernieres.
+
+    La mediane et non la moyenne : une session ou l'on n'a rien retenu — il y en
+    a une dans l'historique reel, 0 sur 34 — tirerait une moyenne vers le bas
+    au point de decrire une prudence qui n'existe pas le reste du temps.
+
+    Seules les sessions **dotees d'un lot** comptent : une session qui n'a
+    genere aucun prompt n'a rien soumis a l'analyse, et lui preter un lot de
+    zero inventerait un taux.
+    """
+    known = lots(settings)
+    if not known:
+        return None, 0
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT s.id, "
+            "  (SELECT COUNT(DISTINCT k.event_id) FROM picks k "
+            "     WHERE k.session_id = s.id AND k.event_id IS NOT NULL) AS covered "
+            "FROM sessions s ORDER BY s.created_at DESC, s.id DESC LIMIT ?",
+            (FEEDBACK_SESSIONS,),
+        ).fetchall()
+
+    # Borne a 1 : une selection rattachee a un match hors du lot — le voisinage
+    # propose au rattachement en offre — ferait sinon une part de lot au-dessus
+    # de cent pour cent, qui ne veut rien dire. La page, elle, montre l'ecart.
+    parts = sorted(
+        min(1.0, int(row["covered"]) / lot.size)
+        for row in rows
+        if (lot := known.get(int(row["id"]))) and lot.size
+    )
+    if len(parts) < FEEDBACK_MIN_SESSIONS:
+        return None, len(parts)
+    middle = len(parts) // 2
+    median = (
+        parts[middle] if len(parts) % 2 else (parts[middle - 1] + parts[middle]) / 2  # noqa: E501
+    )
+    return median, len(parts)
 
 
 def feedback(settings: Settings | None = None, played_only: bool = False) -> Feedback:
@@ -1788,6 +2064,13 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
         settled=len(rows),
         days=len({str(row["created_at"])[:10] for row in rows}),
     )
+    # Le taux de selection est publie **hors** des trois garde-fous ci-dessous,
+    # et ce n'est pas un oubli : eux protegent des taux de reussite, qui
+    # mesurent des issues. Celui-ci decrit un comportement — comment je trie —
+    # et une part du lot ne devient pas trompeuse parce que les resultats
+    # manquent. Meme exemption que `labelling()` sur la page.
+    report.selection_median, report.selection_sessions = _selection_median(settings)
+
     if not report.enough:
         # En dessous d'un des deux seuils, on ne publie aucun detail : le prompt
         # dira ce qui manque, ce qui vaut mieux qu'un pourcentage trompeur.

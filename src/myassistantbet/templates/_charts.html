@@ -116,6 +116,39 @@
   </article>
 {% endmacro %}
 
+{# Le tri, et non les sélections : la seule barre de la page qui mesure une part
+   de lot plutôt qu'un taux de réussite. Elle garde la même échelle fixe de 0 à
+   100 % et la même teinte unique — c'est toujours une grandeur seule.
+
+   Une session sans lot connu garde sa ligne : elle n'a soumis aucun prompt, et
+   la faire disparaître laisserait croire qu'elle n'a pas eu lieu. #}
+{% macro sessions(rows) %}
+  <div class="bars">
+    {% for row in rows %}
+    <div class="bar-row{% if row.lot is none %} is-void{% endif %}"
+         title="{{ row.day }} — {{ row.covered }} match(s) retenu(s){% if row.lot %} sur {{ row.lot }}{% endif %}{% if row.picks != row.covered %}, {{ row.picks }} sélection(s){% endif %}{% if row.tokens %} · prompt le plus lourd ~{{ row.tokens }} tokens{% endif %}">
+      <span class="bar-label">
+        {{ row.day }}
+        {%- if row.sports %}<i class="band">{{ row.sports }}</i>{% endif %}
+      </span>
+      <span class="track" aria-hidden="true">
+        {% if row.selection_rate is not none %}
+          <span class="fill" style="width: {{ '%.1f'|format(row.selection_rate * 100) }}%"></span>
+        {% endif %}
+      </span>
+      <b class="bar-value">{{ row.selection_label }}</b>
+      {# Le compte accompagne toujours la part, et il porte ici les deux
+         grandeurs qui la composent : rien ne se déduit d'un pourcentage seul. #}
+      <span class="bar-count">
+        {%- if row.lot %}{{ row.covered }}/{{ row.lot }}
+        {%- else %}<i class="units">lot non enregistré</i>{% endif %}
+        {%- if row.reconstructed %}<i class="units">· reconstruit</i>{% endif %}
+      </span>
+    </div>
+    {% endfor %}
+  </div>
+{% endmacro %}
+
 {% macro tile(row, label, note="") %}
   <div class="tile">
     <span class="label">{{ label }}</span>
