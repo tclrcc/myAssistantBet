@@ -60,6 +60,20 @@ THRESHOLDS: dict[str, Threshold] = {
             "insatisfiable avant même que l'analyse commence."
         ),
     ),
+    "combo_solo_min_lot": Threshold(
+        key="combo_solo_min_lot",
+        label="Lot minimum pour un combiné",
+        default=5,
+        low=2,
+        high=20,
+        note=(
+            "En dessous, le prompt ne demande **aucun** combiné. Le seuil des deux combinés "
+            "avait son symétrique manquant : sur un lot de 4 matchs et un taux de sélection "
+            "médian de 36 %, l'espérance tourne autour de 1.4 sélection, quand la section D "
+            "en réclame trois indépendantes. Mieux vaut supprimer la demande que faire écrire "
+            "qu'elle était insatisfiable."
+        ),
+    ),
     "enjeu_min_journees": Threshold(
         key="enjeu_min_journees",
         label="Journées avant qu'un enjeu de classement compte",

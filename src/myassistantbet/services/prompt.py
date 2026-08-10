@@ -677,6 +677,12 @@ def build_prompt(
             # matchs un lot porte-t-il deux combines » est une decision de
             # l'utilisateur, pas une constante du projet.
             combo_min_lot=threshold("combo_min_lot", settings),
+            # Le symetrique du precedent, qui manquait : sous ce lot, aucun
+            # combine n'est demande du tout. Sur quatre matchs et un taux de
+            # selection median de 36 %, l'esperance tourne autour de 1.4
+            # selection quand la section D en reclame trois independantes —
+            # reclamer puis faire ecrire que c'etait impossible coute deux fois.
+            combo_solo_min_lot=threshold("combo_solo_min_lot", settings),
             # Les bornes **de ce lot**, calculees ici. Le prompt annoncait
             # celles d'un lot de dix et expliquait qu'elles se reduisaient : une
             # borne qu'il faut recalculer soi-meme ne contraint rien.

@@ -468,14 +468,18 @@ section F**, qui est réservée aux échecs de recherche.
 {% if event_blocks | length >= combo_min_lot %}- Un combiné « solide » : 3-4 sélections des deux paliers les plus sûrs,
   cote cible 6-12
 - Un combiné « frisson » : 4-5 sélections, cote cible 25-80
-{% else %}**Un seul combiné**, et seulement si trois sélections reposant sur des causes
+{% elif event_blocks | length >= combo_solo_min_lot %}**Un seul combiné**, et seulement si trois sélections reposant sur des causes
 indépendantes existent. Ce lot porte {{ event_blocks | length }} match(s) : une
 seule sélection par match, et une partie du lot passera. Si les trois n'y sont
 pas, écris en une ligne que le lot ne portait pas de quoi en construire un — et
 n'ajoute aucune jambe pour faire le compte.
+{% else %}**Aucun combiné sur ce lot.** {{ event_blocks | length }} match(s), une seule
+sélection par match et une partie du lot qui passera : trois jambes
+indépendantes ne peuvent pas en sortir. N'en propose pas, et n'écris pas non
+plus que tu n'as pas pu — la question n'est pas posée.
 {% endif %}{% if exact_scores %}- Optionnel : un multichoix scores exacts sur le match le plus lisible
-{% endif %}Contrainte : une seule sélection par match dans un combiné.
-{% if 'tennis' in sports %}
+{% endif %}{% if event_blocks | length >= combo_solo_min_lot %}Contrainte : une seule sélection par match dans un combiné.
+{% endif %}{% if 'tennis' in sports %}
 **Score exact en sets** — obligatoire, une ligne par match du lot où un scénario
 se dessine, `PASSE` sinon. Donne le score en sets le plus probable et, si un
 second se défend, le second : `2-0` / `2-1` du point de vue du premier joueur
@@ -489,6 +493,7 @@ et ne le mets dans aucun combiné — c'est une proposition à tarifer sur place
 Écris le score, une phrase de justification, et rien d'autre.
 {% endif %}
 
+{% if event_blocks | length >= combo_solo_min_lot %}
 Les cotes cibles sont indicatives et cèdent devant la confiance. **N'ajoute
 jamais une jambe sous confiance 3 pour atteindre une fourchette** : rends le
 combiné plus court, donne sa cote réelle, et écris en une ligne pourquoi la
@@ -502,6 +507,7 @@ et dis que le lot ne portait pas de quoi en construire deux.
 {% endif %}Pour chaque combiné : nomme le maillon le plus fragile, et dis si deux
 jambes reposent sur la même cause — **au sens strict défini en section C**, pas
 au sens du tournoi partagé. Deux maillons qui tombent ensemble n'en font qu'un.
+{% endif %}
 
 ### E. Le match que tu ne jouerais pas
 Désigne un match du lot où l'incertitude sportive est trop forte, et explique

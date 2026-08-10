@@ -626,7 +626,27 @@ async def test_le_prompt_impose_une_hierarchie_de_sources(
 async def test_le_prompt_refuse_de_gonfler_un_combine(
     odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
 ) -> None:
+    """Le lot est etendu au seuil du combine : depuis que le prompt n'en demande
+    plus du tout sous `combo_solo_min_lot`, la consigne de jambe tombe avec la
+    demande — et c'est exactement ce qu'on veut, pas ce qu'on teste ici."""
     session_id = await _session_enrichie(odds_client, migrated, load_fixture)
+    for index in range(threshold_value("combo_solo_min_lot", migrated)):
+        event_id = save(
+            build(
+                "football",
+                "Match amical",
+                f"Lyon {index}",
+                f"Nice {index}",
+                "2026-08-04",
+                "20:45",
+                f"Lyon {index} 2.10\nNice {index} 3.20",
+                "",
+                "",
+                settings=migrated,
+            ),
+            migrated,
+        )
+        board_service.toggle_selection(event_id, True, migrated)
 
     body = build_prompt(session_id, settings=migrated, now=NOW).body
 
@@ -1305,8 +1325,11 @@ def test_la_meme_cause_ne_se_declenche_plus_sur_le_tournoi_partage(migrated: Set
     ligne qu'il reclame devient une formalite.
 
     La meme cause, c'est desormais le meme protagoniste, ou un facteur nomme
-    comme moteur des deux angles."""
-    corps = " ".join(build_prompt(_lot_de(migrated, 4), settings=migrated, now=NOW).body.split())
+    comme moteur des deux angles.
+
+    Le lot fait six matchs : la section D ne parle de combines — donc de causes
+    partagees entre jambes — qu'au-dessus de `combo_solo_min_lot`."""
+    corps = " ".join(build_prompt(_lot_de(migrated, 6), settings=migrated, now=NOW).body.split())
 
     assert "un facteur nommément désigné comme moteur des deux angles" in corps
     assert "Partager le tournoi, la surface ou la soirée **ne suffit pas**" in corps
@@ -1375,3 +1398,58 @@ def test_aucun_rappel_sans_cote_de_reference(migrated: Settings) -> None:
     corps = build_prompt(_lot_de(migrated, 2), settings=migrated, now=NOW).body
 
     assert "Prix à relever avant de miser" not in corps
+
+
+def test_un_lot_trop_court_ne_demande_aucun_combine(migrated: Settings) -> None:
+    """Le seuil des deux combines avait son symetrique manquant. Sur un lot de
+    4 matchs et un taux de selection median de 36 %, l'esperance tourne autour
+    de 1.4 selection quand la section D en reclame trois independantes :
+    reclamer, puis faire ecrire que c'etait impossible, coute deux fois."""
+    corps = build_prompt(_lot_de(migrated, 4), settings=migrated, now=NOW).body
+
+    assert "**Aucun combiné sur ce lot.**" in corps
+    assert "la question n'est pas posée" in corps
+    assert "Un seul combiné" not in corps
+    assert "N'ajoute\njamais une jambe" not in corps, "la consigne de jambe tombe avec la demande"
+    assert "maillon le plus fragile" not in corps
+
+
+def test_le_seuil_d_un_combine_se_regle(migrated: Settings) -> None:
+    """Un seuil est une decision de l'utilisateur : le coder en dur obligerait
+    a redeployer pour changer d'avis."""
+    assert threshold_value("combo_solo_min_lot", migrated) == 5
+
+    save_threshold("combo_solo_min_lot", "3", migrated)
+    corps = build_prompt(_lot_de(migrated, 4), settings=migrated, now=NOW).body
+
+    assert "**Un seul combiné**" in corps
+    assert "Aucun combiné sur ce lot" not in corps
+
+
+def test_le_score_exact_en_sets_survit_a_l_absence_de_combine(migrated: Settings) -> None:
+    """La section D porte deux demandes distinctes : les combines et, au tennis,
+    le score en sets. Retirer la premiere ne doit pas emporter la seconde — elle
+    ne depend d'aucun combine, et le prompt interdit meme de l'y mettre."""
+    save_threshold("combo_solo_min_lot", "20", migrated)
+    event_id = save(
+        build(
+            "tennis",
+            "ATP 250 Gstaad",
+            "Moutet",
+            "Bergs",
+            "2026-08-04",
+            "20:45",
+            "Moutet 1.85\nBergs 1.95",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+    session_id = board_service.toggle_selection(event_id, True, migrated)
+
+    corps = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "Aucun combiné sur ce lot" in corps
+    assert "**Score exact en sets**" in corps
+    assert "ne le mets dans aucun combiné" in corps
