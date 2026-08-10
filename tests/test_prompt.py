@@ -1293,3 +1293,22 @@ def test_le_chapitre_de_lecture_a_maigri_sans_perdre_ses_conventions(migrated: S
     assert "le seul pourcentage du bloc" in gabarit
     assert "les buts **du match, les deux équipes réunies**" in gabarit
     assert "**journées de tournoi** et non en dates civiles" in gabarit
+
+
+# -- Lot 8 : corrections courtes ---------------------------------------------
+
+
+def test_la_meme_cause_ne_se_declenche_plus_sur_le_tournoi_partage(migrated: Settings) -> None:
+    """« Meme tournoi, memes conditions, meme type de scenario » se declenche sur
+    presque toutes les paires d'un lot de quatre quarts de finale du meme
+    tournoi, joues la meme soiree : le critere ne discrimine plus rien, et la
+    ligne qu'il reclame devient une formalite.
+
+    La meme cause, c'est desormais le meme protagoniste, ou un facteur nomme
+    comme moteur des deux angles."""
+    corps = " ".join(build_prompt(_lot_de(migrated, 4), settings=migrated, now=NOW).body.split())
+
+    assert "un facteur nommément désigné comme moteur des deux angles" in corps
+    assert "Partager le tournoi, la surface ou la soirée **ne suffit pas**" in corps
+    assert "même tournoi, mêmes conditions, même type de scénario" not in corps
+    assert "au sens strict défini en section C" in corps, "la section D suit la meme regle"

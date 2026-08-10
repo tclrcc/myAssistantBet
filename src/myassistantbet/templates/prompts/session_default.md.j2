@@ -398,9 +398,13 @@ qui porte `manière` et sort en vainqueur se traduit ailleurs. Si elles portent
 toutes `issue`, garde-les et dis-le en une ligne sous le tableau — c'est une
 information sur le lot, pas une faute.
 
-{% endif %}Si deux sélections du tableau reposent sur la **même cause** — même tournoi,
-mêmes conditions, même type de scénario — dis-le en une ligne sous le tableau.
-Deux lignes qui tombent ensemble n'en font qu'une.
+{% endif %}Si deux sélections du tableau reposent sur la **même cause**, dis-le en une ligne
+sous le tableau. Deux lignes qui tombent ensemble n'en font qu'une. La même
+cause, c'est **le même {% if 'tennis' in sports %}joueur{% else %}protagoniste{% endif %}**
+ou **un facteur nommément désigné comme moteur des deux angles** — même météo
+relevée, même décision d'ordre du jeu, même absence. Partager le tournoi, la
+surface ou la soirée **ne suffit pas** : sur quatre quarts de finale du même
+tournoi, un critère aussi large se déclenche sur presque toutes les paires.
 
 {% if tier_scope.known %}{{ tier_scope.range_line }}
 {{ tier_scope.present_line }}
@@ -480,8 +484,8 @@ le premier plus une jambe, ce n'est pas un second combiné : n'en propose qu'un,
 et dis que le lot ne portait pas de quoi en construire deux.
 
 {% endif %}Pour chaque combiné : nomme le maillon le plus fragile, et dis si deux
-sélections reposent sur la même cause — mêmes conditions, même tournoi, même
-type de scénario. Deux maillons qui tombent ensemble n'en font qu'un.
+jambes reposent sur la même cause — **au sens strict défini en section C**, pas
+au sens du tournoi partagé. Deux maillons qui tombent ensemble n'en font qu'un.
 
 ### E. Le match que tu ne jouerais pas
 Désigne un match du lot où l'incertitude sportive est trop forte, et explique
