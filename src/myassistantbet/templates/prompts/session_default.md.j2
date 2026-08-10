@@ -605,8 +605,8 @@ La colonne « Ce qui manque » n'est jamais vide par confort : si tu n'as rien
 trouvé sur un point, il y figure.
 
 ### B. Analyse par match — 8 lignes maximum chacune
-L'angle sportif dominant, {% if event_blocks | length >= 4 %}sa **nature en un mot — « issue » ou « manière »** —
-puis le marché qui la traduit : c'est ce mot qui choisit le marché.{% else %}puis le marché qui le traduit le mieux.{% endif %}
+L'angle sportif dominant, sa **nature en un mot — « issue » ou « manière »** —
+puis le marché qui la traduit : c'est ce mot qui choisit le marché.
 Si aucun angle net ne se dégage : écris « PASSE » et passe au suivant.
 Passer est un résultat valable et attendu sur une partie du lot.
 Si la section A laisse trop de trous sur ce match, c'est un PASSE — pas une
@@ -623,11 +623,25 @@ serait raisonner sur le prix. Si ton angle porte sur l'issue, le vainqueur reste
 le bon marché.
 
 ### C. Tableau des sélections
-| # | Match | Marché | Sélection | Cote | Palier | Conf/5 | Angle (1 ligne) | Ce qui la tue |
+| # | Match | Marché | Sélection | Cote | Palier | Conf/5 | Type | Source | Angle (1 ligne) | Ce qui la tue |
 
 La sélection porte obligatoirement sur un marché présent dans le bloc du match,
 et la colonne « Cote » recopie **au centime près** la valeur du bloc. Si ton
 angle appelle un marché absent, ne l'invente pas : signale-le en section F.
+
+**Type** reprend le mot de la section B, sans le changer : `issue` ou `manière`.
+C'est lui qui a choisi le marché, et l'écrire ici permet de vérifier après coup
+qu'il l'a vraiment fait — un angle sur une manière rendu en vainqueur se voit
+alors d'un coup d'œil.
+
+**Source** est le niveau du fait principal sur l'échelle du préambule — `1`
+officiel, `2` presse, `3` statistiques, `4` agrégateurs — ou `lecture` quand
+aucun fait daté ne porte la sélection et qu'elle repose sur les blocs seuls.
+`lecture` est une réponse **normale et fréquente**, pas un aveu : la déclarer
+franchement vaut mieux que de promouvoir un bloc de contexte au rang de source
+citée. Ce que ces deux colonnes mesurent est précisément si une sélection
+adossée à un fait daté tient mieux qu'une lecture — répondre au petit bonheur
+détruirait la seule comparaison qui puisse changer la méthode.
 
 Un marché listé « A relever » **est un marché présent** : il est sélectionnable
 comme les autres, sa cote se recopie du bloc et porte « (ref.) ». N'écarte jamais
@@ -655,10 +669,10 @@ jouer, ce qui n'est pas la même chose, et c'est un PASSE.
 
 {% if event_blocks | length >= 4 -%}
 **Compte tes lignes avant de rendre.** Si plus de la moitié du tableau porte sur
-le marché du vainqueur, relis ces sélections avec le mot écrit en section B :
-celle dont l'angle portait sur une **manière** se traduit ailleurs. Si elles
-décrivent toutes une issue, garde-les et dis-le en une ligne sous le tableau —
-c'est une information sur le lot, pas une faute.
+le marché du vainqueur, relis ces sélections avec leur colonne « Type » : celle
+qui porte `manière` et sort en vainqueur se traduit ailleurs. Si elles portent
+toutes `issue`, garde-les et dis-le en une ligne sous le tableau — c'est une
+information sur le lot, pas une faute.
 
 {% endif %}Si deux sélections du tableau reposent sur la **même cause** — même tournoi,
 mêmes conditions, même type de scénario — dis-le en une ligne sous le tableau.

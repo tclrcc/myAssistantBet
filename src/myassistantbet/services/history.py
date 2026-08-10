@@ -34,6 +34,30 @@ RESULT_LABELS = {
     "void": "annulé",
 }
 NO_SPORT = "—"
+
+#: Nature de l'angle qui porte la selection. **C'est ce mot qui choisit le
+#: marche** : un raisonnement sur un rythme, une usure, un desequilibre, qui
+#: finit sur un nom de camp, a perdu en route ce qu'il avait compris.
+#:
+#: Sans accent dans la cle, comme partout : elle voyage dans un formulaire, une
+#: URL et une colonne SQLite. Le libelle, lui, s'ecrit correctement.
+ANGLES = {
+    "issue": "Issue",
+    "maniere": "Manière",
+}
+
+#: Niveau de la source qui porte le fait principal, sur l'echelle a quatre crans
+#: du preambule. `lecture` n'est pas une absence de valeur mais une valeur de
+#: l'echelle : l'analyse declare qu'aucun fait date ne porte la selection. La
+#: distinguer de « non renseigne » est tout l'objet de la mesure — c'est
+#: precisement la comparaison que le regroupement doit permettre.
+SOURCE_LEVELS = {
+    "1": "1 · officiel",
+    "2": "2 · presse",
+    "3": "3 · statistiques",
+    "4": "4 · agrégateurs",
+    "lecture": "Lecture seule",
+}
 #: Titre du bloc des selections qu'aucun match ne porte. Elles existent — un
 #: pari sur un vainqueur de tournoi, une ligne dont le rapprochement a echoue —
 #: et les taire les rendrait introuvables.
@@ -898,6 +922,24 @@ def _as_float(value: str, field_name: str) -> float | None:
         raise HistoryError(f"« {field_name} » doit être un nombre.") from exc
 
 
+def _vocabulary(raw: str, allowed: dict[str, str]) -> str | None:
+    """Une valeur du vocabulaire, ou None. Tolerante a l'orthographe rendue.
+
+    Claude ecrit « manière » avec son accent, et l'accepter evite de perdre la
+    colonne entiere sur un detail de rendu. Une valeur hors vocabulaire vaut
+    « non renseigne » plutot qu'une erreur : refuser un import de vingt lignes
+    pour un mot inattendu couterait plus que la ligne manquante.
+
+    La normalisation est celle des libelles de marche — minuscules, sans
+    accents — parce que c'est exactement le meme probleme : du texte ecrit a la
+    main dont seule la forme varie.
+    """
+    value = _market_key(raw)
+    if not value:
+        return None
+    return value if value in allowed else None
+
+
 def add_pick(
     session_id: int,
     tier: str,
@@ -908,6 +950,8 @@ def add_pick(
     price: str = "",
     confidence: str = "",
     stake: str = "",
+    angle: str = "",
+    source_level: str = "",
     played: bool = False,
     result: str = "pending",
     settings: Settings | None = None,
@@ -942,6 +986,12 @@ def add_pick(
     confidence_value = _as_float(confidence, "Confiance")
     if confidence_value is not None and not 1 <= confidence_value <= 5:
         raise HistoryError("« Confiance » doit être comprise entre 1 et 5.")
+    # Les deux dimensions du « pourquoi » sont facultatives : cent selections
+    # deja en base n'en portent aucune, et une valeur inconnue vaut « non
+    # renseigne » plutot qu'un refus — le seul effet est une ligne de moins dans
+    # les statistiques, comme pour un niveau de competition.
+    angle_value = _vocabulary(angle, ANGLES)
+    source_value = _vocabulary(source_level, SOURCE_LEVELS)
 
     with connect(settings) as conn:
         known = {row["key"] for row in conn.execute("SELECT key FROM tiers")}
@@ -950,8 +1000,9 @@ def add_pick(
 
         cursor = conn.execute(
             "INSERT INTO picks (session_id, event_id, tier, market, selection, price, "
-            "                   confidence, played, stake, result, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "                   confidence, played, stake, result, angle, source_level, "
+            "                   created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 int(event_id) if str(event_id).strip().isdigit() else None,
@@ -963,6 +1014,8 @@ def add_pick(
                 1 if played else 0,
                 stake_value,
                 result,
+                angle_value,
+                source_value,
                 utcnow(),
             ),
         )
@@ -1275,6 +1328,19 @@ class Analysis:
     #: tout le football est reste invisible cent paris durant.
     uncategorised: int = 0
     by_market: list[RateRow] = field(default_factory=list)
+    #: **Sur quoi** la selection reposait, et non de quoi elle avait l'air. Les
+    #: autres axes sont des etiquettes de forme — un palier est une bande de
+    #: cote, un marche un libelle. Ces deux-la portent la seule question dont la
+    #: reponse changerait la methode : une selection adossee a un fait date de
+    #: niveau 1-2 tient-elle mieux qu'une lecture ?
+    by_angle: list[RateRow] = field(default_factory=list)
+    by_source: list[RateRow] = field(default_factory=list)
+    #: Selections tranchees qui ne portent ni l'une ni l'autre. Meme role que
+    #: `uncategorised` : fermer l'addition plutot que de laisser des lignes
+    #: quitter un regroupement sans un mot. Les cent premieres selections sont
+    #: dans ce cas, les colonnes n'existant pas encore.
+    unlabelled_angle: int = 0
+    unlabelled_source: int = 0
     #: Une ligne par session, la plus recente d'abord. Tenu hors de `groups` :
     #: les autres axes decoupent **les selections**, celui-ci decoupe le
     #: **travail**, et il porte une grandeur qu'aucun autre ne porte — le taux
@@ -1319,6 +1385,8 @@ class Analysis:
             self.by_sport,
             self.by_category,
             self.by_market,
+            self.by_angle,
+            self.by_source,
         )
 
     @property
@@ -1703,7 +1771,8 @@ def analysis(settings: Settings | None = None) -> Analysis:
         }
         rows = conn.execute(
             "SELECT k.id, k.session_id, k.tier, k.result, k.market, k.confidence, k.played, "
-            "       k.event_id, k.created_at, k.price, s.key AS sport_key, c.category FROM picks k "
+            "       k.event_id, k.created_at, k.price, k.angle, k.source_level, "
+            "       s.key AS sport_key, c.category FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
             "LEFT JOIN competitions c ON c.id = e.competition_id"
@@ -1801,6 +1870,42 @@ def analysis(settings: Settings | None = None) -> Analysis:
         if result in ("win", "loss") and not row["category"]
     )
 
+    # Le « pourquoi ». L'ordre suit l'echelle et non l'effectif : « Manière »
+    # apres « Issue », les sources du plus officiel au plus incertain, et
+    # « Lecture seule » ferme la marche — c'est la lecture qu'on veut comparer
+    # au reste, et la voir a sa place dans une echelle vaut mieux que de la
+    # voir en tete parce qu'elle est la plus nombreuse.
+    report.by_angle = sorted(
+        _rate_tally(
+            [
+                (row["angle"], ANGLES[row["angle"]], result, row)
+                for row, result in zip(rows, results, strict=True)
+                if row["angle"] in ANGLES
+            ]
+        ),
+        key=lambda item: list(ANGLES).index(item.key),
+    )
+    report.by_source = sorted(
+        _rate_tally(
+            [
+                (row["source_level"], SOURCE_LEVELS[row["source_level"]], result, row)
+                for row, result in zip(rows, results, strict=True)
+                if row["source_level"] in SOURCE_LEVELS
+            ]
+        ),
+        key=lambda item: list(SOURCE_LEVELS).index(item.key),
+    )
+    report.unlabelled_angle = sum(
+        1
+        for row, result in zip(rows, results, strict=True)
+        if result in ("win", "loss") and row["angle"] not in ANGLES
+    )
+    report.unlabelled_source = sum(
+        1
+        for row, result in zip(rows, results, strict=True)
+        if result in ("win", "loss") and row["source_level"] not in SOURCE_LEVELS
+    )
+
     markets = [
         (_market_key(row["market"]), (row["market"] or "").strip(), result, row)
         for row, result in zip(rows, results, strict=True)
@@ -1823,6 +1928,12 @@ def analysis(settings: Settings | None = None) -> Analysis:
             ("sport", report.by_sport),
             ("category", report.by_category),
             ("market", report.by_market),
+            # Le « pourquoi » entre dans le detecteur comme les autres, et il en
+            # a besoin plus qu'eux : un lot ou toutes les manieres se traduisent
+            # en totaux ferait de « Manière » et « O/U » deux noms du meme
+            # echantillon, et la page les presenterait comme deux constats.
+            ("angle", report.by_angle),
+            ("source", report.by_source),
         ]
     )
 

@@ -834,6 +834,11 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         "prompts": history_service.list_prompts(session_id, settings),
         "events": history_service.pickable_groups(session_id, settings),
         "tiers": history_service.tiers(settings),
+        # Le vocabulaire du « pourquoi » : deux menus fermes plutot que deux
+        # champs libres, une faute de frappe faisant sinon disparaitre la ligne
+        # de son regroupement sans un mot.
+        "angles": history_service.ANGLES,
+        "source_levels": history_service.SOURCE_LEVELS,
         "picks": history_service.list_picks(session_id, settings),
         "worksheet": history_service.worksheet(session_id, settings),
         "result_labels": list(history_service.RESULT_LABELS.items()),
@@ -875,6 +880,8 @@ async def add_pick(request: Request, session_id: int) -> HTMLResponse:
             price=form.get("price", ""),
             confidence=form.get("confidence", ""),
             stake=form.get("stake", ""),
+            angle=form.get("angle", ""),
+            source_level=form.get("source_level", ""),
             settings=get_settings(),
         )
     except history_service.HistoryError as exc:
@@ -914,6 +921,8 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
                 event_id=form.get(f"event_{index}", ""),
                 price=form.get(f"price_{index}", ""),
                 confidence=form.get(f"confidence_{index}", ""),
+                angle=form.get(f"angle_{index}", ""),
+                source_level=form.get(f"source_{index}", ""),
                 settings=settings,
             )
             created += 1

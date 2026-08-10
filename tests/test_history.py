@@ -759,6 +759,8 @@ def _propose(
     market: str = "O/U",
     confidence: str = "",
     price: str = "",
+    angle: str = "",
+    source_level: str = "",
 ) -> int:
     """Une selection **non jouee** dont on connait le resultat."""
     pick_id = add_pick(
@@ -769,6 +771,8 @@ def _propose(
         event_id=str(event_id),
         confidence=confidence,
         price=price,
+        angle=angle,
+        source_level=source_level,
         settings=settings,
     )
     set_result(pick_id, result, settings)
@@ -1711,6 +1715,93 @@ def test_le_taux_global_reunit_joue_et_ecarte(migrated: Settings) -> None:
 
     assert (report.overall.won, report.overall.lost) == (1, 1)
     assert report.overall.won == report.played.won + report.skipped.won
+
+
+# -- Le « pourquoi » : type d'angle et niveau de source ---------------------
+
+
+def test_le_type_d_angle_produit_son_regroupement(migrated: Settings) -> None:
+    """Toutes les autres dimensions sont des etiquettes de forme : un palier est
+    une bande de cote, un marche un libelle. Celle-ci dit **sur quoi** la
+    selection reposait."""
+    session_id, event_id = _session_avec_match(migrated)
+    _propose(migrated, session_id, event_id, "safe", "win", angle="issue")
+    _propose(migrated, session_id, event_id, "safe", "loss", angle="maniere")
+    _propose(migrated, session_id, event_id, "safe", "win", angle="maniere")
+
+    report = analysis(migrated)
+
+    assert [(row.label, row.won, row.settled) for row in report.by_angle] == [
+        ("Issue", 1, 1),
+        ("Manière", 1, 2),
+    ]
+
+
+def test_le_niveau_de_source_suit_l_echelle_et_non_l_effectif(migrated: Settings) -> None:
+    """« Lecture seule » ferme la marche parce que c'est sa place dans l'echelle,
+    pas parce qu'elle serait la plus ou la moins nombreuse. C'est elle qu'on veut
+    comparer au reste, et la voir a sa place vaut mieux que de la voir en tete."""
+    session_id, event_id = _session_avec_match(migrated)
+    for niveau in ("lecture", "lecture", "lecture", "2", "4"):
+        _propose(migrated, session_id, event_id, "safe", "win", source_level=niveau)
+
+    assert [row.key for row in analysis(migrated).by_source] == ["2", "4", "lecture"]
+
+
+def test_lecture_seule_n_est_pas_une_absence(migrated: Settings) -> None:
+    """C'est **la** distinction que la mesure existe pour faire : « aucun fait
+    date ne porte cette selection » est une reponse, « je n'ai rien renseigne »
+    n'en est pas une. Un entier nullable aurait ecrase la premiere sur la seconde.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    _propose(migrated, session_id, event_id, "safe", "win", source_level="lecture")
+    _propose(migrated, session_id, event_id, "safe", "loss")
+
+    report = analysis(migrated)
+
+    assert [row.key for row in report.by_source] == ["lecture"]
+    assert report.unlabelled_source == 1
+    assert sum(row.settled for row in report.by_source) + report.unlabelled_source == report.settled
+
+
+def test_les_selections_anterieures_aux_colonnes_sont_comptees(migrated: Settings) -> None:
+    """Cent selections en base n'en portent aucune : les taire ferait lire les
+    regroupements comme s'ils couvraient tout l'historique."""
+    session_id, event_id = _session_avec_match(migrated)
+    _propose(migrated, session_id, event_id, "safe", "win", angle="issue")
+    _propose(migrated, session_id, event_id, "safe", "win")
+
+    report = analysis(migrated)
+
+    assert report.unlabelled_angle == 1
+    assert sum(row.settled for row in report.by_angle) + report.unlabelled_angle == report.settled
+
+
+def test_le_pourquoi_entre_dans_le_detecteur_de_recouvrement(migrated: Settings) -> None:
+    """Un lot ou toutes les manieres se traduisent en totaux ferait de « Manière »
+    et « O/U » deux noms du meme echantillon, presentes comme deux constats."""
+    session_id, event_id = _session_avec_match(migrated)
+    for _ in range(ANALYSIS_MIN_ROWS):
+        _propose(migrated, session_id, event_id, "safe", "win", market="O/U", angle="maniere")
+
+    notes = [overlap.note for overlap in analysis(migrated).overlaps]
+
+    assert any("Manière" in note and "O/U" in note for note in notes)
+
+
+def test_les_deux_cartes_du_pourquoi_sont_affichees(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    session_id, event_id = _session_avec_match(isolated_settings)
+    _propose(
+        isolated_settings, session_id, event_id, "safe", "win", angle="issue", source_level="2"
+    )
+
+    page = " ".join(client.get("/stats").text.split())
+
+    assert "Par type d'angle" in page
+    assert "Par niveau de source" in page
+    assert "2 · presse" in page
 
 
 # -- Ce que j'ecarte : le lot d'une session ---------------------------------

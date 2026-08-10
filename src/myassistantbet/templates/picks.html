@@ -50,6 +50,11 @@
           <th class="num">Cote</th>
           <th>Palier</th>
           <th class="num">Conf</th>
+          {# Le « pourquoi ». Deux menus plutôt que deux champs libres : le
+             vocabulaire est fermé, et une faute de frappe ferait disparaître la
+             ligne du regroupement sans un mot. #}
+          <th>Type</th>
+          <th>Source</th>
           <th>À vérifier</th>
         </tr>
       </thead>
@@ -82,6 +87,24 @@
             <input type="text" class="tiny" name="confidence_{{ pick.index }}"
                    value="{{ pick.confidence }}">
           </td>
+          <td>
+            <select name="angle_{{ pick.index }}">
+              <option value="">—</option>
+              {% for key, label in angles.items() %}
+                <option value="{{ key }}"
+                        {% if key == pick.angle %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </td>
+          <td>
+            <select name="source_{{ pick.index }}">
+              <option value="">—</option>
+              {% for key, label in source_levels.items() %}
+                <option value="{{ key }}"
+                        {% if key == pick.source %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
+          </td>
           <td class="muted small">{{ pick.problems | join(', ') }}</td>
         </tr>
         {% endfor %}
@@ -102,7 +125,7 @@
   </summary>
   <form method="post" action="/history/{{ session_id }}/picks/preview" class="paste-form">
     <textarea name="table" rows="5"
-              placeholder="| # | Match | Marché | Sélection | Cote | Palier | Conf/5 | …"></textarea>
+              placeholder="| # | Match | Marché | Sélection | Cote | Palier | Conf/5 | Type | Source | …"></textarea>
     <button type="submit" class="button">Lire le tableau</button>
   </form>
 </details>
@@ -140,6 +163,23 @@
     <label class="narrow">Cote<input type="text" name="price" inputmode="decimal" placeholder="1.72"></label>
     <label class="narrow">Conf/5
       <input type="text" name="confidence" inputmode="numeric" placeholder="3"></label>
+    {# Facultatifs : cent sélections en base n'en portent aucun, et alourdir la
+       saisie à la main pour deux dimensions statistiques serait un mauvais
+       échange. Non renseignés, ils ne produisent aucune ligne. #}
+    <label class="narrow">Type
+      <select name="angle">
+        <option value="">—</option>
+        {% for key, label in angles.items() %}
+          <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select></label>
+    <label class="narrow">Source
+      <select name="source_level">
+        <option value="">—</option>
+        {% for key, label in source_levels.items() %}
+          <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select></label>
     <button type="submit" class="primary">Ajouter</button>
   </form>
 </details>

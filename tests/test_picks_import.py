@@ -382,3 +382,108 @@ def test_une_ligne_neuve_reste_cochee(migrated: Settings) -> None:
     pick = picks_import.build_preview(session_id, UNE_LIGNE, migrated).picks[0]
 
     assert pick.keep and not pick.duplicate
+
+
+# -- Le « pourquoi » : type d'angle et niveau de source ---------------------
+
+TABLEAU_AVEC_POURQUOI = """### C. Tableau des sélections
+
+| # | Match | Marché | Sélection | Cote | Palier | Conf/5 | Type | Source | Angle |
+|---|-------|--------|-----------|------|--------|--------|------|--------|-------|
+| 1 | Hurkacz – Giron | Vainqueur | Hubert Hurkacz | 1.55 | 🟢 SAFE | 4 | issue | 2 | Service |
+| 2 | Chan – Tirante | Jeux O/U | Over 21.5 | 2.35 | 🔵 FUN | 3 | manière (rythme) | lecture | TB |
+"""
+
+
+def test_le_pourquoi_est_lu_dans_le_tableau(migrated: Settings) -> None:
+    """Les deux colonnes qui disent **sur quoi** la selection reposait.
+
+    Toutes les autres dimensions sont des etiquettes de forme : un palier est
+    une bande de cote, un marche un libelle. Celles-ci portent la seule question
+    dont la reponse changerait la methode.
+    """
+    session_id, _, _ = _session(migrated)
+
+    preview = picks_import.build_preview(session_id, TABLEAU_AVEC_POURQUOI, migrated)
+
+    assert [(pick.angle, pick.source) for pick in preview.picks] == [
+        ("issue", "2"),
+        # « manière (rythme) » : le mot est cherche **dans** la cellule, le rendu
+        # ajoutant volontiers une precision utile a la lecture.
+        ("maniere", "lecture"),
+    ]
+
+
+def test_la_colonne_angle_de_prose_n_est_pas_le_type(migrated: Settings) -> None:
+    """« Angle » nomme la description en une ligne, « Type » le mot a deux
+    valeurs. Les confondre ferait entrer une phrase entiere dans le champ."""
+    session_id, _, _ = _session(migrated)
+
+    preview = picks_import.build_preview(session_id, TABLEAU, migrated)
+
+    assert all(pick.angle == "" for pick in preview.picks)
+    assert all(pick.source == "" for pick in preview.picks)
+
+
+def test_un_tableau_sans_le_pourquoi_reste_importable(migrated: Settings) -> None:
+    """Cent selections en base n'en portent aucun : les exiger casserait
+    l'import de tout rendu anterieur, et le manque se dit deja en statistiques."""
+    session_id, _, _ = _session(migrated)
+
+    preview = picks_import.build_preview(session_id, TABLEAU, migrated)
+
+    assert all(pick.ready for pick in preview.picks if pick.market and pick.selection)
+
+
+def test_le_pourquoi_arrive_en_base_par_l_import(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    session_id, hurkacz, chan = _session(isolated_settings)
+    preview = picks_import.build_preview(session_id, TABLEAU_AVEC_POURQUOI, isolated_settings)
+
+    payload: dict[str, str] = {}
+    for pick in preview.picks:
+        payload |= {
+            f"keep_{pick.index}": "1",
+            f"event_{pick.index}": str(pick.event_id or ""),
+            f"market_{pick.index}": pick.market,
+            f"selection_{pick.index}": pick.selection,
+            f"price_{pick.index}": pick.price,
+            f"tier_{pick.index}": pick.tier,
+            f"confidence_{pick.index}": pick.confidence,
+            f"angle_{pick.index}": pick.angle,
+            f"source_{pick.index}": pick.source,
+        }
+    client.post(f"/history/{session_id}/picks/import", data=payload)
+
+    lignes = db.query(
+        "SELECT angle, source_level FROM picks ORDER BY id", settings=isolated_settings
+    )
+    assert [(row["angle"], row["source_level"]) for row in lignes] == [
+        ("issue", "2"),
+        ("maniere", "lecture"),
+    ]
+
+
+def test_une_valeur_hors_vocabulaire_vaut_non_renseigne(migrated: Settings) -> None:
+    """Refuser un import de vingt lignes pour un mot inattendu couterait plus
+    que la ligne manquante. Le seul effet est une ligne de moins en statistiques."""
+    session_id, hurkacz, _ = _session(migrated)
+
+    pick_id = history_service.add_pick(
+        session_id,
+        "safe",
+        "Vainqueur",
+        "Hurkacz",
+        event_id=str(hurkacz),
+        angle="scénario",
+        source_level="Twitter",
+        settings=migrated,
+    )
+
+    row = db.query_one(
+        "SELECT angle, source_level FROM picks WHERE id = ?",
+        (pick_id,),
+        settings=migrated,
+    )
+    assert (row["angle"], row["source_level"]) == (None, None)

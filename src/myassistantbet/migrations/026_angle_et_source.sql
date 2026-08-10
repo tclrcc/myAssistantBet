@@ -1,0 +1,31 @@
+-- 026_angle_et_source.sql — sur quoi la selection reposait.
+--
+-- Toutes les dimensions enregistrees jusqu'ici — palier, confiance, marche,
+-- sport, niveau de competition — sont des etiquettes de **forme**. Aucune ne
+-- dit **sur quoi** la selection tenait. Le prompt reclame pourtant les deux
+-- elements qui en feraient de bonnes dimensions, et les jette une fois
+-- l'analyse rendue :
+--
+--   · la **nature de l'angle** — une issue, ou une maniere. C'est ce mot qui
+--     choisit le marche, et la section B le demande deja.
+--   · le **niveau de la source** qui porte le fait principal, sur l'echelle a
+--     quatre crans du preambule (officiel, presse, statistiques, agregateurs),
+--     ou `lecture` quand aucun fait date ne la porte.
+--
+-- La question que ces deux colonnes rendent enfin mesurable est la seule dont
+-- la reponse changerait la methode : une selection adossee a un fait date de
+-- niveau 1-2 tient-elle mieux qu'une lecture ? Elle etait jusqu'ici hors de
+-- portee, et elle ne coute que deux colonnes.
+--
+-- `source_level` est du **texte** et non un entier : `lecture` est une valeur
+-- de l'echelle — l'analyste declare qu'aucun fait date ne porte la selection —
+-- alors que NULL veut dire « pas renseigne ». Les deux ne se confondent pas, et
+-- un entier nullable aurait ecrase la premiere sur la seconde.
+--
+-- Les deux colonnes restent **facultatives** : les cent selections deja en base
+-- n'en portent aucune, et une saisie a la main ne doit pas devenir plus lourde
+-- qu'elle ne l'etait. Une valeur absente ne produit aucune ligne de
+-- statistiques, comme un niveau de competition non renseigne.
+
+ALTER TABLE picks ADD COLUMN angle TEXT;        -- issue | maniere | NULL
+ALTER TABLE picks ADD COLUMN source_level TEXT; -- 1 | 2 | 3 | 4 | lecture | NULL

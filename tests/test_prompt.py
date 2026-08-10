@@ -253,15 +253,17 @@ def test_le_comptage_se_tait_sur_un_lot_trop_court(migrated: Settings) -> None:
     quotas se reduisent deja a proportion du lot. Meme regle que partout
     ailleurs : sous quelques observations, une proportion ne dit rien.
 
-    Les deux morceaux tombent **ensemble**, parce qu'ils n'en font qu'un : le mot
-    de la section B n'existe que pour etre relu au moment du comptage. Garder le
-    premier sans le second aurait coute au budget de tokens du lot le plus lourd
-    — trois sports pour trois matchs — sans rien mettre en face."""
+    **Le mot, lui, ne tombe plus avec le comptage**, et les deux traitements
+    sont justes parce que les deux grandeurs n'ont pas la meme nature. Ils
+    n'en faisaient qu'un tant que le mot n'existait que pour etre relu au
+    moment du comptage ; depuis qu'il est une **colonne du tableau**, il decrit
+    une selection prise seule — donc il vaut des la premiere — quand la
+    proportion, elle, a toujours besoin de volume."""
     corps = " ".join(build_prompt(_lot_de(migrated, 3), settings=migrated, now=NOW).body.split())
 
     assert "Compte tes lignes avant de rendre" not in corps
-    assert "nature en un mot" not in corps
-    assert "puis le marché qui le traduit le mieux" in corps, "la consigne d'origine tient"
+    assert "nature en un mot" in corps, "le mot est une colonne : il vaut a tout volume"
+    assert "| Type | Source |" in corps
     assert "le plus grossier des débouchés d'une analyse" in corps, "le rappel de fond reste"
 
 

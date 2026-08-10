@@ -1360,6 +1360,46 @@ l'avait franchi depuis des mois sans que rien ne bronche.
   panne exacte qui a fait echouer la premiere version de cette fixture. Un
   enrichissement complet se simule donc de bout en bout avec `DOSSIER_RATE_HEADERS`.
 
+## Sur quoi la selection reposait (`picks.angle`, `picks.source_level`)
+
+Palier, confiance, marche, sport, niveau de competition : **toutes les dimensions
+enregistrees jusqu'ici sont des etiquettes de forme.** Aucune ne dit sur quoi la
+selection tenait. Le prompt reclamait pourtant les deux elements qui en feraient de
+bonnes dimensions — la nature de l'angle en section B, le niveau de la source en
+preambule — et les jetait une fois l'analyse rendue.
+
+- `angle` vaut `issue` ou `maniere`. **C'est ce mot qui choisit le marche**, et l'ecrire
+  dans le tableau permet de verifier apres coup qu'il l'a vraiment fait : un angle sur une
+  maniere rendu en vainqueur se voit alors d'un coup d'oeil. Le comptage de la section C
+  lit desormais la colonne au lieu de renvoyer a la section B.
+- `source_level` vaut `1` a `4` sur l'echelle du preambule, ou `lecture`.
+  - **`lecture` n'est pas une absence de valeur mais une valeur de l'echelle** :
+    l'analyse declare qu'aucun fait date ne porte la selection. La distinguer de « non
+    renseigne » est **tout l'objet de la mesure** — c'est precisement la comparaison qui
+    pourrait changer la methode. D'ou une colonne **TEXTE** : un entier nullable aurait
+    ecrase la premiere sur la seconde, silencieusement.
+  - Le template la presente comme une reponse **normale et frequente**. Le contraire
+    ferait promouvoir un bloc de contexte au rang de source citee, et detruirait la
+    comparaison au moment meme ou on l'installe.
+- **Les deux colonnes restent facultatives.** Les cent selections deja en base n'en
+  portent aucune, et une valeur hors vocabulaire vaut « non renseigne » plutot qu'un
+  refus : casser un import de vingt lignes pour un mot inattendu couterait plus que la
+  ligne manquante. `unlabelled_angle` et `unlabelled_source` ferment l'addition, comme
+  `uncategorised`.
+- **Le mot de la section B ne se garde plus par la taille du lot.** Il tombait avec le
+  comptage — « les deux morceaux n'en font qu'un » — et c'etait juste tant qu'il n'existait
+  que pour etre relu au moment du comptage. Depuis qu'il est une **colonne**, il decrit une
+  selection prise seule, donc il vaut des la premiere ; la proportion, elle, a toujours
+  besoin de volume et reste gardee a quatre matchs.
+- **`by_angle` et `by_source` entrent dans le detecteur de recouvrement**, et ils en ont
+  besoin plus que les autres : un lot ou toutes les manieres se traduisent en totaux ferait
+  de « Manière » et « O/U » deux noms du meme echantillon, presentes comme deux constats.
+- L'ordre des lignes suit **l'echelle et non l'effectif** : « Lecture seule » ferme la
+  marche parce que c'est sa place, pas parce qu'elle serait la plus nombreuse. C'est elle
+  qu'on veut comparer au reste.
+- La saisie passe par **deux menus fermes** et jamais par un champ libre : une faute de
+  frappe ferait disparaitre la ligne de son regroupement sans un mot.
+
 ## Le lot d'une session, et ce qu'elle en a ecarte (`prompt_events`)
 
 L'application enregistrait ce qui avait ete **selectionne**, jamais ce qui avait ete

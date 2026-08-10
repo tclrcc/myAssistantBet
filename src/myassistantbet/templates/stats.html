@@ -118,6 +118,27 @@
               (analysis.hidden_markets ~ " marché(s) vu(s) une seule fois ne sont pas listés.")
               if analysis.hidden_markets else "") }}
     {% endif %}
+    {# Les deux seuls axes qui décrivent **sur quoi** la sélection reposait. Tous
+       les autres sont des étiquettes de forme : un palier est une bande de cote,
+       un marché un libellé. #}
+    {% if analysis.by_angle %}
+      {{ card("Par type d'angle", analysis.by_angle,
+              "« Issue » ou « manière » : le mot qui a choisi le marché. Un angle
+               sur une manière rendu en vainqueur a perdu en route ce qu'il avait
+               compris — c'est ce que ces deux lignes rendent visible."
+              ~ ((" " ~ analysis.unlabelled_angle ~ " sélection(s) tranchée(s) n'en
+                   portent pas : elles sont antérieures à la colonne.")
+                 if analysis.unlabelled_angle else "")) }}
+    {% endif %}
+    {% if analysis.by_source %}
+      {{ card("Par niveau de source", analysis.by_source,
+              "Le fait principal venait-il d'une source officielle, de la presse,
+               de statistiques, d'un agrégateur — ou d'aucun fait daté ? C'est la
+               seule question de cette page dont la réponse changerait la méthode."
+              ~ ((" " ~ analysis.unlabelled_source ~ " sélection(s) tranchée(s) n'en
+                   portent pas : elles sont antérieures à la colonne.")
+                 if analysis.unlabelled_source else "")) }}
+    {% endif %}
   </div>
 
   {# Une barre pâlit pour deux raisons distinctes, et la note ne peut donc pas
@@ -217,6 +238,32 @@
         {% with rows = analysis.by_market, heading = "Marché" %}
           {% include "_rates.html" %}
         {% endwith %}
+      </div>
+      {% endif %}
+      {% if analysis.by_angle %}
+      <div>
+        <h3>Par type d'angle</h3>
+        {% with rows = analysis.by_angle, heading = "Type" %}
+          {% include "_rates.html" %}
+        {% endwith %}
+        {% if analysis.unlabelled_angle %}
+        <p class="muted small">
+          + {{ analysis.unlabelled_angle }} sans type, sur {{ analysis.settled }} tranchée(s).
+        </p>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if analysis.by_source %}
+      <div>
+        <h3>Par niveau de source</h3>
+        {% with rows = analysis.by_source, heading = "Source" %}
+          {% include "_rates.html" %}
+        {% endwith %}
+        {% if analysis.unlabelled_source %}
+        <p class="muted small">
+          + {{ analysis.unlabelled_source }} sans source, sur {{ analysis.settled }} tranchée(s).
+        </p>
+        {% endif %}
       </div>
       {% endif %}
     </div>

@@ -18,7 +18,7 @@ from typing import Any
 
 from ..config import Settings, get_settings
 from .grid import GridRow, anchor, build_view
-from .history import PickableEvent, list_picks, pickable_events
+from .history import ANGLES, PickableEvent, list_picks, pickable_events
 from .history import tiers as load_tiers
 
 #: Une ligne de tableau Markdown : `| a | b | c |`.
@@ -40,6 +40,12 @@ HEADERS: dict[str, tuple[str, ...]] = {
     "price": ("cote", "odds", "cotes"),
     "tier": ("palier", "tier", "bande"),
     "confidence": ("conf 5", "conf", "confiance", "conf/5", "confiance 5"),
+    # Le « pourquoi ». « Angle » n'est **pas** un alias de `angle` : c'est le
+    # nom de la colonne de prose qui decrit la selection en une ligne, et la
+    # confondre avec la nature de l'angle ferait entrer une phrase entiere dans
+    # un champ a deux valeurs.
+    "angle": ("type", "nature"),
+    "source": ("source", "niveau de source", "niveau source", "src"),
 }
 
 
@@ -57,6 +63,11 @@ class ParsedPick:
     tier: str = ""
     tier_text: str = ""
     confidence: str = ""
+    #: Le « pourquoi » : la nature de l'angle, et le niveau de la source qui
+    #: porte le fait principal. Vides quand le rendu ne les a pas donnes — ils
+    #: ne font pas partie de `ready`, une selection restant enregistrable sans.
+    angle: str = ""
+    source: str = ""
     #: Une selection identique existe deja dans la session, ou plus haut dans
     #: le meme tableau. Elle reste proposee — c'est peut-etre voulu — mais
     #: decochee : coller deux fois le meme rendu ne doit pas doubler l'historique.
@@ -186,6 +197,35 @@ def _confidence(text: str) -> str:
     return str(stars) if 1 <= stars <= 5 else ""
 
 
+def _angle(text: str) -> str:
+    """Reconnait `issue` ou `manière` dans une cellule.
+
+    Cherche le mot **dans** la cellule plutot que de la comparer entiere : le
+    rendu ecrit volontiers « manière (rythme) », et exiger le mot seul perdrait
+    la colonne sur une precision utile a la lecture.
+    """
+    folded = _fold(text)
+    for key in ANGLES:
+        if key in folded:
+            return key
+    return ""
+
+
+def _source(text: str) -> str:
+    """Reconnait le niveau de source. `2`, `niveau 2`, `2 (L'Équipe)`, `lecture`.
+
+    Le chiffre prime sur le mot : une cellule qui porte les deux — « 2, sinon
+    lecture » — decrit une source, et c'est elle qu'on veut mesurer.
+    """
+    folded = _fold(text)
+    if not folded:
+        return ""
+    match = re.search(r"[1-4]", folded)
+    if match:
+        return match.group(0)
+    return "lecture" if "lecture" in folded else ""
+
+
 def _resolve_tier(text: str, tiers: list[dict[str, str]]) -> str:
     """Retrouve la cle du palier depuis « 🟢 SAFE », « SAFE » ou « safe »."""
     raw = (text or "").strip()
@@ -269,6 +309,8 @@ def parse_table(
                 tier=_resolve_tier(values["tier"], tiers),
                 tier_text=values["tier"],
                 confidence=_confidence(values["confidence"]),
+                angle=_angle(values["angle"]),
+                source=_source(values["source"]),
                 duplicate=signature in seen,
             )
         )

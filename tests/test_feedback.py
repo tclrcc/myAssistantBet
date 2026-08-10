@@ -655,3 +655,22 @@ def test_le_taux_de_selection_ne_produit_aucun_champ_financier() -> None:
     noms = {field.name for field in fields(Feedback)}
 
     assert not noms & {"roi", "profit", "stake", "mise", "gain", "bankroll"}
+
+
+def test_le_prompt_demande_le_type_et_la_source(migrated: Settings) -> None:
+    """Le prompt reclamait deja les deux elements en sections A et B, et les
+    jetait une fois l'analyse rendue. Deux colonnes suffisent a les garder.
+
+    « lecture » est presente comme une reponse normale : le contraire ferait
+    promouvoir un bloc de contexte au rang de source citee, et detruirait la
+    seule comparaison qui puisse changer la methode.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    _regle(migrated, session_id, event_id, "safe", "win")
+
+    corps = " ".join(build_prompt(session_id, settings=migrated, now=NOW).body.split())
+
+    assert "| Type | Source |" in corps
+    assert "reprend le mot de la section B" in corps
+    assert "`lecture` est une réponse **normale et fréquente**" in corps
+    assert "adossée à un fait daté tient mieux qu'une lecture" in corps
