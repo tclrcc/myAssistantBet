@@ -1360,6 +1360,49 @@ l'avait franchi depuis des mois sans que rien ne bronche.
   panne exacte qui a fait echouer la premiere version de cette fixture. Un
   enrichissement complet se simule donc de bout en bout avec `DOSSIER_RATE_HEADERS`.
 
+## Familles de marches (`services/market_families.py`)
+
+Neuf regroupements de marches sur cent selections, **dont six vus une seule fois** :
+chacun mesurait le hasard, et le bloc entier ne se lisait pas. Or `O/U` et `O/U 2.5`
+sont le meme pari a une ligne pres, `Vainqueur` et `1N2` la meme chose sur deux sports,
+`Handicap` et `Hand. jeux` aussi. Mesure apres groupement : **trois familles passent le
+seuil** — Issue 24/49, Handicap 11/23, Total 10/21 — la ou aucun libelle ne l'atteignait.
+
+- **Deux niveaux de cle, et il faut les deux.** La cle fine (`market_key`) distingue
+  `O/U 2.5` de `O/U 3.5` et titre une ligne du detail ; la cle de famille (`family_key`)
+  retire en plus la **valeur de ligne finale**, qui est un parametre du marche et non un
+  autre marche. Sans elle, chaque seuil rencontre reclamerait sa propre correspondance et
+  la liste « a classer » ne desemplirait jamais.
+  - **Seuls les nombres de fin sont retires.** « Les 2 équipes marquent » garde son 2 :
+    ce n'est pas une ligne, c'est une partie du nom. Retirer tout nombre ou qu'il soit
+    aurait produit une cle que personne ne reconnait dans les reglages.
+- **Rien n'est deduit d'un libelle**, meme regle que le niveau d'une competition. Le
+  vocabulaire est pourtant connu — c'est celui de `render.MARKET_ORDER_BY_SPORT`, le
+  prompt imposant de choisir un marche present dans le bloc — mais une saisie a la main
+  reste libre. La migration 027 et `FAMILY_SEED` portent la meme table, et un test compare
+  les deux ecritures.
+- **`autre` est une decision, jamais un depotoir.** Une cle inconnue n'y tombe pas
+  d'office : le regroupement se lirait comme un choix alors que ce serait un oubli, et le
+  marche nouveau qu'on essaie serait le premier a disparaitre dans le fourre-tout. Il est
+  reclame dans les reglages, avec son compte, et `unclassified_markets` ferme l'addition.
+  - Y sont ranges **par decision** : corners et cartons, qui sont des totaux d'une autre
+    grandeur — les melanger aux buts ferait decrire deux choses par un seul taux ; les
+    props buteurs, qui sont des marches de joueur ; et `Cotes`, libelle libre de la saisie
+    manuelle, qui peut recouvrir n'importe quoi.
+  - `equipe` est la seule famille rangee par **sujet** et non par forme : un total
+    d'equipe est un total, mais « plus de 1.5 but pour Lyon » et « plus de 2.5 buts dans
+    le match » ne se gagnent pas dans les memes scenarios.
+- **Un seul comptage, deux vues.** La carte « Par marché » applique son seuil
+  (`ANALYSIS_MIN_MARKET`), le deplie d'une famille non — c'est tout l'interet du
+  groupement, un libelle vu deux fois disant quelque chose sous sa famille. Les deux
+  sortent du meme `_rate_tally` : les recalculer separement les aurait fait diverger, et
+  la somme du deplie n'aurait plus tombe juste sur sa ligne.
+- **La famille se resout a la lecture**, jamais recopiee sur la selection : reclasser un
+  marche reclasse tout l'historique, sans migration. Meme regle que le niveau d'une
+  competition.
+- **Regrouper ne fabrique pas d'effectif** : une famille sous le seuil est palie et
+  comptee dans `thin_rows` comme les autres lignes.
+
 ## Sur quoi la selection reposait (`picks.angle`, `picks.source_level`)
 
 Palier, confiance, marche, sport, niveau de competition : **toutes les dimensions

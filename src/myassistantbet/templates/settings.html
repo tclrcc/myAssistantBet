@@ -40,10 +40,25 @@
 
 <section class="settings-section">
   <h2>Bandes de confiance</h2>
+  {# Elles servaient à la relecture seule, et le dire ici était vrai. Elles
+     entrent maintenant dans le prompt : le laisser écrit aurait posé une
+     affirmation périmée à l'endroit exact où l'on vient de gagner en justesse. #}
   <p class="muted small">
-    Le taux qu'un niveau de confiance devrait atteindre. Sert à la page Statistiques,
-    jamais au prompt : c'est un repère de relecture, pas une consigne d'analyse.
+    Le taux qu'un niveau de confiance devrait atteindre. Sert à la page Statistiques
+    <strong>et au prompt</strong> : c'est le seul chiffre du retour d'expérience qui
+    parle de ta notation plutôt que des matchs, donc le seul sur lequel l'analyse
+    puisse agir dès la section C.
   </p>
   {% include "_bands.html" %}
+</section>
+
+<section class="settings-section">
+  <h2>Familles de marchés</h2>
+  <p class="muted small">
+    Regroupe les libellés qui décrivent le même pari, pour que la page Statistiques
+    ait des effectifs lisibles. Ne touche ni au prompt, ni aux cotes, ni à ce qui est
+    enregistré sur une sélection : c'est une lecture, pas une réécriture.
+  </p>
+  {% include "_families.html" %}
 </section>
 {% endblock %}

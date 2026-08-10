@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import logging
 import re
-import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from math import ceil, sqrt
@@ -23,6 +22,9 @@ from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from .competitions import category_label, category_rank
 from .labels import affiche, sort_key
+from .market_families import family_key, family_label, family_rank
+from .market_families import load as load_families
+from .market_families import market_key as _market_key
 
 logger = logging.getLogger(__name__)
 
@@ -1290,6 +1292,20 @@ class SessionRate:
 
 
 @dataclass
+class Family:
+    """Une famille de marches, et le detail fin qu'elle regroupe.
+
+    Le detail est **entier**, sans le seuil qui filtre la carte « Par marché » :
+    c'est tout l'interet du groupement — un libelle vu deux fois ne dit rien
+    seul, il dit quelque chose sous sa famille, et la somme du deplie doit
+    tomber juste sur le total de la ligne.
+    """
+
+    rates: RateRow
+    markets: list[RateRow] = field(default_factory=list)
+
+
+@dataclass
 class Analysis:
     """Ce que vaut l'analyse, jouee ou non.
 
@@ -1328,6 +1344,15 @@ class Analysis:
     #: tout le football est reste invisible cent paris durant.
     uncategorised: int = 0
     by_market: list[RateRow] = field(default_factory=list)
+    #: Marches groupes par famille. Rendu **avant** le detail fin : neuf
+    #: regroupements dont six vus une seule fois ne se lisaient pas, la ou trois
+    #: familles passent le seuil.
+    by_family: list[Family] = field(default_factory=list)
+    #: Libelles de marche qu'aucune famille ne porte. Jamais ranges d'office
+    #: dans « Autre » : le regroupement se lirait comme une decision alors que
+    #: ce serait un oubli, et un marche nouveau qu'on essaie serait le premier a
+    #: disparaitre dans le fourre-tout.
+    unclassified_markets: int = 0
     #: **Sur quoi** la selection reposait, et non de quoi elle avait l'air. Les
     #: autres axes sont des etiquettes de forme — un palier est une bande de
     #: cote, un marche un libelle. Ces deux-la portent la seule question dont la
@@ -1387,6 +1412,7 @@ class Analysis:
             self.by_market,
             self.by_angle,
             self.by_source,
+            [entry.rates for entry in self.by_family],
         )
 
     @property
@@ -1700,6 +1726,33 @@ def _rate_tally(entries: list[tuple[str, str, str, Any]], minimum: int = 1) -> l
     return [row for row in grouped.values() if row.settled >= minimum]
 
 
+def _by_family(tally: list[RateRow], known: dict[str, str]) -> tuple[list[Family], int]:
+    """Groupe les marches par famille. Rend aussi ce qui n'en a aucune.
+
+    Une cle inconnue **ne tombe pas dans « Autre »** : `autre` est une decision
+    prise marche par marche, pas le fourre-tout de ce qu'on n'a pas regarde. Le
+    compte des non classes est rendu a part, et les reglages les reclament.
+    """
+    grouped: dict[str, Family] = {}
+    orphans = 0
+    for entry in tally:
+        family = known.get(family_key(entry.key))
+        if family is None:
+            orphans += entry.settled
+            continue
+        target = grouped.setdefault(
+            family, Family(rates=RateRow(key=family, label=family_label(family)))
+        )
+        target.rates.merge(entry)
+        target.markets.append(entry)
+
+    found = [entry for entry in grouped.values() if entry.rates.settled]
+    for entry in found:
+        entry.markets.sort(key=lambda item: (-item.settled, item.label))
+    found.sort(key=lambda item: family_rank(item.rates.key))
+    return found, orphans
+
+
 def _by_session(
     sessions: list[Any],
     picks: list[Any],
@@ -1911,10 +1964,16 @@ def analysis(settings: Settings | None = None) -> Analysis:
         for row, result in zip(rows, results, strict=True)
         if _market_key(row["market"])
     ]
+    # Un seul comptage, deux vues : la carte fine applique son seuil, le deplie
+    # d'une famille non. Les recalculer separement les aurait fait diverger, et
+    # la somme du deplie n'aurait plus tombe juste sur sa ligne de famille.
+    tally = _rate_tally(markets)
     report.by_market = sorted(
-        _rate_tally(markets, ANALYSIS_MIN_MARKET), key=lambda item: (-item.settled, item.label)
+        (entry for entry in tally if entry.settled >= ANALYSIS_MIN_MARKET),
+        key=lambda item: (-item.settled, item.label),
     )
-    report.hidden_markets = len(_rate_tally(markets)) - len(report.by_market)
+    report.hidden_markets = len(tally) - len(report.by_market)
+    report.by_family, report.unclassified_markets = _by_family(tally, load_families(settings))
 
     for row, result in zip(rows, results, strict=True):
         _count(report.played if row["played"] else report.skipped, result, row)
@@ -2117,18 +2176,6 @@ class Feedback:
         prompt le presenterait comme un ordre de passage durable.
         """
         return self.settled >= self.minimum and self.days >= self.minimum_days
-
-
-def _market_key(text: str) -> str:
-    """Regroupe les libelles de marche, qui sont ecrits a la main.
-
-    `Over 2.5 buts`, `over 2,5 buts` et `Over  2.5 Buts` sont le meme marche.
-    La normalisation de `matching.py` ne convient pas ici : elle retire les
-    chiffres aux extremites, et « Over 2.5 » y deviendrait « over ».
-    """
-    decomposed = unicodedata.normalize("NFKD", text or "")
-    stripped = "".join(char for char in decomposed if not unicodedata.combining(char))
-    return " ".join(re.sub(r"[^a-z0-9]+", " ", stripped.lower()).split())
 
 
 def _feedback_tally(entries: list[tuple[str, str, str]]) -> list[FeedbackRow]:

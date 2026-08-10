@@ -1,0 +1,74 @@
+<div id="families">
+  {% if families_saved %}<div class="report">Famille enregistrée.</div>{% endif %}
+
+  <p class="muted small">
+    Neuf regroupements de marchés sur cent sélections, dont six vus une seule fois :
+    chacun mesurait le hasard. « O/U » et « O/U 2.5 » sont le même pari à une ligne
+    près, « Vainqueur » et « 1N2 » la même chose sur deux sports. Groupés, trois
+    familles atteignent un effectif lisible.
+  </p>
+  <p class="muted small">
+    La valeur de ligne ne compte pas dans la clé : « O/U 2.5 » et « O/U 3.5 » se
+    classent ensemble, une ligne étant un paramètre du marché et non un autre marché.
+    <strong>Rien n'est déduit d'un libellé</strong> : un marché inconnu n'est jamais
+    rangé d'office dans « Autre » — il est réclamé ci-dessous.
+  </p>
+
+  {# Un marché nouveau qu'on essaie serait le premier à disparaître dans un
+     fourre-tout : il est donc réclamé, avec ce qu'il porte déjà. #}
+  {% if market_todo %}
+  <div class="report report-warn">
+    <b>{{ market_todo | length }} marché(s) à classer.</b>
+    Leurs sélections sont comptées à part sur la page Statistiques au lieu de rejoindre
+    une famille lisible.
+  </div>
+  {% endif %}
+
+  <table class="board">
+    <thead>
+      <tr>
+        <th>Marché</th>
+        <th class="num">Sélections</th>
+        <th>Famille</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in market_todo %}
+      <tr>
+        <td class="affiche">{{ row.label or row.key }}</td>
+        <td class="num">
+          {{ row.picks }}{% if row.settled %} <span class="muted small">dont {{ row.settled }} tranchée(s)</span>{% endif %}
+        </td>
+        <td>
+          <select name="family" aria-label="Famille de {{ row.label or row.key }}"
+                  hx-trigger="change" hx-post="/settings/families"
+                  hx-vals='{"market_key": {{ row.key | tojson }}}'
+                  hx-target="#families" hx-swap="outerHTML">
+            <option value="">À classer</option>
+            {% for key, label in market_family_options.items() %}
+            <option value="{{ key }}">{{ label }}</option>
+            {% endfor %}
+          </select>
+        </td>
+      </tr>
+      {% endfor %}
+      {% for row in market_families %}
+      <tr>
+        <td class="muted">{{ row.key }}</td>
+        <td class="num muted">—</td>
+        <td>
+          <select name="family" aria-label="Famille de {{ row.key }}"
+                  hx-trigger="change" hx-post="/settings/families"
+                  hx-vals='{"market_key": {{ row.key | tojson }}}'
+                  hx-target="#families" hx-swap="outerHTML">
+            <option value="">À classer</option>
+            {% for key, label in market_family_options.items() %}
+            <option value="{{ key }}" {% if key == row.family %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

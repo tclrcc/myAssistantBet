@@ -39,6 +39,7 @@ from .services import history as history_service
 from .services import labels as labels_service
 from .services import manual as manual_service
 from .services import mapping_ui as mapping_service
+from .services import market_families as market_families_service
 from .services import odds_view as odds_view_service
 from .services import picks_import as picks_import_service
 from .services import prompt as prompt_service
@@ -1178,6 +1179,16 @@ def _settings_context(**overrides: object) -> dict[str, object]:
         "preferences": prompt_service.read_preference(prompt_service.PREFERENCE_NOTES, settings),
         "preferences_error": None,
         "preferences_saved": False,
+        # Les familles de marches : ce qui est deja classe, et ce qui reclame
+        # une decision. Un marche inconnu n'est jamais range d'office dans
+        # « Autre » — ce serait lire un oubli comme une decision.
+        "market_families": [
+            {"key": key, "family": family}
+            for key, family in sorted(market_families_service.load(settings).items())
+        ],
+        "market_todo": market_families_service.unclassified(settings),
+        "market_family_options": market_families_service.FAMILIES,
+        "families_saved": False,
     }
     context.update(overrides)
     return context
@@ -1234,6 +1245,18 @@ def save_preferences(request: Request, preferences: str = Form(default="")) -> H
         )
     return templates.TemplateResponse(
         request, "_preferences.html", _settings_context(preferences_saved=True)
+    )
+
+
+@app.post("/settings/families", response_class=HTMLResponse)
+async def save_market_family(request: Request) -> HTMLResponse:
+    """Classe un libelle de marche dans une famille, ou retire son classement."""
+    form = await request.form()
+    market_families_service.set_family(
+        str(form.get("market_key", "")), str(form.get("family", "")), get_settings()
+    )
+    return templates.TemplateResponse(
+        request, "_families.html", _settings_context(families_saved=True)
     )
 
 

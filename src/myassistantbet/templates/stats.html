@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_charts.html" import bars, card, tile, hero, mix, sessions %}
+{% from "_charts.html" import bars, card, tile, hero, mix, sessions, families %}
 {% block title %}Statistiques — MyAssistantBet{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -112,6 +112,25 @@
                    sans match rattaché. Elles sont comptées ici, jamais mises en barre :
                    un taux moyen de ce qui n'a pas été saisi ne dirait rien des matchs.")
                  if analysis.uncategorised else "")) }}
+    {% endif %}
+    {# La famille avant le marché fin, et c'est mesuré : neuf regroupements dont
+       six vus une seule fois ne se lisaient pas — chacun mesurait le hasard.
+       Trois familles passent le seuil sur le même jeu de sélections. #}
+    {% if analysis.by_family %}
+    <article class="chart-card">
+      <h3>Par famille de marché</h3>
+      {{ families(analysis.by_family) }}
+      <p class="chart-note">
+        « O/U » et « O/U 2.5 » sont le même pari à une ligne près, « Vainqueur » et
+        « 1N2 » la même chose sur deux sports. Éclatés, aucun n'atteint un effectif
+        lisible. Le détail fin reste dépliable : la famille ordonne, le marché nomme.
+        {% if analysis.unclassified_markets %}
+          {{ analysis.unclassified_markets }} sélection(s) tranchée(s) portent un marché
+          qu'aucune famille ne couvre — il n'est jamais rangé d'office dans « Autre ».
+          <a href="/settings">Classer les marchés</a>
+        {% endif %}
+      </p>
+    </article>
     {% endif %}
     {% if analysis.by_market %}
       {{ card("Par marché", analysis.by_market,

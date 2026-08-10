@@ -23,6 +23,7 @@ EXPECTED_TABLES = {
     "events",
     "league_context",
     "market_coverage",
+    "market_families",
     "odds",
     "picks",
     "player_context",

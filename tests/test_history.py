@@ -1689,7 +1689,10 @@ def test_une_ligne_trop_courte_est_marquee_et_jamais_tue(
 
     assert [row.label for row in report.by_market] == ["O/U 2.5"], "la ligne existe toujours"
     assert report.by_market[0].thin
-    assert report.thin_rows == 3, "palier, sport, marche — ni confiance ni niveau ici"
+    # Palier, sport, marche et **famille** — ni confiance ni niveau ici. La
+    # famille compte comme les autres : regrouper des libelles ne fabrique pas
+    # de l'effectif, et sept paris restent sept paris sous « Total ».
+    assert report.thin_rows == 4
     assert "is-thin" in page
     assert f"moins de {ANALYSIS_MIN_ROWS}" in page
 

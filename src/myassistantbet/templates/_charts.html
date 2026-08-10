@@ -149,6 +149,30 @@
   </div>
 {% endmacro %}
 
+{# Les familles de marchés, avec leur détail fin replié. Neuf regroupements dont
+   six vus une seule fois ne se lisaient pas ; trois familles, si. Le détail
+   reste accessible parce que c'est lui qu'on joue — la famille ordonne, le
+   marché nomme.
+
+   Le déplié n'applique **pas** le seuil de la carte « Par marché » : c'est tout
+   l'intérêt du groupement, et la somme du déplié doit tomber juste sur le total
+   de sa ligne. #}
+{% macro families(rows) %}
+  {{ bars(rows | map(attribute='rates') | list) }}
+  <details class="panel chart-detail">
+    <summary>
+      Le marché fin
+      <span class="muted small">ce que chaque famille regroupe</span>
+    </summary>
+    {% for entry in rows %}
+    <div class="family-detail">
+      <b class="muted small">{{ entry.rates.label }}</b>
+      {{ bars(entry.markets) }}
+    </div>
+    {% endfor %}
+  </details>
+{% endmacro %}
+
 {% macro tile(row, label, note="") %}
   <div class="tile">
     <span class="label">{{ label }}</span>
