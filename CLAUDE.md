@@ -1533,6 +1533,25 @@ qu'il venait de disputer.
   manque » ferait douter de donnees completes. A compte nul, elle ecrit
   « toutes les lignes a jour ». Elle n'entre donc **pas** dans `CONTEXT_EXPECTED`, qui
   compte deja `Historique`.
+- **Elle nomme les adversaires, et c'est la seule chose que le bloc ne dit nulle part
+  ailleurs.** Le compte est sur cette ligne, la liste complete du tournoi sur `Parcours`
+  deux lignes plus haut : savoir *lesquels* manquent demandait de croiser les deux de tete,
+  exactement le travail que ce projet retire a l'analyse. Chaque nom est un match
+  identifiable, donc une recherche a mener — celle que le prompt designe comme la plus
+  rentable du lot. Quand ils manquent **tous**, la ligne ecrit « (tout le Parcours) »
+  plutot que de recopier `Parcours` mot pour mot.
+  - Le rapprochement passe par `Load.faced`, une paire `(journee, adversaire)` : `opponents`
+    et `days` sont tries chacun de son cote et ne se remettent pas en face l'un de l'autre.
+    Sans la paire, le premier tri divergent attribuerait le mauvais nom.
+- **Aspirer `atptour.com` a ete envisage et refuse.** Son `robots.txt` porte
+  `User-agent: ClaudeBot` / `Disallow: /` — avec GPTBot, CCBot, Google-Extended et les
+  autres agents d'IA — et un `Content-Signal: ai-train=no, use=reference` qui est une
+  reserve de droits explicite au titre de l'article 4 de la directive UE 2019/790.
+  Collecter ces pages pour les injecter dans un prompt Claude sous un autre nom d'agent
+  serait un contournement, pas une lecture de la regle ; le projet respecte les `robots.txt`
+  a la lettre, comme sur Tennis Abstract. Le chemin autorise est celui qui existe deja :
+  **la recherche de Claude en session** — debloquee par l'echelle des sources, ces pages
+  etant desormais de niveau 1 — et la `NOTE PERSO` pour ce qui est releve a la main.
 - **`tennis_round.truncated()` ne dit qu'un booleen, et c'est deliberе.** Le nombre de
   tours manquants demanderait la taille du tableau, exactement ce qui empeche ce module de
   nommer un tour par son ordinal. Le seul signal sur est qu'un nombre de joueurs vus ne

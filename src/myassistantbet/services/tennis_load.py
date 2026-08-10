@@ -56,6 +56,11 @@ class Load:
     #: Paris. C'est aussi l'echelle du fichier de resultats, qui date un match du
     #: jour ou il se joue sur place — les deux se comparent donc directement.
     days: tuple[str, ...] = ()
+    #: `(journee de tournoi, adversaire)` de chaque rencontre precedente, dans
+    #: l'ordre. `opponents` et `days` s'en deduisent, mais separement ils ne se
+    #: rapprochent pas : c'est la paire qui permet de nommer **quels** matchs
+    #: manquent a l'historique, et non seulement combien.
+    faced: tuple[tuple[str, str], ...] = ()
 
     @property
     def fragment(self) -> str:
@@ -120,6 +125,10 @@ def load_for(
     dates: list[datetime] = []
     veilles: list[str | None] = []
     faced: list[tuple[datetime, str]] = []
+    # La meme chose indexee par evenement, pour rapprocher chaque adversaire de
+    # **sa** journee de tournoi : `opponents` et `days` sont tries chacun de son
+    # cote et ne se remettent pas en face l'un de l'autre.
+    rencontres: dict[int, tuple[datetime, str]] = {}
     for row in rows:
         if key not in (sort_key(row["home"]), sort_key(row["away"])):
             continue
@@ -133,6 +142,7 @@ def load_for(
         autre = row["away"] if key == sort_key(row["home"]) else row["home"]
         if autre:
             faced.append((played, autre))
+            rencontres[int(row["id"])] = (played, autre)
 
     if not dates or when is None:
         return Load()
@@ -143,6 +153,11 @@ def load_for(
         opponents=tuple(nom for _, nom in sorted(faced)),
         first_day=min(connues) if connues else "",
         days=tuple(sorted(jour for jour in veilles if jour)),
+        faced=tuple(
+            (journees[identifiant], nom)
+            for identifiant, (_, nom) in sorted(rencontres.items(), key=lambda item: item[1][0])
+            if identifiant in journees
+        ),
     )
 
 
@@ -222,25 +237,55 @@ def path_lines(
     return [("Parcours", " | ".join(fragments) + _since(debut))]
 
 
+@dataclass(frozen=True)
+class Uncounted:
+    """Ce que l'historique ne connait pas encore du tournoi en cours."""
+
+    count: int = 0
+    #: Les adversaires de ces matchs-la, quand ils sont nommes. C'est ce qui
+    #: transforme un constat en **liste de taches** : chaque nom est un match
+    #: identifiable, donc une recherche que l'analyse peut mener une par une.
+    opponents: tuple[str, ...] = ()
+    #: Vrai quand **tout** le parcours connu manque a l'historique. Les nommer
+    #: alors ne ferait que recopier la ligne « Parcours », deux lignes plus
+    #: haut : autant le dire en trois mots.
+    whole_path: bool = False
+
+
 def played_since(
     player: str,
     competition_id: int | None,
     commence_time: str,
     cutoff: date,
     settings: Settings | None = None,
-) -> int:
+) -> Uncounted:
     """Matchs de ce tournoi joues par ce joueur **apres** la date de collecte.
 
-    C'est le nombre de matchs que l'historique ne connait pas encore, donc que
+    Ce sont les matchs que l'historique ne connait pas encore, donc que
     « Forme », « Usure », « Profil », « Marge » et « Niveau adv. » ne comptent
-    pas. Sur un quart de finale, il vaut trois : l'usure affichee ignore alors
+    pas. Sur un quart de finale, il y en a trois : l'usure affichee ignore alors
     tout le tournoi en cours, et rien ne le disait.
+
+    **Les adversaires sont nommes**, parce que c'est la seule chose que le bloc
+    ne dit nulle part ailleurs : le compte se lit dans « Fraicheur » et la liste
+    complete dans « Parcours », mais rapprocher les deux pour savoir *lesquels*
+    manquent etait laisse a l'analyse. Quand ils manquent tous, la ligne le dit
+    en trois mots plutot que de recopier « Parcours ».
 
     Aucun appel, aucune cle : les tours precedents ont ete scannes les jours
     d'avant, et leurs journees de tournoi sont deja calculees pour le repos.
     """
     charge = load_for(player, competition_id, commence_time, settings)
-    return sum(1 for jour in charge.days if jour > cutoff.isoformat())
+    limite = cutoff.isoformat()
+    count = sum(1 for jour in charge.days if jour > limite)
+    if not count:
+        return Uncounted()
+    noms = tuple(nom for jour, nom in charge.faced if jour > limite)
+    return Uncounted(
+        count=count,
+        opponents=noms,
+        whole_path=bool(charge.opponents) and len(noms) == len(charge.opponents),
+    )
 
 
 def _since(first_day: str) -> str:

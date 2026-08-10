@@ -186,7 +186,12 @@ def test_les_matchs_joues_depuis_la_collecte_se_comptent(migrated: Settings) -> 
         "Fils", _competition(migrated), "2026-08-09T18:00:00Z", date(2026, 8, 3), migrated
     )
 
-    assert depuis == 3
+    assert depuis.count == 3
+    # **Et il les nomme** : c'est la seule chose que le bloc ne dit nulle part
+    # ailleurs. Le compte est sur « Fraicheur », la liste complete sur
+    # « Parcours » ; savoir lesquels manquent demandait de croiser les deux.
+    assert depuis.opponents == ("Adversaire 04", "Adversaire 06", "Adversaire 08")
+    assert depuis.whole_path, "aucun match du parcours n'est connu de l'historique"
 
 
 def test_un_match_anterieur_a_la_collecte_ne_compte_pas(migrated: Settings) -> None:
@@ -198,4 +203,20 @@ def test_un_match_anterieur_a_la_collecte_ne_compte_pas(migrated: Settings) -> N
         "Fils", _competition(migrated), "2026-08-08T18:00:00Z", date(2026, 8, 5), migrated
     )
 
-    assert depuis == 1
+    assert depuis.count == 1
+    assert depuis.opponents == ("Navone",), "seul le match posterieur a la collecte"
+    assert not depuis.whole_path, "l'autre est deja dans l'historique — Parcours en dit plus"
+
+
+def test_un_adversaire_est_rapproche_de_sa_propre_journee(migrated: Settings) -> None:
+    """`opponents` et `days` sont tries chacun de son cote et ne se remettent pas
+    en face l'un de l'autre : sans la paire, nommer « les matchs posterieurs a la
+    collecte » attribuerait le mauvais adversaire des qu'un tri differe.
+
+    Les noms sont volontairement dans l'ordre inverse des dates."""
+    _match(migrated, "Fils", "Zzz", "2026-08-04T18:00:00Z")
+    _match(migrated, "Aaa", "Fils", "2026-08-08T18:00:00Z")
+
+    charge = tennis_load.load_for("Fils", _competition(migrated), "2026-08-09T18:00:00Z", migrated)
+
+    assert charge.faced == (("2026-08-04", "Zzz"), ("2026-08-08", "Aaa"))

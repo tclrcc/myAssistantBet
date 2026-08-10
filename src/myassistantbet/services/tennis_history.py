@@ -799,6 +799,24 @@ def _late_fragment(collected: date | None, start: datetime) -> str:
 STALE_LINES = "Forme/Usure/Profil/Marge/Niveau adv."
 
 
+def _which(manquants: tennis_load.Uncounted) -> str:
+    """`(tout le Parcours)` ou ` : Musetti, Lehecka` — jamais les deux.
+
+    **Nommer les adversaires est la seule chose que le bloc ne dit nulle part
+    ailleurs.** Le compte est sur cette ligne, la liste complete sur
+    « Parcours » ; savoir *lesquels* manquent demandait de croiser les deux de
+    tete, ce que ce projet cherche precisement a ne plus faire faire.
+
+    Quand ils manquent tous, les nommer recopierait « Parcours » mot pour mot :
+    trois mots suffisent alors, et ils disent la meme chose.
+    """
+    if manquants.whole_path:
+        return " (tout le Parcours)"
+    if not manquants.opponents:
+        return ""
+    return " : " + ", ".join(manquants.opponents)
+
+
 def _freshness_line(
     home: str,
     away: str,
@@ -825,12 +843,11 @@ def _freshness_line(
     for player in (home, away):
         if not player:
             continue
-        played = tennis_load.played_since(
+        manquants = tennis_load.played_since(
             player, competition_id, commence_time, collected, settings
         )
-        if played:
-            suffixe = " de ce tournoi non comptes" if not fragments else ""
-            fragments.append(f"{player} {played} matchs{suffixe}")
+        if manquants.count:
+            fragments.append(f"{player} {manquants.count} non comptes{_which(manquants)}")
 
     detail = " | ".join(fragments) if fragments else "toutes les lignes a jour"
     rows = [f"{STALE_LINES} arretees au {_short(collected.isoformat())}", detail]

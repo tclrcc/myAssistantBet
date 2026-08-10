@@ -1161,7 +1161,7 @@ def test_la_fraicheur_compte_ce_que_l_historique_ignore(migrated: Settings) -> N
     assert lignes["Fraicheur"].startswith(
         "Forme/Usure/Profil/Marge/Niveau adv. arretees au 05/07\n"
     )
-    assert "Jiri Lehecka 3 matchs de ce tournoi non comptes" in lignes["Fraicheur"]
+    assert "Jiri Lehecka 3 non comptes" in lignes["Fraicheur"]
 
 
 def test_un_historique_a_jour_sur_le_tournoi_le_dit(migrated: Settings) -> None:
@@ -1355,7 +1355,8 @@ def test_le_preambule_fait_lire_la_fraicheur_au_lieu_de_la_calculer(migrated: Se
     corps = " ".join(build_prompt(session, settings=migrated, now=NOW).body.split())
 
     assert "**« Fraicheur »** dit ce que ça coûte" in corps
-    assert "Rien à recalculer, le compte est écrit." in corps
+    assert "**nomme les adversaires de ces matchs-là**" in corps
+    assert "Rien à recalculer ni à croiser." in corps
 
 
 def test_les_faits_declencheurs_du_tennis_remplacent_ceux_du_football(migrated: Settings) -> None:

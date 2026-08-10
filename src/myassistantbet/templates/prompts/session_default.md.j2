@@ -741,12 +741,16 @@ quarante jeux sont ordinaires ; le compte écrit à côté dit combien des dix o
 retenus, ces trois lignes n'existent pas.
 {% if 'Historique' in context_labels %}
 **« Historique »** dit jusqu'où va le jeu de données — la source est hebdomadaire
-et publiée après coup. **« Fraicheur »** dit ce que ça coûte : elle nomme les
-lignes concernées et **compte**, joueur par joueur, les matchs de ce tournoi qui
-n'y sont pas encore. Rien à recalculer, le compte est écrit. Une mention « tours
-anterieurs non scannes » ajoute que le début du tableau précède notre fenêtre de
-collecte. Seules **« Tour », « Repos » et « Parcours »** portent le tournoi en
-cours, et elles n'en donnent aucun résultat : c'est la première recherche à faire.
+et publiée après coup. **« Fraicheur »** dit ce que ça coûte **et désigne le
+travail** : elle nomme les lignes concernées, compte les matchs de ce tournoi qui
+n'y sont pas encore, et **nomme les adversaires de ces matchs-là**. Chaque nom est
+une recherche à mener, et c'est la plus rentable du lot ; « (tout le Parcours) »
+veut dire que la ligne « Parcours » les liste tous. Rien à recalculer ni à
+croiser. Une mention « tours anterieurs non scannes » ajoute que le début du
+tableau précède notre fenêtre de collecte — il manque alors des matchs que même
+« Parcours » ne nomme pas. Seules **« Tour », « Repos » et « Parcours »** portent
+le tournoi en cours, et elles n'en donnent aucun résultat : c'est la première
+recherche à faire.
 {% endif %}{% if 'Parcours' in context_labels %}
 **« Parcours »** nomme les adversaires déjà rencontrés **dans ce tournoi-ci**, du
 premier tour au dernier, avec leur Elo quand il est connu : c'est ce qui
