@@ -1,0 +1,24 @@
+-- 028_independance.sql — pourquoi deux selections sur le meme match.
+--
+-- Cent selections pour **97 evenements distincts** : trois matchs en portent
+-- deux. Le prompt l'autorise et l'encadre depuis toujours — « deux selections
+-- sur un meme match ne se justifient que si elles reposent sur des angles
+-- reellement independants, et tu le dis alors explicitement » — mais rien de
+-- cette justification n'arrivait en base. Elle etait ecrite dans le rendu, lue
+-- une fois, puis perdue.
+--
+-- Ce que ca coute de la perdre : `RateRow.clustered` sait deja qu'un
+-- regroupement porte moins d'evenements que de selections, et la page annonce
+-- alors que ses intervalles sont optimistes. Elle ne peut pas dire si c'est
+-- grave — deux angles vraiment independants sur un match ne tombent pas
+-- ensemble, deux angles qui se ressemblent si — et cette note est la seule
+-- chose qui permette de trancher, match par match.
+--
+-- La note est **exigee a la saisie** de la seconde selection, et son absence
+-- refuse l'enregistrement. C'est le seul controle bloquant de tout le module :
+-- ailleurs une valeur manquante vaut « non renseigne », ici elle vaudrait
+-- « j'ai oublie de me poser la question », et le prompt nomme precisement ce
+-- cas — « multiplier les lignes d'un meme match pour atteindre un quota est une
+-- facon deguisee de remplir un palier avec du vide ».
+
+ALTER TABLE picks ADD COLUMN independence_note TEXT;

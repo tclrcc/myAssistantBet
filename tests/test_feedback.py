@@ -89,6 +89,11 @@ def _regle(
         "Over",
         event_id=str(event_id),
         confidence=confidence,
+        # Ces tests montent plusieurs selections sur un **meme match** par
+        # commodite — c'est le match le moins couteux a fabriquer. La note
+        # d'independance est donc fournie d'office : c'est un test dedie qui
+        # verifie qu'elle est exigee, pas chaque montage de fixture.
+        independence_note="angles indépendants (fixture)",
         settings=settings,
     )
     set_result(pick_id, result, settings)
@@ -453,7 +458,13 @@ def test_le_retour_compte_les_selections_non_jouees(migrated: Settings) -> None:
     session_id, event_id = _session_avec_match(migrated)
     for _ in range(FEEDBACK_MIN_TOTAL):
         pick_id = add_pick(
-            session_id, "safe", "O/U 2.5", "Over", event_id=str(event_id), settings=migrated
+            session_id,
+            "safe",
+            "O/U 2.5",
+            "Over",
+            event_id=str(event_id),
+            independence_note="angles indépendants (fixture)",
+            settings=migrated,
         )
         set_result(pick_id, "win", migrated)
 

@@ -68,6 +68,11 @@ class ParsedPick:
     #: ne font pas partie de `ready`, une selection restant enregistrable sans.
     angle: str = ""
     source: str = ""
+    #: Un autre pick de la session porte deja ce match — dans le tableau colle,
+    #: ou en base. La ligne reste proposee, mais elle reclame sa justification
+    #: d'independance : `add_pick` la refuse sans.
+    same_event: bool = False
+    independence: str = ""
     #: Une selection identique existe deja dans la session, ou plus haut dans
     #: le meme tableau. Elle reste proposee — c'est peut-etre voulu — mais
     #: decochee : coller deux fois le meme rendu ne doit pas doubler l'historique.
@@ -80,8 +85,13 @@ class ParsedPick:
 
     @property
     def keep(self) -> bool:
-        """Vrai si la ligne est cochee par defaut dans le formulaire."""
-        return self.ready and not self.duplicate
+        """Vrai si la ligne est cochee par defaut dans le formulaire.
+
+        Une seconde selection sur un match deja pris reste **decochee** tant que
+        sa justification manque : `add_pick` la refuserait, et une ligne qui
+        echoue a l'import se remarque moins qu'une case qu'on doit cocher.
+        """
+        return self.ready and not self.duplicate and not (self.same_event and not self.independence)
 
     @property
     def problems(self) -> list[str]:
@@ -96,6 +106,8 @@ class ParsedPick:
             issues.append("match non rapproché")
         if self.duplicate:
             issues.append("déjà présente")
+        if self.same_event and not self.independence:
+            issues.append("2e sélection sur ce match : dire l'angle indépendant")
         return issues
 
 
@@ -117,6 +129,11 @@ class ImportPreview:
     @property
     def duplicate_count(self) -> int:
         return sum(1 for pick in self.picks if pick.duplicate)
+
+    @property
+    def same_event_count(self) -> int:
+        """Lignes portant sur un match qu'une autre selection porte deja."""
+        return sum(1 for pick in self.picks if pick.same_event)
 
 
 def _signature(event_id: int | None, market: str, selection: str) -> tuple[Any, ...]:
@@ -257,6 +274,7 @@ def parse_table(
     tiers: list[dict[str, str]],
     known: set[tuple[Any, ...]] | None = None,
     nearby: list[PickableEvent] | None = None,
+    taken: set[int] | None = None,
 ) -> ImportPreview:
     """Lit le tableau de selections. Ne rapproche jamais un match au hasard.
 
@@ -275,6 +293,10 @@ def parse_table(
     # Les doublons se cherchent contre la session **et** contre le tableau
     # lui-meme : un rendu recopie deux fois se repete a l'interieur.
     seen = set(known or ())
+    # Les matchs deja pris, en base **et** plus haut dans le tableau : deux
+    # lignes du meme rendu sur une meme affiche sont le cas que le prompt
+    # encadre, et le second des deux doit se justifier.
+    events = set(taken or ())
 
     for line in (raw or "").splitlines():
         cells = _cells(line)
@@ -312,9 +334,12 @@ def parse_table(
                 angle=_angle(values["angle"]),
                 source=_source(values["source"]),
                 duplicate=signature in seen,
+                same_event=event_id is not None and event_id in events,
             )
         )
         seen.add(signature)
+        if event_id is not None:
+            events.add(event_id)
 
     if columns is None:
         preview.ignored.append(
@@ -339,4 +364,5 @@ def build_preview(
     # Le voisinage rattrape ce que la shortlist ne contient pas : un match qui a
     # commence a quitte le board et n'a jamais pu y etre coche.
     nearby = [event for event in pickable_events(session_id, settings) if not event.in_session]
-    return parse_table(raw, rows, load_tiers(settings), known, nearby)
+    taken = {pick.event_id for pick in list_picks(session_id, settings) if pick.event_id}
+    return parse_table(raw, rows, load_tiers(settings), known, nearby, taken)

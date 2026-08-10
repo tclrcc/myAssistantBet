@@ -70,6 +70,13 @@ def _session_avec_match(settings: Settings, sport: str = "football") -> tuple[in
     return board_service.toggle_selection(event_id, True, settings), event_id
 
 
+#: Ces tests montent plusieurs selections sur un **meme match** par commodite —
+#: c'est le match le moins couteux a fabriquer. La note d'independance est donc
+#: fournie d'office : c'est un test dedie qui verifie qu'elle est exigee, pas
+#: chaque montage de fixture.
+INDEP = {"independence_note": "angles indépendants (fixture)"}
+
+
 # -- Saisie des picks -------------------------------------------------------
 
 
@@ -208,6 +215,8 @@ def _joue(
         selection,
         event_id=str(event_id) if event_id else "",
         stake=stake,
+        # Meme raison que `_propose` : ces montages reutilisent un match unique.
+        independence_note="angles indépendants (fixture)",
         settings=settings,
     )
     set_result(pick_id, result, settings)
@@ -483,7 +492,9 @@ def test_la_feuille_separe_le_tranche_de_l_attente(migrated: Settings) -> None:
     """Melangees, il fallait relire quinze lignes pour trouver les trois qui restent."""
     session_id, event_id = _session_avec_match(migrated)
     attente = add_pick(session_id, "safe", "O/U", "Over", event_id=str(event_id), settings=migrated)
-    gagne = add_pick(session_id, "fun", "O/U", "Under", event_id=str(event_id), settings=migrated)
+    gagne = add_pick(
+        session_id, "fun", "O/U", "Under", event_id=str(event_id), settings=migrated, **INDEP
+    )
     set_result(gagne, "win", migrated)
 
     feuille = worksheet(session_id, migrated)
@@ -526,7 +537,9 @@ def test_la_feuille_groupe_par_competition(migrated: Settings) -> None:
     # Saisies en alternance : sans regroupement, elles ressortiraient melangees.
     add_pick(session_id, "safe", "Vainqueur", "Moutet", event_id=str(tennis), settings=migrated)
     add_pick(session_id, "safe", "O/U", "Over", event_id=str(foot), settings=migrated)
-    add_pick(session_id, "fun", "Vainqueur", "Bergs", event_id=str(tennis), settings=migrated)
+    add_pick(
+        session_id, "fun", "Vainqueur", "Bergs", event_id=str(tennis), settings=migrated, **INDEP
+    )
 
     groupes = worksheet(session_id, migrated).pending
 
@@ -592,7 +605,13 @@ def test_la_feuille_rend_deux_tableaux(client: TestClient, isolated_settings: Se
     session_id, event_id = _session_avec_match(isolated_settings)
     add_pick(session_id, "safe", "O/U", "Over", event_id=str(event_id), settings=isolated_settings)
     tranche = add_pick(
-        session_id, "fun", "O/U", "Under", event_id=str(event_id), settings=isolated_settings
+        session_id,
+        "fun",
+        "O/U",
+        "Under",
+        event_id=str(event_id),
+        settings=isolated_settings,
+        **INDEP,
     )
     set_result(tranche, "loss", isolated_settings)
 
@@ -773,6 +792,11 @@ def _propose(
         price=price,
         angle=angle,
         source_level=source_level,
+        # Ces tests montent plusieurs selections sur un **meme match** par
+        # commodite — c'est le match le moins couteux a fabriquer. La note
+        # d'independance est donc fournie d'office : c'est un test dedie qui
+        # verifie qu'elle est exigee, pas chaque montage de fixture.
+        independence_note="angles indépendants (fixture)",
         settings=settings,
     )
     set_result(pick_id, result, settings)
@@ -1279,7 +1303,7 @@ def test_les_paris_en_attente_ne_comptent_pas_d_evenement(migrated: Settings) ->
     """L'effectif accompagne le taux, qui ne porte que sur les tranchees."""
     session_id, event_id = _session_avec_match(migrated)
     _propose(migrated, session_id, event_id, "safe", "win")
-    add_pick(session_id, "safe", "O/U", "Over", event_id=str(event_id), settings=migrated)
+    add_pick(session_id, "safe", "O/U", "Over", event_id=str(event_id), settings=migrated, **INDEP)
 
     ligne = analysis(migrated).by_tier[0]
 
@@ -1690,7 +1714,9 @@ def test_l_analyse_compte_les_journees_d_analyse(migrated: Settings) -> None:
     # En attente : sans resultat, elle ne compte ni au total ni a l'etalement.
     _le_jour(
         migrated,
-        add_pick(session_id, "safe", "O/U", "Over", event_id=str(event_id), settings=migrated),
+        add_pick(
+            session_id, "safe", "O/U", "Over", event_id=str(event_id), settings=migrated, **INDEP
+        ),
         9,
     )
 
@@ -2237,3 +2263,111 @@ def test_les_groupes_sont_ranges_par_heure(migrated: Settings) -> None:
     noms = [nom for nom, _ in pickable_groups(session_id, migrated)]
 
     assert noms.index("Tennis · ATP Canadian Open") < noms.index("Football · Amical")
+
+
+# -- Une seconde selection sur le meme match --------------------------------
+
+
+def test_une_seconde_selection_sur_un_match_exige_sa_justification(migrated: Settings) -> None:
+    """Cent selections pour 97 evenements : trois matchs en portent deux.
+
+    Le prompt l'autorise et l'encadre depuis toujours — « deux selections sur un
+    meme match ne se justifient que si elles reposent sur des angles reellement
+    independants, et tu le dis alors explicitement » — mais rien de cette
+    justification n'arrivait en base. Elle etait ecrite dans le rendu, lue une
+    fois, puis perdue.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    add_pick(session_id, "safe", "Vainqueur", "Lyon", event_id=str(event_id), settings=migrated)
+
+    with pytest.raises(HistoryError, match="angle réellement indépendant"):
+        add_pick(session_id, "fun", "O/U", "Over", event_id=str(event_id), settings=migrated)
+
+
+def test_la_justification_debloque_et_se_stocke(migrated: Settings) -> None:
+    session_id, event_id = _session_avec_match(migrated)
+    add_pick(session_id, "safe", "Vainqueur", "Lyon", event_id=str(event_id), settings=migrated)
+
+    pick_id = add_pick(
+        session_id,
+        "fun",
+        "O/U",
+        "Over",
+        event_id=str(event_id),
+        independence_note="l'un porte l'issue, l'autre le rythme",
+        settings=migrated,
+    )
+
+    row = db.query_one(
+        "SELECT independence_note FROM picks WHERE id = ?", (pick_id,), settings=migrated
+    )
+    assert row["independence_note"] == "l'un porte l'issue, l'autre le rythme"
+
+
+def test_la_premiere_selection_ne_demande_rien(migrated: Settings) -> None:
+    """C'est **le seul controle bloquant du module** : l'imposer partout ferait
+    d'une exigence de bon sens une corvee sur chaque ligne."""
+    session_id, event_id = _session_avec_match(migrated)
+
+    pick_id = add_pick(session_id, "safe", "O/U", "Over", event_id=str(event_id), settings=migrated)
+
+    row = db.query_one(
+        "SELECT independence_note FROM picks WHERE id = ?", (pick_id,), settings=migrated
+    )
+    assert row["independence_note"] is None
+
+
+def test_le_controle_porte_sur_la_session_et_pas_sur_l_histoire(migrated: Settings) -> None:
+    """Deux analyses successives du meme match sont deux decisions distinctes,
+    pas une selection doublee : la regle du prompt vaut a l'interieur d'un
+    rendu, et la faire porter sur tout l'historique bloquerait un match rejoue
+    la semaine suivante."""
+    session_id, event_id = _session_avec_match(migrated)
+    add_pick(session_id, "safe", "O/U", "Over", event_id=str(event_id), settings=migrated)
+    with db.connect(migrated) as conn:
+        autre = int(
+            conn.execute(
+                "INSERT INTO sessions (label, created_at) VALUES ('S2', '2026-08-05T10:00:00Z')"
+            ).lastrowid
+        )
+
+    pick_id = add_pick(autre, "safe", "O/U", "Over", event_id=str(event_id), settings=migrated)
+
+    assert pick_id > 0
+
+
+def test_une_selection_sans_match_echappe_au_controle(migrated: Settings) -> None:
+    """Rien ne permet de les rapprocher : un pari sur un vainqueur de tournoi et
+    une ligne dont le rattachement a echoue ne sont pas « le meme match »."""
+    session_id, _ = _session_avec_match(migrated)
+    add_pick(session_id, "safe", "Combiné", "3 sélections", settings=migrated)
+
+    assert add_pick(session_id, "safe", "Combiné", "4 sélections", settings=migrated) > 0
+
+
+def test_la_justification_est_relue_sur_la_feuille(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Une donnee que rien ne lit finit par se retirer — c'est ce qui est arrive
+    a l'effectif collecte pendant des mois sans lecteur (migration 022).
+
+    Celle-ci se relit sur la feuille de session : c'est la qu'on voit si deux
+    angles etaient vraiment independants ou deux facons de dire la meme chose.
+    """
+    session_id, event_id = _session_avec_match(isolated_settings)
+    add_pick(
+        session_id, "safe", "Vainqueur", "Lyon", event_id=str(event_id), settings=isolated_settings
+    )
+    add_pick(
+        session_id,
+        "fun",
+        "O/U",
+        "Over",
+        event_id=str(event_id),
+        independence_note="issue contre rythme",
+        settings=isolated_settings,
+    )
+
+    page = " ".join(client.get(f"/history/{session_id}").text.split())
+
+    assert "↳ issue contre rythme" in page

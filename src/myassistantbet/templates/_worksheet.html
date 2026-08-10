@@ -51,6 +51,15 @@
       <td class="affiche">
         {{ pick.selection }}
         <span class="muted small">{{ pick.market }}</span>
+        {# La justification d'une seconde sélection sur le même match. Rendue ici
+           et pas seulement stockée : c'est en la relisant qu'on voit si deux
+           angles étaient vraiment indépendants ou deux façons de dire la même
+           chose — et une donnée que rien ne lit finit par se retirer. #}
+        {%- if pick.independence_note %}
+        <span class="muted small" title="Justification d'indépendance">
+          ↳ {{ pick.independence_note }}
+        </span>
+        {%- endif %}
       </td>
       <td class="num">{{ '%.2f'|format(pick.price) if pick.price else '·' }}</td>
       <td class="num muted">{{ pick.confidence or '·' }}</td>

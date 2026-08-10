@@ -487,3 +487,105 @@ def test_une_valeur_hors_vocabulaire_vaut_non_renseigne(migrated: Settings) -> N
         settings=migrated,
     )
     assert (row["angle"], row["source_level"]) == (None, None)
+
+
+# -- Une seconde selection sur le meme match, a l'import --------------------
+
+TABLEAU_DEUX_FOIS = """### C. Tableau des sélections
+
+| # | Match | Marché | Sélection | Cote | Palier | Conf/5 | Angle |
+|---|-------|--------|-----------|------|--------|--------|-------|
+| 1 | Hurkacz – Giron | Vainqueur | Hubert Hurkacz | 1.55 | 🟢 SAFE | 4 | Service |
+| 2 | Hurkacz – Giron | Jeux O/U | Over 21.5 | 2.10 | 🔵 FUN | 3 | Rythme |
+"""
+
+
+def test_la_seconde_ligne_d_un_meme_match_est_signalee(migrated: Settings) -> None:
+    """Le prompt encadre le cas depuis toujours ; l'import ne le voyait pas.
+
+    La ligne reste proposee — c'est peut-etre voulu — mais **decochee** tant que
+    sa justification manque : `add_pick` la refuserait, et une ligne qui echoue
+    a l'import se remarque moins qu'une case qu'on doit cocher.
+    """
+    session_id, _, _ = _session(migrated)
+
+    preview = picks_import.build_preview(session_id, TABLEAU_DEUX_FOIS, migrated)
+
+    assert [pick.same_event for pick in preview.picks] == [False, True]
+    assert preview.picks[0].keep and not preview.picks[1].keep
+    assert "2e sélection sur ce match" in " ".join(preview.picks[1].problems)
+    assert preview.same_event_count == 1
+
+
+def test_un_match_deja_pris_en_base_compte_aussi(migrated: Settings) -> None:
+    """Coller un second tableau ne remet pas le compteur a zero."""
+    session_id, hurkacz, _ = _session(migrated)
+    history_service.add_pick(
+        session_id, "safe", "Vainqueur", "Hurkacz", event_id=str(hurkacz), settings=migrated
+    )
+
+    preview = picks_import.build_preview(session_id, TABLEAU, migrated)
+
+    premiere = next(pick for pick in preview.picks if pick.event_id == hurkacz)
+    assert premiere.same_event
+
+
+def test_la_justification_saisie_recoche_la_ligne(migrated: Settings) -> None:
+    session_id, _, _ = _session(migrated)
+    preview = picks_import.build_preview(session_id, TABLEAU_DEUX_FOIS, migrated)
+
+    preview.picks[1].independence = "l'un porte l'issue, l'autre le rythme"
+
+    assert preview.picks[1].keep
+    assert "2e sélection sur ce match" not in " ".join(preview.picks[1].problems)
+
+
+def test_la_justification_arrive_en_base_par_l_import(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    session_id, _, _ = _session(isolated_settings)
+    preview = picks_import.build_preview(session_id, TABLEAU_DEUX_FOIS, isolated_settings)
+
+    payload: dict[str, str] = {}
+    for pick in preview.picks:
+        payload |= {
+            f"keep_{pick.index}": "1",
+            f"event_{pick.index}": str(pick.event_id or ""),
+            f"market_{pick.index}": pick.market,
+            f"selection_{pick.index}": pick.selection,
+            f"tier_{pick.index}": pick.tier,
+        }
+    payload["independence_2"] = "issue contre rythme"
+    client.post(f"/history/{session_id}/picks/import", data=payload)
+
+    notes = [
+        row["independence_note"]
+        for row in db.query(
+            "SELECT independence_note FROM picks ORDER BY id", settings=isolated_settings
+        )
+    ]
+    assert notes == [None, "issue contre rythme"]
+
+
+def test_sans_justification_l_import_refuse_la_ligne(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Elle est **decochee** par defaut ; forcee, elle echoue et le dit."""
+    session_id, _, _ = _session(isolated_settings)
+    preview = picks_import.build_preview(session_id, TABLEAU_DEUX_FOIS, isolated_settings)
+
+    payload: dict[str, str] = {}
+    for pick in preview.picks:
+        payload |= {
+            f"keep_{pick.index}": "1",
+            f"event_{pick.index}": str(pick.event_id or ""),
+            f"market_{pick.index}": pick.market,
+            f"selection_{pick.index}": pick.selection,
+            f"tier_{pick.index}": pick.tier,
+        }
+    page = client.post(f"/history/{session_id}/picks/import", data=payload).text
+
+    assert "angle réellement indépendant" in page
+    assert db.query_one("SELECT COUNT(*) AS n FROM picks", settings=isolated_settings)["n"] == 1, (
+        "seule la première ligne entre"
+    )

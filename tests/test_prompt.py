@@ -834,3 +834,91 @@ def test_un_palier_vide_se_commente(migrated: Settings) -> None:
     assert "un palier vide non commenté est un oubli" in corps
     # Et surtout : rien qui invite a le remplir.
     assert "Ne remplis jamais un palier avec une sélection qui appartient" in corps
+
+
+# -- L'ordre du prompt : ce qui decide avant ce qui explique -----------------
+
+
+@respx.mock
+async def test_le_mode_d_emploi_des_lignes_vient_apres_la_sortie_attendue(
+    odds_client: OddsAPIClient,
+    http_client: httpx.AsyncClient,
+    migrated: Settings,
+    load_fixture: Any,
+) -> None:
+    """Trois cents lignes de mode d'emploi se lisaient **avant** la methode.
+
+    Le lecteur apprenait ce que veut dire « Buts marq. » et comment se pose un
+    handicap jeux bien avant de savoir ce qu'il devait produire : les consignes
+    qui decident de la sortie etaient noyees au milieu de celles qui expliquent.
+    Deplacer ne change pas un token — c'est l'ordre qui etait faux.
+    """
+    from myassistantbet.providers.apifootball import APIFootballClient
+
+    from .test_context import _mock_all
+
+    session_id = await _session_enrichie(odds_client, migrated, load_fixture, enrich=False)
+    event = db.query_one("SELECT * FROM events WHERE home = 'BK Hacken'", settings=migrated)
+    _mock_all(load_fixture)
+    await fetch_context(
+        APIFootballClient(http_client, migrated),
+        {
+            "id": event["id"],
+            "home": event["home"],
+            "away": event["away"],
+            "commence_time": event["commence_time"],
+            "apifootball_league_id": 113,
+        },
+        migrated,
+    )
+
+    body = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "## COMMENT LIRE LES BLOCS" in body, "le mode d'emploi existe toujours"
+    assert "Une ligne **« Classement »**" in body or "Classement" in body
+    for section in ("## MÉTHODE", "## SORTIE ATTENDUE", "### F. Ce qui aurait changé"):
+        assert body.index(section) < body.index("## COMMENT LIRE LES BLOCS"), (
+            f"« {section} » doit précéder le mode d'emploi"
+        )
+
+
+@respx.mock
+async def test_les_regles_qui_decident_restent_en_tete(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Le partage n'est pas « tout ce qui est long descend ».
+
+    Ce qui **decide de ce qu'on rend** reste avant la methode : les interdits,
+    la cote du bloc qui fait autorite, « A relever » qui rend un marche
+    selectionnable, les lignes en quart qui ne le sont pas. Ce qui **explique
+    une ligne** descend. Un marche qu'on croit interdit faute d'avoir lu jusqu'au
+    bout est exactement l'erreur que ce prompt a deja payee une fois.
+    """
+    session_id = await _session_enrichie(odds_client, migrated, load_fixture, enrich=False)
+
+    body = build_prompt(session_id, settings=migrated, now=NOW).body
+    tete = body[: body.index("## MÉTHODE")]
+
+    assert "INTERDIT, sans exception" in tete
+    assert "Ces cotes font autorité" in tete
+    assert "Une ligne **« A relever »**" in tete
+    assert "les lignes en quart ne se posent pas" in tete
+
+
+def test_le_renvoi_se_garde_comme_le_chapitre_qu_il_annonce(migrated: Settings) -> None:
+    """La porte du chapitre est celle de son contenu, `sports`, et non
+    `context_labels` : ses paragraphes de football et de tennis se gardent sur le
+    sport du lot, pas sur les lignes recuperees. Un lot de football sans contexte
+    a bien un mode d'emploi a lire — celui de ses marches.
+
+    Un renvoi garde autrement que le chapitre qu'il annonce est le pire des deux
+    mondes : il promet une section absente, ou il tait une section presente.
+    """
+    session_id = board_service.current_session(migrated)
+    vide = build_prompt(session_id, settings=migrated, now=NOW).body
+    football = build_prompt(_lot_de(migrated, 2), settings=migrated, now=NOW).body
+
+    assert "COMMENT LIRE LES BLOCS" not in vide, "aucun sport, aucun mode d'emploi"
+    assert "Le mode d'emploi des lignes de contexte" not in vide
+    assert "COMMENT LIRE LES BLOCS" in football
+    assert "Le mode d'emploi des lignes de contexte" in football

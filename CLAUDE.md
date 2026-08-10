@@ -1360,6 +1360,62 @@ l'avait franchi depuis des mois sans que rien ne bronche.
   panne exacte qui a fait echouer la premiere version de cette fixture. Un
   enrichissement complet se simule donc de bout en bout avec `DOSSIER_RATE_HEADERS`.
 
+## L'ordre du prompt : ce qui decide avant ce qui explique
+
+**Trois cents lignes de mode d'emploi se lisaient avant la methode.** Le lecteur
+apprenait ce que veut dire « Buts marq. », comment se lit un Elo et comment se pose un
+handicap jeux **avant** de savoir ce qu'il devait produire : les consignes qui decident
+de la sortie etaient noyees au milieu de celles qui expliquent.
+
+- Le mode d'emploi des lignes de contexte est devenu un chapitre
+  **`## COMMENT LIRE LES BLOCS`, place apres la section F**. Deplacer ne change pas un
+  token — c'est l'ordre qui etait faux. Le plan rendu est desormais : role et interdits,
+  methode, ce qu'il faut verifier, matchs, historique, sortie attendue, puis glossaire.
+- **Le partage n'est pas « tout ce qui est long descend ».** Ce qui **decide de ce qu'on
+  rend** reste en tete : les interdits, la cote du bloc qui fait autorite, « A relever »
+  qui rend un marche selectionnable, les lignes en quart qui ne le sont pas. Ce qui
+  **explique une ligne** descend. Un marche qu'on croit interdit faute d'avoir lu jusqu'au
+  bout est exactement l'erreur que ce prompt a deja payee une fois.
+- **La porte du chapitre est celle de son contenu — `sports`, et non
+  `context_labels`.** Ses paragraphes de football et de tennis se gardent sur le sport du
+  lot, pas sur les lignes recuperees : un lot de football sans contexte a bien un mode
+  d'emploi a lire, celui de ses marches. Le renvoi place en tete porte **la meme porte** —
+  un renvoi garde autrement que le chapitre qu'il annonce promet une section absente, ou
+  tait une section presente.
+
+## Une seconde selection sur le meme match (`picks.independence_note`)
+
+Cent selections pour **97 evenements distincts** : trois matchs en portent deux. Le prompt
+l'autorise et l'encadre depuis toujours — « deux selections sur un meme match ne se
+justifient que si elles reposent sur des angles reellement independants, et tu le dis
+alors explicitement » — mais rien de cette justification n'arrivait en base. Elle etait
+ecrite dans le rendu, lue une fois, puis perdue.
+
+- **Seul controle bloquant du module, et c'est delibere.** Ailleurs une valeur manquante
+  vaut « non renseigne » ; ici elle vaudrait « je ne me suis pas pose la question », et le
+  prompt nomme precisement ce cas — multiplier les lignes d'un meme match pour atteindre
+  un quota est une facon deguisee de remplir un palier avec du vide.
+- **Le controle porte sur la session, pas sur l'historique.** Deux analyses successives du
+  meme match sont deux decisions distinctes ; faire porter la regle sur toute la base
+  bloquerait un match rejoue la semaine suivante.
+- **Une selection sans match y echappe** : rien ne permet de les rapprocher, et un pari
+  sur un vainqueur de tournoi n'est pas « le meme match » qu'un autre.
+- **La note est rendue sur la feuille de session**, et pas seulement stockee. Une donnee
+  que rien ne lit finit par se retirer — c'est le sort exact de l'effectif collecte des
+  mois sans lecteur (migration 022). C'est en la relisant qu'on voit si deux angles
+  etaient vraiment independants ou deux facons de dire la meme chose ; `RateRow.clustered`
+  sait deja qu'un regroupement porte moins d'evenements que de selections, elle seule dit
+  si c'est grave.
+- **Rien n'est retrobackfille** : les trois cas deja en base gardent une note vide. On ne
+  peut pas inventer une justification apres coup, et l'exiger a la lecture rendrait
+  l'historique invalide.
+- **Le controle ne s'applique pas a `set_event()`**, qui repare un rattachement. Refuser
+  une correction laisserait un pick attache au mauvais match, ce qui est pire ; la regle
+  vise le moment ou l'on **cree** une seconde ligne, pas celui ou l'on corrige.
+- A l'import, la ligne concernee reste **proposee mais decochee** tant que sa
+  justification manque : `add_pick` la refuserait, et une ligne qui echoue se remarque
+  moins qu'une case qu'on doit cocher.
+
 ## Les crans de confiance, et les paliers qu'on n'atteint pas
 
 - **Les crans 2 et 4 n'avaient aucune definition**, et tout tombait donc en 3 : le prompt

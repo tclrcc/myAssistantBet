@@ -883,6 +883,7 @@ async def add_pick(request: Request, session_id: int) -> HTMLResponse:
             stake=form.get("stake", ""),
             angle=form.get("angle", ""),
             source_level=form.get("source_level", ""),
+            independence_note=form.get("independence_note", ""),
             settings=get_settings(),
         )
     except history_service.HistoryError as exc:
@@ -924,6 +925,7 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
                 confidence=form.get(f"confidence_{index}", ""),
                 angle=form.get(f"angle_{index}", ""),
                 source_level=form.get(f"source_{index}", ""),
+                independence_note=form.get(f"independence_{index}", ""),
                 settings=settings,
             )
             created += 1

@@ -50,7 +50,17 @@ def _session(settings: Settings) -> tuple[int, int]:
 
 def _pick(settings: Settings, session_id: int, event_id: int, market: str, result: str) -> None:
     pick_id = add_pick(
-        session_id, "safe", market, "Over", event_id=str(event_id), settings=settings
+        session_id,
+        "safe",
+        market,
+        "Over",
+        event_id=str(event_id),
+        # Ces tests montent plusieurs selections sur un **meme match** par
+        # commodite — c'est le match le moins couteux a fabriquer. La note
+        # d'independance est donc fournie d'office : c'est un test dedie qui
+        # verifie qu'elle est exigee, pas chaque montage de fixture.
+        independence_note="angles indépendants (fixture)",
+        settings=settings,
     )
     set_result(pick_id, result, settings)
 

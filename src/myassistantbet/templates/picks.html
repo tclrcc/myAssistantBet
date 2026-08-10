@@ -54,6 +54,7 @@
              vocabulaire est fermé, et une faute de frappe ferait disparaître la
              ligne du regroupement sans un mot. #}
           <th>Type</th>
+          <th>2<sup>e</sup> sur le match</th>
           <th>Source</th>
           <th>À vérifier</th>
         </tr>
@@ -95,6 +96,16 @@
                         {% if key == pick.angle %}selected{% endif %}>{{ label }}</option>
               {% endfor %}
             </select>
+          </td>
+          <td>
+            {# Le champ n'apparaît que sur une seconde sélection du même match :
+               ailleurs il serait une colonne de plus à ignorer sur chaque ligne. #}
+            {% if pick.same_event %}
+            <input type="text" name="independence_{{ pick.index }}"
+                   placeholder="angle indépendant ?"
+                   aria-label="Justification d'indépendance, ligne {{ pick.index }}"
+                   value="{{ pick.independence }}">
+            {% else %}<span class="muted">—</span>{% endif %}
           </td>
           <td>
             <select name="source_{{ pick.index }}">
@@ -173,6 +184,12 @@
           <option value="{{ key }}">{{ label }}</option>
         {% endfor %}
       </select></label>
+    {# Exigée dès qu'une sélection existe déjà sur ce match. Le prompt le demande
+       depuis toujours — « et tu le dis alors explicitement » — mais la
+       justification restait dans le rendu et n'arrivait jamais en base. #}
+    <label class="grow">Angle indépendant ?
+      <input type="text" name="independence_note"
+             placeholder="obligatoire si le match porte déjà une sélection"></label>
     <label class="narrow">Source
       <select name="source_level">
         <option value="">—</option>

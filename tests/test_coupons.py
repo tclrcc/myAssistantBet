@@ -69,6 +69,11 @@ def _pick(settings: Settings, session_id: int, event_id: int, tier: str = "safe"
         "Over 2.5",
         event_id=str(event_id),
         price="1.72",
+        # Ces tests montent plusieurs selections sur un **meme match** par
+        # commodite — c'est le match le moins couteux a fabriquer. La note
+        # d'independance est donc fournie d'office : c'est un test dedie qui
+        # verifie qu'elle est exigee, pas chaque montage de fixture.
+        independence_note="angles indépendants (fixture)",
         settings=settings,
     )
 

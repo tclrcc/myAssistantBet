@@ -24,325 +24,12 @@ sélection concernée porte alors la mention « (ref.) » dans la colonne Cote d
 section C, et la section F rappelle qu'elle est à vérifier chez le bookmaker
 principal. Aucune comparaison de prix entre books, jamais.
 
-{% if 'Elo' in context_labels %}
-Une ligne **« Elo »** donne les classements Elo publiés par Tennis Abstract :
-Elo général, Elo de la surface quand elle est renseignée, pic de carrière et
-classement officiel. C'est une mesure de niveau, utile pour situer un joueur
-que la seule place au classement décrit mal — un revenant, un spécialiste de
-surface, un jeune en progression.
+{% if sports %}Le mode d'emploi des lignes de contexte — ce que dit chaque
+libellé d'un bloc, et comment le lire — est en **fin de prompt**, sous
+« COMMENT LIRE LES BLOCS ». Il n'y décide de rien : tout ce qui décide de ce que
+tu rends est ici et dans la section SORTIE ATTENDUE.
 
-Ce que tu n'en fais **jamais** : la convertir en probabilité de victoire. La
-correspondance existe et tu la connais ; elle est hors sujet ici, et le
-résultat, rapproché d'une cote, serait exactement le calcul d'espérance
-interdit plus haut. L'Elo sert à décrire un rapport de forces, pas à le
-chiffrer contre un prix. Un écart d'Elo n'est pas non plus un argument à lui
-seul : il ne dit rien du calendrier, de la blessure ni des conditions du jour.
-Un joueur « non trouvé au classement Elo » n'est pas un joueur faible, c'est un
-joueur qui n'a pas assez de matchs récents pour y figurer — dis-le ainsi.
-
-{% endif %}
-{% if 'football' in sports %}
-Plusieurs lignes du bloc CONTEXTE sont des **fractions de matchs joués dans la
-compétition**, et non des pourcentages ni des moyennes :
-
-  · **« Buts marq. »** — combien de matchs cette équipe a passé chaque ligne de
-    buts, **les siens uniquement**, pas le total du match. `>1.5 9/16` se lit
-    « elle a marqué au moins 2 buts dans 9 de ses 16 matchs ». Deux équipes ne
-    s'additionnent pas en un total de match : cette ligne éclaire les marchés
-    par équipe, pas l'O/U de la rencontre.
-  · **« Buts pris »** — la même chose du côté défensif : dans combien de ses
-    matchs elle a encaissé au moins ce nombre de buts. Lue avec « Buts marq. »
-    de l'adversaire, elle dit qui devrait marquer — mais les deux ne
-    s'additionnent toujours pas en un total de rencontre : pour ça, la ligne
-    « Total buts » plus bas est la seule qui compte les deux équipes réunies.
-  · **« Clean sheet »** — matchs sans encaisser, puis matchs sans marquer.
-{% if '1re MT' in context_labels %}  · **« 1re MT »** et **« Buts tard. »** — la
-    répartition des buts marqués puis encaissés, avant la pause et après la 75e,
-    rapportée au nombre de buts et non au nombre de matchs. La seconde est la
-    seule ligne qui dise **quand** une équipe marque ou cède : `xG` et `Tirs`
-    donnent le volume, jamais le moment. Encaisser le tiers de ses buts dans le
-    dernier quart d'heure éclaire un total et un handicap, pas le seul vainqueur.
-{% endif %}
-  · **« Cartons tps »** — part des cartons jaunes reçus après la 60e.
-  · **« Formations »** — les deux formations les plus alignées, avec leur
-    nombre de titularisations. Une formation à 4 sur 16 n'est pas une habitude,
-    c'est un effectif qui tourne — et ça se lit sur le compte, pas sur le nom.
-
-{% if 'Effectif' in context_labels -%}
-La ligne **« Effectif »** ne parait que là où « Absents » est muet : sur ces
-compétitions, le fournisseur ne couvre pas les blessures, et la ligne est
-reconstruite des **feuilles de match** des dernières rencontres. Elle nomme les
-joueurs vus régulièrement puis disparus des deux dernières feuilles, banc
-compris, avec la date où on les a vus pour la dernière fois.
-
-Ce n'est **pas** une liste d'absents, et la nuance décide de l'usage : une
-blessure, une suspension, un repos et une mise à l'écart produisent exactement le
-même signal, et rien ici ne les distingue. C'est une **piste datée** — « plus vu
-depuis le 26/07 » se vérifie en une recherche — et elle ne devient un fait que
-confirmée. Son absence ne prouve rien non plus : un joueur écarté avant la
-fenêtre lue n'y figure pas.
-
-{% endif -%}
-{% if 'Aller' in context_labels -%}
-La ligne **« Aller »** dit que ces deux équipes se sont déjà rencontrées dans
-cette compétition, chez l'autre, il y a moins de trois semaines — le score est
-donné du point de vue de l'équipe qui reçoit aujourd'hui, comme « H2H ». C'est
-un fait, pas une conclusion : à toi de dire s'il s'agit d'une double
-confrontation, ce qui est presque certain sur un tour européen. Si c'en est une,
-c'est **le premier déterminant du scénario** — qui doit marquer, qui gère, qui
-joue le prolongement — et il prime sur la forme et sur le classement.
-
-{% endif -%}
-La ligne **« Enjeu »** donne ce que la compétition déclare pour l'équipe à cette
-place — « Play-offs », « Relegation Round », « Promotion - Champions League ».
-Recopiée telle quelle : c'est l'enjeu réel que la fiche de vérification réclame,
-sans recherche. Elle ne dit rien de l'**écart** au premier ou au barragiste — ça,
-c'est la ligne « Classement » et ta recherche. Absente, elle signale que la
-compétition ne déclare rien à cette place, pas une équipe sans enjeu.
-
-Trois lignes décrivent la **manière**, moyennées sur les derniers matchs :
-
-  · **« Fautes »** — commises, puis subies. Elle accompagne « Cartons » : un
-    arbitre ne sort un carton que sur une faute, et une équipe qui en commet
-    quatorze par match n'aborde pas ce marché comme celle qui en commet huit.
-  · **« xG »** — buts attendus produits, puis concédés. Elle sépare ce qu'aucun
-    compte de tirs ne sépare : marquer 2.0 pour 0.8 xG, c'est avoir été porté par
-    sa finition ; l'inverse décrit une équipe qui se crée des situations sans
-    conclure.
-
-    **C'est la seule ligne du bloc qui ne soit pas un fait observé mais une
-    sortie de modèle.** Elle porte donc la même interdiction que l'Elo : ne la
-    convertis **jamais** en probabilité, et ne la rapproche jamais d'une cote —
-    ce serait le calcul d'espérance interdit plus haut, et le fait que le chiffre
-    vienne du fournisseur n'y change rien. Sa couverture est inégale : son
-    absence ne dit rien de l'équipe, seulement du fournisseur.
-  · **« Possession »** — la part du ballon. **Le seul pourcentage du bloc**, et
-    il ne contredit pas l'interdiction ci-dessous : celle-ci vise les fréquences
-    d'issues, qu'un pourcentage invite à diviser par une cote. Une part de ballon
-    ne se rapporte à aucun marché, rien ne se divise par elle. Elle dit qui subit,
-    et se lit contre le style de l'adversaire : 60 % contre un bloc bas et 60 %
-    contre un pressing ne décrivent pas le même match.
-
-Trois autres lignes viennent de l'historique complet de la saison, **toutes
-compétitions confondues** — championnat, coupes, Europe — et non de la seule
-compétition du jour :
-
-  · **« Total buts »** — les buts **du match, les deux équipes réunies**, à ne
-    pas confondre avec « Buts marq. » juste au-dessus, qui ne compte que ceux de
-    l'équipe. `>2.5 23/36` se lit « 23 de ses 36 matchs ont eu plus de 2.5 buts ».
-    `BTTS` compte les matchs où les deux équipes ont marqué. Les scores retenus
-    sont ceux **à 90 minutes** : une prolongation de coupe n'y ajoute rien, parce
-    qu'un marché O/U se règle sur le temps réglementaire.
-  · **« Série »** — la série **en cours**, à 90 minutes, et non le record de la
-    saison. Deux raisons de ne pas la voir, et elles ne disent pas la même
-    chose : moins de deux matchs, et un résultat isolé n'est pas une série ;
-    ou un `(2025)` sur « Total buts », et la seule série connue serait celle de
-    la saison passée — l'équipe a rejoué depuis, ne lui en prête aucune.
-  · **« Calendrier »** — le prochain match de chaque équipe **après celui-ci**,
-    et sa compétition quand elle diffère de celle du jour. C'est le facteur de
-    rotation d'effectif que la fiche de vérification demande : une coupe trois
-    jours après explique un turnover annoncé. La ligne « Repos » dit l'inverse,
-    ce qui précède.
-
-Une année entre parenthèses — `23/36 (2025)` — signale que le compte porte sur la
-**saison précédente**, faute d'assez de matchs joués dans celle en cours. C'est le
-cas normal en début de saison. Ne la présente jamais comme la forme du moment.
-
-{% if 'Buteurs' in context_labels %}La ligne **« Buteurs »** donne les trois meilleurs buteurs de chaque équipe, avec
-leur total et la part inscrite sur penalty — un attaquant à douze buts dont dix
-sur penalty ne se parie pas comme celui qui en met douze dans le jeu. Elle
-n'apparaît que sur les compétitions où des props buteurs sont relevées.
-
-Trois choses qu'elle ne dit pas, et qu'il ne faut pas lui prêter :
-  · **elle ne liste que les vingt meilleurs de la compétition.** Une équipe
-    absente de la ligne n'est pas une équipe sans buteur — c'est une équipe dont
-    aucun joueur n'est dans ce classement. Ne conclus jamais l'inverse ;
-  · **elle ne dit pas qui est disponible.** Un buteur peut être blessé, suspendu
-    ou sur le départ : c'est la ligne « Absents » et ta recherche qui le disent,
-    et elles priment sur celle-ci ;
-  · **elle ne dit rien de la forme récente.** Un total de saison ne distingue pas
-    dix buts en août de dix buts la semaine dernière.
-
-La ligne **« Buteur abs. »** signale qu'un de ces buteurs est déclaré
-indisponible, **avec la date de début** de son indisponibilité. La date n'est pas
-un ornement : ce que le fournisseur publie est un historique de carrière, et une
-période sans date de fin signifie qu'il ne l'a pas refermée — ce qui n'est pas
-tout à fait la même chose qu'une absence en cours. Traite-la comme une piste
-datée à confirmer, pas comme un fait : « absent depuis le 12/07 » se vérifie en
-une recherche. Si ta recherche montre que le joueur a rejoué depuis, dis-le, et
-c'est ta recherche qui gagne. L'absence de cette ligne ne prouve rien non plus :
-le fournisseur ne couvre pas les indisponibilités partout.
-
-{% endif %}
-{% if 'Statut' in context_labels -%}
-Une ligne **« Statut »** dit que le fournisseur de contexte ne donne pas ce match
-comme jouable à l'heure annoncée — reporté, annulé, forfait. C'est **bloquant** :
-PASSE, et une seule ligne en section B. Vérifie-le quand même, un relevé peut
-dater ; mais l'absence de cette ligne ne prouve rien dans l'autre sens.
-
-{% endif %}{% if 'Entraineur' in context_labels -%}
-La ligne **« Entraîneur »** donne la date de prise de fonction et l'ancienneté
-dans **cette** équipe. Une arrivée récente est le signal : un effectif qui change
-de mains n'a plus la forme qu'on lui prête, et les statistiques ci-dessus
-décrivent en partie le travail de quelqu'un d'autre.
-
-**Le fournisseur ne referme pas ses fiches** — sur les clubs en base, 84 % ont
-plusieurs entraîneurs déclarés en poste en même temps, et il lui arrive de n'avoir
-jamais enregistré une nomination. Une ancienneté longue ne prouve donc pas la
-continuité : elle peut n'être que la dernière fiche restée ouverte. Traite cette
-ligne comme une piste, jamais comme un fait — c'est la conférence de presse qui
-tranche, et un angle qui repose sur un changement d'entraîneur exige de l'avoir
-confirmé.
-
-{% endif -%}
-
-Le dénominateur est toujours écrit, et c'est lui qui fixe ce que la ligne vaut :
-`5 CS/16` décrit une saison, `2 CS/5` décrit un mois. Sous cinq matchs joués, la
-ligne n'existe pas du tout.
-
-Ce que tu n'en fais **jamais** : les traiter comme des probabilités. Ce sont des
-fréquences passées, décrites pour situer une équipe — les rapprocher d'une cote
-serait le calcul d'espérance interdit plus haut, exactement comme pour l'Elo, et
-le fait que le chiffre vienne d'un relevé réel n'y change rien. Elles servent à
-choisir où chercher et à formuler un angle sportif, jamais à l'évaluer contre un
-prix. Une fréquence n'est pas non plus un argument à elle seule : elle ne dit
-rien de l'adversaire du jour, de l'effectif disponible ni de l'enjeu.
-
-{% endif %}
-{% if 'tennis' in sports %}
-Au tennis, les lignes **« Hand. jeux »** et **« Jeux O/U »** donnent une échelle
-et non une seule ligne, parce que le book en sert une dizaine. Deux conventions à
-ne pas confondre :
-
-  · **« Hand. jeux »** : le handicap est écrit du point de vue du **premier joueur
-    nommé** dans le titre du bloc, signe compris, et les deux prix suivent dans le
-    même ordre. `-2.5: 1.88/2.01` se lit « premier joueur à -2.5 jeux coté 1.88,
-    second à +2.5 coté 2.01 ». `+3: 1.74/2.19` se lit « premier joueur à +3 jeux
-    coté 1.74 ». Le signe ne suit jamais le favori : il suit la position dans le
-    titre.
-  · **« Jeux O/U »** : `21.5: 1.96/1.93` se lit « plus de 21.5 jeux coté 1.96,
-    moins coté 1.93 ». Over d'abord, Under ensuite, comme au football.
-
-{% if 'Forme' in context_labels or 'H2H' in context_labels or 'Tour' in context_labels or 'Repos' in context_labels %}Au tennis, quatre lignes viennent de l'historique des matchs **réellement joués**
-sur les trois dernières saisons, ATP et WTA :
-
-  · **« H2H (n) »** — le bilan des confrontations directes, écrit `3V-7D` du point
-    de vue du premier joueur nommé, puis les trois plus récentes avec leur mois,
-    leur surface et leur score en sets. Un `3V-1D` dont les trois victoires
-    tiennent en trois sets serrés ne décrit pas le même rapport de forces qu'un
-    `3V-1D` en deux sets secs — c'est pour ça que les scores y sont. Un `ab.`
-    signale un match interrompu : le score n'est pas tronqué, le match l'a été.
-  · **« Tour »** — le tour du tableau, **toujours compté depuis la fin** : 16e de
-    finale, huitième, quart, demie, finale. **Cette ligne-là** n'écrit jamais
-    « 2e tour », parce que l'ordinal supposerait de savoir où est le premier, ce
-    que le tournoi en cours ne permet pas d'établir. « Palmarès » et « Précédent »
-    l'écrivent, elles, et c'est juste : une édition passée a un tableau connu.
-    « 16e de finale » et « 3e tour » peuvent donc désigner le même tour d'un
-    tableau à exemptions — c'est normal, et c'est le premier qui est vérifiable.
-  · **« Repos »** — jours entre la dernière apparition et celle-ci, comptés en
-    **journées de tournoi** et non en dates civiles : au Canada, un match de la
-    session du soir part après minuit à Paris. Il ne dit rien du **double** :
-    sur un tournoi où le tableau de double a commencé, un joueur peut avoir la
-    même ligne « Repos » et une charge tout autre. C'est à ta recherche.
-  · **« Forme »** — les dix derniers matchs, **toutes surfaces**, la dernière
-    lettre étant le dernier match — même sens de lecture que « Forme 5 » au
-    football.
-  · **« Usure »** — jeux par match sur les dix derniers, **temps passé sur le
-    court par procuration** : aucune source ne publie la durée réelle. Vingt
-    jeux et trente-huit ne laissent pas le même joueur le lendemain. Abandons et
-    tapis verts en sont exclus — leur score est tronqué. À lire avec « Repos ».
-    Un `(4 en 5 sets)` dit que quatre de ces matchs se jouaient au meilleur des
-    cinq — un Grand Chelem masculin. La moyenne reste juste, c'est une vraie
-    charge ; mais **elle ne se compare pas** à celle d'un joueur qui n'en a pas
-    joué. Sans ce compte, un joueur ordinaire sortant d'un Chelem passe pour un
-    marathonien.
-  · **« Surface »** — le bilan sur la surface du tournoi, sur douze mois. Elle
-    n'apparaît que si la surface est renseignée sur la compétition : la déduire du
-    libellé d'un tournoi serait une invention, comme pour l'Elo.
-  · **« Abandons »** — abandons et forfaits des six derniers mois. Seul celui qui
-    a abandonné est compté, jamais son adversaire. C'est un état physique que ni
-    le classement ni l'Elo ne disent.
-  · **« Niveau adv. »** — l'Elo moyen des adversaires de ces dix matchs, et le
-    meilleur d'entre eux qui ait été battu. C'est elle qui rend « Forme »
-    lisible : la suite de lettres traite une victoire sur le 150e comme une
-    victoire sur le 5e. Un « meilleur battu » inférieur à la moyenne dit que les
-    victoires sont venues du bas du tableau. Le compte est celui des adversaires
-    rapprochés au classement, pas celui des matchs.
-  · **« Profil »** — médiane des jeux et étendue, matchs avec tie-break, matchs
-    pliés en deux sets : à quoi ressemble un match de ce joueur, là où « Usure »
-    ne dit que le temps passé sur le court. C'est la ligne des marchés de jeux, et
-    le plus proche du **style** que les données permettent — beaucoup de tie-breaks
-    décrivent un joueur qui tient son engagement, des sets secs un tableau de
-    breaks. Aces, première balle et balles de break ne sont dans aucune source :
-    à ta recherche.
-  · **« Marge »** — l'écart de jeux moyen quand il gagne, puis quand il perd,
-    chacun avec son compte. C'est la grandeur du **handicap jeux**, et la seule
-    ligne du bloc qui en parle. Les deux sens sont séparés parce qu'une moyenne
-    unique les annule.
-
-{% if 'Historique' in context_labels %}La ligne **« Historique »** dit jusqu'où va le jeu de données, donc jusqu'où vont
-toutes les lignes ci-dessus. La source est **hebdomadaire et publiée après coup** :
-les matchs joués depuis — y compris ceux de ce tournoi-ci — ne sont dans aucune
-d'elles. « Forme » peut ignorer deux victoires de la semaine, « Précédent » nommer
-l'avant-dernier tournoi. Seules **« Tour », « Repos » et « Parcours »** portent le
-tournoi en cours, et elles n'en donnent aucun résultat : c'est la première
-recherche à faire.
-
-{% endif %}
-« Profil » et « Marge » écartent les matchs au **meilleur des cinq sets** — les
-Grands Chelems masculins, où quarante jeux sont ordinaires : le compte écrit à
-côté dit combien des dix ont été retenus. « Usure » les garde, elle, parce que
-cinq sets fatiguent vraiment. Sous cinq matchs retenus, ces trois lignes
-n'existent pas.
-
-{% if 'Parcours' in context_labels %}La ligne **« Parcours »** nomme les adversaires déjà rencontrés **dans ce
-tournoi-ci**, du premier tour au dernier, avec leur Elo quand il est connu :
-c'est ce qui distingue un parcours facile d'un parcours d'usure. Elle donne les
-adversaires et **jamais les résultats** — un joueur présent au tour suivant a
-forcément passé le précédent, mais l'écrire « il a battu X » supposerait qu'aucun
-forfait n'existe. Ne lui prête pas non plus des durées ni des statistiques de
-service : elles ne sont dans aucune source, et c'est « Usure » qui en approche.
-
-Deux limites, toutes deux vérifiées en réel :
-  · le `[vu depuis le 04/08]` en fin de ligne est **la fenêtre de nos scans, pas
-    celle du tournoi**. Un tournoi commencé avant elle a des premiers tours que
-    nous n'avons jamais vus : compare cette date à la ligne « Tour », et s'il
-    manque des tours, va les chercher ;
-  · un adversaire y figure parce que la rencontre était **programmée**. Un
-    forfait s'y lit donc comme un match joué alors que personne n'est entré sur
-    le court, et « Repos » compte ce jour-là de la même façon. C'est l'un des
-    points que la recherche des matchs déjà joués tranche.
-
-{% endif %}
-Deux lignes de plus portent sur **ce tournoi précisément**, toutes éditions
-confondues :
-
-  · **« H2H ici »** — leurs confrontations dans ce tournoi, avec le tour. Un
-    huitième de finale et une finale ne se valent pas.
-  · **« Palmarès »** — le meilleur résultat atteint ici et l'année, puis le bilan
-    sur place. `vainqueur 2025, 14V-0D` et `1er tour 2025, 0V-2D` décrivent deux
-    rapports au lieu radicalement différents. « finaliste » veut dire finale
-    perdue, « vainqueur » finale gagnée.
-
-Ces deux lignes n'existent que si le tournoi a été rattaché à la main au jeu de
-données — la source le nomme par son sponsor. Absentes **des deux côtés**, elles
-ne disent donc rien du passé des joueurs sur place : elles disent que le
-rattachement manque. Présentes pour **un seul** joueur, elles disent l'inverse —
-le rattachement est fait, et l'autre n'a simplement aucun passé ici dans le jeu
-de données.
-
-Un match donné sur tapis vert n'entre dans aucun de ces comptes : personne n'est
-entré sur le court. Il n'apparaît que sur la ligne « Abandons ».
-
-Ces bilans sont des **fréquences passées**, au même titre que les fractions du
-football, et la même interdiction s'applique : ne les rapproche jamais d'une cote.
-Un H2H ne dit rien à lui seul non plus — deux joueurs peuvent s'être affrontés
-trois fois sur une autre surface, il y a deux ans, avant une blessure. Un joueur
-absent d'une ligne n'est pas un joueur sans passé : c'est un joueur que le jeu de
-données ne nomme pas, ou dont l'identité était ambiguë et qu'on a préféré taire.
-
-{% endif %}{% endif %}
-Une ligne **« Stats match »** marquée « données non disponibles » signifie que le
+{% endif %}Une ligne **« Stats match »** marquée « données non disponibles » signifie que le
 fournisseur ne publie pas les statistiques de match sur cette compétition : ni
 corners, ni cartons, ni tirs ne seront jamais renseignés ici. C'est un fait
 acquis, pas un trou de collecte — mais la recherche web peut le combler.
@@ -796,3 +483,330 @@ sport, le réclamer ne changera rien. Ce qui mérite d'y figurer, c'est un march
 que l'outil demande, qui n'apparaît ni en cote ni en « Non servis » sur ce match
 précis — là, il manque vraiment quelque chose. Signale de même toute sélection
 assise sur une cote de référence, qui reste à vérifier.
+
+{% if sports %}## COMMENT LIRE LES BLOCS
+Mode d'emploi des lignes de contexte, et rien d'autre : **aucune règle de ce
+chapitre ne décide de ce que tu rends**. Il répond à « que veut dire cette
+ligne », pas à « que dois-je produire » — cette question-là est tranchée plus
+haut, et c'était justement le problème quand ces trois cents lignes se lisaient
+avant la méthode.
+
+{% if 'Elo' in context_labels %}
+Une ligne **« Elo »** donne les classements Elo publiés par Tennis Abstract :
+Elo général, Elo de la surface quand elle est renseignée, pic de carrière et
+classement officiel. C'est une mesure de niveau, utile pour situer un joueur
+que la seule place au classement décrit mal — un revenant, un spécialiste de
+surface, un jeune en progression.
+
+Ce que tu n'en fais **jamais** : la convertir en probabilité de victoire. La
+correspondance existe et tu la connais ; elle est hors sujet ici, et le
+résultat, rapproché d'une cote, serait exactement le calcul d'espérance
+interdit plus haut. L'Elo sert à décrire un rapport de forces, pas à le
+chiffrer contre un prix. Un écart d'Elo n'est pas non plus un argument à lui
+seul : il ne dit rien du calendrier, de la blessure ni des conditions du jour.
+Un joueur « non trouvé au classement Elo » n'est pas un joueur faible, c'est un
+joueur qui n'a pas assez de matchs récents pour y figurer — dis-le ainsi.
+
+{% endif %}
+{% if 'football' in sports %}
+Plusieurs lignes du bloc CONTEXTE sont des **fractions de matchs joués dans la
+compétition**, et non des pourcentages ni des moyennes :
+
+  · **« Buts marq. »** — combien de matchs cette équipe a passé chaque ligne de
+    buts, **les siens uniquement**, pas le total du match. `>1.5 9/16` se lit
+    « elle a marqué au moins 2 buts dans 9 de ses 16 matchs ». Deux équipes ne
+    s'additionnent pas en un total de match : cette ligne éclaire les marchés
+    par équipe, pas l'O/U de la rencontre.
+  · **« Buts pris »** — la même chose du côté défensif : dans combien de ses
+    matchs elle a encaissé au moins ce nombre de buts. Lue avec « Buts marq. »
+    de l'adversaire, elle dit qui devrait marquer — mais les deux ne
+    s'additionnent toujours pas en un total de rencontre : pour ça, la ligne
+    « Total buts » plus bas est la seule qui compte les deux équipes réunies.
+  · **« Clean sheet »** — matchs sans encaisser, puis matchs sans marquer.
+{% if '1re MT' in context_labels %}  · **« 1re MT »** et **« Buts tard. »** — la
+    répartition des buts marqués puis encaissés, avant la pause et après la 75e,
+    rapportée au nombre de buts et non au nombre de matchs. La seconde est la
+    seule ligne qui dise **quand** une équipe marque ou cède : `xG` et `Tirs`
+    donnent le volume, jamais le moment. Encaisser le tiers de ses buts dans le
+    dernier quart d'heure éclaire un total et un handicap, pas le seul vainqueur.
+{% endif %}
+  · **« Cartons tps »** — part des cartons jaunes reçus après la 60e.
+  · **« Formations »** — les deux formations les plus alignées, avec leur
+    nombre de titularisations. Une formation à 4 sur 16 n'est pas une habitude,
+    c'est un effectif qui tourne — et ça se lit sur le compte, pas sur le nom.
+
+{% if 'Effectif' in context_labels -%}
+La ligne **« Effectif »** ne parait que là où « Absents » est muet : sur ces
+compétitions, le fournisseur ne couvre pas les blessures, et la ligne est
+reconstruite des **feuilles de match** des dernières rencontres. Elle nomme les
+joueurs vus régulièrement puis disparus des deux dernières feuilles, banc
+compris, avec la date où on les a vus pour la dernière fois.
+
+Ce n'est **pas** une liste d'absents, et la nuance décide de l'usage : une
+blessure, une suspension, un repos et une mise à l'écart produisent exactement le
+même signal, et rien ici ne les distingue. C'est une **piste datée** — « plus vu
+depuis le 26/07 » se vérifie en une recherche — et elle ne devient un fait que
+confirmée. Son absence ne prouve rien non plus : un joueur écarté avant la
+fenêtre lue n'y figure pas.
+
+{% endif -%}
+{% if 'Aller' in context_labels -%}
+La ligne **« Aller »** dit que ces deux équipes se sont déjà rencontrées dans
+cette compétition, chez l'autre, il y a moins de trois semaines — le score est
+donné du point de vue de l'équipe qui reçoit aujourd'hui, comme « H2H ». C'est
+un fait, pas une conclusion : à toi de dire s'il s'agit d'une double
+confrontation, ce qui est presque certain sur un tour européen. Si c'en est une,
+c'est **le premier déterminant du scénario** — qui doit marquer, qui gère, qui
+joue le prolongement — et il prime sur la forme et sur le classement.
+
+{% endif -%}
+La ligne **« Enjeu »** donne ce que la compétition déclare pour l'équipe à cette
+place — « Play-offs », « Relegation Round », « Promotion - Champions League ».
+Recopiée telle quelle : c'est l'enjeu réel que la fiche de vérification réclame,
+sans recherche. Elle ne dit rien de l'**écart** au premier ou au barragiste — ça,
+c'est la ligne « Classement » et ta recherche. Absente, elle signale que la
+compétition ne déclare rien à cette place, pas une équipe sans enjeu.
+
+Trois lignes décrivent la **manière**, moyennées sur les derniers matchs :
+
+  · **« Fautes »** — commises, puis subies. Elle accompagne « Cartons » : un
+    arbitre ne sort un carton que sur une faute, et une équipe qui en commet
+    quatorze par match n'aborde pas ce marché comme celle qui en commet huit.
+  · **« xG »** — buts attendus produits, puis concédés. Elle sépare ce qu'aucun
+    compte de tirs ne sépare : marquer 2.0 pour 0.8 xG, c'est avoir été porté par
+    sa finition ; l'inverse décrit une équipe qui se crée des situations sans
+    conclure.
+
+    **C'est la seule ligne du bloc qui ne soit pas un fait observé mais une
+    sortie de modèle.** Elle porte donc la même interdiction que l'Elo : ne la
+    convertis **jamais** en probabilité, et ne la rapproche jamais d'une cote —
+    ce serait le calcul d'espérance interdit plus haut, et le fait que le chiffre
+    vienne du fournisseur n'y change rien. Sa couverture est inégale : son
+    absence ne dit rien de l'équipe, seulement du fournisseur.
+  · **« Possession »** — la part du ballon. **Le seul pourcentage du bloc**, et
+    il ne contredit pas l'interdiction ci-dessous : celle-ci vise les fréquences
+    d'issues, qu'un pourcentage invite à diviser par une cote. Une part de ballon
+    ne se rapporte à aucun marché, rien ne se divise par elle. Elle dit qui subit,
+    et se lit contre le style de l'adversaire : 60 % contre un bloc bas et 60 %
+    contre un pressing ne décrivent pas le même match.
+
+Trois autres lignes viennent de l'historique complet de la saison, **toutes
+compétitions confondues** — championnat, coupes, Europe — et non de la seule
+compétition du jour :
+
+  · **« Total buts »** — les buts **du match, les deux équipes réunies**, à ne
+    pas confondre avec « Buts marq. » juste au-dessus, qui ne compte que ceux de
+    l'équipe. `>2.5 23/36` se lit « 23 de ses 36 matchs ont eu plus de 2.5 buts ».
+    `BTTS` compte les matchs où les deux équipes ont marqué. Les scores retenus
+    sont ceux **à 90 minutes** : une prolongation de coupe n'y ajoute rien, parce
+    qu'un marché O/U se règle sur le temps réglementaire.
+  · **« Série »** — la série **en cours**, à 90 minutes, et non le record de la
+    saison. Deux raisons de ne pas la voir, et elles ne disent pas la même
+    chose : moins de deux matchs, et un résultat isolé n'est pas une série ;
+    ou un `(2025)` sur « Total buts », et la seule série connue serait celle de
+    la saison passée — l'équipe a rejoué depuis, ne lui en prête aucune.
+  · **« Calendrier »** — le prochain match de chaque équipe **après celui-ci**,
+    et sa compétition quand elle diffère de celle du jour. C'est le facteur de
+    rotation d'effectif que la fiche de vérification demande : une coupe trois
+    jours après explique un turnover annoncé. La ligne « Repos » dit l'inverse,
+    ce qui précède.
+
+Une année entre parenthèses — `23/36 (2025)` — signale que le compte porte sur la
+**saison précédente**, faute d'assez de matchs joués dans celle en cours. C'est le
+cas normal en début de saison. Ne la présente jamais comme la forme du moment.
+
+{% if 'Buteurs' in context_labels %}La ligne **« Buteurs »** donne les trois meilleurs buteurs de chaque équipe, avec
+leur total et la part inscrite sur penalty — un attaquant à douze buts dont dix
+sur penalty ne se parie pas comme celui qui en met douze dans le jeu. Elle
+n'apparaît que sur les compétitions où des props buteurs sont relevées.
+
+Trois choses qu'elle ne dit pas, et qu'il ne faut pas lui prêter :
+  · **elle ne liste que les vingt meilleurs de la compétition.** Une équipe
+    absente de la ligne n'est pas une équipe sans buteur — c'est une équipe dont
+    aucun joueur n'est dans ce classement. Ne conclus jamais l'inverse ;
+  · **elle ne dit pas qui est disponible.** Un buteur peut être blessé, suspendu
+    ou sur le départ : c'est la ligne « Absents » et ta recherche qui le disent,
+    et elles priment sur celle-ci ;
+  · **elle ne dit rien de la forme récente.** Un total de saison ne distingue pas
+    dix buts en août de dix buts la semaine dernière.
+
+La ligne **« Buteur abs. »** signale qu'un de ces buteurs est déclaré
+indisponible, **avec la date de début** de son indisponibilité. La date n'est pas
+un ornement : ce que le fournisseur publie est un historique de carrière, et une
+période sans date de fin signifie qu'il ne l'a pas refermée — ce qui n'est pas
+tout à fait la même chose qu'une absence en cours. Traite-la comme une piste
+datée à confirmer, pas comme un fait : « absent depuis le 12/07 » se vérifie en
+une recherche. Si ta recherche montre que le joueur a rejoué depuis, dis-le, et
+c'est ta recherche qui gagne. L'absence de cette ligne ne prouve rien non plus :
+le fournisseur ne couvre pas les indisponibilités partout.
+
+{% endif %}
+{% if 'Statut' in context_labels -%}
+Une ligne **« Statut »** dit que le fournisseur de contexte ne donne pas ce match
+comme jouable à l'heure annoncée — reporté, annulé, forfait. C'est **bloquant** :
+PASSE, et une seule ligne en section B. Vérifie-le quand même, un relevé peut
+dater ; mais l'absence de cette ligne ne prouve rien dans l'autre sens.
+
+{% endif %}{% if 'Entraineur' in context_labels -%}
+La ligne **« Entraîneur »** donne la date de prise de fonction et l'ancienneté
+dans **cette** équipe. Une arrivée récente est le signal : un effectif qui change
+de mains n'a plus la forme qu'on lui prête, et les statistiques ci-dessus
+décrivent en partie le travail de quelqu'un d'autre.
+
+**Le fournisseur ne referme pas ses fiches** — sur les clubs en base, 84 % ont
+plusieurs entraîneurs déclarés en poste en même temps, et il lui arrive de n'avoir
+jamais enregistré une nomination. Une ancienneté longue ne prouve donc pas la
+continuité : elle peut n'être que la dernière fiche restée ouverte. Traite cette
+ligne comme une piste, jamais comme un fait — c'est la conférence de presse qui
+tranche, et un angle qui repose sur un changement d'entraîneur exige de l'avoir
+confirmé.
+
+{% endif -%}
+
+Le dénominateur est toujours écrit, et c'est lui qui fixe ce que la ligne vaut :
+`5 CS/16` décrit une saison, `2 CS/5` décrit un mois. Sous cinq matchs joués, la
+ligne n'existe pas du tout.
+
+Ce que tu n'en fais **jamais** : les traiter comme des probabilités. Ce sont des
+fréquences passées, décrites pour situer une équipe — les rapprocher d'une cote
+serait le calcul d'espérance interdit plus haut, exactement comme pour l'Elo, et
+le fait que le chiffre vienne d'un relevé réel n'y change rien. Elles servent à
+choisir où chercher et à formuler un angle sportif, jamais à l'évaluer contre un
+prix. Une fréquence n'est pas non plus un argument à elle seule : elle ne dit
+rien de l'adversaire du jour, de l'effectif disponible ni de l'enjeu.
+
+{% endif %}
+{% if 'tennis' in sports %}
+Au tennis, les lignes **« Hand. jeux »** et **« Jeux O/U »** donnent une échelle
+et non une seule ligne, parce que le book en sert une dizaine. Deux conventions à
+ne pas confondre :
+
+  · **« Hand. jeux »** : le handicap est écrit du point de vue du **premier joueur
+    nommé** dans le titre du bloc, signe compris, et les deux prix suivent dans le
+    même ordre. `-2.5: 1.88/2.01` se lit « premier joueur à -2.5 jeux coté 1.88,
+    second à +2.5 coté 2.01 ». `+3: 1.74/2.19` se lit « premier joueur à +3 jeux
+    coté 1.74 ». Le signe ne suit jamais le favori : il suit la position dans le
+    titre.
+  · **« Jeux O/U »** : `21.5: 1.96/1.93` se lit « plus de 21.5 jeux coté 1.96,
+    moins coté 1.93 ». Over d'abord, Under ensuite, comme au football.
+
+{% if 'Forme' in context_labels or 'H2H' in context_labels or 'Tour' in context_labels or 'Repos' in context_labels %}Au tennis, quatre lignes viennent de l'historique des matchs **réellement joués**
+sur les trois dernières saisons, ATP et WTA :
+
+  · **« H2H (n) »** — le bilan des confrontations directes, écrit `3V-7D` du point
+    de vue du premier joueur nommé, puis les trois plus récentes avec leur mois,
+    leur surface et leur score en sets. Un `3V-1D` dont les trois victoires
+    tiennent en trois sets serrés ne décrit pas le même rapport de forces qu'un
+    `3V-1D` en deux sets secs — c'est pour ça que les scores y sont. Un `ab.`
+    signale un match interrompu : le score n'est pas tronqué, le match l'a été.
+  · **« Tour »** — le tour du tableau, **toujours compté depuis la fin** : 16e de
+    finale, huitième, quart, demie, finale. **Cette ligne-là** n'écrit jamais
+    « 2e tour », parce que l'ordinal supposerait de savoir où est le premier, ce
+    que le tournoi en cours ne permet pas d'établir. « Palmarès » et « Précédent »
+    l'écrivent, elles, et c'est juste : une édition passée a un tableau connu.
+    « 16e de finale » et « 3e tour » peuvent donc désigner le même tour d'un
+    tableau à exemptions — c'est normal, et c'est le premier qui est vérifiable.
+  · **« Repos »** — jours entre la dernière apparition et celle-ci, comptés en
+    **journées de tournoi** et non en dates civiles : au Canada, un match de la
+    session du soir part après minuit à Paris. Il ne dit rien du **double** :
+    sur un tournoi où le tableau de double a commencé, un joueur peut avoir la
+    même ligne « Repos » et une charge tout autre. C'est à ta recherche.
+  · **« Forme »** — les dix derniers matchs, **toutes surfaces**, la dernière
+    lettre étant le dernier match — même sens de lecture que « Forme 5 » au
+    football.
+  · **« Usure »** — jeux par match sur les dix derniers, **temps passé sur le
+    court par procuration** : aucune source ne publie la durée réelle. Vingt
+    jeux et trente-huit ne laissent pas le même joueur le lendemain. Abandons et
+    tapis verts en sont exclus — leur score est tronqué. À lire avec « Repos ».
+    Un `(4 en 5 sets)` dit que quatre de ces matchs se jouaient au meilleur des
+    cinq — un Grand Chelem masculin. La moyenne reste juste, c'est une vraie
+    charge ; mais **elle ne se compare pas** à celle d'un joueur qui n'en a pas
+    joué. Sans ce compte, un joueur ordinaire sortant d'un Chelem passe pour un
+    marathonien.
+  · **« Surface »** — le bilan sur la surface du tournoi, sur douze mois. Elle
+    n'apparaît que si la surface est renseignée sur la compétition : la déduire du
+    libellé d'un tournoi serait une invention, comme pour l'Elo.
+  · **« Abandons »** — abandons et forfaits des six derniers mois. Seul celui qui
+    a abandonné est compté, jamais son adversaire. C'est un état physique que ni
+    le classement ni l'Elo ne disent.
+  · **« Niveau adv. »** — l'Elo moyen des adversaires de ces dix matchs, et le
+    meilleur d'entre eux qui ait été battu. C'est elle qui rend « Forme »
+    lisible : la suite de lettres traite une victoire sur le 150e comme une
+    victoire sur le 5e. Un « meilleur battu » inférieur à la moyenne dit que les
+    victoires sont venues du bas du tableau. Le compte est celui des adversaires
+    rapprochés au classement, pas celui des matchs.
+  · **« Profil »** — médiane des jeux et étendue, matchs avec tie-break, matchs
+    pliés en deux sets : à quoi ressemble un match de ce joueur, là où « Usure »
+    ne dit que le temps passé sur le court. C'est la ligne des marchés de jeux, et
+    le plus proche du **style** que les données permettent — beaucoup de tie-breaks
+    décrivent un joueur qui tient son engagement, des sets secs un tableau de
+    breaks. Aces, première balle et balles de break ne sont dans aucune source :
+    à ta recherche.
+  · **« Marge »** — l'écart de jeux moyen quand il gagne, puis quand il perd,
+    chacun avec son compte. C'est la grandeur du **handicap jeux**, et la seule
+    ligne du bloc qui en parle. Les deux sens sont séparés parce qu'une moyenne
+    unique les annule.
+
+{% if 'Historique' in context_labels %}La ligne **« Historique »** dit jusqu'où va le jeu de données, donc jusqu'où vont
+toutes les lignes ci-dessus. La source est **hebdomadaire et publiée après coup** :
+les matchs joués depuis — y compris ceux de ce tournoi-ci — ne sont dans aucune
+d'elles. « Forme » peut ignorer deux victoires de la semaine, « Précédent » nommer
+l'avant-dernier tournoi. Seules **« Tour », « Repos » et « Parcours »** portent le
+tournoi en cours, et elles n'en donnent aucun résultat : c'est la première
+recherche à faire.
+
+{% endif %}
+« Profil » et « Marge » écartent les matchs au **meilleur des cinq sets** — les
+Grands Chelems masculins, où quarante jeux sont ordinaires : le compte écrit à
+côté dit combien des dix ont été retenus. « Usure » les garde, elle, parce que
+cinq sets fatiguent vraiment. Sous cinq matchs retenus, ces trois lignes
+n'existent pas.
+
+{% if 'Parcours' in context_labels %}La ligne **« Parcours »** nomme les adversaires déjà rencontrés **dans ce
+tournoi-ci**, du premier tour au dernier, avec leur Elo quand il est connu :
+c'est ce qui distingue un parcours facile d'un parcours d'usure. Elle donne les
+adversaires et **jamais les résultats** — un joueur présent au tour suivant a
+forcément passé le précédent, mais l'écrire « il a battu X » supposerait qu'aucun
+forfait n'existe. Ne lui prête pas non plus des durées ni des statistiques de
+service : elles ne sont dans aucune source, et c'est « Usure » qui en approche.
+
+Deux limites, toutes deux vérifiées en réel :
+  · le `[vu depuis le 04/08]` en fin de ligne est **la fenêtre de nos scans, pas
+    celle du tournoi**. Un tournoi commencé avant elle a des premiers tours que
+    nous n'avons jamais vus : compare cette date à la ligne « Tour », et s'il
+    manque des tours, va les chercher ;
+  · un adversaire y figure parce que la rencontre était **programmée**. Un
+    forfait s'y lit donc comme un match joué alors que personne n'est entré sur
+    le court, et « Repos » compte ce jour-là de la même façon. C'est l'un des
+    points que la recherche des matchs déjà joués tranche.
+
+{% endif %}
+Deux lignes de plus portent sur **ce tournoi précisément**, toutes éditions
+confondues :
+
+  · **« H2H ici »** — leurs confrontations dans ce tournoi, avec le tour. Un
+    huitième de finale et une finale ne se valent pas.
+  · **« Palmarès »** — le meilleur résultat atteint ici et l'année, puis le bilan
+    sur place. `vainqueur 2025, 14V-0D` et `1er tour 2025, 0V-2D` décrivent deux
+    rapports au lieu radicalement différents. « finaliste » veut dire finale
+    perdue, « vainqueur » finale gagnée.
+
+Ces deux lignes n'existent que si le tournoi a été rattaché à la main au jeu de
+données — la source le nomme par son sponsor. Absentes **des deux côtés**, elles
+ne disent donc rien du passé des joueurs sur place : elles disent que le
+rattachement manque. Présentes pour **un seul** joueur, elles disent l'inverse —
+le rattachement est fait, et l'autre n'a simplement aucun passé ici dans le jeu
+de données.
+
+Un match donné sur tapis vert n'entre dans aucun de ces comptes : personne n'est
+entré sur le court. Il n'apparaît que sur la ligne « Abandons ».
+
+Ces bilans sont des **fréquences passées**, au même titre que les fractions du
+football, et la même interdiction s'applique : ne les rapproche jamais d'une cote.
+Un H2H ne dit rien à lui seul non plus — deux joueurs peuvent s'être affrontés
+trois fois sur une autre surface, il y a deux ans, avant une blessure. Un joueur
+absent d'une ligne n'est pas un joueur sans passé : c'est un joueur que le jeu de
+données ne nomme pas, ou dont l'identité était ambiguë et qu'on a préféré taire.
+
+{% endif %}{% endif %}
+{% endif %}

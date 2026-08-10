@@ -116,6 +116,12 @@ class Pick:
     #: ont pas l'usage, ce qui evite une jointure a chaque affichage de pick.
     sport_label: str = ""
     coupon_id: int | None = None
+    #: Justification d'independance d'une seconde selection sur le meme match.
+    #: **Rendue sur la feuille de session**, sans quoi elle serait ecrite et
+    #: jamais relue — le sort exact reserve a `/players/squads`, retire faute de
+    #: lecteur. C'est en la relisant qu'on voit si deux angles etaient vraiment
+    #: independants ou deux facons de dire la meme chose.
+    independence_note: str = ""
     #: Renseignes par `list_picks`, qui range les selections par competition.
     competition: str = ""
     sport_order: int = 99
@@ -622,6 +628,7 @@ def _pick(row: Any, tier_labels: dict[str, str], tz: str = "") -> Pick:
         stake=row["stake"],
         result=row["result"] or "pending",
         coupon_id=row["coupon_id"],
+        independence_note=_column(row, "independence_note") or "",
         sport_label=_column(row, "sport_label") or "",
         competition=_column(row, "competition") or "",
         sport_order=int(_column(row, "sport_order") or 99),
@@ -954,6 +961,7 @@ def add_pick(
     stake: str = "",
     angle: str = "",
     source_level: str = "",
+    independence_note: str = "",
     played: bool = False,
     result: str = "pending",
     settings: Settings | None = None,
@@ -995,19 +1003,40 @@ def add_pick(
     angle_value = _vocabulary(angle, ANGLES)
     source_value = _vocabulary(source_level, SOURCE_LEVELS)
 
+    attached = int(event_id) if str(event_id).strip().isdigit() else None
     with connect(settings) as conn:
         known = {row["key"] for row in conn.execute("SELECT key FROM tiers")}
         if tier not in known:
             raise HistoryError(f"Palier inconnu : {tier}")
 
+        # Une seconde selection sur le meme match reclame sa justification
+        # d'independance. **Seul controle bloquant du module**, et c'est
+        # deliberе : ailleurs une valeur manquante vaut « non renseigne », ici
+        # elle vaudrait « je ne me suis pas pose la question ». Le prompt nomme
+        # precisement ce cas — multiplier les lignes d'un meme match pour
+        # atteindre un quota est une facon deguisee de remplir un palier avec du
+        # vide — et rien d'autre ne permet de distinguer deux angles vraiment
+        # independants de deux facons de dire la meme chose.
+        note = (independence_note or "").strip()
+        if attached is not None and not note:
+            already = conn.execute(
+                "SELECT COUNT(*) AS n FROM picks WHERE session_id = ? AND event_id = ?",
+                (session_id, attached),
+            ).fetchone()["n"]
+            if already:
+                raise HistoryError(
+                    "Ce match porte déjà une sélection. Une seconde ne se justifie que "
+                    "sur un angle réellement indépendant : dis lequel, en une ligne."
+                )
+
         cursor = conn.execute(
             "INSERT INTO picks (session_id, event_id, tier, market, selection, price, "
             "                   confidence, played, stake, result, angle, source_level, "
-            "                   created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "                   independence_note, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
-                int(event_id) if str(event_id).strip().isdigit() else None,
+                attached,
                 tier,
                 market.strip(),
                 selection.strip(),
@@ -1018,6 +1047,7 @@ def add_pick(
                 result,
                 angle_value,
                 source_value,
+                note or None,
                 utcnow(),
             ),
         )
