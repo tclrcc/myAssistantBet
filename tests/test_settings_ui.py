@@ -11,6 +11,7 @@ from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services import thresholds
 from myassistantbet.services.history import ANALYSIS_MIN_DAYS, ANALYSIS_MIN_TOTAL
+from myassistantbet.services.history import load_bands as bandes_reglees
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import (
     DEFAULT_TEMPLATE,
@@ -21,6 +22,7 @@ from myassistantbet.services.prompt import (
     list_templates,
     load_tiers,
     read_template,
+    save_bands,
     save_template,
     save_tiers,
     template_path,
@@ -375,3 +377,50 @@ def test_l_ecran_des_bandes_dit_quand_elles_atteignent_le_prompt(client: TestCli
     assert f"sous {ANALYSIS_MIN_TOTAL} sélections tranchées" in page
     assert f"{ANALYSIS_MIN_DAYS} journées" in page
     assert "manque du recul" in page
+
+
+# -- L'etat « pas de cible » -------------------------------------------------
+
+
+def test_une_bande_entierement_vide_est_acceptee(migrated: Settings) -> None:
+    """Il n'existait **aucune** facon d'exprimer « ce cran n'a pas de cible » :
+    vider les deux bornes rendait « borne basse manquante ». Or c'est le reglage
+    juste sur les crans 1 et 2, pines par la source — `lecture` impose 1, une
+    source de niveau 3-4 plafonne a 2. Ni les resserrer ni les relacher n'est un
+    choix, donc une bande n'y declenche rien."""
+    save_bands([{"level": 1, "low": None, "high": None}], migrated)
+
+    bande = bandes_reglees(migrated)[1]
+    assert not bande.targeted
+    assert bande.label == "", "aucune cible a afficher, et surtout pas un zero"
+    assert not bande.excludes((0.0, 0.1)), "rien a sortir d'une bande absente"
+
+
+def test_une_borne_haute_seule_reste_refusee(migrated: Settings) -> None:
+    """Saisie incomplete, et le rejet est garde exprès : c'est le dernier cas
+    d'erreur que ce validateur sache attraper. Une borne effacee par megarde
+    doit se voir."""
+    with pytest.raises(CustomizationError, match="borne basse manquante"):
+        save_bands([{"level": 3, "low": None, "high": 60.0}], migrated)
+
+
+def test_le_cran_5_garde_sa_borne_basse(migrated: Settings) -> None:
+    """Ce qui n'allait pas chez lui n'a jamais ete d'avoir une cible : la
+    frontiere entre « un facteur dominant » et « deux facteurs independants »
+    est discretionnaire, et descendre ses marginales en confiance 4 est une
+    action reelle. Une borne basse sans borne haute reste sa forme."""
+    save_bands([{"level": 5, "low": 70.0, "high": None}], migrated)
+
+    bande = bandes_reglees(migrated)[5]
+    assert bande.targeted
+    assert bande.label == "70 % et plus"
+
+
+def test_l_ecran_explique_l_etat_sans_cible(client: TestClient) -> None:
+    page = client.get("/settings").text
+
+    assert "Laisser les deux bornes vides veut dire" in page
+    assert "C&#39;est le réglage attendu sur les crans" in page or (
+        "C'est le réglage attendu sur les crans" in page
+    )
+    assert "borne haute seule</strong> reste refusée" in page

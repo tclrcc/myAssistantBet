@@ -180,3 +180,108 @@ def mock_dossier_routes(load_fixture: Any) -> dict[str, respx.Route]:
             )
         ),
     }
+
+
+# -- Le recul du bloc de retour d'experience --------------------------------
+#
+# **Le gate est ferme en production**, et il le restera un moment : 4 journees
+# d'analyse distinctes sur les 10 requises, pour 60 selections tranchees sur 40.
+# Rien de ce qui concerne les bandes de confiance ne se voit donc dans un prompt
+# reel aujourd'hui — ni la cible, ni l'ecart, ni la mention « hors bande ».
+#
+# Tout ce qui touche a ces lignes se valide donc sur une fixture qui **ouvre le
+# gate**, et jamais sur un rendu de production. Elle vit ici parce que trois lots
+# en dependent : l'etat « pas de cible », l'effectif minimum et les cibles
+# relatives. Trois copies auraient diverge au premier seuil deplace.
+
+
+def lot_avec_recul(
+    settings: Any,
+    *,
+    confiances: dict[int, tuple[int, int]] | None = None,
+    market: str = "O/U 2.5",
+) -> int:
+    """Une session dont les selections franchissent **les deux** seuils du gate.
+
+    `confiances` donne, par cran, le couple `(gagnees, perdues)`. Le defaut
+    reproduit la forme reelle de la base — un cran 3 large et legerement sous le
+    taux global, un cran 4 plus etroit et au-dessus — parce que c'est cette forme
+    que les bandes ont a decrire, et qu'une fixture uniforme rendrait toute cible
+    egalement satisfaite.
+
+    L'**etalement** compte autant que le volume : les selections sont reparties
+    sur `FEEDBACK_MIN_DAYS` journees d'analyse distinctes. Un lot nombreux mais
+    concentre mesure ces jours-la, et le gate le refuse — c'est le seul des deux
+    seuils qu'une fixture naive oublie.
+    """
+    from myassistantbet import db
+    from myassistantbet.services import board, coupons
+    from myassistantbet.services.history import FEEDBACK_MIN_DAYS, add_pick, set_result
+    from myassistantbet.services.manual import build, save
+
+    # Le total tient **exactement** dans `FEEDBACK_WINDOW` : au-dela, la fenetre
+    # glissante tronque, et elle tronque par date — le cran le moins fourni
+    # disparaissait alors du rendu sans que la fixture le dise.
+    #
+    # Taux obtenus : cran 3 a 40 %, crans 4 et 5 a 60 %, global a 50 %. Un cran
+    # sous sa cible, un dedans, un legerement dessous : trois etats distincts,
+    # ce qu'une repartition uniforme ne donnerait pas.
+    repartition = confiances or {3: (12, 18), 4: (12, 8), 5: (6, 4)}
+    event_id = save(
+        build(
+            "football",
+            "Amical",
+            "Lyon",
+            "Nice",
+            "2026-08-04",
+            "20:45",
+            "Lyon 2.10\nNice 3.40",
+            "",
+            "",
+            settings=settings,
+        ),
+        settings,
+    )
+    session_id = board.toggle_selection(event_id, True, settings)
+
+    rang = 0
+    for cran, (gagnees, perdues) in sorted(repartition.items()):
+        for index in range(gagnees + perdues):
+            pick_id = add_pick(
+                session_id,
+                tier="fun",
+                market=market,
+                selection=f"Over {cran}-{index}",
+                event_id=str(event_id),
+                price="2.10",
+                confidence=str(cran),
+                # Ces lots montent plusieurs selections sur un meme match par
+                # commodite : la note d'independance est fournie d'office, un
+                # test dedie verifiant qu'elle est bien exigee.
+                independence_note="angles indépendants (fixture)",
+                settings=settings,
+            )
+            set_result(pick_id, "win" if index < gagnees else "loss", settings)
+            db.execute(
+                "UPDATE picks SET created_at = ? WHERE id = ?",
+                (f"2026-07-{1 + rang % FEEDBACK_MIN_DAYS:02d}T12:00:00Z", pick_id),
+                settings=settings,
+            )
+            # « Joue » veut dire pose chez le bookmaker, donc rattache a un
+            # coupon. Le marquer a la main ferait passer la fixture sans que le
+            # parcours reel fonctionne.
+            coupons.create(session_id, [pick_id], settings=settings)
+            rang += 1
+    return session_id
+
+
+def pose_bandes(settings: Any, bandes: dict[int, tuple[float | None, float | None]]) -> None:
+    """Ecrit les bandes cibles voulues, sans passer par la route ni le formulaire."""
+    from myassistantbet import db
+
+    for level, (low, high) in bandes.items():
+        db.execute(
+            "UPDATE confidence_bands SET low = ?, high = ? WHERE level = ?",
+            (low, high, level),
+            settings=settings,
+        )

@@ -863,7 +863,17 @@ def save_bands(rows: list[dict[str, Any]], settings: Settings | None = None) -> 
     for row in rows:
         level = row.get("level")
         low, high = row.get("low"), row.get("high")
+        # **Les deux vides = pas de cible sur ce cran**, et c'est un reglage
+        # attendu la ou aucun mouvement correctif n'existe : les crans 1 et 2
+        # sont pines par la source — `lecture` impose 1, une source de niveau
+        # 3-4 plafonne a 2 — donc ni les resserrer ni les relacher n'est un
+        # choix. Une bande qui ne peut declencher aucune action ne mesure rien.
+        if low is None and high is None:
+            continue
         if low is None:
+            # `high` seul reste une **saisie incomplete**, et le rejet est garde
+            # exprès : c'est le dernier cas d'erreur que ce validateur sache
+            # attraper, et une borne effacee par megarde doit se voir.
             raise CustomizationError(f"Confiance {level} : borne basse manquante.")
         if not 0 <= low <= 100:
             raise CustomizationError(f"Confiance {level} : la borne basse sort de 0 à 100 %.")

@@ -235,13 +235,18 @@ Par confiance annoncée à l'époque :
   {{ row.line }}
 {%- endfor %}
 
+{% if feedback.any_band %}
 L'écart à la bande cible est le **seul chiffre de ce bloc qui parle de ma
 notation plutôt que des matchs** : un cran nettement sous la sienne a été
 employé trop largement, et c'est à toi de le resserrer dès la section C — même
 faisceau, un cran de moins. Au-dessus, l'inverse. Un écart marqué **« hors
 bande »** est confirmé par le volume : agis dessus. Sans cette mention, lis-le,
 n'en fais pas une règle. Comme le reste du bloc, il ne se compare à aucune cote.
-{% endif %}
+
+Les crans sans cible n'en portent pas parce qu'aucun mouvement n'y est un
+choix : `lecture` impose la confiance 1, une source de niveau 3-4 plafonne à 2.
+Leur taux se lit, il ne se corrige pas.
+{% endif %}{% endif %}
 {%- if feedback.by_sport %}
 Par sport :
 {%- for row in feedback.by_sport %}

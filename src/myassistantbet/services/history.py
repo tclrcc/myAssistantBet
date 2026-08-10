@@ -293,11 +293,26 @@ class Band:
     """
 
     level: int
-    low: float
+    #: `None` des deux cotes = **ce cran n'a pas de cible**, et c'est un etat a
+    #: part entiere. Une bande sert a declencher un mouvement — resserrer un cran
+    #: employe trop largement, relacher un cran trop etroit — et les crans 1 et 2
+    #: sont pines par la source : `lecture` impose 1, une source de niveau 3-4
+    #: plafonne a 2. Aucun mouvement n'y est un choix, donc aucune cible n'y
+    #: mesure quoi que ce soit ; l'afficher ajouterait du bruit a un bloc dont
+    #: c'est justement le defaut a eviter.
+    low: float | None = None
     high: float | None = None
 
     @property
+    def targeted(self) -> bool:
+        """Ce cran porte une cible. Faux quand les deux bornes sont vides."""
+        return self.low is not None
+
+    @property
     def label(self) -> str:
+        if not self.targeted:
+            return ""
+        assert self.low is not None
         return f"{self.low:.0f} – {self.high:.0f} %" if self.high else f"{self.low:.0f} % et plus"
 
     def excludes(self, interval: tuple[float, float]) -> bool:
@@ -306,7 +321,12 @@ class Band:
         Le chevauchement le plus tenu suffit a se taire : signaler des qu'un
         taux sort de sa bande ferait crier a la derive sur du bruit, et au
         volume actuel presque chaque intervalle couvre plusieurs bandes.
+
+        Un cran sans cible n'est jamais hors bande : il n'y a rien a en sortir.
         """
+        if not self.targeted:
+            return False
+        assert self.low is not None
         low, high = interval[0] * 100, interval[1] * 100
         if high < self.low:
             return True
@@ -1949,7 +1969,7 @@ def load_bands(settings: Settings | None = None) -> dict[int, Band]:
     return {
         int(row["level"]): Band(
             level=int(row["level"]),
-            low=float(row["low"]),
+            low=None if row["low"] is None else float(row["low"]),
             high=None if row["high"] is None else float(row["high"]),
         )
         for row in rows
@@ -2139,7 +2159,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
         bands = {
             int(row["level"]): Band(
                 level=int(row["level"]),
-                low=float(row["low"]),
+                low=None if row["low"] is None else float(row["low"]),
                 high=None if row["high"] is None else float(row["high"]),
             )
             for row in conn.execute("SELECT level, low, high FROM confidence_bands")
@@ -2480,8 +2500,9 @@ class FeedbackRow:
         None quand le taux tombe **dans** la bande : il n'y a alors rien a
         corriger, et ecrire « écart 0 pt » ferait chercher un probleme absent.
         """
-        if self.band is None or self.rate is None:
+        if self.band is None or not self.band.targeted or self.rate is None:
             return None
+        assert self.band.low is not None
         observed = self.rate * 100
         if observed < self.band.low:
             return observed - self.band.low
@@ -2520,7 +2541,7 @@ class FeedbackRow:
             label = label[: self.LABEL_WIDTH - 1] + "…"
         compte = f"{self.won}/{self.settled}"
         line = f"{label:<{self.LABEL_WIDTH}} {compte:<7} {self.rate * 100:.0f} %"
-        if self.band is None:
+        if self.band is None or not self.band.targeted:
             return line
         line += f"   cible {self.band.label}"
         if self.gap is not None:
@@ -2624,6 +2645,17 @@ class Feedback:
             f"{self.selection_median * 100:.0f} % en médiane, "
             f"sur {self.selection_sessions} session{pluriel}"
         )
+
+    @property
+    def any_band(self) -> bool:
+        """Au moins un cran porte une cible.
+
+        Sans elle, le paragraphe qui ordonne de resserrer un cran employe trop
+        largement n'a rien a decrire : il expliquerait un mecanisme dont aucune
+        ligne du bloc ne peut declencher l'action. C'est exactement le genre de
+        texte que ce prompt passe son temps a retirer.
+        """
+        return any(row.band is not None and row.band.targeted for row in self.by_confidence)
 
     @property
     def enough(self) -> bool:

@@ -42,7 +42,7 @@ from myassistantbet.services.prompt import (
     save_preference,
 )
 
-from .helpers import NOW
+from .helpers import NOW, lot_avec_recul, pose_bandes
 
 
 @pytest.fixture
@@ -935,3 +935,69 @@ def test_le_taux_de_selection_dit_qu_il_compte_autre_chose() -> None:
     assert "ne lit pas la même population que le taux de sélection" in enough
     assert "sessions ayant produit un prompt" in enough
     assert "Deux nombres différents à quelques lignes d'écart sont donc normaux" in enough
+
+
+# -- L'etat « pas de cible », vu du prompt -----------------------------------
+#
+# **Gate ouvert obligatoire.** En production il est ferme — 4 journees sur 10 —
+# donc rien de ce qui touche aux bandes ne se voit dans un rendu reel. Ces tests
+# passent par la fixture partagee, jamais par la base du jour.
+
+
+def test_un_cran_sans_cible_ne_porte_ni_ecart_ni_hors_bande(migrated: Settings) -> None:
+    """La ligne donne le taux et rien d'autre. Un cran pine par la source —
+    `lecture` impose 1, une source de niveau 3-4 plafonne a 2 — ne peut ni se
+    resserrer ni se relacher : lui afficher une cible reviendrait a demander un
+    mouvement qui n'existe pas."""
+    session_id = lot_avec_recul(migrated)
+    pose_bandes(migrated, {3: (None, None), 4: (53.0, 62.0), 5: (62.0, None)})
+
+    corps = build_prompt(session_id, settings=migrated, now=NOW).body
+    bloc = corps.split("Par confiance annoncée")[1].split("Par sport")[0]
+
+    sans_cible = next(
+        ligne for ligne in bloc.splitlines() if ligne.strip().startswith("confiance 3")
+    )
+    assert "40 %" in sans_cible, "le taux constate reste, c'est un fait"
+    assert "cible" not in sans_cible
+    assert "écart" not in sans_cible
+    assert "hors bande" not in sans_cible
+
+
+def test_aucun_cran_cible_retire_le_paragraphe_de_resserrement(migrated: Settings) -> None:
+    """Il explique un mecanisme dont aucune ligne ne peut declencher l'action :
+    c'est exactement le genre de texte que ce prompt passe son temps a retirer."""
+    session_id = lot_avec_recul(migrated)
+    pose_bandes(migrated, {level: (None, None) for level in range(1, 6)})
+
+    corps = " ".join(build_prompt(session_id, settings=migrated, now=NOW).body.split())
+
+    assert "Par confiance annoncée" in corps, "les taux, eux, restent publies"
+    assert "seul chiffre de ce bloc qui parle de ma notation" not in corps
+    assert "hors bande" not in corps
+
+
+def test_un_cran_cible_garde_son_paragraphe(migrated: Settings) -> None:
+    """Le pendant du precedent : c'est bien l'absence de cible qui le retire, et
+    non un garde-fou trop large. Sans ce test, un conditionnement casse
+    passerait inapercu."""
+    session_id = lot_avec_recul(migrated)
+    pose_bandes(migrated, {1: (None, None), 2: (None, None), 5: (62.0, None)})
+
+    corps = " ".join(build_prompt(session_id, settings=migrated, now=NOW).body.split())
+
+    assert "seul chiffre de ce bloc qui parle de ma notation" in corps
+    assert "Les crans sans cible n'en portent pas parce qu'aucun mouvement" in corps
+
+
+def test_la_page_dit_qu_un_cran_n_a_pas_de_cible(client: TestClient, migrated: Settings) -> None:
+    """Un humain qui lit un tableau doit savoir qu'une case est vide par
+    decision et non par oubli — et jamais voir un zero, qui se lirait comme une
+    cible de 0 %."""
+    lot_avec_recul(migrated)
+    pose_bandes(migrated, {3: (None, None)})
+
+    page = client.get("/stats").text
+
+    assert "pas de cible" in page
+    assert "cible 0" not in page

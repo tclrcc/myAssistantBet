@@ -32,6 +32,24 @@
     mention qui déclenche l'action, pas le nombre.
   </p>
 
+  {# L'état « pas de cible » n'est pas une case qu'on aurait oublié de remplir :
+     c'est le réglage juste là où aucun mouvement correctif n'existe. La
+     partition n'est pas « les bords de l'échelle » mais « discrétionnaire contre
+     déterminé par la source ». #}
+  <p class="muted small">
+    <strong>Laisser les deux bornes vides veut dire « ce cran n'a pas de cible ».</strong>
+    C'est le réglage attendu sur les crans <strong>1 et 2</strong> : ils sont fixés par ce
+    que la recherche a trouvé — <code>lecture</code> impose 1, une source de niveau 3-4
+    plafonne à 2 — donc ni les resserrer ni les relâcher n'est un choix, et une bande qui
+    ne peut déclencher aucune action ne mesure rien. Les crans 3, 4 et 5 se distinguent
+    par des critères appréciables : c'est là que le resserrement a prise, et le cran 5
+    garde sa borne basse sans borne haute.
+  </p>
+  <p class="muted small">
+    Une <strong>borne haute seule</strong> reste refusée : c'est une saisie incomplète, et
+    le dernier cas d'erreur que ce formulaire sache encore attraper.
+  </p>
+
   <form class="tiers-form"
         hx-post="/settings/bands"
         hx-target="#bands"
@@ -51,7 +69,10 @@
             confiance {{ band.level }}
             <input type="hidden" name="level" value="{{ band.level }}">
           </td>
-          <td><input class="tiny" type="text" name="low" value="{{ band.low }}"></td>
+          {# Vide des deux côtés = pas de cible. Rendre « None » ferait
+             réenregistrer la chaîne au premier envoi du formulaire. #}
+          <td><input class="tiny" type="text" name="low"
+                     value="{{ band.low if band.low is not none else '' }}"></td>
           <td>
             {# Vide = pas de borne haute, comme la cote max d'un palier : le cran
                le plus élevé n'en a pas. #}

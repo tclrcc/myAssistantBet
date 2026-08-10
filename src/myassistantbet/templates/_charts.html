@@ -46,7 +46,11 @@
         {# La bande cible suit son libellé, en retrait : c'est l'objectif du
            niveau, pas une seconde mesure. « Hors bande » n'apparaît que si
            l'intervalle en sort entièrement — voir `Band.excludes`. #}
-        {%- if row.band %}<i class="band">cible {{ row.band.label }}</i>{% endif %}
+        {#- Un cran sans cible le **dit**, il ne se contente pas de ne rien
+            afficher : un humain qui lit un tableau doit savoir qu'une case est
+            vide par décision et non par oubli. Jamais un zéro, qui se lirait
+            comme une cible de 0 %. -#}
+        {%- if row.band %}<i class="band">{% if row.band.targeted %}cible {{ row.band.label }}{% else %}pas de cible{% endif %}</i>{% endif %}
       </span>
       {{ meter(row) }}
       <b class="bar-value{% if row.off_band %} is-off{% endif %}">{{ row.rate_label }}</b>
