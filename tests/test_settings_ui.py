@@ -10,8 +10,10 @@ from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services import thresholds
+from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import (
     DEFAULT_TEMPLATE,
+    QUOTA_REFERENCE_LOT,
     CustomizationError,
     build_prompt,
     delete_template,
@@ -182,7 +184,29 @@ def test_borne_basse_manquante_refusee(migrated: Settings) -> None:
 
 
 def test_les_bandes_modifiees_apparaissent_dans_le_prompt(migrated: Settings) -> None:
-    session_id = board_service.current_session(migrated)
+    """Le lot fait la taille de reference : la borne reglee y passe telle quelle.
+
+    Depuis que les quotas se calculent a la generation, une session vide les
+    rendrait tous a `0-0` — ce qui est juste, mais ne dirait rien de la saisie.
+    """
+    session_id = 0
+    for index in range(QUOTA_REFERENCE_LOT):
+        event_id = save(
+            build(
+                "football",
+                "Amical",
+                f"Lyon {index}",
+                f"Nice {index}",
+                "2026-08-20",
+                "20:45",
+                f"Lyon {index} 2.10",
+                "",
+                "",
+                settings=migrated,
+            ),
+            migrated,
+        )
+        session_id = board_service.toggle_selection(event_id, True, migrated)
     rows = _rows(migrated)
     rows[0]["label"] = "PRUDENT"
     rows[0]["quota_min"] = 1

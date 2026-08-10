@@ -436,11 +436,10 @@ calculer un taux de réussite par bande de cote dans le temps. Deux sélections 
 même prix doivent tomber dans le même palier, sans quoi ce taux ne mesure plus
 une bande de cote — et la confiance a déjà son propre axe.
 
-Quotas indicatifs : {{ tiers | map(attribute='quota_label') | join(', ') }}.
-Ces quotas supposent un lot d'une dizaine de matchs ou plus, et **se réduisent
-à proportion du lot**. Une seule sélection par match : sur ce lot, le total ne
-peut donc pas dépasser {{ event_blocks | length }}, tous paliers confondus.
-Vise la fourchette basse de deux ou trois paliers, laisse les autres vides.
+Quotas **de ce lot** : {{ quotas | join(', ') }}. Une seule sélection par match,
+donc le total ne peut pas dépasser {{ event_blocks | length }}, tous paliers
+confondus. Vise la fourchette basse de deux ou trois paliers, laisse les autres
+vides.
 
 Une sélection par match. Deux sélections sur un même match ne se justifient que
 si elles reposent sur des angles réellement indépendants — et tu le dis alors

@@ -34,6 +34,14 @@ from .thresholds import value_of as threshold
 logger = logging.getLogger(__name__)
 
 TEMPLATES_DIR = PACKAGE_DIR / "templates" / "prompts"
+
+#: Taille de lot pour laquelle les quotas des paliers sont regles. En dessous,
+#: ils se reduisent a proportion — c'est ce que le prompt expliquait en prose,
+#: et que personne ne pouvait appliquer sans refaire le calcul.
+QUOTA_REFERENCE_LOT = 10
+
+#: Paliers gardant un plancher de 1 quel que soit le lot : les deux plus surs.
+QUOTA_FLOOR_TIERS = 2
 DEFAULT_TEMPLATE = "session_default.md.j2"
 TEMPLATE_SUFFIX = ".md.j2"
 
@@ -85,7 +93,42 @@ class Tier:
 
     @property
     def quota_label(self) -> str:
+        """La borne telle qu'elle est **reglee**, pour l'ecran des reglages.
+
+        Le prompt, lui, n'ecrit jamais celle-ci : il ecrit la borne du lot,
+        calculee par `quota_for()`. Une borne qu'il faut recalculer soi-meme ne
+        contraint rien.
+        """
         return f"{self.quota_min}-{self.quota_max} {self.emoji}"
+
+    def quota_for(self, lot: int, *, safest: bool) -> tuple[int, int]:
+        """Bornes reelles de ce palier sur un lot de `lot` matchs.
+
+        Les quotas sont regles pour un lot de reference (`QUOTA_REFERENCE_LOT`)
+        et se reduisent a proportion. Le prompt expliquait cette reduction en
+        prose et laissait le calcul a faire — donc une borne de dix matchs
+        s'affichait sur un lot de cinq, et ne contraignait rien.
+
+        **Les deux paliers les plus surs gardent un plancher a 1** : un petit
+        lot doit pouvoir porter une selection sure, sinon la reduction
+        interdirait de rendre quoi que ce soit. Au-dela, le plancher est 0 — un
+        palier haut vide est un resultat, et la section C demande de le
+        commenter.
+
+        L'arrondi est **au plus proche, moities vers le haut**, et non celui de
+        `round()` : la regle bancaire de Python rendrait 2 pour 2.5 et 2 pour
+        1.5, deux comportements differents sur deux paliers voisins.
+        """
+        if lot <= 0:
+            return (0, 0)
+        scaled = int(self.quota_max * lot / QUOTA_REFERENCE_LOT + 0.5)
+        high = max(min(self.quota_max, scaled), 1 if safest else 0)
+        # La borne basse ne peut pas depasser la haute : « 2-1 » ne se lit pas.
+        return (min(self.quota_min, high), high)
+
+    def quota_line(self, lot: int, *, safest: bool) -> str:
+        low, high = self.quota_for(lot, safest=safest)
+        return f"{low}-{high} {self.emoji}"
 
 
 @dataclass
@@ -336,6 +379,13 @@ def build_prompt(
             # matchs un lot porte-t-il deux combines » est une decision de
             # l'utilisateur, pas une constante du projet.
             combo_min_lot=threshold("combo_min_lot", settings),
+            # Les bornes **de ce lot**, calculees ici. Le prompt annoncait
+            # celles d'un lot de dix et expliquait qu'elles se reduisaient : une
+            # borne qu'il faut recalculer soi-meme ne contraint rien.
+            quotas=[
+                tier.quota_line(len(blocks), safest=rank < QUOTA_FLOOR_TIERS)
+                for rank, tier in enumerate(load_tiers(settings))
+            ],
             exact_scores=any(
                 key.startswith("correct_score") for event in events for key in event.markets
             ),

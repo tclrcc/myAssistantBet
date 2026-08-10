@@ -21,7 +21,10 @@ from myassistantbet.services.enrich import run_enrich
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import (
     DEFAULT_TEMPLATE,
+    QUOTA_FLOOR_TIERS,
+    QUOTA_REFERENCE_LOT,
     TEMPLATES_DIR,
+    Tier,
     build_prompt,
     date_fr,
     list_templates,
@@ -297,7 +300,12 @@ async def test_paliers_injectes_dans_le_prompt(
 
     assert "🟢 SAFE         1.25 – 1.70" in body
     assert "💥 GIGA+" in body
-    assert "Quotas indicatifs : 2-4 🟢, 3-5 🔵, 2-4 🟠, 1-3 🔴, 0-2 💥." in body
+    # Les bornes **de ce lot**, pas celles d'un lot de dix. Le prompt annoncait
+    # « 2-4 🟢, 3-5 🔵… » sur un lot d'un match, puis expliquait en prose que
+    # ces quotas « se reduisent a proportion » — une borne qu'il faut recalculer
+    # soi-meme ne contraint rien.
+    assert "Quotas **de ce lot** : 1-1 🟢, 1-1 🔵, 0-0 🟠, 0-0 🔴, 0-0 💥." in body
+    assert "se réduisent" not in body, "le paragraphe explicatif n'a plus lieu d'etre"
 
 
 @respx.mock
@@ -681,7 +689,7 @@ async def test_le_prompt_donne_la_taille_du_lot_et_son_plafond(
     body = build_prompt(session_id, settings=migrated, now=NOW).body
 
     assert "Ce lot comporte **1 match(s)**" in body
-    assert "le total ne\npeut donc pas dépasser 1, tous paliers confondus." in body
+    assert "le total ne peut pas dépasser 1, tous paliers confondus" in " ".join(body.split())
 
 
 @respx.mock
@@ -1034,3 +1042,59 @@ def test_les_blocs_ne_sont_jamais_une_source(migrated: Settings) -> None:
     assert "est une `lecture`, quelle que soit la qualité du fournisseur" in corps
     assert "une statistique que **ta recherche** a rapportée" in corps
     assert "ces deux colonnes ne mesureraient plus rien" in corps
+
+
+# -- Les quotas se calculent, ils ne s'expliquent plus -----------------------
+
+
+def test_les_quotas_se_reduisent_a_proportion_du_lot(migrated: Settings) -> None:
+    """Le prompt affichait les bornes d'un lot de dix sur un lot de cinq, puis
+    expliquait en prose qu'elles « se réduisent à proportion ». Une borne qu'il
+    faut recalculer soi-meme ne contraint rien."""
+    tiers = load_tiers(migrated)
+    safe, giga_plus = tiers[0], tiers[-1]
+
+    assert safe.quota_for(QUOTA_REFERENCE_LOT, safest=True) == (2, 4), "le lot de reference"
+    assert safe.quota_for(5, safest=True) == (2, 2), "moitie moins de matchs, moitie moins"
+    assert giga_plus.quota_for(5, safest=False) == (0, 1)
+
+
+def test_les_deux_paliers_les_plus_surs_gardent_un_plancher(migrated: Settings) -> None:
+    """Un petit lot doit pouvoir porter une selection sure : sans plancher, la
+    reduction interdirait de rendre quoi que ce soit."""
+    tiers = load_tiers(migrated)
+
+    assert [
+        tier.quota_for(1, safest=rank < QUOTA_FLOOR_TIERS)[1] for rank, tier in enumerate(tiers)
+    ] == [
+        1,
+        1,
+        0,
+        0,
+        0,
+    ]
+
+
+def test_une_borne_basse_ne_depasse_jamais_la_haute(migrated: Settings) -> None:
+    """« 2-1 » ne se lit pas. La borne reglee peut depasser la borne reduite."""
+    safe = load_tiers(migrated)[0]
+
+    low, high = safe.quota_for(2, safest=True)
+
+    assert low <= high
+
+
+def test_un_lot_vide_ne_reclame_aucun_palier(migrated: Settings) -> None:
+    assert load_tiers(migrated)[0].quota_for(0, safest=True) == (0, 0)
+
+
+def test_l_arrondi_des_quotas_ne_depend_pas_du_palier(migrated: Settings) -> None:
+    """`round()` de Python arrondit les moities vers le pair : 2.5 rendrait 2 et
+    1.5 rendrait 2, soit deux comportements sur deux paliers voisins. L'arrondi
+    est donc au plus proche, moities vers le haut."""
+    tiers = load_tiers(migrated)
+    cinq = Tier(**{**tiers[0].__dict__, "quota_min": 0, "quota_max": 5})
+    trois = Tier(**{**tiers[0].__dict__, "quota_min": 0, "quota_max": 3})
+
+    assert cinq.quota_for(5, safest=False)[1] == 3, "2.5 monte a 3"
+    assert trois.quota_for(5, safest=False)[1] == 2, "1.5 monte a 2"

@@ -1383,6 +1383,30 @@ qui les rend chercheuses.
   selections. Sous `combo_min_lot`, le prompt n'en demande qu'un, et les deux
   paragraphes qui supposent deux combines se gardent avec.
 
+## Les quotas de palier se calculent, ils ne s'expliquent plus
+
+Le prompt affichait les bornes d'un lot de dix — `0-6 🟢, 0-5 🔵, 0-3 🟠…` — sur un lot de
+cinq, puis expliquait en prose qu'elles « se reduisent a proportion du lot » et laissait
+le calcul a faire. **Une borne qu'il faut recalculer soi-meme ne contraint rien.**
+
+- `Tier.quota_for(lot)` rend la borne reelle : `min(quota_max, arrondi(quota_max × lot /
+  QUOTA_REFERENCE_LOT))`. Le paragraphe explicatif a disparu avec le calcul — c'est
+  autant de texte gagne, et la ligne « le total ne peut pas depasser N », qui etait deja
+  calculee, a servi de modele.
+- **Les deux paliers les plus surs gardent un plancher a 1** (`QUOTA_FLOOR_TIERS`) : un
+  petit lot doit pouvoir porter une selection sure, sinon la reduction interdirait de
+  rendre quoi que ce soit. Au-dela le plancher est 0 — un palier haut vide est un
+  resultat, et la section C demande de le commenter.
+- **La borne basse ne depasse jamais la haute** : la valeur reglee peut survivre a la
+  reduction, et « 2-1 » ne se lit pas.
+- **L'arrondi est au plus proche, moities vers le haut**, et pas celui de `round()` : la
+  regle bancaire de Python rend 2 pour 2.5 et 2 pour 1.5, soit deux comportements
+  differents sur deux paliers voisins.
+- `Tier.quota_label` reste la borne **reglee**, et ne sert plus qu'a l'ecran des reglages.
+  Corollaire pour les tests : une session vide rend desormais `0-0` partout, ce qui est
+  juste mais ne dit rien d'une saisie — celui qui verifie qu'une bande modifiee atteint le
+  prompt monte donc un lot de la taille de reference.
+
 ## Les seuils reglables (`services/thresholds.py`)
 
 Des nombres qui decident d'une regle sans etre ni une constante du projet ni une donnee :
