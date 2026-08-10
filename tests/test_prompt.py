@@ -1457,3 +1457,95 @@ def test_le_score_exact_en_sets_survit_a_l_absence_de_combine(migrated: Settings
     assert "Aucun combiné sur ce lot" in corps
     assert "**Score exact en sets**" in corps
     assert "ne le mets dans aucun combiné" in corps
+
+
+# -- Coherence des combines aux seuils releves -------------------------------
+#
+# Les seuils passent a 9 (un combine) et 20 (deux combines). Sur des lots tennis
+# de 4 a 8 matchs, la consequence assumee est qu'**aucun combine n'est plus
+# demande** : la branche doit donc s'ecrire sans laisser de section vide, de
+# titre orphelin ni de double saut de ligne.
+#
+# Les valeurs sont posees **par le test** et jamais en base : ce sont des
+# saisies de l'utilisateur, et les figer en dur ferait passer le test sur une
+# configuration que personne n'a choisie.
+
+SEUIL_UN_COMBINE = 9
+SEUIL_DEUX_COMBINES = 20
+
+
+@pytest.mark.parametrize(
+    ("taille", "attendu"),
+    [
+        (4, "aucun"),
+        (8, "aucun"),
+        (9, "un"),
+        (14, "un"),
+        (15, "un"),
+        (19, "un"),
+        (20, "deux"),
+    ],
+)
+def test_la_section_des_combines_se_rend_proprement(
+    migrated: Settings, taille: int, attendu: str
+) -> None:
+    """Aux bornes et de part et d'autre. Le rendu doit rester propre a chaque
+    taille : c'est la seule section du prompt dont le contenu disparait
+    entierement, et une section vide se remarque moins qu'un paragraphe faux."""
+    save_threshold("combo_solo_min_lot", str(SEUIL_UN_COMBINE), migrated)
+    save_threshold("combo_min_lot", str(SEUIL_DEUX_COMBINES), migrated)
+
+    corps = build_prompt(_lot_de(migrated, taille), settings=migrated, now=NOW).body
+    section = corps.split("### D. Combinés")[1].split("### E.")[0]
+    plat = " ".join(section.split())
+
+    assert plat, "jamais un titre orphelin : la section dit toujours quelque chose"
+    assert "\n\n\n" not in section, "aucun double saut de ligne"
+    assert section.strip(), "aucune section vide"
+
+    if attendu == "aucun":
+        assert "**Aucun combiné sur ce lot.**" in plat
+        assert "la question n'est pas posée" in plat
+        # Les trois paragraphes qui n'ont plus d'objet tombent avec la demande.
+        assert "une seule sélection par match dans un combiné" not in plat
+        assert "cotes cibles sont indicatives" not in plat
+        assert "maillon le plus fragile" not in plat
+    elif attendu == "un":
+        assert "**Un seul combiné**" in plat
+        assert "Contrainte : une seule sélection par match dans un combiné." in plat
+        assert "Les cotes cibles sont indicatives" in plat
+        assert "maillon le plus fragile" in plat
+        assert "Les deux combinés doivent être" not in plat
+    else:
+        assert "combiné « solide »" in plat and "combiné « frisson »" in plat
+        assert "Les deux combinés doivent être **réellement différents**" in plat
+
+
+def test_le_score_en_sets_survit_a_toutes_les_tailles(migrated: Settings) -> None:
+    """La section D porte deux demandes distinctes : les combines et, au tennis,
+    le score en sets. Retirer la premiere ne doit jamais emporter la seconde."""
+    save_threshold("combo_solo_min_lot", str(SEUIL_UN_COMBINE), migrated)
+    save_threshold("combo_min_lot", str(SEUIL_DEUX_COMBINES), migrated)
+    session_id = 0
+    for index in range(4):
+        event_id = save(
+            build(
+                "tennis",
+                "ATP 250 Gstaad",
+                f"Moutet {index}",
+                f"Bergs {index}",
+                "2026-08-04",
+                "20:45",
+                f"Moutet {index} 1.85\nBergs {index} 1.95",
+                "",
+                "",
+                settings=migrated,
+            ),
+            migrated,
+        )
+        session_id = board_service.toggle_selection(event_id, True, migrated)
+
+    corps = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "Aucun combiné sur ce lot" in corps
+    assert "**Score exact en sets**" in corps
