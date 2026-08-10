@@ -1273,3 +1273,23 @@ def test_le_glossaire_explique_les_deux_fenetres_de_forme_5(migrated: Settings) 
     assert "chaque moitié porte son propre dénominateur" in gabarit
     assert "n'est pas seize buts en deux matchs" in gabarit
     assert "(après Nj — indicatif) »**, elle sort d'un classement de début de saison" in gabarit
+
+
+def test_le_chapitre_de_lecture_a_maigri_sans_perdre_ses_conventions(migrated: Settings) -> None:
+    """Apres les lots 1, 3 et 4, plusieurs passages decrivaient des calculs que
+    l'application fait desormais. Le chapitre a ete resserre — mesure sur un lot
+    de six matchs de football, 2517 tokens contre 1834 — mais **aucune
+    convention de lecture n'a bouge**, a commencer par le signe du handicap
+    jeux, qui suit la position dans le titre et jamais le favori.
+
+    Le garde-fou est ecrit ici parce que la perte serait silencieuse : une
+    convention retiree ne casse rien, elle fait lire une cote a l'envers.
+    """
+    gabarit = " ".join((TEMPLATES_DIR / DEFAULT_TEMPLATE).read_text(encoding="utf-8").split())
+
+    assert "Le signe ne suit jamais le favori : il suit la position dans le titre." in gabarit
+    assert "Over d'abord, Under ensuite" in gabarit
+    assert "toujours compté depuis la fin" in gabarit
+    assert "le seul pourcentage du bloc" in gabarit
+    assert "les buts **du match, les deux équipes réunies**" in gabarit
+    assert "**journées de tournoi** et non en dates civiles" in gabarit
