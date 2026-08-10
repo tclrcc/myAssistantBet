@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -27,7 +28,15 @@ from ..db import connect, utcnow
 from ..providers.oddsapi import SCAN_MARKETS
 from .enrich import markets_for
 from .history import feedback
-from .render import estimate_tokens, ordered_labels, render_event
+from .render import (
+    MERGED_MARKETS,
+    Outcome,
+    RenderableEvent,
+    estimate_tokens,
+    market_label,
+    ordered_labels,
+    render_event,
+)
 from .session import has_started, renderable_events, session_label, started_labels
 from .thresholds import value_of as threshold
 
@@ -91,6 +100,16 @@ class Tier:
             return f"> {self.min_price:.2f}   (scores exacts multichoix, marches exotiques)"
         return f"{self.min_price:.2f} – {self.max_price:.2f}"
 
+    def covers(self, value: float) -> bool:
+        """Vrai si cette cote tombe dans la bande.
+
+        **La borne haute appartient au palier suivant** : une cote a 1.70 est
+        FUN et non SAFE. C'est la convention du prompt, ecrite une seule fois.
+        """
+        if value < self.min_price:
+            return False
+        return self.max_price is None or value < self.max_price
+
     @property
     def quota_label(self) -> str:
         """La borne telle qu'elle est **reglee**, pour l'ecran des reglages.
@@ -129,6 +148,176 @@ class Tier:
     def quota_line(self, lot: int, *, safest: bool) -> str:
         low, high = self.quota_for(lot, safest=safest)
         return f"{low}-{high} {self.emoji}"
+
+
+@dataclass(frozen=True)
+class Price:
+    """Une cote du lot, avec de quoi la retrouver dans son bloc."""
+
+    value: float
+    block: int
+    market: str
+    outcome: str
+
+    @property
+    def label(self) -> str:
+        """`3.40 (M2 · Vainqueur Diana Shnaider)`.
+
+        L'emplacement compte autant que le nombre : une borne annoncee sans
+        l'endroit ou elle se lit oblige a relire les quatre blocs pour la
+        verifier, et personne ne le fait.
+        """
+        where = " ".join(part for part in (self.market, self.outcome) if part)
+        return f"{self.value:.2f} (M{self.block} · {where})"
+
+
+def _outcome_text(outcome: Outcome) -> str:
+    """`Over 22.5`, `Diana Shnaider`, `Hacken O1.5` — l'issue telle qu'elle se lit."""
+    parts = [outcome.description or "", outcome.name or ""]
+    if outcome.point is not None:
+        parts.append(f"{outcome.point:g}")
+    return " ".join(part for part in parts if part)
+
+
+def prices_of(event: RenderableEvent) -> list[Price]:
+    """Toutes les cotes d'un bloc, dans l'ordre croissant.
+
+    Le marche est nomme par son **libelle fusionne**, celui qu'affiche le bloc :
+    une cote annoncee sous `alternate_totals` serait introuvable a l'oeil, la
+    ligne s'appelant `Jeux O/U`.
+    """
+    found = [
+        Price(
+            value=float(outcome.price),
+            block=event.index,
+            market=market_label(event.sport_key, MERGED_MARKETS.get(key, key)),
+            outcome=_outcome_text(outcome),
+        )
+        for key, outcomes in event.markets.items()
+        for outcome in outcomes
+    ]
+    return sorted(found, key=lambda price: price.value)
+
+
+@dataclass
+class TierScope:
+    """Les paliers que les cotes du lot rendent reellement atteignables.
+
+    Mesure qui l'a fait naitre : sur un lot de quatre quarts de finale, la cote
+    la plus haute valait **3.40**. Les paliers 🔴 GIGA FUN et 💥 GIGA+ etaient
+    donc hors d'atteinte avant meme que l'analyse commence — et le prompt
+    injectait pourtant leurs quotas, puis exigeait qu'un palier vide soit
+    commente « en nommant ce qu'il aurait fallu trouver ». L'analyse produisait
+    une ligne d'excuse pour un palier que le lot rendait impossible.
+
+    **L'atteignabilite se mesure sur les cotes reellement offertes, pas sur
+    l'intervalle qu'elles couvrent.** Un lot dont les prix seraient 1.34 et 3.40
+    ne porte aucune cote entre 1.70 et 2.30 : declarer 🔵 FUN atteignable parce
+    qu'il tombe « entre les deux » ferait chercher un prix qui n'existe nulle
+    part. Une selection recopie **une** cote d'**un** bloc, jamais un intervalle.
+    """
+
+    lowest: Price | None = None
+    highest: Price | None = None
+    present: list[Tier] = field(default_factory=list)
+    absent: list[Tier] = field(default_factory=list)
+
+    @property
+    def known(self) -> bool:
+        """Le lot porte au moins une cote. Sans cote, rien ne se calcule."""
+        return self.lowest is not None and self.highest is not None
+
+    @property
+    def range_line(self) -> str:
+        if not self.known:
+            return ""
+        assert self.highest is not None and self.lowest is not None
+        return f"Cote max du lot : {self.highest.label}. Cote min : {self.lowest.label}."
+
+    @property
+    def present_line(self) -> str:
+        if not self.present:
+            return "Aucun palier réglé ne couvre les cotes de ce lot."
+        return (
+            "Paliers présents dans ce lot : " + ", ".join(tier.label for tier in self.present) + "."
+        )
+
+    @property
+    def absent_line(self) -> str:
+        """« Absents du lot : GIGA FUN, GIGA+ — ne les commente pas. »
+
+        Nommes plutot que sous-entendus par leur cote : « les paliers
+        superieurs » serait faux le jour ou c'est le palier le plus sur qui
+        manque, ce qui arrive des qu'un lot n'offre aucun favori net.
+        """
+        if not self.absent:
+            return ""
+        return (
+            "Absents du lot : "
+            + ", ".join(tier.label for tier in self.absent)
+            + " — aucune cote du lot n'y tombe, ne les commente pas."
+        )
+
+
+def reachable(tiers: list[Tier], prices: Sequence[Price] | Sequence[float]) -> list[Tier]:
+    """Paliers qu'au moins une de ces cotes atteint, dans l'ordre des bandes.
+
+    Un palier dont le **quota reglé** vaut zero n'y figure jamais : l'annoncer
+    reviendrait a proposer une case qu'on s'est deja interdit de remplir.
+    """
+    values = [price.value if isinstance(price, Price) else float(price) for price in prices]
+    return [
+        tier for tier in tiers if tier.quota_max > 0 and any(tier.covers(value) for value in values)
+    ]
+
+
+def tier_scope(tiers: list[Tier], events: Sequence[RenderableEvent]) -> TierScope:
+    """Bornes du lot et paliers atteignables, calcules sur toutes ses cotes."""
+    prices = sorted(
+        (price for event in events for price in prices_of(event)),
+        key=lambda price: price.value,
+    )
+    if not prices:
+        return TierScope()
+    present = reachable(tiers, prices)
+    keys = {tier.key for tier in present}
+    return TierScope(
+        lowest=prices[0],
+        highest=prices[-1],
+        present=present,
+        absent=[tier for tier in tiers if tier.quota_max > 0 and tier.key not in keys],
+    )
+
+
+def _enumerate_fr(labels: Sequence[str]) -> str:
+    """`SAFE`, `SAFE ni ULTRA FUN`, `SAFE, ULTRA FUN ni GIGA FUN`."""
+    if len(labels) <= 1:
+        return "".join(labels)
+    return ", ".join(labels[:-1]) + " ni " + labels[-1]
+
+
+def block_tiers_line(tiers: list[Tier], event: RenderableEvent, scope: TierScope) -> str:
+    """Ligne `Paliers` d'un bloc : ce que **ses** cotes rendent atteignable.
+
+    La parenthese n'apparait que si le bloc restreint **au-dela du lot** : ce
+    que le lot exclut partout est deja dit une fois, en tete de la section C, et
+    le repeter sous chaque match couterait quatre fois la meme phrase.
+
+    Ni accent ni apostrophe, comme toute valeur rendue dans un bloc.
+    """
+    prices = prices_of(event)
+    if not prices or not scope.present:
+        return ""
+    present = reachable(tiers, prices)
+    keys = {tier.key for tier in present}
+    missing = [tier.label for tier in scope.present if tier.key not in keys]
+    bounds = f"cotes du bloc {prices[0].value:.2f}-{prices[-1].value:.2f}"
+    if not present:
+        return f"aucun — {bounds}, hors des bandes reglees"
+    labels = ", ".join(tier.label for tier in present)
+    if not missing:
+        return labels
+    return f"{labels} ({bounds} — aucun {_enumerate_fr(missing)})"
 
 
 @dataclass
@@ -342,6 +531,16 @@ def build_prompt(
 
     moment = (now or datetime.now(ZoneInfo(settings.tz))).astimezone(ZoneInfo(settings.tz))
     events = renderable_events(session_id, settings, moment, competition_id)
+
+    # Les paliers que les cotes du lot rendent atteignables, calcules **avant**
+    # le rendu : chaque bloc porte les siens, et la section C n'annonce que ceux
+    # qui existent. Un palier hors d'atteinte annonce puis reclame produisait une
+    # ligne d'excuse pour une case que le lot rendait impossible.
+    tiers = load_tiers(settings)
+    scope = tier_scope(tiers, events)
+    for event in events:
+        event.tiers_line = block_tiers_line(tiers, event, scope)
+
     blocks = [render_event(event) for event in events]
 
     body = (
@@ -351,7 +550,12 @@ def build_prompt(
             date_fr=date_fr(moment),
             event_blocks=blocks,
             session_label=session_label(session_id, settings),
-            tiers=load_tiers(settings),
+            # **Seuls les paliers du lot.** Definir 💥 GIGA+ sur un lot dont la
+            # cote maximale vaut 3.40 coute des tokens pour proposer une case
+            # que rien ne peut remplir — et le prompt reclamait ensuite de
+            # commenter sa vacance.
+            tiers=scope.present or tiers,
+            tier_scope=scope,
             tz=settings.tz,
             # Les sports presents dans le lot. Le preambule documente les
             # lignes de chaque sport, et une session de football payait jusqu'ici
@@ -382,9 +586,14 @@ def build_prompt(
             # Les bornes **de ce lot**, calculees ici. Le prompt annoncait
             # celles d'un lot de dix et expliquait qu'elles se reduisaient : une
             # borne qu'il faut recalculer soi-meme ne contraint rien.
+            # Le rang du plancher se compte sur les paliers **regles**, jamais
+            # sur ceux du lot : un lot sans 🟢 SAFE ferait sinon du palier
+            # suivant « l'un des deux plus surs », et lui accorderait un
+            # plancher de 1 que la regle ne lui donne pas.
             quotas=[
                 tier.quota_line(len(blocks), safest=rank < QUOTA_FLOOR_TIERS)
-                for rank, tier in enumerate(load_tiers(settings))
+                for rank, tier in enumerate(tiers)
+                if tier in (scope.present or tiers)
             ],
             exact_scores=any(
                 key.startswith("correct_score") for event in events for key in event.markets

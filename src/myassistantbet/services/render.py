@@ -72,6 +72,16 @@ UNSERVED_NOTE_SUBSTITUTE = "non servis par le book de substitution sur ce match"
 #: prix chez le book principal avant de miser.
 UNPLAYABLE_LABEL = "A relever"
 
+#: Les paliers que les cotes **de ce bloc** rendent atteignables. Un palier est
+#: une bande de cote : si aucune cote du bloc n'y tombe, aucune selection de ce
+#: match ne pourra s'y ranger, quel que soit l'angle. Mesure qui l'a fait naitre :
+#: sur un lot de quatre quarts de finale, la cote la plus basse d'un bloc valait
+#: 1.71 — aucun 🟢 SAFE n'en sortirait jamais, et rien ne le disait.
+#:
+#: La valeur est calculee par `prompt.py`, qui detient les paliers : ce module
+#: n'en connait rien et ne doit pas commencer, ils vivent en base.
+TIERS_LABEL = "Paliers"
+
 
 @dataclass
 class Outcome:
@@ -115,6 +125,9 @@ class RenderableEvent:
     #: Vrai quand les cotes viennent d'un book de repli et non du fournisseur
     #: principal : la cause d'une absence n'est alors pas la meme.
     substitute: bool = False
+    #: Paliers atteignables sur ce bloc, deja formates par `prompt.py`. Vide
+    #: quand le lot n'a pas de bandes reglees, ou quand le bloc n'a aucune cote.
+    tiers_line: str = ""
 
 
 # -- Formatage elementaire --------------------------------------------------
@@ -624,8 +637,22 @@ def _context_block(event: RenderableEvent) -> list[str]:
     return ["CONTEXTE", *rows] if rows else []
 
 
+def _tiers_line(event: RenderableEvent) -> list[str]:
+    """Les paliers que les cotes du bloc rendent atteignables.
+
+    Elle ferme le bloc parce qu'elle porte sur ses prix et sur rien d'autre :
+    c'est une consequence des lignes qui precedent, pas une donnee de plus.
+    """
+    return [line(TIERS_LABEL, event.tiers_line)] if event.tiers_line else []
+
+
 def _markets_block(event: RenderableEvent) -> list[str]:
-    rows = _render_markets(event) + _unplayable_line(event) + _unserved_line(event)
+    rows = (
+        _render_markets(event)
+        + _unplayable_line(event)
+        + _unserved_line(event)
+        + _tiers_line(event)
+    )
     if not rows:
         return []
     heading = f"MARCHES ({event.bookmaker_label}"

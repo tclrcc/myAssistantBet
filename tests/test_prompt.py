@@ -1100,6 +1100,122 @@ def test_l_arrondi_des_quotas_ne_depend_pas_du_palier(migrated: Settings) -> Non
     assert trois.quota_for(5, safest=False)[1] == 2, "1.5 monte a 2"
 
 
+# -- Ne proposer que les paliers atteignables --------------------------------
+
+
+def _lot_aux_cotes(migrated: Settings, *blocs: str) -> int:
+    """Un lot de football dont chaque bloc porte les cotes demandees.
+
+    `_lot_de` fige les siennes ; ici c'est precisement la cote qui est le sujet.
+    """
+    session_id = 0
+    for index, cotes in enumerate(blocs):
+        event_id = save(
+            build(
+                "football",
+                "Match amical",
+                f"Lyon {index}",
+                f"Nice {index}",
+                "2026-08-04",
+                "20:45",
+                cotes,
+                "",
+                "",
+                settings=migrated,
+            ),
+            migrated,
+        )
+        session_id = board_service.toggle_selection(event_id, True, migrated)
+    return session_id
+
+
+def test_la_borne_haute_appartient_au_palier_suivant(migrated: Settings) -> None:
+    """Une cote a 1.70 est FUN, pas SAFE. La convention du prompt, en code."""
+    safe, fun = load_tiers(migrated)[:2]
+
+    assert safe.covers(1.69) and not safe.covers(1.70)
+    assert fun.covers(1.70)
+
+
+def test_seuls_les_paliers_atteignables_sont_injectes(migrated: Settings) -> None:
+    """Le prompt injectait `0-1 🔴, 0-0 💥` sur un lot dont la cote la plus haute
+    valait 3.40, puis exigeait qu'un palier vide soit commente « en nommant ce
+    qu'il aurait fallu trouver ». L'analyse produisait une ligne d'excuse pour un
+    palier que le lot rendait impossible avant meme qu'elle commence."""
+    session_id = _lot_aux_cotes(migrated, "Lyon 0 1.30\nNice 0 1.65")
+
+    corps = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "Quotas **de ce lot** : 1-1 🟢." in corps
+    for emoji in ("🔵", "🟠", "🔴", "💥"):
+        assert emoji not in corps.split("Quotas")[1], f"{emoji} n'est pas dans le lot"
+    assert "Absents du lot : FUN, ULTRA FUN, GIGA FUN, GIGA+" in corps
+
+
+def test_une_cote_sur_la_borne_ouvre_le_palier(migrated: Settings) -> None:
+    """La borne basse, elle, appartient bien au palier : 5.00 est un GIGA FUN,
+    et le lot qui la porte doit le proposer."""
+    session_id = _lot_aux_cotes(migrated, "Lyon 0 1.50\nNice 0 5.00")
+
+    corps = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "🔴 GIGA FUN" in corps
+    assert "Paliers présents dans ce lot : SAFE, GIGA FUN." in corps
+
+
+def test_l_atteignabilite_se_mesure_sur_les_cotes_et_non_sur_l_intervalle(
+    migrated: Settings,
+) -> None:
+    """Un lot a 1.50 et 3.00 ne porte **aucune** cote entre 1.70 et 2.60.
+
+    Declarer FUN atteignable parce qu'il tombe « entre les deux » ferait chercher
+    un prix qui n'existe nulle part : une selection recopie une cote d'un bloc,
+    jamais un intervalle.
+    """
+    session_id = _lot_aux_cotes(migrated, "Lyon 0 1.50\nNice 0 3.00")
+
+    corps = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "Paliers présents dans ce lot : SAFE, ULTRA FUN." in corps
+    assert "Absents du lot : FUN, GIGA FUN, GIGA+" in corps
+
+
+def test_les_bornes_du_lot_sont_nommees_avec_leur_emplacement(migrated: Settings) -> None:
+    """Une borne annoncee sans l'endroit ou elle se lit oblige a relire tous les
+    blocs pour la verifier, et personne ne le fait."""
+    session_id = _lot_aux_cotes(migrated, "Lyon 0 1.50\nNice 0 3.00")
+
+    corps = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "Cote max du lot : 3.00 (M1 · Cotes Nice 0)." in corps
+    assert "Cote min : 1.50 (M1 · Cotes Lyon 0)." in corps
+
+
+def test_chaque_bloc_dit_les_paliers_que_ses_cotes_atteignent(migrated: Settings) -> None:
+    """Mesure qui l'a fait naitre : sur un lot de quatre quarts de finale, un
+    bloc n'offrait aucune cote sous 1.70 — aucune selection SAFE n'en sortirait,
+    quel que soit l'angle, et rien ne le disait."""
+    session_id = _lot_aux_cotes(
+        migrated, "Lyon 0 1.71\nNice 0 2.23", "Lyon 1 1.40\nNul 2.00\nNice 1 3.00"
+    )
+
+    corps = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "Paliers     FUN (cotes du bloc 1.71-2.23 — aucun SAFE ni ULTRA FUN)" in corps
+    assert "Paliers     SAFE, FUN, ULTRA FUN\n" in corps, (
+        "un bloc qui n'exclut rien de plus que le lot n'explique rien"
+    )
+
+
+def test_un_palier_hors_du_lot_ne_se_commente_pas(migrated: Settings) -> None:
+    """La consigne « un palier vide se commente » ne porte plus que sur les
+    paliers reellement proposes : ailleurs, elle reclamait une excuse."""
+    corps = " ".join(build_prompt(_lot_de(migrated, 4), settings=migrated, now=NOW).body.split())
+
+    assert "seulement parmi ceux listés ci-dessus" in corps
+    assert "il n'a jamais été proposé" in corps
+
+
 def test_le_glossaire_explique_les_deux_fenetres_de_forme_5(migrated: Settings) -> None:
     """`ND (2j) 10-6/5` n'est pas seize buts en deux matchs : les lettres
     viennent de la seule competition, les buts des cinq derniers toutes

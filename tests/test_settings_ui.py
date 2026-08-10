@@ -188,6 +188,11 @@ def test_les_bandes_modifiees_apparaissent_dans_le_prompt(migrated: Settings) ->
 
     Depuis que les quotas se calculent a la generation, une session vide les
     rendrait tous a `0-0` — ce qui est juste, mais ne dirait rien de la saisie.
+
+    **Et la cote du lot tombe dans la bande modifiee**, ce qui n'est pas un
+    detail depuis que le prompt n'annonce que les paliers atteignables : a 2.10
+    le lot ne portait que du FUN, et le palier renomme disparaissait du rendu
+    pour une raison parfaitement juste — aucune de ses cotes ne pouvait y tomber.
     """
     session_id = 0
     for index in range(QUOTA_REFERENCE_LOT):
@@ -199,7 +204,7 @@ def test_les_bandes_modifiees_apparaissent_dans_le_prompt(migrated: Settings) ->
                 f"Nice {index}",
                 "2026-08-20",
                 "20:45",
-                f"Lyon {index} 2.10",
+                f"Lyon {index} 1.50",
                 "",
                 "",
                 settings=migrated,

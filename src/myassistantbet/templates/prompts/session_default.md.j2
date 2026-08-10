@@ -424,10 +424,19 @@ information sur le lot, pas une faute.
 mêmes conditions, même type de scénario — dis-le en une ligne sous le tableau.
 Deux lignes qui tombent ensemble n'en font qu'une.
 
-Paliers, définis par bande de cote :
+{% if tier_scope.known %}{{ tier_scope.range_line }}
+{{ tier_scope.present_line }}
+{% if tier_scope.absent %}{{ tier_scope.absent_line }}
+{% endif %}
+{% endif %}Paliers, définis par bande de cote :
 {% for tier in tiers %}
   {{ tier.emoji }} {{ '%-12s'|format(tier.label) }} {{ tier.range_label }}
 {%- endfor %}
+
+La ligne **« Paliers »** qui ferme chaque bloc dit ce que **ses** cotes rendent
+atteignable. Un bloc dont la cote la plus basse vaut 1.71 ne portera jamais de
+sélection SAFE, quel que soit l'angle : la parenthèse le nomme quand ce bloc
+restreint au-delà du lot, et rien n'apparaît quand il ne restreint pas.
 
 **La cote décide seule, et la borne haute appartient au palier suivant** : une
 cote à 1.70 est FUN, pas SAFE. N'invente aucune autre règle, et surtout n'y fais
@@ -450,13 +459,16 @@ Si la matière manque pour remplir un palier, laisse-le vide.
 Ne remplis jamais un palier avec une sélection qui appartient à un palier
 inférieur : c'est l'erreur la plus coûteuse que tu puisses commettre ici.
 
-**Un palier vide se commente, en une ligne sous le tableau.** Si aucun fait
-nommé et daté de la section A ne porte de sélection au-dessus de la borne haute
-du second palier, laisse les paliers supérieurs vides et écris-le, en nommant ce
-qu'il aurait fallu trouver — « aucun retour de blessure daté, aucun enjeu
-asymétrique, aucune charge anormale sur ce lot ». Un palier vide est un
-résultat ; un palier vide non commenté est un oubli, et rien ne distingue alors
-un lot qui n'offrait rien d'un lot qu'on a mal cherché.
+**Un palier vide se commente, en une ligne sous le tableau — mais seulement
+parmi ceux listés ci-dessus.** Un palier qu'aucune cote du lot n'atteint n'est
+pas resté vide, il n'a jamais été proposé : le commenter produirait une ligne
+d'excuse pour une case impossible. Pour les autres, si aucun fait nommé et daté
+de la section A ne porte de sélection au-dessus de la borne haute du second
+palier, laisse-les vides et écris-le, en nommant ce qu'il aurait fallu trouver —
+« aucun retour de blessure daté, aucun enjeu asymétrique, aucune charge anormale
+sur ce lot ». Un palier vide est un résultat ; un palier vide non commenté est
+un oubli, et rien ne distingue alors un lot qui n'offrait rien d'un lot qu'on a
+mal cherché.
 
 ### D. Combinés
 {% if event_blocks | length >= combo_min_lot %}- Un combiné « solide » : 3-4 sélections des deux paliers les plus sûrs,
