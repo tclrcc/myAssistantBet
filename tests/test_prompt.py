@@ -1328,3 +1328,50 @@ def test_les_faits_declencheurs_dependent_du_sport(migrated: Settings) -> None:
     assert "Au football : une absence, un retour de blessure, une surface qui ne" in foot
     assert "un enjeu asymétrique, une charge anormale" in foot
     assert "double engagé sur place" not in foot, "un lot de football ne paie pas la liste tennis"
+
+
+def test_les_rappels_de_cote_de_reference_sont_generes(migrated: Settings) -> None:
+    """La section F est plafonnee a **trois lignes** et doit porter les marches
+    manquants. Avec deux ou trois selections assises sur une cote de reference,
+    elle etait pleine avant d'avoir rien dit d'utile — sur le lot du 10/08, les
+    quatre blocs portaient « A relever : Hand. jeux, Jeux O/U ».
+
+    L'application sait quels marches sont en reference : elle les ecrit, et F
+    redevient ce qu'elle doit etre.
+    """
+    event_id = save(
+        build(
+            "tennis",
+            "ATP 250 Gstaad",
+            "Moutet",
+            "Bergs",
+            "2026-08-04",
+            "20:45",
+            "Moutet 1.85\nBergs 1.95",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+    session_id = board_service.toggle_selection(event_id, True, migrated)
+    db.execute(
+        "UPDATE odds SET bookmaker = 'pinnacle' WHERE event_id = ?", (event_id,), settings=migrated
+    )
+
+    corps = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "**Prix à relever avant de miser.**" in corps
+    assert "M1 Moutet – Bergs — tout le bloc [Pinnacle (ref.)]" in corps
+    # Et la section F cesse de les reclamer : elle est reservee aux echecs de
+    # recherche, pas a une liste que l'application connait deja.
+    assert "Signale de même toute sélection assise sur une cote de référence" not in corps
+    assert "elles sont déjà listées sous le tableau C" in corps
+
+
+def test_aucun_rappel_sans_cote_de_reference(migrated: Settings) -> None:
+    """Une ligne sans donnee est omise, jamais rendue vide : un lot entierement
+    servi par le book principal ne paie pas ce paragraphe."""
+    corps = build_prompt(_lot_de(migrated, 2), settings=migrated, now=NOW).body
+
+    assert "Prix à relever avant de miser" not in corps

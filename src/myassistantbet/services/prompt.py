@@ -28,6 +28,7 @@ from ..db import connect, utcnow
 from ..providers.oddsapi import SCAN_MARKETS
 from .enrich import markets_for
 from .history import feedback
+from .labels import affiche, bookmaker_label, is_reference
 from .render import (
     MERGED_MARKETS,
     Outcome,
@@ -36,6 +37,7 @@ from .render import (
     market_label,
     ordered_labels,
     render_event,
+    unplayable_markets,
 )
 from .session import has_started, renderable_events, session_label, started_labels
 from .thresholds import value_of as threshold
@@ -321,6 +323,94 @@ def block_tiers_line(tiers: list[Tier], event: RenderableEvent, scope: TierScope
 
 
 @dataclass
+class ReferenceNote:
+    """Un bloc dont tout ou partie des prix vient d'un book de reference."""
+
+    block: int
+    label: str
+    books: list[str] = field(default_factory=list)
+    #: Les marches concernes. **Vide = tout le bloc**, et la distinction compte :
+    #: un match servi par un book de substitution n'a aucun prix maison, alors
+    #: qu'un match ordinaire n'en manque que sur deux marches.
+    markets: list[str] = field(default_factory=list)
+
+    @property
+    def line(self) -> str:
+        quoi = ", ".join(self.markets) if self.markets else "tout le bloc"
+        return f"M{self.block} {self.label} — {quoi} [{' + '.join(self.books)}]"
+
+
+def reference_notes(events: Sequence[RenderableEvent]) -> list[ReferenceNote]:
+    """Les rappels « (ref.) » du lot, calcules au lieu d'etre reclames.
+
+    La section F est plafonnee a **trois lignes** et doit porter les marches
+    manquants ; avec deux ou trois selections assises sur une cote de reference,
+    elle etait pleine avant d'avoir dit quoi que ce soit d'utile. Or
+    l'application sait exactement quels marches sont en reference : elle les
+    ecrit sous le tableau C, et F redevient ce qu'elle doit etre — les seuls
+    echecs de recherche.
+
+    Deux cas, et le second n'a aucune ligne « A relever » pour le signaler :
+
+    - un bloc ordinaire dont certains marches n'ont aucun prix maison, ce que
+      `unplayable_markets` sait deja dire ;
+    - un bloc dont la **source principale elle-meme** est un book de reference —
+      releve de substitution, ou competition que Betclic ne sert pas du tout.
+      Tous ses prix sont de reference par construction, donc aucun ne se detache,
+      donc rien ne le disait ici.
+    """
+    notes: list[ReferenceNote] = []
+    for event in events:
+        if not event.markets:
+            continue
+        name = affiche(event.home, event.away)
+        if event.substitute or is_reference(event.primary_book):
+            books = sorted(
+                {
+                    outcome.bookmaker
+                    for outcomes in event.markets.values()
+                    for outcome in outcomes
+                    if is_reference(outcome.bookmaker)
+                }
+            )
+            if books:
+                notes.append(
+                    ReferenceNote(
+                        block=event.index,
+                        label=name,
+                        books=[bookmaker_label(book) for book in books],
+                    )
+                )
+            continue
+
+        labels = unplayable_markets(event)
+        if not labels:
+            continue
+        concerned = {
+            key
+            for key, outcomes in event.markets.items()
+            if market_label(event.sport_key, MERGED_MARKETS.get(key, key)) in labels
+        }
+        books = sorted(
+            {
+                outcome.bookmaker
+                for key in concerned
+                for outcome in event.markets[key]
+                if outcome.bookmaker and outcome.bookmaker != event.primary_book
+            }
+        )
+        notes.append(
+            ReferenceNote(
+                block=event.index,
+                label=name,
+                books=[bookmaker_label(book) for book in books] or ["source inconnue"],
+                markets=labels,
+            )
+        )
+    return notes
+
+
+@dataclass
 class Catalogue:
     """Ce que l'app sait demander a l'API pour un sport du lot.
 
@@ -571,6 +661,10 @@ def build_prompt(
             # et ca rend au budget de quoi payer ce qui, lui, est la.
             context_labels=sorted({label for event in events for label, _ in event.context_lines}),
             catalogues=catalogues(session_id, settings, moment),
+            # Les rappels « (ref.) », calcules plutot que reclames a l'analyse.
+            # La section F est plafonnee a trois lignes : deux selections de
+            # reference la remplissaient avant qu'elle ait dit quoi que ce soit.
+            reference_notes=reference_notes(events),
             competition_notes=competition_notes(session_id, settings, moment),
             # Les consignes permanentes et le retour d'experience ne coutent
             # aucun appel : ils sortent de la base, donc ils sont toujours la.

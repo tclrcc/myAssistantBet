@@ -21,8 +21,8 @@ crochets, en fin de ligne : **« [Pinnacle (ref.)] »** pour un book de référe
 ligne mélange les deux. Une cote de référence dit où se situe le marché, elle
 n'est pas le prix qu'on obtiendra : tu peux bâtir un angle dessus, mais la
 sélection concernée porte alors la mention « (ref.) » dans la colonne Cote de la
-section C, et la section F rappelle qu'elle est à vérifier chez le bookmaker
-principal. Aucune comparaison de prix entre books, jamais.
+section C, et la liste des prix à relever, calculée sous ce tableau, la reprend.
+Aucune comparaison de prix entre books, jamais.
 
 {% if sports %}Le mode d'emploi des lignes de contexte — ce que dit chaque
 libellé d'un bloc, et comment le lire — est en **fin de prompt**, sous
@@ -51,8 +51,8 @@ pas, pas son offre qui manque. Le handicap jeux et le total de jeux y figurent
 presque toujours, et ce sont justement les marchés qui traduisent le mieux un
 angle de manière. Y renoncer au motif qu'aucun prix maison n'apparaît reviendrait
 à jeter la moitié des débouchés d'une analyse. La sélection porte alors « (ref.) »
-en colonne Cote et la section F rappelle de vérifier le prix — c'est tout ce qui
-change.
+en colonne Cote et figure dans la liste des prix à relever, sous le tableau C —
+c'est tout ce qui change.
 {% endif %}{% if 'football' in sports %}
 **Au football, les lignes en quart ne se posent pas.** `-0.25`, `+0.75`, `1.25`,
 `2.75` sont des paris asiatiques scindés — une demi-mise sur chacune des deux
@@ -454,7 +454,16 @@ second palier, laisse-les vides et écris-le, en nommant ce qu'il aurait fallu
 trouver — « aucun retour de blessure daté, aucun enjeu asymétrique, aucune
 charge anormale sur ce lot ». Un palier vide est un résultat ; un palier vide
 non commenté est un oubli.
-
+{% if reference_notes %}
+**Prix à relever avant de miser.** Ces marchés n'ont aucun prix du bookmaker
+principal : leur cote situe le marché, elle n'est pas celle qu'on obtiendra. La
+liste est calculée, tu n'as pas à la reconstituer — recopie simplement « (ref.) »
+en colonne Cote sur les sélections concernées, et **ne les reporte pas en
+section F**, qui est réservée aux échecs de recherche.
+{% for note in reference_notes %}
+  · {{ note.line }}
+{%- endfor %}
+{% endif %}
 ### D. Combinés
 {% if event_blocks | length >= combo_min_lot %}- Un combiné « solide » : 3-4 sélections des deux paliers les plus sûrs,
   cote cible 6-12
@@ -512,8 +521,8 @@ tranchée. Un marché absent de la liste des marchés demandés, en tête de sec
 MATCHS, n'y a pas sa place non plus : le fournisseur ne le sert pas pour ce
 sport, le réclamer ne changera rien. Ce qui mérite d'y figurer, c'est un marché
 que l'outil demande, qui n'apparaît ni en cote ni en « Non servis » sur ce match
-précis — là, il manque vraiment quelque chose. Signale de même toute sélection
-assise sur une cote de référence, qui reste à vérifier.
+précis — là, il manque vraiment quelque chose. Les cotes de référence n'y ont
+pas leur place : elles sont déjà listées sous le tableau C.
 
 {% if sports %}## COMMENT LIRE LES BLOCS
 Mode d'emploi des lignes de contexte, et rien d'autre : **aucune règle de ce

@@ -266,9 +266,24 @@ def affiche(home: str, away: str | None) -> str:
     return f"{home} – {away}" if away else home
 
 
+#: Suffixe qui marque un book de reference. Il vit dans les libelles depuis
+#: toujours ; le nommer permet de **lire** cette qualite au lieu de la retaper.
+REFERENCE_SUFFIX = "(ref.)"
+
+
 def bookmaker_label(key: str | None) -> str:
     """Nom lisible d'un bookmaker, la cle brute a defaut."""
     return BOOKMAKER_LABELS.get(key or "", key or "—")
+
+
+def is_reference(key: str | None) -> bool:
+    """Vrai si ce book sert des prix de **reference**, jamais jouables tels quels.
+
+    Un book inconnu n'en est pas un : il est rendu sous sa cle brute, sans
+    suffixe, et le presenter comme une reference serait une affirmation qu'on ne
+    peut pas gager.
+    """
+    return bookmaker_label(key).endswith(REFERENCE_SUFFIX)
 
 
 def primary_book(books: Sequence[str]) -> str:
