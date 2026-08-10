@@ -2751,3 +2751,113 @@ def test_aucun_champ_financier_n_arrive_avec_la_cote_obtenue() -> None:
 
     assert "price_real" in noms
     assert not noms & {"roi", "profit", "gain", "retour", "benefice"}
+
+
+# -- Une cote hors de toute bande de palier ----------------------------------
+
+
+def test_une_cote_sous_le_premier_palier_est_refusee(migrated: Settings) -> None:
+    """Le comportement d'avant n'etait ni un rejet, ni une exception, ni un
+    palier nul visible — c'etait pire : la selection etait acceptee sans
+    controle, puis rangee dans le palier choisi au formulaire, auquel sa cote
+    n'appartient pas. Elle entrait ainsi dans un taux **par bande de cote** sans
+    tomber dans aucune bande."""
+    session_id, event_id = _session_avec_match(migrated)
+
+    with pytest.raises(HistoryError, match="ne tombe dans aucun palier"):
+        add_pick(
+            session_id,
+            tier="safe",
+            market="1N2",
+            selection="Lyon",
+            event_id=str(event_id),
+            price="1.18",
+            settings=migrated,
+        )
+
+
+def test_le_refus_nomme_le_palier_le_plus_proche_et_sa_borne(migrated: Settings) -> None:
+    """Un message qui dit seulement « hors palier » laisse chercher laquelle des
+    dix bornes reglees est en cause."""
+    session_id, _ = _session_avec_match(migrated)
+
+    with pytest.raises(HistoryError) as refus:
+        add_pick(
+            session_id, tier="safe", market="1N2", selection="X", price="1.18", settings=migrated
+        )
+
+    assert "le plus proche est SAFE, à partir de 1.25" in str(refus.value)
+
+
+def test_une_borne_haute_vide_ne_plafonne_rien(migrated: Settings) -> None:
+    """**Non-regression.** `GIGA+` n'a pas de borne haute, et « vide » y veut
+    dire « pas de limite » : une cote de 999.00 doit rester acceptee, sans quoi
+    le garde-fou fermerait le seul palier ouvert de l'echelle."""
+    session_id, event_id = _session_avec_match(migrated)
+
+    pick_id = add_pick(
+        session_id,
+        tier="giga_plus",
+        market="1N2",
+        selection="Lyon",
+        event_id=str(event_id),
+        price="999.00",
+        settings=migrated,
+    )
+
+    assert get_pick(pick_id, migrated).price == 999.0
+
+
+def test_une_cote_au_dessus_du_dernier_palier_borne_est_refusee(migrated: Settings) -> None:
+    """L'autre extremite, et elle n'existe **que** si le dernier palier porte une
+    borne haute. Le test la pose pour pouvoir la franchir."""
+    session_id, _ = _session_avec_match(migrated)
+    db.execute("UPDATE tiers SET max_price = 20.0 WHERE key = 'giga_plus'", settings=migrated)
+
+    with pytest.raises(HistoryError) as refus:
+        add_pick(
+            session_id,
+            tier="giga_plus",
+            market="1N2",
+            selection="X",
+            price="25.00",
+            settings=migrated,
+        )
+
+    assert "le plus proche est GIGA+, jusqu'à 20.00" in str(refus.value)
+
+
+def test_la_cote_obtenue_est_refusee_aux_memes_bornes(migrated: Settings) -> None:
+    """C'est elle qui portait le defaut le plus grave : `tier_real` restait NULL,
+    indiscernable de « jamais saisi », et la selection sortait de la quarantaine
+    des cotes de reference comme si son prix avait ete releve."""
+    session_id, event_id = _session_avec_match(migrated)
+    pick_id = add_pick(
+        session_id,
+        tier="fun",
+        market="Hand. jeux",
+        selection="X",
+        event_id=str(event_id),
+        price="1.92",
+        price_source="reference",
+        settings=migrated,
+    )
+
+    with pytest.raises(HistoryError, match="ne tombe dans aucun palier"):
+        set_real_price(pick_id, "1.18", migrated)
+
+    pick = get_pick(pick_id, migrated)
+    assert pick.price_real is None, "rien n'est ecrit"
+    assert pick.quarantined, "et elle reste en quarantaine, ce qui est juste"
+
+
+def test_une_cote_absente_reste_permise(migrated: Settings) -> None:
+    """Les selections anterieures a la regle n'en portent pas, et une cote vide
+    n'est pas une cote hors bande."""
+    session_id, _ = _session_avec_match(migrated)
+
+    pick_id = add_pick(
+        session_id, tier="safe", market="1N2", selection="X", price="", settings=migrated
+    )
+
+    assert get_pick(pick_id, migrated).price is None

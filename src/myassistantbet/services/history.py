@@ -992,6 +992,57 @@ def tiers(settings: Settings | None = None) -> list[dict[str, str]]:
         ]
 
 
+def _nearest_band(price: float, settings: Settings | None = None) -> str:
+    """Le palier le plus proche d'une cote qui n'en atteint aucun, et sa borne.
+
+    « Le plus proche » se mesure en **distance a la borne franchie**, jamais en
+    ordre de position : les bandes se reglent, et rien n'empeche d'en laisser un
+    trou au milieu. Un message qui nommerait le premier palier de la liste
+    enverrait alors corriger la mauvaise borne.
+    """
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT label, min_price, max_price FROM tiers ORDER BY position"
+        ).fetchall()
+
+    candidats: list[tuple[float, str, str]] = []
+    for row in rows:
+        minimum = float(row["min_price"])
+        if price < minimum:
+            candidats.append((minimum - price, row["label"], f"à partir de {minimum:.2f}"))
+        # Une borne haute vide veut dire « pas de limite » : ce palier ne peut
+        # rien avoir au-dessus de lui, et aucune cote ne le depasse.
+        elif row["max_price"] is not None and price >= float(row["max_price"]):
+            maximum = float(row["max_price"])
+            candidats.append((price - maximum, row["label"], f"jusqu'à {maximum:.2f}"))
+    if not candidats:
+        return ""
+    _, label, borne = min(candidats, key=lambda item: item[0])
+    return f"le plus proche est {label}, {borne}"
+
+
+def _reject_out_of_band(price: float | None, settings: Settings | None, champ: str) -> None:
+    """Refuse une cote qu'aucune bande de palier ne couvre.
+
+    **Le comportement d'avant n'etait ni un rejet, ni une exception, ni un
+    palier nul visible** — c'etait pire : `add_pick` acceptait sans rien
+    verifier, et `set_real_price` ecrivait `tier_real = NULL`, indiscernable de
+    « jamais saisi ». La selection sortait alors de la quarantaine des cotes de
+    reference comme si son prix avait ete releve, **et se rangeait dans le
+    palier provisoire auquel sa cote n'appartient pas**. Un faux negatif
+    silencieux, sur l'axe que le lot precedent venait de fiabiliser.
+
+    Audit fait avant de corriger : **zero ligne concernee en base**, les cotes
+    enregistrees allant de 1.25 a 3.50. Le defaut etait latent, donc rien a
+    reparer — seulement a fermer.
+    """
+    if price is None or tier_for_price(price, settings) is not None:
+        return
+    proche = _nearest_band(price, settings)
+    detail = f" — {proche}" if proche else ""
+    raise HistoryError(f"« {champ} » : {price:.2f} ne tombe dans aucun palier{detail}.")
+
+
 def tier_for_price(price: float | None, settings: Settings | None = None) -> str | None:
     """Palier d'une cote, lu sur les bandes reglees.
 
@@ -1087,6 +1138,10 @@ def add_pick(
     # moins n'est pas une cote : ce serait un taux implicite d'au moins 100 %.
     if price_value is not None and price_value <= 1.0:
         raise HistoryError("« Cote » doit être supérieure à 1.00.")
+    # Une cote hors de toutes les bandes n'a pas de palier, et la ranger sous
+    # celui qui a ete choisi au formulaire ferait entrer dans un taux par bande
+    # de cote une selection qui n'y appartient pas.
+    _reject_out_of_band(price_value, settings, "Cote")
     stake_value = _as_float(stake, "Mise")
     confidence_value = _as_float(confidence, "Confiance")
     if confidence_value is not None and not 1 <= confidence_value <= 5:
@@ -1181,6 +1236,7 @@ def set_real_price(pick_id: int, price: str = "", settings: Settings | None = No
     value = _as_float(price, "Cote obtenue")
     if value is not None and value <= 1.0:
         raise HistoryError("« Cote obtenue » doit être supérieure à 1.00.")
+    _reject_out_of_band(value, settings, "Cote obtenue")
     tier = tier_for_price(value, settings)
     with connect(settings) as conn:
         conn.execute(
