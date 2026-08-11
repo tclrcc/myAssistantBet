@@ -2406,6 +2406,56 @@ rien a normaliser, aucun maximum a chercher.
   libelle qui cede la place. Sous quatre paris tranches la barre est visiblement moins
   affirmee (`.fill.is-thin`), affichee mais pas assenee.
 - Deux cartes par rangee au plus : sur trois colonnes, il ne reste a la barre que quelques
-  pixels et le graphique n'ajoute plus rien au pourcentage ecrit a cote.
+  pixels et le graphique n'ajoute plus rien au pourcentage ecrit a cote. **Une carte seule
+  ne se coule pas en deux colonnes** (`.charts.is-single`) : « Par session » occupait la
+  moitie gauche et laissait l'autre vide, avec une barre deux fois plus courte que
+  necessaire pour la seule grandeur du bloc.
 - Le tableau chiffre complet (annules, en attente) reste accessible sous chaque bloc, dans
   un `<details>`. Un graphique ne remplace pas les nombres, il les ordonne.
+- **Aucune colonne de barre n'a de largeur ecrite d'avance pour du texte.** La colonne du
+  compte fait trois caracteres, et deux annotations en faisaient vingt-cinq : l'effectif
+  independant (`24/40 · 39 ev.`) debordait hors de la carte, et la vacance d'un palier
+  (`0 · absent de 6/6 session(s)`) **passait par-dessus la carte voisine** — les libelles
+  de palier se lisaient sur les comptes de la colonne de gauche. Deux corrections, et
+  chacune repond a une question differente :
+  - ce qui **precise le compte** reste dans sa colonne, qui se dimensionne desormais sur
+    son contenu (`minmax(3.1rem, max-content)`), la piste prenant ce qui reste — d'ou le
+    `minmax(0, 1fr)`, sans lequel elle refuse de descendre sous sa largeur minimale ;
+  - ce qui **qualifie la ligne** — un palier laisse vide six sessions de suite, une journee
+    dont le lot n'a pas ete enregistre — descend sous son libelle, comme une bande cible.
+    C'est une propriete du niveau, pas une precision sur un nombre, et la place existe la.
+
+### La densite de la page : ce qui porte un nombre, et ce qui explique une methode
+
+La page portait **huit paragraphes de methode** entre ses graphiques — l'intervalle de
+Wilson, l'effectif independant, les lignes minces, la testabilite d'un ecart (celle-la
+deux fois, une par carte) — et les chiffres qu'ils commentent se perdaient dedans. Le
+detail chiffre arrivait apres un ecran entier de prose.
+
+- **Rien n'est retire.** La regle de cette page n'a pas change : c'est la surface ou
+  l'utilisateur regarde ses propres donnees, et un manque s'y dit — c'est justement ce qui
+  la separe du prompt, qui se tait sous les memes seuils. Ce qui change est la
+  **partition** : ce qui porte un **nombre ou un lien** reste lu, ce qui explique une
+  **methode** attend qu'on le demande (`details.why`, macro `why()`).
+  - Corollaire : le resume d'un depliant porte le nombre quand il y en a un — « il faudrait
+    ~92 selections par ligne » — et **jamais** un « en savoir plus ». Un depliant dont le
+    resume n'apprend rien ne se deplie pas, et l'information est perdue pour de bon.
+  - `card()` a donc deux parametres distincts, `note` et `reason`, pour que le choix se
+    fasse a l'ecriture de la carte et non a la relecture d'un paragraphe qui aurait
+    melange les deux.
+- **Trois notes de methode deviennent un bandeau de comptes** (`details.readout`) : leur
+  part actionnable est un nombre, et un nombre tient sur une ligne. Le raisonnement est
+  dessous, mot pour mot.
+- **Un constat se pose sur ce qu'il decrit.** La concentration d'une echelle etait rendue
+  en bandeau au-dessus du bloc, donc recopiee pour chaque echelle : deux paragraphes
+  presque identiques dont seul le premier tiers changeait. Le tiers qui change vit sur sa
+  carte, les deux tiers communs une seule fois sous le bloc.
+- **Un sommaire d'ancres** en tete : cinq blocs repondent a cinq questions differentes, et
+  rien ne disait ce qui venait. Il suit les blocs **reellement rendus** — annoncer une
+  ancre vers une section absente serait pire que pas de sommaire. `scroll-margin-top` tient
+  compte de la barre collante, sans quoi l'ancre depose le titre dessous.
+- **Corollaire pour les tests, et c'est ce qui a rendu la refonte sure** : les tests de
+  cette page cherchent des **phrases** dans le texte servi. Une prose deplacee dans un
+  `<details>` y reste ; une prose reecrite, non. Les phrases n'ont donc pas bouge d'un mot
+  la ou un test les nomme — et la ou l'une a du changer, c'est qu'elle disait deux fois le
+  meme nombre que la tuile posee au-dessus d'elle.

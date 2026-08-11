@@ -1177,6 +1177,9 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
    laquelle repond a « ce que vaut l'analyse » et laquelle a « ce que valent mes
    paris ». */
 .stats-block { margin-bottom: var(--s6); }
+/* La barre de navigation est collante : sans cette marge, une ancre du
+   sommaire depose le titre de section **sous** elle. */
+.stats-block { scroll-margin-top: calc(var(--topbar-h) + var(--s4)); }
 .block-head {
   display: flex;
   align-items: baseline;
@@ -1188,13 +1191,36 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
 }
 .block-head h2 { font-size: var(--text-xl); font-weight: 650; margin: 0;
                  letter-spacing: var(--track-tight); }
+/* Un court filet d'accent devant le titre : cinq sections empilees se
+   ressemblaient toutes, et le seul repere etait la taille du texte. */
+.block-head h2::before {
+  content: "";
+  display: inline-block;
+  width: 3px;
+  height: 0.9em;
+  margin-right: 0.55rem;
+  vertical-align: -0.08em;
+  border-radius: 2px;
+  background: linear-gradient(180deg, var(--accent-light), var(--accent));
+}
 .block-head span { margin-left: auto; text-align: right; }
 .block-note {
   color: var(--text-dim);
   font-size: 0.85rem;
   max-width: 62ch;
-  margin: 0 0 var(--s5);
+  margin: 0 0 var(--s4);
 }
+/* Un constat sur les chiffres eux-memes — deux axes qui comptent les memes
+   paris. Il n'alerte pas, mais il ne se lit pas apres coup non plus : un filet
+   a gauche suffit a le sortir du fil du texte sans la charge d'un bandeau. */
+.block-note.is-flag {
+  padding: var(--s2) var(--s3);
+  border-left: 2px solid var(--accent-line);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--accent-soft);
+  color: var(--text-dim);
+}
+.block-note.is-flag strong { color: var(--text); }
 /* Ce que les chiffres qui suivent decrivent vraiment. En note grise il se
    lisait apres coup, une fois les taux deja pris pour des tendances : il porte
    donc un fond et un filet, comme un bandeau, sans crier pour autant — la page
@@ -1206,10 +1232,130 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
   margin: 0 0 var(--s4);
   padding: var(--s3);
   border: 1px solid var(--warn);
+  border-left-width: 3px;
   border-radius: var(--radius-sm);
   background: var(--warn-soft);
 }
 .block-warn strong { color: var(--warn); }
+/* Le controle d'integrite n'est pas du meme ordre que le manque de recul : il
+   annonce un defaut de l'outil, pas une portee limitee. */
+.block-warn.is-alert { border-color: var(--alert); background: var(--alert-soft); }
+.block-warn.is-alert strong { color: var(--alert); }
+
+/* Le sommaire. Cinq blocs qui repondent a cinq questions differentes, sur une
+   page qu'on parcourt sans savoir ce qui vient : les ancres coutent une ligne
+   et evitent de faire defiler pour chercher. */
+.section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin: 0 0 var(--s5);
+}
+.section-nav a {
+  padding: 0.28rem 0.7rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel) var(--surface);
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  box-shadow: var(--edge);
+  transition: color 0.12s, border-color 0.12s;
+}
+.section-nav a:hover {
+  text-decoration: none;
+  color: var(--text);
+  border-color: var(--accent-line);
+}
+
+/* --- Le mode d'emploi se deplie -------------------------------------------
+   La page portait huit paragraphes de methode entre ses graphiques, et les
+   chiffres qu'ils commentent se perdaient dedans. Rien n'est retire — la regle
+   de cette page est que ce qui manque se dit — mais la partition est
+   explicite : ce qui porte un nombre ou un lien reste lu, ce qui explique une
+   methode attend qu'on le demande. */
+details.why { margin: var(--s2) 0 0; }
+details.why > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: var(--text-sm);
+  list-style: none;
+  transition: color 0.12s;
+}
+details.why > summary:hover { color: var(--text-dim); }
+/* Le marqueur par defaut est un triangle noir plein qui n'appartient a aucune
+   des tailles de la page. Un chevron dessine a la main suit la couleur du
+   texte et pivote a l'ouverture. */
+details.why > summary::-webkit-details-marker { display: none; }
+details.why > summary::before {
+  content: "";
+  flex: none;
+  width: 0.42em;
+  height: 0.42em;
+  margin-top: 0.15em;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s;
+}
+details.why[open] > summary::before { transform: rotate(45deg); }
+details.why[open] > summary { color: var(--text-dim); }
+.why-body {
+  margin-top: var(--s2);
+  color: var(--muted);
+  font-size: var(--text-sm);
+  max-width: 72ch;
+}
+.why-body p { margin: 0 0 var(--s2); }
+.why-body p:last-child { margin-bottom: 0; }
+.why-body strong { color: var(--text-dim); }
+
+/* Le bandeau de lecture : ce que les barres au-dessus permettent de conclure,
+   en comptes plutot qu'en paragraphes. Trois notes de methode tenaient un
+   ecran entier avant le detail chiffre ; leur part actionnable est un nombre,
+   et un nombre tient sur une ligne. */
+details.readout {
+  margin: 0 0 var(--s4);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  background: var(--panel) var(--surface);
+  box-shadow: var(--edge);
+}
+details.readout > summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  padding: var(--s3) var(--s4);
+  cursor: pointer;
+  border-radius: var(--radius);
+  list-style: none;
+  transition: background 0.12s;
+}
+details.readout > summary::-webkit-details-marker { display: none; }
+details.readout > summary:hover { background: var(--panel-2); }
+.readout-facts { font-size: var(--text-sm); color: var(--text-dim); }
+.readout-facts b { color: var(--text); font-variant-numeric: tabular-nums; }
+.readout-hint {
+  margin-left: auto;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.readout-hint::after {
+  content: "";
+  display: inline-block;
+  width: 0.42em;
+  height: 0.42em;
+  margin-left: 0.45rem;
+  vertical-align: 0.12em;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+}
+details.readout[open] .readout-hint::after { transform: rotate(45deg); }
+details.readout > .why-body { padding: 0 var(--s4) var(--s4); margin-top: 0; }
 
 /* Chiffres de tete. Une seule figure « heros » par page : au-dela, plus rien
    ne dit par ou commencer. */
@@ -1377,6 +1523,10 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
     column-gap: var(--s3);
   }
   .charts > * { break-inside: avoid; margin-bottom: var(--s3); }
+  /* Une carte seule ne se coule pas en deux colonnes : elle occupait la moitie
+     gauche et laissait l'autre vide, avec une barre deux fois plus courte que
+     necessaire pour la seule grandeur du bloc. */
+  .charts.is-single { column-count: 1; }
 }
 .chart-card {
   padding: var(--s4);
@@ -1393,19 +1543,54 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
-.chart-note {
-  margin: var(--s3) 0 0;
+/* Le pied d'une carte : le fait a corriger, puis ce qui se deplie. Le filet
+   n'appartient plus a la note mais au pied entier — sinon une carte sans note
+   mais avec un deplie perdait sa separation, et une carte qui portait les deux
+   en affichait deux. */
+.chart-foot {
+  margin-top: var(--s3);
   padding-top: var(--s3);
   border-top: 1px solid var(--line-soft);
+}
+.chart-note {
+  margin: 0;
   color: var(--muted);
   font-size: 0.8rem;
 }
+.chart-note + details.why { margin-top: var(--s2); }
+/* Un constat sur l'echelle elle-meme, pose sur la carte qu'il decrit. En
+   bandeau au-dessus du bloc, il etait recopie pour chaque echelle : deux
+   paragraphes presque identiques dont seul le premier tiers changeait. */
+.chart-flag {
+  margin: 0 0 var(--s3);
+  padding: var(--s2) var(--s3);
+  border-left: 2px solid var(--warn);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--warn-soft);
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+.chart-flag strong { color: var(--warn); }
+/* Un chiffre seul, quand la carte n'a pas de barre a montrer. */
+.chart-figure { margin: 0 0 var(--s3); color: var(--text-dim); font-size: 0.85rem; }
+.chart-figure b { font-size: 1.5rem; font-weight: 700; color: var(--text);
+                  letter-spacing: var(--track-tight); margin-right: 0.15rem; }
 .chart-empty { margin: 0; color: var(--muted); font-size: 0.85rem; }
+/* Un tableau pose dans une carte : deux fois plus dense que sur une page, et
+   sans le fond propre qui le detacherait de sa carte. */
+table.board.compact { font-size: var(--text-sm); }
+table.board.compact th, table.board.compact td { padding: 0.3rem var(--s2); }
 
 .bars { display: flex; flex-direction: column; gap: var(--s2); }
 .bar-row {
   display: grid;
-  grid-template-columns: minmax(4.5rem, 7.5rem) 1fr 3.4rem 3.1rem;
+  /* La derniere colonne se dimensionne sur son contenu et non sur un nombre
+     ecrit d'avance : l'effectif independant s'y ajoute (« 24/40 · 39 ev. ») et
+     debordait de trois centimetres, hors de la carte — jusqu'a passer sur la
+     carte voisine dans la colonne de droite. La piste, elle, prend ce qui
+     reste, d'ou le `minmax(0, 1fr)` : sans lui elle refuserait de descendre
+     sous sa largeur minimale. */
+  grid-template-columns: minmax(4.5rem, 7.5rem) minmax(0, 1fr) 3.4rem minmax(3.1rem, max-content);
   align-items: center;
   gap: var(--s3);
   padding: 0.15rem var(--s2);
@@ -1442,6 +1627,18 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
 }
 .bar-row.is-void .bar-value { color: var(--muted); }
 
+/* Ce qui qualifie une ligne — un palier laisse vide six sessions de suite, une
+   journee dont le lot n'a pas ete enregistre — tient en une vingtaine de
+   caracteres, et la colonne du compte en fait trois. Ecrit dedans, il
+   debordait de la carte et **passait par-dessus la carte voisine** : les
+   libelles de palier se lisaient sur les comptes de la colonne de gauche. Il
+   se range donc sous son libelle, ou la place existe, et cette colonne-la
+   s'elargit pour lui. */
+.wide-labels .bar-row {
+  grid-template-columns: minmax(6rem, 12rem) minmax(0, 1fr) 3.4rem minmax(3.1rem, max-content);
+}
+.wide-labels .band { white-space: normal; }
+
 .stats h3 { color: var(--text-dim); }
 .group > h2 { font-size: var(--text-lg); }
 
@@ -1449,9 +1646,28 @@ table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(
    quarante ne disent pas la meme chose, et le masquer sur petit ecran serait
    masquer precisement ce qui empeche de se tromper. C'est le libelle qui cede. */
 @media (max-width: 720px) {
-  .bar-row { grid-template-columns: minmax(3.5rem, 5.5rem) 1fr 3.2rem 2.9rem; gap: var(--s2); }
+  .bar-row {
+    grid-template-columns: minmax(3.5rem, 5.5rem) minmax(0, 1fr) 3.2rem minmax(2.9rem, max-content);
+    gap: var(--s2);
+  }
+  .wide-labels .bar-row {
+    grid-template-columns: minmax(5rem, 8rem) minmax(0, 1fr) 3.2rem minmax(2.9rem, max-content);
+  }
   .hero-figure { font-size: 2.4rem; }
 }
+
+/* Le pied de page : l'interdiction de la section 9, ecrite une fois sous les
+   deux mesures. Elle n'appartient a aucun bloc, et sa place se voit — un filet
+   au-dessus, la largeur d'un paragraphe, et pas la couleur du corps. */
+.page-foot {
+  margin: var(--s6) 0 0;
+  padding-top: var(--s4);
+  border-top: 1px solid var(--line-soft);
+  max-width: 86ch;
+  color: var(--muted);
+  font-size: var(--text-sm);
+}
+.page-foot strong { color: var(--text-dim); }
 
 /* Une ligne deja presente dans la session : proposee, mais visiblement mise
    de cote. Elle ne doit pas se confondre avec les lignes a importer. */

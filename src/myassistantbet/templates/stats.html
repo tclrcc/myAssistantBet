@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_charts.html" import bars, card, tile, hero, mix, sessions, families %}
+{% from "_charts.html" import card, tile, hero, mix, sessions, families, why %}
 {% block title %}Statistiques — MyAssistantBet{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -28,8 +28,27 @@
   </p>
 {% else %}
 
+{# Cinq blocs qui repondent a cinq questions differentes, sur une page qu'on
+   parcourt de haut en bas sans jamais savoir ce qui vient. Le sommaire est
+   ecrit une fois et suit les blocs reellement rendus : annoncer une ancre vers
+   une section absente serait pire que pas de sommaire du tout. #}
+{% set sections = [
+     ('analyse', "Ce que vaut l'analyse", not analysis.empty),
+     ('tri', 'Ce que tu écartes', analysis.by_session | length > 0),
+     ('sets', 'Le score en sets', not set_scores.empty),
+     ('etiquettes', 'Comment tu étiquettes', labelling | length > 0),
+     ('paris', 'Ce que valent tes paris', not stats.empty),
+   ] %}
+{% if sections | selectattr(2) | list | length > 1 %}
+<nav class="section-nav" aria-label="Sommaire">
+  {% for ancre, libelle, montre in sections if montre %}
+  <a href="#{{ ancre }}">{{ libelle }}</a>
+  {% endfor %}
+</nav>
+{% endif %}
+
 {% if not analysis.empty %}
-<section class="stats-block">
+<section class="stats-block" id="analyse">
   <div class="block-head">
     <h2>Ce que vaut l'analyse</h2>
     <span class="muted small">
@@ -77,7 +96,7 @@
      pas masqué : lequel des deux axes est le bon ne se déduit d'aucune donnée,
      et choisir à la place du lecteur serait pire que le lui dire. #}
   {% if analysis.overlaps %}
-  <p class="block-note">
+  <p class="block-note is-flag">
     {% for overlap in analysis.overlaps %}
     <strong>{{ overlap.note }}.</strong>
     {% endfor %}
@@ -93,10 +112,10 @@
        pourcentage, et il n'y avait donc rien contre quoi mesurer l'écart. La
        bande cible est ce référentiel, et elle se règle dans les réglages. #}
     {{ card("Par confiance annoncée", analysis.by_confidence,
-            "Chaque niveau porte sa bande cible, réglable dans les réglages. Un taux
-             n'est signalé hors bande que si son intervalle en sort entièrement —
-             sinon la page crierait à la dérive sur du bruit.",
-            "Aucune confiance annoncée sur les sélections tranchées.",
+            reason="Chaque niveau porte sa bande cible, réglable dans les réglages. Un taux
+                    n'est signalé hors bande que si son intervalle en sort entièrement —
+                    sinon la page crierait à la dérive sur du bruit.",
+            empty="Aucune confiance annoncée sur les sélections tranchées.",
             comparison=analysis.confidence_comparison) }}
     {# Un palier est une bande de cote, et le prompt affirme qu'il « sert à
        calculer un taux de réussite par bande de cote dans le temps ». Un 1.92
@@ -105,11 +124,13 @@
        sélections dont le prix reste à relever sortent de cet axe, et de
        celui-là seulement. #}
     {{ card("Par palier", analysis.by_tier,
-            ("Lu sur la cote obtenue quand elle est saisie, sinon sur la cote du bloc. "
-             ~ analysis.quarantined ~ " sélection(s) tranchée(s) assise(s) sur une cote de
-             référence attendent leur prix réel : leur palier reposerait sur un prix qu'on
-             n'aurait pas obtenu. Elles comptent partout ailleurs.")
-            if analysis.quarantined else "",
+            note=(analysis.quarantined ~ " sélection(s) tranchée(s) assise(s) sur une cote de
+                   référence attendent leur prix réel.") if analysis.quarantined else "",
+            reason=("Lu sur la cote obtenue quand elle est saisie, sinon sur la cote du bloc.
+                     Le palier d'une sélection dont le prix reste à relever reposerait sur un
+                     prix qu'on n'aurait pas obtenu : elle sort de cet axe, et de celui-là
+                     seulement — elle compte partout ailleurs.")
+                   if analysis.quarantined else "",
             comparison=analysis.tier_comparison) }}
     {{ card("Par sport", analysis.by_sport) }}
     {# Le niveau est la seule dimension qui tienne entre le sport, trop large, et
@@ -118,14 +139,15 @@
        ferme à l'œil. #}
     {% if analysis.by_category %}
       {{ card("Par niveau de compétition", analysis.by_category,
-              "Un Grand Chelem ne se joue ni sur le format ni contre les joueurs
-               d'un 250 ; une coupe continentale et une 2e division n'ont pas
-               davantage en commun. Leurs taux ne se mélangent pas."
-              ~ ((" " ~ analysis.uncategorised ~ " sélection(s) tranchée(s) ne portent
-                   aucun niveau — compétition à classer dans les réglages, ou sélection
-                   sans match rattaché. Elles sont comptées ici, jamais mises en barre :
-                   un taux moyen de ce qui n'a pas été saisi ne dirait rien des matchs.")
-                 if analysis.uncategorised else "")) }}
+              note=(analysis.uncategorised ~ " sélection(s) tranchée(s) ne portent aucun
+                     niveau — compétition à classer, ou sélection sans match rattaché.")
+                    if analysis.uncategorised else "",
+              reason="Un Grand Chelem ne se joue ni sur le format ni contre les joueurs
+                      d'un 250 ; une coupe continentale et une 2e division n'ont pas
+                      davantage en commun. Leurs taux ne se mélangent pas."
+                     ~ (" Les non classées sont comptées ici, jamais mises en barre : un taux
+                         moyen de ce qui n'a pas été saisi ne dirait rien des matchs."
+                        if analysis.uncategorised else "")) }}
     {% endif %}
     {# La famille avant le marché fin, et c'est mesuré : neuf regroupements dont
        six vus une seule fois ne se lisaient pas — chacun mesurait le hasard.
@@ -134,146 +156,175 @@
     <article class="chart-card">
       <h3>Par famille de marché</h3>
       {{ families(analysis.by_family) }}
-      <p class="chart-note">
-        « O/U » et « O/U 2.5 » sont le même pari à une ligne près, « Vainqueur » et
-        « 1N2 » la même chose sur deux sports. Éclatés, aucun n'atteint un effectif
-        lisible. Le détail fin reste dépliable : la famille ordonne, le marché nomme.
+      <div class="chart-foot">
         {% if analysis.unclassified_markets %}
+        <p class="chart-note">
           {{ analysis.unclassified_markets }} sélection(s) tranchée(s) portent un marché
           qu'aucune famille ne couvre — il n'est jamais rangé d'office dans « Autre ».
           <a href="/settings">Classer les marchés</a>
+        </p>
         {% endif %}
-      </p>
+        {% call why("Ce que dit ce regroupement") %}
+        <p>
+          « O/U » et « O/U 2.5 » sont le même pari à une ligne près, « Vainqueur » et
+          « 1N2 » la même chose sur deux sports. Éclatés, aucun n'atteint un effectif
+          lisible. Le détail fin reste dépliable : la famille ordonne, le marché nomme.
+        </p>
+        {% endcall %}
+      </div>
     </article>
     {% endif %}
     {% if analysis.by_market %}
       {{ card("Par marché", analysis.by_market,
-              (analysis.hidden_markets ~ " marché(s) vu(s) une seule fois ne sont pas listés.")
-              if analysis.hidden_markets else "") }}
+              note=(analysis.hidden_markets ~ " marché(s) vu(s) une seule fois ne sont pas
+                     listés.") if analysis.hidden_markets else "") }}
     {% endif %}
     {# Les deux seuls axes qui décrivent **sur quoi** la sélection reposait. Tous
        les autres sont des étiquettes de forme : un palier est une bande de cote,
        un marché un libellé. #}
     {% if analysis.by_angle %}
       {{ card("Par type d'angle", analysis.by_angle,
-              "« Issue » ou « manière » : le mot qui a choisi le marché. Un angle
-               sur une manière rendu en vainqueur a perdu en route ce qu'il avait
-               compris — c'est ce que ces deux lignes rendent visible."
-              ~ ((" " ~ analysis.unlabelled_angle ~ " sélection(s) tranchée(s) n'en
-                   portent pas : elles sont antérieures à la colonne.")
-                 if analysis.unlabelled_angle else "")) }}
+              note=(analysis.unlabelled_angle ~ " sélection(s) tranchée(s) n'en portent
+                     pas : elles sont antérieures à la colonne.")
+                    if analysis.unlabelled_angle else "",
+              reason="« Issue » ou « manière » : le mot qui a choisi le marché. Un angle
+                      sur une manière rendu en vainqueur a perdu en route ce qu'il avait
+                      compris — c'est ce que ces deux lignes rendent visible.") }}
     {% endif %}
     {% if analysis.by_source %}
       {{ card("Par niveau de source", analysis.by_source,
-              "Le fait principal venait-il d'une source officielle, de la presse,
-               de statistiques, d'un agrégateur — ou d'aucun fait daté ? C'est la
-               seule question de cette page dont la réponse changerait la méthode."
-              ~ ((" " ~ analysis.unlabelled_source ~ " sélection(s) tranchée(s) n'en
-                   portent pas : elles sont antérieures à la colonne.")
-                 if analysis.unlabelled_source else "")) }}
+              note=(analysis.unlabelled_source ~ " sélection(s) tranchée(s) n'en portent
+                     pas : elles sont antérieures à la colonne.")
+                    if analysis.unlabelled_source else "",
+              reason="Le fait principal venait-il d'une source officielle, de la presse,
+                      de statistiques, d'un agrégateur — ou d'aucun fait daté ? C'est la
+                      seule question de cette page dont la réponse changerait la méthode.") }}
     {% endif %}
-  </div>
-
-  {# Le prompt demandait à l'analyse de compter ces lignes elle-même — « si plus
-     de la moitié du tableau porte sur le vainqueur, relis-les avec leur colonne
-     Type ». Les deux colonnes sont en base : le compte se fait ici, une fois,
-     et se mesure enfin dans le temps. C'est une mesure de la qualité du rendu,
-     pas un blocage : une telle sélection reste valable, simplement moins fidèle
-     à son propre raisonnement. #}
-  {% if analysis.conflicts.known %}
-  <article class="chart-card">
-    <h3>Angle « manière » rendu en vainqueur</h3>
-    <p class="chart-note">
-      Une sélection dont l'angle déclaré décrit une <strong>manière</strong> — un
-      rythme, une usure, un déséquilibre — et dont le marché rendu appartient à la
-      famille <strong>Issue</strong> ne retient du raisonnement que le nom d'un
-      camp. Ce n'est pas une faute : c'est l'écart entre ce qui a été compris et ce
-      qui a été posé, et il se corrige en section B, pas après coup.
-    </p>
-    <p class="chart-note">
-      <strong>{{ analysis.conflicts.count }}</strong> sur
-      {{ analysis.conflicts.labelled }} sélection(s) tranchée(s) déclarant une
-      manière{% if analysis.conflicts.rate is not none %} —
-      {{ (analysis.conflicts.rate * 100) | round | int }} %{% endif %}.
-    </p>
-    {% if analysis.conflicts.by_sport | length > 1 %}
-    <table class="board">
-      <thead><tr><th>Sport</th><th class="num">En conflit</th><th class="num">Manières</th></tr></thead>
-      <tbody>
-        {% for sport, conflit, total in analysis.conflicts.by_sport %}
-        <tr><td class="muted">{{ sport }}</td><td class="num">{{ conflit }}</td><td class="num">{{ total }}</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    {% endif %}
-    {% if analysis.conflicts.by_session | length > 1 %}
-    <details>
-      <summary>Dans le temps</summary>
-      <table class="board">
-        <thead><tr><th>Journée</th><th class="num">En conflit</th><th class="num">Manières</th></tr></thead>
+    {# Le prompt demandait à l'analyse de compter ces lignes elle-même — « si plus
+       de la moitié du tableau porte sur le vainqueur, relis-les avec leur colonne
+       Type ». Les deux colonnes sont en base : le compte se fait ici, une fois,
+       et se mesure enfin dans le temps. C'est une mesure de la qualité du rendu,
+       pas un blocage : une telle sélection reste valable, simplement moins fidèle
+       à son propre raisonnement. #}
+    {% if analysis.conflicts.known %}
+    <article class="chart-card">
+      <h3>Angle « manière » rendu en vainqueur</h3>
+      <p class="chart-figure">
+        <b>{{ analysis.conflicts.count }}</b> sur
+        {{ analysis.conflicts.labelled }} sélection(s) tranchée(s) déclarant une
+        manière{% if analysis.conflicts.rate is not none %} —
+        {{ (analysis.conflicts.rate * 100) | round | int }} %{% endif %}.
+      </p>
+      {% if analysis.conflicts.by_sport | length > 1 %}
+      <table class="board compact">
+        <thead><tr><th>Sport</th><th class="num">En conflit</th><th class="num">Manières</th></tr></thead>
         <tbody>
-          {% for jour, conflit, total in analysis.conflicts.by_session %}
-          <tr><td class="muted">{{ jour }}</td><td class="num">{{ conflit }}</td><td class="num">{{ total }}</td></tr>
+          {% for sport, conflit, total in analysis.conflicts.by_sport %}
+          <tr><td class="muted">{{ sport }}</td><td class="num">{{ conflit }}</td><td class="num">{{ total }}</td></tr>
           {% endfor %}
         </tbody>
       </table>
-    </details>
+      {% endif %}
+      <div class="chart-foot">
+        {% if analysis.conflicts.by_session | length > 1 %}
+        <details class="why">
+          <summary>Dans le temps</summary>
+          <table class="board compact">
+            <thead><tr><th>Journée</th><th class="num">En conflit</th><th class="num">Manières</th></tr></thead>
+            <tbody>
+              {% for jour, conflit, total in analysis.conflicts.by_session %}
+              <tr><td class="muted">{{ jour }}</td><td class="num">{{ conflit }}</td><td class="num">{{ total }}</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </details>
+        {% endif %}
+        {% call why("Ce que ce compte mesure") %}
+        <p>
+          Une sélection dont l'angle déclaré décrit une <strong>manière</strong> — un
+          rythme, une usure, un déséquilibre — et dont le marché rendu appartient à la
+          famille <strong>Issue</strong> ne retient du raisonnement que le nom d'un
+          camp. Ce n'est pas une faute : c'est l'écart entre ce qui a été compris et ce
+          qui a été posé, et il se corrige en section B, pas après coup.
+        </p>
+        {% endcall %}
+      </div>
+    </article>
     {% endif %}
-  </article>
-  {% endif %}
+  </div>
 
-  {# Une barre pâlit pour deux raisons distinctes, et la note ne peut donc pas
-     promettre que le pâlissement identifie l'une d'elles : au volume actuel
-     seize lignes sur dix-sept sont indécises, si bien que tout le graphique
-     pâlit et que le contraste ne dit plus rien. Ce sont les deux comptes qui
-     portent l'information, et le crochet qui la montre ligne par ligne. #}
-  {% if analysis.thin_rows %}
-  <p class="block-note">
-    {{ analysis.thin_rows }} ligne(s) portent moins de {{ analysis.minimum_rows }}
-    paris tranchés. Le taux y mesure surtout le hasard — « 100 % » sur deux paris
-    et « 100 % » sur quarante ne disent pas la même chose. Le prompt, lui, ne
-    publie pas ces lignes du tout.
-  </p>
-  {% endif %}
+  {# Trois paragraphes de méthode se lisaient d'affilée sous les graphiques : à
+     eux seuls, ils tenaient un écran entier avant le détail chiffré. Ce qu'ils
+     portent d'actionnable est un compte, et un compte tient sur une ligne. Rien
+     n'est retiré — la règle de cette page reste que ce qui manque se dit — mais
+     le raisonnement attend qu'on le demande. #}
+  <details class="readout">
+    <summary>
+      <span class="readout-facts">
+        <b>{{ analysis.settled }}</b> tranchée(s) sur
+        <b>{{ analysis.settled_events }}</b> événement(s) distinct(s)
+        {%- if analysis.undecided_rows %} · <b>{{ analysis.undecided_rows }}</b> ligne(s) sur
+        {{ analysis.undecided_rows + analysis.decided_rows }} n'écartent pas 50 %{% endif %}
+        {%- if analysis.thin_rows %} · <b>{{ analysis.thin_rows }}</b> ligne(s) sous
+        {{ analysis.minimum_rows }} paris{% endif %}
+      </span>
+      <span class="readout-hint">comment lire ces barres</span>
+    </summary>
+    <div class="why-body">
+      {# L'effectif indépendant. La note est écrite dans les deux sens parce que
+         les deux cas se produisent et n'appellent pas la même lecture : là où des
+         sélections se partagent un match, l'intervalle est optimiste ; là où
+         chacune a le sien, il n'y a rien à corriger et le dire évite de chercher
+         un biais absent. #}
+      <p>
+        <strong>{{ analysis.settled }} sélection(s) tranchée(s) ·
+        {{ analysis.settled_events }} événement(s) distinct(s).</strong>
+        {% if analysis.settled_events < analysis.settled %}
+        Plusieurs sélections portent sur le même match — Vainqueur, handicap jeux et
+        total de jeux sur une même rencontre sont une seule issue comptée trois fois,
+        le joueur qui gagne en deux sets les faisant passer ensemble. Les intervalles
+        supposent l'indépendance : ils sont donc <strong>optimistes</strong>,
+        et les vrais sont plus larges. De combien ne s'estime pas proprement à ce
+        volume — le signaler est tout ce qu'on peut faire honnêtement.
+        {% if analysis.clustered_rows %}
+        Les {{ analysis.clustered_rows }} ligne(s) concernées portent leur compte
+        d'événements à côté du leur.
+        {% endif %}
+        {% else %}
+        Chaque sélection porte sur un match différent : sur ce lot, rien ne se compte
+        deux fois, et les intervalles n'ont pas à être élargis pour ça.
+        {% endif %}
+      </p>
 
-  {# L'effectif indépendant. La note est écrite dans les deux sens parce que
-     les deux cas se produisent et n'appellent pas la même lecture : là où des
-     sélections se partagent un match, l'intervalle est optimiste ; là où
-     chacune a le sien, il n'y a rien à corriger et le dire évite de chercher
-     un biais absent. #}
-  <p class="block-note">
-    <strong>{{ analysis.settled }} sélection(s) tranchée(s) ·
-    {{ analysis.settled_events }} événement(s) distinct(s).</strong>
-    {% if analysis.settled_events < analysis.settled %}
-    Plusieurs sélections portent sur le même match — Vainqueur, handicap jeux et
-    total de jeux sur une même rencontre sont une seule issue comptée trois fois,
-    le joueur qui gagne en deux sets les faisant passer ensemble. Les intervalles
-    ci-dessous supposent l'indépendance : ils sont donc <strong>optimistes</strong>,
-    et les vrais sont plus larges. De combien ne s'estime pas proprement à ce
-    volume — le signaler est tout ce qu'on peut faire honnêtement.
-    {% if analysis.clustered_rows %}
-    Les {{ analysis.clustered_rows }} ligne(s) concernées portent leur compte
-    d'événements à côté du leur.
-    {% endif %}
-    {% else %}
-    Chaque sélection porte sur un match différent : sur ce lot, rien ne se compte
-    deux fois, et les intervalles ci-dessous n'ont pas à être élargis pour ça.
-    {% endif %}
-  </p>
+      {% if analysis.undecided_rows %}
+      <p>
+        Le crochet posé sur chaque barre est l'<strong>intervalle à 95 %</strong> :
+        l'étendue des taux que ces tirages-là ne permettent pas d'écarter.
+        <strong>{{ analysis.undecided_rows }} ligne(s) sur
+        {{ analysis.undecided_rows + analysis.decided_rows }} ont un intervalle qui
+        contient 50 %</strong> — elles ne disent donc pas si tu passes plus souvent
+        qu'à pile ou face. Ce n'est pas un défaut d'affichage : c'est ce que permet
+        ce volume, et le seul moyen de le savoir est de l'écrire.
+        Une barre pâlie signale l'un ou l'autre — trop peu de paris, ou un intervalle
+        qui contient 50 % — et c'est le crochet qui dit lequel.
+      </p>
+      {% endif %}
 
-  {% if analysis.undecided_rows %}
-  <p class="block-note">
-    Le crochet posé sur chaque barre est l'<strong>intervalle à 95 %</strong> :
-    l'étendue des taux que ces tirages-là ne permettent pas d'écarter.
-    <strong>{{ analysis.undecided_rows }} ligne(s) sur
-    {{ analysis.undecided_rows + analysis.decided_rows }} ont un intervalle qui
-    contient 50 %</strong> — elles ne disent donc pas si tu passes plus souvent
-    qu'à pile ou face. Ce n'est pas un défaut d'affichage : c'est ce que permet
-    ce volume, et le seul moyen de le savoir est de l'écrire.
-    Une barre pâlie signale l'un ou l'autre — trop peu de paris, ou un intervalle
-    qui contient 50 % — et c'est le crochet qui dit lequel.
-  </p>
-  {% endif %}
+      {# Une barre pâlit pour deux raisons distinctes, et la note ne peut donc pas
+         promettre que le pâlissement identifie l'une d'elles : au volume actuel
+         seize lignes sur dix-sept sont indécises, si bien que tout le graphique
+         pâlit et que le contraste ne dit plus rien. Ce sont les deux comptes qui
+         portent l'information, et le crochet qui la montre ligne par ligne. #}
+      {% if analysis.thin_rows %}
+      <p>
+        {{ analysis.thin_rows }} ligne(s) portent moins de {{ analysis.minimum_rows }}
+        paris tranchés. Le taux y mesure surtout le hasard — « 100 % » sur deux paris
+        et « 100 % » sur quarante ne disent pas la même chose. Le prompt, lui, ne
+        publie pas ces lignes du tout.
+      </p>
+      {% endif %}
+    </div>
+  </details>
 
   {# Contrôle d'intégrité. Un regroupement qui perd des lignes en silence est la
      panne la plus coûteuse de cette page : elle ne se voit pas, elle fait
@@ -281,7 +332,7 @@
      directement dans `picks`, sans jointure — une jointure devenue stricte le
      laisserait intact et ferait bouger tout le reste. #}
   {% if not analysis.consistent %}
-  <p class="block-warn">
+  <p class="block-warn is-alert">
     <strong>Ce que la page compte ne retombe pas sur ce que porte la base.</strong>
     {% if analysis.settled != analysis.recorded %}
       La base contient {{ analysis.recorded }} sélection(s) tranchée(s), la page en
@@ -384,7 +435,7 @@
    les sélections mais le geste qui les précède, comme « Comment tu étiquettes »
    juste en dessous — et il ne dépend, comme lui, d'aucun résultat saisi. #}
 {% if analysis.by_session %}
-<section class="stats-block">
+<section class="stats-block" id="tri">
   <div class="block-head">
     <h2>Ce que tu écartes</h2>
     <span class="muted small">
@@ -392,24 +443,31 @@
     </span>
   </div>
 
-  <div class="charts">
+  {# Une seule carte : elle prend la largeur. Coulée dans les deux colonnes des
+     autres blocs, elle laissait la moitié droite de l'écran vide, et une
+     journée y tenait sur quatre centimètres de barre. #}
+  <div class="charts is-single">
     <article class="chart-card">
       <h3>Par session</h3>
       {{ sessions(analysis.by_session) }}
-      <p class="chart-note">
-        Le lot est l'ensemble des matchs <strong>distincts</strong> entrés dans un
-        prompt de la session : régénérer le même lot ne le gonfle pas, il ne grossit
-        que lorsqu'un scan y ajoute un match. Ce n'est pas la shortlist, qui se vide
-        à mesure qu'on décoche — une session réelle porte 4 lignes de shortlist pour
-        29 sélections.
-        {% set anciennes = analysis.by_session | selectattr('reconstructed') | list %}
-        {% if anciennes %}
-          {{ anciennes | length }} session(s) sont marquées « reconstruit » : leur lot
-          n'a pas été enregistré à l'époque, il est recalculé depuis les prompts
-          archivés. Un match n'y figure que par son libellé, donc deux rencontres
-          homonymes le même jour n'en feraient qu'une.
-        {% endif %}
-      </p>
+      <div class="chart-foot">
+        {% call why("Ce que « lot » veut dire ici") %}
+        <p>
+          Le lot est l'ensemble des matchs <strong>distincts</strong> entrés dans un
+          prompt de la session : régénérer le même lot ne le gonfle pas, il ne grossit
+          que lorsqu'un scan y ajoute un match. Ce n'est pas la shortlist, qui se vide
+          à mesure qu'on décoche — une session réelle porte 4 lignes de shortlist pour
+          29 sélections.
+          {% set anciennes = analysis.by_session | selectattr('reconstructed') | list %}
+          {% if anciennes %}
+            {{ anciennes | length }} session(s) sont marquées « reconstruit » : leur lot
+            n'a pas été enregistré à l'époque, il est recalculé depuis les prompts
+            archivés. Un match n'y figure que par son libellé, donc deux rencontres
+            homonymes le même jour n'en feraient qu'une.
+          {% endif %}
+        </p>
+        {% endcall %}
+      </div>
     </article>
   </div>
 
@@ -470,15 +528,13 @@
    aucun prix. Quatre issues, vérifiables sur n'importe quelle feuille de match.
    La section D l'impose à chaque session de tennis ; il n'était ni enregistré ni
    vérifié — écrit dans le rendu, lu une fois, puis perdu. #}
-<section class="stats-block">
-  <header class="block-head">
+<section class="stats-block" id="sets">
+  <div class="block-head">
     <h2>Le score en sets annoncé</h2>
-    <p class="block-note">
-      La lecture de la <strong>manière</strong>, mesurée sans aucun prix : ni cote,
-      ni palier, ni mise n'entrent ici. Le score est écrit du point de vue du
-      premier joueur nommé.
-    </p>
-  </header>
+    <span class="muted small">
+      la lecture de la manière, mesurée sans aucun prix
+    </span>
+  </div>
 
   {% if set_scores.settled %}
   <div class="kpi">
@@ -497,24 +553,32 @@
         nombre de sets compris ou non
       </span>
     </div>
+    <div class="tile">
+      <span class="label">Issue juste, manière fausse</span>
+      <b class="tile-figure">{{ set_scores.issue_only }}</b>
+      <span class="tile-detail">
+        bon vainqueur, mauvais nombre de sets
+        {%- if set_scores.pending %} · {{ set_scores.pending }} en attente{% endif %}
+      </span>
+    </div>
   </div>
 
   <p class="block-note">
-    <strong>{{ set_scores.issue_only }}</strong> score(s) avec le bon vainqueur mais
-    le mauvais nombre de sets : l'issue était lue, la manière non. C'est le chiffre
-    qui dit qu'un raisonnement sur le rythme n'a pas porté — et il le dit même
-    quand la sélection, elle, a gagné.
+    Ni cote, ni palier, ni mise n'entrent ici — le score est écrit du point de vue
+    du premier joueur nommé. Le troisième chiffre est le plus parlant du bloc :
+    l'issue était lue, la manière non. C'est lui qui dit qu'un raisonnement sur le
+    rythme n'a pas porté — et il le dit même quand la sélection, elle, a gagné.
     {% if set_scores.alternate %}
     Le second scénario est tombé {{ set_scores.alternate }} fois ; il est compté à
     part, deux scores proposés ne valant pas une lecture deux fois plus juste.
     {% endif %}
-    {% if set_scores.pending %}
-    {{ set_scores.pending }} score(s) annoncé(s) attendent encore leur résultat.
-    {% endif %}
   </p>
 
-  <details>
-    <summary>Matrice annoncé / constaté</summary>
+  <details class="panel">
+    <summary>
+      Matrice annoncé / constaté
+      <span class="muted small">ce qui était annoncé, ce qui est tombé</span>
+    </summary>
     <table class="board">
       <thead>
         <tr>
@@ -536,6 +600,9 @@
   </details>
   {% else %}
   <p class="block-note">
+    La lecture de la <strong>manière</strong>, mesurée sans aucun prix : ni cote,
+    ni palier, ni mise n'entrent ici. Le score est écrit du point de vue du
+    premier joueur nommé.
     {{ set_scores.pending }} score(s) annoncé(s), aucun résultat saisi pour l'instant.
     Ils se renseignent sur la feuille de session, au même endroit que les paris.
   </p>
@@ -544,7 +611,7 @@
 {% endif %}
 
 {% if labelling %}
-<section class="stats-block">
+<section class="stats-block" id="etiquettes">
   <div class="block-head">
     <h2>Comment tu étiquettes</h2>
     <span class="muted small">
@@ -553,51 +620,65 @@
     </span>
   </div>
 
-  {% for block in labelling if block.concentrated %}
-  <p class="block-warn">
-    <strong>{{ block.top_share_label }} du volume tiennent sur
-    {{ block.top|length }} niveaux</strong> — {{ block.top_labels }} — d'une échelle
-    de {{ block.label }} qui en compte {{ block.levels }}.
+  <div class="charts">
+    {% for block in labelling %}
+    <article class="chart-card">
+      <h3>Par {{ block.label }}</h3>
+      {# La concentration se lit sur la carte qu'elle décrit. Écrite en bandeau
+         au-dessus du bloc, elle était recopiée pour chaque échelle : deux
+         paragraphes presque identiques, dont seul le premier tiers changeait. #}
+      {% if block.concentrated %}
+      <p class="chart-flag">
+        <strong>{{ block.top_share_label }} du volume tiennent sur
+        {{ block.top|length }} niveaux</strong> — {{ block.top_labels }} — sur
+        {{ block.levels }}.
+      </p>
+      {% endif %}
+      {{ mix(block) }}
+      <div class="chart-foot">
+        <p class="chart-note">
+          {{ block.used }} niveau(x) employé(s) sur {{ block.levels }}.
+          {%- if block.unlabelled %}
+          {{ block.unlabelled }} sélection(s) sans {{ block.label }} ne comptent pas ici :
+          ne pas étiqueter n'est pas un niveau de l'échelle.
+          {%- endif %}
+          {# La vacance, mesurée sans rien parser : un niveau qu'aucune sélection
+             de la session ne porte est un niveau laissé vide ce jour-là. Ce n'est
+             pas encore une conclusion — il faut du temps pour distinguer un niveau
+             que les lots n'offrent pas d'un niveau qu'on ne cherche plus. #}
+          {%- set jamais = block.rows | rejectattr('count') | list %}
+          {%- if jamais and block.sessions %}
+          <strong>{{ jamais | map(attribute='label') | join(', ') }}</strong>
+          {{ 'reste' if jamais | length == 1 else 'restent' }} sans emploi sur
+          {{ block.sessions }} session(s).
+          {%- endif %}
+        </p>
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+
+  {# Écrite une fois pour les deux échelles : la phrase ne dépend ni du nom de
+     l'échelle ni de son nombre de niveaux, et la recopier par bloc en faisait
+     le plus gros du texte de la section. #}
+  {% call why("Ce qu'une échelle concentrée, ou un niveau vide, veut dire") %}
+  <p>
     Une échelle employée comme si elle en comptait deux ne sépare plus que deux cas,
     et le niveau le plus fourni y sert de valeur par défaut plutôt que de jugement.
     Contrairement aux taux de cette page, ce constat-là ne demande pas de recul :
     il décrit un geste, pas une issue.
   </p>
-  {% endfor %}
-
-  <div class="charts">
-    {% for block in labelling %}
-    <article class="chart-card">
-      <h3>Par {{ block.label }}</h3>
-      {{ mix(block) }}
-      <p class="chart-note">
-        {{ block.used }} niveau(x) employé(s) sur {{ block.levels }}.
-        {%- if block.unlabelled %}
-        {{ block.unlabelled }} sélection(s) sans {{ block.label }} ne comptent pas ici :
-        ne pas étiqueter n'est pas un niveau de l'échelle.
-        {%- endif %}
-        {# La vacance, mesurée sans rien parser : un niveau qu'aucune sélection
-           de la session ne porte est un niveau laissé vide ce jour-là. Ce n'est
-           pas encore une conclusion — il faut du temps pour distinguer un niveau
-           que les lots n'offrent pas d'un niveau qu'on ne cherche plus. #}
-        {%- set jamais = block.rows | rejectattr('count') | list %}
-        {%- if jamais and block.sessions %}
-        <strong>{{ jamais | map(attribute='label') | join(', ') }}</strong>
-        {{ 'reste' if jamais | length == 1 else 'restent' }} sans emploi sur
-        {{ block.sessions }} session(s). Un niveau vide est un résultat, pas une
-        anomalie : c'est sa persistance dans le temps qui dira s'il est
-        inatteignable — auquel cas c'est l'échelle qu'il faudra raccourcir, pas
-        les sélections qu'il faudra y pousser.
-        {%- endif %}
-      </p>
-    </article>
-    {% endfor %}
-  </div>
+  <p>
+    Un niveau vide est un résultat, pas une anomalie : c'est sa persistance dans le
+    temps qui dira s'il est inatteignable — auquel cas c'est l'échelle qu'il faudra
+    raccourcir, pas les sélections qu'il faudra y pousser.
+  </p>
+  {% endcall %}
 </section>
 {% endif %}
 
 {% if not stats.empty %}
-<section class="stats-block">
+<section class="stats-block" id="paris">
   <div class="block-head">
     <h2>Ce que valent tes paris</h2>
     <span class="muted small">uniquement ce qui a été posé chez le bookmaker</span>
@@ -610,21 +691,23 @@
     {% endfor %}
   </div>
 
+  <div class="charts">
+    {{ card("Par palier", stats.by_tier,
+            note=(stats.quarantined ~ " pari(s) posé(s) à une cote de référence dont le prix
+                   obtenu n'est pas saisi : hors de cet axe, comptés partout ailleurs.")
+                  if stats.quarantined else "") }}
+    {{ card("Par sport", stats.by_sport) }}
+  </div>
+
   {% if coupon_rates %}
-  <p class="block-note">
+  {% call why("Pourquoi les types de coupons ne s'additionnent pas") %}
+  <p>
     Les types de coupons sont séparés : un combiné tombe dès qu'une jambe cède,
     il ne se compare pas à un pari simple. Les additionner produirait un taux
     qui ne décrit ni l'un ni l'autre.
   </p>
+  {% endcall %}
   {% endif %}
-
-  <div class="charts">
-    {{ card("Par palier", stats.by_tier,
-            (stats.quarantined ~ " pari(s) posé(s) à une cote de référence dont le prix
-             obtenu n'est pas saisi : hors de cet axe, comptés partout ailleurs.")
-            if stats.quarantined else "") }}
-    {{ card("Par sport", stats.by_sport) }}
-  </div>
 
   <details class="panel">
     <summary>
@@ -666,7 +749,7 @@
 </section>
 {% endif %}
 
-<p class="muted small">
+<p class="page-foot">
   Taux = gagnés / (gagnés + perdus). Les paris annulés et ceux en attente sont exclus
   du dénominateur. Aucun indicateur financier n'est produit : rien n'est multiplié par
   une mise, aucun solde ni aucun gain n'est calculé, et la cote d'ensemble d'un coupon

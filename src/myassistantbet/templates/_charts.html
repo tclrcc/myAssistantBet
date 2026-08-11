@@ -82,56 +82,99 @@
    fixe de 0 à 100 % et même teinte unique — c'est toujours une grandeur seule.
    Un niveau à zéro garde sa ligne : c'est lui qui décrit l'échelle. #}
 {% macro mix(block) %}
-  <div class="bars">
+  {# `wide-labels` n'est pas cosmétique : la colonne du compte fait trois
+     caractères, et la vacance écrite dedans en faisait vingt-cinq. Elle
+     débordait de sa carte et **passait par-dessus la carte voisine** — les
+     libellés de palier se lisaient sur les comptes de la colonne de gauche.
+     La vacance décrit le niveau, comme une bande cible : elle se range donc
+     sous son libellé, où la place existe. #}
+  <div class="bars wide-labels">
     {% for row in block.rows %}
     <div class="bar-row{% if not row.count %} is-void{% endif %}"
          title="{{ row.label }} — {{ row.count }} sélection(s) sur {{ block.total }}">
-      <span class="bar-label">{{ row.label }}</span>
+      {# La part dit qu'un niveau ne sert pas ; le compte de sessions dit à quel
+         rythme. Un palier absent de 5 sessions sur 5 n'est pas dans le même état
+         qu'un palier employé une fois sur deux, et c'est cette différence qui
+         décidera un jour de réduire l'échelle. Rien quand il a servi partout :
+         « absent de 0 session » serait du bruit sur chaque ligne. #}
+      <span class="bar-label">
+        {{ row.label }}
+        {%- if row.absent_sessions %}<i class="band">absent de {{ row.absent_sessions }}/{{ block.sessions }} sessions</i>{% endif %}
+      </span>
       <span class="track" aria-hidden="true">
         {% if row.count %}
           <span class="fill" style="width: {{ '%.1f'|format(row.share * 100) }}%"></span>
         {% endif %}
       </span>
       <b class="bar-value">{{ row.share_label }}</b>
-      {# La part dit qu'un niveau ne sert pas ; le compte de sessions dit à quel
-         rythme. Un palier absent de 5 sessions sur 5 n'est pas dans le même état
-         qu'un palier employé une fois sur deux, et c'est cette différence qui
-         décidera un jour de réduire l'échelle. Rien quand il a servi partout :
-         « absent de 0 session » serait du bruit sur chaque ligne. #}
-      <span class="bar-count">{{ row.count }}{% if row.absent_sessions %}<i class="units">· absent de {{ row.absent_sessions }}/{{ block.sessions }} session(s)</i>{% endif %}</span>
+      <span class="bar-count">{{ row.count }}</span>
     </div>
     {% endfor %}
   </div>
 {% endmacro %}
 
+{# Le mode d'emploi d'une ligne, replié.
+
+   La page portait huit paragraphes de méthode entre ses graphiques : à les
+   lire d'affilée, on ne voyait plus les chiffres qu'ils commentent. Rien n'est
+   retiré — c'est la surface où l'utilisateur regarde ses propres données, et
+   la règle du projet est qu'une absence se dit — mais la partition est
+   désormais explicite : **ce qui porte un nombre ou un lien reste visible, ce
+   qui explique une méthode se déplie**. Le résumé porte donc le nombre quand
+   il y en a un, et jamais un simple « en savoir plus ». #}
+{% macro why(summary) %}
+  <details class="why">
+    <summary>{{ summary }}</summary>
+    <div class="why-body">{{ caller() }}</div>
+  </details>
+{% endmacro %}
+
 {# La distance à la testabilité, sous la comparaison que la carte invite à
    faire. La page pose deux barres côte à côte sans jamais dire si l'écart
    tient : cette ligne répond en donnant le volume qui trancherait, ce qui est
-   plus utile que de trancher trop tôt. #}
+   plus utile que de trancher trop tôt.
+
+   Le volume est **dans le résumé**, le raisonnement dessous : c'est le seul
+   chiffre actionnable des quatre phrases, et il payait jusqu'ici le prix fort —
+   deux cartes de la page portaient ce paragraphe en entier. #}
 {% macro reach(comparison) %}
   {% if comparison and comparison.required %}
-  <p class="chart-note">
-    {{ comparison.observed }} sélections tranchées sur ces deux lignes
-    ({{ comparison.left.settled }} et {{ comparison.right.settled }}).
-    Pour que l'écart observé — {{ comparison.left.rate_label }} contre
-    {{ comparison.right.rate_label }} — devienne testable, il en faudrait environ
-    <strong>{{ comparison.required }} par ligne</strong>.
-    {%- if comparison.clustered %}
-    Ce calcul suppose les sélections indépendantes ; ces deux lignes portent sur
-    {{ comparison.units }} événements seulement, donc la vraie cible est plus haute.
-    {%- else %}
-    Ce calcul suppose les sélections indépendantes — ce que ce lot vérifie.
-    {%- endif %}
-  </p>
+  {% call why("L'écart tient-il ? il faudrait ~" ~ comparison.required ~ " sélections par ligne") %}
+    <p>
+      {{ comparison.observed }} sélections tranchées sur ces deux lignes
+      ({{ comparison.left.settled }} et {{ comparison.right.settled }}).
+      Pour que l'écart observé — {{ comparison.left.rate_label }} contre
+      {{ comparison.right.rate_label }} — devienne testable, il en faudrait environ
+      <strong>{{ comparison.required }} par ligne</strong>.
+      {%- if comparison.clustered %}
+      Ce calcul suppose les sélections indépendantes ; ces deux lignes portent sur
+      {{ comparison.units }} événements seulement, donc la vraie cible est plus haute.
+      {%- else %}
+      Ce calcul suppose les sélections indépendantes — ce que ce lot vérifie.
+      {%- endif %}
+    </p>
+  {% endcall %}
   {% endif %}
 {% endmacro %}
 
-{% macro card(title, rows, note="", empty="Rien de tranché sur ce regroupement.", comparison=none) %}
+{# `note` porte un fait — un compte, un lien, quelque chose à corriger — et
+   reste lu ; `reason` porte la méthode et se déplie. Les deux paramètres sont
+   séparés pour que le choix se fasse à l'écriture de la carte, et non à la
+   relecture d'un paragraphe qui aurait mélangé les deux. #}
+{% macro card(title, rows, note="", empty="Rien de tranché sur ce regroupement.",
+              comparison=none, reason="") %}
   <article class="chart-card">
     <h3>{{ title }}</h3>
     {{ bars(rows, empty) }}
-    {{ reach(comparison) }}
-    {% if note %}<p class="chart-note">{{ note }}</p>{% endif %}
+    {% if note or comparison or reason %}
+    <div class="chart-foot">
+      {% if note %}<p class="chart-note">{{ note }}</p>{% endif %}
+      {{ reach(comparison) }}
+      {% if reason %}
+        {% call why("Ce que dit ce regroupement") %}<p>{{ reason }}</p>{% endcall %}
+      {% endif %}
+    </div>
+    {% endif %}
   </article>
 {% endmacro %}
 
@@ -142,13 +185,25 @@
    Une session sans lot connu garde sa ligne : elle n'a soumis aucun prompt, et
    la faire disparaître laisserait croire qu'elle n'a pas eu lieu. #}
 {% macro sessions(rows) %}
-  <div class="bars">
+  <div class="bars wide-labels">
     {% for row in rows %}
     <div class="bar-row{% if row.lot is none %} is-void{% endif %}"
          title="{{ row.day }} — {{ row.covered }} match(s) retenu(s){% if row.lot %} sur {{ row.lot }}{% endif %}{% if row.picks != row.covered %}, {{ row.picks }} sélection(s){% endif %}{% if row.tokens %} · prompt le plus lourd ~{{ row.tokens }} tokens{% endif %}">
+      {# Ce qui qualifie la journée — les sports, un lot reconstruit, un lot
+         jamais enregistré — se range sous sa date. Écrit dans la colonne du
+         compte, « lot non enregistré » débordait de la carte.
+
+         Les mentions sont assemblées puis jointes : écrits à la suite avec
+         leur propre séparateur, elles laissaient un « · » orphelin devant une
+         journée dont les sports sont inconnus. #}
+      {%- set marques = [
+           row.sports,
+           'lot non enregistré' if row.lot is none else none,
+           'reconstruit' if row.reconstructed else none,
+         ] | select | list -%}
       <span class="bar-label">
         {{ row.day }}
-        {%- if row.sports %}<i class="band">{{ row.sports }}</i>{% endif %}
+        {%- if marques %}<i class="band">{{ marques | join(' · ') }}</i>{% endif %}
       </span>
       <span class="track" aria-hidden="true">
         {% if row.selection_rate is not none %}
@@ -158,11 +213,7 @@
       <b class="bar-value">{{ row.selection_label }}</b>
       {# Le compte accompagne toujours la part, et il porte ici les deux
          grandeurs qui la composent : rien ne se déduit d'un pourcentage seul. #}
-      <span class="bar-count">
-        {%- if row.lot %}{{ row.covered }}/{{ row.lot }}
-        {%- else %}<i class="units">lot non enregistré</i>{% endif %}
-        {%- if row.reconstructed %}<i class="units">· reconstruit</i>{% endif %}
-      </span>
+      <span class="bar-count">{% if row.lot %}{{ row.covered }}/{{ row.lot }}{% else %}—{% endif %}</span>
     </div>
     {% endfor %}
   </div>
