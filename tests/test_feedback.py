@@ -1018,8 +1018,8 @@ def test_la_page_dit_qu_un_cran_n_a_pas_de_cible(client: TestClient, migrated: S
 
     page = client.get("/stats").text
 
-    assert "pas de cible" in page
-    assert "cible 0" not in page
+    assert "sans bande" in page
+    assert "bande 0" not in page, "jamais un zero, qui se lirait comme une cible de 0 %"
 
 
 # -- La suspension pendant une replication ----------------------------------

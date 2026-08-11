@@ -159,21 +159,6 @@
   </p>
   {% endif %}
 
-  {# Deux axes peuvent décrire le même échantillon sous deux noms, et la page
-     les présente alors comme deux observations indépendantes. Le bloc n'est
-     pas masqué : lequel des deux axes est le bon ne se déduit d'aucune donnée,
-     et choisir à la place du lecteur serait pire que le lui dire. #}
-  {% if analysis.overlaps %}
-  <p class="block-note is-flag">
-    {% for overlap in analysis.overlaps %}
-    <strong>{{ overlap.note }}.</strong>
-    {% endfor %}
-    Les deux regroupements comptent les mêmes paris : le second n'ajoute donc
-    aucune observation au premier, et lire leurs taux comme deux constats
-    reviendrait à compter deux fois la même chose.
-  </p>
-  {% endif %}
-
   {# LA SECTION DES REGROUPEMENTS, REPLIÉE.
 
      Elle avait pour but de faire remonter la ligne informative. Depuis, on a
@@ -222,6 +207,22 @@
       écartées de tout ce bloc</strong> : leur antériorité n'est pas établie, donc
       leur étiquette non plus. Les compter reviendrait à mesurer la valeur
       prédictive d'étiquettes dont rien ne dit qu'elles précèdent le résultat.
+    </p>
+    {% endif %}
+
+    {# Le recouvrement vit **sous le pli**, avec les axes qu'il concerne : il les
+       annonçait au-dessus alors qu'ils sont repliés, donc il commentait des
+       lignes que le lecteur ne voyait pas. Il n'est pas masqué pour autant —
+       lequel des deux axes est le bon ne se déduit d'aucune donnée, et choisir à
+       la place du lecteur serait pire que le lui dire. #}
+    {% if analysis.overlaps %}
+    <p class="chart-note is-flag">
+      {% for overlap in analysis.overlaps %}
+      <strong>{{ overlap.note }}.</strong>
+      {% endfor %}
+      Les deux regroupements comptent les mêmes paris : le second n'ajoute donc
+      aucune observation au premier, et lire leurs taux comme deux constats
+      reviendrait à compter deux fois la même chose.
     </p>
     {% endif %}
 
@@ -742,20 +743,32 @@
 
   {% if set_scores.settled %}
   <div class="kpi">
+    {# **Un décompte, son intervalle, sa fragilité — dans la même phrase.**
+       Ce bloc annonçait deux « 100 % » en gros caractères sur deux constats,
+       dix lignes sous un avertissement qui dit à la page qu'elle manque de
+       recul. L'effectif seul ne corrigeait pas la lecture : « 100 % sur 2 »
+       reste un fait à l'œil. C'est le nombre de bascules qui le dit — même
+       règle que les lignes portées par les regroupements. #}
     <div class="tile">
       <span class="label">Score exact</span>
-      <b class="tile-figure">{{ (set_scores.exact_rate * 100) | round | int }} %</b>
+      <b class="tile-figure">{{ set_scores.exact }} <i>sur</i> {{ set_scores.settled }}</b>
       <span class="tile-detail">
-        {{ set_scores.exact }} sur {{ set_scores.settled }} score(s) constaté(s)
+        score(s) constaté(s) · intervalle {{ set_scores.exact_interval_label }}
       </span>
+      {%- if set_scores.exact_flip_label %}
+      <span class="muted small">{{ set_scores.exact_flip_label }}</span>
+      {%- endif %}
     </div>
     <div class="tile">
       <span class="label">Vainqueur juste</span>
-      <b class="tile-figure">{{ (set_scores.issue_rate * 100) | round | int }} %</b>
+      <b class="tile-figure">
+        {{ set_scores.exact + set_scores.issue_only }} <i>sur</i> {{ set_scores.settled }}</b>
       <span class="tile-detail">
-        {{ set_scores.exact + set_scores.issue_only }} sur {{ set_scores.settled }},
-        nombre de sets compris ou non
+        nombre de sets compris ou non · intervalle {{ set_scores.issue_interval_label }}
       </span>
+      {%- if set_scores.issue_flip_label %}
+      <span class="muted small">{{ set_scores.issue_flip_label }}</span>
+      {%- endif %}
     </div>
     <div class="tile">
       <span class="label">Issue juste, manière fausse</span>

@@ -43,14 +43,20 @@
          title="{{ row.label }} — {{ row.won }} gagné(s), {{ row.lost }} perdu(s){% if row.void %}, {{ row.void }} annulé(s){% endif %}{% if row.pending %}, {{ row.pending }} en attente{% endif %}{% if row.thin %} — trop peu tranché pour se lire comme une tendance{% endif %}">
       <span class="bar-label">
         {{ row.label }}
-        {# La bande cible suit son libellé, en retrait : c'est l'objectif du
-           niveau, pas une seconde mesure. « Hors bande » n'apparaît que si
-           l'intervalle en sort entièrement — voir `Band.excludes`. #}
-        {#- Un cran sans cible le **dit**, il ne se contente pas de ne rien
-            afficher : un humain qui lit un tableau doit savoir qu'une case est
-            vide par décision et non par oubli. Jamais un zéro, qui se lirait
-            comme une cible de 0 %. -#}
-        {%- if row.band %}<i class="band">{% if row.band.targeted %}cible {{ row.band.label }}{% else %}pas de cible{% endif %}</i>{% endif %}
+        {# **Le mot « cible » a été retiré, et ce n'est pas une reformulation.**
+           Il promettait un pilotage : on règle la bande, on resserre le cran.
+           Or la question de savoir si cette échelle doit exister n'est pas
+           tranchée — l'équivalence contre le palier est non concluante, son
+           intervalle allant de −37 à +13 points. Annoncer une cible par cran
+           supposerait résolu ce qui ne l'est pas.
+
+           Le libellé dit donc ce que la bande **est** mécaniquement : un écart
+           réglé au taux global, avec sa valeur résolue entre parenthèses. Il ne
+           promet rien de ce qu'elle sert.
+
+           Un cran sans bande le dit toujours : une case vide par décision ne se
+           distingue pas d'un oubli. -#}
+        {%- if row.band %}<i class="band">{% if row.band.targeted %}bande {{ row.band.offset_label }}{% if row.band.label %} → {{ row.band.label }}{% endif %}{% else %}sans bande{% endif %}</i>{% endif %}
       </span>
       {{ meter(row) }}
       {# Sous le seuil de lecture, **l'effectif prend la place du taux**. Un

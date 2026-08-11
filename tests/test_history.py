@@ -1332,17 +1332,28 @@ def test_un_ecart_negatif_est_accepte(client: TestClient, isolated_settings: Set
 
 
 def test_la_page_affiche_la_bande_cible(client: TestClient, isolated_settings: Settings) -> None:
-    """La cible est **resolue** avant d'etre affichee : donner « global +3 » a
-    comparer a un taux ferait refaire l'addition a chaque ligne, ce que ce
-    projet retire partout ailleurs. Le taux global vaut ici 50 %, donc le cran 4
-    vise 53 a 62 %."""
+    """La bande dit **ce qu'elle est** — un ecart regle au taux global — et sa
+    valeur resolue suit, pour qu'aucune addition ne reste a faire.
+
+    **Le mot « cible » a ete retire.** Il promettait un pilotage : on regle la
+    bande, on resserre le cran. Or la question de savoir si cette echelle doit
+    exister n'est pas tranchee — l'equivalence contre le palier est non
+    concluante, son intervalle allant de -37 a +13 points.
+
+    Le taux global vaut ici 50 %, donc le cran 4 se resout entre 53 et 62 %.
+    """
     session_id, event_id = _session_avec_match(isolated_settings)
     _propose(isolated_settings, session_id, event_id, "safe", "win", confidence="4")
     _propose(isolated_settings, session_id, event_id, "safe", "loss", confidence="3")
 
     page = " ".join(client.get("/stats").text.split())
 
-    assert "cible 53 – 62 %" in page
+    assert "bande global +3 → +12 → 53 – 62 %" in page
+    # Le mot survit ailleurs dans un autre sens — « la vraie cible est plus
+    # haute » parle d'un effectif requis. C'est **l'etiquette de bande** qui ne
+    # doit plus promettre un pilotage.
+    assert "cible 53" not in page
+    assert "cible " not in page.split("Par confiance annoncée")[1].split("</article>")[0]
     assert "réglable dans les réglages" in page
 
 

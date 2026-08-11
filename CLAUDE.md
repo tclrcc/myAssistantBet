@@ -2138,6 +2138,27 @@ etait revenue une fois de trop.
   Le socle avait change de reference sans que le rendu suive.
 - **L'en-tete disait « toutes les selections »** en en ecartant trente-sept.
 
+### Trois libelles que le socle avait rendus faux, et qui restaient
+
+- **« SCORE EXACT 100 % » sur deux constats** — la specification d'origine
+  demandait deja son intervalle, et il n'avait jamais ete fait. Il tombe
+  desormais sous la meme regle que les lignes portees : **decompte, intervalle
+  et fragilite dans la meme phrase** — `2 sur 2 · intervalle [34 – 100] · un
+  resultat retourne le ramenerait a 50 %`. L'effectif seul ne corrigeait pas la
+  lecture ; « 100 % sur 2 » reste un fait a l'oeil, dix lignes sous un
+  avertissement qui dit a la page qu'elle manque de recul.
+- **« cible 51 – 60 % » est devenu « bande global +3 → +12 → 51 – 60 % ».** Ce
+  n'est pas une reformulation : le mot **cible** promettait un pilotage — on
+  regle la bande, on resserre le cran — alors que la question de savoir si cette
+  echelle doit exister n'est **pas tranchee**, l'equivalence contre le palier
+  allant de -37 a +13 points. Le libelle dit maintenant ce que la bande **est**
+  mecaniquement, avec sa valeur resolue, et ne promet rien de ce qu'elle sert.
+  Un cran sans bande le dit toujours : une case vide par decision ne se
+  distingue pas d'un oubli.
+- **Le bandeau de recouvrement est descendu sous le pli**, avec les axes qu'il
+  concerne : il les commentait au-dessus alors qu'ils sont replies, donc il
+  parlait de lignes que le lecteur ne voyait pas.
+
 ### La portee d'affichage du residu
 
 **Au niveau de la population, en chiffre de tete. Pas en colonne sur trente

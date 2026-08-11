@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
+from .inference import wilson
 from .labels import affiche
 
 logger = logging.getLogger(__name__)
@@ -219,6 +220,42 @@ class Report:
         if not self.settled:
             return None
         return (self.exact + self.issue_only) / self.settled
+
+    def _interval_label(self, won: int) -> str:
+        """« [34 – 100] » — l'etendue que ces tirages-la ne permettent pas
+        d'ecarter."""
+        bounds = wilson(won, self.settled)
+        return "" if bounds is None else f"[{bounds[0] * 100:.0f} – {bounds[1] * 100:.0f}]"
+
+    def _flip_label(self, won: int) -> str:
+        """« un résultat retourné le ramènerait à 50 % ».
+
+        **La fragilite, dans la meme phrase que le chiffre.** « 100 % » sur deux
+        constats se lit comme un fait ; l'effectif seul ne suffit pas a le
+        corriger — c'est le nombre de bascules qui le dit. Meme regle que les
+        lignes portees par les regroupements, et meme defaut corrige : ce bloc
+        annoncait deux « 100 % » en gros caracteres, sur une page qui
+        avertissait dix lignes plus haut de son propre manque de recul.
+        """
+        if not self.settled or not won:
+            return ""
+        return f"un résultat retourné le ramènerait à {(won - 1) / self.settled * 100:.0f} %"
+
+    @property
+    def exact_interval_label(self) -> str:
+        return self._interval_label(self.exact)
+
+    @property
+    def exact_flip_label(self) -> str:
+        return self._flip_label(self.exact)
+
+    @property
+    def issue_interval_label(self) -> str:
+        return self._interval_label(self.exact + self.issue_only)
+
+    @property
+    def issue_flip_label(self) -> str:
+        return self._flip_label(self.exact + self.issue_only)
 
 
 def report(settings: Settings | None = None) -> Report:
