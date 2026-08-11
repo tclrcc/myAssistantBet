@@ -80,8 +80,7 @@
     une façon d'analyser : deux regroupements peuvent y être les mêmes matchs sous
     deux noms. Il en faudrait {{ analysis.minimum }} réparties sur
     {{ analysis.minimum_days }} journées pour qu'un regroupement se lise comme une
-    tendance. Les chiffres restent affichés, c'est leur portée qui est limitée —
-    c'est le même seuil qui fait taire le bloc de retour d'expérience du prompt.
+    tendance. Les chiffres restent affichés, c'est leur portée qui est limitée.
   </p>
   {% endif %}
 
@@ -118,28 +117,54 @@
       {{ residu.observed }} victoire(s) pour {{ residu.expected_label }}
       payée(s) par les prix des {{ residu.settled }} sélections retenues.
     </span>
+    {# **Deux niveaux, et c'est le nombre qui compte.** Le bloc portait quatre
+       qualifications juxtaposées au même niveau syntaxique : un lecteur ne les
+       compte pas, il perçoit une densité, et le seul chiffre interprétable de
+       la page se lisait comme un chiffre qui ne vaut rien.
+
+       Au premier niveau : le constat, son ampleur, sa solidité. La frontière du
+       verdict y est **dite sans son nombre** — poser un second P à côté du
+       premier, c'était ajouter une qualification là où une phrase suffit.
+
+       Test des extrémités, celui que fait toute lecture rapide : première ligne
+       et dernière ligne doivent donner « un écart, et il tient à N résultats ».
+       Le reste se déplie. #}
     <p class="residual-note">
       {%- if residu.annulling_overround %}
       Il faudrait <strong>{{ residu.overround_label }}</strong>
-      de marge pour expliquer l'écart.
+      de marge pour expliquer l'écart —
+      {%- if residu.tipping_margin %} il n'en faudrait que
+      <strong>{{ '%.1f'|format(residu.tipping_margin * 100) | replace('.', ',') }} %</strong>
+      pour qu'il cesse d'être net.
+      {%- else %} aucune marge plausible ne l'explique.{% endif %}
       {%- endif %}
-      À {{ '%.0f'|format(margin_reference * 100) }} % de marge,
-      P = {{ sous_marge.p_label }} —
-      {% if sous_marge.p_value < 0.05 %}au-delà du seuil{% else %}au seuil, pas au-delà{% endif %}.
       {%- if residu.fragility %}
       <strong>{{ residu.fragility }} résultat(s)</strong> suffiraient à l'effacer —
       autant de défaites le renforceraient.
       {%- endif %}
-      {#- La loi exacte suppose les issues indépendantes ; deux sélections sur la
-          même rencontre ne le sont pas — quatre des cinq paires sont tombées du
-          même côté. La borne conservatrice se dit **ici**, pas en note : c'est
-          le seul endroit de la page où une réserve n'a pas ce droit. -#}
-      {%- if analysis.clustered_selections %}
-      {{ analysis.clustered_selections }} sélection(s) partagent un match : en les
-      supposant liées, P monte à
-      {{ '%.3f'|format(analysis.clustered_p_value(margin_reference)) | replace('.', ',') }}.
-      {%- endif %}
     </p>
+    {% call why("Ce que ce chiffre suppose") %}
+      <p>
+        Les prix portent la marge du bookmaker, donc l'attendu est
+        mécaniquement trop haut et le test est <strong>conservateur</strong> :
+        le franchir est un constat solide, ne pas le franchir n'accuse de rien.
+        À {{ '%.0f'|format(margin_reference * 100) }} % de marge, P vaut
+        {{ sous_marge.p_label }}.
+      </p>
+      {%- if analysis.clustered_selections %}
+      <p>
+        La loi exacte suppose les issues indépendantes, et
+        {{ analysis.clustered_selections }} sélection(s) partagent un match —
+        elles ne le sont donc pas. En les supposant liées, P monte à
+        {{ '%.3f'|format(analysis.clustered_p_value(margin_reference)) | replace('.', ',') }} :
+        aucun verdict ne bascule, mais le chiffre suppose quelque chose de faux.
+      </p>
+      {%- endif %}
+      <p>
+        Aucun dévig, aucun marché complet, aucune projection, aucune mise : des
+        issues déjà tranchées comparées à des prix déjà enregistrés.
+      </p>
+    {% endcall %}
   </div>
   {% endif %}
 
@@ -354,9 +379,12 @@
        pourcentage, et il n'y avait donc rien contre quoi mesurer l'écart. La
        bande cible est ce référentiel, et elle se règle dans les réglages. #}
     {{ card("Par confiance annoncée", analysis.by_confidence,
-            reason="Chaque niveau porte sa bande cible, réglable dans les réglages. Un taux
-                    n'est signalé hors bande que si son intervalle en sort entièrement —
-                    sinon la page crierait à la dérive sur du bruit.",
+            reason="Chaque niveau porte sa bande, réglée dans les réglages : un écart au
+                    taux global, avec sa valeur résolue. Elle ne dit pas que l'échelle
+                    pilote quelque chose — la question de savoir si elle doit exister
+                    n'est pas tranchée. Un taux n'est signalé hors bande que si son
+                    intervalle en sort entièrement, sinon la page crierait à la dérive
+                    sur du bruit.",
             empty="Aucune confiance annoncée sur les sélections tranchées.",
             comparison=analysis.confidence_comparison) }}
     {# Un palier est une bande de cote, et le prompt affirme qu'il « sert à
@@ -507,8 +535,6 @@
         <b>{{ analysis.settled }}</b> tranchée(s) sur
         <b>{{ analysis.settled_events }}</b> événement(s) distinct(s)
 
-        {%- if analysis.thin_rows %} · <b>{{ analysis.thin_rows }}</b> ligne(s) sous
-        {{ analysis.minimum_rows }} paris{% endif %}
       </span>
       <span class="readout-hint">comment lire ces barres</span>
     </summary>
@@ -561,14 +587,7 @@
          seize lignes sur dix-sept sont indécises, si bien que tout le graphique
          pâlit et que le contraste ne dit plus rien. Ce sont les deux comptes qui
          portent l'information, et le crochet qui la montre ligne par ligne. #}
-      {% if analysis.thin_rows %}
-      <p>
-        {{ analysis.thin_rows }} ligne(s) portent moins de {{ analysis.minimum_rows }}
-        paris tranchés. Le taux y mesure surtout le hasard — « 100 % » sur deux paris
-        et « 100 % » sur quarante ne disent pas la même chose. Le prompt, lui, ne
-        publie pas ces lignes du tout.
-      </p>
-      {% endif %}
+
     </div>
   </details>
 
@@ -1062,10 +1081,9 @@
   du dénominateur. Aucun indicateur financier n'est produit : rien n'est multiplié par
   une mise, aucun solde ni aucun gain n'est calculé, et la cote d'ensemble d'un coupon
   ne l'est pas davantage.
-  Le taux implicite ne fait pas exception, et c'est le point à tenir : il se compte en
-  points de taux, il décrit des sélections déjà tranchées, et il porte la marge du book.
-  En faire l'annonce de ce que rapporterait la suite serait calculer une
-  <strong>espérance</strong> — c'est le calcul que cette page ne fait pas.
-</p>
+  Rien de ce qui précède n'échappe à la règle, pas même le résidu du bloc de tête :
+  il compare des issues déjà tranchées à des prix déjà enregistrés, et rien n'y est
+  multiplié par une mise. En faire l'annonce de ce que rapporterait la suite serait
+  calculer une <strong>espérance</strong></p>
 {% endif %}
 {% endblock %}

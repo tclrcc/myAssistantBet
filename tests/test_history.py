@@ -12,7 +12,7 @@ from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services import coupons as coupons_service
-from myassistantbet.services import market_families, thresholds
+from myassistantbet.services import market_families
 from myassistantbet.services.competitions import set_category
 from myassistantbet.services.history import (
     ANALYSIS_MIN_DAYS,
@@ -1354,7 +1354,7 @@ def test_la_page_affiche_la_bande_cible(client: TestClient, isolated_settings: S
     # doit plus promettre un pilotage.
     assert "cible 53" not in page
     assert "cible " not in page.split("Par confiance annoncée")[1].split("</article>")[0]
-    assert "réglable dans les réglages" in page
+    assert "réglée dans les réglages" in page
 
 
 # -- Effectif independant ---------------------------------------------------
@@ -1617,44 +1617,6 @@ def test_wilson_sans_rien_de_tranche() -> None:
     assert wilson(0, 0) is None
 
 
-def test_un_taux_dont_l_intervalle_contient_50_ne_tranche_pas(migrated: Settings) -> None:
-    session_id, event_id = _session_avec_match(migrated)
-    for index in range(10):
-        _propose(migrated, session_id, event_id, "safe", "win" if index < 6 else "loss")
-
-    ligne = analysis(migrated).by_tier[0]
-
-    assert ligne.rate == pytest.approx(0.6)
-    assert ligne.inconclusive, "6/10 ne dit pas qu'on passe plus souvent qu'a pile ou face"
-    assert ligne.interval_label == "[31 – 83]"
-
-
-def test_un_taux_tranche_quand_l_intervalle_ecarte_50(migrated: Settings) -> None:
-    session_id, event_id = _session_avec_match(migrated)
-    for _ in range(12):
-        _propose(migrated, session_id, event_id, "safe", "win")
-
-    ligne = analysis(migrated).by_tier[0]
-
-    assert not ligne.inconclusive
-    assert ligne.interval[0] > 0.5
-
-
-def test_indecis_et_trop_court_sont_deux_causes_distinctes(migrated: Settings) -> None:
-    """Une ligne peut porter assez de paris et rester indecise, et une ligne
-    courte peut trancher : 0/6 n'atteint pas le seuil et exclut pourtant 50 %."""
-    session_id, event_id = _session_avec_match(migrated)
-    for _ in range(6):
-        _propose(migrated, session_id, event_id, "ultra_fun", "loss")
-    for index in range(12):
-        _propose(migrated, session_id, event_id, "safe", "win" if index < 7 else "loss")
-
-    par_palier = {row.key: row for row in analysis(migrated).by_tier}
-
-    assert (par_palier["ultra_fun"].thin, par_palier["ultra_fun"].inconclusive) == (True, False)
-    assert (par_palier["safe"].thin, par_palier["safe"].inconclusive) == (False, True)
-
-
 def test_la_page_materialise_l_intervalle_et_dit_la_regle(
     client: TestClient, isolated_settings: Settings
 ) -> None:
@@ -1737,9 +1699,10 @@ def test_aucun_mot_financier_dans_le_rendu_des_cotes(
         )
 
     assert "aucun indicateur financier n'est produit" in page
-    assert "ne fait pas exception" in page, (
-        "le taux implicite est le cas limite : la page doit le dire, pas l'omettre"
-    )
+    # Le taux implicite a ete **retire de la page** : il y vivait ligne par ligne
+    # sans test ni fragilite, et personne ne l'a jamais lu comme tel. Le residu
+    # du bloc de tete a pris sa place, et c'est lui que le garde-fou nomme.
+    assert "rien n'y est multiplié par une mise" in page
 
 
 def test_les_seuils_de_la_page_sont_ceux_du_prompt() -> None:
@@ -1826,40 +1789,6 @@ def test_un_echantillon_etale_ne_declenche_aucun_avertissement(
 
     assert analysis(isolated_settings).enough
     assert "journée(s) d'analyse" not in client.get("/stats").text
-
-
-def test_une_ligne_trop_courte_est_marquee_et_jamais_tue(
-    client: TestClient, isolated_settings: Settings
-) -> None:
-    """Le prompt tait ces lignes — Claude ne peut pas savoir qu'il lit trois
-    paris. La page les garde et les pale : lui cacher ses propres donnees
-    repondrait a cote de la question qu'elle pose."""
-    session_id, event_id = _session_avec_match(isolated_settings)
-    for _ in range(ANALYSIS_MIN_ROWS - 1):
-        _propose(isolated_settings, session_id, event_id, "safe", "win", market="O/U 2.5")
-
-    report = analysis(isolated_settings)
-    page = " ".join(client.get("/stats").text.split())
-
-    assert [row.label for row in report.by_market] == ["O/U 2.5"], "la ligne existe toujours"
-    assert report.by_market[0].thin
-    # Palier, sport, marche et **famille** — ni confiance ni niveau ici. La
-    # famille compte comme les autres : regrouper des libelles ne fabrique pas
-    # de l'effectif, et sept paris restent sept paris sous « Total ».
-    assert report.thin_rows == 4
-    assert "is-thin" in page
-    assert f"moins de {ANALYSIS_MIN_ROWS}" in page
-
-
-def test_une_ligne_assez_fournie_n_est_plus_marquee(migrated: Settings) -> None:
-    session_id, event_id = _session_avec_match(migrated)
-    for _ in range(ANALYSIS_MIN_ROWS):
-        _propose(migrated, session_id, event_id, "safe", "win")
-
-    report = analysis(migrated)
-
-    assert not report.by_tier[0].thin
-    assert report.thin_rows == 0
 
 
 def test_le_taux_global_reunit_joue_et_ecarte(migrated: Settings) -> None:
@@ -2922,34 +2851,45 @@ def test_une_cote_absente_reste_permise(migrated: Settings) -> None:
 # -- L'effectif minimum, un seuil pour deux presentations --------------------
 
 
-def test_le_seuil_de_lecture_se_regle(migrated: Settings) -> None:
-    """Un mecanisme existait deja, et il y en avait meme deux qui divergeaient :
-    le prompt **retirait** les lignes sous le seuil, la page les gardait et les
-    palissait. Le seuil est desormais unique et regle."""
-    session_id, event_id = _session_avec_match(migrated)
-    for _ in range(4):
-        _pick(migrated, session_id, event_id, market="O/U 2.5", result="win")
-
-    assert all(not row.readable for row in analysis(migrated).by_market)
-
-    thresholds.save("feedback_min_rows", "3", migrated)
-
-    assert all(row.readable for row in analysis(migrated).by_market)
-
-
-def test_la_page_affiche_l_effectif_a_la_place_du_taux(
-    client: TestClient, migrated: Settings
+def test_toute_ligne_affiche_son_taux_et_son_intervalle(
+    client: TestClient, isolated_settings: Settings
 ) -> None:
-    """« 100 % » sur trois paris occupe la meme colonne qu'un taux calcule sur
-    quarante. Un humain doit savoir qu'une case est vide parce qu'elle est
-    maigre, et non parce qu'elle est nulle."""
-    session_id, event_id = _session_avec_match(migrated)
-    for _ in range(3):
-        _pick(migrated, session_id, event_id, market="GIGA test", result="win")
+    """**Le seuil sur `n` ne decide plus de l'affichage.**
 
-    page = client.get("/stats").text
+    L'effectif prenait la place du taux sous huit paris — « 4 sél. » au lieu de
+    « 50 % » — ce qui faisait de `n` le critere de lecture. Or `n` ne dit pas si
+    une ligne affirme quelque chose : c'est le test qui le dit, et la fragilite
+    dit a quel point. Les deux vivent en tete de bloc, sur les seules lignes
+    portees ; ici, une barre est une forme et un compte.
 
-    assert "3 sélection(s), effectif insuffisant" in page
+    Le defaut a survecu neuf lots parce qu'il a ete **remplace dans la
+    conversation** par le repli des lignes non discriminantes, sans que personne
+    ne note qu'il n'avait pas ete fait. A l'interieur du pli, le critere de
+    lecture etait reste celui d'avant.
+    """
+    session_id, event_id = _session_avec_match(isolated_settings)
+    for resultat in ("win", "win", "loss"):
+        _propose(isolated_settings, session_id, event_id, "safe", resultat)
+
+    page = " ".join(client.get("/stats").text.split())
+
+    assert "67 %" in page, "trois paris, et le taux s'affiche quand meme"
+    assert "[21 – 94]" in page, "son intervalle avec lui"
+    assert "sél." not in page, "l'effectif ne remplace plus rien"
+    assert "effectif insuffisant" not in page
+
+
+def test_le_seuil_de_lecture_ne_regle_plus_l_affichage(migrated: Settings) -> None:
+    """Il reste **reglable et lu par le prompt**, qui tait ses lignes courtes —
+    une categorie annoncee a 0/7 y cesserait d'etre produite. La page, elle, ne
+    s'en sert plus : un compte de paris ne dit pas si une ligne affirme quelque
+    chose."""
+    ligne = RateRow(key="x", label="x", won=1, lost=2)
+
+    assert ligne.minimum == ANALYSIS_MIN_ROWS
+    assert not hasattr(ligne, "readable")
+    assert not hasattr(ligne, "thin")
+    assert ligne.rate_label == "33 %", "le taux s'affiche quel que soit l'effectif"
 
 
 def test_le_prompt_se_tait_sur_un_regroupement_trop_maigre(migrated: Settings) -> None:

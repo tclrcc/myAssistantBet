@@ -25,8 +25,7 @@
      constat. #}
   <span class="track" aria-hidden="true">
     {% if row.rate is not none %}
-      <span class="fill{% if row.thin or row.inconclusive %} is-thin{% endif %}"
-            style="width: {{ '%.1f'|format(row.rate * 100) }}%"></span>
+      <span class="fill" style="width: {{ '%.1f'|format(row.rate * 100) }}%"></span>
       {% set low, high = row.interval %}
       <span class="ci"
             style="left: {{ '%.1f'|format(low * 100) }}%;
@@ -40,7 +39,7 @@
   <div class="bars">
     {% for row in rows %}
     <div class="bar-row{% if row.rate is none %} is-void{% endif %}"
-         title="{{ row.label }} — {{ row.won }} gagné(s), {{ row.lost }} perdu(s){% if row.void %}, {{ row.void }} annulé(s){% endif %}{% if row.pending %}, {{ row.pending }} en attente{% endif %}{% if row.thin %} — trop peu tranché pour se lire comme une tendance{% endif %}">
+         title="{{ row.label }} — {{ row.won }} gagné(s), {{ row.lost }} perdu(s){% if row.void %}, {{ row.void }} annulé(s){% endif %}{% if row.pending %}, {{ row.pending }} en attente{% endif %}">
       <span class="bar-label">
         {{ row.label }}
         {# **Le mot « cible » a été retiré, et ce n'est pas une reformulation.**
@@ -59,17 +58,13 @@
         {%- if row.band %}<i class="band">{% if row.band.targeted %}bande {{ row.band.offset_label }}{% if row.band.label %} → {{ row.band.label }}{% endif %}{% else %}sans bande{% endif %}</i>{% endif %}
       </span>
       {{ meter(row) }}
-      {# Sous le seuil de lecture, **l'effectif prend la place du taux**. Un
-         « 100 % » sur trois paris occupe la même colonne qu'un taux calculé sur
-         quarante, et rien ne les distingue à l'œil ; l'effectif, lui, dit
-         exactement pourquoi la case est vide. Le prompt, lui, tait la ligne —
-         même seuil, présentation différente, et les deux sont justes : son
-         lecteur n'est pas le même. #}
-      {% if row.rate is not none and not row.readable %}
-      <b class="bar-value is-thin" title="{{ row.thin_label }}">{{ row.settled }} sél.</b>
-      {% else %}
+      {# **Le taux s'affiche toujours, et son compte avec lui.** L'effectif
+         prenait sa place sous un seuil de lecture — « 4 sél. » au lieu de
+         « 50 % » — ce qui faisait de `n` le critère, alors que `n` ne dit pas si
+         une ligne affirme quelque chose. C'est le test qui le dit, et la
+         fragilité dit à quel point ; les deux vivent en tête de bloc, sur les
+         seules lignes portées. Ici, une barre est une forme et un compte. #}
       <b class="bar-value{% if row.off_band %} is-off{% endif %}">{{ row.rate_label }}</b>
-      {% endif %}
       {# Le compte accompagne toujours le taux : « 100 % » sur un pari et
          « 100 % » sur quarante ne disent pas la meme chose. L'effectif
          indépendant ne s'y ajoute **que s'il diffère** — écrire « 37 paris ·

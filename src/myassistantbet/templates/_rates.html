@@ -25,18 +25,12 @@
     {% for row in rows %}
     <tr>
       <td class="affiche">{{ row.label }}</td>
-      {# L'intervalle est plus discret que le taux : c'est sa précision, pas une
-         seconde mesure. Une ligne dont il contient 50 % ne tranche pas — elle
-         reste affichée et le dit, elle n'est jamais retirée. #}
+      {# L'intervalle est plus discret que le taux : c'est sa **précision**, pas
+         un verdict. Il s'affiche sur toute ligne, comme le taux : un seuil sur
+         `n` ne dit pas si une ligne affirme quelque chose. #}
       <td class="num">
-        {# Sous le seuil de lecture, l'effectif remplace le taux : la case est
-           vide parce qu'elle est maigre, et non parce qu'elle est nulle. #}
-        {% if row.rate is not none and not row.readable %}
-        <span class="muted">{{ row.thin_label }}</span>
-        {%- else %}
         {{ row.rate_label }}
-        {%- endif %}
-        {%- if row.interval_label and row.readable %}
+        {%- if row.interval_label %}
         <span class="muted small ci-text">{{ row.interval_label }}</span>
         {%- endif %}
       </td>

@@ -530,9 +530,10 @@ class RateRow:
     label: str
     won: int = 0
     lost: int = 0
-    #: Sous ce compte, le taux ne decrit que le hasard. **Porte par la ligne et
-    #: non lu d'une constante** : il se regle, et une propriete qui irait le
-    #: chercher elle-meme rendrait la classe intestable hors d'une base.
+    #: Seuil de lecture historique, garde pour les **surfaces qui le lisent
+    #: encore** — le prompt, et lui seul. La page ne s'en sert plus : un compte
+    #: de paris ne dit pas si une ligne affirme quelque chose, c'est le test qui
+    #: le dit, et la fragilite dit a quel point.
     minimum: int = ANALYSIS_MIN_ROWS
     void: int = 0
     pending: int = 0
@@ -660,28 +661,6 @@ class RateRow:
     def rate_label(self) -> str:
         return "—" if self.rate is None else f"{self.rate * 100:.0f} %"
 
-    @property
-    def thin(self) -> bool:
-        """Trop peu de paris tranches pour que le taux decrive autre chose que
-        le hasard. **Meme seuil que le prompt, presentation differente**, et les
-        deux sont justes : le prompt tait la ligne — « effectif insuffisant »
-        n'y sert ni a dire ou chercher, ni ou relever l'exigence, les deux
-        seules choses que ce bloc fasse — quand la page la garde et affiche son
-        effectif, un humain devant savoir qu'une case est vide parce qu'elle est
-        maigre et non parce qu'elle est nulle.
-        """
-        return 0 < self.settled < self.minimum
-
-    @property
-    def readable(self) -> bool:
-        """Assez fourni pour qu'un taux se lise comme autre chose qu'un hasard."""
-        return self.settled >= self.minimum
-
-    @property
-    def thin_label(self) -> str:
-        """« 3 sélections, effectif insuffisant » — ce qui remplace le taux."""
-        return f"{self.settled} sélection(s), effectif insuffisant"
-
     def merge(self, other: RateRow) -> None:
         """Ajoute un regroupement a celui-ci, champ par champ.
 
@@ -733,22 +712,6 @@ class RateRow:
             return ""
         low, high = bounds
         return f"[{low * 100:.0f} – {high * 100:.0f}]"
-
-    @property
-    def inconclusive(self) -> bool:
-        """L'intervalle contient 50 % : le taux ne tranche pas.
-
-        Un regroupement dans ce cas n'est pas presente comme un constat — il ne
-        dit pas si l'on passe plus souvent qu'a pile ou face. Au volume actuel
-        cela concerne la quasi-totalite des lignes, **et c'est le message** :
-        c'est une propriete de l'echantillon, pas un defaut d'affichage.
-
-        Distinct de `thin`, qui compte les lignes : une ligne peut porter assez
-        de paris et rester indecise, et une ligne courte peut trancher — 0/6 ne
-        contient pas 50 %.
-        """
-        bounds = self.interval
-        return bounds is not None and bounds[0] <= 0.5 <= bounds[1]
 
     @property
     def off_band(self) -> bool:
@@ -2231,15 +2194,6 @@ class Analysis:
             self.by_source,
             [entry.rates for entry in self.by_family],
         )
-
-    @property
-    def thin_rows(self) -> int:
-        """Regroupements dont le taux mesure surtout le hasard.
-
-        Annonce plutot que laissee a l'oeil : la barre pale se remarque quand on
-        la cherche, pas quand on parcourt la page.
-        """
-        return sum(1 for rows in self.groups for row in rows if row.thin)
 
     @staticmethod
     def _compare(rows: list[RateRow]) -> Comparison | None:

@@ -756,6 +756,28 @@ class Residual:
         return Residual(observed=self.observed, implied=self.implied, margin=margin)
 
     @property
+    def tipping_margin(self) -> float | None:
+        """Marge de book au-dela de laquelle le constat cesse de tenir.
+
+        **Derivee, jamais ecrite en dur** : elle bouge a chaque session, comme
+        la fragilite. Elle dit la meme chose qu'un second `P` affiche a cote du
+        premier — « le seuil n'est franchi que si la marge reelle est sous
+        ~4 % » — sans poser deux nombres de meme nature l'un contre l'autre.
+
+        `None` quand le constat ne tient a aucune marge, ou qu'il tient a
+        toutes : il n'y a alors pas de bascule a nommer.
+        """
+        if not self.settled or self.p_value >= ALPHA:
+            return None
+        pas = 0.005
+        marge = 0.0
+        while marge < 0.5:
+            marge += pas
+            if self.with_margin(marge).p_value >= ALPHA:
+                return marge - pas
+        return None
+
+    @property
     def fragility(self) -> int | None:
         """Victoires de plus qu'il faudrait pour que le constat perde son seuil.
 

@@ -2228,6 +2228,66 @@ change est la grandeur et la sortie.
   `Masters 1000` portent **les memes 33 selections** (J = 1,00), et deux autres
   paires se recouvrent partiellement, sans etre nommees.
 
+### B1 a survecu neuf lots sans etre fait
+
+**Le defaut d'origine, conserve sous un couvercle.** La specification demandait
+de supprimer le seuil « n < 8 → afficher l'effectif a la place du taux » ; ce qui
+a ete livre est le **repli** des lignes non discriminantes. Les deux repondent a
+la meme gene, donc l'un a remplace l'autre dans la conversation — et personne n'a
+note que le premier n'avait pas ete fait. A l'interieur du pli, le critere de
+lecture etait reste `n`.
+
+- **Le taux s'affiche desormais sur toute ligne, avec son intervalle**, dans les
+  barres comme dans le detail chiffre. `RateRow.thin`, `readable`, `thin_label`
+  et `inconclusive` ont ete retires — les deux premiers fondes sur `n`, le
+  dernier sur une reference a 50 % dont on a etabli qu'elle ne veut rien dire.
+- **Le compte des lignes maigres disparait comme categorie.** « 18 lignes
+  portent moins de 8 paris » regroupait des lignes qui n'ont en commun qu'un
+  effectif faible — ce qui a cesse d'etre une propriete interessante depuis
+  qu'on mesure la fragilite. Le compte utile est celui de l'en-tete : portees,
+  repliees, ecartees.
+- `ANALYSIS_MIN_ROWS` **reste reglable et lu par le prompt**, seule surface qui
+  s'en sert encore : lui, il tait ses lignes courtes, et pour une raison qui n'a
+  rien a voir avec la lisibilite — une categorie annoncee a 0/7 cesserait d'etre
+  produite.
+
+**La lecon de methode** : une exigence remplacee dans la conversation par une
+autre qui la recouvre partiellement disparait sans laisser de trace. Elle ne
+casse rien, aucun test ne tombe, et elle se retrouve neuf lots plus tard par une
+relecture de la page rendue. C'est pourquoi la relecture large est une etape et
+non un exercice.
+
+### Le bloc de tete a deux niveaux, et le test des extremites
+
+Il portait quatre qualifications **juxtaposees au meme niveau syntaxique**.
+Chacune etait justifiee ; ensemble elles produisaient l'effet inverse — un
+lecteur ne compte pas les reserves, il percoit une densite, et le seul chiffre
+interpretable de la page se lisait comme un chiffre qui ne vaut rien.
+
+- **Premier niveau** : le constat, son ampleur (l'overround d'annulation), sa
+  solidite (la fragilite). La frontiere du verdict y est **dite sans son
+  nombre** — « il n'en faudrait que 4,5 % pour qu'il cesse d'etre net » — parce
+  que poser un second `P` a cote du premier ajoutait une qualification la ou une
+  phrase suffit. Elle est **derivee** (`tipping_margin`), jamais ecrite en dur :
+  elle bouge a chaque session, comme la fragilite.
+- **Second niveau, dans le depliant** : la marge de reference et son `P`, la
+  correlation entre paris, et le rappel qu'aucun interdit n'est rouvert.
+- **Le test des extremites** decide, parce que c'est ce que fait toute lecture
+  rapide : premiere ligne et derniere ligne doivent donner *« un ecart, et il
+  tient a trois resultats »*. Avant, la derniere ligne etait la correlation —
+  la plus faible des quatre reserves.
+
+### Le seuil du Jaccard est arbitraire, et sans effet — mesure
+
+`COLLINEAR_SHARE` vaut 0,90, pose par convention et jamais justifie autrement.
+Verifie sur les 30 paires comparables : **le classement est identique a 0,85,
+0,90 et 0,95** — un fort, deux partiels dans les trois cas.
+
+Ce qui le rend inconsequent n'est pas la stabilite mais **le trou dans la
+distribution** : `1,000` puis `0,697`, et rien entre les deux. Sur ces donnees
+les recouvrements sont soit totaux soit moderes. **Le jour ou une paire tombe
+dans le trou, ce seuil devra etre justifie pour de bon** — et ce sera le signal.
+
 ### La portee d'affichage du residu
 
 **Au niveau de la population, en chiffre de tete. Pas en colonne sur trente
