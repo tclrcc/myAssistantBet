@@ -218,31 +218,76 @@ def test_une_tranche_vide_ne_se_compare_a_rien(
 
 
 def test_l_omnibus_d_un_axe_qui_separe() -> None:
-    """Le palier reel, sur la population a anteriorite etablie."""
+    """Le palier reel, sur la population a anteriorite etablie.
+
+    Exact : `p = 0,0016`. Le chi2 donnait `0,0023` — meme verdict ici, ce qui
+    est le cas ordinaire. Le chi2 ne trompe que sur les axes a petits
+    effectifs, et c'est justement la qu'on ne peut pas s'en apercevoir.
+    """
     resultat = omnibus([(22, 34), (8, 29), (0, 4)])
 
     assert resultat is not None
-    assert resultat.chi_squared == pytest.approx(12.17, abs=0.01)
-    assert resultat.degrees == 2
-    assert resultat.p_value == pytest.approx(0.00228, abs=1e-5)
+    assert resultat.exact
+    assert resultat.chi_squared is None, "un test exact ne produit aucune statistique"
+    assert resultat.p_value == pytest.approx(0.0016, abs=1e-4)
     assert resultat.separates
 
 
-def test_l_omnibus_demote_une_ligne_qui_passerait_seule() -> None:
-    """**La mesure qui justifie la regle « l'axe avant la ligne ».**
+def test_l_omnibus_du_niveau_separe_et_le_chi2_disait_l_inverse() -> None:
+    """**Le faux negatif qui a fait passer l'omnibus a l'exact.**
 
-    « 1re division — Europe » vaut `2/13` contre `28/54` : seule, elle donne
-    p = 0,028 et serait portee comme un constat. Son axe, lui, ne separe pas —
-    et un axe est une partition, donc ses lignes sont un seul test ecrit six
-    fois. La ligne ne passe pas, et c'est juste.
+    Cet axe reel porte quinze lignes sous huit paris, donc des effectifs
+    attendus tres au-dessous de 5 : le chi2 y donne p = 0,083 — l'axe ne passe
+    pas, et « 1re division — Europe » est demotee. Le test exact donne
+    p = 0,044 : l'axe passe et la ligne tient.
+
+    L'erreur ne cassait rien. Elle retirait une ligne de la page en presentant
+    son retrait comme une regle qui fonctionne — la forme la plus couteuse
+    qu'un defaut puisse prendre ici.
     """
-    seule = two_proportions(2, 13, 28, 54)
+    niveau = [(17, 32), (2, 13), (0, 2), (1, 1), (1, 1), (9, 18)]
+    axe = omnibus(niveau)
+
+    assert axe is not None
+    assert axe.exact
+    assert axe.p_value == pytest.approx(0.0443, abs=1e-3)
+    assert axe.separates
+    assert two_proportions(2, 13, 28, 54) < ALPHA, "et la ligne passe dans son axe"
+
+
+def test_le_chi2_reste_un_repli_declare_au_dela_du_budget(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """L'exact est gratuit sur cinq axes reels et coute 632 ms sur le sixieme.
+
+    Au-dela du budget, le chi2 reprend la main — mais la sortie **le dit**. Un
+    verdict exact et une approximation ne se lisent pas au meme titre, et c'est
+    leur confusion qui a produit le faux negatif ci-dessus.
+    """
+    monkeypatch.setattr("myassistantbet.services.inference.EXACT_BUDGET", 10)
     axe = omnibus([(17, 32), (2, 13), (0, 2), (1, 1), (1, 1), (9, 18)])
 
-    assert seule < ALPHA, "elle passerait si on la testait isolement"
     assert axe is not None
-    assert axe.p_value == pytest.approx(0.083, abs=1e-3)
-    assert not axe.separates
+    assert not axe.exact
+    assert axe.chi_squared == pytest.approx(9.73, abs=0.01)
+    assert axe.degrees == 5
+    assert axe.p_value == pytest.approx(0.0832, abs=1e-3)
+
+
+def test_le_cout_de_l_exact_se_compte_avant_de_l_engager() -> None:
+    """Compter les tables coute des microsecondes, les enumerer une seconde.
+
+    Les comptes reels : confiance 27, palier 144, famille 1 078, niveau 3 113 —
+    et le marche 777 437, seul axe au-dela du budget.
+    """
+    from myassistantbet.services.inference import _table_count
+
+    assert _table_count([26, 41], 30) == 27
+    assert _table_count([34, 29, 4], 30) == 144
+    assert _table_count([32, 13, 2, 1, 1, 18], 30) == 3113
+    # Le marche ne totalise que 29 reussites, la ou les autres axes en portent
+    # 30 : la ligne « Handicap » y est a 0/4 et la marge n'est pas la meme.
+    assert _table_count([23, 13, 6, 6, 4, 4, 3, 3, 2], 29) == 777_437
 
 
 def test_l_omnibus_se_tait_sur_un_axe_qui_ne_pose_pas_la_question() -> None:
@@ -287,13 +332,20 @@ def test_la_p_valeur_du_chi2_hors_de_la_zone_critique(
     assert _upper_gamma(degrees / 2, chi / 2) == pytest.approx(attendu, abs=1e-3)
 
 
+def test_un_chi2_nul_vaut_une_p_valeur_de_un() -> None:
+    """Le repli asymptotique peut tomber sur un axe parfaitement homogene :
+    la statistique est alors nulle, et la fonction ne doit pas y prendre le
+    logarithme de zero."""
+    assert _upper_gamma(0.5, 0.0) == 1.0
+    assert _upper_gamma(2.5, 0.0) == 1.0
+
+
 def test_un_axe_parfaitement_homogene_ne_separe_rien() -> None:
     """Chi2 nul, donc p = 1. C'est l'axe « type d'angle » de la base reelle :
     deux lignes a 1/2, et rien a en tirer."""
     resultat = omnibus([(1, 2), (1, 2)])
 
     assert resultat is not None
-    assert resultat.chi_squared == pytest.approx(0.0)
     assert resultat.p_value == 1.0
     assert not resultat.separates
 

@@ -1754,16 +1754,32 @@ Trois lecons mesurees, et ce sont elles le module :
     trompe.
 - **L'axe se teste avant la ligne.** Un axe est une **partition** : « conf 3 contre
   le reste » et « conf 4 contre le reste » sont le meme test ecrit deux fois, et les
-  compter comme deux essais gonfle la multiplicite. Un omnibus par axe (chi2
-  d'homogeneite), puis decomposition en lignes seulement s'il passe.
-  - Mesure de ce que la regle ecarte : « 1re division — Europe » vaut `2/13` contre
-    `28/54`, soit **p = 0,028 prise seule** — elle serait portee comme un constat.
-    Son axe vaut **p = 0,083**. Elle ne passe pas, et c'est juste.
+  compter comme deux essais gonfle la multiplicite. Un omnibus par axe, puis
+  decomposition en lignes seulement s'il passe.
   - `RateRow.discriminant` porte les deux conditions dans cet ordre.
     `_with_complements` remplit tout `Analysis.groups` **en un seul endroit** : axe
     par axe, il aurait ete oublie au premier axe ajoute — le piege exact de
     `RateRow.merge`, dont les deux fusions recopiees a la main n'avaient pas suivi
     les champs ajoutes apres elles.
+- **Et cet omnibus doit etre exact — appris en se trompant.** La premiere version
+  employait un chi2 d'homogeneite. Son hypothese — des effectifs attendus au-dessus
+  de 5 — est fausse sur une page qui porte quinze lignes sous huit paris, c'est-a-dire
+  fausse exactement la ou le test decide.
+  - Le degat, mesure sur l'axe « niveau de competition » : chi2 **p = 0,083**, l'axe
+    ne passe pas et « 1re division — Europe » (`2/13` contre `28/54`, p = 0,028) est
+    demotee — cas qui figurait ici meme comme **exemple de la regle qui fonctionne**.
+    Fisher-Freeman-Halton exact donne **p = 0,044** : l'axe passe, la ligne tient.
+  - L'erreur ne cassait rien. Elle retirait une ligne de la page en presentant son
+    retrait comme une regle — la forme la plus couteuse qu'un defaut puisse prendre
+    ici, puisqu'elle se lit comme une justification.
+  - **Exact par enumeration sous `EXACT_BUDGET` (200 000 tables), chi2 au-dela, et
+    `Omnibus.exact` dit lequel a servi.** Comptes reels : confiance 27 tables, palier
+    144, famille 1 078, niveau 3 113 — tous sous la milliseconde ; le marche en
+    compte **777 437**, soit 632 ms, ce qu'une page ne peut pas payer. Le nombre de
+    tables se compte d'abord, par une recurrence qui ne les construit pas. Cout final
+    de `analysis()` sur 114 selections : **67 ms**.
+  - Un verdict exact et une approximation ne se lisent pas au meme titre : c'est leur
+    confusion qui a produit le faux negatif, et la sortie porte donc la distinction.
 
 **Unilateral seulement sur une hypothese posee d'avance.** Le gabarit de prompt
 affirme qu'une confiance 4 doit battre une confiance 3, et qu'un SAFE doit battre un

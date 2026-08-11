@@ -43,9 +43,17 @@ non prouve ce que les donnees etablissent.
 **3. L'axe se teste avant la ligne.** Un axe est une **partition** : « conf 3
 contre le reste » et « conf 4 contre le reste » sont le meme test ecrit deux
 fois, et les compter comme deux essais gonfle artificiellement la multiplicite.
-Un omnibus par axe, puis decomposition en lignes seulement s'il passe. Mesure de
-ce que la regle ecarte : « 1re division — Europe » seule donne p = 0,028, mais
-son axe vaut p = 0,083 — elle ne passe pas, et c'est juste.
+Un omnibus par axe, puis decomposition en lignes seulement s'il passe.
+
+**4. Et cet omnibus doit etre exact, ce qui a ete appris en se trompant.** La
+premiere version employait un chi2 d'homogeneite, dont l'hypothese — des
+effectifs attendus au-dessus de 5 — est fausse sur une page qui porte quinze
+lignes sous huit paris. Sur l'axe « niveau de competition », le chi2 donne
+p = 0,083 : l'axe ne passe pas, et « 1re division — Europe » est demotee comme
+un exemple de la regle qui fonctionne. Le test exact donne **p = 0,044** :
+l'axe passe, la ligne tient. Un faux negatif silencieux, produit par le repli
+asymptotique exactement la ou il ne vaut rien. Le chi2 ne sert plus que
+au-dela du budget d'enumeration, et `Omnibus.exact` le dit.
 """
 
 from __future__ import annotations
@@ -237,6 +245,16 @@ def _upper_gamma(shape: float, x: float) -> float:
     return min(1.0, fraction * exp(-x + shape * log(x) - lgamma(shape)))
 
 
+#: Nombre de tables au-dela duquel l'enumeration exacte cede la place au chi2.
+#:
+#: Mesure sur les axes reels : confiance 27 tables, palier 144, famille 1 078,
+#: niveau 3 113 — tous sous la milliseconde. Le marche en compte **777 437**, et
+#: son enumeration coute 632 ms, ce qu'une page ne peut pas payer a chaque
+#: affichage. Le nombre de tables se compte d'abord, par une recurrence qui ne
+#: les construit pas.
+EXACT_BUDGET = 200_000
+
+
 @dataclass(frozen=True)
 class Omnibus:
     """L'axe entier separe-t-il les resultats, avant qu'on regarde ses lignes.
@@ -247,19 +265,88 @@ class Omnibus:
     Un seul test par axe, puis decomposition s'il passe.
     """
 
-    chi_squared: float
-    degrees: int
     p_value: float
+    #: Le test etait-il exact. Faux quand la table depassait le budget
+    #: d'enumeration et qu'un chi2 a servi de repli. **Rendu, jamais tu** : un
+    #: verdict exact et une approximation ne se lisent pas au meme titre, et
+    #: c'est precisement leur confusion qui a produit un faux negatif.
+    exact: bool
+    #: Statistique du chi2 et ses degres de liberte, sur le seul repli. `None`
+    #: sur un test exact, qui n'en produit aucune.
+    chi_squared: float | None = None
+    degrees: int | None = None
 
     @property
     def separates(self) -> bool:
         return self.p_value < ALPHA
 
 
+def _table_count(sizes: list[int], target: int) -> int:
+    """Combien de tables partagent ces marges. Recurrence, sans les construire.
+
+    Sert a decider si l'enumeration exacte est payable **avant** de la lancer :
+    la compter coute quelques microsecondes, la tenter coute une seconde.
+    """
+    reachable = {0: 1}
+    for size in sizes:
+        following: dict[int, int] = {}
+        for used, ways in reachable.items():
+            for taken in range(min(size, target - used) + 1):
+                following[used + taken] = following.get(used + taken, 0) + ways
+        reachable = following
+    return reachable.get(target, 0)
+
+
+def _freeman_halton(rows: list[tuple[int, int]]) -> float:
+    """Test exact de Fisher-Freeman-Halton sur une table r x 2.
+
+    Enumeration complete des tables de memes marges, et somme de celles dont la
+    probabilite ne depasse pas celle observee. Le produit est **porte le long de
+    la recurrence** plutot que recalcule a chaque feuille : la difference vaut
+    un facteur trois sur les grandes tables.
+    """
+    sizes = [settled for _, settled in rows]
+    target = sum(won for won, _ in rows)
+    binomials = [[comb(size, taken) for taken in range(size + 1)] for size in sizes]
+    observed = 1.0
+    for (won, _), table in zip(rows, binomials, strict=True):
+        observed *= table[won]
+    remaining = [sum(sizes[index + 1 :]) for index in range(len(sizes))]
+    last = len(sizes) - 1
+    kept = mass = 0.0
+
+    def walk(index: int, left: int, product: float) -> None:
+        nonlocal kept, mass
+        if index == last:
+            if 0 <= left <= sizes[index]:
+                weight = product * binomials[index][left]
+                mass += weight
+                if weight <= observed * (1 + _EPSILON):
+                    kept += weight
+            return
+        low = max(0, left - remaining[index])
+        for taken in range(low, min(sizes[index], left) + 1):
+            walk(index + 1, left - taken, product * binomials[index][taken])
+
+    walk(0, target, 1.0)
+    return kept / mass if mass else 1.0
+
+
 def omnibus(cells: list[tuple[int, int]]) -> Omnibus | None:
     """Test d'homogeneite d'un axe : ses lignes ont-elles le meme taux.
 
     `cells` est une liste de `(reussites, tranchees)`, une par ligne de l'axe.
+
+    **Exact par defaut, et ce n'est pas un raffinement.** Le chi2 suppose des
+    effectifs attendus au-dessus de 5 ; un axe de la page en porte quinze sous
+    huit paris, si bien que l'hypothese est fausse la ou le test compte. Mesure
+    du degat sur l'axe « niveau de competition » : chi2 p = 0,083 — l'axe ne
+    passe pas et sa ligne « 1re division — Europe » est demotee — quand le test
+    exact donne **p = 0,044**, donc l'inverse. Un faux negatif silencieux, sur
+    l'axe le plus fourni apres les deux etiquetages.
+
+    Le chi2 ne sert plus que de repli au-dela du budget d'enumeration, et
+    `Omnibus.exact` le dit.
 
     None quand la question ne se pose pas : moins de deux lignes peuplees, ou
     un axe dont **tout** est gagne ou **tout** est perdu — les taux y sont alors
@@ -272,6 +359,11 @@ def omnibus(cells: list[tuple[int, int]]) -> Omnibus | None:
     total = sum(settled for _, settled in peupled)
     if total_won in (0, total):
         return None
+
+    sizes = [settled for _, settled in peupled]
+    if _table_count(sizes, total_won) <= EXACT_BUDGET:
+        return Omnibus(p_value=_freeman_halton(peupled), exact=True)
+
     statistic = 0.0
     for won, settled in peupled:
         for observed, expected in (
@@ -281,7 +373,12 @@ def omnibus(cells: list[tuple[int, int]]) -> Omnibus | None:
             if expected:
                 statistic += (observed - expected) ** 2 / expected
     degrees = len(peupled) - 1
-    return Omnibus(statistic, degrees, _upper_gamma(degrees / 2, statistic / 2))
+    return Omnibus(
+        p_value=_upper_gamma(degrees / 2, statistic / 2),
+        exact=False,
+        chi_squared=statistic,
+        degrees=degrees,
+    )
 
 
 def cramers_v(table: list[list[int]]) -> float | None:
