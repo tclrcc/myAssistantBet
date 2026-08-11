@@ -1831,19 +1831,99 @@ tout cela ne prouve rien.
   observe de 82,6 % ne depasse le prix que de 13 points, et sur 23 selections
   c'est dans le bruit : loi de Poisson-binomiale exacte sur les `1/cote`,
   **P(X ≥ 19) = 0,119**.
-- **Le contraste vient de l'autre cote, et c'est l'inverse de ce qu'on croyait
-  lire.** Hors cellule : 16 victoires observees pour **28,35 attendues par les
-  prix**, soit 32 % contre 56,7 % implicite. Le p = 0,000024 ne dit pas que le
-  coin est bon, il dit que **le reste est catastrophique par rapport a son
-  prix**. Sur la population entiere, le residu vaut **-9,31 victoires**.
+- **Et le complement ne se raconte pas non plus.** Dire « hors cellule, 16
+  victoires pour 28,35 payees » serait refaire la meme faute dans le miroir : la
+  cellule a ete trouvee en regardant le tableau, donc son complement aussi. Un
+  deficit sur un sous-ensemble defini apres coup n'a pas plus de statut que les
+  19/23 qu'on vient de retirer.
+  - **Le seul enonce qui tienne porte sur la population entiere** : une
+    partition, aucun choix, aucune multiplicite. `35` victoires pour **44,31
+    payees par les prix**, soit un residu de **-9,31**.
 - **Le test de residu ne rouvre pas les interdits.** Aucun devig, aucun marche
   complet, aucune projection, aucune mise : il compare des issues **tranchees**
   a des prix **deja enregistres**, meme statut que le taux lui-meme. Et il est
   **conservateur par construction** — `1/cote` porte la marge du book, donc
   surestime la probabilite vraie : la barre est trop haute, la franchir serait
   un constat solide, ne pas la franchir n'accuse de rien.
-- Effectif qu'il faudrait pour trancher : **~67 selections dans la cellule**,
+- Effectif qu'il faudrait pour trancher la cellule : **~67 selections dedans**,
   soit une quinzaine de sessions de plus. Elle en porte 23.
+
+### La marge s'ecarte sans reconstruire le marche
+
+On ne peut pas devigger sans le marche complet, et on n'en a pas besoin : il
+suffit de calculer **l'overround qui annulerait le constat**, c'est-a-dire le
+facteur par lequel il faudrait diviser les probabilites implicites pour que
+l'attendu tombe sur l'observe. C'est descriptif, sans devig, sans projection, et
+ca dit exactement ce que la marge peut ou ne peut pas expliquer.
+
+| Hypothese | Attendu | Residu | `P(X <= 35)` |
+| --- | --- | --- | --- |
+| marge 0 % (brut) | 44,31 | -9,31 | **0,0161** |
+| marge 3 % | 43,02 | -8,02 | **0,0345** |
+| marge 5 % | 42,20 | -7,20 | 0,0532 |
+| marge 8 % | 41,03 | -6,03 | 0,0922 |
+
+**Marge qui annulerait le constat : 26,6 %.** Aucun book n'en approche — on est
+entre 3 et 8 % sur les marches concernes. L'ampleur du deficit n'est donc pas
+explicable par la marge.
+
+**La certitude, elle, l'est encore par l'effectif, et il ne faut pas la
+durcir.** Le seuil de 5 % n'est franchi que si la marge reelle est sous ~4 % :
+a 5 % on est deja a 0,053. Formulation juste, a garder telle quelle : *le
+deficit est directionnellement net et n'est pas explique par la marge, mais il
+n'est pas encore etabli*. Fragilite mesuree : **3 victoires de plus** suffisent
+a lui faire perdre son seuil a marge nulle, **aucune** a marge 5 %.
+
+### D'ou vient le prix, et pourquoi c'est la vraie lacune de couverture
+
+Tout le calcul repose sur `picks.price`, **un nombre auto-declare** : la cote
+recopiee du bloc a la main. Le seul controle possible est `price_real`, la cote
+reellement obtenue, renseignee sur **9 lignes**.
+
+Sur ces 9 : 6 cotes obtenues plus basses, 2 plus hautes, 1 identique, pour un
+ecart moyen de **-2,19 %**. Le sens compte plus que l'amplitude — une cote de
+bloc **optimiste** sous-estime l'attendu, donc **le deficit reel est pire** que
+celui qu'on mesure. Corrige de 2,19 %, il passe de -9,31 a -10,30
+(`P = 0,0083`). Le constat est conservateur.
+
+- **Reserve a porter, et elle est serieuse** : les 9 paires ont **toutes**
+  `price_source = 'reference'`. Elles mesurent l'ecart entre un prix de book de
+  reference et le prix obtenu — exactement ce que la migration 030 a ete ecrite
+  pour separer — et ne disent **rien** des selections cotees chez le book
+  principal, qui sont le gros du lot. Trois des neuf sont d'ailleurs encore en
+  attente.
+- C'est le **vrai enjeu de couverture de cette base**, bien avant `angle` ou
+  `source_level` : sans `price_real` systematique, le chiffre de tete de la page
+  repose sur une saisie que rien ne verifie.
+
+### Une analyse est datee, et un verdict qui bouge n'en est pas un
+
+Que l'axe « niveau de competition » passe de `p = 0,0443` a `p = 0,0195` sur
+**six resultats saisis** n'est pas un incident de lecture : c'est une mesure. Un
+verdict qui bouge d'un facteur deux sur six saisies n'est pas un verdict.
+
+Deux consequences, a tenir :
+
+- toute analyse porte son `as_of`, la page dit « arrete au … », et un
+  pre-enregistrement — s'il en existe un un jour — gele un instantane ;
+- chaque ligne porte un **indice de fragilite** : combien de resultats il
+  faudrait retourner pour que son verdict bascule. Le calcul est trivial et
+  l'information est indispensable — une ligne discriminante a fragilite 1 et une
+  a fragilite 12 ne se lisent pas pareil, et la page n'en fait aujourd'hui
+  aucune difference.
+
+### La portee d'affichage du residu
+
+**Au niveau de la population, en chiffre de tete. Pas en colonne sur trente
+lignes.** Sur trente lignes il redevient exactement le probleme corrige plus
+haut : trente residus, ~1,5 « significatif » par hasard, et une nouvelle cellule
+a trouver. Par ligne, il ne s'affiche que sous la machinerie complete — omnibus
+d'abord, exact, BH entre axes, fragilite affichee.
+
+Et **le chiffre de tete change de nature**. Le taux de 48 % n'etait pas
+interpretable : il ne distingue pas une methode qui bat le marche d'une methode
+qui prend des favoris. Le residu au prix, lui, l'est. C'est lui qui occupe le
+bloc de tete, le taux devenant une description a cote.
 
 **La lecon de methode, qui vaut au-dela de ce cas** : une hypothese formulee
 comme « cette etiquette bat les autres etiquettes » a un **mode de reussite
