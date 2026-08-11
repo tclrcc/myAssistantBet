@@ -332,20 +332,64 @@ chaque marche ajoute a `markets.py` sans l'etre a `render.py`.
     report d'horaire met la ligne a jour au lieu d'en creer une seconde.
   - `source = 'apifootball'`, distincte de `api` et de `manual` : savoir d'ou vient un
     match explique pourquoi il n'a pas de cotes, et evite de chercher une panne de scan.
-- **Cotes de substitution** (`import_odds`) : pour un match sans aucune cote, un releve
-  chez un book proche de Betclic. **Betclic n'est pas au catalogue d'API-Football** — il
-  faut donc un substitut, et « proche » se mesure au lieu de se supposer. Sur des matchs
-  servis par les deux fournisseurs, l'ecart moyen absolu au prix Betclic valait 3.0 % pour
-  BetVictor, 3.4 % pour William Hill et 888Sport, contre 5.4 % pour Unibet, 6.0 % pour
-  Pinnacle et 6.8 % pour 1xBet : **l'intuition « un book francais sera le plus proche »
-  etait fausse**. L'ordre se regle par `APIFOOTBALL_BOOKMAKERS`, l'echantillon etant court.
+- **Cotes de substitution** (`import_odds`) : pour un match dont aucun prix ne vient du
+  book principal, un releve chez un book proche de Betclic. **Betclic n'est pas au
+  catalogue d'API-Football** — il faut donc un substitut, et « proche » se mesure au lieu
+  de se supposer. Sur des matchs servis par les deux fournisseurs, l'ecart moyen absolu au
+  prix Betclic valait 3.0 % pour BetVictor, 3.4 % pour William Hill et 888Sport, contre
+  5.4 % pour Unibet, 6.0 % pour Pinnacle et 6.8 % pour 1xBet : **l'intuition « un book
+  francais sera le plus proche » etait fausse**. L'ordre se regle par
+  `APIFOOTBALL_BOOKMAKERS`, l'echantillon etant court.
   - **Aucun repli sur un book hors liste** : prendre le premier venu ferait passer pour
     jouable un prix dont l'ecart n'a jamais ete mesure. Une absence constatee est dite.
+  - **Parmi les books de la liste, en revanche, c'est le catalogue qui tranche.** Ils ne
+    servent pas la meme chose et l'ecart n'est pas marginal : sur un tour preliminaire de
+    Ligue des champions, le fournisseur sert quatorze books, et les six de la liste vont de
+    6 a 11 marches modelises. Prendre le premier disponible donnait 888Sport et ses sept
+    marches quand Bet365 en servait dix. La garantie de proximite tient — tous les
+    candidats sont deja mesures — donc l'ordre ne departage plus que les egalites.
+    - Le compte porte sur ce que le book **apporte**, deja-servi deduit : le plus fourni
+      dans l'absolu peut ne rien ajouter. Et le deja-servi se lit **par book**, sans quoi
+      un second passage compterait le releve precedent comme un acquis d'ailleurs, ne
+      verrait plus aucun apport nulle part, et changerait de book a chaque fois.
   - Ces prix portent le suffixe `(ref.)` comme les autres books de reference : ils situent
     le marche, ils ne sont pas jouables tels quels.
   - Le releve remplace **le seul book releve** : ni Betclic, ni la saisie manuelle.
-  - Le bouton n'apparait que sur un evenement sans aucune cote. Ailleurs il n'ajouterait
-    qu'un prix non jouable a cote d'un prix jouable.
+  - **Une seule source par marche**, comme `services/reference.py` : un marche deja servi
+    n'est pas relu. Deux prix sur la meme issue, le bloc en afficherait un au hasard et
+    l'outil inviterait a la comparaison de cotes entre bookmakers que SPEC.md interdit.
+    C'est cette regle qui permet au releve d'aller sur un match qui a **deja** des cotes.
+  - **Le declencheur est « aucun prix jouable », et non « aucune cote ».** La regle
+    d'origine gardait le bouton sur les seuls evenements vides, au motif qu'ailleurs il
+    n'ajouterait qu'un prix non jouable a cote d'un prix jouable — vrai, sauf qu'il n'y a
+    parfois **aucun** prix jouable : sur la qualification de Ligue des champions, les trois
+    seules cotes venaient d'un book de reference. Mesure qui l'a declenche : `coverage`
+    montre que l'etage B a ete **paye** sur cette competition et que The Odds API n'y sert
+    que le `h2h` — 14 marches profonds sur 15 constates absents chez `betclic_fr`,
+    `pinnacle` et `unibet_nl` reunis, dix constats chacun. Aucun credit ne pouvait donc
+    acheter plus, quand API-Football servait dix marches de plus chez un book mesure. Sur
+    les dix matchs concernes du board, le releve est passe de 3 cotes a 83-100, pour zero
+    credit Odds API.
+    - La saisie manuelle **n'ouvre pas** le releve : c'est un prix pris a la main chez le
+      book principal, et le substitut ne doit pas venir par-dessus. La regle se lit chez
+      `labels.primary_book` / `is_reference`, ecrites une fois — la recopier en SQL
+      l'aurait fait diverger au premier book ajoute.
+    - Un evenement peut etre **a la fois achetable et relevable**. Il ne figure alors que
+      dans `targets`, avec un drapeau `substitute` : dans les deux listes, il paierait son
+      contexte deux fois. On achete d'abord, on releve ensuite — ce que The Odds API sert
+      prime, le releve ne comble que le reste.
+  - **Trois marches manquaient a `BET_MARKETS`** — `HT/FT Double`, `Corners 1x2`,
+    `Correct Score - First Half`. `markets.py` les demande a The Odds API depuis toujours
+    et `render.py` sait les ecrire : sur une competition ou le book principal ne sert rien,
+    ils n'arrivaient donc par **aucun** des deux chemins. Meme piege que les props buteurs,
+    et il se reproduira a chaque marche ajoute d'un cote sans l'autre.
+  - **Les camps se traduisent en noms d'equipes** (`Home/Draw` → `Lyon/Draw`). Ce n'est pas
+    cosmetique pour la double chance : `render` identifie 1X / 12 / X2 par **les equipes
+    citees dans l'issue**, donc `Home/Away` ne s'identifiait pas, le bloc tombait dans le
+    repli generique, et le prompt affichait « Home/Away 1.14 » — une ligne ou l'analyse ne
+    peut meme pas dire de quel camp on parle. Le defaut dormait depuis que la double chance
+    est dans la table : il ne se voyait pas, le releve n'allant que sur des matchs sans
+    aucune cote.
   - **`run_enrich` les prend en charge** (`Estimate.substitutes`) : un match que The Odds
     API ne connait pas etait auparavant classe « aucun appel possible » et ressortait sans
     cotes **ni contexte**, si bien qu'une shortlist entiere de qualifs Europa produisait un

@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
 from ..db import connect
-from .labels import UNTIMED_BOOKMAKERS, affiche, bookmaker_label, primary_book
+from .labels import UNTIMED_BOOKMAKERS, affiche, bookmaker_label, is_reference, primary_book
 from .render import MARKET_ORDER, MARKET_ORDER_BY_SPORT
 
 #: Marches releves par l'etage A : leur seule presence signale un evenement
@@ -96,6 +96,9 @@ class EventOdds:
     surface: str | None = None
     blocks: list[MarketBlock] = field(default_factory=list)
     bookmakers: list[str] = field(default_factory=list)
+    #: Cle de la source principale, celle dont les prix seraient jouables. Le
+    #: champ `bookmakers` porte des libelles, bons a lire et impropres a tester.
+    primary: str = ""
     fetched_local: datetime | None = None
     note: str = ""
 
@@ -122,6 +125,19 @@ class EventOdds:
     @property
     def is_empty(self) -> bool:
         return not self.blocks
+
+    @property
+    def reference_only(self) -> bool:
+        """Des cotes, mais aucune du book principal — donc aucune jouable.
+
+        C'est l'etat d'un match dont la competition n'est pas servie par
+        Betclic : les tours preliminaires de coupe d'Europe n'en ont que le 1N2,
+        releve chez un book de reference. Il ouvre le releve de substitution au
+        meme titre qu'un match sans aucune cote — l'objection d'origine, « il
+        n'ajouterait qu'un prix non jouable a cote d'un prix jouable », ne tient
+        pas quand il n'y a aucun prix jouable.
+        """
+        return bool(self.blocks) and is_reference(self.primary)
 
 
 def _local(value: str, tz: str) -> datetime:
@@ -241,6 +257,7 @@ def build(event_id: int, settings: Settings | None = None) -> EventOdds | None:
         surface=row["surface"],
         blocks=blocks,
         bookmakers=[bookmaker_label(book) for book in books],
+        primary=primary,
         # Une cote saisie a la main porte l'heure de la frappe, pas celle d'un
         # releve de marche : l'afficher tromperait sur la fraicheur.
         fetched_local=_local(fetched, settings.tz) if fetched and timed else None,

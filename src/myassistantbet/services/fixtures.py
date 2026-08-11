@@ -203,12 +203,25 @@ BET_MARKETS = {
     # rapprochement, alors qu'un rendu dedie l'attendait deja.
     "Total - Home": "team_totals",
     "Total - Away": "team_totals",
+    # Trois marches que `markets.py` demande a The Odds API depuis toujours et
+    # que cette table ignorait : sur une competition ou le book principal ne sert
+    # rien, ils n'arrivaient donc par aucun des deux chemins. Le fournisseur les
+    # sert, `render.py` sait les ecrire, et l'entree ne coute aucun appel de plus
+    # — un seul les rend tous.
+    "HT/FT Double": "halftime_fulltime",
+    "Corners 1x2": "corners_1x2",
+    "Correct Score - First Half": "correct_score_h1",
 }
 
 
 def _book_key(name: str) -> str:
     """`888Sport` -> `888sport`. Cle stable pour la colonne `bookmaker`."""
     return re.sub(r"[^a-z0-9]+", "_", (name or "").lower()).strip("_")
+
+
+def _side(text: str, home: str, away: str) -> str:
+    """`Home` -> le nom de l'equipe qui recoit, `Draw` inchange."""
+    return {"home": home, "away": away, "draw": "Draw"}.get(text.strip().lower(), text.strip())
 
 
 def _outcome(
@@ -235,7 +248,21 @@ def _outcome(
             except ValueError:
                 return text, None, team
         return text, None, team
-    if market in {"h2h", "spreads"}:
+    if market in {"halftime_fulltime", "double_chance"}:
+        # « Home/Draw » cote fournisseur, « Lyon/Draw » cote application : c'est
+        # la convention de The Odds API, et deux ecritures du meme pari se
+        # liraient comme deux paris.
+        #
+        # Ce n'est pas cosmetique pour la double chance : `render` identifie
+        # 1X / 12 / X2 par **les equipes citees dans l'issue**, donc « Home/Away »
+        # ne s'identifiait pas et le bloc tombait dans le repli generique. Le
+        # prompt affichait alors « Home/Away 1.14 » — une ligne ou l'analyse ne
+        # peut meme pas dire de quel camp on parle. Le defaut dormait depuis que
+        # la double chance est dans la table ; il ne se voyait pas parce que le
+        # releve n'allait que sur des matchs sans aucune cote, donc rarement.
+        camps = [_side(part, home, away) for part in text.split("/")]
+        return "/".join(camps), None, None
+    if market in {"h2h", "spreads", "corners_1x2"}:
         parts = text.rsplit(" ", 1)
         side, point = (parts[0], parts[1]) if len(parts) == 2 else (text, None)
         name = {"home": home, "away": away, "draw": "Draw"}.get(side.lower(), side)
@@ -267,6 +294,11 @@ class OddsReport:
     markets: int = 0
     outcomes: int = 0
     ignored: int = 0
+    #: Marches que le releve n'a pas ecrits parce qu'une autre source les sert
+    #: deja sur cet evenement. Distinct de `ignored`, qui compte ce que
+    #: l'application ne modelise pas : ici le marche est connu et rendu, il vient
+    #: simplement d'ailleurs.
+    held: int = 0
     error: str | None = None
 
     @property
@@ -274,32 +306,80 @@ class OddsReport:
         if self.error:
             return f"{self.label} : {self.error}"
         if not self.outcomes:
+            if self.held:
+                return (
+                    f"{self.label} : rien de neuf a relever, "
+                    f"{self.held} marche(s) deja servi(s) par une autre source."
+                )
             return f"{self.label} : aucune cote servie par les books retenus."
         detail = f"{self.label} : {self.outcomes} cote(s) sur {self.markets} marche(s)"
         detail += f", relevees chez {self.bookmaker}."
+        if self.held:
+            detail += f" {self.held} marche(s) deja servi(s) par une autre source."
         if self.ignored:
             detail += f" {self.ignored} marche(s) non modelise(s) ignore(s)."
         return detail
 
 
+def _new_markets(book: dict[str, Any], served: frozenset[str]) -> set[str]:
+    """Marches modelises que ce book apporterait, deduction faite du deja-servi."""
+    return {
+        market
+        for bet in book.get("bets") or []
+        if (market := BET_MARKETS.get(str(bet.get("name")))) and market not in served
+    }
+
+
 def _pick_bookmaker(
-    entries: list[dict[str, Any]], wanted: tuple[str, ...]
+    entries: list[dict[str, Any]],
+    wanted: tuple[str, ...],
+    served_by_book: dict[str, set[str]] | None = None,
 ) -> dict[str, Any] | None:
-    """Premier book de la liste de preference effectivement present.
+    """Le plus fourni des books de la liste de preference, presents sur ce match.
 
     Aucun repli sur un book quelconque : prendre le premier venu ferait passer
     pour jouable un prix releve chez un book dont l'ecart a Betclic n'a jamais
     ete mesure. Une absence constatee est une information, pas un probleme.
+
+    **Parmi les books mesures, en revanche, c'est le catalogue qui tranche**, et
+    la difference n'est pas marginale : sur un tour preliminaire de Ligue des
+    champions, le fournisseur sert quatorze books, et les six de la liste vont de
+    6 a 11 marches modelises. Prendre le premier disponible donnait 888Sport et
+    ses 7 marches quand Bet365 en servait 10 — cinquante cotes perdues pour un
+    ecart de prix qui, lui, a ete mesure equivalent sur les deux. La garantie de
+    proximite tient : tous les candidats sont deja verifies, l'ordre ne
+    departage plus que les egalites.
+
+    `served_by_book` retire du compte ce qu'une autre source sert deja : le book
+    choisi doit etre celui qui apporte le plus, pas celui qui repete le mieux.
+    Le deja-servi est lu **par book** et non en bloc, sans quoi un second
+    passage compterait le releve precedent comme un acquis d'ailleurs, ne
+    verrait plus aucun apport nulle part, et changerait de book a chaque fois.
     """
-    available = {}
+    deja = served_by_book or {}
+    available: dict[str, dict[str, Any]] = {}
     for entry in entries:
         for book in entry.get("bookmakers") or []:
             available[_book_key(str(book.get("name")))] = book
-    for name in wanted:
-        book = available.get(_book_key(name))
-        if book:
-            return book
-    return None
+
+    def ailleurs(book_key: str) -> frozenset[str]:
+        return frozenset(
+            market for book, markets in deja.items() if book != book_key for market in markets
+        )
+
+    candidats = [
+        (rang, _book_key(name), available[_book_key(name)])
+        for rang, name in enumerate(wanted)
+        if _book_key(name) in available
+    ]
+    if not candidats:
+        return None
+    # A egalite de marches apportes, le rang dans la liste — donc la proximite
+    # mesuree a Betclic — departage.
+    return max(
+        candidats,
+        key=lambda item: (len(_new_markets(item[2], ailleurs(item[1]))), -item[0]),
+    )[2]
 
 
 async def import_odds(
@@ -307,11 +387,19 @@ async def import_odds(
     event_id: int,
     settings: Settings | None = None,
 ) -> OddsReport:
-    """Releve des cotes chez un substitut de Betclic, pour un match qui n'en a pas.
+    """Releve des cotes chez un substitut de Betclic, pour ce qu'aucune source ne sert.
 
     Ne touche jamais aux cotes existantes d'un autre book : elles sont
     remplacees pour ce book seulement, donc relancer ne duplique rien et
     n'ecrase pas un releve Betclic ni une saisie manuelle.
+
+    **Une seule source par marche**, comme `services/reference.py` : un marche
+    deja servi par une autre source n'est pas relu ici. Sans cette regle, un
+    `h2h` de Pinnacle et un `h2h` de Bet365 coexisteraient sur la meme issue, le
+    bloc en afficherait un au hasard, et l'outil inviterait a la comparaison de
+    prix entre bookmakers que SPEC.md interdit. C'est ce qui permet au releve
+    d'aller sur un match qui a **deja** des cotes, tant qu'aucune ne vient du
+    book principal : il complete au lieu de doubler.
     """
     settings = settings or get_settings()
     with connect(settings) as conn:
@@ -319,6 +407,10 @@ async def import_odds(
             "SELECT id, home, away, apifootball_fixture_id FROM events WHERE id = ?",
             (event_id,),
         ).fetchone()
+        existing = conn.execute(
+            "SELECT DISTINCT bookmaker, market_key FROM odds WHERE event_id = ?",
+            (event_id,),
+        ).fetchall()
     if row is None:
         return OddsReport(label=str(event_id), error="evenement inconnu")
 
@@ -335,11 +427,21 @@ async def import_odds(
         logger.warning("Cotes de substitution indisponibles pour %s : %s", label, exc)
         return OddsReport(label=label, error=str(exc))
 
-    book = _pick_bookmaker(entries, settings.apifootball_books)
+    # Ce que chaque source sert deja sur cet evenement. Range par book : le
+    # releve remplace ses propres lignes, elles ne comptent donc pas comme
+    # « deja servi » quand c'est lui qu'on rappelle.
+    deja: dict[str, set[str]] = {}
+    for line in existing:
+        deja.setdefault(str(line["bookmaker"]), set()).add(str(line["market_key"]))
+
+    book = _pick_bookmaker(entries, settings.apifootball_books, deja)
     if book is None:
         return OddsReport(label=label)
 
     key = _book_key(str(book.get("name")))
+    served = frozenset(
+        market for other, markets in deja.items() if other != key for market in markets
+    )
     report = OddsReport(label=label, bookmaker=str(book.get("name")))
     stamp = utcnow()
     with connect(settings) as conn:
@@ -348,6 +450,9 @@ async def import_odds(
             market = BET_MARKETS.get(str(bet.get("name")))
             if market is None:
                 report.ignored += 1
+                continue
+            if market in served:
+                report.held += 1
                 continue
             written = 0
             for value in bet.get("values") or []:

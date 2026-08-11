@@ -22,7 +22,7 @@ from ..providers.tennisabstract import TennisAbstractClient
 from ..providers.tennisdata import TennisDataClient
 from . import coverage, dossier, elo, fixtures, reference, tennis_history
 from .context import fetch_context
-from .labels import affiche
+from .labels import affiche, is_reference, primary_book
 from .markets import (
     markets_for,
 )
@@ -53,6 +53,11 @@ class EnrichTarget:
 
     #: Books interroges pour cet evenement. Jusqu'a dix, le cout est le meme.
     bookmakers: tuple[str, ...] = (DEFAULT_BOOKMAKER,)
+    #: Un releve de substitution est du a cet evenement : aucun de ses prix ne
+    #: vient du book principal. Porte par la cible plutot que par une seconde
+    #: liste, sinon un evenement a la fois achetable et relevable figurerait
+    #: dans les deux et paierait son contexte deux fois.
+    substitute: bool = False
 
     @property
     def cost(self) -> int:
@@ -71,6 +76,43 @@ class EnrichTarget:
             "commence_time": self.commence_time,
             "apifootball_league_id": self.apifootball_league_id,
         }
+
+
+def _substitute_due(row: Any) -> bool:
+    """Ce match attend-il un releve de substitution ?
+
+    Deux conditions, et il faut les deux : API-Football doit pouvoir repondre
+    — football, competition rattachee a une ligue — et **aucun de ses prix ne
+    doit venir du book principal**. La seconde se lit chez `labels`, ou la
+    notion de source principale est deja ecrite : la recopier ici en SQL
+    l'aurait fait diverger au premier book ajoute, et une saisie manuelle
+    serait passee pour une cote de reference.
+    """
+    if row["sport_key"] != "football" or not row["apifootball_league_id"]:
+        return False
+    books = [book for book in str(row["books"] or "").split(",") if book]
+    if not books:
+        return True
+    return is_reference(primary_book(books))
+
+
+def _substitute_target(row: Any, label: str) -> EnrichTarget:
+    """Cible sans achat : tout y est gratuit en credits The Odds API."""
+    return EnrichTarget(
+        event_id=int(row["id"]),
+        oddsapi_event_id="",
+        sport_key=row["sport_key"],
+        oddsapi_sport_key="",
+        label=label,
+        markets=(),
+        bookmakers=(),
+        substitute=True,
+        competition_id=row["competition_id"],
+        apifootball_league_id=row["apifootball_league_id"],
+        home=row["home"],
+        away=row["away"],
+        commence_time=row["commence_time"],
+    )
 
 
 @dataclass
@@ -261,7 +303,12 @@ def build_estimate(
             # que le book principal ne sert pas, la reponse est non, et le 1N2
             # doit alors etre reclame ici — sans quoi il n'arrive jamais.
             "       EXISTS(SELECT 1 FROM odds o WHERE o.event_id = e.id "
-            "              AND o.market_key = 'h2h') AS base_served "
+            "              AND o.market_key = 'h2h') AS base_served, "
+            # Les sources qui servent deja cet evenement. C'est `labels` qui dit
+            # laquelle est la principale et si elle est de reference : la regle
+            # est ecrite une fois, ici on ne fait que lui donner la liste.
+            "       (SELECT GROUP_CONCAT(DISTINCT o.bookmaker) FROM odds o "
+            "         WHERE o.event_id = e.id) AS books "
             "FROM session_events se "
             "JOIN events e ON e.id = se.event_id "
             "JOIN sports s ON s.id = e.sport_id "
@@ -277,27 +324,22 @@ def build_estimate(
         if has_started(row["commence_time"], now):
             estimate.started.append(label)
             continue
+        # Un releve de substitution est du des qu'**aucun prix ne vient du book
+        # principal**, et non plus seulement quand le match n'a aucune cote. La
+        # justification d'origine — « ailleurs il n'ajouterait qu'un prix non
+        # jouable a cote d'un prix jouable » — ne tient pas ici : il n'y a aucun
+        # prix jouable, tout est deja de reference. Mesure qui l'a declenche :
+        # sur la qualification de Ligue des champions, The Odds API a ete payee
+        # et ne sert que le 1N2 — 14 marches profonds sur 15 constates absents
+        # chez betclic_fr, pinnacle et unibet_nl reunis — quand API-Football sert
+        # dix marches de plus chez un book dont l'ecart a Betclic est mesure.
+        due = _substitute_due(row)
         if not row["oddsapi_event_id"] or not row["competition_key"]:
             # The Odds API ne connait pas ce match. API-Football, peut-etre :
             # c'est le cas des qualifications europeennes importees. Le releve
             # de substitution et le contexte sont gratuits en credits.
-            if row["sport_key"] == "football" and row["apifootball_league_id"]:
-                estimate.substitutes.append(
-                    EnrichTarget(
-                        event_id=int(row["id"]),
-                        oddsapi_event_id="",
-                        sport_key=row["sport_key"],
-                        oddsapi_sport_key="",
-                        label=label,
-                        markets=(),
-                        bookmakers=(),
-                        competition_id=row["competition_id"],
-                        apifootball_league_id=row["apifootball_league_id"],
-                        home=row["home"],
-                        away=row["away"],
-                        commence_time=row["commence_time"],
-                    )
-                )
+            if due:
+                estimate.substitutes.append(_substitute_target(row, label))
                 continue
             # Evenement manuel (cyclisme, ATP 250) : aucun appel possible.
             estimate.skipped.append(label)
@@ -305,6 +347,9 @@ def build_estimate(
         base_served = bool(row["base_served"])
         markets = markets_for(row["sport_key"], row["competition_key"], settings, base_served)
         if not markets:
+            if due:
+                estimate.substitutes.append(_substitute_target(row, label))
+                continue
             estimate.skipped.append(label)
             continue
         # Ne pas repayer un constat deja fait : les marches que cette competition
@@ -316,6 +361,12 @@ def build_estimate(
             row["competition_id"], markets, settings, anchor_alone=not base_served
         )
         if not markets:
+            # Plus rien a acheter, mais peut-etre encore quelque chose a relever :
+            # c'est exactement l'etat d'une competition ou le book principal ne
+            # sert rien et ou le constat de couverture est deja fait.
+            if due:
+                estimate.substitutes.append(_substitute_target(row, label))
+                continue
             estimate.barren.append(label)
             continue
         estimate.targets.append(
@@ -326,6 +377,7 @@ def build_estimate(
                 oddsapi_sport_key=row["competition_key"],
                 label=label,
                 markets=markets,
+                substitute=due,
                 bookmakers=(DEFAULT_BOOKMAKER, *settings.reference_books),
                 competition_id=row["competition_id"],
                 apifootball_league_id=row["apifootball_league_id"],
@@ -345,6 +397,34 @@ def _store(event_id: int, payload: dict[str, Any], settings: Settings) -> tuple[
     with connect(settings) as conn:
         rows = replace_odds(conn, event_id, payload)
     return markets, rows
+
+
+async def _add_substitute_odds(
+    client: APIFootballClient,
+    target: EnrichTarget,
+    result: EnrichResult,
+    settings: Settings,
+) -> None:
+    """Releve de substitution, ecrit dans le resultat de l'evenement.
+
+    Ecrit une seule fois pour les deux boucles : un evenement achetable peut
+    aussi etre relevable, et deux appels du meme geste auraient fini par ne plus
+    dire la meme chose de leur resultat.
+    """
+    try:
+        odds_report = await fixtures.import_odds(client, target.event_id, settings)
+    except ProviderError as exc:
+        result.error = result.error or str(exc)
+        logger.warning("Releve de substitution echoue pour %s : %s", target.label, exc)
+        return
+    if odds_report.error:
+        result.error = result.error or odds_report.error
+        return
+    # Les marches releves s'ajoutent a ceux qui ont ete achetes : le compte du
+    # rapport dit ce que l'evenement a recu, quelle qu'en soit la provenance.
+    result.markets_received += odds_report.markets
+    result.odds_rows += odds_report.outcomes
+    result.substitute_book = odds_report.bookmaker
 
 
 async def _add_context(
@@ -519,6 +599,14 @@ async def run_enrich(
             result.error = f"reponse inexploitable : {type(exc).__name__}: {exc}"
             logger.exception("Reponse inexploitable pour %s", target.label)
 
+        # Achete d'abord, releve ensuite, et dans cet ordre : ce que The Odds API
+        # sert prime, le releve ne comble que ce qui reste. Un evenement peut
+        # etre les deux — la competition vend quelques marches sans qu'aucun
+        # vienne du book principal — et il ne doit alors figurer que dans une
+        # seule liste, sinon son contexte serait paye deux fois.
+        if target.substitute and context_client is not None:
+            await _add_substitute_odds(context_client, target, result, settings)
+
         if context_client is not None and target.context_possible:
             await _add_context(context_client, target, result, settings, context_cache, now)
 
@@ -538,17 +626,7 @@ async def run_enrich(
             report.results.append(result)
             report.done += 1
             continue
-        try:
-            odds_report = await fixtures.import_odds(context_client, target.event_id, settings)
-            if odds_report.error:
-                result.error = odds_report.error
-            else:
-                result.markets_received = odds_report.markets
-                result.odds_rows = odds_report.outcomes
-                result.substitute_book = odds_report.bookmaker
-        except ProviderError as exc:
-            result.error = str(exc)
-            logger.warning("Releve de substitution echoue pour %s : %s", target.label, exc)
+        await _add_substitute_odds(context_client, target, result, settings)
 
         if context_client is not None and target.context_possible:
             await _add_context(context_client, target, result, settings, context_cache, now)

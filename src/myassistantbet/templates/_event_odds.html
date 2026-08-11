@@ -41,14 +41,27 @@
       Aucune cote pour cet événement. Enrichis-le depuis la shortlist, ou saisis
       des cotes à la main ci-dessous.
     </p>
-    {# Le seul cas ou le releve de substitution a un sens : rien a comparer, donc
-       rien a ecraser. Sur un match deja servi par Betclic, il n'apporterait
-       qu'une cote non jouable a cote d'une cote jouable. #}
+  {% endif %}
+
+  {# Deux cas ouvrent le relevé de substitution, et c'est le même : **aucun prix
+     jouable**. Ni cote du tout, ou des cotes qui viennent toutes d'un book de
+     référence — une qualification de coupe d'Europe, que Betclic ne sert pas.
+     L'objection d'origine, « il n'ajouterait qu'une cote non jouable à côté
+     d'une cote jouable », ne tient pas ici : il n'y en a aucune. Le relevé ne
+     touche qu'aux marchés qu'aucune autre source ne sert. #}
+  {% if event.is_empty or event.reference_only %}
     {% if event.apifootball_fixture_id %}
-      <form hx-post="/events/{{ event.event_id }}/odds/apifootball"
+      <form class="substitute" hx-post="/events/{{ event.event_id }}/odds/apifootball"
             hx-target="#event-odds" hx-swap="outerHTML" hx-indicator="#sub-spinner">
         <button type="submit" class="button">Relever des cotes chez un book proche de Betclic</button>
         <span id="sub-spinner" class="htmx-indicator">relevé…</span>
+        {% if event.reference_only %}
+        <span class="muted small">
+          Aucune cote de ce match ne vient du book principal : elles sont toutes de
+          référence. Le relevé complète les marchés qu'aucune source ne sert, il n'en
+          double aucun.
+        </span>
+        {% endif %}
       </form>
     {% else %}
       <p class="muted small">
@@ -56,7 +69,9 @@
         l'enrichissement, ou une résolution manuelle du rapprochement.
       </p>
     {% endif %}
-  {% else %}
+  {% endif %}
+
+  {% if not event.is_empty %}
     <div class="markets">
       {% for block in event.blocks %}
       <section class="market {% if block.unmodelled %}market-raw{% endif %}">

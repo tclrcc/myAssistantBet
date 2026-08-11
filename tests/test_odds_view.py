@@ -133,6 +133,44 @@ def test_un_evenement_non_enrichi_est_signale(migrated: Settings) -> None:
     assert enriched.enriched is True
 
 
+@pytest.mark.parametrize(
+    ("book", "attendu"),
+    [("pinnacle", True), ("betclic_fr", False), ("manual", False)],
+)
+def test_un_bloc_dont_aucun_prix_ne_vient_du_book_principal_le_dit(
+    migrated: Settings, book: str, attendu: bool
+) -> None:
+    """Troisieme etat de la fiche : des cotes, mais aucune jouable. C'est celui
+    d'une qualification de coupe d'Europe, ou Betclic ne sert rien et ou le 1N2
+    vient d'un book de reference. Il ouvre le releve de substitution au meme
+    titre qu'un match sans aucune cote — l'objection d'origine, « il
+    n'ajouterait qu'un prix non jouable a cote d'un prix jouable », ne tient
+    pas quand il n'y a aucun prix jouable.
+
+    La saisie manuelle n'en est pas une : c'est un prix releve a la main chez le
+    book principal, et le substitut ne doit pas venir par-dessus.
+    """
+    event_id = _event(migrated)
+    _odd(migrated, event_id, "h2h", "Moutet", 1.85, bookmaker=book)
+
+    view = odds_view.build(event_id, migrated)
+
+    assert view is not None
+    assert view.is_empty is False
+    assert view.reference_only is attendu
+
+
+def test_un_match_sans_cote_n_est_pas_dit_de_reference(migrated: Settings) -> None:
+    """Les deux etats ouvrent le meme bouton, mais ils ne se confondent pas :
+    l'un n'a rien, l'autre n'a rien de jouable, et la fiche ne dit pas la meme
+    phrase."""
+    view = odds_view.build(_event(migrated), migrated)
+
+    assert view is not None
+    assert view.is_empty is True
+    assert view.reference_only is False
+
+
 def test_une_saisie_manuelle_n_affiche_aucun_horodatage(migrated: Settings) -> None:
     """L'heure d'une saisie est celle de la frappe, pas celle d'un releve."""
     event_id = _event(migrated)
@@ -179,6 +217,45 @@ def test_la_fiche_repond(client: TestClient, isolated_settings: Settings) -> Non
     assert response.status_code == 200
     assert "Moutet – Bergs" in response.text
     assert "1.85" in response.text
+
+
+def test_la_fiche_propose_le_releve_quand_aucun_prix_n_est_jouable(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Le bouton etait garde par « aucune cote » : sur une qualification de coupe
+    d'Europe, trois cotes de reference suffisaient a le faire disparaitre, et
+    dix marches qu'API-Football sert restaient hors de portee."""
+    db.run_migrations(isolated_settings)
+    event_id = _event(isolated_settings)
+    _odd(isolated_settings, event_id, "h2h", "Moutet", 1.85, bookmaker="pinnacle")
+    db.execute(
+        "UPDATE events SET apifootball_fixture_id = 900001 WHERE id = ?",
+        (event_id,),
+        settings=isolated_settings,
+    )
+
+    page = client.get(f"/events/{event_id}").text
+
+    assert "Relever des cotes" in page
+    assert "ne vient du book principal" in page, "le bouton dit pourquoi il est la"
+    assert "1.85" in page, "la cote en place reste affichee"
+
+
+def test_la_fiche_ne_propose_rien_quand_le_book_principal_sert(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Ailleurs, le releve n'ajouterait qu'un prix non jouable a cote d'un prix
+    jouable : c'est la regle d'origine, et elle tient toujours."""
+    db.run_migrations(isolated_settings)
+    event_id = _event(isolated_settings)
+    _odd(isolated_settings, event_id, "h2h", "Moutet", 1.85)
+    db.execute(
+        "UPDATE events SET apifootball_fixture_id = 900001 WHERE id = ?",
+        (event_id,),
+        settings=isolated_settings,
+    )
+
+    assert "Relever des cotes" not in client.get(f"/events/{event_id}").text
 
 
 def test_une_fiche_inconnue_renvoie_404(client: TestClient, isolated_settings: Settings) -> None:

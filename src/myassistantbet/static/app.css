@@ -415,6 +415,17 @@ button.primary:disabled {
 .notice-ok { border-left-color: var(--ok); background: var(--ok-soft); }
 .notice-warn { border-left-color: var(--warn); background: var(--warn-soft); }
 .failures { margin: var(--s2) 0 0; padding-left: var(--s5); color: var(--text-dim); }
+/* Le releve de substitution, propose sur un match dont aucun prix n'est
+   jouable. Sa raison d'etre s'ecrit a cote du bouton et non dessous : c'est
+   elle qui distingue « il n'y a rien » de « il n'y a rien de jouable ». */
+form.substitute {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin-bottom: var(--s4);
+}
+form.substitute .small { max-width: 62ch; }
 .rejected { font-family: var(--mono); font-size: 0.85em; color: var(--warn); }
 
 .alert { color: var(--alert); }
