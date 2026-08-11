@@ -2327,6 +2327,36 @@ fait**, quand les seuils valaient encore 10 et 4, dont un annoncant « confiance
 aujourd'hui a 82 %. Une constante et non un reglage : le garde-fou d'origine
 etait un couple de seuils, et il a cede sans que personne le decide.
 
+## Ce que la specification demandait, et ce que la mesure a impose
+
+**Fait de methode, pas de satisfaction.** Sur trente-quatre points specifies,
+sept ont ete abandonnes ou faits autrement — chacun contre une mesure, jamais
+par commodite. Ce n'est pas un taux d'echec : c'est le rapport ordinaire entre
+ce qu'on croit savoir en ecrivant un cahier des charges et ce que les donnees
+autorisent.
+
+Les trois qui comptent viennent de la **meme faute**, et c'est celle que la page
+commettait sur ses propres donnees — prendre un chiffre pour un fait sans
+regarder ce qu'il compte :
+
+| Specifie | Etabli |
+| --- | --- |
+| une reference a 50 % | erreur de categorie ; le complement est la bonne reference |
+| masquer les colonnes sous 30 % de couverture | colonne **jeune**, pas morte : c'est la fenetre qui manquait |
+| un critere d'acceptation en valeur absolue | faux le jour de la recette ; devient une propriete |
+
+**Et l'inverse merite d'etre note aussi** : les elements aujourd'hui centraux du
+produit ne figuraient dans **aucune** specification. Le residu au prix, le test
+d'equivalence, la garde a l'ecriture et son motif, la fragilite par ligne, le
+compteur de couverture a la saisie — tous sont nes d'une mesure qui a rendu la
+question posee insuffisante.
+
+La consequence pratique : **une specification plus courte, qui prevoit plus de
+place pour ce que la mesure fera apparaitre**, vaut mieux qu'une specification
+exhaustive dont un cinquieme sera renverse. Et une exigence remplacee en cours
+de route par une autre qui la recouvre partiellement disparait sans laisser de
+trace — B1 a survecu neuf lots ainsi.
+
 ## Toute lecture se fait sur une copie de la base
 
 **Aucune verification, aucun rendu, aucune execution qui demarre l'application
