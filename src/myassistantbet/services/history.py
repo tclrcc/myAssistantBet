@@ -29,6 +29,7 @@ from .inference import (
     benjamini_hochberg,
     clustered_p_value,
     evidence,
+    jaccard,
     omnibus,
     required_sample,
     two_proportions,
@@ -365,11 +366,23 @@ ANALYSIS_MIN_DAYS = FEEDBACK_MIN_DAYS
 
 # -- Ce que vaut l'analyse --------------------------------------------------
 
-#: Part de recouvrement au-dela de laquelle deux regroupements de deux axes
-#: differents decrivent le meme echantillon sous deux noms. Elle se mesure
-#: **des deux cotes** : un sous-ensemble entierement contenu dans un autre n'est
-#: pas le meme echantillon, c'est une partie de celui-ci.
-COLLINEAR_SHARE = 0.95
+#: Indice de Jaccard au-dela duquel deux regroupements de deux axes differents
+#: decrivent **le meme echantillon sous deux noms**.
+#:
+#: Le Jaccard remplace une double inclusion — « partage plus de 95 % de chaque
+#: cote » — qui disait la meme chose en deux conditions. Une seule grandeur,
+#: symetrique par construction, et comparable d'une paire a l'autre.
+COLLINEAR_SHARE = 0.90
+
+#: En dessous du seuil fort, la borne d'un recouvrement **partiel**.
+#:
+#: **Il se compte, il ne s'enumere pas.** Trente avertissements de recouvrement
+#: faible reproduiraient sous un autre nom le defaut que cette page a mis huit
+#: lots a corriger : des signalements qui n'affirment rien, en nombre tel que
+#: plus personne ne les lit. Ce qui se dit tient en deux faits — un
+#: recouvrement total, et une association entre les deux etiquetages — et le
+#: reste vit dans la matrice, sous le pli.
+PARTIAL_SHARE = 0.60
 
 #: Part du volume au-dela de laquelle une echelle se comporte comme si elle
 #: comptait moins de niveaux qu'elle n'en a. Mesure qui l'a fixee : 95 des 96
@@ -2051,6 +2064,14 @@ class Analysis:
     #: compter ces lignes elle-meme ; les deux colonnes etant en base, le compte
     #: se fait ici — et se mesure enfin dans le temps.
     conflicts: Conflict = field(default_factory=lambda: Conflict())
+    #: Paires de regroupements qui se recouvrent **partiellement**. Comptees,
+    #: jamais enumerees : trente avertissements faibles reproduiraient le defaut
+    #: que cette page a mis huit lots a corriger. Le detail vit dans la matrice.
+    partial_overlaps: int = 0
+    #: La matrice de recouvrement inter-axes, pour le depliant.
+    overlap_matrix: list[tuple[str, str, list[tuple[str, str, float]]]] = field(
+        default_factory=list
+    )
     #: Horodatage de la lecture. **Une analyse est datee**, et ce n'est pas une
     #: precaution de style : l'axe « niveau de competition » est passe de
     #: p = 0,0443 a p = 0,0195 sur **six resultats saisis**, la base etant servie
@@ -2366,6 +2387,8 @@ class Overlap:
     right_axis: str
     right_label: str
     shared: int
+    #: Indice de Jaccard, garde pour que la note dise **a quel point**.
+    share: float = 1.0
 
     @property
     def note(self) -> str:
@@ -2408,45 +2431,67 @@ def _with_complements(axes: tuple[list[RateRow], ...]) -> None:
             row.axis_survives = value <= seuil
 
 
-def _overlaps(axes: list[tuple[str, list[RateRow]]]) -> list[Overlap]:
+def _overlaps(axes: list[tuple[str, list[RateRow]]]) -> tuple[list[Overlap], int]:
     """Regroupements de deux axes distincts qui decrivent le meme echantillon.
 
     Compare des **ensembles d'identifiants** et non des comptes : deux
     regroupements de 37 lignes chacun peuvent n'avoir aucune selection commune,
-    et un taux identique de part et d'autre serait alors une coincidence, pas
-    une redondance.
+    et un taux identique de part et d'autre serait alors une coincidence.
 
-    Le seuil de lecture de la page s'applique ici aussi : deux regroupements
-    d'une seule selection partagee se recouvrent a 100 % sans rien dire.
+    Rend les recouvrements **forts**, qui se nomment, et le **compte** des
+    partiels, qui ne se nomment pas : trente avertissements faibles
+    reproduiraient le defaut que cette page a mis huit lots a corriger. Le
+    detail vit dans la matrice, sous le pli.
+
+    Le seuil de lecture s'applique ici aussi : deux regroupements d'une seule
+    selection partagee se recouvrent a 100 % sans rien dire.
     """
     found: list[Overlap] = []
+    partial = 0
     for index, (left_axis, left_rows) in enumerate(axes):
         for right_axis, right_rows in axes[index + 1 :]:
             for left in left_rows:
                 for right in right_rows:
-                    if len(left.members) < ANALYSIS_MIN_ROWS:
+                    if min(len(left.members), len(right.members)) < ANALYSIS_MIN_ROWS:
                         continue
-                    if len(right.members) < ANALYSIS_MIN_ROWS:
-                        continue
-                    # Le recouvrement doit **depasser** le seuil, pas l'atteindre :
-                    # 19 selections communes sur 20 font exactement 95 % et
-                    # laissent une ligne de difference de chaque cote, ce qui
-                    # suffit a en faire deux echantillons distincts.
-                    shared = len(left.members & right.members)
-                    if shared <= COLLINEAR_SHARE * len(left.members):
-                        continue
-                    if shared <= COLLINEAR_SHARE * len(right.members):
-                        continue
-                    found.append(
-                        Overlap(
-                            left_axis=left_axis,
-                            left_label=left.label,
-                            right_axis=right_axis,
-                            right_label=right.label,
-                            shared=shared,
+                    share = jaccard(left.members, right.members)
+                    if share >= COLLINEAR_SHARE:
+                        found.append(
+                            Overlap(
+                                left_axis=left_axis,
+                                left_label=left.label,
+                                right_axis=right_axis,
+                                right_label=right.label,
+                                shared=len(left.members & right.members),
+                                share=share,
+                            )
                         )
-                    )
-    return found
+                    elif share >= PARTIAL_SHARE:
+                        partial += 1
+    return found, partial
+
+
+def overlap_matrix(
+    axes: list[tuple[str, list[RateRow]]],
+) -> list[tuple[str, str, list[tuple[str, str, float]]]]:
+    """La matrice de recouvrement inter-axes, pour le depliant.
+
+    Chaque paire d'axes rend ses couples de lignes et leur Jaccard. C'est le
+    detail que le compte des partiels resume : il existe pour qui veut verifier,
+    il ne se lit pas de haut en bas.
+    """
+    matrix = []
+    for index, (left_axis, left_rows) in enumerate(axes):
+        for right_axis, right_rows in axes[index + 1 :]:
+            cells = [
+                (left.label, right.label, jaccard(left.members, right.members))
+                for left in left_rows
+                for right in right_rows
+                if min(len(left.members), len(right.members)) >= ANALYSIS_MIN_ROWS
+            ]
+            if any(share >= PARTIAL_SHARE for _, _, share in cells):
+                matrix.append((left_axis, right_axis, sorted(cells, key=lambda c: -c[2])))
+    return matrix
 
 
 @dataclass
@@ -3033,20 +3078,20 @@ def analysis(settings: Settings | None = None) -> Analysis:
     # Le palier n'entre pas dans la comparaison : il est defini par des tranches
     # de cote, donc correle par construction a tout ce qui depend du prix. Le
     # signaler comme une redondance decouverte serait annoncer sa definition.
-    report.overlaps = _overlaps(
-        [
-            ("confidence", report.by_confidence),
-            ("sport", report.by_sport),
-            ("category", report.by_category),
-            ("market", report.by_market),
-            # Le « pourquoi » entre dans le detecteur comme les autres, et il en
-            # a besoin plus qu'eux : un lot ou toutes les manieres se traduisent
-            # en totaux ferait de « Manière » et « O/U » deux noms du meme
-            # echantillon, et la page les presenterait comme deux constats.
-            ("angle", report.by_angle),
-            ("source", report.by_source),
-        ]
-    )
+    axes_compares = [
+        ("confidence", report.by_confidence),
+        ("sport", report.by_sport),
+        ("category", report.by_category),
+        ("market", report.by_market),
+        # Le « pourquoi » entre dans le detecteur comme les autres, et il en
+        # a besoin plus qu'eux : un lot ou toutes les manieres se traduisent
+        # en totaux ferait de « Manière » et « O/U » deux noms du meme
+        # echantillon, et la page les presenterait comme deux constats.
+        ("angle", report.by_angle),
+        ("source", report.by_source),
+    ]
+    report.overlaps, report.partial_overlaps = _overlaps(axes_compares)
+    report.overlap_matrix = overlap_matrix(axes_compares)
 
     # Le conflit entre l'angle declare et le marche rendu. Calcule a la lecture
     # comme la famille elle-meme : reclasser un marche reclasse tout

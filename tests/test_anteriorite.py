@@ -25,8 +25,11 @@ from myassistantbet.services.history import (
     LATE_REASONS,
     HistoryError,
     Horizon,
+    RateRow,
+    _overlaps,
     add_pick,
     analysis,
+    overlap_matrix,
     set_result,
     worksheet,
 )
@@ -726,9 +729,56 @@ def test_le_cout_du_cadre_se_lit_par_match_et_porte_son_regime(
     page = client.get("/stats").text
 
     assert ligne.tokens_per_match and ligne.tokens_per_match > 0
-    assert "Prompt / match" in page
+    # Les deux colonnes : le total et le rapporte au lot. Sans le premier, on ne
+    # sait pas si le cadre s'est alourdi ou si le lot a retreci — et depuis la
+    # garde d'anteriorite, le lot retrecira mecaniquement.
+    assert ">/match<" in page.replace(" ", "")
+    assert ligne.tokens > 0
     assert "Sél./match" in page
     # Le regime est dit sur la ligne : sans lui, une serie de poids melangerait
     # le bloc de retour d'experience servi, sa suspension et la garde.
     assert not ligne.feedback_active, "aucun prompt de ce lot n'a transmis de taux"
     assert "où le régime change" in page
+
+
+# -- La redondance, generalisee mais pas bavarde -----------------------------
+
+
+def _axe_de(nom: str, membres: object) -> tuple[str, list[RateRow]]:
+    """Un axe d'une seule ligne, portant ces selections."""
+    ligne = RateRow(key=nom, label=nom, won=1, lost=1)
+    ligne.members = set(membres)
+    return (nom, [ligne])
+
+
+def test_un_recouvrement_fort_se_nomme(migrated: Settings) -> None:
+    """Deux axes qui portent les memes selections : le second n'ajoute aucune
+    observation au premier."""
+    trouves, _ = _overlaps([_axe_de("sport", range(20)), _axe_de("niveau", range(20))])
+
+    assert len(trouves) == 1
+    assert trouves[0].share == 1.0
+    assert "décrivent les mêmes 20 sélections" in trouves[0].note
+
+
+def test_les_partiels_se_comptent_et_ne_s_enumerent_pas(migrated: Settings) -> None:
+    """**Deux faits, pas trente signalements.** Trente avertissements de
+    recouvrement faible reproduiraient sous un autre nom le defaut que cette
+    page a mis huit lots a corriger : des lignes qui n'affirment rien, en nombre
+    tel que plus personne ne les lit."""
+    trouves, partiels = _overlaps([_axe_de("sport", range(20)), _axe_de("niveau", range(5, 25))])
+
+    assert trouves == [], "0,60 <= J < 0,90 ne se nomme pas"
+    assert partiels == 1
+
+
+def test_la_matrice_ne_garde_que_les_paires_qui_disent_quelque_chose(
+    migrated: Settings,
+) -> None:
+    """Elle existe pour qui veut verifier, elle ne se lit pas de haut en bas :
+    une paire sans le moindre recouvrement n'y figure pas."""
+    disjointe = overlap_matrix([_axe_de("sport", range(20)), _axe_de("niveau", range(20, 40))])
+    proche = overlap_matrix([_axe_de("sport", range(20)), _axe_de("niveau", range(20))])
+
+    assert disjointe == []
+    assert len(proche) == 1

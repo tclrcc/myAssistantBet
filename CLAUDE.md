@@ -2204,6 +2204,30 @@ C'est aussi ce qui les distingue de `price_real` : la cote obtenue n'a **aucun**
 point de capture automatique, et sa couverture ne montera que par un geste. Une
 colonne qu'aucun geste ne remplit est morte ; celle-ci ne l'est pas.
 
+### La redondance : deux faits, pas trente signalements
+
+Le detecteur compare des **ensembles d'identifiants** et non des comptes — deux
+regroupements de 37 lignes peuvent n'avoir aucune selection commune. Ce qui a
+change est la grandeur et la sortie.
+
+- **L'indice de Jaccard remplace une double inclusion.** « Partage plus de 95 %
+  de chaque cote » disait la meme chose en deux conditions ; une seule grandeur,
+  symetrique par construction, se compare d'une paire a l'autre.
+  - **Le seuil change de nature au passage, et c'est assume** : 19 selections
+    communes sur 20 et 20 font `19/21 = 0,90`, donc un recouvrement fort, la ou
+    l'ancienne regle jugeait qu'une ligne de difference de chaque cote suffisait
+    a distinguer deux echantillons. Le test le dit.
+- **Un recouvrement fort se nomme, un partiel se compte.** Entre 0,60 et 0,90 la
+  paire n'est pas enumerée : **trente avertissements faibles reproduiraient sous
+  un autre nom le defaut que cette page a mis huit lots a corriger** — des
+  lignes qui n'affirment rien, en nombre tel que plus personne ne les lit.
+- **La matrice existe pour qui veut verifier, pas pour se lire de haut en bas.**
+  Sous le pli, et seulement les paires d'axes ou quelque chose se recouvre : une
+  paire disjointe n'y figure pas.
+- Ce que la page dit aujourd'hui tient donc en deux faits : `Tennis` et
+  `Masters 1000` portent **les memes 33 selections** (J = 1,00), et deux autres
+  paires se recouvrent partiellement, sans etre nommees.
+
 ### La portee d'affichage du residu
 
 **Au niveau de la population, en chiffre de tete. Pas en colonne sur trente

@@ -1464,7 +1464,7 @@ def _axe(nom: str, *lots: list[int]) -> tuple[str, list]:
 def test_deux_ensembles_identiques_sont_signales() -> None:
     memes = list(range(20))
 
-    trouves = _overlaps([_axe("sport", memes), _axe("niveau", memes)])
+    trouves, partiels = _overlaps([_axe("sport", memes), _axe("niveau", memes)])
 
     assert len(trouves) == 1
     assert trouves[0].shared == 20
@@ -1472,7 +1472,9 @@ def test_deux_ensembles_identiques_sont_signales() -> None:
 
 
 def test_deux_ensembles_disjoints_ne_le_sont_pas() -> None:
-    trouves = _overlaps([_axe("sport", list(range(20))), _axe("niveau", list(range(20, 40)))])
+    trouves, partiels = _overlaps(
+        [_axe("sport", list(range(20))), _axe("niveau", list(range(20, 40)))]
+    )
 
     assert trouves == []
 
@@ -1481,23 +1483,39 @@ def test_un_sous_ensemble_n_est_pas_le_meme_echantillon() -> None:
     """Le recouvrement se mesure **des deux cotes** : vingt selections toutes
     contenues dans quarante ne decrivent pas le meme echantillon, elles en
     decrivent une moitie."""
-    trouves = _overlaps([_axe("sport", list(range(40))), _axe("niveau", list(range(20)))])
+    trouves, partiels = _overlaps([_axe("sport", list(range(40))), _axe("niveau", list(range(20)))])
 
     assert trouves == []
 
 
-def test_un_recouvrement_partiel_reste_sous_le_seuil() -> None:
-    trouves = _overlaps([_axe("sport", list(range(20))), _axe("niveau", list(range(1, 21)))])
+def test_un_recouvrement_partiel_se_compte_sans_se_nommer() -> None:
+    """**Le seuil a change de nature en passant au Jaccard, et c'est delibere.**
 
-    assert trouves == [], "19 communes sur 20 font 95 %, il en faut plus"
+    L'ancienne regle exigeait 95 % de part et d'autre, et jugeait qu'une ligne
+    de difference de chaque cote suffisait a faire deux echantillons distincts.
+    Le Jaccard mesure la meme chose en une grandeur symetrique : 19 communes sur
+    20 et 20 font `19/21 = 0,90`, donc un recouvrement fort.
+
+    Ce qui compte ici est ailleurs : entre 0,60 et 0,90, une paire est
+    **comptee** et jamais nommee. Trente avertissements faibles reproduiraient
+    le defaut que cette page a mis huit lots a corriger.
+    """
+    fort, _ = _overlaps([_axe("sport", list(range(20))), _axe("niveau", list(range(1, 21)))])
+    faible, partiels = _overlaps(
+        [_axe("sport", list(range(20))), _axe("niveau", list(range(6, 26)))]
+    )
+
+    assert len(fort) == 1, "19 communes sur 21 unies font 0,90"
+    assert faible == [], "14 sur 26 font 0,54 : sous le seuil partiel"
+    assert partiels == 0
 
 
 def test_deux_lignes_trop_courtes_ne_sont_pas_comparees() -> None:
     """Deux regroupements d'une selection partagee se recouvrent a 100 % sans
     rien dire : le seuil de lecture de la page vaut aussi ici."""
-    trouves = _overlaps([_axe("sport", [1, 2]), _axe("niveau", [1, 2])])
+    trouves, partiels = _overlaps([_axe("sport", [1, 2]), _axe("niveau", [1, 2])])
 
-    assert trouves == []
+    assert (trouves, partiels) == ([], 0)
 
 
 def test_deux_lignes_du_meme_axe_ne_se_comparent_jamais(migrated: Settings) -> None:
@@ -1505,7 +1523,7 @@ def test_deux_lignes_du_meme_axe_ne_se_comparent_jamais(migrated: Settings) -> N
     construction, les comparer entre elles ne peut rien produire."""
     axe = _axe("sport", list(range(20)), list(range(20)))
 
-    assert _overlaps([axe]) == []
+    assert _overlaps([axe]) == ([], 0)
 
 
 def test_le_tennis_et_son_niveau_de_tournoi_sont_signales(migrated: Settings) -> None:

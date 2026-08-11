@@ -224,15 +224,58 @@
        lignes que le lecteur ne voyait pas. Il n'est pas masqué pour autant —
        lequel des deux axes est le bon ne se déduit d'aucune donnée, et choisir à
        la place du lecteur serait pire que le lui dire. #}
-    {% if analysis.overlaps %}
-    <p class="chart-note is-flag">
+    {% if analysis.overlaps or analysis.partial_overlaps %}
+    <p class="chart-note{% if analysis.overlaps %} is-flag{% endif %}">
       {% for overlap in analysis.overlaps %}
       <strong>{{ overlap.note }}.</strong>
       {% endfor %}
+      {%- if analysis.overlaps %}
       Les deux regroupements comptent les mêmes paris : le second n'ajoute donc
       aucune observation au premier, et lire leurs taux comme deux constats
       reviendrait à compter deux fois la même chose.
+      {%- endif %}
+      {#- **Les recouvrements partiels se comptent, ils ne se nomment pas.**
+          Trente avertissements faibles reproduiraient sous un autre nom le
+          défaut que cette page a mis huit lots à corriger : des signalements qui
+          n'affirment rien, en nombre tel que plus personne ne les lit. Le détail
+          est dans la matrice, pour qui veut vérifier. -#}
+      {%- if analysis.partial_overlaps %}
+      {{ analysis.partial_overlaps }} autre(s) paire(s) se recouvrent partiellement
+      — voir la matrice ci-dessous.
+      {%- endif %}
     </p>
+    {% endif %}
+
+    {% if analysis.overlap_matrix %}
+    <details class="panel chart-detail">
+      <summary>
+        La matrice de recouvrement
+        <span class="muted small">indice de Jaccard entre lignes de deux axes</span>
+      </summary>
+      {% for gauche, droite, cellules in analysis.overlap_matrix %}
+      <table class="board compact">
+        <thead>
+          <tr><th>{{ gauche }}</th><th>{{ droite }}</th><th class="num">Jaccard</th></tr>
+        </thead>
+        <tbody>
+          {% for gl, dl, part in cellules %}
+          <tr>
+            <td class="muted">{{ gl }}</td>
+            <td class="muted">{{ dl }}</td>
+            <td class="num">{{ '%.2f'|format(part) | replace('.', ',') }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% endfor %}
+      <p class="block-note">
+        Un indice de 1,00 dit que les deux regroupements portent exactement les
+        mêmes sélections ; 0,00 qu'ils n'en partagent aucune. Seules les paires
+        dont les deux côtés atteignent le seuil de lecture sont comparées — deux
+        regroupements d'une seule sélection partagée se recouvrent à 100 % sans
+        rien dire.
+      </p>
+    </details>
     {% endif %}
 
     {% if analysis.horizons %}
@@ -709,7 +752,14 @@
              régime** : le bloc de retour d'expérience a été servi sur trois
              sessions puis suspendu, et la garde d'antériorité ne vaut que pour
              ce qui vient après elle. Une série qui les mélange ne dit rien. #}
-          <th class="num">Prompt / match</th>
+          {# **Les deux, et c'est la seule facon de savoir lequel bouge.** Le
+             coût par match est la bonne unité, mais il devient instable quand le
+             lot est petit : le pic du 10/08 est un effet de dénominateur — neuf
+             matchs — plus qu'une inflation du cadre. Et depuis la garde
+             d'antériorité, le lot va rétrécir mécaniquement : le coût par match
+             montera sans qu'aucun prompt ne grossisse. #}
+          <th class="num">Prompt</th>
+          <th class="num">/ match</th>
         </tr>
       </thead>
       <tbody>
@@ -740,6 +790,7 @@
           <td class="num">
             {%- if row.density %}{{ '%.1f'|format(row.density) }}{% else %}—{% endif %}
           </td>
+          <td class="num">{{ row.tokens or '—' }}</td>
           <td class="num">{{ row.tokens_per_match or '—' }}</td>
         </tr>
         {% endfor %}
