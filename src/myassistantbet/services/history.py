@@ -1623,6 +1623,24 @@ def delete_pick(pick_id: int, settings: Settings | None = None) -> None:
 # -- Statistiques -----------------------------------------------------------
 
 
+def _late(row: Any) -> bool:
+    """La selection est **demontrablement** posterieure au coup d'envoi.
+
+    Le pendant exact de `_antecedence`, et le filtre porte sur celui-ci — pas
+    sur la negation de l'autre. La difference tient aux selections **sans
+    match** : leur anteriorite n'est pas etablie, mais leur retard ne l'est pas
+    davantage, faute de coup d'envoi contre quoi les dater.
+
+    **C'est la meme regle d'un seul sens que partout ici** : la base peut
+    prouver l'anteriorite quand elle voit les deux heures, et le retard dans le
+    meme cas ; elle ne peut rien prouver quand il en manque une. On n'ecarte
+    donc que ce qui est demontre, et une selection sans match reste comptee —
+    son propre manque est deja declare par les compteurs de non-classees.
+    """
+    commence = _column(row, "commence_time")
+    return bool(commence) and str(row["created_at"]) >= str(commence)
+
+
 def _antecedence(row: Any) -> bool:
     """La selection a-t-elle ete enregistree avant le coup d'envoi.
 
@@ -1865,14 +1883,24 @@ class Horizon:
 
     @property
     def reachable(self) -> bool:
-        """La question se ferme-t-elle dans un horizon qui a un sens.
-
-        Au-dela, la reponse **est** que l'axe ne se departagera pas : le cout
-        d'attendre n'etant pas nul — chaque session paie du poids de prompt et
-        de l'attention de saisie — une question a soixante-douze sessions est
-        une question tranchee par la negative.
-        """
+        """La question se ferme-t-elle dans un horizon qui a un sens."""
         return 0 < self.sessions <= HORIZON_MAX_SESSIONS
+
+    @property
+    def undetectable(self) -> bool:
+        """L'ecart, s'il existe, est trop petit pour etre vu.
+
+        **Ce n'est pas « on ne saura jamais », et la nuance decide de l'usage.**
+        Un besoin de ~378 selections par ligne ne dit pas que la question restera
+        ouverte : il dit qu'aucun ecart assez gros pour compter n'existe. Ecrire
+        « hors d'atteinte » ferait lire un constat de futilite la ou il y a un
+        **argument pour agir** — un ecart trop petit pour etre mesure en
+        soixante-quinze sessions est un ecart trop petit pour justifier le cout
+        de saisie et le poids de prompt d'un second axe.
+
+        Une question tranchee par l'absence d'effet est une question tranchee.
+        """
+        return self.sessions > HORIZON_MAX_SESSIONS
 
 
 #: Au-dela de ce nombre de sessions, une question n'attend plus : elle est
@@ -2033,6 +2061,10 @@ class Analysis:
     #: Selections tranchees sans cote enregistree — elles sortent des deux
     #: residus et de ceux-la seulement.
     unpriced: int = 0
+    #: Selections tranchees **ecartees de toute la page** faute d'anteriorite
+    #: etablie. Comptees et annoncees : une page qui perd un tiers de son volume
+    #: sans le dire est pire que celle qui le melangeait.
+    without_antecedence: int = 0
     #: `(reussites, tranchees)` des deux paliers les plus employes **a l'interieur
     #: du niveau de confiance le plus fourni**. C'est l'ecart **residuel** entre
     #: les deux echelles, celui qui dit si la seconde ajoute quelque chose — bien
@@ -2045,8 +2077,24 @@ class Analysis:
 
     @property
     def carried_rows(self) -> list[RateRow]:
-        """Les lignes que la page **porte**. Toutes les autres sont repliees."""
-        return [row for rows in self.groups for row in rows if row.carried]
+        """Les lignes que la page **porte**. Toutes les autres sont repliees.
+
+        **Un axe a deux niveaux ne porte qu'une ligne.** « conf 4 contre le
+        reste » et « conf 3 contre le reste » y sont litteralement le meme test —
+        memes donnees retournees, meme p-valeur — et les afficher tous deux
+        presenterait un contraste comme deux decouvertes. C'est la meme regle
+        que l'omnibus, poussee jusqu'a l'affichage : un axe est une partition.
+        """
+        portees: list[RateRow] = []
+        for rows in self.groups:
+            retenues = [row for row in rows if row.carried]
+            peuplees = [row for row in rows if row.settled]
+            if len(retenues) == 2 and len(peuplees) == 2:
+                # Le mieux classe en premier : l'ecart se lit alors dans le sens
+                # ou la phrase le raconte.
+                retenues = [max(retenues, key=lambda row: row.rate or 0.0)]
+            portees.extend(retenues)
+        return portees
 
     @property
     def folded_rows(self) -> int:
@@ -2119,8 +2167,13 @@ class Analysis:
 
     @property
     def consistent(self) -> bool:
-        """Tout ce qui est tranche en base est compte ici, et dans chaque axe."""
-        return self.settled == self.recorded and not self.gaps
+        """Tout ce qui est tranche en base est compte ou **declare** ici.
+
+        Le temoin reste le compte brut ; les selections ecartees faute
+        d'anteriorite s'y ajoutent explicitement. Une page qui perd un tiers de
+        son volume doit le faire retomber juste, pas le faire disparaitre.
+        """
+        return self.settled + self.without_antecedence == self.recorded and not self.gaps
 
     @property
     def comparable(self) -> bool:
@@ -2775,7 +2828,28 @@ def analysis(settings: Settings | None = None) -> Analysis:
     report.minimum, report.minimum_days = reach(settings)
     report.minimum_rows = threshold_value("feedback_min_rows", settings)
     report.recorded = int(recorded)
+    # **Le taux de selection garde toutes les selections, et lui seul.** Il ne
+    # mesure pas ce que vaut une etiquette mais ce qui a ete retenu du lot : un
+    # match passe ou pris l'a ete quel que soit le moment ou sa ligne a ete
+    # saisie. Le filtre ci-dessous ne s'y applique donc pas.
     report.by_session = _by_session(sessions, rows, lots(settings), sport_labels, settings.tz)
+
+    # LE FILTRE D'ANTERIORITE, applique **une seule fois et pour tout le reste**.
+    #
+    # Il ne protege pas seulement le prix : une selection saisie apres le coup
+    # d'envoi porte une **etiquette** saisie apres le coup d'envoi, et rien ne
+    # garantit qu'un « SAFE » ecrit a 22 h sur un match commence a 21 h ait ete
+    # pense avant. C'est ce que la strate montre — l'echelle s'y **inverse** sur
+    # les deux axes, et une echelle qui s'inverse n'est pas bruitee, elle decrit
+    # au lieu de predire.
+    #
+    # Les compter reviendrait a mesurer la valeur predictive d'etiquettes dont
+    # on a etabli qu'elles ne predisent pas. Et le melange **detruit du
+    # signal** : sur 110 selections, la correction entre axes n'en retient
+    # qu'un ; sur les 73 filtrees, elle en retenait trois.
+    tardifs = [row for row in rows if _late(row)]
+    rows = [row for row in rows if not _late(row)]
+    report.without_antecedence = sum(1 for row in tardifs if str(row["result"]) in ("win", "loss"))
     if not rows:
         return report
 
@@ -2981,25 +3055,24 @@ def analysis(settings: Settings | None = None) -> Analysis:
     # -9,31 sur les autres. Un prix qui colle a ce point au resultat est un prix
     # releve en le connaissant, et c'est ce qui justifie l'exclusion plutot que
     # la simple precaution.
-    etabli: list[float] = []
-    tardif: list[float] = []
-    gagnees_etabli = gagnees_tardif = 0
-    for row in rows:
-        if str(row["result"]) not in ("win", "loss"):
-            continue
-        price = _column(row, "price")
-        if not price or price <= 1.0:
-            report.unpriced += 1
-            continue
-        cible, gagne = (etabli, 1) if _antecedence(row) else (tardif, 1)
-        cible.append(1.0 / float(price))
-        if str(row["result"]) == "win":
-            if _antecedence(row):
-                gagnees_etabli += gagne
-            else:
-                gagnees_tardif += gagne
-    report.residual = Residual(observed=gagnees_etabli, implied=etabli)
-    report.residual_late = Residual(observed=gagnees_tardif, implied=tardif)
+    def _releve(lignes: list[Any]) -> tuple[int, list[float]]:
+        """Victoires observees et `1/cote` d'une population deja separee."""
+        gagnees, implicites = 0, []
+        for ligne in lignes:
+            if str(ligne["result"]) not in ("win", "loss"):
+                continue
+            price = _column(ligne, "price")
+            if not price or price <= 1.0:
+                report.unpriced += 1
+                continue
+            implicites.append(1.0 / float(price))
+            gagnees += str(ligne["result"]) == "win"
+        return gagnees, implicites
+
+    gagnees, implicites = _releve(rows)
+    report.residual = Residual(observed=gagnees, implied=implicites)
+    gagnees, implicites = _releve(tardifs)
+    report.residual_late = Residual(observed=gagnees, implied=implicites)
 
     # Le croisement palier x confiance, pour l'ecart residuel entre les deux
     # echelles. Calcule ici parce que c'est le seul endroit qui voit les lignes
@@ -3040,7 +3113,10 @@ def _audit(report: Analysis, tally: list[RateRow]) -> list[AxisGap]:
     affichees : la carte en ecarte volontairement les marches vus une seule
     fois, et les compter comme perdus ferait crier a la panne sur une regle.
     """
-    total = report.recorded
+    # Le temoin reste le compte brut ; ce sont les selections **ecartees faute
+    # d'anteriorite** qui font la difference, et elles sont declarees comme
+    # toutes les autres exclusions de cette page.
+    total = report.recorded - report.without_antecedence
     axes = [
         (
             "Palier",

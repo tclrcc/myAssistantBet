@@ -187,8 +187,28 @@
         {%- else %}
         aucune des {{ analysis.folded_rows }} lignes ne s'écarte de sa référence
         {%- endif %}
+        {#- Une page qui perd un tiers de son volume sans le dire est pire que
+            celle qui le mélangeait. Le compte des écartées se lit **dans**
+            l'en-tête, à côté de ce qu'il reste. -#}
+        {%- if analysis.without_antecedence %} ·
+        {{ analysis.without_antecedence }} sélection(s) écartée(s)
+        {%- endif %}
       </span>
     </summary>
+
+    {#- Le filtre, dit une fois et en clair. Une sélection saisie après le coup
+        d'envoi porte une **étiquette** saisie après le coup d'envoi : rien ne
+        garantit qu'un « SAFE » écrit à 22 h sur un match commencé à 21 h ait été
+        pensé avant. Sur cette strate l'échelle s'inverse — sur les deux axes — et
+        une échelle qui s'inverse ne prédit pas, elle décrit. -#}
+    {% if analysis.without_antecedence %}
+    <p class="chart-note">
+      <strong>{{ analysis.without_antecedence }} sélection(s) tranchée(s) sont
+      écartées de tout ce bloc</strong> : leur antériorité n'est pas établie, donc
+      leur étiquette non plus. Les compter reviendrait à mesurer la valeur
+      prédictive d'étiquettes dont rien ne dit qu'elles précèdent le résultat.
+    </p>
+    {% endif %}
 
     {% if analysis.horizons %}
     <div class="horizons">
@@ -203,8 +223,9 @@
           <strong>{{ horizon.question | capitalize }}</strong> —
           {{ horizon.have }} sélections sur les ~{{ horizon.need }} nécessaires
           {%- if horizon.reachable %}, soit environ {{ horizon.sessions }} session(s)
-          {%- elif horizon.missing %} : <strong>hors d'atteinte</strong>
-          ({{ horizon.sessions }} sessions au rythme actuel)
+          {%- elif horizon.undetectable %} — autrement dit
+          <strong>aucun écart détectable</strong> : il en faudrait autant pour voir
+          un écart aussi petit, et un écart aussi petit ne justifie pas son coût
           {%- else %}, atteint{% endif %}.
           <i class="muted small">{{ horizon.detail }}</i>
         </li>

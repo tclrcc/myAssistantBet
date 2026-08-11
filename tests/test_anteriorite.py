@@ -198,7 +198,8 @@ def test_les_deux_populations_ne_se_melangent_jamais(migrated: Settings) -> None
 
     assert (report.residual.settled, report.residual.observed) == (4, 0)
     assert (report.residual_late.settled, report.residual_late.observed) == (4, 4)
-    assert report.residual.settled + report.residual_late.settled == report.settled
+    assert report.settled == 4, "seules les selections decrites par la page"
+    assert report.without_antecedence == 4
 
 
 def test_une_selection_sans_cote_sort_des_deux_residus(migrated: Settings) -> None:
@@ -214,6 +215,8 @@ def test_une_selection_sans_cote_sort_des_deux_residus(migrated: Settings) -> No
 
     assert report.unpriced == 1
     assert report.residual.settled == 1
+    # La selection sans match reste comptee : son retard n'est pas demontre,
+    # faute de coup d'envoi contre quoi la dater.
     assert report.settled == 2
 
 

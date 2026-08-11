@@ -2113,6 +2113,28 @@ qui font la regle :
 - **C'est ce qui rend `as_of` honnete plutot que decoratif.** Une lecture faite
   sur une copie datee porte vraiment la date qu'elle affiche.
 
+## Une valeur nulle ou extreme est un resultat, pas une absence de resultat
+
+**Trois occurrences en cinq lots : c'est un motif, pas une serie d'accidents.**
+Toute garde qui confond un etat limite avec un manque doit etre testee **sur ce
+cas limite**, et pas seulement sur le cas ordinaire.
+
+- `required_sample` rend **0** sur un ecart total — aucun volume supplementaire
+  n'est requis, la question est deja tranchee. `if besoin:` le lisait « pas de
+  question », et l'horizon disparaissait **au moment precis ou il conclut**.
+  Attrape par une fixture trop parfaite, qui rendait l'axe parfaitement separe.
+- `Feedback.suspended` en propriete lisait la constante **a l'acces** : deux
+  releves du meme lot devenaient indiscernables des qu'elle changeait entre les
+  deux, et la suspension etait intestable. Voir la section suivante.
+- `_upper_gamma` a **chi2 nul** prenait le logarithme de zero. Le cas ne se
+  produit que sur un axe parfaitement homogene, c'est-a-dire exactement quand le
+  test doit repondre « rien ne separe ».
+
+Le symptome commun : **rien ne casse**. La valeur limite se lit comme une
+absence, la ligne disparait, et l'interface a l'air normale. C'est la forme la
+plus couteuse qu'un defaut puisse prendre sur cette page, puisqu'elle se
+confond avec le message qu'elle est censee porter.
+
 ## Un seuil descend dans l'objet, il ne va pas se chercher lui-meme
 
 Regle generale, apprise trois fois — sur `RateRow.minimum`, sur le seuil

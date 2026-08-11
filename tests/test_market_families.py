@@ -37,7 +37,7 @@ def _session(settings: Settings) -> tuple[int, int]:
             "Amical",
             "Lyon",
             "Nice",
-            "2026-08-04",
+            "2099-01-01",
             "20:45",
             "Lyon 2.10",
             "",

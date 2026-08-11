@@ -61,14 +61,20 @@ def client(isolated_settings: Settings) -> Iterator[TestClient]:
 
 
 def _session_avec_match(settings: Settings, sport: str = "football") -> tuple[int, int]:
-    """Cree un evenement manuel et le coche. Renvoie (session_id, event_id)."""
+    """Cree un evenement manuel et le coche. Renvoie (session_id, event_id).
+
+    **L'horaire est loin devant**, et ce n'est pas cosmetique : une selection
+    saisie sur un match deja joue n'a pas d'anteriorite etablie, donc sort de
+    tous les regroupements. La fixture d'origine datait ses matchs de la veille
+    et decrivait donc une saisie que la page ecarte desormais.
+    """
     event_id = save(
         build(
             sport,
             "Amical",
             "Lyon" if sport == "football" else "Moutet",
             "Nice" if sport == "football" else "Bergs",
-            "2026-08-04",
+            "2099-01-01",
             "20:45",
             "Lyon 2.10",
             "",
@@ -638,15 +644,21 @@ def test_la_feuille_rend_deux_tableaux(client: TestClient, isolated_settings: Se
 # -- Rattacher une selection a un match hors shortlist ----------------------
 
 
-def _hors_shortlist(settings: Settings) -> int:
-    """Un match connu mais jamais coche : c'est le cas d'un match commence."""
+def _hors_shortlist(settings: Settings, date: str = "2026-08-04") -> int:
+    """Un match connu mais jamais coche : c'est le cas d'un match commence.
+
+    La date se choisit parce qu'elle ne dit pas la meme chose selon le test :
+    passee, elle fabrique un match **deja joue** — ce que le voisinage de
+    `pickable_events` doit proposer — et une selection qui s'y rattache sort
+    des regroupements, son retard etant alors demontre.
+    """
     return save(
         build(
             "tennis",
             "ATP Canadian Open",
             "Michelsen",
             "Cerundolo",
-            "2026-08-04",
+            date,
             "22:20",
             "Michelsen 1.62",
             "",
@@ -655,6 +667,26 @@ def _hors_shortlist(settings: Settings) -> int:
         ),
         settings,
     )
+
+
+def test_rattacher_a_un_match_deja_joue_ecarte_la_selection(migrated: Settings) -> None:
+    """Le pendant du precedent, et c'est un comportement voulu.
+
+    Une selection rattachee apres coup a un match deja joue porte une etiquette
+    dont rien ne dit qu'elle precede le resultat. Elle reste comptee au temoin
+    et **declaree** comme ecartee, jamais silencieusement perdue.
+    """
+    session_id, _ = _session_avec_match(migrated)
+    event_id = _hors_shortlist(migrated)
+    pick_id = add_pick(session_id, "safe", "Vainqueur", "Michelsen", settings=migrated)
+    set_result(pick_id, "win", migrated)
+    set_event(pick_id, str(event_id), migrated)
+
+    report = analysis(migrated)
+
+    assert [row.label for row in report.by_sport] == []
+    assert report.without_antecedence == 1
+    assert report.consistent, "l'addition retombe juste, l'ecartee etant declaree"
 
 
 def _fenetre_autour(settings: Settings, session_id: int, moment: str) -> None:
@@ -725,9 +757,14 @@ def test_un_match_inconnu_est_refuse(migrated: Settings) -> None:
 
 
 def test_rattachement_rend_la_selection_visible_par_sport(migrated: Settings) -> None:
-    """Sans match, une selection n'a pas de sport : elle manque aux statistiques."""
+    """Sans match, une selection n'a pas de sport : elle manque aux statistiques.
+
+    Le match visé est **a venir** : rattacher a un match deja joue rendrait la
+    selection demontrablement tardive, donc ecartee des regroupements — c'est
+    juste, et c'est l'objet du test suivant.
+    """
     session_id, _ = _session_avec_match(migrated)
-    event_id = _hors_shortlist(migrated)
+    event_id = _hors_shortlist(migrated, date="2099-01-01")
     pick_id = add_pick(session_id, "safe", "Vainqueur", "Michelsen", settings=migrated)
     set_result(pick_id, "win", migrated)
 
