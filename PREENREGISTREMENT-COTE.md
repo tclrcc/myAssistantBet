@@ -123,7 +123,34 @@ pre-enregistree et non elle.
 
 ---
 
-## 6. Resultat
+## 6. Avenant du 11/08/2026 — ce qui se mesure a la cloture
+
+**Ajoute le jour meme, avant que la fenetre ait produit la moindre donnee, et il
+ne touche a rien de ce qui engage** : ni l'hypothese (§1), ni le test (§2), ni la
+fenetre (§3), ni la regle d'echec (§4). Il inscrit une **seconde mesure a faire
+au meme moment**, et c'est le seul motif pour lequel ce fichier accepte un ajout.
+
+Le bloc de retour d'experience du prompt est suspendu depuis le 11/08
+(`FEEDBACK_SUSPENDED`). La suspension a une contrepartie qui se perd par inertie
+si personne ne l'inscrit : **a la cloture de cette fenetre, le rallumer et
+mesurer l'ecart.**
+
+- **C'est le seul moment ou la question sera repondable.** « Le retour
+  d'experience aide-t-il l'analyse, ou la fait-il boucler sur elle-meme » n'a
+  jamais pu se poser : les trois sessions qui ont recu des taux les ont recus
+  sans regime de comparaison propre. La fenetre qui s'ouvre est le **premier
+  regime propre** de ce projet — garde d'anteriorite en service, bloc suspendu —
+  donc le premier terme d'une comparaison qui vaille.
+- **Si le bloc reste suspendu indefiniment, l'occasion passe** : il faudra alors
+  une seconde fenetre propre pour la recreer, et le cout double.
+- Ce qui se compare : le residu au prix, l'ordre des echelles et le taux de
+  selection, sur la fenetre suspendue puis sur la fenetre rallumee. Aucune de
+  ces trois grandeurs n'est le taux de reussite nu, qui n'est comparable a rien.
+
+Les deux fenetres se ferment donc **au meme endroit** : quand la cible du §2 est
+atteinte.
+
+## 7. Resultat
 
 *A completer une seule fois, quand la cible du §2 est atteinte.*
 
