@@ -1810,6 +1810,84 @@ l'intervalle. La page arrondit a l'entier (« [47 – 74] »), donc l'ecart y et
 invisible : c'est exactement pourquoi ce module se teste contre des valeurs
 publiees et non contre ce qu'il affiche.
 
+## Un taux sans son prix ne mesure rien (le coin SAFE x confiance 4)
+
+**Resultat negatif, et il vaut d'etre ecrit : il a economise sept sessions de
+collecte.** L'enchainement qui y mene est le mode de defaillance principal de
+cette page, et il se reproduira.
+
+Le chemin : les selections dont l'anteriorite est etablie donnent une notation
+qui parait fonctionner (confiance 4 a 69 %, confiance 3 a 29 %) ; le test
+conditionnel montre qu'aucun des deux axes ne survit au conditionnement sur
+l'autre (Mantel-Haenszel exact 0,115 et 0,119) ; le signal se concentre dans une
+**cellule** — `SAFE ∩ confiance 4`, 19/23 contre 16/50 ailleurs, Fisher
+p = 0,000024 ; six retraits de strate ne l'entament pas. Tout cela est vrai, et
+tout cela ne prouve rien.
+
+- **Il manquait le seul controle qui compte : le prix.** 82 % n'est pas un
+  resultat, c'est un chiffre sans unite tant qu'on ignore ce qui etait paye. La
+  cellule est faite de favoris courts — cote moyenne **1,456**, mediane 1,41,
+  toutes entre 1,25 et 1,74 — soit **69,4 % de probabilite implicite**. Le taux
+  observe de 82,6 % ne depasse le prix que de 13 points, et sur 23 selections
+  c'est dans le bruit : loi de Poisson-binomiale exacte sur les `1/cote`,
+  **P(X ≥ 19) = 0,119**.
+- **Le contraste vient de l'autre cote, et c'est l'inverse de ce qu'on croyait
+  lire.** Hors cellule : 16 victoires observees pour **28,35 attendues par les
+  prix**, soit 32 % contre 56,7 % implicite. Le p = 0,000024 ne dit pas que le
+  coin est bon, il dit que **le reste est catastrophique par rapport a son
+  prix**. Sur la population entiere, le residu vaut **-9,31 victoires**.
+- **Le test de residu ne rouvre pas les interdits.** Aucun devig, aucun marche
+  complet, aucune projection, aucune mise : il compare des issues **tranchees**
+  a des prix **deja enregistres**, meme statut que le taux lui-meme. Et il est
+  **conservateur par construction** — `1/cote` porte la marge du book, donc
+  surestime la probabilite vraie : la barre est trop haute, la franchir serait
+  un constat solide, ne pas la franchir n'accuse de rien.
+- Effectif qu'il faudrait pour trancher : **~67 selections dans la cellule**,
+  soit une quinzaine de sessions de plus. Elle en porte 23.
+
+**La lecon de methode, qui vaut au-dela de ce cas** : une hypothese formulee
+comme « cette etiquette bat les autres etiquettes » a un **mode de reussite
+vide**. Si l'etiquette selectionne des favoris courts, elle gagnera toujours,
+et le test passera sans que l'etiquette ait rien apporte. La question juste est
+toujours le **residu au prix** — l'etiquette ajoute-t-elle quelque chose a ce
+que le prix disait deja.
+
+- Corollaire sur les sous-tests de robustesse : six retraits de strate ne sont
+  **pas six preuves**. Ce sont six vues du meme echantillon, toutes descendantes
+  du meme p, fortement correlees. C'est une robustesse au confondant teste, pas
+  une accumulation d'evidence — et le plus fin d'entre eux tombait a 6
+  selections dans un bras, ou un resultat de plus deplace le p d'un facteur dix.
+- **La base est vivante, et une lecture est datee.** Entre le debut et la fin de
+  cette analyse, elle est passee de 114 a 116 selections et de 104 a 110
+  tranchees ; l'axe « niveau de competition » de p = 0,0443 a p = 0,0195, ce qui
+  lui a fait franchir un seuil de Benjamini-Hochberg qu'il ne franchissait pas.
+  Toute mesure citee ici vaut pour son etat, pas pour toujours.
+
+**Le bloc de taux reste retenu** (`FEEDBACK_SUSPENDED`). La raison ne depend
+d'aucune hypothese en cours : le transmettre rend ininterpretables les mesures
+qu'il contient, et ce n'est pas theorique — **9 prompts de 3 sessions l'ont
+fait**, quand les seuils valaient encore 10 et 4, dont un annoncant « confiance
+4 — 10/15, 67 % » juste avant que soient produites les etiquettes qu'on mesure
+aujourd'hui a 82 %. Une constante et non un reglage : le garde-fou d'origine
+etait un couple de seuils, et il a cede sans que personne le decide.
+
+## Un seuil descend dans l'objet, il ne va pas se chercher lui-meme
+
+Regle generale, apprise trois fois — sur `RateRow.minimum`, sur le seuil
+d'effectif minimum, et sur `Feedback.suspended`.
+
+Une valeur qui decide d'un comportement se pose **en champ, a la construction**.
+Ecrite en propriete qui lit une constante de module ou un reglage en base, elle
+est relue **a chaque acces** : deux releves du meme lot deviennent alors
+indiscernables des que la valeur change entre les deux, et la classe n'est plus
+testable hors d'une base.
+
+Le symptome est celui d'un test qui compare un avant et un apres et trouve deux
+fois l'apres. Constate sur `Feedback.suspended` : le test comparait un lot avec
+et sans suspension, et les deux objets voyaient la meme valeur — le defaut ne
+cassait rien en production, il rendait seulement l'etat d'exploitation
+invisible a la verification.
+
 ## Le marche a la prise (migration 033)
 
 **Ce chantier n'affiche rien et ne repare rien. Il arrete une perte**, et c'est la seule

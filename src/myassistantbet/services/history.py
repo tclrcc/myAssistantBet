@@ -2180,22 +2180,22 @@ class Mix:
 #: nom dit, et rien de plus.
 SCALE_VERSION = "relatif-032"
 
-#: Une replication est-elle en cours. Tant que c'est vrai, **aucun taux de
-#: reussite ne part dans le prompt** : les selections a venir doivent etre des
-#: tirages independants de ce qu'elles servent a eprouver.
+#: Le bloc de taux est-il retenu. Tant que c'est vrai, **aucun taux de reussite
+#: ne part dans le prompt**, quel que soit le recul accumule.
 #:
 #: Des qu'un agregat de resultats entre dans le prompt, l'analyse lit son propre
-#: tableau de bord — une categorie annoncee a 0/7 cesse d'etre produite, donc
-#: cesse d'etre mesurable. Ce n'est pas une precaution theorique : 9 prompts de
-#: 3 sessions l'ont fait, et l'un d'eux annoncait « confiance 4 — 10/15, 67 % »
-#: juste avant que soient produites les etiquettes qu'on mesure aujourd'hui a
-#: 69 %.
+#: tableau de bord : les selections suivantes cessent d'etre des tirages
+#: independants de ce qui les mesure, et une categorie annoncee a 0/7 cesse
+#: d'etre produite — donc cesse d'etre mesurable. Ce n'est pas une precaution
+#: theorique : **9 prompts de 3 sessions l'ont fait**, quand les seuils valaient
+#: encore 10 et 4, et l'un d'eux annoncait « confiance 4 — 10/15, 67 % » juste
+#: avant que soient produites les etiquettes qu'on mesure aujourd'hui a 82 %.
+#: Ces 3 sessions fournissent la majorite de la population propre.
 #:
 #: **Une constante et non un reglage.** Un seuil se baisse par inadvertance ; le
-#: garde-fou d'origine etait justement un couple de seuils, et il a cede sans que
-#: personne le decide. Rouvrir le bloc demande donc de modifier le code, avec le
-#: protocole sous les yeux — `PREENREGISTREMENT.md`, §5.
-REPLICATION_OPEN = True
+#: garde-fou d'origine etait justement un couple de seuils, et il a cede sans
+#: que personne le decide. Rouvrir le bloc demande donc de modifier le code.
+FEEDBACK_SUSPENDED = True
 
 
 def load_bands(settings: Settings | None = None, reference: float | None = None) -> dict[int, Band]:
@@ -2987,7 +2987,7 @@ class Feedback:
         jours-la — un tournoi, une soiree de coupe d'Europe, une meteo — et le
         prompt le presenterait comme un ordre de passage durable.
 
-        Une replication en cours prime sur les deux : voir `suspended`.
+        Une suspension prime sur les deux : voir `suspended`.
         """
         return (
             not self.suspended and self.settled >= self.minimum and self.days >= self.minimum_days
@@ -3141,7 +3141,7 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
         recorded=int(recorded),
         minimum=minimum,
         minimum_days=minimum_days,
-        suspended=REPLICATION_OPEN,
+        suspended=FEEDBACK_SUSPENDED,
         global_rate=_global_rate(rows, [str(row["result"]) for row in rows]),
     )
     # Le taux de selection est publie **hors** des trois garde-fous ci-dessous,

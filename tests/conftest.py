@@ -51,19 +51,18 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
 
 
 @pytest.fixture(autouse=True)
-def replication_levee(monkeypatch: pytest.MonkeyPatch) -> None:
+def suspension_levee(monkeypatch: pytest.MonkeyPatch) -> None:
     """Le bloc de retour d'experience n'est pas suspendu, sauf test contraire.
 
-    `history.REPLICATION_OPEN` est un etat **d'exploitation** — une replication
-    en cours, datee dans `PREENREGISTREMENT.md` — et non le comportement normal
-    du code. Les vingt-trois tests qui decrivent ce que le bloc transmet doivent
-    continuer de le decrire : ce sont eux qui garantissent qu'il fonctionnera
-    encore a la reouverture, et les laisser passer par la suspension les rendrait
-    verts sans rien verifier.
+    `history.FEEDBACK_SUSPENDED` est un etat **d'exploitation** et non le
+    comportement normal du code. Les vingt-trois tests qui decrivent ce que le
+    bloc transmet doivent continuer de le decrire : ce sont eux qui garantissent
+    qu'il fonctionnera encore a la reouverture, et les laisser passer par la
+    suspension les rendrait verts sans rien verifier.
 
-    La suspension elle-meme a son test, qui remet le drapeau a vrai.
+    La suspension elle-meme a ses tests, qui remettent le drapeau a vrai.
     """
-    monkeypatch.setattr("myassistantbet.services.history.REPLICATION_OPEN", False)
+    monkeypatch.setattr("myassistantbet.services.history.FEEDBACK_SUSPENDED", False)
 
 
 @pytest.fixture

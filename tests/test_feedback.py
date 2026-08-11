@@ -1036,12 +1036,12 @@ def test_une_replication_en_cours_coupe_les_taux(
     lit son propre tableau de bord et les selections a venir cessent d'etre des
     tirages independants de ce qu'elles servent a eprouver.
     """
-    monkeypatch.setattr("myassistantbet.services.history.REPLICATION_OPEN", True)
+    monkeypatch.setattr("myassistantbet.services.history.FEEDBACK_SUSPENDED", True)
     session_id = lot_avec_recul(migrated)
 
     corps = build_prompt(session_id, settings=migrated, now=NOW).body
 
-    assert "réplication en cours" in corps
+    assert "retenus volontairement" in corps
     assert "Par palier" not in corps
     assert "Par confiance annoncée" not in corps
 
@@ -1055,13 +1055,13 @@ def test_la_suspension_ne_se_presente_pas_comme_un_manque_de_recul(
     « Recul insuffisant » deviendra faux pendant la fenetre — le lot en a — et
     ferait chercher un volume qui est deja la.
     """
-    monkeypatch.setattr("myassistantbet.services.history.REPLICATION_OPEN", True)
+    monkeypatch.setattr("myassistantbet.services.history.FEEDBACK_SUSPENDED", True)
     session_id = lot_avec_recul(migrated)
 
     corps = build_prompt(session_id, settings=migrated, now=NOW).body
 
     assert "recul insuffisant" not in corps
-    assert "suspension volontaire" in corps
+    assert "rien à en déduire sur mon\nhistorique" in corps
 
 
 def test_la_suspension_ne_touche_que_les_taux_de_reussite(
@@ -1078,7 +1078,7 @@ def test_la_suspension_ne_touche_que_les_taux_de_reussite(
     lot_avec_recul(migrated)
 
     ouvert = feedback(migrated)
-    monkeypatch.setattr("myassistantbet.services.history.REPLICATION_OPEN", True)
+    monkeypatch.setattr("myassistantbet.services.history.FEEDBACK_SUSPENDED", True)
     suspendu = feedback(migrated)
 
     assert (ouvert.enough, suspendu.enough) == (True, False)
@@ -1093,7 +1093,7 @@ def test_un_prompt_suspendu_n_est_pas_marque_comme_alimente(
     """`prompts.feedback_active` doit rester faux : il enregistre ce qui est
     **parti**, pas ce qui aurait pu partir. Sans quoi la fenetre de replication
     se marquerait elle-meme comme contaminee."""
-    monkeypatch.setattr("myassistantbet.services.history.REPLICATION_OPEN", True)
+    monkeypatch.setattr("myassistantbet.services.history.FEEDBACK_SUSPENDED", True)
     session_id = lot_avec_recul(migrated)
 
     prompt_id = save_prompt(
