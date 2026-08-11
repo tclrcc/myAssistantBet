@@ -782,3 +782,23 @@ def test_la_matrice_ne_garde_que_les_paires_qui_disent_quelque_chose(
 
     assert disjointe == []
     assert len(proche) == 1
+
+
+def test_une_ligne_portee_se_marque_sur_sa_barre(migrated: Settings, client: TestClient) -> None:
+    """**Retirer un critere faux et retirer le critere sont deux operations
+    differentes, et elles se ressemblent dans un diff.**
+
+    En retirant `thin` et `inconclusive`, la barre a perdu toute qualification :
+    le concept survivait dans le modele — `carried` — mais plus rien ne le
+    montrait. La polarite est inversee au passage : on marque ce qui est porte
+    plutot que d'attenuer le reste, parce qu'a ce volume vingt-neuf lignes sur
+    trente-trois seraient attenuees et le contraste ne dirait plus rien.
+    """
+    _axe_tranchant(migrated)
+
+    page = client.get("/stats").text
+    portees = analysis(migrated).carried_rows
+
+    assert portees, "ce lot doit porter au moins une ligne"
+    assert "is-carried" in page
+    assert page.count("is-carried") >= len(portees)

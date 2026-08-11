@@ -1463,7 +1463,21 @@ details.readout > .why-body { padding: 0 var(--s4) var(--s4); margin-top: 0; }
 /* Sous quatre paris tranches, le taux mesure surtout le hasard. La barre reste
    affichee — la taire cacherait une information — mais elle est visiblement
    moins affirmee, et le compte a cote dit pourquoi. */
-.fill.is-thin { opacity: 0.42; }
+/* La ligne **portee** se marque, plutot que d'attenuer les autres : a ce
+   volume, vingt-neuf lignes sur trente-trois seraient attenuees et le contraste
+   ne dirait plus rien. Le liseré tient sur la gauche, la ou l'oeil descend. */
+.bar-row.is-carried { position: relative; }
+.bar-row.is-carried::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--s2) * -1);
+  top: 10%;
+  bottom: 10%;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.bar-row.is-carried .bar-label { font-weight: 600; }
 
 /* L'effectif independant, colle au compte de paris et plus discret que lui :
    c'est une precision sur ce compte, pas un second. */

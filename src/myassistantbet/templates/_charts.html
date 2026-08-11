@@ -38,7 +38,16 @@
   {% if rows %}
   <div class="bars">
     {% for row in rows %}
-    <div class="bar-row{% if row.rate is none %} is-void{% endif %}"
+    {# **Polarite inverse de l'ancienne, et c'est ce qui la rend lisible.** La
+       barre palissait quand la ligne ne concluait pas : au volume actuel c'est
+       vingt-neuf lignes sur trente-trois, donc tout le graphique palit et le
+       contraste ne dit plus rien. On marque desormais ce qui est **porte** —
+       quatre lignes sur trente-trois se voient.
+
+       Le critere est `carried`, pas `n` ni un intervalle qui contient 50 % :
+       l'axe passe son omnibus exact, il survit a la correction entre axes, et
+       la ligne s'ecarte de son complement. #}
+    <div class="bar-row{% if row.rate is none %} is-void{% endif %}{% if row.carried %} is-carried{% endif %}"
          title="{{ row.label }} — {{ row.won }} gagné(s), {{ row.lost }} perdu(s){% if row.void %}, {{ row.void }} annulé(s){% endif %}{% if row.pending %}, {{ row.pending }} en attente{% endif %}">
       <span class="bar-label">
         {{ row.label }}
