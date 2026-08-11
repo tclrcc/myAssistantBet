@@ -1568,10 +1568,13 @@ def _antecedence(row: Any) -> bool:
     coup d'envoi, et son `1/cote` ne decrit alors plus le marche d'avant-match —
     donc plus rien de comparable a un resultat. Tout le residu en depend.
 
-    Mesure qui confirme le mecanisme : sur les selections **sans** anteriorite
-    etablie, le residu est **nul** — 20 victoires pour 20,25 payees, p = 0,53 —
-    quand il vaut -9,31 sur les autres. Un prix qui colle a ce point au resultat
-    est un prix releve en le connaissant.
+    Ce qui **s'observe** : sur les selections sans anteriorite etablie, le
+    residu au prix est nul — 20 victoires pour 20,25 payees, p = 0,53 — quand il
+    vaut -9,31 sur les autres, et l'ajustement y tient dans chaque bande de
+    cote. Ce qui s'en **deduit** — qu'un prix collant a ce point au resultat
+    aurait ete releve en le connaissant — est une inference, pas une
+    observation : elle est plausible, elle vit dans `CLAUDE.md` au conditionnel,
+    et ni cette fonction ni la page ne l'affirment.
 
     **Sens unique, et le libelle doit le respecter.** `created_at` est l'heure
     d'**enregistrement dans l'application**, pas celle de la decision : une

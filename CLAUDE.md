@@ -1929,11 +1929,25 @@ filtre passe avant lui.
   La base peut prouver l'anteriorite, **jamais son absence** — d'ou « anteriorite
   non etablie », et jamais « enregistre apres coup », meme quand l'ecart atteint
   vingt-six heures. Un test le verifie sur le libelle.
-- **Le mecanisme est confirme par la mesure**, et c'est ce qui justifie
-  l'exclusion plutot que la precaution : sur les selections **sans** anteriorite
-  etablie, le residu au prix est **nul** — 20 victoires pour 20,25 payees,
-  p = 0,53 — quand il vaut -9,31 sur les autres. Un prix qui colle a ce point au
-  resultat est un prix releve en le connaissant.
+- **Ce qui s'observe, et ce qui s'en deduit — a ne pas confondre.** Sur les
+  selections **sans** anteriorite etablie, le residu au prix est **nul** :
+  20 victoires pour 20,25 payees, p = 0,53, quand il vaut -9,31 sur les autres.
+  C'est l'observation, et c'est ce que la page affiche.
+  - **L'inference, au conditionnel** : un prix qui suit l'issue a ce point
+    aurait ete releve en la connaissant. Elle est plausible et elle ne vit
+    qu'ici — ni le code ni la page ne l'affirment.
+  - **Deux causes se disputaient l'ajustement, et la calibration par bande de
+    cote les separe.** Soit le prix suit l'issue (a), soit ces selections sont
+    concentrees sur des cotes courtes ou `1/cote` colle mecaniquement au taux
+    observe (b). Mesure : le residu des 37 est nul **dans chaque bande** —
+    -0,65 sur les courtes, +0,14 sur les moyennes, +0,25 sur les longues — donc
+    y compris la ou l'ajustement mecanique est impossible. Et la distribution
+    ecarte (b) d'elle-meme : les 37 sont sur des cotes **plus longues** que les
+    73 (mediane 1,87 contre 1,67), pas plus courtes.
+  - **Observation sans statut, notee pour plus tard** : sur les 73, le deficit
+    croit avec la cote — 1 victoire sur 12 au-dela de 2.00, contre 5,40 payees.
+    C'est une tranche decoupee **apres coup**, donc exactement la faute corrigee
+    deux fois plus haut. Elle se decrit, elle ne se conclut pas.
 - **Deux populations, deux chiffres, jamais additionnes** (`residual` et
   `residual_late`). Leur **difference** est le diagnostic ; le bloc de tete ne
   porte que la premiere.
@@ -1995,6 +2009,28 @@ fait**, quand les seuils valaient encore 10 et 4, dont un annoncant « confiance
 4 — 10/15, 67 % » juste avant que soient produites les etiquettes qu'on mesure
 aujourd'hui a 82 %. Une constante et non un reglage : le garde-fou d'origine
 etait un couple de seuils, et il a cede sans que personne le decide.
+
+## Toute lecture se fait sur une copie de la base
+
+**Aucune verification, aucun rendu, aucune execution qui demarre l'application
+ne touche `data/myassistantbet.db`.** On copie, on lit la copie. Si un controle
+exige vraiment la production, il se demande d'abord.
+
+Constate en livrant E1 : un `TestClient` lance pour verifier le rendu reel du
+bloc de tete a demarre l'application, donc **applique la migration 033** sur la
+base servie. Non destructive et de toute facon prevue au prochain redemarrage —
+mais non decidee.
+
+Deux raisons qui vont plus loin que l'ecriture accidentelle, et ce sont elles
+qui font la regle :
+
+- **La base bouge pendant qu'on travaille.** Elle est passee de 114 a 116
+  selections et de 104 a 110 tranchees au cours d'une seule analyse, l'axe
+  « niveau » suivant de 0,0443 a 0,0195. Un releve sur production n'est donc pas
+  reproductible, et deux mesures d'un meme rapport peuvent porter sur deux
+  populations differentes sans que rien ne le signale.
+- **C'est ce qui rend `as_of` honnete plutot que decoratif.** Une lecture faite
+  sur une copie datee porte vraiment la date qu'elle affiche.
 
 ## Un seuil descend dans l'objet, il ne va pas se chercher lui-meme
 

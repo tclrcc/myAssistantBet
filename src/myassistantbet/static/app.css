@@ -1912,6 +1912,16 @@ h1, h2, h3 { letter-spacing: var(--track-snug); }
    quelques résultats suffisent à l'effacer : le taire en petits caractères
    ferait lire un résultat établi. */
 .residual-head { margin-bottom: var(--s4); }
+/* La date vit **dans** le bloc, en retrait de son libellé : un chiffre de tête
+   daté ailleurs est un chiffre de tête non daté. */
+.residual-head .as-of {
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+  margin-left: var(--s2);
+}
 .residual-head .hero-figure i {
   font-style: normal;
   font-size: var(--text-lg);

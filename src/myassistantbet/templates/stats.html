@@ -100,7 +100,12 @@
   {% set residu = analysis.residual %}
   {% set sous_marge = residu.with_margin(margin_reference) %}
   <div class="tile tile-hero residual-head">
-    <span class="label">Face aux prix des sélections</span>
+    {# La date **dans le bloc**, pas en pied de page. Même leçon que la
+       fragilité : un lecteur qui revient trois jours plus tard doit savoir sans
+       chercher que les trois résultats qui l'effacent sont peut-être déjà
+       tombés. Un chiffre de tête daté ailleurs est un chiffre de tête non daté. #}
+    <span class="label">Face aux prix des sélections
+      <i class="as-of">au {{ analysis.as_of_label }}</i></span>
     <b class="hero-figure">{{ residu.observed }} <i>pour</i> {{ residu.expected_label }}</b>
     <span class="tile-detail">
       {{ residu.observed }} victoire(s) pour {{ residu.expected_label }}

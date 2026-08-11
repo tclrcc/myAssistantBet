@@ -375,3 +375,32 @@ def test_la_completude_du_lot_ne_filtre_rien(migrated: Settings, client: TestCli
 
     if "reconstruit" in page:
         assert "complétude du lot" in page
+
+
+def test_le_bloc_de_tete_porte_sa_date(migrated: Settings, client: TestClient) -> None:
+    """**Dans le bloc, pas en pied de page.** Un lecteur qui revient trois jours
+    plus tard doit savoir sans chercher que les quelques resultats qui effacent
+    le constat sont peut-etre deja tombes. Un chiffre de tete date ailleurs est
+    un chiffre de tete non date."""
+    _lot(migrated, [("1.25", "loss", False)] * 8 + [("1.25", "win", False)] * 4)
+
+    bloc = client.get("/stats").text.split("residual-head")[1].split("</div>")[0]
+
+    assert "as-of" in bloc
+    assert analysis(migrated).as_of_label[:5] in bloc
+
+
+def test_ni_le_code_ni_la_page_n_affirment_le_mecanisme(
+    migrated: Settings, client: TestClient
+) -> None:
+    """La page dit ce qu'elle **voit** — un residu nul d'un cote, negatif de
+    l'autre. Que le prix ait ete releve en connaissant l'issue est une
+    **inference** : plausible, ecrite au conditionnel dans `CLAUDE.md`, et
+    affirmee nulle part ailleurs.
+    """
+    _lot(migrated, [("2.00", "win", True), ("2.00", "loss", False)])
+
+    page = client.get("/stats").text
+
+    for affirmation in ("en le connaissant", "après le résultat", "relevé après"):
+        assert affirmation not in page
