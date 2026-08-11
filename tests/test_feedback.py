@@ -40,6 +40,7 @@ from myassistantbet.services.prompt import (
     competition_notes,
     read_preference,
     save_preference,
+    save_prompt,
 )
 
 from .helpers import NOW, lot_avec_recul, pose_bandes
@@ -1019,3 +1020,87 @@ def test_la_page_dit_qu_un_cran_n_a_pas_de_cible(client: TestClient, migrated: S
 
     assert "pas de cible" in page
     assert "cible 0" not in page
+
+
+# -- La suspension pendant une replication ----------------------------------
+
+
+def test_une_replication_en_cours_coupe_les_taux(
+    migrated: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Le lot a tout le recul necessaire, et le bloc se tait quand meme.
+
+    C'est le point : la suspension ne passe pas par les seuils. Ils sont ici
+    largement franchis — `lot_avec_recul` les ouvre tous les deux — et aucun
+    taux ne part. Des qu'un agregat de resultats entre dans le prompt, l'analyse
+    lit son propre tableau de bord et les selections a venir cessent d'etre des
+    tirages independants de ce qu'elles servent a eprouver.
+    """
+    monkeypatch.setattr("myassistantbet.services.history.REPLICATION_OPEN", True)
+    session_id = lot_avec_recul(migrated)
+
+    corps = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "réplication en cours" in corps
+    assert "Par palier" not in corps
+    assert "Par confiance annoncée" not in corps
+
+
+def test_la_suspension_ne_se_presente_pas_comme_un_manque_de_recul(
+    migrated: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Une fausse explication a l'endroit meme ou l'on cherche a etre rigoureux
+    serait le pire endroit ou en mettre une.
+
+    « Recul insuffisant » deviendra faux pendant la fenetre — le lot en a — et
+    ferait chercher un volume qui est deja la.
+    """
+    monkeypatch.setattr("myassistantbet.services.history.REPLICATION_OPEN", True)
+    session_id = lot_avec_recul(migrated)
+
+    corps = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    assert "recul insuffisant" not in corps
+    assert "suspension volontaire" in corps
+
+
+def test_la_suspension_ne_touche_que_les_taux_de_reussite(
+    migrated: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Le taux de selection ne depend d'aucun resultat, donc il ne referme
+    aucune boucle : la suspension doit le laisser exactement ou il est.
+
+    Compare **les deux etats du meme lot** plutot que de chercher une phrase
+    dans un corps : le taux de selection a ses propres conditions d'apparition —
+    trois sessions distinctes — et un test qui les confondrait avec la
+    suspension passerait au vert pour la mauvaise raison.
+    """
+    lot_avec_recul(migrated)
+
+    ouvert = feedback(migrated)
+    monkeypatch.setattr("myassistantbet.services.history.REPLICATION_OPEN", True)
+    suspendu = feedback(migrated)
+
+    assert (ouvert.enough, suspendu.enough) == (True, False)
+    assert suspendu.suspended and not ouvert.suspended
+    assert suspendu.selection_line == ouvert.selection_line
+    assert suspendu.settled == ouvert.settled, "les donnees ne bougent pas, leur diffusion oui"
+
+
+def test_un_prompt_suspendu_n_est_pas_marque_comme_alimente(
+    migrated: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`prompts.feedback_active` doit rester faux : il enregistre ce qui est
+    **parti**, pas ce qui aurait pu partir. Sans quoi la fenetre de replication
+    se marquerait elle-meme comme contaminee."""
+    monkeypatch.setattr("myassistantbet.services.history.REPLICATION_OPEN", True)
+    session_id = lot_avec_recul(migrated)
+
+    prompt_id = save_prompt(
+        session_id, build_prompt(session_id, settings=migrated, now=NOW), migrated
+    )
+
+    ligne = db.query_one(
+        "SELECT feedback_active FROM prompts WHERE id = ?", (prompt_id,), settings=migrated
+    )
+    assert ligne["feedback_active"] == 0

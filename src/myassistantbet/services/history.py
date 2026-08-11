@@ -2180,6 +2180,23 @@ class Mix:
 #: nom dit, et rien de plus.
 SCALE_VERSION = "relatif-032"
 
+#: Une replication est-elle en cours. Tant que c'est vrai, **aucun taux de
+#: reussite ne part dans le prompt** : les selections a venir doivent etre des
+#: tirages independants de ce qu'elles servent a eprouver.
+#:
+#: Des qu'un agregat de resultats entre dans le prompt, l'analyse lit son propre
+#: tableau de bord — une categorie annoncee a 0/7 cesse d'etre produite, donc
+#: cesse d'etre mesurable. Ce n'est pas une precaution theorique : 9 prompts de
+#: 3 sessions l'ont fait, et l'un d'eux annoncait « confiance 4 — 10/15, 67 % »
+#: juste avant que soient produites les etiquettes qu'on mesure aujourd'hui a
+#: 69 %.
+#:
+#: **Une constante et non un reglage.** Un seuil se baisse par inadvertance ; le
+#: garde-fou d'origine etait justement un couple de seuils, et il a cede sans que
+#: personne le decide. Rouvrir le bloc demande donc de modifier le code, avec le
+#: protocole sous les yeux — `PREENREGISTREMENT.md`, §5.
+REPLICATION_OPEN = True
+
 
 def load_bands(settings: Settings | None = None, reference: float | None = None) -> dict[int, Band]:
     """Bandes cibles par niveau de confiance, telles qu'elles sont reglees.
@@ -2825,6 +2842,21 @@ class Feedback:
     recorded: int = 0
     minimum: int = FEEDBACK_MIN_TOTAL
     minimum_days: int = FEEDBACK_MIN_DAYS
+    #: Une replication est en cours : aucun taux de reussite ne part dans le
+    #: prompt, quel que soit le recul accumule.
+    #:
+    #: **Explicite, et surtout pas delegue a un seuil.** Le bloc est aujourd'hui
+    #: tu par son volume et son etalement, mais un reglage abaisse le rouvrirait
+    #: sans que personne s'en apercoive — et il l'a deja fait : 9 prompts de
+    #: 3 sessions ont transmis des taux quand les seuils valaient encore 10 et 4,
+    #: dont un annoncant « confiance 4 — 10/15, 67 % » juste avant que soient
+    #: produites les etiquettes qu'on mesure aujourd'hui a 69 %.
+    #:
+    #: **Descend dans l'objet, comme `minimum`**, et n'est pas une propriete qui
+    #: irait lire la constante du module : lue a l'acces, elle rendrait deux
+    #: releves du meme lot indiscernables des qu'elle change entre les deux —
+    #: donc la suspension intestable. Meme regle que le seuil d'effectif.
+    suspended: bool = False
     by_tier: list[FeedbackRow] = field(default_factory=list)
     by_confidence: list[FeedbackRow] = field(default_factory=list)
     by_sport: list[FeedbackRow] = field(default_factory=list)
@@ -2954,8 +2986,12 @@ class Feedback:
         journees. Un lot nombreux mais concentre sur quelques jours mesure ces
         jours-la — un tournoi, une soiree de coupe d'Europe, une meteo — et le
         prompt le presenterait comme un ordre de passage durable.
+
+        Une replication en cours prime sur les deux : voir `suspended`.
         """
-        return self.settled >= self.minimum and self.days >= self.minimum_days
+        return (
+            not self.suspended and self.settled >= self.minimum and self.days >= self.minimum_days
+        )
 
 
 def _global_rate(rows: list[Any], results: list[str]) -> float | None:
@@ -3105,6 +3141,7 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
         recorded=int(recorded),
         minimum=minimum,
         minimum_days=minimum_days,
+        suspended=REPLICATION_OPEN,
         global_rate=_global_rate(rows, [str(row["result"]) for row in rows]),
     )
     # Le taux de selection est publie **hors** des trois garde-fous ci-dessous,
