@@ -222,16 +222,45 @@
         <li>
           <strong>{{ horizon.question | capitalize }}</strong> —
           {{ horizon.have }} sélections sur les ~{{ horizon.need }} nécessaires
-          {%- if horizon.reachable %}, soit environ {{ horizon.sessions }} session(s)
-          {%- elif horizon.undetectable %} — autrement dit
-          <strong>aucun écart détectable</strong> : il en faudrait autant pour voir
-          un écart aussi petit, et un écart aussi petit ne justifie pas son coût
-          {%- else %}, atteint{% endif %}.
+          {%- if horizon.missing %}, soit environ {{ horizon.sessions }} session(s)
+          {%- else %} — <strong>atteint</strong>{% endif %}.
           <i class="muted small">{{ horizon.detail }}</i>
         </li>
         {% endfor %}
       </ul>
+      {# Ces horizons **planifient, ils ne concluent pas**. Une version
+         précédente portait un plafond de sessions au-delà duquel la question
+         était déclarée tranchée : ça transformait une propriété de l'agenda de
+         saisie en verdict statistique, et ça basculait d'un « rien à mesurer »
+         à un « atteignable » sur les mêmes données. #}
+      <p class="chart-note muted small">
+        Ces comptes disent quand regarder à nouveau. Ils ne tranchent rien :
+        un rythme de saisie n'est pas un résultat.
+      </p>
     </div>
+    {% endif %}
+
+    {# LA QUESTION DES DEUX ÉCHELLES, posée comme une équivalence.
+       Un test classique ne conclut jamais « il n'y a rien » — il échoue à
+       rejeter, ce qui n'est pas la même chose. Une équivalence se conclut par
+       l'affirmative : l'écart résiduel tient tout entier dans une marge dont on
+       a décidé d'avance qu'elle ne vaut pas un second axe. #}
+    {% if analysis.scales and analysis.scales.interval %}
+    <p class="chart-note">
+      <strong>Faut-il deux échelles ?</strong>
+      À confiance fixée, le palier écarte de
+      {{ '%+.0f'|format(analysis.scales.gap * 100) }} points,
+      intervalle {{ analysis.scales.interval_label }}.
+      {% if analysis.scales.established %}
+      L'écart tient entièrement sous les
+      {{ '%.0f'|format(equivalence_margin * 100) }} points qu'un second axe
+      devrait valoir : <strong>une seule échelle suffit</strong>.
+      {% else %}
+      L'intervalle sort des {{ '%.0f'|format(equivalence_margin * 100) }} points
+      qu'un second axe devrait valoir : <strong>on ne peut pas encore conclure</strong>
+      qu'une seule échelle suffirait.
+      {% endif %}
+    </p>
     {% endif %}
 
     {% if analysis.carried_rows %}

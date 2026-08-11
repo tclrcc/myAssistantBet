@@ -23,6 +23,7 @@ from ..db import connect, utcnow
 from .competitions import category_label, category_rank
 from .inference import (
     ALPHA,
+    Equivalence,
     Evidence,
     Residual,
     benjamini_hochberg,
@@ -1850,6 +1851,13 @@ SETTLED_PER_SESSION = 9.6
 class Horizon:
     """Ce qu'il faudrait accumuler pour qu'une question devienne decidable.
 
+    **De la planification, jamais un verdict.** Une version precedente portait un
+    plafond de sessions au-dela duquel la question etait declaree tranchee — ce
+    qui transformait une propriete de l'agenda de saisie en conclusion
+    statistique. Il a d'ailleurs bascule d'un « rien a mesurer » a un
+    « atteignable » sur les memes donnees lues a travers deux populations. Ce qui
+    conclut, c'est `Equivalence` ; ceci dit seulement quand regarder a nouveau.
+
     **Le vrai contenu de la section des regroupements.** Elle ne conclut rien et
     ne conclura peut-etre jamais ; ce qui s'y lit utilement n'est pas un taux,
     c'est la distance au moment ou un taux voudra dire quelque chose. Un compte
@@ -1880,32 +1888,6 @@ class Horizon:
         if not self.missing:
             return 0
         return ceil(self.missing * 2 / SETTLED_PER_SESSION)
-
-    @property
-    def reachable(self) -> bool:
-        """La question se ferme-t-elle dans un horizon qui a un sens."""
-        return 0 < self.sessions <= HORIZON_MAX_SESSIONS
-
-    @property
-    def undetectable(self) -> bool:
-        """L'ecart, s'il existe, est trop petit pour etre vu.
-
-        **Ce n'est pas « on ne saura jamais », et la nuance decide de l'usage.**
-        Un besoin de ~378 selections par ligne ne dit pas que la question restera
-        ouverte : il dit qu'aucun ecart assez gros pour compter n'existe. Ecrire
-        « hors d'atteinte » ferait lire un constat de futilite la ou il y a un
-        **argument pour agir** — un ecart trop petit pour etre mesure en
-        soixante-quinze sessions est un ecart trop petit pour justifier le cout
-        de saisie et le poids de prompt d'un second axe.
-
-        Une question tranchee par l'absence d'effet est une question tranchee.
-        """
-        return self.sessions > HORIZON_MAX_SESSIONS
-
-
-#: Au-dela de ce nombre de sessions, une question n'attend plus : elle est
-#: repondue par la negative. Environ deux mois au rythme d'une session par jour.
-HORIZON_MAX_SESSIONS = 60
 
 
 @dataclass
@@ -2124,39 +2106,26 @@ class Analysis:
                         detail=f"{haut.label} contre {bas.label}",
                     )
                 )
-        found.extend(self._scales_horizon())
         return sorted(found, key=lambda item: item.sessions)
 
-    def _scales_horizon(self) -> list[Horizon]:
-        """Faut-il deux echelles, ou une seule ?
+    @property
+    def scales(self) -> Equivalence | None:
+        """Faut-il deux echelles d'etiquetage, ou une seule ?
 
-        Le palier et la confiance annoncee se recouvrent — V de Cramer 0,54 — et
-        **aucun des deux ne survit au conditionnement sur l'autre** (Mantel-
-        Haenszel exact, p = 0,115 et 0,119). La question ne peut pas rester
-        ouverte indefiniment : chaque session saisie avec deux echelles couplees
-        paie du poids de prompt et de l'attention de saisie pour produire une
-        redondance. On mesure donc ce qu'il faudrait pour trancher — et une
-        reponse hors d'atteinte **est** une reponse.
+        **La question ne se pose pas en sessions restantes.** « Quarante-neuf
+        sessions » repond a *quand saurai-je*, ce qui depend du rythme de saisie
+        et non des donnees. La question produit est : *quel ecart residuel
+        justifierait le cout d'un second axe ?* — decidee d'avance, une fois,
+        et insensible a l'echantillon.
 
-        L'ecart qui compte est le **residuel** : a confiance fixee, le palier
-        separe-t-il encore ? Il se lit dans la strate la plus fournie, et il est
-        bien plus tenu que l'ecart brut — d'ou un horizon qui n'a rien a voir
-        avec celui de l'axe pris seul.
+        L'ecart mesure est le **residuel**, dans la strate la plus fournie de
+        l'autre axe : a confiance fixee, le palier separe-t-il encore ? L'ecart
+        brut recopierait ce que l'axe dit deja tout seul.
         """
         if len(self.conditional) < 2:
-            return []
-        haut, bas = sorted(self.conditional, key=lambda cell: -(cell[0] / cell[1]))[:2]
-        besoin = required_sample(haut[0] / haut[1], bas[0] / bas[1])
-        if besoin is None:
-            return []
-        return [
-            Horizon(
-                question="il faut deux échelles plutôt qu'une",
-                have=min(haut[1], bas[1]),
-                need=besoin,
-                detail="à confiance fixée, le palier ne sépare plus — V de Cramér 0,54",
-            )
-        ]
+            return None
+        first, second = self.conditional[0], self.conditional[1]
+        return Equivalence(first=first, second=second)
 
     @property
     def as_of_label(self) -> str:

@@ -22,7 +22,6 @@ from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services.history import (
-    HORIZON_MAX_SESSIONS,
     Horizon,
     add_pick,
     analysis,
@@ -514,14 +513,20 @@ def test_l_en_tete_porte_les_horizons(migrated: Settings, client: TestClient) ->
     assert "nécessaires" in page
 
 
-def test_une_question_hors_d_atteinte_est_dite_comme_telle(migrated: Settings) -> None:
-    """Une reponse hors d'atteinte **est** une reponse : le cout d'attendre
-    n'est pas nul, chaque session paie du poids de prompt et de l'attention de
-    saisie pour produire une redondance."""
+def test_un_horizon_planifie_et_ne_conclut_rien(migrated: Settings) -> None:
+    """**Un rythme de saisie n'est pas un resultat.**
+
+    Une version precedente declarait une question tranchee au-dela d'un plafond
+    de sessions : ca transformait une propriete de l'agenda en verdict
+    statistique, et ca a bascule d'un « rien a mesurer » a un « atteignable »
+    sur les memes donnees lues a travers deux populations. Un horizon dit
+    seulement quand regarder a nouveau.
+    """
     lointain = Horizon(question="x", have=10, need=5000)
 
-    assert not lointain.reachable
-    assert lointain.sessions > HORIZON_MAX_SESSIONS
+    assert lointain.sessions > 0
+    assert not hasattr(lointain, "reachable"), "aucun verdict ne sort d'un horizon"
+    assert not hasattr(lointain, "undetectable")
 
 
 def test_une_question_deja_tranchee_ne_reclame_plus_rien(migrated: Settings) -> None:
@@ -529,4 +534,3 @@ def test_une_question_deja_tranchee_ne_reclame_plus_rien(migrated: Settings) -> 
 
     assert atteint.missing == 0
     assert atteint.sessions == 0
-    assert not atteint.reachable, "rien a attendre n'est pas « atteignable »"

@@ -90,7 +90,9 @@ _EPSILON = 1e-9
 # -- Intervalle -------------------------------------------------------------
 
 
-def wilson(won: int, settled: int, continuity: bool = False) -> tuple[float, float] | None:
+def wilson(
+    won: int, settled: int, continuity: bool = False, z: float = WILSON_Z
+) -> tuple[float, float] | None:
     """Intervalle de Wilson a 95 % sur une proportion observee.
 
     Choisi plutot que l'intervalle normal, qui donne des bornes hors de [0, 1]
@@ -109,7 +111,7 @@ def wilson(won: int, settled: int, continuity: bool = False) -> tuple[float, flo
     """
     if settled <= 0:
         return None
-    z_squared = WILSON_Z * WILSON_Z
+    z_squared = z * z
     observed = won / settled
     denominator = settled + z_squared
     centre = (won + z_squared / 2) / denominator
@@ -121,7 +123,7 @@ def wilson(won: int, settled: int, continuity: bool = False) -> tuple[float, flo
         low = _wilson_bound(won, settled, -1)
         high = _wilson_bound(won, settled, +1)
         return (max(0.0, low), min(1.0, high))
-    half = (WILSON_Z / denominator) * sqrt(spread)
+    half = (z / denominator) * sqrt(spread)
     # Les bornes se rabattent sur [0, 1] : un taux ne sort pas de la, et une
     # borne a -0.03 se lirait comme une grandeur signee.
     return (max(0.0, centre - half), min(1.0, centre + half))
@@ -428,6 +430,97 @@ def jaccard(left: set[int], right: set[int]) -> float:
     """
     union = left | right
     return len(left & right) / len(union) if union else 0.0
+
+
+# -- Equivalence : conclure qu'il n'y a rien d'assez gros ------------------
+
+#: z d'un intervalle a 90 %, celui d'un test d'equivalence a 5 %.
+#:
+#: **Et non 1,96.** Une equivalence se conclut par deux tests unilateraux, donc
+#: par l'intervalle a `1 - 2α` : prendre celui a 95 % testerait a 2,5 % de chaque
+#: cote et rendrait la conclusion plus difficile qu'elle ne doit l'etre.
+TOST_Z = 1.645
+
+#: Ecart en dessous duquel deux etiquetages ne meritent pas d'exister tous les
+#: deux, en fraction de taux.
+#:
+#: **C'est une decision produit, prise avant de regarder les donnees, et elle ne
+#: bouge pas avec l'echantillon.** C'est tout ce qui la separe de ce qu'elle
+#: remplace : un plafond de sessions restantes transformait une propriete de
+#: l'agenda de saisie en verdict statistique — il a d'ailleurs bascule d'un
+#: « rien a mesurer » a un « atteignable » sur les memes donnees lues a travers
+#: deux populations.
+#:
+#: Sous dix points, deux echelles a saisir, deux jeux de libelles a tenir et le
+#: poids de prompt associe ne se justifient pas.
+EQUIVALENCE_MARGIN = 0.10
+
+
+@dataclass(frozen=True)
+class Equivalence:
+    """Deux etiquetages disent-ils assez peu de choses differentes pour n'en
+    garder qu'un.
+
+    **Un test classique ne conclut jamais « il n'y a rien »** : il echoue a
+    rejeter, ce qui n'est pas la meme chose. Une equivalence, elle, se conclut
+    par l'affirmative — l'ecart residuel tient tout entier dans une marge dont
+    on a decide d'avance qu'elle ne vaut pas un second axe.
+    """
+
+    #: `(reussites, tranchees)` des deux groupes compares, **a l'interieur d'une
+    #: strate de l'autre axe** : c'est l'ecart residuel qui decide, jamais
+    #: l'ecart brut, qui recopierait ce que l'axe dit deja tout seul.
+    first: tuple[int, int]
+    second: tuple[int, int]
+    margin: float = EQUIVALENCE_MARGIN
+
+    @property
+    def gap(self) -> float | None:
+        if not self.first[1] or not self.second[1]:
+            return None
+        return self.first[0] / self.first[1] - self.second[0] / self.second[1]
+
+    @property
+    def interval(self) -> tuple[float, float] | None:
+        return difference_interval(*self.first, *self.second, z=TOST_Z)
+
+    @property
+    def established(self) -> bool:
+        """L'ecart tient **entierement** dans la marge : un seul axe suffit."""
+        bounds = self.interval
+        return bounds is not None and max(abs(bounds[0]), abs(bounds[1])) < self.margin
+
+    @property
+    def interval_label(self) -> str:
+        """« [-37 ; +13] pts », en points de taux."""
+        bounds = self.interval
+        if bounds is None:
+            return ""
+        return f"[{bounds[0] * 100:+.0f} ; {bounds[1] * 100:+.0f}] pts"
+
+
+def difference_interval(
+    won: int, settled: int, other_won: int, other_settled: int, z: float = WILSON_Z
+) -> tuple[float, float] | None:
+    """Intervalle de la **difference** de deux proportions, methode de Newcombe.
+
+    Bati sur les intervalles de Wilson de chaque proportion, donc de la meme
+    famille que ce que la page affiche deja. L'approximation normale sur la
+    difference serait fausse la ou elle compte : sur `6/14` contre `8/26`, elle
+    donne des bornes qui sortent de [-1, 1].
+    """
+    # Une seule garde, et c'est celle de `wilson` : elle rend deja `None` sur un
+    # effectif nul. Un controle d'entree en plus rendrait ce repli inatteignable,
+    # donc non verifiable — la meme branche morte que deux fois plus haut.
+    first = wilson(won, settled, z=z)
+    second = wilson(other_won, other_settled, z=z)
+    if first is None or second is None:
+        return None
+    rate, other_rate = won / settled, other_won / other_settled
+    gap = rate - other_rate
+    low = gap - sqrt((rate - first[0]) ** 2 + (second[1] - other_rate) ** 2)
+    high = gap + sqrt((first[1] - rate) ** 2 + (other_rate - second[0]) ** 2)
+    return (max(-1.0, low), min(1.0, high))
 
 
 # -- Puissance --------------------------------------------------------------

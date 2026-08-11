@@ -2041,16 +2041,42 @@ seul texte utile du bloc : la distance a laquelle elle conclura.
   tenir a un seul resultat. Mesure qui le prouve : `ULTRA FUN 0/7` est portee, et
   sa fragilite vaut **1**. Le calcul refait **les deux tests**, l'axe pouvant
   ceder avant la ligne.
-- **`Horizon` mesure ce qu'il faudrait**, et une reponse hors d'atteinte **est**
-  une reponse : le cout d'attendre n'est pas nul, chaque session paie du poids de
-  prompt et de l'attention de saisie. Mesure actuelle : le palier departage ses
-  deux niveaux dans ~5 sessions, la confiance dans ~12, et la question « faut-il
-  deux echelles » demande **~378 selections par ligne contre 19** — soit
-  75 sessions, donc hors d'atteinte. C'est la reponse : le second axe
-  n'apportera rien de mesurable, et il se retire.
-  - L'ecart qui compte y est le **residuel** — a confiance fixee, le palier
-    separe-t-il encore — et non l'ecart brut, qui donnerait le meme horizon que
-    l'axe pris seul et ne dirait rien de la redondance.
+- **`Horizon` planifie, il ne conclut pas.** Une version portait un plafond de
+  sessions au-dela duquel une question etait declaree tranchee : **cela
+  transformait une propriete de l'agenda de saisie en verdict statistique**, et
+  le defaut s'est montre tout seul — le meme calcul a annonce « rien a mesurer »
+  puis « atteignable » sur les memes donnees, lues a travers deux populations.
+  Le plafond est retire. Un horizon dit quand regarder a nouveau, rien d'autre.
+
+### Faut-il deux echelles ? Une equivalence, pas un horizon
+
+**« Quarante-neuf sessions » repond a *quand saurai-je*** — une question sur le
+rythme de saisie, pas sur les donnees. La question produit est : **quel ecart
+residuel justifierait le cout d'un second axe ?** Elle se decide **avant** de
+regarder les donnees, une fois, et ne bouge pas avec l'echantillon.
+
+`EQUIVALENCE_MARGIN` vaut **10 points de taux**. En dessous, deux echelles a
+saisir, deux jeux de libelles a tenir et le poids de prompt associe ne se
+justifient pas.
+
+- **Un test classique ne conclut jamais « il n'y a rien »** : il echoue a
+  rejeter, ce qui n'est pas la meme chose. Une equivalence, elle, se conclut par
+  l'affirmative — l'ecart tient **entierement** dans la marge.
+- L'intervalle est celui de **Newcombe**, bati sur les Wilson des deux
+  proportions : meme famille que ce que la page affiche deja, et l'approximation
+  normale sur une difference sort de `[-1, 1]` la ou elle compte.
+- `TOST_Z` vaut **1,645 et non 1,96** : une equivalence se conclut par deux
+  tests unilateraux, donc par l'intervalle a `1 - 2α`. Prendre celui a 95 %
+  testerait a 2,5 % de chaque cote.
+- **Mesure actuelle : non concluante, et c'est l'inverse de ce que le plafond
+  annoncait.** A confiance fixee, le palier ecarte de **-12 points**, intervalle
+  **[-37 ; +13]**. Il sort largement des dix points, donc on ne peut pas encore
+  conclure qu'une seule echelle suffirait. Le verdict precedent — « le second axe
+  n'apportera rien de mesurable » — etait un artefact du seuil.
+- L'ecart mesure est le **residuel**, dans la strate la plus fournie de l'autre
+  axe : l'ecart brut recopierait ce que l'axe dit deja tout seul.
+- **Une equivalence se merite par du volume** : deux groupes identiques mais
+  minuscules ne la donnent pas. C'est la propriete qui rend le test honnete.
 
 ### La portee d'affichage du residu
 

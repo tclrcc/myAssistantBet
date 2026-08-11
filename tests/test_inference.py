@@ -17,12 +17,16 @@ import pytest
 
 from myassistantbet.services.inference import (
     ALPHA,
+    TOST_Z,
+    WILSON_Z,
+    Equivalence,
     Evidence,
     Residual,
     _upper_gamma,
     benjamini_hochberg,
     binomial_test,
     cramers_v,
+    difference_interval,
     evidence,
     jaccard,
     omnibus,
@@ -586,3 +590,77 @@ def test_la_loi_retombe_sur_la_binomiale_a_probabilite_constante() -> None:
     for count in range(6):
         attendu = comb(5, count) * 0.3**count * 0.7 ** (5 - count)
         assert distribution[count] == pytest.approx(attendu)
+
+
+# -- Equivalence -------------------------------------------------------------
+
+
+def test_l_equivalence_se_conclut_par_l_affirmative() -> None:
+    """**Un test classique ne conclut jamais « il n'y a rien »** : il echoue a
+    rejeter, ce qui n'est pas la meme chose.
+
+    Deux groupes tres fournis et tres proches : l'ecart residuel tient tout
+    entier sous la marge, et un seul axe suffit.
+    """
+    proche = Equivalence(first=(200, 400), second=(205, 400))
+
+    assert proche.established
+    bornes = proche.interval
+    assert bornes is not None and max(abs(bornes[0]), abs(bornes[1])) < proche.margin
+
+
+def test_l_equivalence_reste_non_concluante_sur_les_donnees_reelles() -> None:
+    """La strate la plus fournie de la population filtree : `8/26` contre
+    `6/14`. L'ecart vaut -12 points et son intervalle va de -37 a +13 — il sort
+    largement des dix points qu'un second axe devrait valoir.
+
+    C'est l'inverse de ce qu'un plafond de sessions annoncait, et c'est la
+    reponse juste : on ne peut pas encore conclure qu'une seule echelle suffit.
+    """
+    reelle = Equivalence(first=(8, 26), second=(6, 14))
+
+    assert reelle.gap == pytest.approx(-0.121, abs=1e-3)
+    assert reelle.interval_label == "[-37 ; +13] pts"
+    assert not reelle.established
+
+
+def test_un_petit_echantillon_ne_conclut_jamais_a_l_equivalence() -> None:
+    """Deux groupes identiques mais minuscules : l'intervalle est trop large.
+
+    C'est la propriete qui rend le test honnete — l'equivalence se merite par
+    du volume, elle ne s'obtient pas en n'ayant rien observe.
+    """
+    minuscule = Equivalence(first=(1, 2), second=(1, 2))
+
+    assert minuscule.gap == 0.0
+    assert not minuscule.established
+
+
+def test_l_intervalle_de_la_difference_est_borne() -> None:
+    """Newcombe plutot que l'approximation normale : celle-ci sort de [-1, 1]
+    la ou elle compte, sur de petits effectifs."""
+    bornes = difference_interval(6, 14, 8, 26)
+
+    assert bornes is not None
+    assert -1.0 <= bornes[0] <= bornes[1] <= 1.0
+
+
+def test_l_equivalence_se_tait_sur_un_groupe_vide() -> None:
+    vide = Equivalence(first=(0, 0), second=(5, 10))
+
+    assert vide.gap is None
+    assert vide.interval is None
+    assert vide.interval_label == ""
+    assert not vide.established
+
+
+def test_le_z_du_tost_n_est_pas_celui_de_wilson() -> None:
+    """Une equivalence se conclut par **deux tests unilateraux**, donc par
+    l'intervalle a `1 - 2α`. Prendre celui a 95 % testerait a 2,5 % de chaque
+    cote et rendrait la conclusion plus difficile qu'elle ne doit l'etre."""
+    assert TOST_Z < WILSON_Z
+    large = difference_interval(6, 14, 8, 26, z=WILSON_Z)
+    etroit = difference_interval(6, 14, 8, 26, z=TOST_Z)
+
+    assert large is not None and etroit is not None
+    assert (etroit[1] - etroit[0]) < (large[1] - large[0])
