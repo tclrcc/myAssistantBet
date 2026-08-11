@@ -243,6 +243,24 @@
   </details>
 {% endmacro %}
 
+{# **Un décompte, pas un indicateur.** Un pourcentage en gros invite à être
+   comparé à quelque chose, et on a établi qu'un taux de réussite nu n'est
+   comparable à rien : il ne distingue pas une méthode qui bat le marché d'une
+   méthode qui prend des favoris courts. Le chiffre est donc « 35 sur 73 », et
+   `.hero-figure` reste réservé au résidu — le seul chiffre interprétable de la
+   page ne peut pas partager son poids visuel avec celui qui ne l'est pas. #}
+{% macro tally(row, label) %}
+  <div class="tile">
+    <span class="label">{{ label }}</span>
+    <b class="tile-figure">{{ row.won }} <i>sur</i> {{ row.settled }}</b>
+    <span class="tile-detail">
+      {{ row.won }} gagnée(s), {{ row.lost }} perdue(s)
+      {%- if row.void %} · {{ row.void }} annulée(s){% endif %}
+      {%- if row.pending %} · {{ row.pending }} en attente{% endif %}
+    </span>
+  </div>
+{% endmacro %}
+
 {% macro tile(row, label, note="") %}
   <div class="tile">
     <span class="label">{{ label }}</span>

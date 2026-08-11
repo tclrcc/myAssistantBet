@@ -26,6 +26,7 @@ from myassistantbet.services.history import (
     HistoryError,
     Lot,
     Pick,
+    RateRow,
     _overlaps,
     add_pick,
     analysis,
@@ -1635,114 +1636,50 @@ def test_la_page_materialise_l_intervalle_et_dit_la_regle(
     report = analysis(isolated_settings)
     page = " ".join(client.get("/stats").text.split())
 
-    assert report.undecided_rows, "6/10 ne tranche pas"
+    assert not report.carried_rows, "6/10 ne tranche pas"
     assert 'class="ci"' in page, "l'intervalle est materialise sur la barre, pas ecrit"
     assert "intervalle à 95 %" in page
-    assert "contient 50 %" in page
     assert "[31 – 83]" in page, "le detail chiffre, lui, l'ecrit"
+    # **La reference a 50 % a disparu de la page.** Un taux de reussite de 50 %
+    # n'est un repere pour rien : la base varie avec le marche joue, et compter
+    # les lignes qui « n'ecartent pas 50 % » testait une hypothese que personne
+    # n'avait formulee.
+    assert "contient 50 %" not in page
+    assert "pile ou face" not in page
 
 
-# -- Le taux implicite ------------------------------------------------------
+# -- Le taux implicite, retire du detail chiffre -----------------------------
+#
+# Il y vivait depuis plusieurs lots, colonne par colonne, sur trente lignes :
+# un residu au prix **sans test, sans correction de multiplicite et sans
+# fragilite**. Personne ne l'a jamais lu comme tel — le residu a fini par etre
+# « decouvert » cinq lots plus tard, par un calcul refait a la main. Trente
+# residus non testes ne se lisent pas, ils decorent.
 
 
-def test_le_taux_implicite_est_la_moyenne_des_inverses_de_cote(migrated: Settings) -> None:
-    """`1/cote` sur des selections deja tranchees : de l'arithmetique sur un
-    prix connu, pas une prevision."""
-    session_id, event_id = _session_avec_match(migrated)
-    for _ in range(ANALYSIS_MIN_ROWS):
-        _propose(migrated, session_id, event_id, "safe", "win", price="2.00")
-
-    ligne = analysis(migrated).by_tier[0]
-
-    assert ligne.priced == ANALYSIS_MIN_ROWS
-    assert ligne.implied == pytest.approx(0.5)
-    assert ligne.implied_label == "50 %"
-
-
-def test_l_ecart_est_signe_et_compte_en_points(migrated: Settings) -> None:
-    session_id, event_id = _session_avec_match(migrated)
-    # Cote 2.00 partout : taux implicite 50 %. Six gagnees sur huit, soit 75 %.
-    for index in range(ANALYSIS_MIN_ROWS):
-        _propose(
-            migrated,
-            session_id,
-            event_id,
-            "safe",
-            "win" if index < 6 else "loss",
-            price="2.00",
-        )
-
-    ligne = analysis(migrated).by_tier[0]
-
-    assert ligne.rate == pytest.approx(0.75)
-    assert ligne.gap == pytest.approx(0.25)
-    assert ligne.gap_label == "+25 pts"
-
-
-def test_les_selections_sans_cote_sortent_du_seul_taux_implicite(migrated: Settings) -> None:
-    """Une cote manquante ne retire pas la selection du taux constate : les 88
-    selections anterieures a cette colonne restent comptees, elles n'entrent
-    simplement pas dans la moyenne des prix."""
-    session_id, event_id = _session_avec_match(migrated)
-    for _ in range(ANALYSIS_MIN_ROWS):
-        _propose(migrated, session_id, event_id, "safe", "win", price="2.00")
-    for _ in range(4):
-        _propose(migrated, session_id, event_id, "safe", "win")
-
-    ligne = analysis(migrated).by_tier[0]
-
-    assert ligne.settled == ANALYSIS_MIN_ROWS + 4, "toutes comptent au taux constate"
-    assert ligne.priced == ANALYSIS_MIN_ROWS, "seules les cotees comptent au taux implicite"
-    assert ligne.implied == pytest.approx(0.5), "les non cotees ne tirent pas la moyenne"
-    assert ligne.priced_note == "8 cotée(s)", "les deux denominateurs different : le dire"
-
-
-def test_sans_aucune_cote_les_deux_colonnes_se_taisent(migrated: Settings) -> None:
-    session_id, event_id = _session_avec_match(migrated)
-    for _ in range(ANALYSIS_MIN_ROWS):
-        _propose(migrated, session_id, event_id, "safe", "win")
-
-    ligne = analysis(migrated).by_tier[0]
-
-    assert ligne.implied is None
-    assert (ligne.implied_label, ligne.gap_label) == ("—", "—")
-    assert ligne.priced_note == "", "aucune cote : il n'y a pas deux denominateurs a opposer"
-
-
-def test_le_seuil_de_lecture_s_applique_aussi_aux_cotes(migrated: Settings) -> None:
-    """Meme seuil que le taux : une moyenne sur sept prix decrit sept paris."""
-    session_id, event_id = _session_avec_match(migrated)
-    for _ in range(ANALYSIS_MIN_ROWS - 1):
-        _propose(migrated, session_id, event_id, "safe", "win", price="2.00")
-
-    ligne = analysis(migrated).by_tier[0]
-
-    assert ligne.priced == ANALYSIS_MIN_ROWS - 1
-    assert ligne.implied is None
-    assert ligne.gap is None
-
-
-def test_une_cote_a_un_ou_moins_est_refusee(migrated: Settings) -> None:
-    """Ce serait un taux implicite d'au moins 100 %, donc pas une cote."""
-    session_id, _ = _session_avec_match(migrated)
-
-    for valeur in ("1.00", "0.80"):
-        with pytest.raises(HistoryError, match="Cote"):
-            add_pick(session_id, "safe", "O/U", "Over", price=valeur, settings=migrated)
-
-
-def test_la_page_publie_les_deux_colonnes_et_leur_mode_d_emploi(
+def test_le_detail_chiffre_ne_porte_plus_de_prix(
     client: TestClient, isolated_settings: Settings
 ) -> None:
+    """Le residu vit en tete de page, sur la population entiere, avec son
+    overround d'annulation et sa fragilite. **Nulle part ailleurs.**"""
     session_id, event_id = _session_avec_match(isolated_settings)
     for _ in range(ANALYSIS_MIN_ROWS):
         _propose(isolated_settings, session_id, event_id, "safe", "win", price="2.00")
 
     page = " ".join(client.get("/stats").text.split())
 
-    assert "Taux implicite" in page
-    assert "négatif par construction" in page, "l'ecart ne se lit pas dans l'absolu"
-    assert "les uns par rapport aux autres" in page
+    assert "Taux implicite" not in page
+    assert "négatif par construction" not in page
+    assert "payée(s) par les prix" in page, "le residu, lui, reste — en tete"
+
+
+def test_aucun_regroupement_ne_cumule_de_prix(migrated: Settings) -> None:
+    """Le garde-fou de non-regression : une donnee que rien ne lit finit par se
+    retirer, et celle-ci est revenue une fois de trop."""
+    interdits = {"priced", "implied_sum", "implied", "gap"}
+    champs = set(RateRow.__dataclass_fields__)
+
+    assert not champs & interdits
 
 
 def test_aucun_mot_financier_dans_le_rendu_des_cotes(
@@ -2152,8 +2089,11 @@ def test_la_barre_a_la_largeur_du_taux(client: TestClient, isolated_settings: Se
 
     response = client.get("/stats")
 
-    assert "75 %" in response.text
+    # La largeur seule, et non le libelle : le taux global a cesse d'etre rendu
+    # en pourcentage — un pourcentage en gros invite a etre compare a quelque
+    # chose, et un taux de reussite nu n'est comparable a rien.
     assert 'style="width: 75.0%"' in response.text
+    assert "3 <i>sur</i> 4" in response.text, "le decompte a pris sa place"
 
 
 def test_le_taux_ne_s_affiche_jamais_sans_son_compte(

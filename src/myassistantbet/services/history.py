@@ -509,13 +509,6 @@ class RateRow:
     minimum: int = ANALYSIS_MIN_ROWS
     void: int = 0
     pending: int = 0
-    #: Selections tranchees du regroupement qui portent une cote. Tenu a part
-    #: de `settled` : une cote manquante ne retire pas la selection du taux
-    #: constate, elle la retire du seul taux implicite.
-    priced: int = 0
-    #: Somme des `1/cote` de ces selections. Stockee en somme plutot qu'en
-    #: moyenne pour que deux regroupements s'additionnent sans se ponderer.
-    implied_sum: float = 0.0
     #: Identifiants des selections **tranchees** du regroupement. Sert a
     #: reconnaitre deux regroupements de deux axes differents qui decrivent le
     #: meme echantillon.
@@ -675,8 +668,6 @@ class RateRow:
         self.lost += other.lost
         self.void += other.void
         self.pending += other.pending
-        self.priced += other.priced
-        self.implied_sum += other.implied_sum
         self.unattached += other.unattached
         self.members |= other.members
         self.events |= other.events
@@ -742,54 +733,6 @@ class RateRow:
         """
         bounds = self.interval
         return self.band is not None and bounds is not None and self.band.excludes(bounds)
-
-    @property
-    def implied(self) -> float | None:
-        """Moyenne des `1/cote` sur les selections tranchees **et cotees**.
-
-        Meme seuil de lecture que le taux constate : sous `ANALYSIS_MIN_ROWS`
-        cotes, la moyenne decrit une poignee de prix et non un regroupement.
-        """
-        if self.priced < self.minimum:
-            return None
-        return self.implied_sum / self.priced
-
-    @property
-    def implied_label(self) -> str:
-        return "—" if self.implied is None else f"{self.implied * 100:.0f} %"
-
-    @property
-    def gap(self) -> float | None:
-        """Ecart en points entre le taux constate et le taux implicite moyen.
-
-        **Structurellement negatif** : `1/cote` porte la marge du bookmaker, si
-        bien qu'un regroupement parfaitement neutre s'ecarte deja de la valeur
-        de cette marge. Il ne se lit que compare a un autre ecart de la meme
-        page, jamais dans l'absolu — la note sous le tableau le dit.
-        """
-        if self.rate is None or self.implied is None:
-            return None
-        return self.rate - self.implied
-
-    @property
-    def gap_label(self) -> str:
-        return "—" if self.gap is None else f"{self.gap * 100:+.0f} pts"
-
-    @property
-    def priced_note(self) -> str:
-        """« 9 cotées », et seulement quand ce n'est pas tout le regroupement.
-
-        Les deux colonnes de cotes n'ont alors pas le meme denominateur que le
-        taux constate : le taire ferait soustraire deux populations differentes
-        sans que rien ne le signale.
-
-        Rien non plus quand **aucune** selection n'est cotee : les deux colonnes
-        affichent deja « — », et « 0 cotée(s) » a cote ne ferait que du bruit
-        sur toutes les lignes anterieures a cette mesure.
-        """
-        if self.priced == 0 or self.priced == self.settled:
-            return ""
-        return f"{self.priced} cotée(s)"
 
 
 @dataclass
@@ -1719,13 +1662,13 @@ def _count(entry: RateRow, result: str, row: Any = None) -> None:
         entry.void += 1
     else:
         entry.pending += 1
-    # Seules les selections tranchees portent un taux constate : ne cumuler que
-    # celles-la garde les deux colonnes comparables. Une cote <= 1.00 ne peut
-    # pas etre une cote et donnerait un taux implicite superieur a 100 %.
-    price = _column(row, "price")
-    if settled and price is not None and price > 1.0:
-        entry.priced += 1
-        entry.implied_sum += 1.0 / price
+    # **Le prix ne se cumule plus par regroupement.** Il l'a ete pendant
+    # plusieurs lots, et le detail chiffre affichait donc un residu par ligne —
+    # sans test, sans correction de multiplicite, sans fragilite. Personne ne
+    # l'a jamais lu comme tel, et le residu a fini par etre « decouvert » cinq
+    # lots plus tard par un calcul refait a la main. Trente residus non testes
+    # ne se lisent pas, ils decorent : celui-ci vit en tete de page, sur la
+    # population entiere, et nulle part ailleurs.
 
 
 def _tally(rows: list[Any], key_field: str, labels: dict[str, str]) -> list[RateRow]:
@@ -2182,17 +2125,6 @@ class Analysis:
         """
         return sum(1 for rows in self.groups for row in rows if row.thin)
 
-    @property
-    def undecided_rows(self) -> int:
-        """Regroupements dont l'intervalle contient 50 %.
-
-        Compte a part de `thin_rows`, parce que les deux causes sont
-        differentes : l'une dit « trop peu de lignes », l'autre « assez de
-        lignes, mais l'ecart reste dans le bruit ». Une ligne peut etre l'un
-        sans l'autre.
-        """
-        return sum(1 for rows in self.groups for row in rows if row.inconclusive)
-
     @staticmethod
     def _compare(rows: list[RateRow]) -> Comparison | None:
         """Les deux plus gros regroupements d'un axe, s'ils se lisent.
@@ -2239,12 +2171,6 @@ class Analysis:
     def clustered_rows(self) -> int:
         """Regroupements ou des selections se partagent des matchs."""
         return sum(1 for rows in self.groups for row in rows if row.clustered)
-
-    @property
-    def decided_rows(self) -> int:
-        """Regroupements dont l'intervalle exclut 50 % — les seuls qui tranchent."""
-        total = sum(len(rows) for rows in self.groups)
-        return total - self.undecided_rows
 
     @property
     def overall(self) -> RateRow:

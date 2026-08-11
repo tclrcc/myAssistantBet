@@ -2078,6 +2078,35 @@ justifient pas.
 - **Une equivalence se merite par du volume** : deux groupes identiques mais
   minuscules ne la donnent pas. C'est la propriete qui rend le test honnete.
 
+### Le residu vit en tete, et nulle part ailleurs
+
+**Il etait deja affiche ligne par ligne, et personne ne l'avait vu.** Le detail
+chiffre portait deux colonnes — « Taux implicite » et « Écart » — depuis
+plusieurs lots : un residu au prix sur trente lignes, **sans test, sans
+correction de multiplicite, sans fragilite**. Il a fini par etre « decouvert »
+cinq lots plus tard, par un calcul refait a la main sur la population entiere.
+
+C'est le meilleur argument possible pour la regle qui les retire : **trente
+residus non testes ne se lisent pas, ils decorent**. Les colonnes, leur note de
+mode d'emploi et les champs qui les alimentaient (`priced`, `implied_sum`) sont
+partis ensemble — une donnee que rien ne lit finit par se retirer, et celle-ci
+etait revenue une fois de trop.
+
+### Ce que le chiffre de tete n'est pas
+
+- **Le taux de reussite nu a cesse d'etre un indicateur.** Il est rendu en
+  **decompte** — « 35 sur 73 » — et non en pourcentage : un pourcentage en gros
+  invite a etre compare a quelque chose, et on a etabli qu'un taux nu n'est
+  comparable a rien. Un decompte n'invite a rien.
+- `.hero-figure` est **reserve au residu**. Le seul chiffre interpretable de la
+  page ne peut pas partager son poids visuel avec celui qui ne l'est pas : ils
+  se sont cotoyes a la meme taille, a quinze pixels d'ecart, pendant un lot.
+- **La reference a 50 % a disparu de la page**, et ce n'etait pas une
+  formulation. Elle y comptait les lignes « qui n'ecartent pas 50 % » — une
+  hypothese que personne n'avait formulee, la base variant avec le marche joue.
+  Le socle avait change de reference sans que le rendu suive.
+- **L'en-tete disait « toutes les selections »** en en ecartant trente-sept.
+
 ### La portee d'affichage du residu
 
 **Au niveau de la population, en chiffre de tete. Pas en colonne sur trente
@@ -2138,6 +2167,38 @@ qui font la regle :
   populations differentes sans que rien ne le signale.
 - **C'est ce qui rend `as_of` honnete plutot que decoratif.** Une lecture faite
   sur une copie datee porte vraiment la date qu'elle affiche.
+
+## Un rythme de saisie n'est pas un resultat
+
+Une question du genre « dans combien de sessions saurai-je » repond a une
+propriete de **l'agenda**, pas des donnees. Elle a sa place — c'est de la
+planification, et savoir quand regarder a nouveau est utile — mais elle ne rend
+aucun verdict, et le libelle ne doit pas la presenter comme tel.
+
+Le defaut s'est montre tout seul : un plafond de sessions restantes a annonce
+« rien a mesurer » puis « atteignable » sur les **memes donnees**, lues a travers
+deux populations. Ce qui conclut est un test dont la reference se decide avant
+de regarder les donnees — voir l'equivalence plus haut.
+
+## Une garde d'entree qui double une garde de sortie est une branche morte
+
+Trois branches inatteignables retirees en six lots, et **deux partagent cette
+forme** : un controle d'entree qui rend impossible le repli place plus bas.
+
+- `cramers_v` filtrait les lignes vides a l'entree, puis testait un total nul
+  qui ne pouvait plus l'etre ;
+- `difference_interval` refusait un effectif nul avant d'appeler `wilson`, qui
+  rend deja `None` dans ce cas.
+
+La troisieme est d'une autre famille — un repli en fin de boucle rendu impossible
+par un **invariant mathematique** : la loi de Poisson-binomiale somme a 1, donc
+la fragilite trouve toujours sa valeur. Elle ne se prevoit pas par une regle de
+forme, seulement par la couverture.
+
+**Et c'est l'argument retrospectif le plus net pour `pytest-cov`**, qui n'etait
+meme pas installe au debut de ce chantier : les trois sont apparues en poussant
+le module a 100 %, aucune n'aurait ete trouvee autrement — une branche morte ne
+casse rien, par definition.
 
 ## Une valeur nulle ou extreme est un resultat, pas une absence de resultat
 

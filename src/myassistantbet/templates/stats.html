@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_charts.html" import card, tile, hero, mix, sessions, families, why %}
+{% from "_charts.html" import card, tile, tally, hero, mix, sessions, families, why %}
 {% block title %}Statistiques — MyAssistantBet{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -56,8 +56,10 @@
        étant servie en continu. Un verdict qui bouge d'un facteur deux sur six
        saisies n'en est pas un, et la page doit dire de quand il date. #}
     <span class="muted small">
-      toutes les sélections dont le résultat est connu, jouées ou non —
-      {{ analysis.settled }} tranchée(s) · arrêté au {{ analysis.as_of_label }}
+      {{ analysis.settled }} sélection(s) tranchée(s) dont l'antériorité est établie,
+      jouées ou non
+      {%- if analysis.without_antecedence %} · {{ analysis.without_antecedence }} écartée(s)
+      {%- endif %} · arrêté au {{ analysis.as_of_label }}
     </span>
   </div>
 
@@ -127,11 +129,19 @@
   </div>
   {% endif %}
 
+  {# **Le taux nu descend au rang de décompte, et change de libellé.**
+     Un pourcentage en gros invite à être comparé à quelque chose ; on a établi
+     qu'il n'est comparable à rien — il ne distingue pas une méthode qui bat le
+     marché d'une méthode qui prend des favoris courts. Un décompte n'invite à
+     rien, et c'est ce qu'on veut ici.
+
+     `.hero-figure` est désormais réservé au résidu : le chiffre interprétable
+     ne peut pas avoir le même poids visuel que celui qui ne l'est pas. #}
   <div class="kpi">
-    {{ hero(analysis.overall, "Taux de l'analyse") }}
+    {{ tally(analysis.overall, "Sélections tranchées") }}
     {% if analysis.comparable %}
-      {{ tile(analysis.played, "Sélections jouées") }}
-      {{ tile(analysis.skipped, "Sélections écartées") }}
+      {{ tally(analysis.played, "Jouées") }}
+      {{ tally(analysis.skipped, "Écartées") }}
     {% endif %}
   </div>
 
@@ -438,8 +448,7 @@
       <span class="readout-facts">
         <b>{{ analysis.settled }}</b> tranchée(s) sur
         <b>{{ analysis.settled_events }}</b> événement(s) distinct(s)
-        {%- if analysis.undecided_rows %} · <b>{{ analysis.undecided_rows }}</b> ligne(s) sur
-        {{ analysis.undecided_rows + analysis.decided_rows }} n'écartent pas 50 %{% endif %}
+
         {%- if analysis.thin_rows %} · <b>{{ analysis.thin_rows }}</b> ligne(s) sous
         {{ analysis.minimum_rows }} paris{% endif %}
       </span>
@@ -471,19 +480,23 @@
         {% endif %}
       </p>
 
-      {% if analysis.undecided_rows %}
+      {# **La référence à 50 % a été retirée, et ce n'était pas un détail de
+         formulation.** Un taux de réussite de 50 % n'est un repère pour rien :
+         sur un 1N2 la base tourne autour de 33 %, sur un handicap asiatique
+         autour de 50 %, sur un total tout dépend de la ligne. Compter les lignes
+         qui « n'écartent pas 50 % » testait une hypothèse que personne n'avait
+         formulée — et le socle avait déjà changé de référence sans que ce
+         paragraphe, ni les deux comptes qui l'alimentaient, ne suivent.
+
+         Ce qui décide vit maintenant plus haut : l'axe passe son omnibus, il
+         survit à la correction entre axes, la ligne s'écarte de **son
+         complément**, et sa fragilité l'accompagne. #}
       <p>
         Le crochet posé sur chaque barre est l'<strong>intervalle à 95 %</strong> :
-        l'étendue des taux que ces tirages-là ne permettent pas d'écarter.
-        <strong>{{ analysis.undecided_rows }} ligne(s) sur
-        {{ analysis.undecided_rows + analysis.decided_rows }} ont un intervalle qui
-        contient 50 %</strong> — elles ne disent donc pas si tu passes plus souvent
-        qu'à pile ou face. Ce n'est pas un défaut d'affichage : c'est ce que permet
-        ce volume, et le seul moyen de le savoir est de l'écrire.
-        Une barre pâlie signale l'un ou l'autre — trop peu de paris, ou un intervalle
-        qui contient 50 % — et c'est le crochet qui dit lequel.
+        l'étendue des taux que ces tirages-là ne permettent pas d'écarter. Il dit
+        une <strong>précision</strong>, jamais un verdict — c'est le test qui
+        tranche, et une ligne portée le dit en tête de ce bloc.
       </p>
-      {% endif %}
 
       {# Une barre pâlit pour deux raisons distinctes, et la note ne peut donc pas
          promettre que le pâlissement identifie l'une d'elles : au volume actuel
@@ -596,7 +609,6 @@
       {% endif %}
     </div>
     {% with minimum_rows = analysis.minimum_rows %}
-      {% include "_rates_note.html" %}
     {% endwith %}
   </details>
 </section>
@@ -924,7 +936,6 @@
       {% endif %}
     </div>
     {% with minimum_rows = analysis.minimum_rows %}
-      {% include "_rates_note.html" %}
     {% endwith %}
     {% if coupon_rates %}
     <p class="block-note">

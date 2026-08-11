@@ -1,17 +1,20 @@
 {# Le détail chiffré d'un regroupement.
 
-   Les deux colonnes de cotes ne sont pas un indicateur financier : « 1/cote »
-   est de l'arithmétique sur un prix déjà connu, et l'écart se lit en points de
-   taux. Rien n'y est multiplié par une mise. Elles se taisent sous le même
-   seuil que le taux constaté — une moyenne sur trois prix décrit trois paris,
-   pas un regroupement. #}
+   **Les colonnes « Taux implicite » et « Écart » ont été retirées, et leur
+   histoire est l'argument le plus net pour la règle qui les retire.** Elles
+   affichaient le résidu au prix, ligne par ligne, depuis plusieurs lots — sans
+   test, sans correction de multiplicité, sans fragilité — et personne ne les a
+   jamais lues comme telles. Le résidu a été « découvert » cinq lots plus tard
+   par un calcul refait à la main.
+
+   Trente résidus non testés ne se lisent pas, ils décorent. Le résidu vit
+   désormais en tête de page, sur la population entière, avec son overround
+   d'annulation et sa fragilité. Nulle part ailleurs. #}
 <table class="board rates">
   <thead>
     <tr>
       <th>{{ heading }}</th>
       <th class="num">Taux</th>
-      <th class="num">Taux implicite</th>
-      <th class="num">Écart</th>
       <th class="num">G</th>
       <th class="num">P</th>
       <th class="num">Ann.</th>
@@ -37,16 +40,6 @@
         <span class="muted small ci-text">{{ row.interval_label }}</span>
         {%- endif %}
       </td>
-      <td class="num">
-        {{ row.implied_label }}
-        {# Le dénominateur du taux implicite est le sous-ensemble coté. Quand il
-           diffère du regroupement, l'écart soustrait deux populations qui ne se
-           recouvrent pas : le dire est la seule façon de ne pas le cacher. #}
-        {%- if row.priced_note %}
-        <span class="muted small">· {{ row.priced_note }}</span>
-        {%- endif %}
-      </td>
-      <td class="num">{{ row.gap_label }}</td>
       <td class="num">{{ row.won }}</td>
       <td class="num">{{ row.lost }}</td>
       <td class="num muted">{{ row.void }}</td>
