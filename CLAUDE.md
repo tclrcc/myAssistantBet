@@ -1395,6 +1395,18 @@ exactement le fait de format et de calendrier que ces fiches ont pour role de po
   match, ecart de niveau attendu. Rien qui change d'une saison a l'autre : un fait perime
   dans le prompt coute plus qu'une fiche absente, et la phase en cours se lit deja sur le
   match.
+  - **Les coupes n'en ont pas le monopole**, et s'en tenir a elles laissait cinq
+    competitions actives muettes. Un **championnat** a lui aussi un format a dire — ce que
+    sa fin de saison met en jeu, a quel moment de l'annee il se joue, si ses clubs se
+    valent : une A-League sans montee ni descente n'a plus d'enjeu de maintien en avril, et
+    aucune ligne du bloc CONTEXTE ne le signale. Un **tournoi de tennis** en a deux de plus,
+    qui n'appartiennent qu'a lui : ce qui se dispute la **semaine d'avant** et la **semaine
+    d'apres** — Cincinnati suit le Masters canadien et precede l'US Open, ou les forfaits de
+    precaution sont la regle.
+  - Le test de garde ne verifie donc plus le prefixe `soccer_` mais ce qu'il verifiait
+    vraiment : que la cle est celle d'un sport connu, donc qu'elle sera rapprochee d'une
+    competition. Une faute de frappe ne casse rien — la fiche ne se pose jamais, et la
+    competition reste reclamee sans qu'on comprenne pourquoi.
 - **Aucune migration ne les rejoue**, contrairement aux niveaux, et c'est un arbitrage :
   c'est de la prose de plusieurs lignes, et la tenir a jour des deux cotes la ferait
   diverger au premier ajustement. La synchronisation comble le manque — elle tourne tous

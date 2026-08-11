@@ -20,6 +20,7 @@ from myassistantbet.services.competitions import (
     CATEGORIES_BY_SPORT,
     COMPETITION_CATEGORIES,
     COMPETITION_NOTES,
+    SPORT_PREFIXES,
     categories_for,
     list_all,
     set_active,
@@ -814,12 +815,19 @@ async def test_la_fiche_comble_un_manque_sur_une_competition_existante(
     )
 
 
-def test_toutes_les_fiches_seedees_visent_une_cle_football() -> None:
+def test_toutes_les_fiches_seedees_visent_une_cle_connue() -> None:
     """Une faute de frappe dans une cle ne casserait rien : la fiche ne se
     poserait jamais, et la competition resterait reclamee sans qu'on comprenne
-    pourquoi."""
+    pourquoi.
+
+    Le prefixe n'est plus « soccer_ » : les fiches couvrent desormais les
+    championnats et les tournois de tennis, ou le format et la place dans le
+    calendrier disent autant qu'un tour de coupe. Ce qui reste verifie est ce
+    que le test verifiait vraiment — que la cle est celle d'un sport connu, donc
+    qu'elle sera rapprochee d'une competition.
+    """
     for cle in COMPETITION_NOTES:
-        assert cle.startswith("soccer_"), cle
+        assert any(cle.startswith(prefix) for prefix in SPORT_PREFIXES), cle
         assert cle in COMPETITION_CATEGORIES, f"{cle} devrait aussi porter un niveau"
 
 

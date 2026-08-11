@@ -432,6 +432,13 @@ class Unclassified:
 #: change d'une saison a l'autre — un fait perime dans le prompt coute plus
 #: qu'une fiche absente, et la phase en cours se lit deja sur le match.
 #:
+#: Les coupes n'en ont pas le monopole. Un **championnat** a lui aussi un format
+#: a dire — ce que sa fin de saison met en jeu, a quel moment de l'annee il se
+#: joue, si ses clubs se valent — et un **tournoi de tennis** en a deux de plus,
+#: qui n'appartiennent qu'a lui : ce qui se dispute la semaine d'avant et la
+#: semaine d'apres. Aucun de ces faits n'est dans le bloc CONTEXTE, qui decrit
+#: un match et jamais la competition qui l'accueille.
+#:
 #: **Aucune migration ne les rejoue**, contrairement aux niveaux : c'est de la
 #: prose de plusieurs lignes, et la tenir a jour des deux cotes la ferait
 #: diverger au premier ajustement. La synchronisation comble le manque sur les
@@ -494,6 +501,57 @@ COMPETITION_NOTES: dict[str, str] = {
         "écarts de niveau et de calendrier sont importants : un club déjà lancé en "
         "championnat affronte souvent un club en reprise ou en fin de saison. Le score de "
         "l'aller commande le scénario du retour."
+    ),
+    # -- Championnats : le format, le calendrier et l'ecart de niveau attendu --
+    #
+    # Un championnat n'a pas de « tour d'entree » a dire, mais il a tout le
+    # reste : ce que la fin de saison met en jeu, a quel moment de l'annee il se
+    # joue, et si ses clubs se valent. Trois faits que le bloc CONTEXTE ne porte
+    # pas — il decrit un match, jamais la competition qui l'accueille.
+    "soccer_italy_serie_b": (
+        "Championnat à matchs aller-retour. Les deux premiers montent directement, le "
+        "troisième promu sort de play-offs à élimination directe ; le bas de tableau descend "
+        "en Serie C, la dernière place de relégation se jouant en play-out. Écarts de niveau "
+        "faibles et classement resserré, avec des journées en semaine qui imposent la "
+        "rotation."
+    ),
+    "soccer_australia_aleague": (
+        "Championnat à contre-saison de l'Europe : il se joue d'octobre à mai, l'été austral "
+        "au milieu. Ligue fermée, sans montée ni descente — la fin de saison ne met en jeu "
+        "que la qualification aux finales, disputées à élimination directe : le premier de la "
+        "saison régulière n'est pas le champion. Plafond salarial et quota de joueurs "
+        "étrangers resserrent les écarts entre clubs, et les déplacements sont énormes "
+        "(Perth, Nouvelle-Zélande)."
+    ),
+    "soccer_saudi_arabia_pro_league": (
+        "Championnat à matchs aller-retour, d'août à mai, avec montées et descentes vers la "
+        "première division saoudienne. Depuis 2023, le recrutement international est "
+        "concentré sur quelques clubs de tête : les écarts de niveau avec le bas de tableau "
+        "sont parmi les plus marqués d'un championnat de première division. Chaleur et "
+        "coups d'envoi tardifs en début de saison ; en mars, le calendrier se resserre autour "
+        "du ramadan."
+    ),
+    # -- Tennis : le format d'un tournoi, sa place dans le calendrier ----------
+    #
+    # Meme role qu'au football, et deux faits de plus qui n'appartiennent qu'au
+    # tennis : ce qui se joue la semaine d'avant, et ce qui se joue la semaine
+    # d'apres. Un tournoi colle a un Grand Chelem ne se dispute pas comme un
+    # tournoi isole.
+    "tennis_atp_cincinnati_open": (
+        "Masters 1000 sur dur extérieur, en deux manches gagnantes, joué à Mason (Ohio) en "
+        "août. Tableau élargi étalé sur douze jours : les têtes de série sont exemptées du "
+        "premier tour et les tours s'enchaînent moins vite qu'en une semaine. Il suit "
+        "immédiatement le Masters canadien et précède l'US Open : forfaits de précaution et "
+        "abandons y sont fréquents, et la fraîcheur pèse autant que la hiérarchie. Chaleur et "
+        "humidité de l'Ohio, sensibles sur les sessions de journée."
+    ),
+    "tennis_wta_cincinnati_open": (
+        "WTA 1000 sur dur extérieur, joué à Mason (Ohio) en août. Tableau élargi étalé sur "
+        "douze jours : les têtes de série sont exemptées du premier tour et les tours "
+        "s'enchaînent moins vite qu'en une semaine. Il suit immédiatement le tournoi canadien "
+        "et précède l'US Open : forfaits de précaution et abandons y sont fréquents, et la "
+        "fraîcheur pèse autant que la hiérarchie. Chaleur et humidité de l'Ohio, sensibles "
+        "sur les sessions de journée."
     ),
 }
 
