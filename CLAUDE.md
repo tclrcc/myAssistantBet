@@ -1714,6 +1714,86 @@ bornes (1.70, 2.30) l'ecart de marge fait basculer de palier.
   d'`edgelab` instancie un client `anthropic`. Le reutiliser ferait de cette application un
   appelant de l'API Anthropic — interdit n°6, sans exception possible.
 
+## Le socle inferentiel (`services/inference.py`)
+
+Couche **pure** — aucune base, aucun reglage, aucun import de service — extraite
+de `history.py`, ou `wilson` et `required_sample` vivaient au milieu de trois mille
+lignes de requetes. Ces fonctions decident desormais de **ce que la page affirme** :
+les laisser la rendait une erreur invisible, et un intervalle faux de deux points ne
+casse rien — il fait seulement lire un constat la ou il n'y en a pas. Aucune
+dependance ajoutee : `scipy` ferait entrer une bibliotheque de calcul scientifique
+dans un projet qui tient sur un processus et un fichier SQLite.
+
+Trois lecons mesurees, et ce sont elles le module :
+
+- **L'intervalle de Wilson ne remplace pas un test.** Sur la population reelle,
+  « l'intervalle ecarte 50 % » retenait 6 lignes quand le test exact n'en retenait
+  que 3, et les trois desaccords vont tous dans le meme sens — l'intervalle affirme
+  plus que les donnees ne portent. Deux lignes a `0/4` dont l'intervalle monte a
+  48,99 % quand quatre pertes d'affilee arrivent **une fois sur huit** (p = 0,125),
+  et une ligne dont la borne basse vaut **50,011 %** : elle franchit le seuil d'un
+  centieme de point. Une ligne qui bascule sur la troisieme decimale n'est pas un
+  fait. L'intervalle reste rendu — c'est la precision, et elle se lit d'un coup
+  d'oeil sur une barre — mais c'est le **test** qui decide.
+  - La correction de continuite existe et est **hors par defaut** : l'intervalle
+    montre une precision, il ne decide pas. Son symptome de mauvaise ecriture est
+    l'**asymetrie** — les deux signes du terme sous la racine sont opposes, et les
+    confondre decale la borne haute de six points sur une proportion de 0,5 sans
+    toucher la basse. Un test le verifie sur `5/10`.
+- **La reference n'est pas 50 %, c'est le complement.** Un taux de reussite de 50 %
+  n'est un repere pour rien : sur un 1N2 la base tourne autour de 33 %, sur un
+  handicap asiatique autour de 50 %, sur un total tout depend de la ligne. Comparer
+  chaque tranche a pile ou face teste une hypothese que personne n'a formulee. La
+  question actionnable est « cette tranche differe-t-elle de ce que je fais **par
+  ailleurs** », donc un 2x2 de Fisher contre le reste de la meme population.
+  - Le changement **retourne le verdict la ou il compte** : `22/34` passe de p = 0,12
+    a p = 0,0013, `18/26` de p = 0,076 a p = 0,0023. La reference d'origine declarait
+    non prouve ce que les donnees etablissent — l'inverse exact du defaut corrige.
+  - Fisher exact plutot qu'un chi2 sur une table 2x2 : les effectifs sont petits —
+    `0/4` contre `30/63` — et l'approximation normale y est fausse dans le sens qui
+    trompe.
+- **L'axe se teste avant la ligne.** Un axe est une **partition** : « conf 3 contre
+  le reste » et « conf 4 contre le reste » sont le meme test ecrit deux fois, et les
+  compter comme deux essais gonfle la multiplicite. Un omnibus par axe (chi2
+  d'homogeneite), puis decomposition en lignes seulement s'il passe.
+  - Mesure de ce que la regle ecarte : « 1re division — Europe » vaut `2/13` contre
+    `28/54`, soit **p = 0,028 prise seule** — elle serait portee comme un constat.
+    Son axe vaut **p = 0,083**. Elle ne passe pas, et c'est juste.
+  - `RateRow.discriminant` porte les deux conditions dans cet ordre.
+    `_with_complements` remplit tout `Analysis.groups` **en un seul endroit** : axe
+    par axe, il aurait ete oublie au premier axe ajoute — le piege exact de
+    `RateRow.merge`, dont les deux fusions recopiees a la main n'avaient pas suivi
+    les champs ajoutes apres elles.
+
+**Unilateral seulement sur une hypothese posee d'avance.** Le gabarit de prompt
+affirme qu'une confiance 4 doit battre une confiance 3, et qu'un SAFE doit battre un
+FUN, avant que la moindre donnee existe : ces deux tests sont **diriges**, donc
+unilateraux, et forment un lot confirmatoire de deux. Partout ailleurs le test est
+bilateral — choisir la direction apres avoir vu le resultat revient a diviser son
+seuil par deux en silence.
+
+**La multiplicite se dit, elle ne filtre pas.** `benjamini_hochberg` rend un
+**compte**. Appliquee aux trente lignes de la page, la correction les retirerait
+toutes et reinstallerait le defaut qu'on corrige — masquer la seule ligne qui
+affirme quelque chose. Et melanger les deux lots serait pire : les deux hypotheses
+d'avance passent Bonferroni a 0,025 (p = 0,0015 et 0,0033), quand rien ne survit a
+BH sur les vingt-neuf lignes exploratoires. Les confondre ferait passer pour du
+bruit le seul resultat que cette base ait etabli.
+
+**Le V de Cramer mesure ce que le Jaccard mesure mal.** Le Jaccard compare deux
+**lignes** de deux axes — « Tennis » et « Masters 1000 », qui portent les memes
+selections. Le V compare deux **partitions** : le palier et la confiance annoncee
+donnent **V = 0,54**, avec 51 selections sur 67 sur la diagonale. Leurs deux
+resultats confirmatoires n'en font qu'un.
+
+**Une valeur de reference du cahier des charges etait fausse, et l'affichage ne
+pouvait pas le montrer.** La borne haute de `29/47` y valait 0,740 ; elle vaut
+**0,742095**, verifie par une seconde methode independante de l'implementation — les
+racines du polynome `p²(n+z²) − p(2np̂+z²) + np̂² = 0`, qui est la definition meme de
+l'intervalle. La page arrondit a l'entier (« [47 – 74] »), donc l'ecart y etait
+invisible : c'est exactement pourquoi ce module se teste contre des valeurs
+publiees et non contre ce qu'il affiche.
+
 ## Le marche a la prise (migration 033)
 
 **Ce chantier n'affiche rien et ne repare rien. Il arrete une perte**, et c'est la seule

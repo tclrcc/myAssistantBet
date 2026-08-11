@@ -14,13 +14,13 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from math import ceil, sqrt
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from .competitions import category_label, category_rank
+from .inference import Evidence, evidence, omnibus, required_sample, wilson
 from .labels import affiche, sort_key
 from .market_families import family_key, family_label, family_of, family_rank, market_key_for
 from .market_families import load as load_families
@@ -217,60 +217,14 @@ class Pick:
         return RESULT_LABELS.get(self.result, self.result)
 
 
-#: z d'un intervalle de confiance a 95 %.
-WILSON_Z = 1.96
-
-
-def wilson(won: int, settled: int) -> tuple[float, float] | None:
-    """Intervalle de Wilson a 95 % sur une proportion observee.
-
-    Choisi plutot que l'intervalle normal, qui donne des bornes hors de [0, 1]
-    et une largeur nulle a `x = 0` — soit exactement les deux cas ou la page a
-    le plus besoin d'etre juste : 0/6 sur ULTRA FUN, et les regroupements de
-    quelques lignes.
-
-    C'est de la statistique descriptive sur des resultats passes. Rien n'en
-    sort qui ressemble a une prevision : l'intervalle dit ce que ces tirages-la
-    permettent d'affirmer, pas ce que le prochain fera.
-    """
-    if settled <= 0:
-        return None
-    z_squared = WILSON_Z * WILSON_Z
-    observed = won / settled
-    denominator = settled + z_squared
-    centre = (won + z_squared / 2) / denominator
-    half = (WILSON_Z / denominator) * sqrt(settled * observed * (1 - observed) + z_squared / 4)
-    # Les bornes se rabattent sur [0, 1] : un taux ne sort pas de la, et une
-    # borne a -0.03 se lirait comme une grandeur signee.
-    return (max(0.0, centre - half), min(1.0, centre + half))
-
-
-#: z d'un test bilateral a 5 %, et z de la puissance visee (80 %). Les deux
-#: valeurs habituelles : un test qui laisse passer une difference reelle une
-#: fois sur cinq est deja peu exigeant, et viser mieux ferait exploser la cible.
-TEST_Z_ALPHA = 1.96
-TEST_Z_BETA = 0.84
-
-
-def required_sample(first: float, second: float) -> int | None:
-    """Selections **par groupe** pour qu'un ecart observe devienne testable.
-
-    Repond a la question que la page pose sans jamais y repondre : « SAFE fait
-    mieux que FUN » est-il un constat ou du bruit ? Le nombre dit ce qu'il
-    faudrait accumuler pour trancher, ce qui est plus utile que de trancher
-    trop tot.
-
-    C'est un calcul de puissance sur des proportions deja observees, pas une
-    prevision : rien n'y annonce le prochain pari.
-
-    None quand les deux taux sont egaux — un ecart nul ne devient jamais
-    testable, aucun volume n'y suffit.
-    """
-    gap = first - second
-    if gap == 0:
-        return None
-    spread = first * (1 - first) + second * (1 - second)
-    return ceil((TEST_Z_ALPHA + TEST_Z_BETA) ** 2 * spread / (gap * gap))
+# Les fonctions d'inference vivent desormais dans `services/inference.py` :
+# une couche **pure**, sans base ni reglage, testable contre des valeurs
+# publiees. Elles decident de ce que la page affirme, et les garder au milieu
+# de trois mille lignes de requetes les rendait invisibles.
+#
+# Reexportees ici parce que ce module reste leur seul appelant metier, et que
+# les deplacer sous un autre nom aurait touche une dizaine de tests pour un
+# gain nul.
 
 
 @dataclass
@@ -553,6 +507,38 @@ class RateRow:
     #: Bande cible, sur les seuls regroupements par confiance. Les autres axes
     #: n'en ont pas : un sport ne se fixe pas d'objectif de taux.
     band: Band | None = None
+    #: Le **reste de l'axe** : (reussites, tranchees) de toutes les autres
+    #: lignes. Rempli par `_with_complements` a l'assemblage, jamais a la main.
+    #:
+    #: C'est **lui** la reference d'une ligne, et non 50 %. Un taux de reussite
+    #: de 50 % n'est un repere pour rien — sur un 1N2 la base tourne autour de
+    #: 33 %, sur un handicap asiatique autour de 50 %, sur un total tout depend
+    #: de la ligne — si bien que comparer chaque tranche a pile ou face testait
+    #: une hypothese que personne n'avait formulee. La question actionnable est
+    #: « cette tranche differe-t-elle de ce que je fais **par ailleurs** ».
+    complement: tuple[int, int] = (0, 0)
+    #: L'axe entier separe-t-il les resultats. **Un axe est une partition**, donc
+    #: ses lignes sont un seul test ecrit N fois : tant qu'il ne passe pas,
+    #: aucune de ses lignes ne se lit comme un constat.
+    axis_separates: bool = False
+
+    @property
+    def evidence(self) -> Evidence:
+        """Ce que cette ligne permet d'affirmer, contre le reste de son axe."""
+        other_won, other_settled = self.complement
+        return evidence(self.won, self.settled, other_won, other_settled)
+
+    @property
+    def discriminant(self) -> bool:
+        """La ligne s'ecarte du reste de l'axe plus que le hasard ne l'explique.
+
+        **Deux conditions, et l'ordre compte** : l'axe doit d'abord separer.
+        Mesure de ce que la seconde ecarte — « 1re division — Europe » vaut
+        `2/13` contre `28/54`, soit p = 0,028 prise seule, mais son axe vaut
+        p = 0,083 ; la porter serait presenter comme un constat une ligne
+        ressortie d'un axe qui ne dit rien.
+        """
+        return self.axis_separates and self.evidence.discriminant
 
     @property
     def settled(self) -> int:
@@ -2034,6 +2020,23 @@ class Overlap:
         )
 
 
+def _with_complements(rows: list[RateRow]) -> None:
+    """Donne a chaque ligne le reste de son axe, et a l'axe son verdict.
+
+    Ecrit une seule fois et applique a `Analysis.groups` en bloc : un
+    remplissage axe par axe aurait ete oublie au premier axe ajoute, et une
+    ligne sans complement se lit comme une ligne qui n'affirme rien — une panne
+    qui ne casse pas, elle fait seulement disparaitre.
+    """
+    total_won = sum(row.won for row in rows)
+    total_settled = sum(row.settled for row in rows)
+    verdict = omnibus([(row.won, row.settled) for row in rows])
+    separates = verdict is not None and verdict.separates
+    for row in rows:
+        row.complement = (total_won - row.won, total_settled - row.settled)
+        row.axis_separates = separates
+
+
 def _overlaps(axes: list[tuple[str, list[RateRow]]]) -> list[Overlap]:
     """Regroupements de deux axes distincts qui decrivent le meme echantillon.
 
@@ -2587,6 +2590,14 @@ def analysis(settings: Settings | None = None) -> Analysis:
     )
     report.hidden_markets = len(tally) - len(report.by_market)
     report.by_family, report.unclassified_markets = _by_family(tally, load_families(settings))
+
+    # Chaque ligne recoit le reste de son axe, et chaque axe son verdict
+    # d'ensemble. Fait **apres** l'assemblage de tous les axes et en un seul
+    # endroit : rempli axe par axe, il aurait ete oublie au premier ajoute — le
+    # piege exact de `RateRow.merge`, dont les deux fusions recopiees a la main
+    # n'avaient pas suivi les champs ajoutes apres elles.
+    for axe in report.groups:
+        _with_complements(axe)
 
     for row, result in zip(rows, results, strict=True):
         _count(report.played if row["played"] else report.skipped, result, row)
