@@ -1714,6 +1714,89 @@ bornes (1.70, 2.30) l'ecart de marge fait basculer de palier.
   d'`edgelab` instancie un client `anthropic`. Le reutiliser ferait de cette application un
   appelant de l'API Anthropic — interdit n°6, sans exception possible.
 
+## Le marche a la prise (migration 033)
+
+**Ce chantier n'affiche rien et ne repare rien. Il arrete une perte**, et c'est la seule
+raison pour laquelle il passe avant le reste : chaque session passee sans lui est une
+session definitivement non comparable.
+
+Ce qui manquait, mesure sur les 114 selections : `odds` fait un `DELETE` puis un `INSERT`
+par (match, book, marche), donc **ne conserve que le dernier releve** — une heure apres un
+prompt, l'etat du marche que l'analyse a lu n'existe plus nulle part. Et `picks.market` est
+du **texte libre** recopie a la main : seize libelles pour dix marches reels, sans aucune
+cle vers `odds`. Pour une selection tranchee, on ne pouvait donc ni retrouver les autres
+issues de son marche, ni dire qui en etait le favori — les deux seules choses qui diraient
+si 48 % est bon ou mauvais.
+
+- **`prompt_odds` fige le marche complet a l'archivage du prompt**, au meme endroit que
+  `prompt_events` : c'est le seul instant ou l'on sait ce que le bloc portait. Tous les
+  books, pas seulement le principal — un favori se lit sur le marche entier, et sur une
+  competition que Betclic ne sert pas, un book de reference est le seul a servir la ligne.
+  - **Un releve par session et par match, remplace a chaque prompt.** Ni par prompt — une
+    session reelle en genere jusqu'a vingt — ni fige au premier : un match entre parfois
+    dans un prompt **avant** d'etre enrichi, et le dernier prompt qui le porte est celui
+    dont l'etat est le plus proche de la decision. Meme forme que `scan._store`.
+  - Deux horodatages, et ils ne disent pas la meme chose : `fetched_at` est l'heure du
+    releve chez le fournisseur, `captured_at` celle ou il a ete fige pour la session.
+  - **Pas de cle primaire composite** : `point` est nullable, et SQLite laisse les NULL se
+    dupliquer dans une PK. L'unicite est tenue par le service.
+  - Cout assume : ~29 lignes par match, ~35 Mo par an a raison d'une session par jour.
+    C'est la table qui grossira le plus vite, et elle porte la seule donnee du projet qui
+    **ne se reconstitue pas apres coup**.
+- **`picks.market_key` se resout par correspondance exacte** avec les libelles de
+  `render.MARKET_ORDER_BY_SPORT`. Ce n'est pas deduire d'un texte libre : ce sont les
+  libelles que le bloc met sous les yeux de l'analyse, donc reconnaitre un mot qu'on a
+  soi-meme imprime. Le **sport** decide — « Vainqueur » est le `h2h` d'un match de tennis
+  et l'`outright` d'une etape de cyclisme.
+  - **Deux passes, et l'ordre compte.** La ligne d'un total fait partie du libelle recopie
+    (« O/U 2.5 ») sans faire partie du marche : elle se retire pour la seconde tentative.
+    La retirer d'emblee confondrait « Set 1 » et « Set 2 », deux marches distincts dont le
+    numero **est** le nom — une selection sur le premier set se rattacherait au second.
+  - Un libelle hors vocabulaire reste **NULL et se reclame** : « Double chance » la ou le
+    bloc ecrit « DC ». Mesure : 110 des 114 selections se resolvent, les 4 autres sont des
+    saisies libres. La selection est enregistree quand meme — une cle absente vaut « on ne
+    sait pas », jamais un refus.
+  - **Figee a l'ecriture, resolue a la lecture quand elle manque** (`market_key_effective`,
+    meme idiome que `tier_effective`). Les deux traitements sont justes et la difference
+    est le coeur du sujet : une selection ecrite depuis cette migration porte sa cle, et ce
+    lien vers le releve pris le meme jour doit survivre a un libelle renomme dans `render` ;
+    les selections anterieures n'en ont pas, et les resoudre a la lecture vaut mieux qu'un
+    retro-remplissage — **la regle vit en Python, la recopier en SQL l'aurait fait diverger
+    au premier marche ajoute**, exactement le piege des niveaux de competition.
+  - `set_event()` la **recalcule** : c'est le seul endroit ou elle bouge apres coup, et
+    c'est justifie — un rattachement corrige peut changer de sport, donc de vocabulaire.
+    Elle etait fausse, pas perimee.
+- **`sessions.scale_version` ne sert a rien aujourd'hui, et c'est delibere.** Une courbe de
+  fiabilite tracee a travers un changement d'echelle de confiance ne mesure rien : il
+  faudra savoir, session par session, contre quoi la confiance annoncee etait notee. Le
+  champ passe maintenant pour que ces sessions-ci soient deja datees quand la question se
+  posera — une echelle ne se reconstitue pas apres coup. `COALESCE` la fige au premier
+  prompt : changer d'echelle en cours de session ne doit pas reetiqueter ce qui a deja ete
+  rendu sous l'ancienne. Le regime actuel s'appelle `relatif-032`, du nom de ce qu'il est —
+  des bandes exprimees en ecart au taux global, donc sans ancrage absolu.
+- **`prompts.feedback_active`, et la boucle qu'il mesure.** Des qu'un agregat de resultats
+  entre dans le prompt, les selections suivantes ne sont plus des tirages independants :
+  l'analyse lit son propre tableau de bord, et une categorie annoncee a 0/7 cesse d'etre
+  produite — donc cesse d'etre mesurable.
+  - **La reponse a « depuis quand » n'etait pas celle qu'on attendait.** Le bloc a bien ete
+    servi : **9 prompts sur 3 sessions** (06, 07 et 08/08), quand les seuils valaient encore
+    10 et 4 — puis plus jamais depuis leur relevement a 40 et 10. Les 104 selections
+    tranchees ne sont donc **pas** propres sur ce plan, et 54 d'entre elles viennent d'une
+    session ou au moins un prompt transmettait des taux.
+  - La valeur se retro-remplit, et c'est legitime la ou celle de la migration 030 ne
+    l'etait pas : **le corps du prompt est la preuve**, il est archive depuis toujours, et
+    la ligne « Taux de reussite de » n'apparait que lorsque le bloc publie. Un test relit le
+    fichier de migration plutot que d'en recopier le critere, comme pour la migration 021.
+  - Le drapeau vaut `feedback.enough` et non `not feedback.empty` : le bloc peut paraitre
+    en ne portant que le taux de selection, qui ne depend d'aucun resultat et ne referme
+    donc aucune boucle.
+- **Les scripts de retour arriere vivent dans `deploy/rollback/`, jamais dans
+  `migrations/`** : `discover_migrations` lit tout `*.sql` du dossier et leve sur une
+  version dupliquee — un `033_..._down.sql` pose a cote de son aller empecherait
+  l'application de demarrer. Ils ne sont jamais joues automatiquement, et le retour arriere
+  se paie **en donnees** : les releves de `prompt_odds` sont perdus, et rien ne les
+  reconstruit.
+
 ## Les cibles de confiance : un ecart, et parfois rien du tout
 
 **Une cible absolue rapprochee des paliers recouple la confiance et la cote.** Les bandes

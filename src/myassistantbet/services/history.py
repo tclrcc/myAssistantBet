@@ -22,7 +22,7 @@ from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from .competitions import category_label, category_rank
 from .labels import affiche, sort_key
-from .market_families import family_key, family_label, family_of, family_rank
+from .market_families import family_key, family_label, family_of, family_rank, market_key_for
 from .market_families import load as load_families
 from .market_families import market_key as _market_key
 from .thresholds import value_of as threshold_value
@@ -158,6 +158,31 @@ class Pick:
     competition: str = ""
     sport_order: int = 99
     commence_local: datetime | None = None
+    #: Cle de marche **figee a l'ecriture**, et la cle du sport qui permet de la
+    #: resoudre a la lecture quand elle manque. Voir `market_key_effective`.
+    market_key: str = ""
+    sport_key: str = ""
+
+    @property
+    def market_key_effective(self) -> str:
+        """La cle de marche qui fait foi : celle qui a ete figee, sinon celle
+        que le libelle designe aujourd'hui.
+
+        **Deux traitements pour une meme grandeur, et les deux sont justes.**
+        Une selection ecrite depuis la migration 033 porte sa cle : elle
+        rattache la selection au releve de marche pris le meme jour, et ce lien
+        doit survivre a un libelle renomme dans `render`. Une selection
+        anterieure n'en a pas, et la resoudre a la lecture vaut mieux que de
+        retro-remplir une colonne — meme regle que la famille d'un marche ou le
+        niveau d'une competition : reclasser reclasse tout l'historique.
+
+        Vide quand le libelle sort du vocabulaire du bloc. On ne devine pas.
+        """
+        if self.market_key:
+            return self.market_key
+        if not self.sport_key:
+            return ""
+        return market_key_for(self.sport_key, self.market) or ""
 
     @property
     def group(self) -> str:
@@ -866,6 +891,8 @@ def _pick(row: Any, tier_labels: dict[str, str], tz: str = "") -> Pick:
         tier_real=_column(row, "tier_real") or "",
         independence_note=_column(row, "independence_note") or "",
         sport_label=_column(row, "sport_label") or "",
+        market_key=_column(row, "market_key") or "",
+        sport_key=_column(row, "sport_key") or "",
         competition=_column(row, "competition") or "",
         sport_order=int(_column(row, "sport_order") or 99),
         commence_local=(
@@ -890,6 +917,10 @@ def _column(row: Any, name: str) -> Any:
 #: ailleurs dans l'application.
 _PICK_JOIN = (
     "SELECT k.*, e.home, e.away, e.commence_time, s.label AS sport_label, "
+    # La **cle** du sport et non son libelle : c'est elle qui choisit le
+    # vocabulaire de marches, « Vainqueur » etant le `h2h` d'un match de tennis
+    # et l'`outright` d'une etape de cyclisme.
+    "       s.key AS sport_key, "
     "       s.id AS sport_order, c.label AS competition FROM picks k "
     "LEFT JOIN events e ON e.id = k.event_id "
     "LEFT JOIN sports s ON s.id = e.sport_id "
@@ -1344,11 +1375,29 @@ def add_pick(
                     "sur un angle réellement indépendant : dis lequel, en une ligne."
                 )
 
+        # La cle de marche est **figee ici**, au moment ou le releve du marche
+        # est pris pour cette session : c'est ce qui rattache la selection a ce
+        # releve, et le lien doit tenir meme si un libelle est renomme dans
+        # `render` par la suite. Elle reste NULL quand le libelle sort du
+        # vocabulaire du bloc — « Double chance » la ou il ecrit « DC » — et se
+        # resout alors a la lecture, sans jamais etre devinee.
+        #
+        # Sans match rattache, aucun sport, donc aucun vocabulaire : rien.
+        resolved = None
+        if attached is not None:
+            sport = conn.execute(
+                "SELECT s.key AS sport_key FROM events e "
+                "JOIN sports s ON s.id = e.sport_id WHERE e.id = ?",
+                (attached,),
+            ).fetchone()
+            if sport is not None:
+                resolved = market_key_for(sport["sport_key"], market.strip())
+
         cursor = conn.execute(
             "INSERT INTO picks (session_id, event_id, tier, market, selection, price, "
             "                   confidence, played, stake, result, angle, source_level, "
-            "                   price_source, independence_note, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "                   price_source, independence_note, market_key, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 attached,
@@ -1364,6 +1413,7 @@ def add_pick(
                 source_value,
                 price_origin,
                 note or None,
+                resolved,
                 utcnow(),
             ),
         )
@@ -1419,14 +1469,32 @@ def set_event(pick_id: int, event_id: str = "", settings: Settings | None = None
     identifier = str(event_id).strip()
     with connect(settings) as conn:
         if not identifier:
-            conn.execute("UPDATE picks SET event_id = NULL WHERE id = ?", (pick_id,))
+            # Le marche perd sa cle avec son match : sans sport, le meme libelle
+            # designe deux marches differents. La laisser en place ferait
+            # survivre la lecture d'un vocabulaire qui ne s'applique plus.
+            conn.execute(
+                "UPDATE picks SET event_id = NULL, market_key = NULL WHERE id = ?", (pick_id,)
+            )
             return
         if not identifier.isdigit():
             raise HistoryError(f"Match inconnu : {event_id}")
-        known = conn.execute("SELECT 1 FROM events WHERE id = ?", (int(identifier),)).fetchone()
+        known = conn.execute(
+            "SELECT s.key AS sport_key FROM events e "
+            "JOIN sports s ON s.id = e.sport_id WHERE e.id = ?",
+            (int(identifier),),
+        ).fetchone()
         if known is None:
             raise HistoryError(f"Match inconnu : {event_id}")
-        conn.execute("UPDATE picks SET event_id = ? WHERE id = ?", (int(identifier), pick_id))
+        # Le rattachement corrige peut changer de sport, donc de vocabulaire :
+        # la cle se **recalcule** au lieu d'etre conservee. C'est la seule
+        # ecriture ou elle bouge apres coup, et c'est justifie — elle etait
+        # fausse, pas perimee.
+        label = conn.execute("SELECT market FROM picks WHERE id = ?", (pick_id,)).fetchone()
+        resolved = market_key_for(known["sport_key"], label["market"]) if label else None
+        conn.execute(
+            "UPDATE picks SET event_id = ?, market_key = ? WHERE id = ?",
+            (int(identifier), resolved, pick_id),
+        )
 
 
 def delete_pick(pick_id: int, settings: Settings | None = None) -> None:
@@ -2093,6 +2161,21 @@ class Mix:
             and self.levels > CONCENTRATION_LEVELS
             and self.top_share > CONCENTRATION_SHARE
         )
+
+
+#: Version de l'echelle de confiance en vigueur, ecrite sur la session au moment
+#: ou elle emet son premier prompt.
+#:
+#: **Elle ne sert a rien aujourd'hui, et c'est deliberе.** Une courbe de
+#: fiabilite tracee a travers un changement d'echelle ne mesure rien : il faudra
+#: savoir, session par session, contre quoi la confiance annoncee etait notee.
+#: Le champ passe donc maintenant, pour que ces sessions-ci soient deja datees
+#: quand la question se posera — une echelle ne se reconstitue pas apres coup.
+#:
+#: Le regime actuel est celui de la migration 032 : des bandes exprimees en
+#: **ecart au taux global observe**, donc sans ancrage absolu. C'est ce que ce
+#: nom dit, et rien de plus.
+SCALE_VERSION = "relatif-032"
 
 
 def load_bands(settings: Settings | None = None, reference: float | None = None) -> dict[int, Band]:

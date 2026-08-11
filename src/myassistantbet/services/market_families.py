@@ -34,6 +34,7 @@ from dataclasses import dataclass
 
 from ..config import Settings, get_settings
 from ..db import connect
+from .render import MARKET_ORDER, MARKET_ORDER_BY_SPORT, MERGED_MARKETS
 
 logger = logging.getLogger(__name__)
 
@@ -137,6 +138,70 @@ FAMILY_SEED: dict[str, str] = {
     "1er buteur": "autre",
     "cotes": "autre",
 }
+
+
+def _canonical(key: str) -> str:
+    """La cle sous laquelle un marche fusionne se lit, une seule fois.
+
+    `render.MERGED_MARKETS` fait tenir une variante « alternate » et sa base sur
+    une meme ligne du bloc : `spreads` se lit sous `alternate_spreads`,
+    `alternate_totals` sous `totals`. Un libelle designe donc les deux cles a la
+    fois, et c'est la cible de la fusion qui les nomme.
+    """
+    return MERGED_MARKETS.get(key, key)
+
+
+def _vocabulary(sport_key: str) -> dict[str, set[str]]:
+    """Libelle normalise -> cles canoniques, pour un sport.
+
+    Un ensemble et non une cle : rien ne garantit a priori qu'un libelle n'en
+    designe qu'une, et c'est justement ce qu'il faut pouvoir constater pour
+    refuser de trancher.
+    """
+    order = MARKET_ORDER_BY_SPORT.get(sport_key, MARKET_ORDER)
+    found: dict[str, set[str]] = {}
+    for key, label in order:
+        found.setdefault(market_key(label), set()).add(_canonical(key))
+    return found
+
+
+def market_key_for(sport_key: str, label: str) -> str | None:
+    """Cle de marche d'un libelle de selection, ou None si rien ne le nomme.
+
+    Le libelle d'une selection est **recopie a la main** depuis le bloc, et le
+    bloc n'ecrit que le vocabulaire de `render.MARKET_ORDER_BY_SPORT` : le lire
+    n'est donc pas deduire quoi que ce soit d'un texte libre, c'est reconnaitre
+    un mot qu'on a soi-meme imprime. Hors de ce vocabulaire, **aucune cle** —
+    « Double chance » la ou le bloc ecrit « DC » reste non resolu et se reclame,
+    meme regle que le niveau d'une competition ou la famille d'un marche.
+
+    Le sport decide : « Vainqueur » est le `h2h` d'un match de tennis et
+    l'`outright` d'une etape de cyclisme.
+
+    **Deux passes, et l'ordre compte.** La ligne d'un total fait partie du
+    libelle recopie (« O/U 2.5 ») sans faire partie du marche : elle se retire
+    donc pour la seconde tentative. Mais la retirer d'emblee confondrait
+    « Set 1 » et « Set 2 », deux marches distincts dont le numero **est** le
+    nom — d'ou l'essai exact d'abord.
+
+    Ambigu, c'est-a-dire deux cles non fusionnees sous un meme libelle : None.
+    Le cas n'existe pas dans le vocabulaire actuel, et s'il apparaissait, en
+    choisir une au hasard rattacherait la selection au mauvais marche du releve.
+    """
+    known = _vocabulary(sport_key)
+    for candidate in (market_key(label), family_key(label)):
+        keys = known.get(candidate)
+        if keys and len(keys) == 1:
+            return next(iter(keys))
+        if keys:
+            logger.warning(
+                "Libelle de marche ambigu pour %s : %r designe %s",
+                sport_key,
+                label,
+                sorted(keys),
+            )
+            return None
+    return None
 
 
 def load(settings: Settings | None = None) -> dict[str, str]:

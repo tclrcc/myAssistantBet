@@ -27,7 +27,7 @@ from ..config import PACKAGE_DIR, Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.oddsapi import SCAN_MARKETS
 from .enrich import markets_for
-from .history import feedback
+from .history import SCALE_VERSION, feedback
 from .labels import affiche, bookmaker_label, is_reference
 from .render import (
     MERGED_MARKETS,
@@ -464,6 +464,14 @@ class RenderedPrompt:
     #: qu'on decoche, et une session reelle porte 4 lignes de shortlist pour 29
     #: selections.
     event_ids: list[int] = field(default_factory=list)
+    #: Le bloc de retour d'experience a-t-il publie des taux dans ce prompt.
+    #:
+    #: Des qu'un agregat de resultats entre dans le prompt, les selections
+    #: suivantes ne sont plus des tirages independants : l'analyse lit son propre
+    #: tableau de bord, et une categorie annoncee a 0/7 cesse d'etre produite —
+    #: donc cesse d'etre mesurable. La question « depuis quand » se posait sans
+    #: qu'aucune donnee n'y reponde autrement qu'en relisant des corps archives.
+    feedback_active: bool = False
 
     @property
     def token_estimate(self) -> int:
@@ -633,6 +641,12 @@ def build_prompt(
 
     blocks = [render_event(event) for event in events]
 
+    # Retenu plutot que passe en ligne au rendu : c'est lui qui dit si le prompt
+    # a transmis des taux, donc si les selections qui vont en sortir ont ete
+    # prises en lisant leur propre tableau de bord. La reponse s'archive avec le
+    # prompt, elle ne se relit pas dans son corps des mois apres.
+    retour = feedback(settings)
+
     body = (
         _environment()
         .get_template(template_name)
@@ -669,7 +683,7 @@ def build_prompt(
             # Les consignes permanentes et le retour d'experience ne coutent
             # aucun appel : ils sortent de la base, donc ils sont toujours la.
             preferences=read_preference(PREFERENCE_NOTES, settings),
-            feedback=feedback(settings),
+            feedback=retour,
             # Le multichoix scores exacts n'a de sens que si un bloc sert
             # vraiment ce marche : l'imposer a un lot de tennis fait ecrire
             # « impossible » a chaque session, ce qui n'apprend rien.
@@ -706,20 +720,64 @@ def build_prompt(
         blocks=len(blocks),
         started=started_labels(session_id, settings, moment, competition_id),
         event_ids=[event.event_id for event in events],
+        # `enough` et non `not empty` : le bloc peut paraitre en ne portant que
+        # le taux de selection, qui ne depend d'aucun resultat et ne referme
+        # donc aucune boucle. Ce qui la referme, ce sont les taux de reussite.
+        feedback_active=retour.enough,
     )
+
+
+def _capture_odds(conn: Any, session_id: int, event_ids: Sequence[int]) -> int:
+    """Fige le marche complet des matchs qui partent a l'analyse.
+
+    **`odds` ne garde que le dernier releve** : le scan fait un DELETE puis un
+    INSERT par (match, book, marche), si bien que l'etat du marche au moment ou
+    l'analyse l'a lu n'existe nulle part une heure apres. C'est le seul instant
+    ou l'on sait ce que le bloc portait, donc le seul ou ce releve se prend.
+
+    Tous les books, pas seulement le principal : un favori se lit sur le marche
+    entier, et sur une competition que Betclic ne sert pas, un book de reference
+    est le seul a servir la ligne.
+
+    **Un releve par session et par match, remplace a chaque prompt.** Ni par
+    prompt — une session reelle en genere jusqu'a vingt, ce serait vingt copies
+    de la meme chose — ni fige au premier : un match entre parfois dans un
+    prompt avant d'etre enrichi, et le dernier prompt qui le porte est celui
+    dont l'etat est le plus proche de la decision. Meme forme que `scan._store`,
+    dont c'est deja la regle.
+    """
+    if not event_ids:
+        return 0
+    moment = utcnow()
+    marks = ",".join("?" for _ in event_ids)
+    conn.execute(
+        f"DELETE FROM prompt_odds WHERE session_id = ? AND event_id IN ({marks})",
+        (session_id, *event_ids),
+    )
+    cursor = conn.execute(
+        "INSERT INTO prompt_odds (session_id, event_id, bookmaker, market_key, outcome_name, "
+        "                         description, point, price, fetched_at, captured_at) "
+        "SELECT ?, o.event_id, o.bookmaker, o.market_key, o.outcome_name, "
+        "       o.description, o.point, o.price, o.fetched_at, ? "
+        f"FROM odds o WHERE o.event_id IN ({marks})",
+        (session_id, moment, *event_ids),
+    )
+    return int(cursor.rowcount or 0)
 
 
 def save_prompt(session_id: int, prompt: RenderedPrompt, settings: Settings | None = None) -> int:
     """Archive le prompt genere. Renvoie son id."""
     with connect(settings) as conn:
         cursor = conn.execute(
-            "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO prompts (session_id, template_name, body, token_estimate, "
+            "                     feedback_active, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 prompt.template_name,
                 prompt.body,
                 prompt.token_estimate,
+                1 if prompt.feedback_active else 0,
                 utcnow(),
             ),
         )
@@ -732,6 +790,21 @@ def save_prompt(session_id: int, prompt: RenderedPrompt, settings: Settings | No
             "INSERT OR IGNORE INTO prompt_events (prompt_id, event_id) VALUES (?, ?)",
             [(prompt_id, event_id) for event_id in prompt.event_ids],
         )
+        captured = _capture_odds(conn, session_id, prompt.event_ids)
+        # L'echelle de confiance en vigueur, ecrite une fois pour la session.
+        # `COALESCE` la fige au premier prompt : changer d'echelle en cours de
+        # session ne doit pas reetiqueter les selections deja rendues sous
+        # l'ancienne.
+        conn.execute(
+            "UPDATE sessions SET scale_version = COALESCE(scale_version, ?) WHERE id = ?",
+            (SCALE_VERSION, session_id),
+        )
+    logger.info(
+        "Marche fige pour la session %d : %d cotes sur %d matchs",
+        session_id,
+        captured,
+        len(prompt.event_ids),
+    )
     logger.info(
         "Prompt genere pour la session %d : %d blocs, ~%d tokens",
         session_id,
