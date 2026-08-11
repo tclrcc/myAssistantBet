@@ -275,7 +275,7 @@ def test_taux_par_sport(migrated: Settings) -> None:
             "ATP",
             "Moutet",
             "Bergs",
-            "2026-08-04",
+            "2099-01-01",
             "11:00",
             "",
             "",
@@ -459,7 +459,7 @@ def test_les_matchs_sont_groupes_par_sport_et_competition(migrated: Settings) ->
             "ATP Canadian Open",
             "Moutet",
             "Bergs",
-            "2026-08-04",
+            "2099-01-01",
             "18:00",
             "Moutet 1.80",
             "",
@@ -480,7 +480,7 @@ def test_les_matchs_sont_groupes_par_sport_et_competition(migrated: Settings) ->
     # reconnaitre l'affiche pour retrouver le match, ce dont on n'est
     # justement pas sur.
     assert [event.label for event in groups["Tennis · ATP Canadian Open"]] == [
-        "04/08 18:00 · Moutet – Bergs"
+        "01/01 18:00 · Moutet – Bergs"
     ]
 
 
@@ -542,7 +542,7 @@ def test_la_feuille_groupe_par_competition(migrated: Settings) -> None:
             "ATP Canadian Open",
             "Moutet",
             "Bergs",
-            "2026-08-04",
+            "2099-01-01",
             "18:00",
             "Moutet 1.80",
             "",
@@ -583,7 +583,7 @@ def test_la_feuille_range_par_heure_dans_un_groupe(migrated: Settings) -> None:
             "ATP Canadian Open",
             "Moutet",
             "Bergs",
-            "2026-08-04",
+            "2099-01-01",
             "22:00",
             "Moutet 1.80",
             "",
@@ -598,7 +598,7 @@ def test_la_feuille_range_par_heure_dans_un_groupe(migrated: Settings) -> None:
             "ATP Canadian Open",
             "Tabilo",
             "Popyrin",
-            "2026-08-04",
+            "2099-01-01",
             "18:00",
             "Tabilo 1.90",
             "",
@@ -2281,7 +2281,7 @@ def test_les_groupes_sont_ranges_par_heure(migrated: Settings) -> None:
             "ATP Canadian Open",
             "Moutet",
             "Bergs",
-            "2026-08-04",
+            "2099-01-01",
             "12:00",
             "Moutet 1.80",
             "",

@@ -1,0 +1,38 @@
+-- 034_anteriorite.sql — le motif d'une selection posee apres le coup d'envoi.
+--
+-- **Mise en service : 11/08/2026.** C'est la borne a partir de laquelle une
+-- population est propre **par construction** plutot que par filtrage. Tout ce
+-- qui precede reste ecarte definitivement — la garde ne touche que l'avenir, et
+-- aucun lot ulterieur ne rendra exploitables les selections deja saisies apres
+-- le coup d'envoi de leur match.
+--
+-- Ce qu'elle repare, mesure : **37 des 110 selections tranchees** ont ete
+-- enregistrees apres le coup d'envoi. Sur cette strate, le residu au prix est
+-- **nul** — 20 victoires pour 20,25 payees, p = 0,53 — et l'echelle
+-- d'etiquetage **s'inverse** sur les deux axes. Une echelle qui s'inverse n'est
+-- pas bruitee : elle decrit au lieu de predire.
+--
+-- La forme canonique d'une selection, dans tout le code de test du projet,
+-- etait d'ailleurs un pari pose sur un match deja commence. La convention de
+-- test refletait la pratique, et 66 tests ont casse quand le filtre est arrive.
+--
+-- **Le compteur informait, la garde empeche.** L'information seule n'a pas
+-- suffi : elle etait deja disponible a la saisie, sous la forme du couple
+-- horaire. Le refus, lui, oblige a un geste.
+--
+-- **Deux valeurs, et pas de texte libre.** Les deux cas legitimes ne se
+-- ressemblent pas, et les confondre est ce qui a rendu les 37 inexploitables :
+--
+--   · `differee` — la decision a ete prise a temps, la saisie est tardive.
+--     L'etiquette est valide, le prix douteux.
+--   · `live`     — le pari a reellement ete pris en cours de match. Les deux
+--     sont invalides pour toute mesure d'anteriorite.
+--
+-- Un troisieme choix, ou un champ libre, ferait retomber dans le melange que
+-- cette colonne existe pour defaire. Le cout de saisie est d'un clic, et
+-- uniquement sur un chemin qu'on veut rare.
+--
+-- NULL est le cas ordinaire : la selection precede le coup d'envoi, et il n'y a
+-- rien a justifier.
+
+ALTER TABLE picks ADD COLUMN late_reason TEXT;  -- differee | live | NULL

@@ -1956,6 +1956,37 @@ filtre passe avant lui.
   selections. Les confondre aurait ete fatal — seules deux sessions natives
   portent des resultats, et un filtre sur ce critere blanchirait la page.
 
+**La garde a l'ecriture (migration 034, mise en service le 11/08/2026).** Le
+compteur informait, la garde empeche — et l'information seule n'a pas suffi : le
+couple horaire etait deja sous les yeux au moment de la saisie, et 37 des 110
+selections tranchees ont ete posees apres le coup d'envoi.
+
+- **Second controle bloquant du module**, apres la note d'independance, et le
+  second seulement : ailleurs une valeur manquante vaut « non renseigne ».
+- **Refusee a la main, decochee a l'import.** Meme traitement que la note
+  d'independance, et pour la meme raison : une ligne qui echoue au milieu de
+  vingt se remarque moins qu'une case qu'on doit cocher. `ParsedPick.started`
+  porte le drapeau, `PickableEvent` l'a recu pour que le rapprochement par le
+  voisinage se comporte comme celui par la shortlist.
+- **Le refus n'est pas absolu : il reclame un motif**, sur un chemin qu'on veut
+  rare. Sans lui, la garde dirait combien de selections sont tardives et jamais
+  **pourquoi** — or les deux cas legitimes ne se ressemblent pas, et c'est leur
+  melange qui a rendu les 37 inexploitables :
+  - `differee` — decision prise a temps, saisie tardive. L'etiquette est
+    **valide**, le prix douteux.
+  - `live` — pari reellement pris en cours de match. Les deux sont invalides.
+  - **Pas de troisieme choix, pas de texte libre** : ils feraient retomber dans
+    le melange que cette colonne existe pour defaire.
+- **La garde ne valide pas le passe.** Elle ne touche que l'avenir : les 37
+  restent ecartees definitivement, et le **11/08/2026** est la borne a partir de
+  laquelle une population est propre **par construction** plutot que par
+  filtrage. Tout pre-enregistrement ulterieur — a commencer par celui du biais
+  favori-outsider — se mesure sur des selections nees apres elle.
+- Corollaire mesure : **la forme canonique d'une selection, dans tout le code de
+  test du projet, etait un pari pose sur un match deja commence.** La convention
+  de test refletait la pratique, et c'est la meme habitude qui produit les 37.
+  Cent six tests ont casse quand la garde est arrivee.
+
 **Le compteur vivant, et pourquoi il compte plus que le filtre.** Un filtre dit
 ce qui a ete perdu ; un compteur evite de le perdre. `Worksheet.coverage_line`
 annonce les deux couvertures sur la feuille de session — « 3 sur 8 sans

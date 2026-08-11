@@ -31,10 +31,13 @@ def client(isolated_settings: Settings) -> Iterator[TestClient]:
 
 
 def _match(settings: Settings, home: str, away: str, hour: str = "15") -> int:
+    """Un match **a venir** : un match deja commence ferait decocher toutes les
+    lignes de l'apercu, la selection posee apres le coup d'envoi reclamant son
+    motif. C'est le cas d'un test dedie, pas celui de la lecture du tableau."""
     sport = db.query_one("SELECT id FROM sports WHERE key = 'tennis'", settings=settings)
     db.execute(
         "INSERT INTO events (sport_id, home, away, commence_time, source, created_at) "
-        f"VALUES (?, ?, ?, '2026-08-04T{hour}:00:00Z', 'oddsapi', ?)",
+        f"VALUES (?, ?, ?, '2099-01-01T{hour}:00:00Z', 'oddsapi', ?)",
         (sport["id"], home, away, db.utcnow()),
         settings=settings,
     )

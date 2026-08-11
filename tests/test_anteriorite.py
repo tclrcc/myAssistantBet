@@ -22,6 +22,8 @@ from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services.history import (
+    LATE_REASONS,
+    HistoryError,
     Horizon,
     add_pick,
     analysis,
@@ -534,3 +536,111 @@ def test_une_question_deja_tranchee_ne_reclame_plus_rien(migrated: Settings) -> 
 
     assert atteint.missing == 0
     assert atteint.sessions == 0
+
+
+# -- La garde a l'ecriture ---------------------------------------------------
+
+
+def _a_venir(settings: Settings) -> tuple[int, int]:
+    """Une session portant un match a venir — le cas ordinaire."""
+    event_id = _match(settings, "À venir")
+    return board_service.toggle_selection(event_id, True, settings), event_id
+
+
+def _match_commence(settings: Settings) -> tuple[int, int]:
+    """Une session portant un match dont le coup d'envoi est passe."""
+    event_id = _match(settings, "Déjà joué")
+    session_id = board_service.toggle_selection(event_id, True, settings)
+    db.execute(
+        "UPDATE events SET commence_time = '2000-01-01T00:00:00Z' WHERE id = ?",
+        (event_id,),
+        settings=settings,
+    )
+    return session_id, event_id
+
+
+#
+# **Le compteur informait, la garde empeche**, et l'information seule n'a pas
+# suffi : le couple horaire etait deja sous les yeux au moment de la saisie, et
+# 37 des 110 selections tranchees ont ete posees apres le coup d'envoi.
+
+
+def test_une_selection_sur_un_match_commence_est_refusee(migrated: Settings) -> None:
+    session_id, event_id = _match_commence(migrated)
+
+    with pytest.raises(HistoryError, match="déjà commencé"):
+        add_pick(session_id, "safe", "1N2", "Domicile", event_id=str(event_id), settings=migrated)
+
+
+def test_le_motif_leve_le_refus_et_reste_en_base(migrated: Settings) -> None:
+    """**Le refus n'est pas absolu : il reclame un motif.** Sans lui, la garde
+    dirait combien de selections sont tardives et jamais pourquoi — or les deux
+    cas legitimes ne se ressemblent pas, et c'est leur melange qui a rendu les
+    37 inexploitables."""
+    session_id, event_id = _match_commence(migrated)
+
+    add_pick(
+        session_id,
+        "safe",
+        "1N2",
+        "Domicile",
+        event_id=str(event_id),
+        late_reason="differee",
+        settings=migrated,
+    )
+
+    ligne = db.query_one("SELECT late_reason FROM picks ORDER BY id DESC", settings=migrated)
+    assert ligne["late_reason"] == "differee"
+
+
+@pytest.mark.parametrize("motif", ["differee", "live"])
+def test_les_deux_motifs_sont_acceptes(migrated: Settings, motif: str) -> None:
+    """Deux valeurs, et pas de texte libre : une decision prise a temps mais
+    saisie tard porte une etiquette **valide** et un prix douteux ; un pari pris
+    en cours de match porte les deux comme invalides."""
+    assert motif in LATE_REASONS
+
+
+def test_un_motif_inconnu_ne_leve_pas_le_refus(migrated: Settings) -> None:
+    """Un troisieme choix, ou un champ libre, ferait retomber dans le melange
+    que cette colonne existe pour defaire."""
+    session_id, event_id = _match_commence(migrated)
+
+    with pytest.raises(HistoryError, match="déjà commencé"):
+        add_pick(
+            session_id,
+            "safe",
+            "1N2",
+            "Domicile",
+            event_id=str(event_id),
+            late_reason="parce que",
+            settings=migrated,
+        )
+
+
+def test_une_selection_a_venir_n_a_rien_a_justifier(migrated: Settings) -> None:
+    """Le cas ordinaire : aucun geste de plus, et `late_reason` reste vide."""
+    session_id, event_id = _a_venir(migrated)
+    add_pick(
+        session_id,
+        "safe",
+        "O/U",
+        "Over",
+        event_id=str(event_id),
+        independence_note="angles indépendants",
+        settings=migrated,
+    )
+
+    ligne = db.query_one("SELECT late_reason FROM picks ORDER BY id DESC", settings=migrated)
+    assert ligne["late_reason"] is None
+
+
+def test_une_selection_sans_match_echappe_a_la_garde(migrated: Settings) -> None:
+    """Aucun coup d'envoi contre quoi la dater : la garde ne peut rien
+    demontrer, et elle n'ecarte que ce qui est demontre."""
+    session_id, _ = _a_venir(migrated)
+
+    add_pick(session_id, "safe", "1N2", "Sans match", settings=migrated)
+
+    ligne = db.query_one("SELECT late_reason FROM picks ORDER BY id DESC", settings=migrated)
+    assert ligne["late_reason"] is None

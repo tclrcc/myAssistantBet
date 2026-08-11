@@ -103,6 +103,19 @@ SOURCE_LEVELS = {
 #: et les taire les rendrait introuvables.
 NO_COMPETITION = "Hors compétition"
 
+#: Motifs d'une selection posee **apres** le coup d'envoi de son match.
+#:
+#: **Deux valeurs, et pas de texte libre.** Les deux cas legitimes ne se
+#: ressemblent pas, et les confondre est ce qui a rendu inexploitables les 37
+#: selections tardives de la base : une decision prise a temps mais saisie tard
+#: porte une etiquette **valide** et un prix douteux ; un pari reellement pris
+#: en cours de match porte les deux comme invalides. Un troisieme choix, ou un
+#: champ libre, ferait retomber dans le melange que cette colonne defait.
+LATE_REASONS = {
+    "differee": "Saisie différée — décision prise avant le coup d'envoi",
+    "live": "Live assumé — pari pris en cours de match",
+}
+
 
 class HistoryError(ValueError):
     """Saisie de pick invalide. Le message est affiche tel quel."""
@@ -1099,6 +1112,10 @@ class PickableEvent:
     local_time: datetime
     #: Le match fait partie de la shortlist, donc de ce qui a ete analyse.
     in_session: bool = True
+    #: Le coup d'envoi est passe. `GridRow` porte deja ce drapeau ; celui-ci
+    #: l'aligne, pour que l'apercu d'import puisse decocher une ligne quelle que
+    #: soit l'origine du match rapproche — shortlist ou voisinage.
+    started: bool = False
 
     @property
     def affiche(self) -> str:
@@ -1200,6 +1217,7 @@ def pickable_events(
             competition=row["competition"],
             local_time=_local(row["commence_time"], settings.tz),
             in_session=bool(row["in_session"]),
+            started=str(row["commence_time"]) <= utcnow(),
         )
         for row in rows
     ]
@@ -1363,6 +1381,7 @@ def add_pick(
     source_level: str = "",
     price_source: str = "",
     independence_note: str = "",
+    late_reason: str = "",
     played: bool = False,
     result: str = "pending",
     settings: Settings | None = None,
@@ -1444,6 +1463,33 @@ def add_pick(
         # vocabulaire du bloc — « Double chance » la ou il ecrit « DC » — et se
         # resout alors a la lecture, sans jamais etre devinee.
         #
+        # LA GARDE D'ANTERIORITE. Second controle bloquant du module, et le
+        # second seulement — ailleurs une valeur manquante vaut « non
+        # renseigne ».
+        #
+        # **Le compteur informait, la garde empeche**, et l'information seule
+        # n'a pas suffi : le couple horaire etait deja sous les yeux au moment
+        # de la saisie, et 37 des 110 selections tranchees ont ete posees apres
+        # le coup d'envoi. Sur cette strate le residu au prix est nul et
+        # l'echelle d'etiquetage **s'inverse** : elle decrit au lieu de predire.
+        #
+        # Le refus n'est pas absolu — il reclame un **motif**, sur un chemin
+        # qu'on veut rare. Sans motif, la garde dirait combien de selections
+        # sont tardives et jamais pourquoi ; or les deux cas legitimes ne se
+        # ressemblent pas, et c'est leur melange qui a rendu les 37
+        # inexploitables.
+        late = _vocabulary(late_reason, LATE_REASONS)
+        if attached is not None and late is None:
+            debut = conn.execute(
+                "SELECT commence_time FROM events WHERE id = ?", (attached,)
+            ).fetchone()
+            if debut is not None and utcnow() >= str(debut["commence_time"]):
+                raise HistoryError(
+                    "Ce match a déjà commencé. Une sélection posée après le coup "
+                    "d'envoi ne dit rien de ce qui la précède : indique si la "
+                    "décision est antérieure (saisie différée) ou non (live assumé)."
+                )
+
         # Sans match rattache, aucun sport, donc aucun vocabulaire : rien.
         resolved = None
         if attached is not None:
@@ -1458,8 +1504,9 @@ def add_pick(
         cursor = conn.execute(
             "INSERT INTO picks (session_id, event_id, tier, market, selection, price, "
             "                   confidence, played, stake, result, angle, source_level, "
-            "                   price_source, independence_note, market_key, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "                   price_source, independence_note, market_key, "
+            "                   late_reason, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 attached,
@@ -1476,6 +1523,7 @@ def add_pick(
                 price_origin,
                 note or None,
                 resolved,
+                late,
                 utcnow(),
             ),
         )

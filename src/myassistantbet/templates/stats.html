@@ -33,7 +33,7 @@
    ecrit une fois et suit les blocs reellement rendus : annoncer une ancre vers
    une section absente serait pire que pas de sommaire du tout. #}
 {% set sections = [
-     ('analyse', "Ce que vaut l'analyse", not analysis.empty),
+     ('analyse', 'Ce que ces sélections ont produit', not analysis.empty),
      ('tri', 'Ce que tu écartes', analysis.by_session | length > 0),
      ('sets', 'Le score en sets', not set_scores.empty),
      ('etiquettes', 'Comment tu étiquettes', labelling | length > 0),
@@ -50,7 +50,12 @@
 {% if not analysis.empty %}
 <section class="stats-block" id="analyse">
   <div class="block-head">
-    <h2>Ce que vaut l'analyse</h2>
+    {# Le titre est la premiere chose lue et la derniere relue : il doit etre au
+       moins aussi prudent que le bloc qu'il coiffe. « Ce que vaut l'analyse »
+       annoncait un **jugement** sur une page qui a passe sept lots a etablir
+       qu'elle ne peut pas le rendre. Ce qu'elle fait est decrire des issues
+       tranchees face a leurs prix. #}
+    <h2>Ce que ces sélections ont produit</h2>
     {# `as_of` n'est pas une coquetterie : l'axe « niveau de compétition » est
        passé de p = 0,0443 à p = 0,0195 sur **six résultats saisis**, la base
        étant servie en continu. Un verdict qui bouge d'un facteur deux sur six

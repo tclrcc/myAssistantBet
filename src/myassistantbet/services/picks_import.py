@@ -75,6 +75,13 @@ class ParsedPick:
     #: d'independance : `add_pick` la refuse sans.
     same_event: bool = False
     independence: str = ""
+    #: Le match a **deja commence** au moment de l'import. La ligne reste
+    #: proposee — la decision est peut-etre anterieure, seule la saisie est
+    #: tardive — mais decochee tant que son motif manque : `add_pick` la
+    #: refuserait, et une ligne qui echoue au milieu de vingt se remarque moins
+    #: qu'une case qu'on doit cocher. Meme traitement que l'independance.
+    started: bool = False
+    late_reason: str = ""
     #: Une selection identique existe deja dans la session, ou plus haut dans
     #: le meme tableau. Elle reste proposee — c'est peut-etre voulu — mais
     #: decochee : coller deux fois le meme rendu ne doit pas doubler l'historique.
@@ -93,7 +100,12 @@ class ParsedPick:
         sa justification manque : `add_pick` la refuserait, et une ligne qui
         echoue a l'import se remarque moins qu'une case qu'on doit cocher.
         """
-        return self.ready and not self.duplicate and not (self.same_event and not self.independence)
+        return (
+            self.ready
+            and not self.duplicate
+            and not (self.same_event and not self.independence)
+            and not (self.started and not self.late_reason)
+        )
 
     @property
     def problems(self) -> list[str]:
@@ -110,6 +122,8 @@ class ParsedPick:
             issues.append("déjà présente")
         if self.same_event and not self.independence:
             issues.append("2e sélection sur ce match : dire l'angle indépendant")
+        if self.started and not self.late_reason:
+            issues.append("match déjà commencé : saisie différée, ou live assumé ?")
         return issues
 
 
@@ -357,6 +371,9 @@ def parse_table(
                 source=_source(values["source"]),
                 duplicate=signature in seen,
                 same_event=event_id is not None and event_id in events,
+                # Les deux types de match rapproches portent ce drapeau : la
+                # ligne se decoche quelle que soit l'origine du rapprochement.
+                started=bool(found and found.started),
             )
         )
         seen.add(signature)

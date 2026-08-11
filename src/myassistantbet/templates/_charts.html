@@ -253,11 +253,22 @@
   <div class="tile">
     <span class="label">{{ label }}</span>
     <b class="tile-figure">{{ row.won }} <i>sur</i> {{ row.settled }}</b>
+    {# **Trois populations ne tiennent pas sur une ligne.** « 35 gagnées, 38
+       perdues » fait 73 ; y ajouter « 1 annulée · 5 en attente » en decrivait
+       79 sous un titre qui en annonce 73, et le lecteur qui additionne trouve un
+       nombre qui ne correspond a rien. Les tranchees d'un cote, le reste en
+       mention separee. #}
     <span class="tile-detail">
       {{ row.won }} gagnée(s), {{ row.lost }} perdue(s)
-      {%- if row.void %} · {{ row.void }} annulée(s){% endif %}
-      {%- if row.pending %} · {{ row.pending }} en attente{% endif %}
     </span>
+    {%- if row.void or row.pending %}
+    <span class="muted small">
+      hors décompte :
+      {%- if row.void %} {{ row.void }} annulée(s){% endif %}
+      {%- if row.void and row.pending %} ·{% endif %}
+      {%- if row.pending %} {{ row.pending }} en attente{% endif %}
+    </span>
+    {%- endif %}
   </div>
 {% endmacro %}
 

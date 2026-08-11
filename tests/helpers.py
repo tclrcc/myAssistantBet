@@ -233,7 +233,7 @@ def lot_avec_recul(
             "Amical",
             "Lyon",
             "Nice",
-            "2026-08-04",
+            "2099-01-01",
             "20:45",
             "Lyon 2.10\nNice 3.40",
             "",
