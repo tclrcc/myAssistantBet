@@ -14,13 +14,24 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from math import ceil
 from typing import Any
 from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from .competitions import category_label, category_rank
-from .inference import Evidence, Residual, evidence, omnibus, required_sample, wilson
+from .inference import (
+    ALPHA,
+    Evidence,
+    Residual,
+    benjamini_hochberg,
+    evidence,
+    omnibus,
+    required_sample,
+    two_proportions,
+    wilson,
+)
 from .labels import affiche, sort_key
 from .market_families import family_key, family_label, family_of, family_rank, market_key_for
 from .market_families import load as load_families
@@ -540,6 +551,58 @@ class RateRow:
     #: ses lignes sont un seul test ecrit N fois : tant qu'il ne passe pas,
     #: aucune de ses lignes ne se lit comme un constat.
     axis_separates: bool = False
+    #: L'axe survit-il a la correction de multiplicite entre axes. Huit axes
+    #: testes a 5 % laissent attendre une « decouverte » par pur hasard.
+    axis_survives: bool = False
+    #: Toutes les lignes de l'axe, `(reussites, tranchees)`. Sert a recalculer
+    #: le verdict quand on retourne des resultats — la fragilite ci-dessous.
+    axis_cells: list[tuple[int, int]] = field(default_factory=list)
+
+    @property
+    def carried(self) -> bool:
+        """La ligne est-elle **portee** par la page, ou repliee avec les autres.
+
+        Trois conditions, dans cet ordre : l'axe separe, il survit a la
+        correction entre axes, et la ligne s'ecarte de son complement.
+        **Jamais un intervalle de Wilson** — sur la population reelle il
+        retenait deux lignes a `0/4` (p = 0,12) et une dont la borne franchissait
+        le seuil de 0,011 point.
+        """
+        return self.axis_separates and self.axis_survives and self.evidence.discriminant
+
+    @property
+    def fragility(self) -> int | None:
+        """Resultats a retourner **dans cette ligne** pour que le verdict tombe.
+
+        **Bloquante pour toute ligne portee**, et c'est la lecon du bloc
+        « SCORE EXACT 100 % sur 2 » : un chiffre sans son effectif se lit comme
+        un fait. Ici l'effectif ne suffit pas — une ligne a 40 paris peut tenir
+        a un seul resultat — donc c'est le nombre de bascules qui accompagne le
+        verdict.
+
+        Le calcul refait **les deux tests** : l'omnibus de l'axe et celui de la
+        ligne. Ne verifier que le second surestimerait la solidite, l'axe
+        pouvant ceder le premier.
+
+        `None` quand la ligne n'est pas portee : il n'y a alors rien a faire
+        tomber.
+        """
+        if not self.carried:
+            return None
+        other_won, other_settled = self.complement
+        for flips in range(1, self.settled + 1):
+            for won in (self.won - flips, self.won + flips):
+                if not 0 <= won <= self.settled:
+                    continue
+                cells = [
+                    (won, self.settled) if cell == (self.won, self.settled) else cell
+                    for cell in self.axis_cells
+                ]
+                verdict = omnibus(cells)
+                tombe = verdict is None or not verdict.separates
+                if tombe or two_proportions(won, self.settled, other_won, other_settled) >= ALPHA:
+                    return flips
+        return None
 
     @property
     def evidence(self) -> Evidence:
@@ -1759,6 +1822,64 @@ class SessionRate:
         return 0 if self.lot is None else max(0, self.covered - self.lot)
 
 
+#: Selections tranchees a anteriorite etablie par session, mesure sur les
+#: sessions reelles. Sert a traduire un effectif manquant en nombre de sessions
+#: — la seule unite dans laquelle une attente se decide.
+SETTLED_PER_SESSION = 9.6
+
+
+@dataclass
+class Horizon:
+    """Ce qu'il faudrait accumuler pour qu'une question devienne decidable.
+
+    **Le vrai contenu de la section des regroupements.** Elle ne conclut rien et
+    ne conclura peut-etre jamais ; ce qui s'y lit utilement n'est pas un taux,
+    c'est la distance au moment ou un taux voudra dire quelque chose. Un compte
+    de lignes repliees n'est pas un aveu d'echec, c'est une mesure de
+    progression.
+    """
+
+    question: str
+    #: Selections **par ligne** deja accumulees et requises.
+    have: int
+    need: int
+    #: Lignes comparees, pour que la question se relise sans y revenir.
+    detail: str = ""
+
+    @property
+    def missing(self) -> int:
+        return max(0, self.need - self.have)
+
+    @property
+    def sessions(self) -> int:
+        """Sessions restantes, arrondies au superieur.
+
+        Le manque porte sur **deux lignes** — c'est un effectif par groupe — et
+        une session n'alimente pas les deux a parts egales. Le compte suppose
+        un partage moyen, ce qui est une estimation et non une echeance : la
+        page dit « environ ».
+        """
+        if not self.missing:
+            return 0
+        return ceil(self.missing * 2 / SETTLED_PER_SESSION)
+
+    @property
+    def reachable(self) -> bool:
+        """La question se ferme-t-elle dans un horizon qui a un sens.
+
+        Au-dela, la reponse **est** que l'axe ne se departagera pas : le cout
+        d'attendre n'etant pas nul — chaque session paie du poids de prompt et
+        de l'attention de saisie — une question a soixante-douze sessions est
+        une question tranchee par la negative.
+        """
+        return 0 < self.sessions <= HORIZON_MAX_SESSIONS
+
+
+#: Au-dela de ce nombre de sessions, une question n'attend plus : elle est
+#: repondue par la negative. Environ deux mois au rythme d'une session par jour.
+HORIZON_MAX_SESSIONS = 60
+
+
 @dataclass
 class AxisGap:
     """Un axe dont l'addition ne retombe pas sur le total tranche.
@@ -1912,10 +2033,82 @@ class Analysis:
     #: Selections tranchees sans cote enregistree — elles sortent des deux
     #: residus et de ceux-la seulement.
     unpriced: int = 0
+    #: `(reussites, tranchees)` des deux paliers les plus employes **a l'interieur
+    #: du niveau de confiance le plus fourni**. C'est l'ecart **residuel** entre
+    #: les deux echelles, celui qui dit si la seconde ajoute quelque chose — bien
+    #: plus tenu que l'ecart brut, et il faut les donnees croisees pour le voir.
+    conditional: list[tuple[int, int]] = field(default_factory=list)
 
     @property
     def empty(self) -> bool:
         return self.settled == 0
+
+    @property
+    def carried_rows(self) -> list[RateRow]:
+        """Les lignes que la page **porte**. Toutes les autres sont repliees."""
+        return [row for rows in self.groups for row in rows if row.carried]
+
+    @property
+    def folded_rows(self) -> int:
+        return sum(len(rows) for rows in self.groups) - len(self.carried_rows)
+
+    @property
+    def horizons(self) -> list[Horizon]:
+        """Les questions ouvertes, et la distance a laquelle elles se ferment.
+
+        **C'est le seul texte utile de la section des regroupements.** Elle ne
+        conclut rien aujourd'hui : ce qui s'y lit est la progression vers un
+        moment ou elle conclura, ou la constatation qu'elle n'y arrivera pas.
+        """
+        found: list[Horizon] = []
+        for libelle, rows in (("le palier", self.by_tier), ("la confiance", self.by_confidence)):
+            paire = sorted((row for row in rows if row.settled), key=lambda row: -row.settled)[:2]
+            if len(paire) < 2:
+                continue
+            haut, bas = sorted(paire, key=lambda row: -(row.rate or 0.0))
+            besoin = required_sample(haut.rate or 0.0, bas.rate or 0.0)
+            if besoin is not None:
+                found.append(
+                    Horizon(
+                        question=f"{libelle} départage ses deux niveaux les plus employés",
+                        have=min(haut.settled, bas.settled),
+                        need=besoin,
+                        detail=f"{haut.label} contre {bas.label}",
+                    )
+                )
+        found.extend(self._scales_horizon())
+        return sorted(found, key=lambda item: item.sessions)
+
+    def _scales_horizon(self) -> list[Horizon]:
+        """Faut-il deux echelles, ou une seule ?
+
+        Le palier et la confiance annoncee se recouvrent — V de Cramer 0,54 — et
+        **aucun des deux ne survit au conditionnement sur l'autre** (Mantel-
+        Haenszel exact, p = 0,115 et 0,119). La question ne peut pas rester
+        ouverte indefiniment : chaque session saisie avec deux echelles couplees
+        paie du poids de prompt et de l'attention de saisie pour produire une
+        redondance. On mesure donc ce qu'il faudrait pour trancher — et une
+        reponse hors d'atteinte **est** une reponse.
+
+        L'ecart qui compte est le **residuel** : a confiance fixee, le palier
+        separe-t-il encore ? Il se lit dans la strate la plus fournie, et il est
+        bien plus tenu que l'ecart brut — d'ou un horizon qui n'a rien a voir
+        avec celui de l'axe pris seul.
+        """
+        if len(self.conditional) < 2:
+            return []
+        haut, bas = sorted(self.conditional, key=lambda cell: -(cell[0] / cell[1]))[:2]
+        besoin = required_sample(haut[0] / haut[1], bas[0] / bas[1])
+        if besoin is None:
+            return []
+        return [
+            Horizon(
+                question="il faut deux échelles plutôt qu'une",
+                have=min(haut[1], bas[1]),
+                need=besoin,
+                detail="à confiance fixée, le palier ne sépare plus — V de Cramér 0,54",
+            )
+        ]
 
     @property
     def as_of_label(self) -> str:
@@ -2138,21 +2331,38 @@ class Overlap:
         )
 
 
-def _with_complements(rows: list[RateRow]) -> None:
-    """Donne a chaque ligne le reste de son axe, et a l'axe son verdict.
+def _with_complements(axes: tuple[list[RateRow], ...]) -> None:
+    """Donne a chaque ligne le reste de son axe, et a chaque axe son verdict.
 
     Ecrit une seule fois et applique a `Analysis.groups` en bloc : un
     remplissage axe par axe aurait ete oublie au premier axe ajoute, et une
     ligne sans complement se lit comme une ligne qui n'affirme rien — une panne
     qui ne casse pas, elle fait seulement disparaitre.
+
+    **La correction de multiplicite se fait ici, entre axes**, parce que c'est
+    le seul endroit qui les voit tous. Huit axes testes a 5 % laissent attendre
+    une « decouverte » par pur hasard ; les corriger **par ligne** aurait au
+    contraire compte chaque partition N fois et gonfle le nombre d'essais — la
+    raison meme pour laquelle l'omnibus existe.
     """
-    total_won = sum(row.won for row in rows)
-    total_settled = sum(row.settled for row in rows)
-    verdict = omnibus([(row.won, row.settled) for row in rows])
-    separates = verdict is not None and verdict.separates
-    for row in rows:
-        row.complement = (total_won - row.won, total_settled - row.settled)
-        row.axis_separates = separates
+    verdicts: list[tuple[list[RateRow], float]] = []
+    for rows in axes:
+        total_won = sum(row.won for row in rows)
+        total_settled = sum(row.settled for row in rows)
+        cells = [(row.won, row.settled) for row in rows]
+        verdict = omnibus(cells)
+        for row in rows:
+            row.complement = (total_won - row.won, total_settled - row.settled)
+            row.axis_separates = verdict is not None and verdict.separates
+            row.axis_cells = cells
+        if verdict is not None:
+            verdicts.append((rows, verdict.p_value))
+
+    retenus = benjamini_hochberg([value for _, value in verdicts])
+    seuil = sorted(value for _, value in verdicts)[retenus - 1] if retenus else -1.0
+    for rows, value in verdicts:
+        for row in rows:
+            row.axis_survives = value <= seuil
 
 
 def _overlaps(axes: list[tuple[str, list[RateRow]]]) -> list[Overlap]:
@@ -2734,8 +2944,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
     # endroit : rempli axe par axe, il aurait ete oublie au premier ajoute — le
     # piege exact de `RateRow.merge`, dont les deux fusions recopiees a la main
     # n'avaient pas suivi les champs ajoutes apres elles.
-    for axe in report.groups:
-        _with_complements(axe)
+    _with_complements(report.groups)
 
     for row, result in zip(rows, results, strict=True):
         _count(report.played if row["played"] else report.skipped, result, row)
@@ -2791,6 +3000,28 @@ def analysis(settings: Settings | None = None) -> Analysis:
                 gagnees_tardif += gagne
     report.residual = Residual(observed=gagnees_etabli, implied=etabli)
     report.residual_late = Residual(observed=gagnees_tardif, implied=tardif)
+
+    # Le croisement palier x confiance, pour l'ecart residuel entre les deux
+    # echelles. Calcule ici parce que c'est le seul endroit qui voit les lignes
+    # brutes : un `RateRow` ne connait que son propre axe.
+    croise: dict[tuple[str, Any], list[int]] = {}
+    for row in rows:
+        resultat = str(row["result"])
+        if resultat not in ("win", "loss") or row["confidence"] is None:
+            continue
+        cle = (_tier_of(row), row["confidence"])
+        compte = croise.setdefault(cle, [0, 0])
+        compte[0] += resultat == "win"
+        compte[1] += 1
+    if croise:
+        dominant = max(
+            {cle[1] for cle in croise},
+            key=lambda niveau: sum(v[1] for k, v in croise.items() if k[1] == niveau),
+        )
+        report.conditional = sorted(
+            (tuple(valeur) for cle, valeur in croise.items() if cle[1] == dominant and valeur[1]),
+            key=lambda cell: -cell[1],
+        )[:2]
 
     report.as_of = utcnow()
     report.gaps = _audit(report, tally)

@@ -159,6 +159,77 @@
   </p>
   {% endif %}
 
+  {# LA SECTION DES REGROUPEMENTS, REPLIÉE.
+
+     Elle avait pour but de faire remonter la ligne informative. Depuis, on a
+     établi qu'il n'y en a pas : l'axe confiance et l'axe palier sont un même
+     phénomène — V de Cramér 0,54, et aucun ne survit au conditionnement sur
+     l'autre — et le seul contraste apparent était des favoris courts que leurs
+     propres prix annonçaient déjà.
+
+     Elle n'est pas supprimée pour autant : le volume s'y accumule, et elle
+     conclura peut-être. **Ce n'est plus une section de résultats, c'est un
+     compteur de progression vers des résultats**, et son en-tête doit le dire
+     plutôt que le laisser deviner.
+
+     Aucune ligne n'y est portée sur la foi d'un intervalle de Wilson : il faut
+     que l'axe passe son omnibus **exact**, qu'il survive à la correction entre
+     axes, et que la ligne s'écarte de son complément. Toute ligne portée
+     affiche sa fragilité — sans elle, on retombe sur le « SCORE EXACT 100 %
+     sur 2 » que cette page a mis six tours à retirer. #}
+  <details class="panel groups-fold"{% if analysis.carried_rows %} open{% endif %}>
+    <summary>
+      Par regroupement
+      <span class="muted small">
+        {%- if analysis.carried_rows %}
+        {{ analysis.carried_rows | length }} ligne(s) portée(s),
+        {{ analysis.folded_rows }} repliée(s)
+        {%- else %}
+        aucune des {{ analysis.folded_rows }} lignes ne s'écarte de sa référence
+        {%- endif %}
+      </span>
+    </summary>
+
+    {% if analysis.horizons %}
+    <div class="horizons">
+      <p class="chart-note">
+        Ce que ces regroupements diront, et quand. Le compte porte sur les
+        sélections d'une même ligne, au rythme observé — c'est une estimation,
+        pas une échéance.
+      </p>
+      <ul>
+        {% for horizon in analysis.horizons %}
+        <li>
+          <strong>{{ horizon.question | capitalize }}</strong> —
+          {{ horizon.have }} sélections sur les ~{{ horizon.need }} nécessaires
+          {%- if horizon.reachable %}, soit environ {{ horizon.sessions }} session(s)
+          {%- elif horizon.missing %} : <strong>hors d'atteinte</strong>
+          ({{ horizon.sessions }} sessions au rythme actuel)
+          {%- else %}, atteint{% endif %}.
+          <i class="muted small">{{ horizon.detail }}</i>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
+    {% if analysis.carried_rows %}
+    <div class="carried">
+      <h3>Ce qui s'écarte</h3>
+      <ul>
+        {% for row in analysis.carried_rows %}
+        <li>
+          <strong>{{ row.label }}</strong> {{ row.won }}/{{ row.settled }}
+          ({{ row.rate_label }}) contre {{ row.complement[0] }}/{{ row.complement[1] }}
+          {%- if row.fragility %} —
+          <strong>{{ row.fragility }} résultat(s) retourné(s) l'effaceraient</strong>
+          {%- endif %}.
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
+
   <div class="charts">
     {# La note d'origine affirmait que l'écart « dit que la notation dérive »
        sans qu'aucun référentiel n'existe : confiance 4 n'est pas un
@@ -305,6 +376,7 @@
     </article>
     {% endif %}
   </div>
+  </details>
 
   {# Trois paragraphes de méthode se lisaient d'affilée sous les graphiques : à
      eux seuls, ils tenaient un écran entier avant le détail chiffré. Ce qu'ils

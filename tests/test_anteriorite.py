@@ -21,7 +21,14 @@ from myassistantbet import db
 from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
-from myassistantbet.services.history import add_pick, analysis, set_result, worksheet
+from myassistantbet.services.history import (
+    HORIZON_MAX_SESSIONS,
+    Horizon,
+    add_pick,
+    analysis,
+    set_result,
+    worksheet,
+)
 from myassistantbet.services.inference import MARGIN_REFERENCE, Residual
 from myassistantbet.services.manual import build, save
 
@@ -404,3 +411,119 @@ def test_ni_le_code_ni_la_page_n_affirment_le_mecanisme(
 
     for affirmation in ("en le connaissant", "après le résultat", "relevé après"):
         assert affirmation not in page
+
+
+# -- Ce que la section des regroupements porte, et ce qu'elle replie ---------
+#
+# **Le critere d'acceptation est une propriete, jamais un nombre.** Il valait
+# « 1 ligne portee sur 30 » a 104 selections, « 3 sur 29 » a 67, et la base bouge
+# chaque jour : un nombre ecrit ici serait faux le jour ou on le recette. Ces
+# tests montent donc leur propre lot et verifient la **regle**.
+
+
+def _axe_tranchant(settings: Settings) -> None:
+    """Un lot dont un axe separe nettement : SAFE gagne, FUN perd."""
+    for index in range(12):
+        event_id = _match(settings, f"Sûr {index}")
+        session_id = board_service.toggle_selection(event_id, True, settings)
+        _pick(settings, session_id, event_id, price="1.30", result="win")
+    for index in range(12):
+        event_id = _match(settings, f"Risqué {index}")
+        session_id = board_service.toggle_selection(event_id, True, settings)
+        pick_id = add_pick(
+            session_id,
+            "fun",
+            "1N2",
+            "Domicile",
+            event_id=str(event_id),
+            price="2.00",
+            settings=settings,
+        )
+        set_result(pick_id, "loss", settings)
+
+
+def test_aucune_ligne_n_est_portee_sur_un_intervalle_de_wilson(migrated: Settings) -> None:
+    """**La regle qui a change le socle.** Sur la population reelle, « l'IC
+    ecarte 50 % » retenait deux lignes a `0/4` (p = 0,12) et une dont la borne
+    franchissait le seuil de 0,011 point. Une ligne portee doit passer les trois
+    conditions, pas la plus permissive."""
+    _lot(migrated, [("2.00", "loss", False)] * 4 + [("2.00", "win", False)] * 4)
+
+    for row in analysis(migrated).carried_rows:
+        assert row.axis_separates and row.axis_survives
+        assert row.evidence.discriminant
+
+
+def test_une_ligne_portee_affiche_toujours_sa_fragilite(migrated: Settings) -> None:
+    """**Bloquante.** Un chiffre sans son effectif se lit comme un fait, et
+    l'effectif ne suffit pas : une ligne a quarante paris peut tenir a un seul
+    resultat. Sans elle, on retombe sur le « SCORE EXACT 100 % sur 2 »."""
+    _axe_tranchant(migrated)
+
+    portees = analysis(migrated).carried_rows
+
+    assert portees, "ce lot doit porter au moins une ligne"
+    for row in portees:
+        assert row.fragility is not None and row.fragility >= 1
+
+
+def test_une_ligne_repliee_n_a_pas_de_fragilite(migrated: Settings) -> None:
+    """Il n'y a rien a faire tomber, et un nombre ferait croire a un verdict."""
+    _lot(migrated, [("2.00", "win", False), ("2.00", "loss", False)])
+
+    for rows in analysis(migrated).groups:
+        for row in rows:
+            if not row.carried:
+                assert row.fragility is None
+
+
+def test_la_fragilite_compte_bien_des_bascules(migrated: Settings) -> None:
+    """Retourner ce nombre de resultats doit **effectivement** faire tomber le
+    verdict : le calcul refait les deux tests, celui de l'axe et celui de la
+    ligne, l'axe pouvant ceder le premier."""
+    _axe_tranchant(migrated)
+    ligne = next(row for row in analysis(migrated).carried_rows if row.settled > 4)
+
+    assert ligne.fragility is not None
+    assert ligne.fragility < ligne.settled, "une ligne ne tient jamais a tout son effectif"
+
+
+def test_la_section_annonce_ce_qu_elle_replie(migrated: Settings, client: TestClient) -> None:
+    """**Ce n'est plus une section de resultats, c'est un compteur de
+    progression.** Le compte de repliees n'est pas un aveu d'echec : c'est le
+    contenu de la section, et l'en-tete doit le dire plutot que le laisser
+    deviner."""
+    _lot(migrated, [("2.00", "win", False), ("2.00", "loss", False)])
+
+    page = client.get("/stats").text
+
+    assert "groups-fold" in page
+    assert "ne s'écarte de sa référence" in page
+
+
+def test_l_en_tete_porte_les_horizons(migrated: Settings, client: TestClient) -> None:
+    """Le seul texte utile du bloc : la distance au moment ou il conclura."""
+    _axe_tranchant(migrated)
+
+    page = client.get("/stats").text
+
+    assert "Ce que ces regroupements diront, et quand" in page
+    assert "nécessaires" in page
+
+
+def test_une_question_hors_d_atteinte_est_dite_comme_telle(migrated: Settings) -> None:
+    """Une reponse hors d'atteinte **est** une reponse : le cout d'attendre
+    n'est pas nul, chaque session paie du poids de prompt et de l'attention de
+    saisie pour produire une redondance."""
+    lointain = Horizon(question="x", have=10, need=5000)
+
+    assert not lointain.reachable
+    assert lointain.sessions > HORIZON_MAX_SESSIONS
+
+
+def test_une_question_deja_tranchee_ne_reclame_plus_rien(migrated: Settings) -> None:
+    atteint = Horizon(question="x", have=100, need=50)
+
+    assert atteint.missing == 0
+    assert atteint.sessions == 0
+    assert not atteint.reachable, "rien a attendre n'est pas « atteignable »"

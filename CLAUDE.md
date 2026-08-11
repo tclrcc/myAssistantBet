@@ -1971,6 +1971,87 @@ seul instant ou l'information arrive assez tot pour changer quelque chose.
 - Rien quand tout est couvert : un compteur a zero sur chaque session serait du
   bruit, et c'est le manque qui doit se voir.
 
+### Le deficit croit-il avec la cote ? Non concluant, et c'est la reponse
+
+Le tableau de calibration montre un deficit qui croit monotonement avec le
+prix — `-1,5` sur les cotes courtes, `-3,4` sur les moyennes, `-4,4` sur les
+longues, soit un tiers du deficit total dans douze selections. Le mecanisme
+candidat est nommable et connu : sur les cotes longues la marge est plus elevee
+et le biais favori-outsider joue contre le parieur.
+
+**Ce n'est donc pas une tranche trouvee en fouillant, c'est une variable ordonnee
+continue** — et elle se teste par une **tendance**, pas en comparant trois bacs :
+une seule statistique, aucune multiplicite. Test de score de la pente dans
+`logit(P) = logit(1/cote) + a + b·cote`, l'ordonnee a l'origine restant un
+parametre de nuisance qui porte le deficit global deja mesure.
+
+- **Unilateral p = 0,031, bilateral p = 0,062** — et c'est le bilateral qui fait
+  foi. La direction est predite par un mecanisme connu, mais elle a aussi ete
+  **vue dans le tableau avant d'etre testee** : prendre l'unilateral reviendrait
+  a diviser le seuil par deux apres avoir regarde. Robuste a la transformation :
+  `log(cote)` donne 0,035 / 0,070.
+- Le constat **n'entre donc pas dans le bloc de tete**. Il attend, et l'en-tete
+  replie dit ce qu'il faudrait : ~165 selections a anteriorite etablie pour 80 %
+  de puissance, contre 73 — soit une dizaine de sessions.
+- Ce qu'il vaudrait s'il tenait : ce ne serait plus « je perds contre les prix »
+  mais « je perds contre les prix, et principalement la », avec une consequence
+  operationnelle immediate — les douze selections a cote >= 2.00 portent 47 % du
+  deficit. Aucune autre mesure du projet ne debouche sur une action.
+- **Fragilite de la tranche longue : 2.** `1/12` contre 5,40 payees donne
+  p = 0,0082, et deux victoires l'effacent. C'est aussi pourquoi elle ne se porte
+  pas seule.
+
+### La calibration, et la puissance qu'elle n'a pas
+
+Deux precautions a garder attachees a ce tableau :
+
+- **Trois bandes sont un decoupage**, donc un choix. Verifie sur un second
+  decoupage — terciles d'effectif au lieu des seuils ronds — et la nullite des
+  37 tient : `-1,00`, `+1,51`, `-0,76`, avec une tendance a `p = 0,86`. Le
+  gradient des 73 s'y renforce au contraire (`-0,50`, `-1,49`, `-7,32`).
+- **« Residu nul dans chaque bande » a une puissance tres faible** sur des bacs
+  de 5, 21 et 11 selections : un ecart de deux victoires y passerait inapercu.
+  La formulation juste est **rien ne s'ecarte, et l'effectif ne permettrait de
+  detecter qu'un ecart important**. C'est suffisant pour preferer (a) a (b) —
+  d'autant que la distribution des cotes va contre (b) — mais ce n'est pas une
+  preuve d'ajustement parfait.
+
+### La section des regroupements est devenue un compteur de progression
+
+**Elle avait pour but de faire remonter la ligne informative ; on a etabli qu'il
+n'y en a pas.** Confiance et palier sont un meme phenomene, et le seul contraste
+apparent etait des favoris courts que leurs prix annoncaient deja. Elle n'est pas
+supprimee pour autant — le volume s'y accumule et elle conclura peut-etre — mais
+elle passe **sous le bloc de tete, repliee par defaut**, et son en-tete porte le
+seul texte utile du bloc : la distance a laquelle elle conclura.
+
+- **Trois conditions pour qu'une ligne soit portee**, dans cet ordre : l'axe
+  passe son omnibus **exact**, il survit a la correction de multiplicite
+  **entre axes**, et la ligne s'ecarte de son complement. **Jamais un intervalle
+  de Wilson.**
+  - La correction se fait entre **axes** et non entre lignes : corriger par ligne
+    compterait chaque partition N fois et gonflerait le nombre d'essais —
+    exactement la raison d'etre de l'omnibus.
+- **Le critere d'acceptation est une propriete, jamais un nombre.** Il valait
+  « 1 ligne sur 30 » a 104 selections, « 3 sur 29 » a 67, et la base bouge chaque
+  jour : un nombre ecrit dans un test serait faux le jour ou on le recette. Les
+  tests montent leur propre lot et verifient la regle.
+- **La fragilite par ligne est bloquante.** Un chiffre sans son effectif se lit
+  comme un fait, et l'effectif ne suffit pas — une ligne a quarante paris peut
+  tenir a un seul resultat. Mesure qui le prouve : `ULTRA FUN 0/7` est portee, et
+  sa fragilite vaut **1**. Le calcul refait **les deux tests**, l'axe pouvant
+  ceder avant la ligne.
+- **`Horizon` mesure ce qu'il faudrait**, et une reponse hors d'atteinte **est**
+  une reponse : le cout d'attendre n'est pas nul, chaque session paie du poids de
+  prompt et de l'attention de saisie. Mesure actuelle : le palier departage ses
+  deux niveaux dans ~5 sessions, la confiance dans ~12, et la question « faut-il
+  deux echelles » demande **~378 selections par ligne contre 19** — soit
+  75 sessions, donc hors d'atteinte. C'est la reponse : le second axe
+  n'apportera rien de mesurable, et il se retire.
+  - L'ecart qui compte y est le **residuel** — a confiance fixee, le palier
+    separe-t-il encore — et non l'ecart brut, qui donnerait le meme horizon que
+    l'axe pris seul et ne dirait rien de la redondance.
+
 ### La portee d'affichage du residu
 
 **Au niveau de la population, en chiffre de tete. Pas en colonne sur trente
