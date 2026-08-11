@@ -30,6 +30,7 @@ from myassistantbet.services.inference import (
     evidence,
     jaccard,
     omnibus,
+    ordinal_trend,
     poisson_binomial,
     required_for_gap,
     required_sample,
@@ -664,3 +665,44 @@ def test_le_z_du_tost_n_est_pas_celui_de_wilson() -> None:
 
     assert large is not None and etroit is not None
     assert (etroit[1] - etroit[0]) < (large[1] - large[0])
+
+
+# -- L'ordre, que ni l'omnibus ni la fragilite ne disent ---------------------
+
+
+def test_une_echelle_ordonnee_dans_le_bon_sens() -> None:
+    """Les crans sont donnes du plus eleve au plus bas."""
+    assert ordinal_trend([(26, 38), (9, 31), (0, 4)]) == pytest.approx(0.0001, abs=1e-4)
+
+
+def test_une_echelle_inversee_separe_tout_autant_sans_ordonner() -> None:
+    """**La mesure qui rend ce test necessaire.** Un axe ou le cran superieur
+    fait moins bien que l'inferieur separe exactement autant : l'omnibus ne voit
+    pas la difference, la fragilite non plus.
+
+    C'est ce que font les selections ecartees faute d'anteriorite — l'echelle
+    s'y inverse sur les deux axes — et c'est ce qui a rendu le filtre decisif.
+    """
+    droite = [(26, 38), (9, 31)]
+    inversee = [(9, 31), (26, 38)]
+
+    assert omnibus(droite).p_value == pytest.approx(omnibus(inversee).p_value)
+    assert ordinal_trend(droite) < ALPHA
+    assert ordinal_trend(inversee) > 0.99, "la meme separation, dans le mauvais sens"
+
+
+def test_la_tendance_se_tait_quand_la_question_ne_se_pose_pas() -> None:
+    assert ordinal_trend([]) is None
+    assert ordinal_trend([(5, 10)]) is None
+    assert ordinal_trend([(0, 10), (0, 20)]) is None, "aucune variation a expliquer"
+    assert ordinal_trend([(10, 10), (20, 20)]) is None
+
+
+def test_un_constat_qui_tient_a_toute_marge_n_a_pas_de_bascule() -> None:
+    """`tipping_margin` rend `None` des deux cotes : quand le constat ne tient
+    a aucune marge, et quand il tient a toutes. Nommer une bascule qui n'existe
+    pas ferait chercher une frontiere absente."""
+    ecrasant = Residual(observed=0, implied=[0.9] * 40)
+
+    assert ecrasant.p_value < ALPHA
+    assert ecrasant.tipping_margin is None, "aucune marge plausible ne l'explique"

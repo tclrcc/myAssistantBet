@@ -31,6 +31,7 @@ from .inference import (
     evidence,
     jaccard,
     omnibus,
+    ordinal_trend,
     required_sample,
     two_proportions,
     wilson,
@@ -2148,6 +2149,29 @@ class Analysis:
         """La borne conservatrice du residu : les issues d'un meme match tombent
         ensemble. Sur les donnees reelles, quatre des cinq paires l'ont fait."""
         return clustered_p_value(self.residual_clusters, self.residual.observed, margin)
+
+    @property
+    def ordered_scales(self) -> list[tuple[str, float]]:
+        """Les echelles d'etiquetage et leur tendance ordinale.
+
+        **La seule question qu'aucun autre bloc ne pose.** L'omnibus dit si les
+        crans separent, la fragilite dit a quel point ils tiennent — ni l'un ni
+        l'autre ne dit **dans quel sens**. Une echelle inversee separerait tout
+        autant, et c'est exactement ce que font les selections ecartees :
+        l'ordre y est **inverse** (p = 0,90 et 0,93), quand il tient sur la
+        population filtree (p = 0,013 et 0,0001).
+
+        Les lignes arrivent deja rangees du cran le plus eleve au plus bas.
+        """
+        found = []
+        for libelle, rows in (
+            ("la confiance annoncée", self.by_confidence),
+            ("le palier", self.by_tier),
+        ):
+            value = ordinal_trend([(row.won, row.settled) for row in rows])
+            if value is not None:
+                found.append((libelle, value))
+        return found
 
     @property
     def as_of_label(self) -> str:

@@ -2288,6 +2288,35 @@ distribution** : `1,000` puis `0,697`, et rien entre les deux. Sur ces donnees
 les recouvrements sont soit totaux soit moderes. **Le jour ou une paire tombe
 dans le trou, ce seuil devra etre justifie pour de bon** — et ce sera le signal.
 
+### F2a est sans objet, et une seule de ses trois questions ne l'est pas
+
+**La resolution ne mesure rien de neuf.** « Les crans separent-ils les issues »
+est exactement ce que calcule l'omnibus, deja affiche. Et sur la population
+filtree l'axe confiance n'a que **deux crans au-dessus du seuil de lecture**
+(27 et 44, plus 2 selections en confiance 2) : une resolution sur deux crans est
+un contraste binaire, donc l'omnibus sous un autre nom. La decomposition de
+Murphy prend son sens a partir de trois ou quatre crans peuples.
+
+Le lot s'arrete la — sauf sur un point, qu'aucun autre bloc ne pose.
+
+**L'ordre.** L'omnibus dit si les crans separent, la fragilite dit a quel point
+ils tiennent ; **ni l'un ni l'autre ne dit dans quel sens**. Un axe ou le cran
+superieur fait moins bien que l'inferieur separe **exactement autant** — un test
+le verifie, en comparant les deux orientations de la meme table.
+
+- `ordinal_trend` est un Cochran-Armitage **unilateral**, et l'unilateral est
+  licite : la direction est declaree par le gabarit de prompt avant qu'aucune
+  donnee existe. Meme argument que les deux tests confirmatoires.
+- **Mesure, et elle donne au filtre d'anteriorite sa justification la plus
+  directe** : sur la population filtree, `p = 0,013` pour la confiance et
+  `0,0001` pour le palier — les deux echelles ordonnent. Sur les selections
+  **ecartees**, `p = 0,90` et `0,93` : l'ordre y est **inverse**.
+- **Piege de la queue** : la premiere version rendait la queue superieure quel
+  que soit le signe, si bien qu'une echelle parfaitement inversee ressortait a
+  `p = 0,0006`. Un unilateral doit rendre un **grand** `p` sur un `z` negatif —
+  c'est le cas ou l'echelle est ordonnee a l'envers, et le declarer significatif
+  serait exactement l'erreur que ce test existe pour attraper. Le test le tient.
+
 ### La portee d'affichage du residu
 
 **Au niveau de la population, en chiffre de tete. Pas en colonne sur trente

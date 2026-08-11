@@ -356,6 +356,25 @@
     </p>
     {% endif %}
 
+    {# **L'ordre, que ni l'omnibus ni la fragilité ne disent.** Les crans
+       séparent peut-être, mais dans le bon sens ? Un axe où le niveau supérieur
+       fait moins bien que l'inférieur séparerait tout autant — et c'est ce que
+       font les sélections écartées, où l'échelle s'inverse sur les deux axes.
+       C'est la mesure qui a rendu le filtre d'antériorité décisif. #}
+    {% if analysis.ordered_scales %}
+    <p class="chart-note">
+      <strong>Les échelles ordonnent-elles ?</strong>
+      {% for libelle, valeur in analysis.ordered_scales %}
+      {{ libelle | capitalize }} :
+      {%- if valeur < 0.05 %} oui, dans le sens attendu
+      {%- else %} rien de concluant{% endif %}
+      (p = {{ '%.3f'|format(valeur) | replace('.', ',') }}).
+      {% endfor %}
+      Séparer et ordonner sont deux choses : une échelle inversée sépare tout
+      autant, et c'est ce que font les sélections écartées.
+    </p>
+    {% endif %}
+
     {% if analysis.carried_rows %}
     <div class="carried">
       <h3>Ce qui s'écarte</h3>

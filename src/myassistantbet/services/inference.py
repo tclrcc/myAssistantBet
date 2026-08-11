@@ -59,7 +59,7 @@ au-dela du budget d'enumeration, et `Omnibus.exact` le dit.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from math import ceil, comb, exp, lgamma, log, sqrt
+from math import ceil, comb, erfc, exp, lgamma, log, sqrt
 
 #: z d'un intervalle de confiance a 95 %.
 WILSON_Z = 1.96
@@ -833,6 +833,56 @@ def clustered_p_value(groups: list[list[float]], observed: int, margin: float = 
                 following[count + step] += mass * weight
         distribution = following
     return sum(distribution[: observed + 1])
+
+
+def ordinal_trend(cells: list[tuple[int, int]]) -> float | None:
+    """Les taux suivent-ils l'ordre de l'echelle ? Test de tendance de
+    Cochran-Armitage, unilateral.
+
+    **La seule question qu'aucun autre bloc ne pose.** L'omnibus dit si les
+    crans separent, la fragilite dit a quel point ils tiennent — ni l'un ni
+    l'autre ne dit **dans quel sens**. Un axe ou le cran superieur fait moins
+    bien que l'inferieur separerait tout autant, et c'est exactement ce qui se
+    produit sur les selections ecartees : l'echelle **s'y inverse** sur les deux
+    axes — mesure : p = 0,90 la ou la population filtree donne 0,013 — et c'est
+    ce qui a rendu le filtre d'anteriorite decisif.
+
+    `cells` est ordonne **du cran le plus eleve au plus bas** : le rang sert de
+    score, et la direction attendue est une pente positive.
+
+    Unilateral, et c'est licite : la direction est declaree par le gabarit de
+    prompt avant qu'aucune donnee existe — une confiance 4 doit battre une
+    confiance 3. Meme argument que les deux tests confirmatoires.
+
+    `None` quand la question ne se pose pas : moins de deux crans peuples, ou
+    aucune variation a expliquer.
+    """
+    peupled = [(won, settled) for won, settled in cells if settled > 0]
+    if len(peupled) < 2:
+        return None
+    total = sum(settled for _, settled in peupled)
+    successes = sum(won for won, _ in peupled)
+    if successes in (0, total):
+        return None
+    rate = successes / total
+    # Le score est le rang **inverse** : le premier cran de la liste est le plus
+    # eleve, et une pente positive veut dire « le haut de l'echelle reussit
+    # mieux ».
+    scores = list(range(len(peupled) - 1, -1, -1))
+    pairs = list(zip(scores, peupled, strict=True))
+    statistic = sum(x * (won - settled * rate) for x, (won, settled) in pairs)
+    weighted = sum(settled * x for x, (_, settled) in pairs)
+    squared = sum(settled * x * x for x, (_, settled) in pairs)
+    # La variance ponderee des scores est strictement positive des que deux
+    # crans sont peuples : les rangs sont distincts par construction. Une garde
+    # y serait une branche qu'aucun appel n'atteint.
+    variance = rate * (1 - rate) * (squared - weighted * weighted / total)
+    z = statistic / sqrt(variance)
+    # **Queue superieure, sans condition sur le signe.** Un unilateral doit
+    # rendre un grand `p` sur un `z` negatif : c'est le cas ou l'echelle est
+    # ordonnee **a l'envers**, et le declarer significatif serait exactement
+    # l'erreur que ce test existe pour attraper.
+    return erfc(z / sqrt(2)) / 2
 
 
 def benjamini_hochberg(p_values: list[float], alpha: float = ALPHA) -> int:
