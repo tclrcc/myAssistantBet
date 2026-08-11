@@ -47,6 +47,7 @@ from .services import session as session_service
 from .services import set_scores as set_scores_service
 from .services import tennis_history as tennis_history_service
 from .services import thresholds as thresholds_service
+from .services.inference import MARGIN_REFERENCE
 from .services.scan import run_scan
 
 logging.basicConfig(
@@ -851,6 +852,9 @@ def stats_page(request: Request) -> HTMLResponse:
         "stats.html",
         {
             "analysis": history_service.analysis(settings),
+            # Point de comparaison du residu, pas une estimation du vrai
+            # overround : il montre ou le constat cesse de tenir.
+            "margin_reference": MARGIN_REFERENCE,
             "labelling": history_service.labelling(settings),
             "stats": history_service.stats(settings),
             "coupon_rates": coupons_service.rates(settings),

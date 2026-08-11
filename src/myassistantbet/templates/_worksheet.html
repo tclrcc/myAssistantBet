@@ -134,6 +134,27 @@
     </p>
   {% else %}
 
+  {# LE COMPTEUR DE COUVERTURE. Un filtre dit ce qui a été perdu ; un compteur
+     évite de le perdre. C'est le seul endroit du produit où l'information
+     arrive assez tôt pour changer quelque chose.
+
+     Les deux colonnes qu'il compte ne se reconstruisent **jamais** après coup :
+     36 % des sélections tranchées de la base n'ont pas d'antériorité établie,
+     et la cote obtenue n'est renseignée que sur 9 lignes sur 116 — toutes
+     issues d'un book de référence. Le contrôle qui valide ou invalide le
+     chiffre de tête de la page ne peut donc pas être fait sur l'existant.
+
+     Rien quand tout est couvert : un compteur à zéro sur chaque session serait
+     du bruit, et c'est le manque qui doit se voir. #}
+  {% if worksheet.coverage_line %}
+  <p class="block-warn">
+    <strong>{{ worksheet.coverage_line }}.</strong>
+    Ces deux informations n'existent qu'à la saisie et aucune reprise ne les
+    reconstruira : une cote enregistrée après le coup d'envoi n'est plus un prix
+    d'avant-match, et sans la cote obtenue rien ne vérifie celle du bloc.
+  </p>
+  {% endif %}
+
   {# Deux blocs : ce qui attend encore un resultat, puis ce qui est tranche.
      Melanges, il fallait relire quinze lignes pour trouver les trois qui
      restent a saisir. #}

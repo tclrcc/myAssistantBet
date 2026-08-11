@@ -58,7 +58,7 @@ au-dela du budget d'enumeration, et `Omnibus.exact` le dit.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import ceil, comb, exp, lgamma, log, sqrt
 
 #: z d'un intervalle de confiance a 95 %.
@@ -72,6 +72,13 @@ TEST_Z_BETA = 0.84
 
 #: Seuil de decision, partout dans ce module.
 ALPHA = 0.05
+
+#: Marge de book de reference, pour montrer ou un constat de residu cesse de
+#: tenir. **Ce n'est pas une estimation du vrai overround** — on ne peut pas le
+#: connaitre sans le marche complet — c'est un point de comparaison choisi dans
+#: la fourchette ordinaire (3 a 8 % sur les marches concernes), et pris **haut**
+#: dans cette fourchette pour que le chiffre affiche soit le moins favorable.
+MARGIN_REFERENCE = 0.05
 
 #: Marge de comparaison des densites dans les tests exacts. Deux tirages de
 #: probabilite egale doivent tomber du meme cote du seuil ; sans cette tolerance,
@@ -529,6 +536,158 @@ def evidence(
         p_value=two_proportions(won, settled, other_won, other_settled, directed=directed),
         directed=directed,
     )
+
+
+# -- Le residu au prix ------------------------------------------------------
+
+
+def poisson_binomial(probabilities: list[float]) -> list[float]:
+    """Loi exacte du nombre de succes de tirages **de probabilites differentes**.
+
+    Convolution, terme a terme. Aucune approximation normale : les probabilites
+    vont de 0,38 a 0,80 sur les selections reelles, et l'approximation y decale
+    la p-valeur de plusieurs points — assez pour faire franchir un seuil.
+    """
+    distribution = [1.0]
+    for probability in probabilities:
+        following = [0.0] * (len(distribution) + 1)
+        for count, mass in enumerate(distribution):
+            following[count] += mass * (1 - probability)
+            following[count + 1] += mass * probability
+        distribution = following
+    return distribution
+
+
+@dataclass(frozen=True)
+class Residual:
+    """Les victoires observees comparees a ce que les prix annoncaient.
+
+    **La seule grandeur de la page qui soit interpretable en elle-meme.** Un
+    taux de reussite ne distingue pas une methode qui bat le marche d'une
+    methode qui prend des favoris courts — c'est exactement ainsi qu'un coin de
+    tableau a 82 % a failli devenir un resultat, alors que ses prix en
+    annoncaient deja 69 %.
+
+    **N'ouvre aucun interdit de la section 9.** Aucun devig, aucun marche
+    complet, aucune projection, aucune mise : des issues **tranchees** comparees
+    a des prix **deja enregistres**, meme statut que le taux lui-meme. Rien n'en
+    sort qui parle du prochain pari.
+    """
+
+    observed: int
+    #: `1/cote` de chaque selection tranchee, dans l'ordre. Conserve plutot que
+    #: somme : la loi exacte a besoin de chaque terme, et l'overround
+    #: d'annulation se relit dessus.
+    implied: list[float] = field(default_factory=list)
+    #: Marge supposee du book, en fraction. Les probabilites implicites sont
+    #: divisees par `1 + marge` — `1/cote` la porte, donc surestime la
+    #: probabilite vraie.
+    margin: float = 0.0
+
+    @property
+    def settled(self) -> int:
+        return len(self.implied)
+
+    @property
+    def probabilities(self) -> list[float]:
+        return [value / (1 + self.margin) for value in self.implied]
+
+    @property
+    def expected(self) -> float:
+        """Victoires que les prix annoncaient."""
+        return sum(self.probabilities)
+
+    @property
+    def gap(self) -> float | None:
+        """Victoires observees moins victoires annoncees. Negatif = deficit."""
+        return None if not self.settled else self.observed - self.expected
+
+    @property
+    def p_value(self) -> float:
+        """`P(X <= observe)` : la probabilite d'un deficit au moins aussi grand.
+
+        Unilaterale vers le bas. C'est le sens qui interesse — le cadre fait-il
+        **moins** bien que ses propres prix — et le test est **conservateur par
+        construction** : `1/cote` porte la marge, donc la barre est trop haute.
+        La franchir est un constat solide ; ne pas la franchir n'accuse de rien.
+        """
+        if not self.settled:
+            return 1.0
+        return sum(poisson_binomial(self.probabilities)[: self.observed + 1])
+
+    @property
+    def annulling_overround(self) -> float | None:
+        """Marge qu'il faudrait au book pour que l'ecart disparaisse.
+
+        **La statistique qui ecarte la marge sans reconstruire le marche.** On
+        ne peut pas devigger sans toutes les issues, et on n'en a pas besoin :
+        ce facteur dit exactement ce que la marge peut ou ne peut pas expliquer.
+        Mesure : 26,6 % sur la population reelle, quand les books tournent entre
+        3 et 8 %.
+
+        `None` quand rien n'est observe — aucune marge ne ramene un attendu sur
+        zero — et quand l'observe depasse deja l'attendu : il n'y a alors rien a
+        annuler.
+        """
+        if not self.observed or not self.settled:
+            return None
+        factor = sum(self.implied) / self.observed
+        return factor - 1 if factor > 1 else None
+
+    @property
+    def expected_label(self) -> str:
+        """« 44,3 » — la virgule decimale, comme partout dans l'interface."""
+        return f"{self.expected:.1f}".replace(".", ",")
+
+    @property
+    def overround_label(self) -> str:
+        """« 26,6 % », et rien quand il n'y a pas d'ecart a annuler."""
+        overround = self.annulling_overround
+        return "" if overround is None else f"{overround * 100:.1f} %".replace(".", ",")
+
+    @property
+    def p_label(self) -> str:
+        """« 0,053 ». Trois decimales : le constat bascule entre 0,05 et 0,06,
+        et deux decimales feraient lire deux fois le meme chiffre de part et
+        d'autre du seuil."""
+        return f"{self.p_value:.3f}".replace(".", ",")
+
+    def with_margin(self, margin: float) -> Residual:
+        """Le meme releve, lu sous une marge de book supposee.
+
+        Sert a montrer **ou le constat cesse de tenir** plutot qu'a choisir une
+        marge : a 0 % il vaut p = 0,016, a 5 % p = 0,053. La frontiere est a
+        ~4 %, et une page qui n'afficherait que le premier chiffre durcirait un
+        resultat que l'effectif ne porte pas.
+        """
+        return Residual(observed=self.observed, implied=self.implied, margin=margin)
+
+    @property
+    def fragility(self) -> int | None:
+        """Victoires de plus qu'il faudrait pour que le constat perde son seuil.
+
+        **Recalculee a chaque lecture, jamais figee.** Un verdict qui bouge d'un
+        facteur deux sur six resultats saisis n'est pas un verdict, et cette
+        page est servie sur une base vivante.
+
+        Elle est **asymetrique**, et le libelle doit le dire : autant de defaites
+        de plus le **renforceraient**. C'est un instantane qui bougera vite dans
+        les deux sens, ce qui plaide pour l'horodater et non pour le taire.
+
+        `None` quand le constat ne tient deja pas : il n'y a rien a effacer.
+        """
+        if not self.settled or self.p_value >= ALPHA:
+            return None
+        distribution = poisson_binomial(self.probabilities)
+        # La somme complete de la loi vaut 1, donc depasse ALPHA : le compte
+        # existe toujours des lors que le constat tient. Un repli en fin de
+        # boucle serait une branche qu'aucun appel ne peut atteindre, donc
+        # qu'aucun test ne peut verifier.
+        return next(
+            extra
+            for extra in range(1, self.settled - self.observed + 1)
+            if sum(distribution[: self.observed + extra + 1]) >= ALPHA
+        )
 
 
 def benjamini_hochberg(p_values: list[float], alpha: float = ALPHA) -> int:

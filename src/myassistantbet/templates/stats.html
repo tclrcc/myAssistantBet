@@ -51,9 +51,13 @@
 <section class="stats-block" id="analyse">
   <div class="block-head">
     <h2>Ce que vaut l'analyse</h2>
+    {# `as_of` n'est pas une coquetterie : l'axe « niveau de compétition » est
+       passé de p = 0,0443 à p = 0,0195 sur **six résultats saisis**, la base
+       étant servie en continu. Un verdict qui bouge d'un facteur deux sur six
+       saisies n'en est pas un, et la page doit dire de quand il date. #}
     <span class="muted small">
       toutes les sélections dont le résultat est connu, jouées ou non —
-      {{ analysis.settled }} tranchée(s)
+      {{ analysis.settled }} tranchée(s) · arrêté au {{ analysis.as_of_label }}
     </span>
   </div>
 
@@ -72,6 +76,50 @@
     tendance. Les chiffres restent affichés, c'est leur portée qui est limitée —
     c'est le même seuil qui fait taire le bloc de retour d'expérience du prompt.
   </p>
+  {% endif %}
+
+  {# LE BLOC DE TÊTE. Le taux nu de 48 % n'était pas interprétable : il ne
+     distingue pas une méthode qui bat le marché d'une méthode qui prend des
+     favoris courts. C'est exactement ainsi qu'un coin de tableau à 82 % a
+     failli devenir un résultat, alors que ses prix en annonçaient déjà 69 %.
+
+     Le résidu au prix, lui, est interprétable — et c'est la première phrase de
+     cette page qui apprenne quelque chose à qui la lit.
+
+     **Le fait et la réserve à la même taille de caractère.** C'est le seul
+     endroit de la page où une réserve n'a pas le droit d'être en note : le
+     constat ne tient qu'à marge basse, et trois résultats suffisent à l'effacer.
+
+     Trois interdits sur ce bloc :
+       · jamais « les prix disaient X, tu as fait Y » — ce serait affirmer une
+         comparaison de compétence que rien n'établit ;
+       · jamais de présent général — ce sont **ces** sélections-là, pas une
+         propriété de la méthode ;
+       · la fragilité se recalcule à chaque rendu, jamais écrite en dur. #}
+  {% if analysis.residual.settled %}
+  {% set residu = analysis.residual %}
+  {% set sous_marge = residu.with_margin(margin_reference) %}
+  <div class="tile tile-hero residual-head">
+    <span class="label">Face aux prix des sélections</span>
+    <b class="hero-figure">{{ residu.observed }} <i>pour</i> {{ residu.expected_label }}</b>
+    <span class="tile-detail">
+      {{ residu.observed }} victoire(s) pour {{ residu.expected_label }}
+      payée(s) par les prix des {{ residu.settled }} sélections retenues.
+    </span>
+    <p class="residual-note">
+      {%- if residu.annulling_overround %}
+      Il faudrait <strong>{{ residu.overround_label }}</strong>
+      de marge pour expliquer l'écart.
+      {%- endif %}
+      À {{ '%.0f'|format(margin_reference * 100) }} % de marge,
+      P = {{ sous_marge.p_label }} —
+      {% if sous_marge.p_value < 0.05 %}au-delà du seuil{% else %}au seuil, pas au-delà{% endif %}.
+      {%- if residu.fragility %}
+      <strong>{{ residu.fragility }} résultat(s)</strong> suffiraient à l'effacer —
+      autant de défaites le renforceraient.
+      {%- endif %}
+    </p>
+  </div>
   {% endif %}
 
   <div class="kpi">
@@ -464,6 +512,18 @@
             n'a pas été enregistré à l'époque, il est recalculé depuis les prompts
             archivés. Un match n'y figure que par son libellé, donc deux rencontres
             homonymes le même jour n'en feraient qu'une.
+            {# C'est un défaut de **complétude du lot**, et rien d'autre : il porte
+               sur le dénominateur du taux de sélection, pas sur ce que valent les
+               sélections. Ce qui menace les mesures est l'**antériorité** — une
+               sélection enregistrée après le coup d'envoi porte une cote qui n'est
+               plus un prix d'avant-match — et c'est elle, et elle seule, qui filtre
+               le chiffre de tête. Les confondre ferait écarter des sessions
+               parfaitement mesurables : deux natives seulement portent des résultats,
+               et un tel filtre blanchirait la page. #}
+            C'est une lacune de <strong>complétude du lot</strong> : elle touche le
+            dénominateur du taux de sélection, jamais la valeur des sélections.
+            Ce qui filtre les mesures est l'antériorité, mesurée sélection par
+            sélection.
           {% endif %}
         </p>
         {% endcall %}

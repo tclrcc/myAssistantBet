@@ -18,6 +18,7 @@ import pytest
 from myassistantbet.services.inference import (
     ALPHA,
     Evidence,
+    Residual,
     _upper_gamma,
     benjamini_hochberg,
     binomial_test,
@@ -25,6 +26,7 @@ from myassistantbet.services.inference import (
     evidence,
     jaccard,
     omnibus,
+    poisson_binomial,
     required_for_gap,
     required_sample,
     two_proportions,
@@ -524,3 +526,63 @@ def test_les_deux_hypotheses_d_avance_survivent_a_leur_propre_correction() -> No
     vingt-neuf autres, le seul resultat que cette base ait etabli passerait pour
     du bruit."""
     assert benjamini_hochberg([0.00147, 0.00333]) == 2
+
+
+# -- Le residu au prix -------------------------------------------------------
+
+
+def test_un_residu_vide_ne_conclut_rien() -> None:
+    """Aucune selection cotee : il n'y a ni attendu, ni ecart, ni verdict.
+
+    `1.0` et non une exception : une page servie sur une base neuve ne doit pas
+    tomber, et « rien a dire » est la reponse juste.
+    """
+    vide = Residual(observed=0)
+
+    assert vide.settled == 0
+    assert vide.p_value == 1.0
+    assert vide.gap is None
+    assert vide.annulling_overround is None
+    assert vide.fragility is None
+
+
+def test_aucun_overround_sans_la_moindre_victoire() -> None:
+    """Aucune marge ne ramene un attendu sur zero : le facteur diviserait par
+    zero, et un nombre infini se lirait comme une mesure."""
+    assert Residual(observed=0, implied=[0.5, 0.5]).annulling_overround is None
+
+
+def test_la_fragilite_existe_des_que_le_constat_tient() -> None:
+    """Quatre selections a 0,99 toutes perdues : le constat est ecrasant, et il
+    faut **toutes** les retourner pour l'effacer.
+
+    La fragilite est donc bornee par l'effectif et jamais absente quand le
+    constat tient — la somme complete de la loi vaut 1, donc depasse le seuil.
+    C'est ce qui rend inutile un repli en fin de boucle.
+    """
+    total = Residual(observed=0, implied=[0.99] * 4)
+
+    assert total.p_value < ALPHA
+    assert total.fragility == 4
+
+
+def test_la_loi_de_poisson_binomiale_somme_a_un() -> None:
+    """Convolution exacte, pas d'approximation normale : les probabilites vont
+    de 0,38 a 0,80 sur les selections reelles, et l'approximation y decale la
+    p-valeur assez pour faire franchir un seuil."""
+    distribution = poisson_binomial([0.2, 0.5, 0.8])
+
+    assert len(distribution) == 4
+    assert sum(distribution) == pytest.approx(1.0)
+    # Aucun succes : (1-0,2)(1-0,5)(1-0,8)
+    assert distribution[0] == pytest.approx(0.8 * 0.5 * 0.2)
+
+
+def test_la_loi_retombe_sur_la_binomiale_a_probabilite_constante() -> None:
+    from math import comb
+
+    distribution = poisson_binomial([0.3] * 5)
+
+    for count in range(6):
+        attendu = comb(5, count) * 0.3**count * 0.7 ** (5 - count)
+        assert distribution[count] == pytest.approx(attendu)

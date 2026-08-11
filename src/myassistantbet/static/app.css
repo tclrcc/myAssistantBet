@@ -1903,3 +1903,25 @@ h1, h2, h3 { letter-spacing: var(--track-snug); }
     scroll-behavior: auto !important;
   }
 }
+
+/* Le bloc de tête des statistiques : le résidu au prix.
+
+   `residual-note` porte la **réserve**, et elle est à la même taille que le
+   fait — c'est le seul endroit de la page où une réserve n'a pas le droit
+   d'être en note de bas de page. Le constat ne tient qu'à marge basse, et
+   quelques résultats suffisent à l'effacer : le taire en petits caractères
+   ferait lire un résultat établi. */
+.residual-head { margin-bottom: var(--s4); }
+.residual-head .hero-figure i {
+  font-style: normal;
+  font-size: var(--text-lg);
+  font-weight: 500;
+  color: var(--muted);
+  margin: 0 var(--s1);
+}
+.residual-note {
+  margin: var(--s3) 0 0;
+  font-size: var(--text-lg);
+  line-height: 1.5;
+  max-width: 60ch;
+}

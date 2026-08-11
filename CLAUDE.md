@@ -1912,6 +1912,51 @@ Deux consequences, a tenir :
   a fragilite 12 ne se lisent pas pareil, et la page n'en fait aujourd'hui
   aucune difference.
 
+### L'anteriorite, et le compteur qui la rend saisissable
+
+**Ce n'est pas un filtre de proprete : c'est ce qui fait du prix un prix.** Une
+selection enregistree apres le coup d'envoi porte une cote enregistree apres le
+coup d'envoi, et son `1/cote` ne decrit plus le marche d'avant-match — donc plus
+rien de comparable a un resultat. Tout le residu en depend, et c'est pourquoi ce
+filtre passe avant lui.
+
+- **Derive a la lecture, selection par selection** (`_antecedence`,
+  `Pick.antecedence`) : `picks.created_at < events.commence_time`. Aucune
+  colonne stockee — elle mentirait des qu'un rattachement est corrige.
+- **Sens unique, et le vocabulaire le respecte.** `created_at` est l'heure
+  d'**enregistrement dans l'application**, pas celle de la decision : une saisie
+  tardive d'une analyse faite a temps y ressemble a un pari pose apres le match.
+  La base peut prouver l'anteriorite, **jamais son absence** — d'ou « anteriorite
+  non etablie », et jamais « enregistre apres coup », meme quand l'ecart atteint
+  vingt-six heures. Un test le verifie sur le libelle.
+- **Le mecanisme est confirme par la mesure**, et c'est ce qui justifie
+  l'exclusion plutot que la precaution : sur les selections **sans** anteriorite
+  etablie, le residu au prix est **nul** — 20 victoires pour 20,25 payees,
+  p = 0,53 — quand il vaut -9,31 sur les autres. Un prix qui colle a ce point au
+  resultat est un prix releve en le connaissant.
+- **Deux populations, deux chiffres, jamais additionnes** (`residual` et
+  `residual_late`). Leur **difference** est le diagnostic ; le bloc de tete ne
+  porte que la premiere.
+- **`reconstructed` ne filtre plus rien** et se dit « complétude du lot » : il
+  porte sur le denominateur du taux de selection, pas sur la valeur des
+  selections. Les confondre aurait ete fatal — seules deux sessions natives
+  portent des resultats, et un filtre sur ce critere blanchirait la page.
+
+**Le compteur vivant, et pourquoi il compte plus que le filtre.** Un filtre dit
+ce qui a ete perdu ; un compteur evite de le perdre. `Worksheet.coverage_line`
+annonce les deux couvertures sur la feuille de session — « 3 sur 8 sans
+anteriorite etablie · 5 sur 8 sans cote obtenue » — au moment ou l'on saisit,
+seul instant ou l'information arrive assez tot pour changer quelque chose.
+
+- **La cote obtenue est la vraie lacune, avant `angle` et `source_level`.** Le
+  chiffre de tete repose sur `price`, un nombre recopie a la main ; `price_real`
+  est le seul controle possible, et il est renseigne sur **9 lignes sur 116**,
+  toutes issues d'un book de reference. Le controle qui valide ou invalide le
+  resultat principal du projet ne peut donc pas etre fait sur l'existant, et il
+  ne le sera jamais retroactivement.
+- Rien quand tout est couvert : un compteur a zero sur chaque session serait du
+  bruit, et c'est le manque qui doit se voir.
+
 ### La portee d'affichage du residu
 
 **Au niveau de la population, en chiffre de tete. Pas en colonne sur trente

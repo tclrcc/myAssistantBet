@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from .competitions import category_label, category_rank
-from .inference import Evidence, evidence, omnibus, required_sample, wilson
+from .inference import Evidence, Residual, evidence, omnibus, required_sample, wilson
 from .labels import affiche, sort_key
 from .market_families import family_key, family_label, family_of, family_rank, market_key_for
 from .market_families import load as load_families
@@ -162,6 +162,25 @@ class Pick:
     #: resoudre a la lecture quand elle manque. Voir `market_key_effective`.
     market_key: str = ""
     sport_key: str = ""
+
+    #: Horodatages bruts, en ISO 8601 UTC. Compares tels quels : le format est
+    #: le meme partout dans la base, donc l'ordre lexicographique est l'ordre
+    #: chronologique — et deux `datetime` construits sur deux fuseaux se
+    #: compareraient mal.
+    created_at: str = ""
+    commence_time: str = ""
+
+    @property
+    def antecedence(self) -> bool:
+        """Enregistree avant le coup d'envoi, donc a un prix d'avant-match.
+
+        **Sens unique.** `created_at` est l'heure d'enregistrement dans
+        l'application, pas celle de la decision : la base peut prouver
+        l'anteriorite, jamais son absence. Le libelle dit donc « anteriorite non
+        etablie » et jamais « enregistre apres coup », meme quand l'ecart atteint
+        vingt-six heures.
+        """
+        return bool(self.commence_time) and self.created_at < self.commence_time
 
     @property
     def market_key_effective(self) -> str:
@@ -879,6 +898,8 @@ def _pick(row: Any, tier_labels: dict[str, str], tz: str = "") -> Pick:
         sport_label=_column(row, "sport_label") or "",
         market_key=_column(row, "market_key") or "",
         sport_key=_column(row, "sport_key") or "",
+        created_at=str(_column(row, "created_at") or ""),
+        commence_time=str(_column(row, "commence_time") or ""),
         competition=_column(row, "competition") or "",
         sport_order=int(_column(row, "sport_order") or 99),
         commence_local=(
@@ -948,6 +969,54 @@ class Worksheet:
 
     pending: list[tuple[str, list[Pick]]] = field(default_factory=list)
     settled: list[tuple[str, list[Pick]]] = field(default_factory=list)
+
+    @property
+    def picks(self) -> list[Pick]:
+        return [pick for _, groupe in self.pending + self.settled for pick in groupe]
+
+    @property
+    def without_antecedence(self) -> int:
+        """Selections de la session dont l'anteriorite n'est pas etablie.
+
+        **Un compteur, pas un filtre**, et c'est toute la difference : un filtre
+        dit ce qui a ete perdu, un compteur evite de le perdre. L'information
+        n'existe qu'a la saisie et aucune migration ne la reconstruira — 36 %
+        des selections tranchees de la base sont deja dans ce cas, pour toujours.
+        """
+        return sum(1 for pick in self.picks if not pick.antecedence)
+
+    @property
+    def without_real_price(self) -> int:
+        """Selections sans cote obtenue. **La lacune de couverture reelle.**
+
+        Le chiffre de tete de la page repose sur `price`, un nombre recopie a la
+        main ; `price_real` est le seul controle possible, et il est renseigne
+        sur 9 lignes sur 116 — toutes issues d'un book de reference. Le controle
+        qui valide ou invalide le resultat principal du projet ne peut donc pas
+        etre fait, et il ne le sera jamais retroactivement.
+
+        Meme lecon que l'anteriorite, sur une autre colonne : chaque session qui
+        passe sans elle est une session definitivement non verifiable.
+        """
+        return sum(1 for pick in self.picks if pick.price_real is None)
+
+    @property
+    def coverage_line(self) -> str:
+        """« 3 sur 8 sans antériorité établie · 5 sur 8 sans cote obtenue ».
+
+        Rien quand tout est couvert : un compteur a zero sur chaque session
+        serait du bruit, et c'est le manque qui doit se voir.
+        """
+        total = self.total
+        manques = [
+            f"{self.without_antecedence} sur {total} sans antériorité établie"
+            if self.without_antecedence
+            else "",
+            f"{self.without_real_price} sur {total} sans cote obtenue"
+            if self.without_real_price
+            else "",
+        ]
+        return " · ".join(part for part in manques if part)
 
     @property
     def pending_count(self) -> int:
@@ -1491,6 +1560,29 @@ def delete_pick(pick_id: int, settings: Settings | None = None) -> None:
 # -- Statistiques -----------------------------------------------------------
 
 
+def _antecedence(row: Any) -> bool:
+    """La selection a-t-elle ete enregistree avant le coup d'envoi.
+
+    **Ce n'est pas un filtre de proprete, c'est ce qui fait du prix un prix.**
+    Une selection saisie apres le coup d'envoi porte une cote saisie apres le
+    coup d'envoi, et son `1/cote` ne decrit alors plus le marche d'avant-match —
+    donc plus rien de comparable a un resultat. Tout le residu en depend.
+
+    Mesure qui confirme le mecanisme : sur les selections **sans** anteriorite
+    etablie, le residu est **nul** — 20 victoires pour 20,25 payees, p = 0,53 —
+    quand il vaut -9,31 sur les autres. Un prix qui colle a ce point au resultat
+    est un prix releve en le connaissant.
+
+    **Sens unique, et le libelle doit le respecter.** `created_at` est l'heure
+    d'**enregistrement dans l'application**, pas celle de la decision : une
+    saisie tardive d'une analyse faite a temps y ressemble a un pari pose apres
+    coup. La base peut donc prouver l'anteriorite, jamais son absence — d'ou
+    « anteriorite non etablie », et jamais « enregistre apres coup ».
+    """
+    commence = _column(row, "commence_time")
+    return bool(commence) and str(row["created_at"]) < str(commence)
+
+
 def _quarantined(row: Any) -> bool:
     """La cote vient d'un book de reference et rien n'a ete releve depuis.
 
@@ -1801,10 +1893,33 @@ class Analysis:
     #: compter ces lignes elle-meme ; les deux colonnes etant en base, le compte
     #: se fait ici — et se mesure enfin dans le temps.
     conflicts: Conflict = field(default_factory=lambda: Conflict())
+    #: Horodatage de la lecture. **Une analyse est datee**, et ce n'est pas une
+    #: precaution de style : l'axe « niveau de competition » est passe de
+    #: p = 0,0443 a p = 0,0195 sur **six resultats saisis**, la base etant servie
+    #: en continu. Un verdict qui bouge d'un facteur deux sur six saisies n'est
+    #: pas un verdict, et la page doit dire de quand il date.
+    as_of: str = ""
+    #: Le residu au prix des selections dont l'anteriorite est **etablie**.
+    #: C'est le chiffre de tete de la page.
+    residual: Residual = field(default_factory=lambda: Residual(observed=0))
+    #: Le meme, sur les selections dont l'anteriorite **ne l'est pas**. Tenu a
+    #: part et **jamais additionne** : les deux populations ne mesurent pas la
+    #: meme chose, et leur difference est justement le diagnostic.
+    residual_late: Residual = field(default_factory=lambda: Residual(observed=0))
+    #: Selections tranchees sans cote enregistree — elles sortent des deux
+    #: residus et de ceux-la seulement.
+    unpriced: int = 0
 
     @property
     def empty(self) -> bool:
         return self.settled == 0
+
+    @property
+    def as_of_label(self) -> str:
+        """« 11/08 20:40 » — l'heure de lecture, en heure locale."""
+        if not self.as_of:
+            return ""
+        return _local(self.as_of, "Europe/Paris").strftime("%d/%m %H:%M")
 
     @property
     def consistent(self) -> bool:
@@ -2417,6 +2532,9 @@ def analysis(settings: Settings | None = None) -> Analysis:
             "SELECT k.id, k.session_id, k.tier, k.result, k.market, k.confidence, k.played, "
             "       k.event_id, k.created_at, k.price, k.angle, k.source_level, "
             "       k.price_source, k.price_real, k.tier_real, "
+            # L'heure du coup d'envoi : c'est elle qui decide si le prix
+            # enregistre est un prix d'avant-match. Voir `_antecedence`.
+            "       e.commence_time, "
             "       s.key AS sport_key, c.category FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
@@ -2642,6 +2760,36 @@ def analysis(settings: Settings | None = None) -> Analysis:
     # l'historique, et le figer sur la selection perdrait cette propriete.
     report.conflicts = conflicts(rows, load_families(settings), settings.tz)
 
+    # Le residu au prix, sur **deux populations tenues separees**.
+    #
+    # Le chiffre de tete de la page ne porte que la premiere : une cote saisie
+    # apres le coup d'envoi n'est pas un prix d'avant-match. La seconde est
+    # publiee a cote et jamais additionnee — c'est leur **difference** qui est le
+    # diagnostic. Mesure : residu nul sur les tardives (20 pour 20,25 payees),
+    # -9,31 sur les autres. Un prix qui colle a ce point au resultat est un prix
+    # releve en le connaissant, et c'est ce qui justifie l'exclusion plutot que
+    # la simple precaution.
+    etabli: list[float] = []
+    tardif: list[float] = []
+    gagnees_etabli = gagnees_tardif = 0
+    for row in rows:
+        if str(row["result"]) not in ("win", "loss"):
+            continue
+        price = _column(row, "price")
+        if not price or price <= 1.0:
+            report.unpriced += 1
+            continue
+        cible, gagne = (etabli, 1) if _antecedence(row) else (tardif, 1)
+        cible.append(1.0 / float(price))
+        if str(row["result"]) == "win":
+            if _antecedence(row):
+                gagnees_etabli += gagne
+            else:
+                gagnees_tardif += gagne
+    report.residual = Residual(observed=gagnees_etabli, implied=etabli)
+    report.residual_late = Residual(observed=gagnees_tardif, implied=tardif)
+
+    report.as_of = utcnow()
     report.gaps = _audit(report, tally)
     return report
 
