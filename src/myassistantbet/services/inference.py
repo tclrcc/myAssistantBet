@@ -783,6 +783,36 @@ class Residual:
         )
 
 
+def clustered_p_value(groups: list[list[float]], observed: int, margin: float = 0.0) -> float:
+    """`P(X <= observe)` quand les issues d'un meme groupe tombent **ensemble**.
+
+    **Borne conservatrice, pas une estimation.** La loi de Poisson-binomiale
+    suppose l'independance ; deux selections sur la meme rencontre ne sont pas
+    independantes — sur les donnees reelles, quatre des cinq paires sont tombees
+    du meme cote. La verite est entre les deux, et ce calcul donne le pire cas :
+    chaque groupe devient un tirage unique rendant tous ses succes ou aucun, de
+    probabilite moyenne. L'esperance ne bouge pas, la variance monte.
+
+    Mesure : 0,0161 devient 0,0227 a marge nulle. L'effet est modeste ici — le
+    verdict tient dans les deux lectures — mais il se dit, et il grossira si les
+    selections multiples se multiplient.
+    """
+    distribution = [1.0]
+    for group in groups:
+        scaled = [value / (1 + margin) for value in group]
+        if len(scaled) == 1:
+            steps = {0: 1 - scaled[0], 1: scaled[0]}
+        else:
+            mean = sum(scaled) / len(scaled)
+            steps = {0: 1 - mean, len(scaled): mean}
+        following = [0.0] * (len(distribution) + max(steps))
+        for count, mass in enumerate(distribution):
+            for step, weight in steps.items():
+                following[count + step] += mass * weight
+        distribution = following
+    return sum(distribution[: observed + 1])
+
+
 def benjamini_hochberg(p_values: list[float], alpha: float = ALPHA) -> int:
     """Nombre de tests retenus par la procedure de Benjamini-Hochberg.
 

@@ -27,6 +27,7 @@ from .inference import (
     Evidence,
     Residual,
     benjamini_hochberg,
+    clustered_p_value,
     evidence,
     omnibus,
     required_sample,
@@ -1800,6 +1801,13 @@ class SessionRate:
     covered: int = 0
     picks: int = 0
     rates: RateRow = field(default_factory=lambda: RateRow("session", ""))
+    #: Le bloc de retour d'experience a transmis des taux dans au moins un
+    #: prompt de cette session. Les selections qui en sortent ne sont plus des
+    #: tirages independants de ce qui les mesure.
+    feedback_active: bool = False
+    #: La session est posterieure a la garde d'anteriorite. Son lot est propre
+    #: **par construction** plutot que par filtrage.
+    guarded: bool = False
     #: Le prompt le plus lourd de la session. Sert de garde-fou de poids, pas
     #: de mesure de qualite.
     tokens: int = 0
@@ -1807,6 +1815,31 @@ class SessionRate:
     @property
     def selection_rate(self) -> float | None:
         return None if not self.lot else self.covered / self.lot
+
+    @property
+    def degenerate(self) -> bool:
+        """Un lot est parti a l'analyse et **rien** n'en est revenu.
+
+        Ce n'est pas un taux de selection bas : c'est zero. Le cas s'est produit
+        — 34 matchs partis le 04/08 pour aucune selection — et la ligne se
+        confondait avec une journee severe. Passer est un resultat valable et
+        attendu ; passer **tout** est un incident, parce qu'il ne se distingue
+        pas d'un rendu jamais colle ni d'un import oublie.
+        """
+        return bool(self.lot) and self.picks == 0
+
+    @property
+    def density(self) -> float | None:
+        """Selections par match retenu. **Une mesure de correlation**, pas de
+        densite : deux selections sur la meme rencontre ne sont pas deux
+        observations, et le residu suppose l'independance.
+        """
+        return None if not self.covered else self.picks / self.covered
+
+    @property
+    def tokens_per_match(self) -> int | None:
+        """Poids du prompt rapporte au lot. Le cout fixe du cadre par match."""
+        return None if not self.lot else round(self.tokens / self.lot)
 
     @property
     def selection_label(self) -> str:
@@ -2034,6 +2067,10 @@ class Analysis:
     #: Selections tranchees sans cote enregistree — elles sortent des deux
     #: residus et de ceux-la seulement.
     unpriced: int = 0
+    #: `1/cote` des selections tranchees, **groupees par match**. Sert la borne
+    #: conservatrice du residu : deux selections sur la meme rencontre ne sont
+    #: pas deux observations, et la loi exacte suppose l'independance.
+    residual_clusters: list[list[float]] = field(default_factory=list)
     #: Selections tranchees **ecartees de toute la page** faute d'anteriorite
     #: etablie. Comptees et annoncees : une page qui perd un tiers de son volume
     #: sans le dire est pire que celle qui le melangeait.
@@ -2117,6 +2154,16 @@ class Analysis:
             return None
         first, second = self.conditional[0], self.conditional[1]
         return Equivalence(first=first, second=second)
+
+    @property
+    def clustered_selections(self) -> int:
+        """Selections tranchees partageant un match avec une autre."""
+        return sum(len(group) - 1 for group in self.residual_clusters if len(group) > 1)
+
+    def clustered_p_value(self, margin: float = 0.0) -> float:
+        """La borne conservatrice du residu : les issues d'un meme match tombent
+        ensemble. Sur les donnees reelles, quatre des cinq paires l'ont fait."""
+        return clustered_p_value(self.residual_clusters, self.residual.observed, margin)
 
     @property
     def as_of_label(self) -> str:
@@ -2504,6 +2551,15 @@ class Mix:
 #: nom dit, et rien de plus.
 SCALE_VERSION = "relatif-032"
 
+#: Mise en service de la garde d'anteriorite (migration 034).
+#:
+#: **La borne a partir de laquelle une population est propre par construction**
+#: plutot que par filtrage. Avant elle, rien n'empechait d'enregistrer une
+#: selection apres le coup d'envoi de son match, et 37 des 110 selections
+#: tranchees sont dans ce cas — definitivement. Toute serie qui traverse cette
+#: date melange deux regimes de collecte et doit le marquer.
+GUARD_IN_SERVICE = "2026-08-11"
+
 #: Le bloc de taux est-il retenu. Tant que c'est vrai, **aucun taux de reussite
 #: ne part dans le prompt**, quel que soit le recul accumule.
 #:
@@ -2717,6 +2773,8 @@ def _by_session(
             picks=len(mine),
             rates=RateRow(key=str(session_id), label=f"Session {session_id}"),
             tokens=int(row["tokens"] or 0),
+            feedback_active=bool(_column(row, "feedback_active")),
+            guarded=str(row["created_at"]) >= GUARD_IN_SERVICE,
         )
         for pick in mine:
             _count(entry.rates, pick["result"] or "pending", pick)
@@ -2763,7 +2821,13 @@ def analysis(settings: Settings | None = None) -> Analysis:
             "     JOIN prompt_events pe ON pe.prompt_id = p.id "
             "     JOIN events ev ON ev.id = pe.event_id "
             "     JOIN sports sp ON sp.id = ev.sport_id "
-            "     WHERE p.session_id = s.id) AS sports "
+            "     WHERE p.session_id = s.id) AS sports, "
+            # Le regime de collecte de la session. Une serie de poids qui les
+            # melange ne dit rien : le bloc de retour d'experience a ete servi
+            # sur trois sessions, puis suspendu, et la garde d'anteriorite ne
+            # vaut que pour ce qui vient apres elle.
+            "  (SELECT MAX(p.feedback_active) FROM prompts p "
+            "     WHERE p.session_id = s.id) AS feedback_active "
             "FROM sessions s ORDER BY s.created_at DESC, s.id DESC"
         ).fetchall()
 
@@ -3014,6 +3078,13 @@ def analysis(settings: Settings | None = None) -> Analysis:
 
     gagnees, implicites = _releve(rows)
     report.residual = Residual(observed=gagnees, implied=implicites)
+    # Groupees par match, pour la borne conservatrice du bloc de tete.
+    par_match: dict[Any, list[float]] = {}
+    for row in rows:
+        price = _column(row, "price")
+        if str(row["result"]) in ("win", "loss") and price and price > 1.0:
+            par_match.setdefault(row["event_id"] or f"seule-{row['id']}", []).append(1.0 / price)
+    report.residual_clusters = list(par_match.values())
     gagnees, implicites = _releve(tardifs)
     report.residual_late = Residual(observed=gagnees, implied=implicites)
 

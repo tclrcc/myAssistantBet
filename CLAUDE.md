@@ -2159,6 +2159,51 @@ etait revenue une fois de trop.
   concerne : il les commentait au-dessus alors qu'ils sont replies, donc il
   parlait de lignes que le lecteur ne voyait pas.
 
+### Ce que la page dit d'une session, et ce que ca coute
+
+- **Un lot entierement passe est un incident, pas une journee severe.** Zero
+  selection sur un lot parti a l'analyse ne se distingue pas d'un rendu jamais
+  colle ni d'un import oublie — le cas s'est produit, 34 matchs le 04/08, et la
+  ligne se confondait avec un tri exigeant. Passer est un resultat valable et
+  attendu ; passer **tout** se signale.
+- **« Sel./match » mesure une correlation, pas une densite.** Deux selections
+  sur la meme rencontre ne sont pas deux observations, et le residu du bloc de
+  tete suppose l'independance. Mesure : **5 des 73** partagent un match, et
+  **quatre des cinq paires sont tombees du meme cote**.
+  - La borne conservatrice se calcule (`clustered_p_value`) : chaque groupe
+    devient un tirage unique rendant tous ses succes ou aucun. L'esperance ne
+    bouge pas, la variance monte. `0,0161` devient `0,0227`, et `0,0532`
+    devient `0,0656`.
+  - **L'effet est modeste, donc il se mentionne** — dans le bloc de tete et non
+    en note, comme la fragilite : aucun verdict ne bascule, mais le lecteur doit
+    savoir que le chiffre suppose quelque chose de faux. Il grossira si les
+    selections multiples se multiplient.
+  - Le projet avait deja une notion d'independance — la note obligatoire sur un
+    second pick du meme match — et elle n'avait jamais servi a l'analyse.
+- **« Prompt / match » ne se lit qu'a regime constant.** Le cout fixe du cadre
+  est passe de 106 a 1 208 unites par match en une semaine ; mais le bloc de
+  retour d'experience a ete servi sur trois sessions puis suspendu, et la garde
+  d'anteriorite ne vaut que pour ce qui vient apres elle. Une courbe qui melange
+  trois regimes ne dit rien : chaque ligne porte donc **bloc servi** et
+  **gardee**, comme les strates de la boucle.
+
+### `angle` et `source_level` ne sont pas sous-couverts, ils sont jeunes
+
+Le masquage sous 30 % de couverture aurait ete une erreur, et la mesure le dit :
+sur les deux dernieres sessions la couverture est de **5/5 et 10/10**. Le point
+de capture existe — `picks_import` lit les colonnes « Angle » et « Source » du
+tableau rendu — et chaque session depuis la migration 026 les remplit
+entierement.
+
+Les `4/104` mesuraient une colonne **jeune** contre tout l'historique. La regle
+juste n'est donc pas de masquer mais de **dater** : une couverture sans sa
+fenetre est le meme defaut qu'un taux sans la sienne, et la page l'a deja paye
+deux fois — `as_of` et la fenetre glissante du retour d'experience.
+
+C'est aussi ce qui les distingue de `price_real` : la cote obtenue n'a **aucun**
+point de capture automatique, et sa couverture ne montera que par un geste. Une
+colonne qu'aucun geste ne remplit est morte ; celle-ci ne l'est pas.
+
 ### La portee d'affichage du residu
 
 **Au niveau de la population, en chiffre de tete. Pas en colonne sur trente

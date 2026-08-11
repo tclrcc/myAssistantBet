@@ -130,6 +130,15 @@
       <strong>{{ residu.fragility }} résultat(s)</strong> suffiraient à l'effacer —
       autant de défaites le renforceraient.
       {%- endif %}
+      {#- La loi exacte suppose les issues indépendantes ; deux sélections sur la
+          même rencontre ne le sont pas — quatre des cinq paires sont tombées du
+          même côté. La borne conservatrice se dit **ici**, pas en note : c'est
+          le seul endroit de la page où une réserve n'a pas ce droit. -#}
+      {%- if analysis.clustered_selections %}
+      {{ analysis.clustered_selections }} sélection(s) partagent un match : en les
+      supposant liées, P monte à
+      {{ '%.3f'|format(analysis.clustered_p_value(margin_reference)) | replace('.', ',') }}.
+      {%- endif %}
     </p>
   </div>
   {% endif %}
@@ -679,7 +688,7 @@
   <details class="panel">
     <summary>
       Le détail par session
-      <span class="muted small">lot, retenus, passés, réussite, poids du prompt</span>
+      <span class="muted small">lot, retenus, passés, réussite, densité, poids du prompt</span>
     </summary>
     <table class="board">
       <thead>
@@ -691,14 +700,30 @@
           <th class="num">Passés</th>
           <th class="num">Sélections</th>
           <th class="num">Réussite</th>
-          <th class="num">Prompt</th>
+          {# **Une mesure de corrélation, pas de densité.** Deux sélections sur
+             la même rencontre ne sont pas deux observations : le résidu du bloc
+             de tête suppose l'indépendance, et cette colonne dit de combien
+             elle est fausse. #}
+          <th class="num">Sél./match</th>
+          {# Le coût fixe du cadre, rapporté au lot. **Avec ses ruptures de
+             régime** : le bloc de retour d'expérience a été servi sur trois
+             sessions puis suspendu, et la garde d'antériorité ne vaut que pour
+             ce qui vient après elle. Une série qui les mélange ne dit rien. #}
+          <th class="num">Prompt / match</th>
         </tr>
       </thead>
       <tbody>
         {% for row in analysis.by_session %}
         <tr>
-          <td>{{ row.day }}{% if row.reconstructed %}
-            <span class="muted small">reconstruit</span>{% endif %}</td>
+          <td>{{ row.day }}
+            {%- set marques = [
+                 'reconstruit' if row.reconstructed else none,
+                 'bloc servi' if row.feedback_active else none,
+                 'gardée' if row.guarded else none,
+               ] | select | list -%}
+            {% if marques %}<span class="muted small">{{ marques | join(' · ') }}</span>{% endif %}
+            {%- if row.degenerate %}
+            <span class="is-flag small">lot entier passé</span>{% endif %}</td>
           <td class="small">{{ row.sports or '—' }}</td>
           <td class="num">{{ row.lot if row.lot is not none else '—' }}</td>
           <td class="num">{{ row.covered }}</td>
@@ -712,11 +737,27 @@
               {%- if row.rates.thin %} <span class="muted small">peu</span>{% endif %}
             {%- else %}—{% endif %}
           </td>
-          <td class="num">{{ row.tokens or '—' }}</td>
+          <td class="num">
+            {%- if row.density %}{{ '%.1f'|format(row.density) }}{% else %}—{% endif %}
+          </td>
+          <td class="num">{{ row.tokens_per_match or '—' }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
+    <p class="block-note">
+      <strong>Un lot entièrement passé n'est pas une journée sévère.</strong>
+      C'est zéro sélection sur un lot parti à l'analyse, et ça ne se distingue pas
+      d'un rendu jamais collé ni d'un import oublié : passer est un résultat
+      valable, passer <em>tout</em> est un incident. Il est signalé sur sa ligne.
+    </p>
+    <p class="block-note">
+      « Sél./match » mesure la <strong>corrélation</strong> entre paris, pas une
+      densité : deux sélections sur la même rencontre ne sont pas deux
+      observations, et le chiffre de tête suppose l'indépendance. « Prompt/match »
+      est le coût fixe du cadre — il ne se lit qu'à régime constant, les mentions
+      « bloc servi » et « gardée » disant où le régime change.
+    </p>
     <p class="block-note">
       « Passés » compte les matchs du lot qu'aucune sélection ne porte. « Hors lot »
       compte l'inverse : une sélection rattachée à un match qui n'était dans aucun

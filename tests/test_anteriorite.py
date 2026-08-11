@@ -32,6 +32,7 @@ from myassistantbet.services.history import (
 )
 from myassistantbet.services.inference import MARGIN_REFERENCE, Residual
 from myassistantbet.services.manual import build, save
+from myassistantbet.services.prompt import build_prompt, save_prompt
 
 LOIN = "2099-01-01"
 
@@ -644,3 +645,90 @@ def test_une_selection_sans_match_echappe_a_la_garde(migrated: Settings) -> None
 
     ligne = db.query_one("SELECT late_reason FROM picks ORDER BY id DESC", settings=migrated)
     assert ligne["late_reason"] is None
+
+
+# -- Le reste de E : incident, correlation, cout du cadre --------------------
+
+
+def test_un_lot_entierement_passe_est_signale(migrated: Settings) -> None:
+    """**Passer est un resultat, passer tout est un incident.** Le cas s'est
+    produit — 34 matchs partis pour aucune selection — et la ligne se confondait
+    avec une journee severe. Zero sur un lot parti ne se distingue pas d'un rendu
+    jamais colle ni d'un import oublie."""
+    session_id, _ = _a_venir(migrated)
+    save_prompt(session_id, build_prompt(session_id, settings=migrated), migrated)
+
+    ligne = next(r for r in analysis(migrated).by_session if r.session_id == session_id)
+
+    assert ligne.lot and ligne.picks == 0
+    assert ligne.degenerate
+
+
+def test_une_session_qui_produit_n_est_pas_degeneree(migrated: Settings) -> None:
+    session_id, event_id = _a_venir(migrated)
+    save_prompt(session_id, build_prompt(session_id, settings=migrated), migrated)
+    add_pick(session_id, "safe", "1N2", "Domicile", event_id=str(event_id), settings=migrated)
+
+    ligne = next(r for r in analysis(migrated).by_session if r.session_id == session_id)
+
+    assert not ligne.degenerate
+
+
+def test_la_correlation_entre_paris_est_mesuree_et_bornee(migrated: Settings) -> None:
+    """**Le residu suppose l'independance, et deux selections sur la meme
+    rencontre ne le sont pas.** La borne conservatrice fait tomber les issues
+    d'un meme match ensemble : l'esperance ne bouge pas, la variance monte, donc
+    la p-valeur aussi. Sur les donnees reelles elle passe de 0,0161 a 0,0227 —
+    modeste, et c'est pourquoi elle se mentionne au lieu de tout changer.
+    """
+    session_id = _lot(migrated, [("2.00", "win", False)])
+    event_id = db.query_one("SELECT MAX(id) AS id FROM events", settings=migrated)["id"]
+    for selection in ("Over", "Under"):
+        pick_id = add_pick(
+            session_id,
+            "safe",
+            "O/U",
+            selection,
+            event_id=str(event_id),
+            price="2.00",
+            independence_note="angles indépendants",
+            settings=migrated,
+        )
+        set_result(pick_id, "win", migrated)
+
+    report = analysis(migrated)
+
+    assert report.clustered_selections == 2, "trois selections sur un match"
+    assert report.clustered_p_value() >= report.residual.p_value
+
+
+def test_sans_selection_partagee_la_borne_ne_bouge_pas(migrated: Settings) -> None:
+    """Chaque pari sur son match : la borne conservatrice **est** la loi exacte,
+    et la mention ne s'affiche pas."""
+    _lot(migrated, [("2.00", "win", False), ("2.00", "loss", False)])
+
+    report = analysis(migrated)
+
+    assert report.clustered_selections == 0
+    assert report.clustered_p_value() == pytest.approx(report.residual.p_value)
+
+
+def test_le_cout_du_cadre_se_lit_par_match_et_porte_son_regime(
+    migrated: Settings, client: TestClient
+) -> None:
+    """Une serie de poids qui melange trois regimes ne dit rien : le bloc de
+    retour d'experience a ete servi sur trois sessions puis suspendu, et la garde
+    d'anteriorite ne vaut que pour ce qui vient apres elle."""
+    session_id = _lot(migrated, [("2.00", "win", False)])
+    save_prompt(session_id, build_prompt(session_id, settings=migrated), migrated)
+
+    ligne = next(r for r in analysis(migrated).by_session if r.session_id == session_id)
+    page = client.get("/stats").text
+
+    assert ligne.tokens_per_match and ligne.tokens_per_match > 0
+    assert "Prompt / match" in page
+    assert "Sél./match" in page
+    # Le regime est dit sur la ligne : sans lui, une serie de poids melangerait
+    # le bloc de retour d'experience servi, sa suspension et la garde.
+    assert not ligne.feedback_active, "aucun prompt de ce lot n'a transmis de taux"
+    assert "où le régime change" in page
