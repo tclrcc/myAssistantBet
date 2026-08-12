@@ -1204,6 +1204,30 @@ Donc, avant d'ecrire une comparaison de chaines : ouvrir une reponse reelle et c
 l'identifiant. S'il existe, c'est lui. S'il n'existe pas, l'ecrire dans le commentaire —
 avec la date de la verification.
 
+## Un drapeau booleen ne se construit pas sur un champ dont on a mesure qu'il ment
+
+**Regle de revue, de la meme famille que « cherchez l'identifiant » et tiree du meme
+chantier.** Celle-la dit ou prendre la donnee ; celle-ci dit **quelle forme** lui donner
+quand on a mesure qu'elle se trompe parfois.
+
+Le cas qui la fonde : `fixture.venue.city` dit « Vitebsk » pour un match joue a
+Mezokovesd, en Hongrie. Le champ existe, il est structure, il est juste sur 7 relevés sur
+8 — et il ment sur le huitieme.
+
+- **Un booleen calcule dessus affirme.** `TERRAIN NEUTRE` absent se lit « domicile », et
+  ce serait dit avec la meme autorite sur les sept justes et sur le faux. La ou le champ
+  ment, l'outil mentirait a sa place, sans laisser de trace.
+- **Une mention textuelle expose la donnee brute.** `Mezokovesdi Varosi Stadion, Vitebsk
+  (BLR) — pas d'identifiant de stade ici, terrain neutre non verifiable` porte le nom
+  hongrois du stade, la ville belarusse et l'aveu que la comparaison manque : c'est la
+  contradiction elle-meme qui fait tiquer, et l'arbitrage revient au lecteur.
+- **Le taux d'erreur ne decide pas de la forme, la visibilite de l'erreur si.** Un champ
+  faux une fois sur huit reste utilisable — a condition que sa sortie soit lisible. Un
+  booleen ne l'est jamais : il n'a pas de place ou mettre son doute.
+- Corollaire pour ce qui reste a faire : c'est **cette** regle qui bloque le drapeau de
+  terrain neutre, et non le cout d'une table `teams` qui n'a jamais ete necessaire. Elle
+  se levera par une source de lieu qu'on puisse gager, pas par une donnee de plus.
+
 ## Le marche « Se qualifie »
 
 Vingt-quatre manches retour en une semaine, et le marche qui traduit le mieux un tour a
@@ -1363,12 +1387,24 @@ son but.
       pour des pays quand Open-Meteo dit « United Kingdom ». Sans `HOME_NATIONS`, Dundee
       et Motherwell n'ont aucun candidat chez eux et passent par la branche des
       delocalisations.
-  - **Le pays du club, lui, ne demande aucune saisie** — `team.country` arrive dans le
-    `/teams` deja appele pour le stade habituel, et `home_country` le persiste. La table
-    `teams` que B1 supposait ne conditionne donc **pas** le drapeau : ce qui manque au
-    drapeau est la fiabilite du couple (ville, pays), pas la donnee du club. Ce qui reste
-    a arbitrer est le drapeau lui-meme, qui touche quatre consommateurs (`Lieu`, `Aller`,
-    `Scenario`, la meteo).
+  - **Le pays du club ne demande aucune saisie, et le drapeau reste bloque quand meme.**
+    `team.country` arrive dans le `/teams` deja appele pour le stade habituel, et
+    `home_country` le persiste : la table `teams` et sa passe de saisie par club ne
+    conditionnaient rien. Le blocage est ailleurs, et il est **mesure** : un drapeau
+    `TERRAIN NEUTRE` calcule sur `fixture.venue.city` dirait « domicile » sur ML Vitebsk
+    avec autorite, la ou la mention actuelle laisse voir la contradiction. Voir la regle
+    de revue plus bas — un drapeau booleen ne se construit pas sur un champ dont on a
+    mesure qu'il ment. Ce qui manque n'est donc pas une donnee de plus mais une source de
+    lieu qu'on puisse gager ; le jour ou elle existe, le drapeau touche quatre
+    consommateurs (`Lieu`, `Aller`, `Scenario`, la meteo).
+  - **Les 164 releves `venue` de la base datent d'avant `venue_id` et `home_country`**, et
+    rien ne les reprend. Consequence a connaitre avant une session plutot que dedans : sur
+    un lot monte a partir d'eux, le pays sort de la **seule** regle de population, sans le
+    garde-fou du pays du club. Les cinq delocalisations connues passent — aucune n'a
+    d'homonyme chez elle — mais le filet est absent tant que rien n'a ete reenrichi.
+    Aucune migration : elle rattraperait un historique que personne ne relira, et le
+    prochain enrichissement ecrit les deux champs tout seul. Meme arbitrage que partout
+    ailleurs — une donnee sans lecteur ne se collecte pas.
 - **La ligne est devenue systematique**, et le calcul qui la reservait a la surprise etait
   faux dans l'autre sens : son absence ne se distinguait pas d'un domicile ordinaire, si
   bien qu'un match delocalise dont le lieu n'avait pas ete recupere passait pour un match
