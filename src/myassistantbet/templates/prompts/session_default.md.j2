@@ -45,11 +45,10 @@ Une ligne **« Non servis »** énumère les marchés demandés à l'API et jama
 obtenus sur cette compétition : fait acquis, pas oubli de collecte. N'imagine
 aucune sélection dessus, et ne les reporte pas en section F.
 
-Une ligne **« A relever »** est tout autre chose, et il ne faut surtout pas la
-lire comme un refus : ces marchés sont affichés au-dessus, mais aucun de leurs
-prix ne vient du bookmaker principal. Le prix affiché situe le marché ; celui
-qu'on obtiendra se lit chez le bookmaker au moment de miser. Cette ligne n'a pas
-sa place en section F : elle y est déjà connue.
+Une ligne **« A relever »** est tout autre chose, et ne se lit pas comme un
+refus : ces marchés sont affichés au-dessus, mais aucun de leurs prix ne vient du
+bookmaker principal. Le prix affiché situe le marché ; celui qu'on obtiendra se
+lit chez le bookmaker au moment de miser. Pas sa place en section F non plus.
 {% if 'tennis' in sports %}
 Donc, au tennis : **appuie-toi dessus quand l'angle l'appelle.** Le bookmaker
 propose bien ces marchés sur son site — c'est notre collecte qui ne les remonte
@@ -764,9 +763,10 @@ Prévisions Open-Meteo (CC-BY 4.0).
 **« Lieu »** donne le stade, la ville et le pays, et porte **trois états** : un
 lieu seul, le club reçoit chez lui ; **« TERRAIN NEUTRE »**, le match se joue
 hors du pays du club qui reçoit — personne n'est à domicile, le public n'est pas
-là, et « Scénario » cesse de prêter l'avantage du terrain ; `données non
-disponibles`, le lieu n'a pas été récupéré, **ce qui n'est pas un domicile
-ordinaire**.
+là, et « Scénario » cesse de prêter l'avantage du terrain ; un lieu suivi de
+**« pas d'identifiant de stade ici »**, où le fournisseur ne permet pas la
+comparaison — le lieu est sûr, le drapeau indécidable, **c'est à toi de lire
+l'anomalie** ; `données non disponibles`, rien n'a été récupéré.
 
 Un stade différent **dans le même pays** — travaux, sanction — n'est pas neutre
 et ne porte pas la mention : le public suit.

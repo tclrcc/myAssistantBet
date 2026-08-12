@@ -934,10 +934,44 @@ async def test_le_pays_du_stade_ne_se_demande_pas_sur_un_match_a_domicile(
 
 @respx.mock
 @pytest.mark.anyio
-async def test_sans_identifiant_le_lieu_se_declare_inconnu(
+async def test_un_stade_sans_identifiant_est_quand_meme_nomme(
     api_client: APIFootballClient, migrated: Settings, load_fixture: Any
 ) -> None:
-    """Troisieme etat, et il compte autant que les deux autres : un domicile
+    """**Mesure du 12/08/2026** : `fixture.venue.id` est nul sur 210 matchs sur
+    210 d'une saison de Conference League, et servi sur 380 sur 380 d'une saison
+    de Premier League. Le drapeau de terrain neutre est donc structurellement
+    muet sur les competitions UEFA — exactement la ou les delocalisations
+    arrivent.
+
+    Rendre « donnees non disponibles » y jetait le nom du stade et sa ville, que
+    le fournisseur sert pourtant. Or c'est cela qui fait sauter l'anomalie aux
+    yeux : un club israelien qui « recoit » a Miskolc se lit sans qu'aucun
+    drapeau soit calcule."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    matchs = load_fixture("apifootball_fixtures_date.json")
+    matchs["response"][0]["fixture"]["venue"] = {
+        "id": None,
+        "name": "DVTK Stadion",
+        "city": "Miskolc",
+    }
+    routes["fixtures_date"].mock(
+        return_value=httpx.Response(200, json=matchs, headers=RATE_HEADERS)
+    )
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert _lines(migrated)["Lieu"] == (
+        "DVTK Stadion, Miskolc — pas d'identifiant de stade ici, terrain neutre non verifiable"
+    )
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_sans_lieu_du_tout_la_ligne_se_declare_inconnue(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Quatrieme etat, et il compte autant que les autres : un domicile
     **suppose** qui n'en est pas serait pire qu'un « non renseigne » franc.
 
     C'est la meme regle que le fuseau du lieu — declarer ce qu'on n'a pas vaut
@@ -945,7 +979,7 @@ async def test_sans_identifiant_le_lieu_se_declare_inconnu(
     _seed_event(migrated)
     routes = _mock_all(load_fixture)
     matchs = load_fixture("apifootball_fixtures_date.json")
-    matchs["response"][0]["fixture"]["venue"] = {"id": None, "name": "Inconnu", "city": "Ailleurs"}
+    matchs["response"][0]["fixture"]["venue"] = {"id": None, "name": None, "city": None}
     routes["fixtures_date"].mock(
         return_value=httpx.Response(200, json=matchs, headers=RATE_HEADERS)
     )

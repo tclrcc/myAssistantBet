@@ -1956,6 +1956,19 @@ NEUTRAL_MARK = "TERRAIN NEUTRE"
 
 VENUE_HOME = "home"
 VENUE_NEUTRAL = "neutral"
+#: Le lieu est connu, mais **aucun identifiant ne permet de le comparer** au
+#: stade habituel. Mesure du 12/08/2026 : `fixture.venue.id` est nul sur
+#: **210 matchs sur 210** d'une saison de Conference League, et servi sur
+#: **380 sur 380** d'une saison de Premier League. Le drapeau de terrain neutre
+#: est donc structurellement muet sur les competitions UEFA — exactement la ou
+#: les delocalisations arrivent.
+#:
+#: Rendre « donnees non disponibles » y jetait le nom du stade et sa ville, que
+#: le fournisseur sert pourtant. Or c'est cela qui fait sauter l'anomalie aux
+#: yeux : un club israelien qui « recoit » a Miskolc se lit sans qu'aucun
+#: drapeau soit calcule. L'etat dit donc le lieu **et** pourquoi la comparaison
+#: manque.
+VENUE_UNIDENTIFIED = "unidentified"
 VENUE_UNKNOWN = "unknown"
 
 #: Trois lettres du pays, comme le fournisseur les publie en toutes lettres. La
@@ -2013,7 +2026,10 @@ def venue_state(venue: dict[str, Any]) -> str:
     contrainte politique ou securitaire, et seule la seconde change la lecture.
     """
     if not venue.get("venue_id") or not venue.get("usual_id"):
-        return VENUE_UNKNOWN
+        # Sans identifiant des deux cotes, la comparaison est hors de portee. Le
+        # lieu, lui, peut etre connu : le dire vaut mieux que le taire.
+        nomme = (venue.get("name") or "").strip() or (venue.get("city") or "").strip()
+        return VENUE_UNIDENTIFIED if nomme else VENUE_UNKNOWN
     if not _moved_venue(venue):
         return VENUE_HOME
     pays, chez_lui = venue.get("country"), venue.get("home_country")
@@ -2037,6 +2053,8 @@ def _venue_line(venue: dict[str, Any], home: str) -> str:
     nom = (venue.get("name") or venue.get("usual_name") or "").strip()
     ville = (venue.get("city") or venue.get("usual_city") or "").strip()
     lieu = ", ".join(part for part in (nom, ville) if part)
+    if etat == VENUE_UNIDENTIFIED:
+        return f"{lieu} — pas d'identifiant de stade ici, terrain neutre non verifiable"
     if etat == VENUE_HOME:
         return f"{lieu}{_country_tag(venue.get('country') or venue.get('home_country'))}"
     return (

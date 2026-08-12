@@ -1312,9 +1312,26 @@ son but.
   rencontre effectivement deplacee** — le stade habituel n'a pas besoin d'etre situe, on
   sait deja que le club y est chez lui. Quelques appels par lot, et un test verifie qu'un
   match a domicile n'en declenche aucun.
-- **Trois etats et non un booleen**, et le troisieme compte autant que les deux autres :
-  un domicile **suppose** qui n'en est pas serait pire qu'un « non renseigne » franc. Meme
-  regle que le fuseau du lieu.
+- **Quatre etats et non un booleen**, et les deux derniers comptent autant que les deux
+  premiers : un domicile **suppose** qui n'en est pas serait pire qu'un « non renseigne »
+  franc. Meme regle que le fuseau du lieu.
+- **Le drapeau est structurellement muet sur les competitions UEFA, et c'est mesure.**
+  `fixture.venue.id` est nul sur **210 matchs sur 210** d'une saison de Conference League,
+  et servi sur **380 sur 380** d'une saison de Premier League — verifie le 12/08/2026. La
+  comparaison d'identifiants est donc hors de portee exactement la ou les delocalisations
+  arrivent : Minsk en Bulgarie, Vitebsk en Hongrie, Hapoel a Miskolc, Kyiv a Lublin.
+  - Rendre « donnees non disponibles » y jetait le **nom du stade et sa ville**, que le
+    fournisseur sert pourtant. D'ou `VENUE_UNIDENTIFIED` : le lieu est ecrit, suivi de
+    « pas d'identifiant de stade ici, terrain neutre non verifiable ». C'est strictement
+    plus informatif qu'un silence — un club israelien qui « recoit » a Miskolc se lit sans
+    qu'aucun drapeau soit calcule, ce que l'utilisateur avait lui-meme observe sur Lublin.
+  - **Ce qu'il faudrait pour lever la mutite**, et qui n'a pas ete construit : une table
+    `teams` portant le pays de chaque club, plus le pays du stade obtenu en **geocodant sa
+    ville** — le geocodeur d'Open-Meteo, deja cable pour la meteo, rend un pays structure,
+    gratuitement et sans cle. La comparaison porterait alors sur des **pays** et non sur des
+    noms de stade, ce qui reste conforme a la regle de revue. Chantier a arbitrer : il
+    touche quatre consommateurs (`Lieu`, `Aller`, `Scenario`, la meteo) et demande une passe
+    de saisie par club.
 - **La ligne est devenue systematique**, et le calcul qui la reservait a la surprise etait
   faux dans l'autre sens : son absence ne se distinguait pas d'un domicile ordinaire, si
   bien qu'un match delocalise dont le lieu n'avait pas ete recupere passait pour un match
