@@ -1088,3 +1088,35 @@ def test_le_retour_arriere_remet_la_convention_du_fournisseur(migrated: Settings
         ("KuPS", -1.0): 1.85,
         ("U Craiova", 1.0): 1.98,
     }, "The Odds API n'est jamais concerne"
+
+
+@respx.mock
+async def test_le_marche_se_qualifie_arrive_aussi_par_le_substitut(
+    http_client: httpx.AsyncClient, migrated: Settings
+) -> None:
+    """Sans cette entree, le marche etait ajoute exactement la ou il ne pouvait
+    pas arriver : un lot de 21 manches retour servi integralement par des books
+    de substitution n'en aurait vu aucune cote, et le bloc ne l'aurait pas dit —
+    « Non servis » ne se construit que sur ce que l'outil demande a The Odds API.
+
+    Meme piege que les props buteurs et que les trois marches de la table avant
+    elles : un marche ajoute d'un cote sans l'autre."""
+    event_id = _event_avec_fixture(migrated)
+    respx.get(f"{BASE_URL}/odds").mock(
+        return_value=httpx.Response(
+            200,
+            json=_payload(("888Sport", {"To Qualify": ["Home", "Away"]})),
+        )
+    )
+
+    await import_odds(APIFootballClient(http_client, migrated), event_id, migrated)
+
+    lignes = {
+        row["outcome_name"]: row["price"]
+        for row in db.query(
+            "SELECT outcome_name, price FROM odds WHERE event_id = ? AND market_key = 'to_qualify'",
+            (event_id,),
+            settings=migrated,
+        )
+    }
+    assert set(lignes) == {"KuPS", "U Craiova"}, "les camps se traduisent en noms d'equipes"

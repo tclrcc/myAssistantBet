@@ -1124,11 +1124,13 @@ jouer ni declarer absent.
   027 : une migration deja appliquee ne se rejoue pas, et les installations existantes
   seraient restees sans l'entree. Le test de parite lit desormais **toutes** les migrations
   qui touchent `market_families`, ce qui est aussi ce qui empeche d'oublier d'en ecrire une.
-- **Non branche cote API-Football** (`BET_MARKETS`), et c'est dit plutot que devine : le nom
-  du pari chez ce fournisseur n'a pas pu etre verifie — sa documentation repond 403 et
-  `/odds/bets` couterait un appel. Le piege est connu — un marche ajoute d'un cote sans
-  l'autre — donc la verification a faire est ecrite ici : un appel a `/odds/bets`, chercher
-  « qualif », ajouter l'entree.
+- **Branche des deux cotes**, et il a fallu le verifier pour le savoir : `/odds/bets` liste
+  338 paris, dont « To Qualify » (id 61). Verifie le 12/08/2026, pour une unite de quota.
+  Sans cette entree, le marche etait ajoute **exactement la ou il ne pouvait pas arriver** —
+  un lot de 21 manches retour servi integralement par Superbet et Bet365 de substitution
+  n'en aurait vu aucune cote, et le bloc ne l'aurait pas dit : « Non servis » ne se construit
+  que sur ce que l'outil demande a The Odds API. Meme piege que les props buteurs et que les
+  trois marches ajoutes a la table avant elles.
 
 ## La meteo : l'alerte d'abord, les chiffres ensuite
 

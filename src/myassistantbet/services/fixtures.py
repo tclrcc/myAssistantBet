@@ -209,6 +209,13 @@ BET_MARKETS = {
     # sert, `render.py` sait les ecrire, et l'entree ne coute aucun appel de plus
     # — un seul les rend tous.
     "HT/FT Double": "halftime_fulltime",
+    # « Se qualifie », cote fournisseur de substitution. Sans cette entree, le
+    # marche etait ajoute exactement la ou il ne pouvait pas arriver : un lot de
+    # 21 manches retour servi integralement par Superbet et Bet365 de
+    # substitution n'en aurait vu aucune cote — et le bloc ne l'aurait pas dit,
+    # « Non servis » ne se construisant que sur ce que l'outil a demande a The
+    # Odds API. Verifie le 12/08/2026 sur `/odds/bets` : « To Qualify », id 61.
+    "To Qualify": "to_qualify",
     "Corners 1x2": "corners_1x2",
     "Correct Score - First Half": "correct_score_h1",
 }
@@ -262,7 +269,7 @@ def _outcome(
         # releve n'allait que sur des matchs sans aucune cote, donc rarement.
         camps = [_side(part, home, away) for part in text.split("/")]
         return "/".join(camps), None, None
-    if market in {"h2h", "spreads", "corners_1x2"}:
+    if market in {"h2h", "spreads", "corners_1x2", "to_qualify"}:
         parts = text.rsplit(" ", 1)
         side, point = (parts[0], parts[1]) if len(parts) == 2 else (text, None)
         name = {"home": home, "away": away, "draw": "Draw"}.get(side.lower(), side)
