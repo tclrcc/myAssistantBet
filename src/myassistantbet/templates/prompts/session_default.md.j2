@@ -38,14 +38,12 @@ libellé d'un bloc, et comment le lire — est en **fin de prompt**, sous
 tu rends est ici et dans la section SORTIE ATTENDUE.
 
 {% endif %}Une ligne **« Stats match »** marquée « données non disponibles » signifie que le
-fournisseur ne publie pas les statistiques de match sur cette compétition : ni
-corners, ni cartons, ni tirs ne seront jamais renseignés ici. C'est un fait
-acquis, pas un trou de collecte — mais la recherche web peut le combler.
+fournisseur ne publie ni corners, ni cartons, ni tirs sur cette compétition.
+Fait acquis, pas trou de collecte — mais la recherche peut le combler.
 
 Une ligne **« Non servis »** énumère les marchés demandés à l'API et jamais
-obtenus sur cette compétition. C'est un fait acquis, pas un oubli de collecte :
-n'imagine aucune sélection dessus, et ne les reporte pas en section F — ils y
-sont déjà connus.
+obtenus sur cette compétition : fait acquis, pas oubli de collecte. N'imagine
+aucune sélection dessus, et ne les reporte pas en section F.
 
 Une ligne **« A relever »** est tout autre chose, et il ne faut surtout pas la
 lire comme un refus : ces marchés sont affichés au-dessus, mais aucun de leurs
@@ -616,12 +614,12 @@ pourcentages ni moyennes :
   · **« Buts pris »** — le miroir défensif. Lue avec « Buts marq. » de
     l'adversaire, elle dit qui devrait marquer ; pour le total de la rencontre,
     seule « Total buts » compte les deux équipes.
-  · **« Clean sheet »** — matchs sans encaisser, puis matchs sans marquer.
+  · **« Clean sheet »** — matchs sans encaisser, puis sans marquer.
 {% if '1re MT' in context_labels %}  · **« 1re MT »** et **« Buts tard. »** — la
-    répartition des buts marqués puis encaissés, avant la pause et après la 75e,
-    rapportée au nombre de buts. La seconde est la seule ligne qui dise **quand**
-    une équipe marque ou cède : `xG` et `Tirs` donnent le volume, jamais le
-    moment. Elle éclaire un total et un handicap, pas le seul vainqueur.
+    répartition des buts marqués puis encaissés, avant la pause et après la 75e.
+    La seconde est la seule ligne qui dise **quand** une équipe marque ou cède :
+    `xG` et `Tirs` donnent le volume, jamais le moment. Elle éclaire un total et
+    un handicap, pas le seul vainqueur.
 {% endif %}
   · **« Cartons tps »** — part des cartons jaunes reçus après la 60e.
   · **« Formations »** — les deux formations les plus alignées, avec leur nombre
@@ -629,31 +627,27 @@ pourcentages ni moyennes :
     tourne — ça se lit sur le compte, pas sur le nom.
   · **« Fautes »** — commises, puis subies. Elle accompagne « Cartons » : un
     arbitre ne sort un carton que sur une faute.
-  · **« xG »** — buts attendus produits, puis concédés. Elle sépare ce qu'aucun
-    compte de tirs ne sépare : 2.0 buts pour 0.8 xG, c'est la finition ;
-    l'inverse, une équipe qui se crée des situations sans conclure. **C'est la
-    seule ligne du bloc qui ne soit pas un fait observé mais une
-    sortie de modèle** : ne la convertis **jamais** en probabilité, et ne la rapproche
-    jamais d'une cote. Sa couverture est inégale — son absence ne dit rien de
-    l'équipe, seulement du fournisseur.
+  · **« xG »** — buts attendus produits, puis concédés. 2.0 buts pour 0.8 xG,
+    c'est la finition ; l'inverse, une équipe qui se crée des situations sans
+    conclure. **Seule ligne du bloc qui soit une sortie de modèle et non un fait
+    observé** : ne la convertis **jamais** en probabilité, ne la rapproche jamais
+    d'une cote. Son absence ne dit rien de l'équipe, seulement du fournisseur.
   · **« Possession »** — **le seul pourcentage du bloc**, et il ne contredit pas
-    l'interdiction ci-dessous : celle-ci vise les fréquences d'issues, qu'un
+    l'interdiction ci-dessous, qui vise les fréquences d'issues — celles qu'un
     pourcentage invite à diviser par une cote. Une part de ballon ne se rapporte
-    à aucun marché. Elle dit qui subit, et se lit contre le style de l'adversaire.
+    à aucun marché. Elle dit qui subit.
 
 Trois lignes viennent de l'historique de saison, **toutes compétitions
 confondues** et non de la seule compétition du jour :
 
   · **« Total buts »** — les buts **du match, les deux équipes réunies**, à ne
     pas confondre avec « Buts marq. », qui ne compte que ceux de l'équipe.
-    `>2.5 23/36` = 23 de ses 36 matchs. `BTTS` compte les matchs où les deux ont
-    marqué. Scores retenus **à 90 minutes** : une prolongation de coupe n'y
-    ajoute rien, un marché O/U se réglant sur le temps réglementaire.
-  · **« Série »** — la série **en cours**, à 90 minutes, et non le record de la
-    saison. Deux raisons de ne pas la voir, et elles ne disent pas la même
-    chose : moins de deux matchs, et un résultat isolé n'est pas une série ; ou
-    un `(2025)` sur « Total buts », et la seule série connue serait celle de la
-    saison passée — l'équipe a rejoué depuis, ne lui en prête aucune.
+    `>2.5 23/36` = 23 de ses 36 matchs. Scores retenus **à 90 minutes**.
+  · **« Série »** — la série **en cours**, à 90 minutes, jamais le record de la
+    saison. Deux raisons de ne pas la voir, distinctes : moins de deux matchs,
+    et un résultat isolé n'est pas une série ; ou un `(2025)` sur « Total buts »,
+    et la seule série connue serait celle de la saison passée — l'équipe a
+    rejoué depuis.
   · **« Calendrier »** — le prochain match de chaque équipe **après celui-ci**,
     et sa compétition si elle diffère. C'est le facteur de rotation que la fiche
     de vérification demande ; « Repos » dit ce qui précède.
@@ -680,13 +674,19 @@ cinq derniers **toutes compétitions**. Les deux coïncident dès cinq matchs
 joués, soit partout sauf en début de saison : `ND (2j) 10-6/5` n'est pas seize
 buts en deux matchs.
 {% endif %}{% if 'Effectif' in context_labels %}
-**« Effectif »** ne paraît que là où « Absents » est muet — le fournisseur ne
-couvre pas les blessures — et se reconstruit des **feuilles de match** récentes :
-les joueurs vus régulièrement puis disparus des deux dernières feuilles, banc
-compris, avec leur dernière date vue. Ce n'est **pas** une liste d'absents :
-blessure, suspension, repos et mise à l'écart y produisent le même signal. C'est
-une **piste datée** à confirmer, et l'absence de cette ligne ne prouve rien non
-plus — un joueur écarté avant la fenêtre lue n'y figure pas.
+**« Effectif »** ne paraît que là où « Absents » est muet, et se reconstruit des
+**feuilles de match** récentes : les joueurs vus régulièrement puis disparus des
+deux dernières feuilles, banc compris, avec leur dernière date vue. Ce n'est
+**pas** une liste d'absents — blessure, suspension, repos et mise à l'écart y
+produisent le même signal. C'est une **piste datée** à confirmer.
+
+Elle porte sa **fenêtre** — `(fenêtre lue : 3 feuille(s), du 23/07 au 06/08,
+toutes compétitions)` — et il faut la lire avant la liste. Elle dit sur combien
+de feuilles le constat repose et jusqu'où il remonte : une fenêtre courte, ou qui
+s'arrête loin du match, rend le signal fragile. Cas mesuré : trois joueurs
+annoncés « plus vus depuis le 23/07 » étaient titulaires le 06/08, parce que le
+fournisseur n'avait pas encore publié les feuilles les plus récentes au moment du
+relevé. **Vérifie toujours cette ligne avant d'en faire un angle.**
 {% endif %}{% if 'Aller' in context_labels %}
 **« Aller »** dit que ces deux équipes se sont rencontrées dans cette
 compétition, chez l'autre, il y a moins de trois semaines — score du point de
@@ -718,6 +718,21 @@ est : cumul égal à la fin des 90 minutes de la manche retour, prolongation pui
 tirs au but. **La fiche de la compétition prime sur cette phrase** : elle seule
 sait qu'une Supercoupe va aux tirs au but sans prolongation, ou qu'une coupe
 nationale rejoue le match. Si elle ne dit rien et que le tour est serré, vérifie.
+{% endif %}{% if 'Absents' in context_labels %}
+**« Absents »** porte **trois états**, et ils appellent trois comportements :
+
+  · une liste — le fournisseur a répondu, c'est ce qu'il signale ;
+  · **« non interrogés »** — le fournisseur ne couvre **pas** les blessures sur
+    cette compétition. Ce n'est pas un incident : ça ne changera pas, et la
+    recherche est le seul chemin. C'est le cas de la plupart des compétitions
+    hors des grands championnats ;
+  · **« source injoignable »** — elle n'a pas répondu **ce jour-là**. Ça se
+    retentera tout seul au prochain enrichissement, mais pour cette session il
+    faut chercher.
+
+Une liste vide ne s'écrit jamais « aucun absent » sans que la source ait
+répondu : les trois états existent précisément pour que le silence ne se lise
+pas comme une information.
 {% endif %}{% if 'Arbitre' in context_labels %}
 **« Arbitre »** donne **le nom, et rien d'autre** : la source ne sert ni
 identifiant, ni pays, ni historique. C'est une **économie de recherche, pas un
@@ -756,20 +771,17 @@ ordinaire**.
 Un stade différent **dans le même pays** — travaux, sanction — n'est pas neutre
 et ne porte pas la mention : le public suit.
 {% endif %}{% if 'Buteurs' in context_labels %}
-**« Buteurs »** — les trois meilleurs de chaque équipe, avec leur total et la
-part inscrite sur penalty : douze buts dont dix sur penalty ne se parient pas
-comme douze dans le jeu. Trois choses qu'elle ne dit pas : elle ne liste que les
-vingt meilleurs de la compétition : une équipe absente
-**n'est pas une équipe sans buteur** ;
-elle ne dit pas qui est disponible — « Absents » et ta recherche priment ; elle
-ne dit rien de la forme récente.
+**« Buteurs »** — les trois meilleurs de chaque équipe,
+avec la part inscrite sur penalty : douze buts dont dix sur penalty ne se parient pas comme douze dans
+le jeu. Elle ne liste que les vingt meilleurs de la compétition — une équipe
+absente **n'est pas une équipe sans buteur**.
+Et elle ne dit pas qui est disponible, ni rien de la forme récente.
 
 **« Buteur abs. »** signale un de ces buteurs déclaré indisponible, **avec sa
-date de début**. Le fournisseur publie un historique de carrière : une période
-sans date de fin signifie qu'il ne l'a pas refermée, ce qui n'est pas tout à
-fait une absence en cours. Traite-la comme une piste
-datée à confirmer, pas comme un fait. Si ta recherche montre qu'il a rejoué,
-c'est ta recherche qui gagne.
+date de début** : le fournisseur publie un historique de carrière, et une période
+non refermée n'est pas tout à fait une absence en cours. Traite-la comme une
+piste datée à confirmer, pas comme un fait ;
+si ta recherche montre qu'il a rejoué, c'est ta recherche qui gagne.
 L'absence de cette ligne ne prouve rien non plus : le fournisseur ne couvre pas
 les indisponibilités partout.
 {% endif %}{% if 'Statut' in context_labels %}

@@ -1084,6 +1084,51 @@ scannes les jours d'avant. Aucun appel, aucune cle, aucun quota.
   - **Un forfait s'y lisait comme un match joue**, et documenter le defaut ne le corrigeait
     pas. Voir la section suivante.
 
+## Les absents : trois etats, et une fenetre qui se rend
+
+**L'hypothese de depart etait fausse, et la mesure l'a montree avant qu'une ligne soit
+ecrite.** Le defaut constate — trois joueurs de Hapoel Tel-Aviv annonces « plus vus depuis
+le 23/07 » alors qu'ils etaient titulaires le 06/08 — etait attribue a une fenetre de
+reconstruction limitee a une seule competition. Verifie le 12/08/2026 :
+
+- la fenetre sort de `/fixtures?team=&last=`, qui **ne filtre sur aucune competition** —
+  une coupe nationale et une coupe d'Europe figuraient dans la meme fenetre de cinq ;
+- le fournisseur sert **les quatre feuilles**, et les trois joueurs figurent sur celles du
+  06/08, du 30/07 et du 23/07 ;
+- le chemin de reconstruction **rejoue a l'identique** sur la meme equipe ne reproduit pas
+  le defaut : aucun manquant.
+
+Conclusion : **la regle etait juste, les feuilles ne l'etaient pas encore au moment du
+releve** — le fournisseur les a publiees apres coup. Contre ce genre de panne il n'existe
+pas de correctif de regle, seulement de quoi la voir.
+
+- **La ligne porte donc sa fenetre** — `(fenetre lue : 3 feuille(s), du 23/07 au 06/08,
+  toutes competitions)` — et ce sont les bornes de ce qui a ete **lu**, pas demande : une
+  feuille non encore publiee est sautee, si bien que la fenetre reelle est plus courte que
+  `SHEETS_LAST`. Meme idiome que `Parcours` et sa fenetre de scans, et que l'en-tete des
+  marches et son heure de releve.
+- **`Absents` porte trois etats**, et c'est le motif de toute la serie — meteo, arbitre,
+  handicap : `aucun absent signale` (on a regarde), `non interroges` (le fournisseur ne
+  couvre pas cette competition, ca ne changera pas), `source injoignable` (elle n'a pas
+  repondu ce jour-la, ca se retentera). `donnees non disponibles` melangeait les trois, si
+  bien qu'une couverture absente se lisait comme un incident et l'inverse. Un etat manquant
+  sur un releve anterieur vaut `non interroges` : le plus prudent des deux, il envoie
+  chercher au lieu d'affirmer qu'on a regarde.
+- **Mesure de couverture, et elle est severe** : sur 165 releves d'absents en base,
+  **81.8 % sont `non interroges`**. Sur les seuls matchs reellement analyses l'echantillon
+  s'inverse — 3 servis sur 4 — mais il est trop court pour conclure. C'est une information
+  sur ce que l'outil peut promettre : hors des grands championnats, la liste d'absents est
+  **a chercher**, et la ligne le dit maintenant au lieu de le laisser deviner.
+- **Aucune source d'absences n'a ete branchee, et c'est une decision documentee.**
+  Transfermarkt a un `robots.txt` permissif (`User-agent: * / Allow: /`) mais des conditions
+  d'utilisation qui interdisent explicitement l'acces automatise — verifie le 12/08/2026 :
+  « The User is not permitted to access or copy the Digital Content using bots, spiders,
+  screen scraping or other automated processes. » C'est **l'inverse exact du cas meteo**, ou
+  le `robots.txt` interdisait et les conditions autorisaient : dans les deux cas ce sont les
+  **conditions d'utilisation qui gouvernent** un client automatise, et ici elles disent non.
+  Les sites de clubs, eux, demanderaient un analyseur par club — licite peut-etre,
+  exploitable non.
+
 ## L'arbitre : le nom seul, et pourquoi il n'y a rien d'autre
 
 Un marche Cartons est servi sur une partie des blocs sans qu'aucune ligne ne permette de le

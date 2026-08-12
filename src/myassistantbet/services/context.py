@@ -130,6 +130,26 @@ KIND_RECENT = "recent"
 KIND_PROFILE = "profile"
 KIND_VENUE = "venue"
 KIND_REFEREE = "referee"
+
+#: Les trois etats d'une liste d'absents, et c'est le motif de toute la serie :
+#: « on a regarde, il n'y a rien », « personne n'a regarde », « la source n'a pas
+#: repondu ». `donnees non disponibles` les melangeait, si bien qu'une
+#: competition non couverte se lisait comme un incident et l'inverse.
+#:
+#: Les trois appellent des comportements differents : le premier ne demande
+#: rien, le deuxieme envoie chercher a la main pour toujours, le troisieme se
+#: retente au prochain enrichissement.
+INJURIES_SERVED = "served"
+INJURIES_NOT_ASKED = "not_asked"
+INJURIES_UNREACHABLE = "unreachable"
+
+INJURIES_NOTES = {
+    INJURIES_NOT_ASKED: (
+        "non interroges — le fournisseur ne couvre pas les absents sur cette "
+        "competition, la recherche est le seul chemin"
+    ),
+    INJURIES_UNREACHABLE: "source injoignable au dernier releve — a retenter ou a chercher",
+}
 KIND_LINEUPS = "lineups"
 KIND_MAPPING = "mapping_pending"
 KIND_MANUAL_NOTE = "manual_note"
@@ -579,6 +599,26 @@ def _missing_players(sheets: list[tuple[Any, list[str]]]) -> list[dict[str, Any]
     return manquants[:SHEETS_KEEP]
 
 
+def _window_of(sheets: list[tuple[Any, list[str]]]) -> dict[str, Any]:
+    """Ce que la fenetre a **reellement** porte : combien de feuilles, et de quand.
+
+    Mesure qui l'a fait naitre : un bloc a designe trois joueurs comme « plus vus
+    depuis le 23/07 » alors qu'ils figuraient sur les feuilles du 30/07 et du
+    06/08 — verifie chez le fournisseur, qui les sert aujourd'hui. Le chemin de
+    reconstruction a ete rejoue a l'identique sur les memes equipes et ne
+    reproduit **pas** le defaut : la regle etait juste, les feuilles ne l'etaient
+    pas encore au moment du releve.
+
+    Contre ce genre de panne il n'y a pas de correctif de regle — seulement de
+    quoi la voir. La ligne porte donc sa fenetre, comme `Parcours` porte celle de
+    nos scans et comme l'en-tete des marches porte l'heure de son releve.
+    """
+    dates = sorted(str(date) for date, _ in sheets if date)
+    if not dates:
+        return {}
+    return {"count": len(sheets), "first": dates[0], "last": dates[-1]}
+
+
 def _lineup_payload(rows: list[dict[str, Any]], home_id: Any, away_id: Any) -> dict[str, Any]:
     """Charge utile d'une composition, rangee par cote.
 
@@ -852,11 +892,16 @@ async def fetch_context(
             # l'affirmation inverse de la verite. Constate en reel sur les
             # qualifications europeennes, ou six absents annonces par la presse
             # etaient rendus « aucun signale » des deux cotes.
-            store(report.event_id, KIND_INJURIES, {"available": False}, settings)
+            store(
+                report.event_id,
+                KIND_INJURIES,
+                {"available": False, "state": INJURIES_NOT_ASKED},
+                settings,
+            )
             report.kinds.append(KIND_INJURIES)
             raise _NotCovered
         rows = await client.injuries(mapping.fixture_id)
-        payload = {"available": True, "home": [], "away": []}
+        payload = {"available": True, "state": INJURIES_SERVED, "home": [], "away": []}
         # Le fournisseur renvoie chaque joueur deux fois — constate en reel :
         # 14 lignes pour 7 absents. Sans dedoublonnage la ligne « Absents »
         # liste tout le monde en double, ce qui fait douter de la donnee entiere.
@@ -888,7 +933,15 @@ async def fetch_context(
     except _NotCovered:
         pass
     except ProviderError as exc:
-        store(report.event_id, KIND_INJURIES, {"available": False}, settings)
+        # **Injoignable n'est pas non couvert.** La premiere se retente au
+        # prochain enrichissement, la seconde ne se retentera jamais : les
+        # confondre faisait chercher un reglage la ou il n'y avait qu'un incident.
+        store(
+            report.event_id,
+            KIND_INJURIES,
+            {"available": False, "state": INJURIES_UNREACHABLE},
+            settings,
+        )
         report.errors.append(f"absents : {exc}")
 
     # Effectif recent, **uniquement** la ou les absents ne sont pas couverts.
@@ -918,6 +971,12 @@ async def fetch_context(
                 if names:
                     sheets.append(((fixture.get("fixture") or {}).get("date"), names))
             payload[side] = _missing_players(sheets)
+            # **Les bornes de ce qui a ete lu**, et non de ce qui a ete demande :
+            # une feuille que le fournisseur n'a pas encore publiee est sautee,
+            # si bien que la fenetre reelle est plus courte que `SHEETS_LAST`.
+            # Sans elles, « plus vu depuis le 23/07 » ne dit pas sur quoi il
+            # repose — c'est ce qui a rendu un faux positif indetectable.
+            payload[f"{side}_window"] = _window_of(sheets)
         store(report.event_id, KIND_SHEETS, payload, settings)
         report.kinds.append(KIND_SHEETS)
     except _NotCovered:
@@ -1232,7 +1291,9 @@ def _injuries_for(entries: list[dict[str, Any]], team: str) -> str:
     return f"{team} — {', '.join(listed)}"
 
 
-def _sheets_for(entries: list[dict[str, Any]], team: str) -> str:
+def _sheets_for(
+    entries: list[dict[str, Any]], team: str, window: dict[str, Any] | None = None
+) -> str:
     """`Cracovia — Knap plus vu depuis le 26/07, Baumgartner depuis le 02/08`.
 
     Rien quand personne ne manque : ecrire « aucun » affirmerait un effectif au
@@ -1247,7 +1308,29 @@ def _sheets_for(entries: list[dict[str, Any]], team: str) -> str:
         # « plus vu » une fois par equipe : sur la seconde, la date suffit.
         prefixe = "plus vu depuis le" if not listed and index == 0 else "depuis le"
         listed.append(f"{entry['name']} {prefixe} {date.strftime('%d/%m')}")
-    return f"{team} — {', '.join(listed)}" if listed else ""
+    if not listed:
+        return ""
+    return f"{team} — {', '.join(listed)}{_window_note(window)}"
+
+
+def _window_note(window: dict[str, Any] | None) -> str:
+    """` (fenetre lue : 3 feuilles, du 23/07 au 06/08, toutes competitions)`.
+
+    « Toutes competitions » est ecrit parce que c'est vrai et parce que ca a ete
+    doute : la fenetre sort de `/fixtures?team=&last=`, qui ne filtre sur aucune
+    competition — verifie le 12/08/2026, une coupe nationale et une coupe
+    d'Europe figuraient dans la meme fenetre.
+    """
+    if not window or not window.get("first"):
+        return ""
+    debut, fin = _moment(str(window["first"])), _moment(str(window["last"]))
+    if debut is None or fin is None:
+        return ""
+    feuilles = window.get("count") or 0
+    return (
+        f" (fenetre lue : {feuilles} feuille(s), du {debut.strftime('%d/%m')} "
+        f"au {fin.strftime('%d/%m')}, toutes competitions)"
+    )
 
 
 def _h2h_line(payload: dict[str, Any], settings: Settings) -> str:
@@ -1724,7 +1807,11 @@ def context_lines(
     injuries = data.get(KIND_INJURIES)
     if injuries is not None:
         if not injuries.get("available"):
-            lines.append(("Absents", UNAVAILABLE))
+            # Un etat absent vaut « non interroge » : c'est le cas des releves
+            # anterieurs a cette distinction, et le plus prudent des deux — il
+            # envoie chercher au lieu d'affirmer qu'on a regarde.
+            etat = injuries.get("state") or INJURIES_NOT_ASKED
+            lines.append(("Absents", INJURIES_NOTES.get(etat, INJURIES_NOTES[INJURIES_NOT_ASKED])))
         else:
             lines.append(
                 (
@@ -1740,8 +1827,8 @@ def context_lines(
     sheets = data.get(KIND_SHEETS) or {}
     if sheets.get("available"):
         rendered = _pair(
-            _sheets_for(sheets.get("home") or [], home),
-            _sheets_for(sheets.get("away") or [], away),
+            _sheets_for(sheets.get("home") or [], home, sheets.get("home_window")),
+            _sheets_for(sheets.get("away") or [], away, sheets.get("away_window")),
         )
         if rendered:
             lines.append(("Effectif", rendered))

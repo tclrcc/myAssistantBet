@@ -258,8 +258,15 @@ async def test_absents_non_couverts_sont_explicites(
 
     report = await fetch_context(api_client, EVENT, migrated)
 
-    assert load(1, migrated)[KIND_INJURIES] == {"available": False}
-    assert _lines(migrated)["Absents"] == UNAVAILABLE
+    # Injoignable, et non « non couvert » : la premiere se retente au prochain
+    # enrichissement, la seconde ne se retentera jamais.
+    assert load(1, migrated)[KIND_INJURIES] == {
+        "available": False,
+        "state": "unreachable",
+    }
+    assert _lines(migrated)["Absents"] == (
+        "source injoignable au dernier releve — a retenter ou a chercher"
+    )
     assert any("absents" in error for error in report.errors)
 
 
@@ -691,7 +698,10 @@ async def test_une_donnee_non_couverte_est_dite_et_non_affirmee_absente(
     await fetch_context(api_client, EVENT, migrated)
 
     lignes = _lines(migrated)
-    assert lignes["Absents"] == UNAVAILABLE
+    assert lignes["Absents"] == (
+        "non interroges — le fournisseur ne couvre pas les absents sur cette "
+        "competition, la recherche est le seul chemin"
+    )
     assert "aucun signale" not in lignes["Absents"]
     assert lignes["Classement"] == UNAVAILABLE, "une absence declaree se dit, elle ne s'omet pas"
 
@@ -1524,8 +1534,16 @@ async def test_l_effectif_se_reconstruit_la_ou_les_absents_ne_sont_pas_couverts(
     await fetch_context(api_client, EVENT, migrated)
 
     lignes = _lines(migrated)
-    assert lignes["Absents"] == UNAVAILABLE, "le fournisseur ne couvre toujours pas"
-    assert lignes["Effectif"] == "BK Hacken — Knap plus vu depuis le 19/07"
+    assert lignes["Absents"] == (
+        "non interroges — le fournisseur ne couvre pas les absents sur cette "
+        "competition, la recherche est le seul chemin"
+    ), "le fournisseur ne couvre toujours pas"
+    # La fenetre accompagne la liste : « plus vu depuis le 19/07 » ne dit pas sur
+    # quoi il repose, et c'est ce qui a rendu un faux positif indetectable.
+    assert lignes["Effectif"] == (
+        "BK Hacken — Knap plus vu depuis le 19/07 "
+        "(fenetre lue : 4 feuille(s), du 13/07 au 28/07, toutes competitions)"
+    )
     assert feuilles.call_count == SHEETS_LAST, "une feuille par match de la fenetre"
 
 
@@ -2272,3 +2290,40 @@ async def test_le_preambule_fait_de_l_absence_d_historique_un_fait(
     assert "**économie de recherche, pas un fait**" in corps
     assert "à écrire en section A comme telle et non en section F comme un manque" in corps
     assert "ne cherche pas, la désignation n'est pas tombée" in corps
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_un_titulaire_d_une_autre_competition_n_est_jamais_porte_manquant(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Le cas Hapoel, verifie avant d'etre code : trois joueurs annonces « plus
+    vus depuis le 23/07 » alors qu'ils figuraient sur les feuilles du 30/07 et du
+    06/08.
+
+    **La fenetre etait deja toutes competitions** — elle sort de
+    `/fixtures?team=&last=`, qui ne filtre sur aucune competition, et le chemin
+    rejoue a l'identique sur les memes equipes ne reproduit pas le defaut. Ce
+    test verrouille la propriete plutot que de corriger une regle qui etait
+    juste : un joueur present sur une feuille d'une **autre** competition compte
+    comme vu."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    routes["leagues"].mock(
+        return_value=httpx.Response(200, json=LEAGUES_SANS_COUVERTURE, headers=RATE_HEADERS)
+    )
+    # Le plus recent des quatre matchs est une coupe nationale, hors du lot :
+    # Knap y figure, donc il n'a pas disparu.
+    _feuilles(
+        routes["lineups"],
+        {
+            800000: ["Andersson", "Berg", "Knap"],
+            800001: ["Andersson", "Berg", "Knap"],
+            800002: ["Andersson", "Berg", "Knap"],
+            800003: ["Andersson", "Berg", "Knap"],
+        },
+    )
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert "Effectif" not in _lines(migrated)
