@@ -1618,3 +1618,14 @@ def test_la_convention_du_handicap_football_est_documentee(migrated: Settings) -
 
     assert "**« Handicap »** porte **une seule ligne, ses deux moitiés**" in corps
     assert "toujours opposés" in corps
+
+
+def test_le_preambule_dit_ce_que_l_ecart_au_coup_d_envoi_traverse(migrated: Settings) -> None:
+    """Une journee entiere a ete analysee sur des cotes relevees huit heures
+    avant le coup d'envoi sans que rien ne le signale. L'en-tete le dit
+    desormais, et le preambule dit quoi en faire — signaler, pas renoncer."""
+    corps = " ".join(build_prompt(_lot_de(migrated, 2), settings=migrated, now=NOW).body.split())
+
+    assert "ce que cet écart traverse" in corps
+    assert "avant les compositions" in corps
+    assert "il te dit que ta recherche peut légitimement décrire un marché" in corps

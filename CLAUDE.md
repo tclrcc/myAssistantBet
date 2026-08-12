@@ -1084,6 +1084,30 @@ scannes les jours d'avant. Aucun appel, aucune cle, aucun quota.
   - **Un forfait s'y lisait comme un match joue**, et documenter le defaut ne le corrigeait
     pas. Voir la section suivante.
 
+## L'age d'un releve se compte vers le coup d'envoi, pas depuis maintenant
+
+L'en-tete d'un bloc donnait l'heure du releve et rien d'autre : `releve 13:27`. La
+soustraction restait a faire, donc personne ne la faisait — une journee entiere a ete
+analysee sur des cotes relevees huit heures avant le coup d'envoi sans que rien ne le
+signale.
+
+- **C'est l'ecart qui compte, pas l'age absolu.** Huit heures sur un tour preliminaire
+  obscur ne bougent rien ; les memes huit heures sur une affiche couvrent l'annonce des
+  compositions. Un age nu (« il y a 8 h ») dirait la moitie de la chose.
+- **Un seul moment est nomme, et c'est le seul qui se produise a heure connue** : la
+  publication des onze, `LINEUP_LEAD_MINUTES` (60) avant le coup d'envoi. Mesure deja au
+  dossier du projet — l'endpoint des compositions rend zero equipe a 2h30 du coup d'envoi
+  et deux a 8 minutes. Football seulement : au tennis il n'y a pas de onze a publier.
+- **Les deux seuils doivent rester distincts, et ils ne l'etaient pas.** Ecrits tous deux
+  a soixante minutes, la mention des compositions accompagnait *toutes* les lignes rendues
+  — elle cessait d'etre un signal pour devenir un decor. `LEAD_TIME_MIN_MINUTES` vaut donc
+  15 : en dessous un releve n'a rien traverse, entre 15 et 60 l'ecart s'ecrit seul, au-dela
+  il s'ecrit avec ce qu'il couvre. Trouve en ecrivant le test.
+- Meme famille que l'age du releve meteo, et **le seuil s'y calait deja sur la fenetre de
+  fraicheur du module** plutot que sur une constante inventee. Les deux lignes qui datent
+  un releve parlent le meme langage : on ne compte le temps qu'une fois qu'il commence a
+  vouloir dire quelque chose.
+
 ## Avant de coder une heuristique sur des libelles, cherchez l'identifiant
 
 **Regle de revue, tiree de trois defauts de la meme famille.** Le handicap qui semblait mal

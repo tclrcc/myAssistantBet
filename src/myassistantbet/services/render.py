@@ -86,6 +86,24 @@ ALERT_LABEL = "Alerte"
 #: silence vaut mieux qu'une accusation que la donnee ne porte pas.
 HANDICAP_ALERT_MARGIN = 0.05
 
+#: Ecart minimal, en minutes, au-dela duquel l'en-tete compte le temps. En
+#: dessous, un releve n'a rien traverse et l'ecrire ferait du bruit sur les blocs
+#: les plus frais. Meme regle que l'age du releve meteo : on ne compte le temps
+#: qu'une fois qu'il commence a vouloir dire quelque chose.
+#:
+#: **Il doit rester nettement sous `LINEUP_LEAD_MINUTES`**, sinon les deux seuils
+#: coincident et la mention des compositions accompagne *toutes* les lignes
+#: rendues — elle cesse alors d'etre un signal pour devenir un decor. Trouve en
+#: ecrivant le test : les deux valaient soixante.
+LEAD_TIME_MIN_MINUTES = 15
+
+#: Heure de publication des compositions, en minutes avant le coup d'envoi. Un
+#: releve anterieur n'a pas vu les onze, et c'est **le seul moment a heure connue
+#: ou le marche se reajuste en masse** — mesure ailleurs dans le projet : les
+#: clubs publient environ une heure avant, et l'endpoint des compositions rend
+#: zero equipe a 2h30 du coup d'envoi contre deux a 8 minutes.
+LINEUP_LEAD_MINUTES = 60
+
 #: Les paliers que les cotes **de ce bloc** rendent atteignables. Un palier est
 #: une bande de cote : si aucune cote du bloc n'y tombe, aucune selection de ce
 #: match ne pourra s'y ranger, quel que soit l'angle. Mesure qui l'a fait naitre :
@@ -802,8 +820,37 @@ def _markets_block(event: RenderableEvent) -> list[str]:
         return []
     heading = f"MARCHES ({event.bookmaker_label}"
     if event.fetched_local:
-        heading += f", releve {event.fetched_local.strftime('%H:%M')}"
+        heading += f", releve {event.fetched_local.strftime('%H:%M')}{_lead_time(event)}"
     return [heading + ")", *rows]
+
+
+def _lead_time(event: RenderableEvent) -> str:
+    """` — coup d'envoi dans 13h07`, et ce que cet ecart traverse.
+
+    **C'est l'ecart au coup d'envoi qui compte, pas l'age du releve.** Huit
+    heures sur une qualification obscure ne bougent rien ; le meme ecart sur une
+    Supercoupe couvre l'annonce des compositions, et la moitie des prix avec.
+    L'heure seule laissait cette soustraction a faire, donc personne ne la
+    faisait.
+
+    Au football, la ligne dit en plus si le releve **precede la publication des
+    compositions** — `LINEUP_LEAD_MINUTES` avant le coup d'envoi, l'heure ou les
+    clubs publient et ou le marche se reajuste. C'est le seul moment nomme,
+    parce que c'est le seul qui deplace les prix a heure connue.
+
+    En dessous de `LEAD_TIME_MIN_MINUTES`, rien : un releve de dix minutes n'a
+    rien traverse, et l'ecrire ferait du bruit sur les blocs les plus frais.
+    """
+    if event.fetched_local is None:
+        return ""
+    ecart = event.commence_local - event.fetched_local
+    minutes = int(ecart.total_seconds() // 60)
+    if minutes < LEAD_TIME_MIN_MINUTES:
+        return ""
+    detail = f" — coup d'envoi dans {minutes // 60}h{minutes % 60:02d}"
+    if event.sport_key == "football" and minutes > LINEUP_LEAD_MINUTES:
+        detail += ", avant les compositions"
+    return detail
 
 
 def render_event(event: RenderableEvent) -> str:

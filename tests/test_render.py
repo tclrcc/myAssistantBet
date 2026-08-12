@@ -513,9 +513,54 @@ def test_donnee_indisponible_est_explicite() -> None:
 
 
 def test_entete_marches_porte_le_bookmaker_et_l_heure() -> None:
+    """L'heure seule laissait une soustraction a faire, donc personne ne la
+    faisait : huit heures d'ecart sur une qualification obscure ne bougent rien,
+    le meme ecart sur une affiche couvre l'annonce des compositions."""
     event = _event(markets={"h2h": [Outcome("Hacken", 2.55)]})
 
-    assert "MARCHES (Betclic, releve 08:12)" in render_event(event)
+    assert (
+        "MARCHES (Betclic, releve 08:12 — coup d'envoi dans 9h18, avant les compositions)"
+        in render_event(event)
+    )
+
+
+def test_un_releve_frais_ne_compte_pas_le_temps() -> None:
+    """Un releve de dix minutes n'a rien traverse, et l'ecrire ferait du bruit
+    sur les blocs les plus frais."""
+    event = _event(
+        markets={"h2h": [Outcome("Hacken", 2.55)]},
+        fetched_local=datetime(2026, 8, 3, 17, 22, tzinfo=PARIS),
+    )
+
+    assert "MARCHES (Betclic, releve 17:22)" in render_event(event)
+
+
+def test_un_releve_posterieur_aux_compositions_ne_le_dit_pas() -> None:
+    """C'est le seul moment nomme, parce que c'est le seul qui deplace les prix a
+    heure connue. Un releve qui l'a deja traverse n'a rien a signaler."""
+    event = _event(
+        markets={"h2h": [Outcome("Hacken", 2.55)]},
+        fetched_local=datetime(2026, 8, 3, 17, 0, tzinfo=PARIS),
+    )
+
+    entete = render_event(event).splitlines()[1]
+    assert "coup d'envoi dans 0h30" in entete
+    assert "avant les compositions" not in entete
+
+
+def test_les_compositions_ne_sont_nommees_qu_au_football() -> None:
+    """Au tennis il n'y a pas de onze a publier : la mention n'y decrirait
+    rien."""
+    event = _event(
+        sport_key="tennis",
+        home="Alcaraz",
+        away="Sinner",
+        markets={"h2h": [Outcome("Alcaraz", 1.4)]},
+    )
+
+    entete = render_event(event).splitlines()[1]
+    assert "coup d'envoi dans 9h18" in entete
+    assert "compositions" not in entete
 
 
 def test_entete_marches_sans_heure_connue() -> None:
