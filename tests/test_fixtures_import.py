@@ -16,7 +16,7 @@ from myassistantbet.main import app
 from myassistantbet.providers.apifootball import BASE_URL, APIFootballClient
 from myassistantbet.providers.oddsapi import OddsAPIClient
 from myassistantbet.services import coverage
-from myassistantbet.services.competitions import set_active
+from myassistantbet.services.competitions import create_apifootball, set_active
 from myassistantbet.services.enrich import build_estimate, run_enrich
 from myassistantbet.services.fixtures import (
     SOURCE,
@@ -179,6 +179,29 @@ async def test_une_competition_sans_ligue_rattachee_le_dit(
 
     assert report.error is not None
     assert "ligue" in report.note
+
+
+@respx.mock
+async def test_une_competition_hors_catalogue_importe_ses_matchs(
+    http_client: httpx.AsyncClient, migrated: Settings
+) -> None:
+    """Le cas que la Supercoupe d'Europe a revele : The Odds API ne la sert pas
+    « hors saison », il ne la connait **pas du tout**. Elle n'a donc aucune cle,
+    et c'est `create_apifootball` qui la cree — avec `api_active = 0` ecrit
+    explicitement, sans quoi la valeur par defaut de la colonne la ferait
+    refuser ici comme « deja servie par The Odds API »."""
+    competition_id = create_apifootball("Supercoupe d'Europe", "531", settings=migrated)
+    _mock_api()
+
+    report = await import_competition(
+        APIFootballClient(http_client, migrated), competition_id, migrated, now=NOW
+    )
+
+    assert report.served_elsewhere is False, "aucune cle Odds API : rien ne peut faire doublon"
+    assert report.created == 2
+    assert all(
+        row["source"] == SOURCE for row in db.query("SELECT source FROM events", settings=migrated)
+    )
 
 
 @respx.mock

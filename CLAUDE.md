@@ -332,6 +332,40 @@ chaque marche ajoute a `markets.py` sans l'etre a `render.py`.
     report d'horaire met la ligne a jour au lieu d'en creer une seconde.
   - `source = 'apifootball'`, distincte de `api` et de `manual` : savoir d'ou vient un
     match explique pourquoi il n'a pas de cotes, et evite de chercher une panne de scan.
+- **« Absente du catalogue » n'est pas « hors saison »**, et la confusion fermait le seul
+  chemin d'entree de toute une classe de competitions. Hors saison, le fournisseur connait
+  la competition et ne sert rien pour l'instant : elle figure dans `/sports`, la
+  synchronisation la cree, `api_active` passe a 0, et l'import de matchs se propose. Absente
+  du catalogue, elle n'y est **a aucun moment**. Mesure du 12/08/2026 : 175 cles servies,
+  dont 67 au football, et **aucune Supercoupe d'Europe** quand API-Football la sert sous la
+  ligue 531. Aucune synchronisation ne la decouvrira jamais.
+  - `competitions.create_apifootball()` est cette porte. Sans elle, le seul chemin etait
+    `manual.py`, qui cree une competition comme **effet de bord** d'un match saisi a la
+    main : sans identifiant de ligue, donc muette — ni classement, ni forme, ni absents —
+    et sans le bouton qui aurait ramene les matchs tout seuls.
+  - **`api_active = 0` s'ecrit explicitement.** La colonne vaut 1 par defaut et n'est
+    jamais mise a jour que par `sync_from_api`, qui s'indexe sur `oddsapi_key` : une
+    competition sans cle garderait 1 pour toujours, et `import_competition` la refuserait
+    comme « deja servie par The Odds API » — l'affirmation exactement inverse de la verite,
+    sur le seul bouton qui pouvait lui donner des matchs.
+  - **Elle est creee active**, contrairement a ce que la synchronisation decouvre. La regle
+    « rien ne se met a couter sans decision » protege le quota ; sa raison ne s'applique pas
+    ici, `scan.active_competitions` filtrant sur `oddsapi_key IS NOT NULL`. Et la creer
+    **est** la decision : elle se tape a la main, une par une.
+  - **L'identifiant de ligue est obligatoire**, la ou `set_apifootball_league` traite une
+    saisie illisible comme « non rattachee ». Le contraste est juste : la-bas l'effet est
+    une ligne de contexte absente, ici c'est une competition qui ne recevra jamais un seul
+    match, c'est-a-dire tout ce pour quoi on la cree. Il n'est pour autant jamais devine
+    d'un libelle, meme regle que partout ailleurs.
+  - Un libelle deja pris est **refuse**, casse et accents ignores (`labels.sort_key`) :
+    deux competitions au meme nom, l'une scannee et l'autre non, que rien ne distingue a
+    l'ecran, se partageraient les matchs. Le rattachement de l'existante se corrige au
+    tableau.
+  - La colonne « Servie ? » porte donc **trois** etats et non deux. Le troisieme se lisait
+    « manuelle », et le bouton d'import etait garde par la seule branche « hors saison » :
+    il ne s'affichait jamais la ou il est le seul chemin d'entree. Sa condition reprend
+    desormais mot pour mot les gardes de `import_competition` — un bouton qui propose ce
+    que le service refuse est pire qu'absent.
 - **Cotes de substitution** (`import_odds`) : pour un match dont aucun prix ne vient du
   book principal, un releve chez un book proche de Betclic. **Betclic n'est pas au
   catalogue d'API-Football** — il faut donc un substitut, et « proche » se mesure au lieu

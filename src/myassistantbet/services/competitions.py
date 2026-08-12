@@ -799,6 +799,103 @@ def set_apifootball_league(
     )
 
 
+# -- Competitions absentes du catalogue The Odds API --------------------------
+
+
+class CompetitionError(ValueError):
+    """Saisie refusee, avec un message lisible pour l'utilisateur."""
+
+
+def create_apifootball(
+    label: str, league_id: str, category: str = "", settings: Settings | None = None
+) -> int:
+    """Cree une competition de football que The Odds API ne connait **pas du tout**.
+
+    A ne pas confondre avec « hors saison » : une competition que le fournisseur
+    sert parfois figure au catalogue et arrive par la synchronisation, avec
+    `api_active = 0` en attendant ses cotes. Celles dont il est question ici n'y
+    figurent a aucun moment. Mesure du 12/08/2026 sur `/sports?all=true` : 175
+    cles dont 67 au football, et **aucune Supercoupe d'Europe** — quand
+    API-Football la sert sous la ligue 531. La synchronisation ne peut donc pas
+    la decouvrir, aujourd'hui ni jamais.
+
+    Sans cette porte, le seul chemin d'entree etait `manual.py`, qui cree une
+    competition comme **effet de bord** d'un match saisi a la main : sans
+    identifiant de ligue, donc muette — ni classement, ni forme, ni absents — et
+    sans le bouton d'import qui aurait ramene les matchs tout seuls.
+
+    Trois choix qui ne vont pas de soi :
+
+    - **`api_active = 0` est ecrit explicitement.** La colonne vaut 1 par
+      defaut et n'est jamais mise a jour que par la synchronisation, qui
+      s'indexe sur `oddsapi_key` : une competition sans cle garderait 1 pour
+      toujours, et `fixtures.import_competition` la refuserait comme « deja
+      servie par The Odds API » — l'affirmation exactement inverse de la verite.
+    - **Elle est creee active**, contrairement a ce que la synchronisation
+      decouvre. La regle « rien ne se met a couter sans decision » protege le
+      quota ; sa raison ne s'applique pas ici, `scan.active_competitions`
+      filtrant sur `oddsapi_key IS NOT NULL` — cette competition ne coutera
+      jamais un credit Odds API. Et la creer **est** la decision : elle se tape
+      a la main, une par une.
+    - **L'identifiant de ligue est obligatoire**, la ou `set_apifootball_league`
+      traite une saisie illisible comme « non rattachee ». Le contraste est
+      juste : la-bas l'effet est une ligne de contexte absente, ici c'est une
+      competition qui ne pourra jamais recevoir un seul match, c'est-a-dire tout
+      ce pour quoi on la cree. Il n'est pour autant **jamais devine** a partir
+      du libelle, meme regle que partout ailleurs.
+
+    Football seulement : `fixtures.py` est le seul fournisseur de matchs sans
+    cotes, et il refuse deja tout autre sport.
+    """
+    name = (label or "").strip()
+    if not name:
+        raise CompetitionError("Le nom de la compétition est obligatoire.")
+
+    raw = (league_id or "").strip()
+    if not raw.isdigit() or int(raw) <= 0:
+        raise CompetitionError(
+            "L'identifiant de ligue API-Football est obligatoire : sans lui, "
+            "aucun match ne peut être importé."
+        )
+
+    value = (category or "").strip().lower()
+    with connect(settings) as conn:
+        sport = conn.execute("SELECT id FROM sports WHERE key = 'football'").fetchone()
+        if sport is None:
+            raise CompetitionError("Sport « football » introuvable.")
+
+        # Meme cle naturelle que `manual._competition_id` — (sport, libelle) —
+        # et c'est ce qui evite le doublon le plus couteux : deux competitions
+        # au meme nom, l'une scannee et l'autre non, que rien ne distingue a
+        # l'ecran. On refuse plutot que d'ecraser une saisie existante ; le
+        # rattachement se corrige dans le tableau, champ par champ.
+        existing = conn.execute(
+            "SELECT id, label FROM competitions WHERE sport_id = ?", (sport["id"],)
+        ).fetchall()
+        for row in existing:
+            if sort_key(row["label"]) == sort_key(name):
+                raise CompetitionError(
+                    f"« {row['label']} » existe déjà : son rattachement et son niveau "
+                    "se corrigent dans le tableau."
+                )
+
+        cursor = conn.execute(
+            "INSERT INTO competitions (sport_id, oddsapi_key, label, priority, active, "
+            "                          api_active, apifootball_league_id, category) "
+            "VALUES (?, NULL, ?, 0, 1, 0, ?, ?)",
+            (sport["id"], name, int(raw), value if value in FOOTBALL_CATEGORIES else None),
+        )
+        competition_id = int(cursor.lastrowid)
+
+    logger.info(
+        "Competition hors catalogue creee : %s (ligue API-Football %s, niveau %s)",
+        name,
+        raw,
+        value if value in FOOTBALL_CATEGORIES else "non renseigne",
+    )
+    return competition_id
+
+
 async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None) -> SyncReport:
     """Aligne la table `competitions` sur le catalogue **complet** de The Odds API.
 

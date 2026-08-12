@@ -769,6 +769,13 @@ code {
 .manual-form .hint { color: var(--muted); font-weight: 400; font-size: 0.78rem; }
 .manual-form button { align-self: flex-start; }
 
+/* Creation d'une competition absente du catalogue The Odds API. Elle vit dans
+   un `details.panel`, qui porte deja son fond, sa bordure et son rembourrage :
+   ne declarer ici que la disposition, sinon le panneau prend deux cadres. */
+.competition-form { display: flex; gap: var(--s4); align-items: flex-end; flex-wrap: wrap; }
+.competition-form label { display: flex; flex-direction: column; gap: var(--s1); font-size: 0.85rem; }
+.competition-form input[name="apifootball_league_id"] { width: 7rem; }
+
 .mapping-form { display: flex; gap: var(--s4); align-items: flex-end; flex-wrap: wrap; }
 .mapping-form label { display: flex; flex-direction: column; gap: var(--s1); font-size: 0.85rem; }
 .mapping-form select { min-width: 260px; }

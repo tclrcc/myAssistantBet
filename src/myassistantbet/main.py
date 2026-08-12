@@ -590,6 +590,8 @@ def _competitions_context(
     report: object | None = None,
     elo_report: object | None = None,
     import_report: object | None = None,
+    error: str | None = None,
+    typed: dict[str, str] | None = None,
 ) -> dict[str, object]:
     settings = get_settings()
     return {
@@ -598,6 +600,10 @@ def _competitions_context(
         "report": report,
         "elo_report": elo_report,
         "import_report": import_report,
+        # Une saisie refusee revient avec son texte : retaper un libelle et un
+        # identifiant de ligue parce qu'un champ manquait est une punition.
+        "error": error,
+        "typed": typed or {},
         "surfaces": competitions_service.SURFACES,
         # Par sport : les niveaux du tennis et ceux du football ne se proposent
         # pas dans le meme menu, et la saisie refuse deja le melange.
@@ -628,6 +634,35 @@ async def competitions_sync(request: Request) -> HTMLResponse:
         logger.warning("Synchronisation impossible : %s", exc)
         report = None
     return templates.TemplateResponse(request, "_competitions.html", _competitions_context(report))
+
+
+@app.post("/competitions/apifootball", response_class=HTMLResponse)
+def competition_create(
+    request: Request,
+    label: str = Form(default=""),
+    apifootball_league_id: str = Form(default=""),
+    category: str = Form(default=""),
+) -> HTMLResponse:
+    """Cree une competition football absente du catalogue The Odds API.
+
+    La Supercoupe d'Europe n'y figure a aucun moment : la synchronisation ne
+    peut pas la decouvrir, et sans cette route elle n'entrait que comme effet de
+    bord d'une saisie manuelle, donc sans ligue rattachee ni import de matchs.
+    """
+    typed = {
+        "label": label,
+        "apifootball_league_id": apifootball_league_id,
+        "category": category,
+    }
+    try:
+        competitions_service.create_apifootball(
+            label, apifootball_league_id, category, get_settings()
+        )
+    except competitions_service.CompetitionError as exc:
+        return templates.TemplateResponse(
+            request, "_competitions.html", _competitions_context(error=str(exc), typed=typed)
+        )
+    return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
 
 
 @app.post("/competitions/{competition_id}/active", response_class=HTMLResponse)

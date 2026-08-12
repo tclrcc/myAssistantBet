@@ -22,6 +22,7 @@ from myassistantbet.services.competitions import (
     COMPETITION_NOTES,
     SPORT_PREFIXES,
     categories_for,
+    create_apifootball,
     list_all,
     set_active,
     set_apifootball_league,
@@ -514,8 +515,10 @@ def test_le_selecteur_de_niveau_sert_les_sports_qui_ont_une_taxonomie(client: Te
 
     assert "Masters 1000" in page
     assert "1re division — top 5" in page
+    # Sur `class="niveau"` et non sur `name="category"` : le formulaire de
+    # creation en porte un aussi, et il ne decrit aucune competition existante.
     assert (
-        page.count('name="category"')
+        page.count('class="niveau"')
         == db.query_one(
             "SELECT COUNT(*) AS n FROM competitions c JOIN sports s ON s.id = c.sport_id "
             "WHERE s.key IN ('tennis', 'football')"
@@ -924,3 +927,139 @@ def test_les_fiches_manquantes_sont_affichees(
 
     assert "compétition(s) sans fiche" in page
     assert "active, jamais analysée" in page
+
+
+# -- Competitions absentes du catalogue The Odds API --------------------------
+
+
+def test_une_competition_hors_catalogue_est_creee_prete_a_servir(migrated: Settings) -> None:
+    """La Supercoupe d'Europe ne figure a **aucun moment** au catalogue The Odds
+    API — 175 cles servies le 12/08/2026, dont 67 au football, et pas celle-la —
+    quand API-Football la sert sous la ligue 531. La synchronisation ne peut donc
+    pas la decouvrir, et sans cette porte elle n'entrait que comme effet de bord
+    d'une saisie manuelle, sans ligue rattachee."""
+    competition_id = create_apifootball(
+        "Supercoupe d'Europe", "531", "coupe_continentale", migrated
+    )
+
+    row = db.query_one(
+        "SELECT oddsapi_key, apifootball_league_id, active, api_active, category "
+        "FROM competitions WHERE id = ?",
+        (competition_id,),
+        settings=migrated,
+    )
+    assert row["oddsapi_key"] is None, "le fournisseur de cotes n'a pas de cle pour elle"
+    assert row["apifootball_league_id"] == 531
+    assert row["active"] == 1, "la creer est la decision ; elle ne coute aucun credit"
+    assert row["category"] == "coupe_continentale"
+
+
+def test_une_competition_hors_catalogue_est_declaree_non_servie(migrated: Settings) -> None:
+    """`api_active` vaut 1 par defaut et n'est jamais mis a jour que par la
+    synchronisation, qui s'indexe sur `oddsapi_key`. Sans ecriture explicite, une
+    competition sans cle garderait 1 pour toujours et `import_competition` la
+    refuserait comme « deja servie par The Odds API » — l'inverse de la verite."""
+    competition_id = create_apifootball("Supercoupe d'Europe", "531", settings=migrated)
+
+    row = db.query_one(
+        "SELECT api_active FROM competitions WHERE id = ?", (competition_id,), settings=migrated
+    )
+    assert row["api_active"] == 0
+
+
+def test_une_competition_hors_catalogue_n_est_jamais_scannee(migrated: Settings) -> None:
+    """Active, mais gratuite : le scan ne visite que ce qui porte une cle. C'est
+    ce qui rend l'activation d'office defendable, la ou une competition
+    decouverte au catalogue arrive inactive pour proteger le quota."""
+    create_apifootball("Supercoupe d'Europe", "531", settings=migrated)
+
+    labels = [row["label"] for row in active_competitions(migrated)]
+
+    assert "Supercoupe d'Europe" not in labels
+
+
+def test_un_identifiant_de_ligue_illisible_est_refuse(migrated: Settings) -> None:
+    """Contraste assume avec `set_apifootball_league`, ou une saisie illisible
+    vaut « non rattachee » : la-bas l'effet est une ligne de contexte absente,
+    ici c'est une competition qui ne recevra jamais un seul match."""
+    with pytest.raises(competitions_module.CompetitionError, match="obligatoire"):
+        create_apifootball("Supercoupe d'Europe", "cinq cent trente et un", settings=migrated)
+
+    assert (
+        db.query_one(
+            "SELECT COUNT(*) AS n FROM competitions WHERE label = 'Supercoupe d''Europe'",
+            settings=migrated,
+        )["n"]
+        == 0
+    )
+
+
+def test_un_nom_vide_est_refuse(migrated: Settings) -> None:
+    with pytest.raises(competitions_module.CompetitionError):
+        create_apifootball("   ", "531", settings=migrated)
+
+
+def test_un_nom_deja_pris_est_refuse(migrated: Settings) -> None:
+    """Deux competitions au meme nom, l'une scannee et l'autre non, que rien ne
+    distingue a l'ecran : c'est le doublon le plus couteux, et il partagerait les
+    matchs entre les deux. La casse et les accents ne font pas deux noms."""
+    create_apifootball("Supercoupe d'Europe", "531", settings=migrated)
+
+    with pytest.raises(competitions_module.CompetitionError, match="existe déjà"):
+        create_apifootball("SUPERCOUPE D'EUROPE", "531", settings=migrated)
+
+
+def test_un_nom_deja_porte_par_le_catalogue_est_refuse(migrated: Settings) -> None:
+    """Meme raison : rien ne distinguerait la copie de l'originale, et l'une des
+    deux serait scannee. Le rattachement de l'existante se corrige au tableau."""
+    with pytest.raises(competitions_module.CompetitionError, match="existe déjà"):
+        create_apifootball("Premier League", "39", settings=migrated)
+
+
+def test_un_niveau_inconnu_a_la_creation_vaut_non_renseigne(migrated: Settings) -> None:
+    """Meme regle que `set_category` : l'effet est une ligne de moins dans les
+    statistiques, jamais une creation refusee. Et la taxonomie est celle du
+    football — « Masters 1000 » sur une coupe d'Europe n'a aucun sens."""
+    competition_id = create_apifootball("Supercoupe d'Europe", "531", "masters_1000", migrated)
+
+    row = db.query_one(
+        "SELECT category FROM competitions WHERE id = ?", (competition_id,), settings=migrated
+    )
+    assert row["category"] is None
+
+
+def test_creation_via_htmx(client: TestClient, isolated_settings: Settings) -> None:
+    response = client.post(
+        "/competitions/apifootball",
+        data={"label": "Supercoupe d'Europe", "apifootball_league_id": "531"},
+    )
+
+    assert response.status_code == 200
+    assert "<html" not in response.text, "une route ciblee par HTMX rend le fragment"
+    assert "Supercoupe d&#39;Europe" in response.text or "Supercoupe d'Europe" in response.text
+
+
+def test_une_saisie_refusee_revient_avec_son_texte(client: TestClient) -> None:
+    """Retaper un libelle parce qu'un champ manquait est une punition."""
+    response = client.post(
+        "/competitions/apifootball",
+        data={"label": "Supercoupe d'Europe", "apifootball_league_id": ""},
+    )
+
+    page = " ".join(response.text.split())
+    assert "obligatoire" in page
+    assert 'value="Supercoupe d&#39;Europe"' in page
+
+
+def test_une_competition_hors_catalogue_propose_l_import(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Le bouton d'import etait garde par la seule branche « hors saison », donc
+    jamais rendu sur une competition sans cle : elle se lisait « manuelle » et
+    n'avait plus aucun chemin d'entree pour ses matchs."""
+    create_apifootball("Supercoupe d'Europe", "531", settings=isolated_settings)
+
+    page = " ".join(client.get("/competitions").text.split())
+
+    assert "hors catalogue" in page
+    assert "importer les matchs" in page

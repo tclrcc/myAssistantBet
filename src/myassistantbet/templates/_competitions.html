@@ -160,6 +160,56 @@
     </form>
   </div>
 
+  {# « Absente du catalogue » n'est pas « hors saison » : une compétition que le
+     fournisseur sert parfois y figure et arrive par la synchronisation. Celles
+     visées ici n'y sont à aucun moment — 175 clés servies le 12/08/2026, dont
+     67 au football, et aucune Supercoupe d'Europe quand API-Football la sert.
+     Sans cette porte, elles n'entraient que comme effet de bord d'une saisie
+     manuelle : donc sans ligue rattachée, donc muettes, et sans le bouton qui
+     ramène leurs matchs. #}
+  <details class="panel" {% if error %}open{% endif %}>
+    <summary>
+      Ajouter une compétition absente du catalogue
+      <span class="muted small">
+        servie par API-Football seule — aucun crédit Odds API, jamais scannée
+      </span>
+    </summary>
+    {% if error %}<div class="report report-warn">{{ error }}</div>{% endif %}
+    <form class="competition-form" hx-post="/competitions/apifootball"
+          hx-target="#competitions" hx-swap="outerHTML">
+      <label>
+        Nom
+        <input type="text" name="label" required spellcheck="false"
+               placeholder="Supercoupe d'Europe" value="{{ typed.get('label', '') }}">
+      </label>
+      <label>
+        Ligue API-Football
+        {# Obligatoire ici, contrairement au champ du tableau : sans elle, la
+           compétition ne pourra jamais recevoir un seul match — c'est-à-dire
+           tout ce pour quoi on la crée. Jamais devinée d'un libellé. #}
+        <input type="text" inputmode="numeric" name="apifootball_league_id" required
+               placeholder="531" value="{{ typed.get('apifootball_league_id', '') }}">
+      </label>
+      <label>
+        Niveau
+        <select name="category">
+          <option value="">Niveau —</option>
+          {% for key, label in categories.get('football', {}).items() %}
+          <option value="{{ key }}" {% if typed.get('category') == key %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="button">Créer</button>
+    </form>
+    <p class="muted small">
+      Football seulement : API-Football est le seul fournisseur de matchs sans cotes.
+      La compétition est créée <b>active</b> — elle ne coûte rien, le scan ne visite que
+      ce qui porte une clé Odds API — et ses matchs s'importent depuis la colonne
+      « Servie ? ». Ils arrivent <b>sans cotes</b> : elles se relèvent ou se saisissent
+      depuis la fiche de chaque match.
+    </p>
+  </details>
+
   <table class="board">
     <thead>
       <tr>
@@ -216,28 +266,41 @@
           {% endif %}
         </td>
         <td class="small">
+          {# Trois etats, pas deux, et le troisieme se lisait « manuelle » : une
+             competition sans cle Odds API peut etre **absente du catalogue** —
+             la Supercoupe d'Europe n'y figure a aucun moment — et porter
+             pourtant une ligue API-Football, donc des matchs a importer. Sans
+             cette distinction, le bouton ne s'affichait jamais la ou il est le
+             seul chemin d'entree. #}
           {% if not competition.oddsapi_key %}
-            <span class="muted">manuelle</span>
+            {% if competition.apifootball_league_id %}
+              <span class="badge warn" title="The Odds API ne sert pas cette compétition du tout : ses matchs viennent d'API-Football, sans cotes">hors catalogue</span>
+            {% else %}
+              <span class="muted">manuelle</span>
+            {% endif %}
           {% elif competition.api_active %}
             <span class="badge ok" title="L'API sert des cotes en ce moment">oui</span>
           {% else %}
             <span class="badge warn" title="Hors saison ou pas encore ouverte : l'activer d'avance ne coûte rien, une réponse vide n'est pas facturée">hors saison</span>
-            {# Le seul cas ou l'import a un sens : The Odds API ne sert rien, et
-               API-Football connait les matchs. Proposer le bouton sur une
-               competition deja servie inviterait a creer des doublons que rien
-               ne saurait rapprocher — « KFUM » et « KFUM Oslo » sont deja
-               au-dessus du seuil de rapprochement automatique. #}
-            {% if competition.active and competition.apifootball_league_id %}
-              <form hx-post="/competitions/{{ competition.id }}/fixtures"
-                    hx-target="#competitions" hx-swap="outerHTML"
-                    hx-indicator="#import-{{ competition.id }}">
-                <button type="submit" class="link-action"
-                        title="Importer les matchs depuis API-Football, sans cotes">
-                  importer les matchs
-                </button>
-                <span id="import-{{ competition.id }}" class="htmx-indicator">…</span>
-              </form>
-            {% endif %}
+          {% endif %}
+          {# Le seul cas ou l'import a un sens : The Odds API ne sert rien, et
+             API-Football connait les matchs. Proposer le bouton sur une
+             competition deja servie inviterait a creer des doublons que rien
+             ne saurait rapprocher — « KFUM » et « KFUM Oslo » sont deja
+             au-dessus du seuil de rapprochement automatique. La condition
+             reprend mot pour mot les gardes de `fixtures.import_competition` :
+             un bouton qui propose ce que le service refuse est pire qu'absent. #}
+          {% if competition.active and competition.sport_key == 'football'
+                and competition.apifootball_league_id and not competition.api_active %}
+            <form hx-post="/competitions/{{ competition.id }}/fixtures"
+                  hx-target="#competitions" hx-swap="outerHTML"
+                  hx-indicator="#import-{{ competition.id }}">
+              <button type="submit" class="link-action"
+                      title="Importer les matchs depuis API-Football, sans cotes">
+                importer les matchs
+              </button>
+              <span id="import-{{ competition.id }}" class="htmx-indicator">…</span>
+            </form>
           {% endif %}
         </td>
         {# Sans identifiant de ligue, aucun contexte n'est demande et la
