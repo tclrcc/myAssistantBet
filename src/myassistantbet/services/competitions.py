@@ -769,6 +769,12 @@ APIFOOTBALL_LEAGUES: dict[str, int] = {
     "soccer_uefa_europa_league": 3,
     "soccer_uefa_nations_league": 5,
     "soccer_usa_mls": 253,
+    # Verifie le 12/08/2026 : `/leagues?search=Leagues Cup` rend **une** ligne,
+    # « Leagues Cup », type Cup, pays « World », saison 2026 en cours. Le
+    # fournisseur y annonce `standings: false` et `injuries: false` — le bloc
+    # portera donc la forme, les confrontations et le lieu, et dira lui-meme ce
+    # qu'il n'a pas.
+    "soccer_concacaf_leagues_cup": 772,
 }
 
 

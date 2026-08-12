@@ -967,6 +967,32 @@ async def test_un_stade_sans_identifiant_est_quand_meme_nomme(
     )
 
 
+@respx.mock
+@pytest.mark.anyio
+async def test_une_competition_sans_ligue_ne_declenche_aucun_appel(
+    api_client: APIFootballClient, migrated: Settings
+) -> None:
+    """**Un credit depense pour un message qui decrit le fournisseur.** Sans
+    identifiant de ligue, `/leagues` part avec un `id` vide et rend une erreur
+    applicative en HTTP 200 : « id: The Id field cannot be empty ». La fiche d'un
+    match affichait cela tel quel, la ou la cause se corrige en une saisie.
+
+    Vu sur une nuit de Leagues Cup : sept matchs a zero ligne de contexte, et le
+    bouton d'un match seul ne disait pas pourquoi. L'enrichissement d'une
+    session, lui, se gardait deja par `context_possible` — ce chemin-la n'avait
+    aucun garde-fou.
+
+    Le test ne simule **aucune route** : le moindre appel le ferait echouer."""
+    _seed_event(migrated)
+
+    report = await fetch_context(api_client, {**EVENT, "apifootball_league_id": None}, migrated)
+
+    assert report.kinds == []
+    assert len(report.errors) == 1
+    assert "non rattachee" in report.errors[0]
+    assert "/competitions" in report.errors[0], "la ligne doit dire ou se corrige la cause"
+
+
 def _geo(candidats: list[dict[str, Any]]) -> respx.Route:
     """Le geocodeur Open-Meteo : gratuit, sans cle, et sans quota."""
     return respx.get(f"{GEOCODING_URL}/v1/search").mock(

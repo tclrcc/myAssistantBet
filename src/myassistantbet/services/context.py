@@ -733,6 +733,21 @@ async def fetch_context(
     cache = cache if cache is not None else {}
     report = ContextReport(event_id=int(event["id"]), label=f"{event['home']} – {event['away']}")
 
+    if not event.get("apifootball_league_id"):
+        # **Sans identifiant de ligue il n'y a rien a demander, et l'appel partait
+        # quand meme.** `/leagues` sans `id` rend une erreur applicative en HTTP
+        # 200 — « id: The Id field cannot be empty » — donc un credit depense pour
+        # un message qui decrit le fournisseur au lieu de decrire le manque.
+        # L'enrichissement d'une session, lui, se gardait deja par
+        # `context_possible` : c'est le bouton d'un match seul qui tombait
+        # dedans, et le rapport disait « rien n'a pu etre recupere » sans dire
+        # que la cause se corrige en une saisie.
+        report.errors.append(
+            "competition non rattachee a une ligue API-Football : aucun contexte n'est "
+            "possible, et rien n'a ete appele. Le rattachement se saisit depuis /competitions."
+        )
+        return report
+
     try:
         mapping = await resolve_fixture(client, event, settings, cache)
     except ProviderError as exc:

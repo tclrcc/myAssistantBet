@@ -662,6 +662,16 @@ def test_la_correspondance_evite_les_pieges_du_rapprochement_par_libelle() -> No
     assert APIFOOTBALL_LEAGUES["soccer_usa_mls"] == 253, "pas la Coupe de Malaisie (499)"
 
 
+def test_la_leagues_cup_est_rattachee() -> None:
+    """Sept matchs d'une nuit de Leagues Cup sortaient a **0 ligne de contexte**,
+    et le bouton d'un match seul rendait « id: The Id field cannot be empty » —
+    le fournisseur decrit a la place du manque.
+
+    Verifie le 12/08/2026 : `/leagues?search=Leagues Cup` rend une seule ligne,
+    type Cup, pays « World », saison 2026 en cours."""
+    assert APIFOOTBALL_LEAGUES["soccer_concacaf_leagues_cup"] == 772
+
+
 def test_les_qualifications_europeennes_pointent_sur_leur_competition() -> None:
     """API-Football sert les tours preliminaires sous la competition elle-meme
     (`round = "3rd Qualifying Round"`) : il n'existe pas d'identifiant distinct
