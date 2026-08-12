@@ -1230,6 +1230,58 @@ Donc, avant d'ecrire une comparaison de chaines : ouvrir une reponse reelle et c
 l'identifiant. S'il existe, c'est lui. S'il n'existe pas, l'ecrire dans le commentaire —
 avec la date de la verification.
 
+**Et la version la plus couteuse de cette regle : la donnee est parfois deja la, calculee
+et rendue, et c'est le code qui ne s'en sert pas.** Le bloc du 12/08 se contredisait a
+quatre lignes d'ecart — `Tour : 32e de finale`, puis `le debut du tableau nous echappe`.
+`truncated()` produisait le signal qui demontait l'etiquette, et rien ne l'opposait a
+elle. Il n'y avait aucune information a aller chercher : il y avait deux sorties du meme
+module qui ne se parlaient pas. Le lecteur non plus ne l'a pas vu — un diagnostic entier
+a ete bati sur la premiere ligne alors que la seconde la dementait deja.
+
+Donc, quand une ligne parait fausse : chercher d'abord si le bloc ne porte pas **deja**
+le fait qui la contredit. Deux sorties d'un meme calcul doivent etre opposees l'une a
+l'autre dans le code, jamais laissees a l'oeil.
+
+## Quand une information n'est pas servie, chercher ce que la question voulait savoir
+
+**Troisieme fois que la mesure fait mieux que la specification, et c'est un motif.** La
+demande etait : « la ligne `Tour` doit dire qu'on est en qualification, nommer la phase,
+le tour dans cette phase, et ce que le vainqueur obtient ». Aucune source ne sert la
+phase — verifie, six champs pour zero credit. La reponse litterale aurait donc ete un
+silence, ou pire une deduction inventee.
+
+Ce qui a marche est d'avoir repris la **question** plutot que la source : ce qu'il fallait
+savoir n'etait pas « qualification, tour final », c'etait **ou en est ce joueur dans ce
+tournoi ce soir**. `Fraicheur` y repond directement — `entre en lice` contre `1 non
+compte` separe les entrants de ceux qui ont deja joue le jour meme — sans nommer quoi que
+ce soit d'invérifiable. Le vocabulaire de la phase etait une hypothese sur le chemin, pas
+le besoin.
+
+Les deux precedents sont de la meme forme : l'historique de cartons par arbitre, remplace
+par le nom seul qui epargne une requete sur deux ; le score du tour precedent au tennis,
+introuvable en automatique, remplace par la demande explicite en tete de fiche de
+recherche. Dans les trois cas, une source manquante a ete traitee comme une question mal
+posee plutot que comme un trou a combler.
+
+## Tout ajout au preambule budgete sa propre coupe
+
+Le socle commun sature : le lot de reference football tient a **7 tokens** de son plafond,
+et le lot mixte a franchi le sien pendant ce chantier (10 086 pour 10 000). Le plafond n'a
+pas bouge — c'est la regle — mais la coupe a ete trouvee **apres coup**, trois fois de
+suite : sur `Repos` ce soir, sur `Arbitre` / `Meteo` / `Lieu` avant. Autant que ce soit la
+procedure.
+
+- **La coupe se mesure avant d'ecrire**, pas quand le test casse, et elle se prend dans le
+  **plus ancien mode d'emploi de la meme famille** — celui qui a eu le plus d'occasions
+  d'accumuler de l'explication.
+- **La frontiere est fine, et deux garde-fous l'ont prouvee** en mordant sur le premier
+  resserrement : « journees de tournoi et non dates civiles » et « en parallele et non a
+  la place » ressemblent a des explications et sont des **conventions de lecture**. Leur
+  perte ne casse rien — elle fait lire une ligne de travers, ce qui est pire.
+- D'ou la question a se poser ligne par ligne : **est-ce que ceci change ce que le lecteur
+  fait de la donnee** ? Si oui, ca reste, meme long. Si ca explique seulement *pourquoi*
+  la donnee est ainsi, ca descend ici.
+
 ## Un drapeau booleen ne se construit pas sur un champ dont on a mesure qu'il ment
 
 **Regle de revue, de la meme famille que « cherchez l'identifiant » et tiree du meme
@@ -1781,6 +1833,33 @@ finale » a 22:15. L'etiquette suivait l'avancement de nos scans.
   pas le match. Ce qui ne doit pas bouger est le **tour**, et c'est ce que le
   test verifie sur les deux populations reelles de la soiree — 34 puis 76.
 
+### Compter les tours depuis le debut : mesure, et resultat negatif
+
+Piste evidente pour recuperer ce que le garde-fou fait perdre : `Parcours`
+compte les tours deja joues, donc `5e match du joueur dans ce tournoi` se
+deduirait **sans aucune taille de tableau** — et c'est la convention qu'il
+faudrait en qualification, ou il n'y a pas de finale. Mesure sur les 406 blocs
+de tennis archives, avant d'ecrire une ligne :
+
+| Etat du bloc | Part | Ce qu'un compte y vaudrait |
+| --- | --- | --- |
+| sans `Parcours`, vue complete | 70 % | « 1er match », que `Fraicheur` dit deja |
+| `Parcours`, vue complete | 18 % | sur, mais le tour s'y nomme deja |
+| `Parcours`, vue tronquee | 8 % | un plancher, pas un compte |
+| sans `Parcours`, vue tronquee | 4 % | rien |
+
+- **La troncature ne tombe pas au hasard : elle tombe exactement sur les blocs
+  que la ligne devait servir.** Le quart de finale du Canadian Open — le cas qui
+  a fait naitre l'idee — est dans la ligne « vue tronquee » : ses joueurs
+  affichent 3 adversaires chacun, ce qui est un plancher pour un non tete de
+  serie. La piste **ne rattrape pas le cas pour lequel elle est proposee**.
+- **Et la ou elle serait sure, le tour se nomme deja** : « vue complete » est
+  exactement la condition qui autorise le comptage depuis la fin. Remplacer
+  « quart de finale » par « 4e match du joueur » y perdrait de l'information.
+- Le critere d'arret pose d'avance — « tronque plus d'une fois sur deux, ne rien
+  faire » — n'aurait pas suffi : la troncature vaut 29 % des blocs a `Parcours`.
+  C'est sa **correlation** avec le besoin, et non sa frequence, qui tranche.
+
 ## Le tour d'un match de tennis (`services/tennis_round.py`)
 
 Aucune source ne le donne. The Odds API ne transmet pas le tour, et `tennisdata.co.uk`
@@ -2262,6 +2341,12 @@ d'enrichissement pour ne rien rapporter, sans que rien ne le signale avant le pr
   `H2H ici` au tennis. Sans quoi chaque match paraitrait pauvre pour de mauvaises raisons.
   `Stats match` en est exclue pour une raison de plus : c'est une ligne **negative**, et la
   compter recompenserait une absence.
+- **Le critere n'est pas « la ligne porte-t-elle un fait sur le match » mais « la ligne
+  change-t-elle le comportement du lecteur ».** `Tour : phase non renseignee (83 joueurs
+  vus)` envoie verifier le tableau soi-meme, exactement comme `Absents : non interroges`
+  designe la recherche comme seul chemin : les deux passent le test et comptent donc.
+  Distinguer les etats « non etablis » demanderait un mecanisme pour une difference qui ne
+  change rien a ce qui est fait ensuite — de la mecanique sans lecteur.
 - **Une ligne hors referentiel ne fait pas monter la densite** au-dessus de son plafond :
   `Aller` est un bonus, pas un du.
 - Le rapprochement passe par `context_family` : « H2H (5) » et « H2H (1) » sont la meme
