@@ -68,6 +68,9 @@ CONTEXT_ICONS = {
     "Forme": "courbe",
     "Dom/Ext": "stade",
     "Entraineur": "personne",
+    # L'arbitre : meme signe que l'entraineur — une personne dont les habitudes
+    # changent la lecture d'un match, pas une statistique d'equipe.
+    "Arbitre": "personne",
     "Buts marq.": "football",
     "Buts pris": "bouclier",
     "Clean sheet": "bouclier",
@@ -180,6 +183,10 @@ CONTEXT_EXPECTED: dict[str, tuple[str, ...]] = {
         # match dont le lieu a ete recupere, y compris pour dire qu'il est
         # inconnu. L'exclure sous-estimerait la densite d'un bloc complet.
         "Lieu",
+        # Servi sur 209 des 210 matchs d'une saison de Conference League :
+        # systematique, donc au referentiel. Il n'y manquera que sur une
+        # designation qui n'est pas tombee, ce que la ligne dit alors.
+        "Arbitre",
         "Classement",
         "Enjeu",
         "Forme 5",

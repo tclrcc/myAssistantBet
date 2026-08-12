@@ -2207,3 +2207,68 @@ async def test_un_aller_sans_stade_nomme_ne_change_pas_la_ligne(
     _h2h(migrated, jours=7, buts=(2, 0))
 
     assert _lines(migrated)["Aller"] == "0-2 le 27/07, Djurgardens IF recevait"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_l_arbitre_est_nomme_sans_un_appel_de_plus(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Un marche Cartons est servi sur une partie des blocs sans qu'aucune ligne
+    ne permette de le lire. Le nom vient du match deja resolu : il ne coute rien,
+    et il supprime une requete sur deux — sans lui, il fallait chercher **qui**
+    arbitre avant de chercher son historique."""
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert _lines(migrated)["Arbitre"] == "M. Oliver"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_designation_qui_n_est_pas_tombee_se_dit(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Deux etats a distinguer, et ils appellent deux comportements opposes : un
+    arbitre non designe ne se cherche pas, il s'attend. Un arbitre nomme, si."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    matchs = load_fixture("apifootball_fixtures_date.json")
+    matchs["response"][0]["fixture"]["referee"] = None
+    routes["fixtures_date"].mock(
+        return_value=httpx.Response(200, json=matchs, headers=RATE_HEADERS)
+    )
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert _lines(migrated)["Arbitre"] == "non encore designe"
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_preambule_fait_de_l_absence_d_historique_un_fait(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """« Aucun historique dans cette confederation » est une caracteristique du
+    match, pas un echec de recherche : l'arbitre somalien d'une Supercoupe
+    dirigeait son premier match en Europe, et ce fait a fini en section F comme
+    un manque au lieu d'y etre porte comme un trait de la rencontre."""
+    from myassistantbet.services import board as board_service
+    from myassistantbet.services.prompt import build_prompt
+
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+    await fetch_context(api_client, EVENT, migrated)
+    session_id = board_service.toggle_selection(1, True, migrated)
+
+    corps = " ".join(
+        build_prompt(
+            session_id, settings=migrated, now=datetime(2026, 8, 3, 12, tzinfo=UTC)
+        ).body.split()
+    )
+
+    assert "**économie de recherche, pas un fait**" in corps
+    assert "à écrire en section A comme telle et non en section F comme un manque" in corps
+    assert "ne cherche pas, la désignation n'est pas tombée" in corps

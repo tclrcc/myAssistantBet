@@ -425,9 +425,9 @@ def test_la_shortlist_affiche_la_densite(client: TestClient, isolated_settings: 
     page = " ".join(client.get(f"/session/{session_id}").text.split())
 
     assert "<th>Contexte</th>" in page
-    # 25 depuis que « Lieu » a cesse d'etre conditionnelle : elle se rend sur
-    # tout match dont le lieu a ete recupere, y compris pour le dire inconnu.
-    assert "0/25" in page
+    # 26 : « Lieu » a cesse d'etre conditionnelle, et « Arbitre » l'a rejointe —
+    # servie sur 209 des 210 matchs d'une saison de Conference League.
+    assert "0/26" in page
 
 
 def test_un_enrichissement_vide_est_annonce(

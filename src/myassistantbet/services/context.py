@@ -129,6 +129,7 @@ KIND_H2H = "h2h"
 KIND_RECENT = "recent"
 KIND_PROFILE = "profile"
 KIND_VENUE = "venue"
+KIND_REFEREE = "referee"
 KIND_LINEUPS = "lineups"
 KIND_MAPPING = "mapping_pending"
 KIND_MANUAL_NOTE = "manual_note"
@@ -234,9 +235,14 @@ class FixtureMapping:
     #: vide ne dit rien tant qu'on ignore si la donnee existe : `injuries:
     #: false` transforme « aucun absent » en « donnee non disponible ».
     coverage: dict[str, Any] = field(default_factory=dict)
-    #: Stade du match, tel que le fournisseur le donne. Sans identifiant
-    #: exploitable, mais avec sa ville — de quoi voir une delocalisation.
+    #: Stade du match, tel que le fournisseur le donne. Il **porte un
+    #: identifiant** — verifie le 12/08/2026 sur `/teams` et `/fixtures` — et
+    #: c'est lui qui sert a voir une delocalisation, jamais le nom de la ville.
     venue: dict[str, Any] = field(default_factory=dict)
+    #: Arbitre designe, **nom seul**. Verifie le 12/08/2026 : `fixture.referee`
+    #: est une chaine libre, sans identifiant et sans pays — « M. Oliver ». Vide
+    #: quand la designation n'est pas tombee.
+    referee: str = ""
 
 
 async def _memoized(cache: dict[str, Any], key: str, coroutine_factory: Any) -> Any:
@@ -306,6 +312,7 @@ async def resolve_fixture(
         away_id=away.matched.apifootball_id,
         coverage=coverage,
         venue=(fixture.get("fixture") or {}).get("venue") or {},
+        referee=str((fixture.get("fixture") or {}).get("referee") or "").strip(),
     )
     # Memorise pour tout ce qui se recupere par equipe. Volontairement absent de
     # `report.kinds` : ce n'est pas un contexte recupere, c'est le moyen d'en
@@ -778,6 +785,14 @@ async def fetch_context(
             report.kinds.append(KIND_VENUE)
     except ProviderError as exc:
         report.errors.append(f"lieu : {exc}")
+
+    # L'arbitre : **aucun appel**, le nom vient du match deja resolu. Il ne
+    # devient une ligne que parce qu'un marche Cartons est servi sur une partie
+    # des blocs sans que rien ne permette de le lire — et parce que chercher
+    # « qui arbitre X - Y » coutait une requete avant meme de chercher son
+    # historique.
+    store(report.event_id, KIND_REFEREE, {"name": mapping.referee}, settings)
+    report.kinds.append(KIND_REFEREE)
 
     # Profil corners et cartons, sur les memes matchs recents. Le prompt
     # proposait des lignes de corners sans rien savoir de ce qu'une equipe en
@@ -1642,6 +1657,10 @@ def context_lines(
         if surface and "grass" not in surface:
             lines.append(("Pelouse", SURFACE_LABELS.get(surface, surface)))
 
+    arbitre = data.get(KIND_REFEREE)
+    if arbitre is not None:
+        lines.append(("Arbitre", _referee_line(arbitre)))
+
     profile = data.get(KIND_PROFILE) or {}
     if profile and not profile.get("available", True):
         # Le fournisseur ne sert pas les statistiques de match sur cette
@@ -1937,6 +1956,33 @@ def _venue_line(venue: dict[str, Any], home: str) -> str:
         f"{lieu}{_country_tag(venue.get('country'))} — {NEUTRAL_MARK}, "
         f"{home} recoit hors de son pays"
     )
+
+
+def _referee_line(payload: dict[str, Any]) -> str:
+    """`M. Oliver`, ou `non encore designe`. Deux etats, et pas trois.
+
+    **Le nom seul, parce que c'est tout ce que le fournisseur sert.** Verifie le
+    12/08/2026 : `fixture.referee` est une chaine libre — pas d'identifiant, pas
+    de pays, et pas de format stable (64 des 183 arbitres d'une saison de
+    Conference League s'ecrivent « X. Nom », les autres non).
+
+    **Un historique de cartons n'est donc pas reconstructible a cout
+    raisonnable** : il faudrait agreger sur le libelle — « M. Oliver » et
+    « Michael Oliver » seraient deux arbitres — puis un appel de statistiques
+    **par match passe**. Et le compte de matchs diriges, lui, serait du decor :
+    sur une saison de Conference League, **157 arbitres sur 183 n'en ont qu'un**,
+    donc la ligne dirait « premier match » sur presque tous les blocs.
+
+    Ce qui reste vaut quand meme le coup, et c'est mesure : sans cette ligne, il
+    fallait une requete pour savoir **qui** arbitre avant d'en chercher une
+    seconde sur son historique. Le nom en supprime une sur deux.
+
+    Le troisieme etat — « aucun historique dans cette confederation » — n'est
+    pas rendu ici parce qu'il ne se constate pas d'ici : c'est un **resultat de
+    recherche**, et le preambule dit que c'en est un valable.
+    """
+    nom = (payload.get("name") or "").strip()
+    return nom or "non encore designe"
 
 
 def _profile_suffix(profile: dict[str, Any]) -> str:

@@ -1084,6 +1084,41 @@ scannes les jours d'avant. Aucun appel, aucune cle, aucun quota.
   - **Un forfait s'y lisait comme un match joue**, et documenter le defaut ne le corrigeait
     pas. Voir la section suivante.
 
+## L'arbitre : le nom seul, et pourquoi il n'y a rien d'autre
+
+Un marche Cartons est servi sur une partie des blocs sans qu'aucune ligne ne permette de le
+lire. La ligne `Arbitre` comble ce trou a moitie, et la moitie manquante est **mesuree**,
+pas supposee.
+
+- **`fixture.referee` est une chaine libre** — verifie le 12/08/2026 : pas d'identifiant,
+  pas de pays, et pas de format stable (64 des 183 arbitres d'une saison de Conference
+  League s'ecrivent « X. Nom », les autres non). C'est la **regle de revue appliquee avant
+  d'ecrire une ligne** : on a cherche l'identifiant, il n'y en a pas, et la date de la
+  verification est dans le commentaire.
+- **Un historique de cartons n'est pas reconstructible a cout raisonnable.** Il faudrait
+  agreger sur le libelle — « M. Oliver » et « Michael Oliver » seraient deux arbitres, le
+  piege deja paye trois fois — puis un appel de statistiques **par match passe**.
+- **Et le compte de matchs diriges serait du decor**, ce qui a tranche : sur une saison de
+  Conference League, **157 arbitres sur 183 n'ont qu'un seul match**. La ligne dirait
+  « premier match dans cette competition » sur 86 % des blocs, donc ne dirait plus rien —
+  exactement le defaut des deux seuils egaux, corrige la veille. Un appel par competition a
+  ete envisage, mesure, puis abandonne sur ce chiffre.
+- **Ce qui reste vaut quand meme, et c'est mesure aussi** : sans la ligne, il fallait une
+  requete pour savoir *qui* arbitre avant d'en depenser une seconde sur ses habitudes. Le
+  nom en supprime une sur deux. Il ne coute **aucun appel** — il vient du match deja resolu.
+- **Le garde-fou de tokens a servi, et il n'a pas ete releve.** L'ajout a fait passer la
+  fixture de six matchs a 11 615 tokens pour un plafond a 11 500. La reponse a ete de
+  **tailler les modes d'emploi**, pas le nombre : les entrees `Arbitre`, `Meteo` et `Lieu`
+  sont passees de 957 a 580 tokens en gardant ce qui **decide** — les trois etats, ce qu'ils
+  appellent comme comportement — et en renvoyant ici ce qui **explique**. Une mesure qui
+  justifie une regle n'a pas a etre payee a chaque session ; sa conclusion, si.
+- **Deux etats rendus, un troisieme qui n'en est pas un.** « non encore designe » appelle le
+  comportement inverse d'un nom : ne pas chercher, attendre. Le troisieme —
+  « aucun historique dans cette confederation » — ne se constate pas d'ici : c'est un
+  **resultat de recherche**, et le preambule dit que c'en est un valable, a ecrire en
+  section A comme une caracteristique du match et non en section F comme un manque. Cas
+  reel : l'arbitre somalien d'une Supercoupe d'Europe dirigeait son premier match en Europe.
+
 ## L'age d'un releve se compte vers le coup d'envoi, pas depuis maintenant
 
 L'en-tete d'un bloc donnait l'heure du releve et rien d'autre : `releve 13:27`. La

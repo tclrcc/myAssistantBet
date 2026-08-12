@@ -718,42 +718,43 @@ est : cumul égal à la fin des 90 minutes de la manche retour, prolongation pui
 tirs au but. **La fiche de la compétition prime sur cette phrase** : elle seule
 sait qu'une Supercoupe va aux tirs au but sans prolongation, ou qu'une coupe
 nationale rejoue le match. Si elle ne dit rien et que le tour est serré, vérifie.
+{% endif %}{% if 'Arbitre' in context_labels %}
+**« Arbitre »** donne **le nom, et rien d'autre** : la source ne sert ni
+identifiant, ni pays, ni historique. C'est une **économie de recherche, pas un
+fait** — sans elle il fallait une requête pour savoir qui arbitre avant d'en
+dépenser une seconde sur ses habitudes. Cherche son bilan cartons et penaltys.
+
+Deux réponses sont valables, et la seconde est **un fait du match, pas un
+échec** : un bilan chiffré, ou « aucun historique dans cette confédération » —
+un arbitre qui dirige son premier match en Europe, à écrire en section A comme
+telle et non en section F comme un manque.
+
+**« non encore désigné »** appelle le comportement inverse : ne cherche pas, la
+désignation n'est pas tombée.
 {% endif %}{% if 'Meteo' in context_labels %}
-**« Météo »** donne d'abord **l'alerte officielle en vigueur**, puis les chiffres.
-Cet ordre est mesuré : la température n'a jamais rien changé à une analyse ; une
-alerte a changé une section entière, deux fois, parce qu'elle disait que la
-rencontre pouvait ne pas se jouer.
+**« Météo »** donne **l'alerte officielle d'abord**, les chiffres ensuite — la
+température n'a jamais changé une analyse, une alerte l'a fait deux fois.
 
-  · **« ALERTE … »** nomme l'événement, sa sévérité et **son émetteur** — « NWS
-    Wilmington OH ». C'est l'instance qui publie, donc une source de **niveau 1**,
-    et tu peux la citer telle quelle en section A. Elle ne couvre l'heure du coup
-    d'envoi que si elle y est en vigueur : une alerte close avant n'est pas rendue.
-  · les chiffres — température, pluie, rafales — valent **à l'heure du coup
-    d'envoi**, pas pour la journée, et portent l'heure de leur relevé. Un relevé
-    de huit heures plus tôt n'engage pas grand-chose sur un orage.
-  · **« alertes officielles non interrogées (pays) »** ne veut pas dire qu'il n'y
-    a pas d'alerte : ça veut dire que **personne n'a regardé**. Un seul service
-    national est branché à ce jour. Sur ces matchs, l'alerte est à ta recherche,
-    et les chiffres au-dessus disent s'il y a lieu de chercher.
-  · **« aucune alerte … en vigueur »** est l'inverse : la source a été interrogée
-    et n'a rien. Ces deux lignes ne se lisent pas pareil.
+  · **« ALERTE … »** nomme l'événement, sa sévérité et **son émetteur**. C'est
+    l'instance qui publie, donc **niveau 1**, citable telle quelle. Elle n'est
+    rendue que si elle couvre l'heure du coup d'envoi.
+  · les chiffres valent **à l'heure du coup d'envoi**, pas pour la journée, et
+    portent l'âge de leur relevé quand il a vieilli.
+  · **« alertes officielles non interrogées (pays) »** ne dit pas qu'il n'y a
+    pas d'alerte : **personne n'a regardé**, et c'est à ta recherche.
+    **« aucune alerte … en vigueur »** est l'inverse — la source a répondu.
 
-Les prévisions viennent d'Open-Meteo (CC-BY 4.0).
+Prévisions Open-Meteo (CC-BY 4.0).
 {% endif %}{% if 'Lieu' in context_labels %}
-**« Lieu »** donne le stade, la ville et le pays, et porte **trois états** :
+**« Lieu »** donne le stade, la ville et le pays, et porte **trois états** : un
+lieu seul, le club reçoit chez lui ; **« TERRAIN NEUTRE »**, le match se joue
+hors du pays du club qui reçoit — personne n'est à domicile, le public n'est pas
+là, et « Scénario » cesse de prêter l'avantage du terrain ; `données non
+disponibles`, le lieu n'a pas été récupéré, **ce qui n'est pas un domicile
+ordinaire**.
 
-  · un lieu seul — `Poljud, Split (HRV)` — le club reçoit chez lui ;
-  · **« TERRAIN NEUTRE »** — le match se joue **hors du pays du club qui
-    reçoit**, pour une raison politique ou sécuritaire. Ce n'est pas un détail
-    logistique : personne ne joue à domicile, le public de l'équipe « recevante »
-    n'est pas là, et « Scénario » cesse alors de lui prêter l'avantage du terrain.
-    C'est un fait à vérifier en priorité — quel public est réellement attendu ;
-  · `données non disponibles` — le lieu n'a pas été récupéré. **Ce n'est pas un
-    domicile ordinaire**, et c'est pour ça que la ligne s'écrit quand même : son
-    absence se confondrait avec un match chez soi.
-
-Un stade différent **dans le même pays** — travaux, sanction, capacité — n'est
-pas un terrain neutre et ne porte donc pas la mention : le public suit.
+Un stade différent **dans le même pays** — travaux, sanction — n'est pas neutre
+et ne porte pas la mention : le public suit.
 {% endif %}{% if 'Buteurs' in context_labels %}
 **« Buteurs »** — les trois meilleurs de chaque équipe, avec leur total et la
 part inscrite sur penalty : douze buts dont dix sur penalty ne se parient pas
