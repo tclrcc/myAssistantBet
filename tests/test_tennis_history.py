@@ -1373,3 +1373,47 @@ def test_les_faits_declencheurs_du_tennis_remplacent_ceux_du_football(migrated: 
     assert "un changement de court ou de session" in corps
     assert "Une absence n'en est pas un" in corps
     assert "Au football :" not in corps
+
+
+# -- Un match jamais dispute ne mesure rien ----------------------------------
+
+
+def test_un_tapis_vert_sort_de_l_usure_du_profil_et_de_la_marge(migrated: Settings) -> None:
+    """Le score d'un forfait est un `6-0 6-0` administratif : le compter ferait
+    passer un joueur qui n'est pas entre sur le court pour un joueur aux matchs
+    expedies, sur les trois lignes qui decrivent la forme d'un match.
+
+    Le comportement existait — `_played` ecarte les tapis verts depuis toujours —
+    mais rien ne le verifiait sur ces trois lignes-la, et c'est exactement le
+    genre d'asymetrie qui laisse un defaut vivre."""
+    _serie(
+        migrated,
+        [
+            ("7-6 6-7 7-6", True),
+            ("7-6 7-6", True),
+            ("6-4 6-4", True),
+            ("6-1 6-2", True),
+            ("6-3 6-4", False),
+        ],
+    )
+    _joue(migrated, "2026-07-20", "6-0 6-0", won=True, comment="Walkover")
+
+    lignes = _lines(migrated, "Jiri Lehecka", "Vit Kopriva")
+
+    assert "sur 5" in lignes["Usure"], "le tapis vert ne compte pas dans les dix derniers"
+    assert "(15-39)" in lignes["Profil"], "l'etendue ignore le 12-0 administratif"
+    # Quatre victoires et une defaite : le tapis vert, gagne, ferait `V/5`.
+    assert "en V/4" in lignes["Marge"]
+
+
+def test_un_match_donne_sur_decision_est_traite_comme_un_abandon(migrated: Settings) -> None:
+    """Quatrieme valeur du champ, relevee en base : 2 lignes sur 13 858. Un match
+    « Awarded » s'arrete sur decision, donc son score est tronque au moment ou il
+    s'arrete — exactement comme un abandon. Le traiter en match complet faisait
+    entrer ce score dans les lignes qui mesurent la duree et l'ecart."""
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+    _joue(migrated, "2026-07-20", "6-1 2-0", won=True, comment="Awarded")
+
+    lignes = _lines(migrated, "Jiri Lehecka", "Vit Kopriva")
+
+    assert "med 20 jeux (20-20)" in lignes["Profil"], "le score tronque ne doit pas peser"

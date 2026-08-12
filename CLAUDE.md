@@ -1081,11 +1081,73 @@ scannes les jours d'avant. Aucun appel, aucune cle, aucun quota.
   scanne, et seule une recherche exterieure l'a rattrape. Comparee a `Tour`, la date dit
   tout de suite si le debut du tableau manque — compter les tours absents demanderait la
   taille du tableau, que rien ne donne.
-  - **Un forfait s'y lit comme un match joue.** L'adversaire y figure parce que la
-    rencontre etait *programmee* : Anisimova avait deux noms au `Parcours` pour un seul
-    match dispute, et `Repos` comptait ce jour-la de la meme facon. Nos donnees ne peuvent
-    pas le savoir — le fournisseur de cotes programme, le fichier de resultats retarde — et
-    c'est donc le template qui le dit.
+  - **Un forfait s'y lisait comme un match joue**, et documenter le defaut ne le corrigeait
+    pas. Voir la section suivante.
+
+## Une rencontre programmee n'est pas une rencontre disputee
+
+Le fournisseur de cotes **programme, il ne rapporte pas**. `Repos` et `Parcours` sortent de
+nos propres scans, donc de rencontres programmees : un forfait, un adversaire remplace ou un
+match interrompu y laissent une ligne indiscernable d'un match dispute.
+
+Mesure qui l'a revele, sur une demi-finale du Canadian Open : Bencic s'est retiree trente
+minutes avant son quart, Gauff est passee sans entrer sur le court. Le bloc a servi
+« Repos Coco Gauff 1j » et a liste Bencic au `Parcours`, quand son dernier match remontait a
+**quatre journees de tournoi**. Le fait le plus decisif du lot etait efface par la ligne
+censee le porter.
+
+- `events.match_outcome_type` (migration 036) dit **ce qui n'a pas eu lieu, jamais ce qui a
+  eu lieu**. NULL est le cas ordinaire et signifie « rien ne s'y oppose », pas « disputee » —
+  meme regle que la ligne `Statut` du football. Vocabulaire tenu par `tennis_load.OUTCOMES` :
+  `walkover`, `replaced`, `suspended`.
+- **`Appearance` porte la distinction, et tout en decoule.** `opponents`, `days`, `faced`,
+  `days_rest` et `rounds` se calculent sur les seules rencontres disputees ; `uncontested`
+  porte les autres. Un seul point de decision, donc `Repos`, `Parcours` **et** `Fraicheur`
+  cessent de compter un forfait sans qu'aucun des trois ait a le savoir — ce dernier
+  enverrait sinon chercher le score d'un match jamais joue.
+- **Le remplacement d'adversaire se derive de nos propres scans, sans saisie** : un joueur ne
+  dispute qu'une rencontre par journee de tournoi, et **c'est la plus recemment creee qui
+  tient**. Une rencontre reprogrammee garde son identifiant chez le fournisseur ; un
+  adversaire remplace en produit un nouveau. Mesure sur la base entiere : **un seul cas**, et
+  c'est exactement celui-la — JJ Wolf programme contre Toby Samuel a 19h00 (enregistre a
+  12h32) puis contre Shintaro Mochizuki a 21h45 (enregistre a 21h51). Le `Parcours` listait
+  les deux, ce qui lui donnait deux tours au lieu d'un.
+  - Limite assumee : un tableau retarde par la pluie peut faire jouer deux simples dans la
+    meme journee. Le cas ne s'observe pas en base, et le degat serait une ligne de parcours
+    en trop plutot qu'un repos faux — l'inverse de ce que le silence coutait.
+- **Le fichier de resultats ne peut pas servir cette colonne, et c'est mesure.** Il parait
+  une fois par semaine et **apres coup** : le 12/08 il s'arretait au 03/08, soit dix jours de
+  retard, quand `Parcours` ne couvre que `MAX_DAYS` (10) jours. Il arrive donc toujours apres
+  que le tournoi a cesse d'etre rendu. Les lignes qui en sortent — `Forme`, `Usure`,
+  `Profil`, `Marge` — le lisent deja en direct et n'ont besoin de rien ici.
+  - Consequence : **la saisie a la main est la seule source vivante**, et c'est un constat,
+    pas une preference. Elle vit sur la fiche d'un match, au tennis seulement — au football
+    un forfait arrive par le fournisseur de contexte et sort deja sur `Statut`, et un second
+    chemin pourrait le contredire.
+  - Un marquage **se defait** : se tromper doit pouvoir s'annuler, sinon on hesite a marquer
+    et la ligne ne sert plus a rien. Une valeur hors vocabulaire est **refusee** plutot
+    qu'ecrite — `load_for` l'ignorerait, et le marquage paraitrait pose sans aucun effet,
+    exactement le silence qu'on corrige.
+- La ligne `Non joue` porte **la date et la cause**, parce que les deux se verifient en une
+  recherche et qu'elles ne se valent pas : un forfait adverse offre un tour sans jouer, un
+  adversaire remplace veut dire que le joueur a bien joue ce jour-la, contre quelqu'un
+  d'autre. La date est celle de la **journee de tournoi**, comme partout dans ce module —
+  en donner une autre ferait deux calendriers dans le meme bloc.
+- **Le preambule a ete relu avec le rendu.** Il affirmait qu'« un forfait s'y lit comme un
+  match joue » : vrai tant que rien ne le detectait, faux des que `Non joue` existe. Il dit
+  desormais que les forfaits connus sortent du `Parcours` et que **l'absence de `Non joue` ne
+  prouve pas** que tout le parcours a ete dispute. Meme regle que `Serie` et son repli de
+  saison : toute condition ajoutee a une ligne se verifie contre la phrase qui explique son
+  absence.
+- **Ce qui n'a pas ete construit, faute de donnee.** Un match interrompu et non termine
+  laisse le tour suivant sans adversaire connu ; `suspended` existe au vocabulaire, mais nos
+  scans ne produisent alors **aucun evenement** — verifie sur la base entiere, aucun match
+  sans second participant, aucun nom de substitution (`Qualifier`, `TBD`, `Bye`). Le bloc
+  n'existe pas plutot que d'etre incomplet, et il n'y a rien a y rendre.
+- `Awarded` est la quatrieme valeur du champ `comment` du fichier de resultats, **2 lignes
+  sur 13 858** : un match donne sur decision a un score tronque, comme un abandon. Le traiter
+  en match complet le faisait entrer dans `Usure`, `Profil` et `Marge`. L'effet est nul a
+  deux lignes ; la regle, elle, ne l'est pas.
 - **`Usure`** (`tennis_history._games_fragment`) : jeux par match sur les dix derniers, le
   **temps passe sur le court par procuration**. Abandons et tapis verts exclus — leur score
   est tronque a l'instant ou le match s'arrete, et les compter ferait passer un joueur qui a

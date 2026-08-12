@@ -105,6 +105,12 @@ H2H_DETAIL = 3
 #: reste une information sur la disponibilite, portee par sa propre ligne.
 WALKOVER = "walkover"
 RETIRED = "retired"
+#: Quatrieme valeur du champ, releve en base : **2 lignes sur 13 858**. Un match
+#: « awarded » est un match donne sur decision — disqualification, defaut — donc
+#: un score tronque a l'instant ou il s'arrete, exactement comme un abandon. Le
+#: traiter en match complet faisait entrer ce score dans `Usure`, `Profil` et
+#: `Marge`. L'effet est nul a deux lignes ; la regle, elle, ne l'est pas.
+AWARDED = "awarded"
 
 #: Profondeur d'un tour, pour savoir jusqu'ou un joueur est alle. « Round Robin »
 #: est la phase de poules du Masters : elle precede les demi-finales sans etre un
@@ -447,7 +453,13 @@ class Match:
 
     @property
     def retired(self) -> bool:
-        return self.comment.casefold() == RETIRED
+        """Score tronque : abandon en cours de jeu, ou match donne sur decision.
+
+        Les deux se ressemblent la ou ca compte — le score s'arrete avant la fin
+        — et c'est le seul usage qu'on en fait : les ecarter des lignes qui
+        mesurent la duree ou l'ecart de jeux.
+        """
+        return self.comment.casefold() in {RETIRED, AWARDED}
 
     @property
     def long_format(self) -> bool:

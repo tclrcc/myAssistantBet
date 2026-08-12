@@ -448,6 +448,12 @@ def context_block(
         lines += tennis_load.path_lines(
             home, away, competition_id, commence_time, oddsapi_key, settings
         )
+        # Ce que le `Parcours` vient d'ecarter, et pourquoi. La ligne suit
+        # immediatement celle qu'elle complete : un forfait retire un nom du
+        # parcours, et le lecteur doit voir les deux d'un coup d'oeil.
+        lines += tennis_load.unplayed_lines(
+            home, away, competition_id, commence_time, oddsapi_key, settings
+        )
         # L'historique des matchs joues : confrontations directes, palmares dans
         # ce tournoi, forme, bilan de surface et abandons.
         lines += tennis_history.lines(

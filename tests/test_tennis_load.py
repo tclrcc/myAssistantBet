@@ -220,3 +220,209 @@ def test_un_adversaire_est_rapproche_de_sa_propre_journee(migrated: Settings) ->
     charge = tennis_load.load_for("Fils", _competition(migrated), "2026-08-09T18:00:00Z", migrated)
 
     assert charge.faced == (("2026-08-04", "Zzz"), ("2026-08-08", "Aaa"))
+
+
+# -- Une rencontre programmee n'est pas une rencontre disputee ----------------
+
+
+def _marquer(settings: Settings, home: str, away: str, outcome: str) -> int:
+    row = db.query_one(
+        "SELECT id FROM events WHERE home = ? AND away = ?", (home, away), settings=settings
+    )
+    tennis_load.mark_unplayed(int(row["id"]), outcome, settings)
+    return int(row["id"])
+
+
+def test_un_forfait_ne_compte_pas_dans_le_repos(migrated: Settings) -> None:
+    """Bencic s'est retiree trente minutes avant le quart : Gauff est passee sans
+    entrer sur le court. Le bloc a servi « Coco Gauff 1j » a une joueuse dont le
+    dernier match remontait a quatre journees de tournoi — sur la ligne meme qui
+    existe pour dire sa fraicheur, et le fait le plus decisif du lot etait ainsi
+    efface.
+
+    Les deux moities sont verifiees ensemble : sans le marquage, le defaut
+    d'origine se reproduit a l'identique. Un test qui n'assurerait que la valeur
+    corrigee ne dirait pas qu'elle corrige quelque chose.
+    """
+    _match(migrated, "Alina Korneeva", "Coco Gauff", "2026-08-09T18:00:00Z")
+    _match(migrated, "Belinda Bencic", "Coco Gauff", "2026-08-11T23:00:00Z")
+    quand = "2026-08-13T00:30:00Z"
+    args = ("Coco Gauff", "Elena Rybakina", _competition(migrated), quand)
+
+    avant = tennis_load.lines(*args, migrated)
+    _marquer(migrated, "Belinda Bencic", "Coco Gauff", tennis_load.WALKOVER)
+    apres = tennis_load.lines(*args, migrated)
+
+    assert avant == [("Repos", "Coco Gauff 1j")], "le defaut, tant que rien ne dit le forfait"
+    assert apres == [("Repos", "Coco Gauff 4j")]
+
+
+def test_un_forfait_sort_du_parcours_et_se_dit_a_part(migrated: Settings) -> None:
+    """Le retirer sans un mot ferait chercher un tour manquant : une absence
+    constatee est une information, et celle-ci porte sa date et sa cause."""
+    _match(migrated, "Alina Korneeva", "Coco Gauff", "2026-08-09T18:00:00Z")
+    _match(migrated, "Belinda Bencic", "Coco Gauff", "2026-08-11T23:00:00Z")
+    _marquer(migrated, "Belinda Bencic", "Coco Gauff", tennis_load.WALKOVER)
+    quand = "2026-08-13T00:30:00Z"
+
+    parcours = tennis_load.path_lines(
+        "Coco Gauff", "Elena Rybakina", _competition(migrated), quand, None, migrated
+    )
+    non_joue = tennis_load.unplayed_lines(
+        "Coco Gauff", "Elena Rybakina", _competition(migrated), quand, None, migrated
+    )
+
+    assert "Belinda Bencic" not in parcours[0][1]
+    assert "Alina Korneeva" in parcours[0][1]
+    # La date est celle de la **journee de tournoi**, comme partout dans ce
+    # module : c'est l'echelle sur laquelle `Repos`, `Fraicheur` et le fichier de
+    # resultats se comparent. En donner une autre ici ferait deux calendriers
+    # dans le meme bloc.
+    assert non_joue == [
+        ("Non joue", "Coco Gauff — Belinda Bencic le 12/08, forfait adverse, non disputee")
+    ]
+
+
+def test_un_adversaire_remplace_ne_compte_qu_une_fois(migrated: Settings) -> None:
+    """Un joueur ne dispute qu'une rencontre par journee de tournoi. JJ Wolf
+    etait programme contre Toby Samuel puis, celui-ci declarant forfait, contre
+    Shintaro Mochizuki : le `Parcours` listait les deux, ce qui lui donnait deux
+    tours au lieu d'un. **C'est la plus recemment creee qui tient** — aucune
+    saisie n'est necessaire, la regle se derive de nos propres scans."""
+    _match(migrated, "JJ Wolf", "Toby Samuel", "2026-08-11T19:00:00Z")
+    _match(migrated, "JJ Wolf", "Shintaro Mochizuki", "2026-08-11T21:45:00Z")
+    quand = "2026-08-12T18:30:00Z"
+
+    charge = tennis_load.load_for("JJ Wolf", _competition(migrated), quand, migrated)
+    non_joue = tennis_load.unplayed_lines(
+        "JJ Wolf", "Sho Shimabukuro", _competition(migrated), quand, None, migrated
+    )
+
+    assert charge.opponents == ("Shintaro Mochizuki",)
+    assert "Toby Samuel" in non_joue[0][1]
+    assert "adversaire remplace" in non_joue[0][1]
+
+
+def test_une_rencontre_disputee_ne_produit_aucune_ligne(migrated: Settings) -> None:
+    """La ligne est faite pour l'exception. Sur un parcours ordinaire elle ne
+    doit rien couter — ni au bloc, ni a la densite."""
+    _match(migrated, "Alina Korneeva", "Coco Gauff", "2026-08-09T18:00:00Z")
+
+    assert (
+        tennis_load.unplayed_lines(
+            "Coco Gauff",
+            "Elena Rybakina",
+            _competition(migrated),
+            "2026-08-13T00:30:00Z",
+            None,
+            migrated,
+        )
+        == []
+    )
+
+
+def test_un_marquage_se_defait(migrated: Settings) -> None:
+    """Se tromper doit pouvoir se defaire, sinon on hesite a marquer et la ligne
+    ne sert plus a rien."""
+    _match(migrated, "Belinda Bencic", "Coco Gauff", "2026-08-11T23:00:00Z")
+    event_id = _marquer(migrated, "Belinda Bencic", "Coco Gauff", tennis_load.WALKOVER)
+
+    tennis_load.mark_unplayed(event_id, "", migrated)
+
+    charge = tennis_load.load_for(
+        "Coco Gauff", _competition(migrated), "2026-08-13T00:30:00Z", migrated
+    )
+    assert charge.opponents == ("Belinda Bencic",)
+    assert charge.uncontested == ()
+
+
+def test_un_etat_hors_vocabulaire_est_refuse(migrated: Settings) -> None:
+    """`load_for` ignorerait une valeur inconnue : le marquage paraitrait pose
+    et n'aurait aucun effet — le silence exact qu'on corrige."""
+    _match(migrated, "Belinda Bencic", "Coco Gauff", "2026-08-11T23:00:00Z")
+    row = db.query_one("SELECT id FROM events WHERE home = 'Belinda Bencic'", settings=migrated)
+
+    try:
+        tennis_load.mark_unplayed(int(row["id"]), "annule", migrated)
+    except ValueError as exc:
+        assert "annule" in str(exc)
+    else:  # pragma: no cover - le test echoue avant d'y arriver
+        raise AssertionError("un etat inconnu doit etre refuse")
+
+
+def test_un_forfait_ne_compte_pas_dans_les_matchs_non_recenses(migrated: Settings) -> None:
+    """« Fraicheur » compte les matchs du tournoi que l'historique ne connait pas
+    encore, pour dire ce que `Forme` et `Usure` ignorent. Un match jamais dispute
+    n'entrera dans aucune de ces lignes : le compter enverrait chercher un score
+    qui n'existe pas."""
+    _match(migrated, "Alina Korneeva", "Coco Gauff", "2026-08-09T18:00:00Z")
+    _match(migrated, "Belinda Bencic", "Coco Gauff", "2026-08-11T23:00:00Z")
+    _marquer(migrated, "Belinda Bencic", "Coco Gauff", tennis_load.WALKOVER)
+
+    manquants = tennis_load.played_since(
+        "Coco Gauff", _competition(migrated), "2026-08-13T00:30:00Z", date(2026, 8, 3), migrated
+    )
+
+    assert manquants.count == 1
+    assert manquants.opponents == ("Alina Korneeva",)
+
+
+def _session(settings: Settings, home: str, away: str, when: str) -> int:
+    """Une session portant ce match, pour eprouver le prompt reellement rendu."""
+    _match(settings, home, away, when)
+    row = db.query_one(
+        "SELECT id FROM events WHERE home = ? AND away = ?", (home, away), settings=settings
+    )
+    db.execute(
+        "INSERT INTO sessions (id, label, created_at) VALUES (1, 'test', ?)",
+        (db.utcnow(),),
+        settings=settings,
+    )
+    db.execute(
+        "INSERT INTO session_events (session_id, event_id) VALUES (1, ?)",
+        (row["id"],),
+        settings=settings,
+    )
+    return 1
+
+
+def test_le_mode_d_emploi_de_non_joue_ne_se_paie_que_sur_un_lot_qui_en_porte(
+    migrated: Settings,
+) -> None:
+    """Meme regle que partout : le preambule ne documente que les lignes que le
+    lot porte vraiment. Un forfait est l'exception, son explication ne doit pas
+    peser sur les sessions ordinaires."""
+    from myassistantbet.services.prompt import build_prompt
+
+    _match(migrated, "Alina Korneeva", "Coco Gauff", "2026-08-09T18:00:00Z")
+    _match(migrated, "Belinda Bencic", "Coco Gauff", "2026-08-11T23:00:00Z")
+    session_id = _session(migrated, "Coco Gauff", "Elena Rybakina", "2026-08-13T00:30:00Z")
+
+    sain = " ".join(build_prompt(session_id, settings=migrated).body.split())
+    _marquer(migrated, "Belinda Bencic", "Coco Gauff", tennis_load.WALKOVER)
+    forfait = " ".join(build_prompt(session_id, settings=migrated).body.split())
+
+    assert "**« Non joué »** liste les rencontres programmées" not in sain
+    assert "**« Non joué »** liste les rencontres programmées" in forfait
+    assert "forfait adverse, non disputee" in forfait, (
+        "le bloc porte la ligne, pas seulement l'aide"
+    )
+
+
+def test_le_preambule_ne_promet_plus_qu_un_forfait_se_lit_comme_un_match_joue(
+    migrated: Settings,
+) -> None:
+    """La phrase etait vraie tant que rien ne detectait un forfait ; elle est
+    devenue fausse le jour ou « Non joue » existe. Toute condition ajoutee a une
+    ligne se verifie contre la phrase du preambule qui explique son absence —
+    corriger un rendu sans relire son mode d'emploi laisse une affirmation fausse
+    a l'endroit precis ou l'on vient de gagner en justesse."""
+    from myassistantbet.services.prompt import build_prompt
+
+    _match(migrated, "Alina Korneeva", "Coco Gauff", "2026-08-09T18:00:00Z")
+    session_id = _session(migrated, "Coco Gauff", "Elena Rybakina", "2026-08-13T00:30:00Z")
+
+    corps = " ".join(build_prompt(session_id, settings=migrated).body.split())
+
+    assert "si bien qu'un forfait s'y lit comme un match joué" not in corps
+    assert "L'absence de « Non joué » ne prouve donc pas" in corps

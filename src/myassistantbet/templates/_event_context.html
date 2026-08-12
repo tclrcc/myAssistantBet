@@ -23,6 +23,39 @@
       {% endif %}
     </div>
 
+    {# La seule source vivante d'un forfait. Le fichier de resultats parait une
+       fois par semaine et apres coup : au tennis, un forfait annonce trente
+       minutes avant le coup d'envoi n'arrive jamais a temps pour le bloc, et
+       « Repos » comptait alors un match jamais dispute. #}
+    {% if event.sport_key == 'tennis' %}
+      <form class="unplayed" hx-post="/events/{{ event.event_id }}/unplayed"
+            hx-target="#event-context" hx-swap="outerHTML">
+        <label>
+          Rencontre disputée ?
+          <select name="outcome">
+            <option value="" {% if not event.match_outcome_type %}selected{% endif %}>
+              rien ne s'y oppose
+            </option>
+            <option value="walkover" {% if event.match_outcome_type == 'walkover' %}selected{% endif %}>
+              forfait adverse — non disputée
+            </option>
+            <option value="replaced" {% if event.match_outcome_type == 'replaced' %}selected{% endif %}>
+              adversaire remplacé — non disputée
+            </option>
+            <option value="suspended" {% if event.match_outcome_type == 'suspended' %}selected{% endif %}>
+              interrompue — non terminée
+            </option>
+          </select>
+        </label>
+        <button type="submit" class="button">Enregistrer</button>
+        <span class="muted small">
+          Retire ce match du repos et du parcours des deux joueurs, sans le faire disparaître.
+        </span>
+      </form>
+    {% endif %}
+
+    {% if error %}<div class="report report-warn">{{ error }}</div>{% endif %}
+
     {% if context_report %}
       <div class="report {% if not context_report.ok %}report-warn{% endif %}">
         {% if context_report.mapping_pending %}

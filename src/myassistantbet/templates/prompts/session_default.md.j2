@@ -737,10 +737,12 @@ trois dernières saisons, ATP et WTA :
     « 2e tour », l'ordinal supposant de savoir où est le premier ; « Palmarès »
     et « Précédent » l'écrivent, elles, une édition passée ayant un tableau
     connu. « 16e de finale » et « 3e tour » désignent donc parfois le même tour.
-  · **« Repos »** — jours entre la dernière apparition et celle-ci, comptés en
-    **journées de tournoi** et non en dates civiles : au Canada, un match de la
-    session du soir part après minuit à Paris. Il ne dit rien du **double** —
-    même ligne « Repos » et une charge tout autre. C'est à ta recherche.
+  · **« Repos »** — jours entre le dernier match **réellement disputé** et
+    celui-ci, comptés en **journées de tournoi** et non en dates civiles : au
+    Canada, un match de la session du soir part après minuit à Paris. Une
+    rencontre programmée puis non jouée n'y compte pas, et se lit sur
+    « Non joué ». Il ne dit rien du **double** — même ligne « Repos » et une
+    charge tout autre. C'est à ta recherche.
   · **« Forme »** — les dix derniers matchs, **toutes surfaces**, la dernière
     lettre étant le dernier match — même sens de lecture que « Forme 5 » au
     football.
@@ -792,10 +794,26 @@ recherche à faire.
 premier tour au dernier, avec leur Elo quand il est connu : c'est ce qui
 distingue un parcours facile d'un parcours d'usure. Les adversaires et **jamais
 les résultats** — un joueur présent au tour suivant a forcément passé le
-précédent, mais l'écrire supposerait qu'aucun forfait n'existe. Deux limites
-vérifiées en réel : le `[vu depuis le 04/08]` est **la fenêtre de nos scans, pas
-celle du tournoi** ; et un adversaire y figure parce que la rencontre était
-**programmée**, si bien qu'un forfait s'y lit comme un match joué.
+précédent, mais l'écrire supposerait qu'aucun forfait n'existe. Limite vérifiée
+en réel : le `[vu depuis le 04/08]` est **la fenêtre de nos scans, pas celle du
+tournoi**.
+
+Un adversaire y figure parce que la rencontre a été **programmée**. Celles dont
+nous savons qu'elles n'ont pas eu lieu en sortent et passent sur « Non joué » ;
+celles que nous ignorons y restent, et s'y lisent comme un match joué. L'absence
+de « Non joué » ne prouve donc pas que tout le parcours a été disputé.
+{% endif %}{% if 'Non joue' in context_labels %}
+**« Non joué »** liste les rencontres programmées qui n'ont pas eu lieu, avec
+leur date et leur cause. Elles sont retirées de « Parcours » et de « Repos » —
+un forfait adverse ne met personne sur le court — mais elles ne disparaissent
+pas : un tour gagné sans jouer est un fait du tournoi, et le taire ferait
+chercher un match manquant.
+
+Les deux causes ne disent pas la même chose. **« forfait adverse »** : le joueur
+est passé sans entrer sur le court, il est donc plus frais que son tour ne le
+suggère, et son adversaire du jour a peut-être joué, lui. **« adversaire
+remplacé »** : le joueur a bien joué ce jour-là, mais contre quelqu'un d'autre —
+c'est le nom qui change, pas la charge.
 {% endif %}
 Deux lignes portent sur **ce tournoi précisément**, toutes éditions confondues :
 **« H2H ici »**, leurs confrontations sur place avec le tour — un huitième et une

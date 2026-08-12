@@ -46,6 +46,7 @@ from .services import prompt as prompt_service
 from .services import session as session_service
 from .services import set_scores as set_scores_service
 from .services import tennis_history as tennis_history_service
+from .services import tennis_load as tennis_load_service
 from .services import thresholds as thresholds_service
 from .services.inference import EQUIVALENCE_MARGIN, MARGIN_REFERENCE
 from .services.scan import run_scan
@@ -276,6 +277,25 @@ def toggle_event_shortlist(
     """Coche ou decoche depuis la fiche, et re-rend son en-tete."""
     board_service.toggle_selection(event_id, selected is not None, get_settings())
     return templates.TemplateResponse(request, "_event_head.html", _event_context(event_id))
+
+
+@app.post("/events/{event_id}/unplayed", response_class=HTMLResponse)
+def mark_event_unplayed(
+    request: Request, event_id: int, outcome: str = Form(default="")
+) -> HTMLResponse:
+    """Marque une rencontre programmee comme non disputee, ou defait le marquage.
+
+    Le bloc entier est re-rendu : `Repos`, `Parcours` et `Non joue` changent
+    ensemble, et n'en rafraichir qu'un laisserait les trois se contredire a
+    l'ecran.
+    """
+    try:
+        tennis_load_service.mark_unplayed(event_id, outcome, get_settings())
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            request, "_event_context.html", _event_context(event_id, error=str(exc))
+        )
+    return templates.TemplateResponse(request, "_event_context.html", _event_context(event_id))
 
 
 @app.post("/events/{event_id}/odds/apifootball", response_class=HTMLResponse)

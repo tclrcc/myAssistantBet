@@ -38,6 +38,40 @@ MAX_DAYS = 10
 #: entier negatif ne peut collisionner avec aucune cle primaire d'evenement.
 _ICI = -1
 
+#: Ce qui peut empecher une rencontre **programmee** d'avoir ete disputee, et le
+#: mot rendu dans le bloc. Le fournisseur de cotes programme, il ne rapporte
+#: pas : sans cette distinction, un forfait se lit comme un match joue.
+WALKOVER = "walkover"
+REPLACED = "replaced"
+SUSPENDED = "suspended"
+OUTCOMES: dict[str, str] = {
+    WALKOVER: "forfait adverse, non disputee",
+    REPLACED: "adversaire remplace, non disputee",
+    SUSPENDED: "interrompue, non terminee",
+}
+
+
+@dataclass(frozen=True)
+class Appearance:
+    """Une rencontre **programmee** de ce joueur dans ce tournoi.
+
+    Programmee, et non jouee : c'est toute la nuance que le module ignorait. Une
+    apparition dont `outcome` est renseigne n'a pas eu lieu, et ne doit donc
+    compter ni dans le repos, ni dans le parcours, ni nulle part ailleurs.
+    """
+
+    #: Journee de tournoi, au format ISO. Jamais une date civile.
+    day: str
+    opponent: str
+    #: `None` = rien ne s'oppose a ce qu'elle ait ete disputee. Ce n'est **pas**
+    #: la meme chose que « disputee » : nous ne le savons pas, nous n'avons rien
+    #: qui dise le contraire. Meme regle que la ligne `Statut` du football.
+    outcome: str | None = None
+
+    @property
+    def contested(self) -> bool:
+        return self.outcome is None
+
 
 @dataclass
 class Load:
@@ -61,6 +95,11 @@ class Load:
     #: rapprochent pas : c'est la paire qui permet de nommer **quels** matchs
     #: manquent a l'historique, et non seulement combien.
     faced: tuple[tuple[str, str], ...] = ()
+    #: Les rencontres programmees qui n'ont **pas** eu lieu. Elles sortent de
+    #: tout le reste — `rounds`, `days_rest`, `opponents`, `days`, `faced` — et
+    #: ne vivent que la. Les taire ferait chercher un match qui n'existe pas ;
+    #: les compter avec les autres est le defaut qu'on corrige.
+    uncontested: tuple[Appearance, ...] = ()
 
     @property
     def fragment(self) -> str:
@@ -97,8 +136,8 @@ def load_for(
         # Toute la competition, match du jour compris : le regroupement en
         # journees de tournoi a besoin de la suite pour placer ses coupures.
         toutes = conn.execute(
-            "SELECT id, home, away, commence_time FROM events "
-            "WHERE competition_id = ? ORDER BY commence_time",
+            "SELECT id, home, away, commence_time, created_at, match_outcome_type "
+            "FROM events WHERE competition_id = ? ORDER BY commence_time",
             (competition_id,),
         ).fetchall()
     rows = [row for row in toutes if row["commence_time"] < commence_time]
@@ -122,43 +161,106 @@ def load_for(
     ici = journees.get(_ICI)
 
     when = _parse(commence_time)
-    dates: list[datetime] = []
-    veilles: list[str | None] = []
-    faced: list[tuple[datetime, str]] = []
-    # La meme chose indexee par evenement, pour rapprocher chaque adversaire de
-    # **sa** journee de tournoi : `opponents` et `days` sont tries chacun de son
-    # cote et ne se remettent pas en face l'un de l'autre.
-    rencontres: dict[int, tuple[datetime, str]] = {}
+    if when is None:
+        return Load()
+
+    # Une entree par rencontre programmee, dans l'ordre du calendrier. Le tri se
+    # fait sur l'heure de coup d'envoi et non sur la journee de tournoi : deux
+    # matchs d'une meme journee doivent rester dans leur ordre reel.
+    programmees: list[tuple[datetime, int, str, str | None, str | None]] = []
     for row in rows:
         if key not in (sort_key(row["home"]), sort_key(row["away"])):
             continue
         played = _parse(row["commence_time"])
-        if when is None or played is None or (when - played).days > MAX_DAYS:
+        if played is None or (when - played).days > MAX_DAYS:
             continue
-        dates.append(played)
-        veilles.append(journees.get(int(row["id"])))
         # L'adversaire est l'autre nom de la ligne. Il est retenu tel qu'il a ete
         # scanne : c'est ainsi qu'il figure partout ailleurs dans l'application.
         autre = row["away"] if key == sort_key(row["home"]) else row["home"]
-        if autre:
-            faced.append((played, autre))
-            rencontres[int(row["id"])] = (played, autre)
+        if not autre:
+            continue
+        jour = journees.get(int(row["id"]))
+        if not jour:
+            continue
+        programmees.append(
+            (played, int(row["id"]), autre, jour, _outcome(row["match_outcome_type"]))
+        )
 
-    if not dates or when is None:
+    apparitions = _resolve_duplicates(programmees, {int(r["id"]): r["created_at"] for r in toutes})
+    disputees = [item for item in apparitions if item.contested]
+
+    if not apparitions:
         return Load()
     connues = [journees[int(row["id"])] for row in toutes if int(row["id"]) in journees]
     return Load(
-        rounds=len(dates),
-        days_rest=_rest(ici, [jour for jour in veilles if jour]),
-        opponents=tuple(nom for _, nom in sorted(faced)),
+        rounds=len(disputees),
+        days_rest=_rest(ici, [item.day for item in disputees]),
+        opponents=tuple(item.opponent for item in disputees),
         first_day=min(connues) if connues else "",
-        days=tuple(sorted(jour for jour in veilles if jour)),
-        faced=tuple(
-            (journees[identifiant], nom)
-            for identifiant, (_, nom) in sorted(rencontres.items(), key=lambda item: item[1][0])
-            if identifiant in journees
-        ),
+        days=tuple(sorted(item.day for item in disputees)),
+        faced=tuple((item.day, item.opponent) for item in disputees),
+        uncontested=tuple(item for item in apparitions if not item.contested),
     )
+
+
+def _outcome(value: str | None) -> str | None:
+    """Le marquage porte par l'evenement, ignore s'il est hors vocabulaire.
+
+    Une valeur inconnue vaut « rien ne s'y oppose » plutot qu'une erreur : elle
+    ferait disparaitre une rencontre du parcours sans que rien ne le dise, ce
+    qui est exactement le defaut qu'on corrige.
+    """
+    mot = (value or "").strip().casefold()
+    return mot if mot in OUTCOMES else None
+
+
+def _resolve_duplicates(
+    programmees: list[tuple[datetime, int, str, str | None, str | None]],
+    created: dict[int, str],
+) -> list[Appearance]:
+    """**Un joueur ne dispute qu'une rencontre par journee de tournoi.**
+
+    Quand nos scans en portent deux, l'adversaire programme a ete remplace — un
+    forfait de derniere minute comble par un `alternate`. Les deux lignes
+    existent en base, et le `Parcours` les listait toutes les deux : le joueur
+    paraissait avoir disputé deux tours au lieu d'un.
+
+    **C'est la plus recemment creee qui tient.** Une rencontre reprogrammee garde
+    son identifiant chez le fournisseur, donc son enregistrement ; un adversaire
+    remplace en produit un nouveau, decouvert au scan suivant. Mesure sur la base
+    entiere : **un seul cas**, et il est exactement celui-la — JJ Wolf programme
+    contre Toby Samuel a 19h00 (enregistre a 12h32), puis contre Shintaro
+    Mochizuki a 21h45 (enregistre a 21h51).
+
+    Limite assumee : un tableau retarde par la pluie peut faire jouer deux
+    simples dans la meme journee. Le cas ne s'observe pas en base, et le degat
+    serait une ligne de parcours en trop plutot qu'un repos faux — l'inverse de
+    ce que le silence coutait.
+    """
+    par_jour: dict[str, list[tuple[datetime, int, str, str | None, str | None]]] = {}
+    for item in programmees:
+        par_jour.setdefault(str(item[3]), []).append(item)
+
+    resolues: list[tuple[datetime, int, Appearance]] = []
+    for lot in par_jour.values():
+        tenue = max(lot, key=lambda item: (created.get(item[1]) or "", item[0], item[1]))
+        for played, identifiant, autre, jour, marque in lot:
+            remplacee = identifiant != tenue[1]
+            resolues.append(
+                (
+                    played,
+                    identifiant,
+                    Appearance(
+                        day=str(jour),
+                        opponent=autre,
+                        outcome=REPLACED if remplacee else marque,
+                    ),
+                )
+            )
+    # L'ordre est celui du calendrier, pas celui des journees : le `Parcours` se
+    # lit du premier tour au dernier, et deux rencontres d'une meme journee
+    # doivent rester dans leur ordre reel.
+    return [item for _, _, item in sorted(resolues, key=lambda row: (row[0], row[1]))]
 
 
 def _rest(here: str | None, previous: list[str]) -> int | None:
@@ -183,6 +285,12 @@ def lines(
     Un tournoi dont on n'a scanne que le jour meme ne produit rien : ecrire
     « 0 tour » laisserait croire a une entree en lice alors qu'on ne sait
     simplement pas.
+
+    **Le repos se compte depuis la derniere rencontre reellement disputee**, et
+    non depuis la derniere programmee. Un forfait adverse n'a pas mis le joueur
+    sur le court : le compter donnait « Coco Gauff 1j » a une joueuse qui
+    n'avait pas joue depuis trois jours, sur la ligne meme qui existe pour dire
+    sa fraicheur.
     """
     settings = settings or get_settings()
     fragments = []
@@ -235,6 +343,75 @@ def path_lines(
     if not fragments:
         return []
     return [("Parcours", " | ".join(fragments) + _since(debut))]
+
+
+def unplayed_lines(
+    home: str,
+    away: str,
+    competition_id: int | None,
+    commence_time: str,
+    oddsapi_key: str | None = None,
+    settings: Settings | None = None,
+) -> list[tuple[str, str]]:
+    """Ligne « Non joue » : les rencontres programmees qui n'ont pas eu lieu.
+
+    Elles sortent du `Parcours` et du `Repos`, mais **elles ne disparaissent
+    pas** : un forfait est une information sur le tournoi et sur l'adversaire,
+    et le retirer sans un mot ferait chercher un tour manquant. C'est la meme
+    regle que partout — une absence constatee se dit.
+
+    La ligne porte la **date** et la **cause**, parce que les deux se verifient
+    en une recherche et qu'elles ne se valent pas : un forfait adverse offre un
+    tour gratuit, un adversaire remplace veut dire que le joueur a bien joue ce
+    jour-la, mais contre quelqu'un d'autre.
+    """
+    settings = settings or get_settings()
+    fragments = []
+    for player in (home, away):
+        if not player:
+            continue
+        for item in load_for(player, competition_id, commence_time, settings).uncontested:
+            adversaire = _with_elo(item.opponent, oddsapi_key, settings)
+            fragments.append(
+                f"{player} — {adversaire} le {_short(item.day)}, {OUTCOMES[str(item.outcome)]}"
+            )
+    return [("Non joue", " | ".join(fragments))] if fragments else []
+
+
+def _short(day: str) -> str:
+    """`2026-08-11` -> `11/08`. La date brute alourdirait une ligne deja longue."""
+    try:
+        return date.fromisoformat(day).strftime("%d/%m")
+    except ValueError:
+        return day
+
+
+def mark_unplayed(event_id: int, outcome: str, settings: Settings | None = None) -> str:
+    """Marque — ou demarque — une rencontre comme non disputee. Rend l'etat pose.
+
+    **C'est la seule source vivante, et c'est un constat, pas une preference.**
+    Un forfait annonce trente minutes avant le coup d'envoi n'existe dans aucune
+    source que l'application sache lire : le fichier de resultats parait une
+    fois par semaine et apres coup — mesure le 12/08, il s'arretait au 03/08 —
+    donc il arrive toujours apres que le tournoi a cesse d'etre rendu. La regle
+    des deux rencontres d'une meme journee attrape le remplacement d'adversaire
+    et rien d'autre. Restait la saisie, ou le silence.
+
+    Une valeur vide efface le marquage : se tromper doit se defaire, sinon on
+    hesite a marquer et la ligne ne sert plus a rien. Une valeur hors
+    vocabulaire est refusee plutot qu'ecrite — `load_for` l'ignorerait, et le
+    marquage paraitrait pose sans avoir aucun effet.
+    """
+    settings = settings or get_settings()
+    mot = (outcome or "").strip().casefold()
+    if mot and mot not in OUTCOMES:
+        raise ValueError(f"Etat inconnu : {outcome}")
+    with connect(settings) as conn:
+        conn.execute(
+            "UPDATE events SET match_outcome_type = ? WHERE id = ?", (mot or None, event_id)
+        )
+    logger.info("evenement %s marque « %s »", event_id, mot or "disputee")
+    return mot
 
 
 @dataclass(frozen=True)

@@ -478,3 +478,76 @@ def test_le_filtre_des_blocs_pauvres_ecarte_les_autres(migrated: Settings) -> No
     # Le cyclisme n'a pas de referentiel : il n'est jamais « pauvre », et le
     # retirer sur ce filtre serait un jugement plutot qu'une mesure.
     assert [event.sport_key for _, events in vue.groups for event in events] == ["football"]
+
+
+# -- Marquer une rencontre non disputee ---------------------------------------
+
+
+def _seed_tennis(settings: Settings, home: str, away: str, when: str) -> int:
+    """Un match de tennis, dans un tournoi rattache."""
+    competition = db.query_one(
+        "SELECT id, sport_id FROM competitions WHERE oddsapi_key = 'tennis_atp_us_open'",
+        settings=settings,
+    )
+    db.execute(
+        "INSERT INTO events (sport_id, competition_id, home, away, commence_time, source, "
+        "created_at) VALUES (?, ?, ?, ?, ?, 'api', ?)",
+        (competition["sport_id"], competition["id"], home, away, when, db.utcnow()),
+        settings=settings,
+    )
+    return int(
+        db.query_one(
+            "SELECT id FROM events WHERE home = ? AND away = ?", (home, away), settings=settings
+        )["id"]
+    )
+
+
+def test_marquer_un_match_non_dispute(client: TestClient, isolated_settings: Settings) -> None:
+    """La seule source vivante d'un forfait : le fichier de resultats parait une
+    fois par semaine et apres coup, donc toujours apres que le tournoi a cesse
+    d'etre rendu."""
+    event_id = _seed_tennis(isolated_settings, "Bencic", "Gauff", "2026-08-11T23:00:00Z")
+
+    response = client.post(f"/events/{event_id}/unplayed", data={"outcome": "walkover"})
+
+    assert response.status_code == 200
+    assert "<html" not in response.text, "une route ciblee par HTMX rend le fragment"
+    assert response.text.strip().startswith('<div id="event-context">')
+    ligne = db.query_one(
+        "SELECT match_outcome_type FROM events WHERE id = ?",
+        (event_id,),
+        settings=isolated_settings,
+    )
+    assert ligne["match_outcome_type"] == "walkover"
+
+
+def test_un_etat_refuse_laisse_la_base_intacte(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Un marquage qui parait pose sans avoir d'effet serait le silence exact que
+    cette colonne existe pour supprimer."""
+    event_id = _seed_tennis(isolated_settings, "Bencic", "Gauff", "2026-08-11T23:00:00Z")
+
+    response = client.post(f"/events/{event_id}/unplayed", data={"outcome": "annule"})
+
+    assert response.status_code == 200
+    assert "Etat inconnu" in response.text
+    ligne = db.query_one(
+        "SELECT match_outcome_type FROM events WHERE id = ?",
+        (event_id,),
+        settings=isolated_settings,
+    )
+    assert ligne["match_outcome_type"] is None
+
+
+def test_le_choix_n_est_propose_qu_au_tennis(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Au football, un forfait arrive par le fournisseur de contexte et sort deja
+    sur la ligne « Statut » : un second chemin, saisi a la main, pourrait le
+    contredire."""
+    foot = _seed_event(isolated_settings)
+    tennis = _seed_tennis(isolated_settings, "Bencic", "Gauff", "2026-08-11T23:00:00Z")
+
+    assert "Rencontre disputée ?" not in client.get(f"/events/{foot}").text
+    assert "Rencontre disputée ?" in client.get(f"/events/{tennis}").text

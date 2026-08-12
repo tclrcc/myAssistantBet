@@ -101,6 +101,10 @@ CONTEXT_ICONS = {
     "Tour": "echelons",
     "Repos": "lit",
     "Parcours": "echelons",
+    # Ce que le parcours vient d'ecarter : une rencontre programmee qui n'a pas
+    # eu lieu. Meme signe que « Abandons », qui dit la meme chose sur les six
+    # derniers mois — un joueur qui n'entre pas sur le court.
+    "Non joue": "sortie",
     "Usure": "chrono",
     "Elo": "jauge",
     "Surface": "tennis",
@@ -158,7 +162,10 @@ CONTEXT_ICONS = {
 #:     compter ferait baisser la densite des matchs bien couverts ;
 #:   · `Stats match` est une ligne **negative** — elle dit que le fournisseur ne
 #:     publie rien — et la compter recompenserait une absence ;
-#:   · `Abandons` et `H2H ici` au tennis ne sortent que si le passe s'y prete.
+#:   · `Abandons` et `H2H ici` au tennis ne sortent que si le passe s'y prete ;
+#:   · `Non joue` ne sort que si une rencontre programmee n'a pas eu lieu, ce qui
+#:     est l'exception — et la compter ferait paraitre plus riche un parcours
+#:     qui, justement, porte un match de moins.
 CONTEXT_EXPECTED: dict[str, tuple[str, ...]] = {
     "football": (
         "Classement",

@@ -101,6 +101,10 @@ class EventOdds:
     primary: str = ""
     fetched_local: datetime | None = None
     note: str = ""
+    #: Ce qui empeche cette rencontre programmee d'avoir ete disputee, quand on
+    #: le sait. Vide est le cas ordinaire, et ne veut pas dire « disputee » : il
+    #: dit que rien, dans ce que nous savons, ne s'y oppose.
+    match_outcome_type: str = ""
 
     @property
     def affiche(self) -> str:
@@ -186,7 +190,7 @@ def build(event_id: int, settings: Settings | None = None) -> EventOdds | None:
             "SELECT e.id, e.home, e.away, e.commence_time, e.source, e.apifootball_fixture_id, "
             "       s.key AS sport_key, s.label AS sport_label, "
             "       COALESCE(c.label, '—') AS competition, "
-            "       e.competition_id, c.oddsapi_key, c.surface "
+            "       e.competition_id, c.oddsapi_key, c.surface, e.match_outcome_type "
             "FROM events e "
             "JOIN sports s ON s.id = e.sport_id "
             "LEFT JOIN competitions c ON c.id = e.competition_id "
@@ -262,4 +266,5 @@ def build(event_id: int, settings: Settings | None = None) -> EventOdds | None:
         # releve de marche : l'afficher tromperait sur la fraicheur.
         fetched_local=_local(fetched, settings.tz) if fetched and timed else None,
         note=(note_row["note"] if note_row else "") or "",
+        match_outcome_type=row["match_outcome_type"] or "",
     )

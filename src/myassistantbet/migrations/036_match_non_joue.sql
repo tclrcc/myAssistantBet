@@ -1,0 +1,34 @@
+-- Un match programme n'est pas un match joue.
+--
+-- `Repos` et `Parcours` se calculent sur **nos propres scans**, qui datent des
+-- rencontres *programmees*. Le fournisseur de cotes programme, il ne rapporte
+-- pas : un forfait, un abandon avant le premier point ou un adversaire remplace
+-- laissent une ligne indiscernable d'un match dispute.
+--
+-- Mesure qui l'a revele, sur une demi-finale du Canadian Open : Bencic s'est
+-- retiree trente minutes avant son quart, Gauff est passee sans entrer sur le
+-- court. Le bloc a servi « Repos Coco Gauff 1j » et a liste Bencic au
+-- `Parcours`, quand Gauff n'avait pas joue depuis **trois jours**. Le fait le
+-- plus decisif du lot etait donc efface par la ligne censee le porter.
+--
+-- **La colonne dit ce qui n'a pas eu lieu, jamais ce qui a eu lieu.** NULL est
+-- le cas ordinaire et signifie « rien ne s'oppose a ce que ce match ait ete
+-- joue » — pas « il a ete joue ». C'est la meme regle que la ligne `Statut` du
+-- football : une absence de ligne ne prouve rien, elle dit seulement que rien
+-- dans ce que nous savons ne contredit le programme.
+--
+-- Vocabulaire, tenu par `tennis_load.OUTCOMES` :
+--   walkover  — forfait de l'adversaire, la rencontre n'a pas ete disputee
+--   replaced  — l'adversaire programme a ete remplace, ce match-la n'a pas eu
+--               lieu (le remplacant a le sien)
+--   suspended — interrompue et non terminee a l'heure ou nous lisons
+--
+-- **Ce qui l'ecrit** : la regle des deux rencontres d'un meme joueur dans la
+-- meme journee de tournoi la derive toute seule, et la fiche d'un match permet
+-- de la poser a la main. Le fichier de resultats, lui, **ne peut pas** la
+-- servir : il parait une fois par semaine et apres coup — mesure le 12/08, il
+-- s'arretait au 03/08 — donc il arrive toujours apres que le tournoi a cesse
+-- d'etre rendu. Les lignes qui en sortent (`Forme`, `Usure`, `Profil`, `Marge`)
+-- le lisent deja en direct et n'ont besoin de rien ici.
+
+ALTER TABLE events ADD COLUMN match_outcome_type TEXT;
