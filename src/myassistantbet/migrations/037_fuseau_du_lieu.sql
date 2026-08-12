@@ -1,0 +1,29 @@
+-- Le fuseau du lieu, pour dater un fait ou il se produit.
+--
+-- Tout ce que l'application affiche est date en `Europe/Paris`, et c'est le bon
+-- choix pour une heure de coup d'envoi : c'est celle a laquelle l'utilisateur
+-- allume sa television. Ce l'est beaucoup moins pour **dater un fait sur
+-- place** : le forfait de Bencic a ete annonce le mardi 11 aout au soir a
+-- Toronto, et le bloc l'ecrivait « le 12/08 ».
+--
+-- Le meme artefact produisait « Repos 0j » sur six joueuses de Cincinnati dont
+-- le premier tour s'etait joue la veille en fin d'apres-midi : bascule de date
+-- a Paris, pas de double journee.
+--
+-- **Rien ne se deduit d'un libelle**, meme regle que la surface, le niveau et le
+-- rattachement au jeu de donnees de resultats : « Cincinnati Open » ne dit pas
+-- `America/New_York`, et une table de villes se tromperait le jour ou le tournoi
+-- demenage — le Canadian Open change de ville chaque annee. La saisie est donc
+-- manuelle, une competition a la fois, depuis `/competitions`.
+--
+-- **Non renseigne, rien n'est invente** : les instants se rendent alors en UTC,
+-- annonces comme tels. Une heure fausse presentee comme locale serait pire qu'une
+-- heure vraie presentee comme distante — c'est exactement le defaut qu'on corrige.
+--
+-- Ce que cette colonne **ne** change pas : le regroupement en journees de tournoi
+-- (`tournament_day`), qui se fait par trou horaire et vaut pour les deux
+-- hemispheres sans qu'aucun fuseau soit stocke. Les deux mesures coexistent — un
+-- ecart en heures et une avancee en journees de tournoi ne disent pas la meme
+-- chose, et un tournoi de douze jours ne fatigue pas comme un tournoi de sept.
+
+ALTER TABLE competitions ADD COLUMN timezone TEXT;

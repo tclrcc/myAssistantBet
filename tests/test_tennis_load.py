@@ -40,7 +40,13 @@ def test_le_repos_se_compte_sur_les_tours_precedents(migrated: Settings) -> None
         "Fils", "Navone", _competition(migrated), "2026-08-07T18:00:00Z", migrated
     )
 
-    assert lignes == [("Repos", "Fils 2j | Navone 3j")]
+    assert lignes == [
+        (
+            "Repos",
+            "Fils 48 h (2 j. tournoi, depuis 05/08 18:00 UTC)\n"
+            "Navone 72 h (3 j. tournoi, depuis 04/08 18:00 UTC)",
+        )
+    ]
 
 
 def test_le_nombre_de_tours_n_accompagne_plus_le_repos(migrated: Settings) -> None:
@@ -57,7 +63,7 @@ def test_le_nombre_de_tours_n_accompagne_plus_le_repos(migrated: Settings) -> No
         "Fils", "Inconnu", _competition(migrated), "2026-08-07T18:00:00Z", migrated
     )
 
-    assert lignes == [("Repos", "Fils 2j")]
+    assert lignes == [("Repos", "Fils 48 h (2 j. tournoi, depuis 05/08 18:00 UTC)")]
 
 
 def test_un_joueur_sans_tour_precedent_ne_produit_rien(migrated: Settings) -> None:
@@ -111,7 +117,7 @@ def test_les_accents_et_la_casse_ne_separent_pas_un_joueur(migrated: Settings) -
         "Fabian Marozsan", "Autre", _competition(migrated), "2026-08-07T18:00:00Z", migrated
     )
 
-    assert lignes and "Fabian Marozsan 2j" in lignes[0][1]
+    assert lignes and lignes[0][1].startswith("Fabian Marozsan 48 h")
 
 
 def test_le_repos_se_compte_en_journees_de_tournoi(migrated: Settings) -> None:
@@ -253,8 +259,9 @@ def test_un_forfait_ne_compte_pas_dans_le_repos(migrated: Settings) -> None:
     _marquer(migrated, "Belinda Bencic", "Coco Gauff", tennis_load.WALKOVER)
     apres = tennis_load.lines(*args, migrated)
 
-    assert avant == [("Repos", "Coco Gauff 1j")], "le defaut, tant que rien ne dit le forfait"
-    assert apres == [("Repos", "Coco Gauff 4j")]
+    assert "Coco Gauff 25 h" in avant[0][1], "le defaut, tant que rien ne dit le forfait"
+    assert apres[0][1].startswith("Coco Gauff 3 j 6 h")
+    assert "4 j. tournoi" in apres[0][1], "les journees de tournoi restent, en parallele"
 
 
 def test_un_forfait_sort_du_parcours_et_se_dit_a_part(migrated: Settings) -> None:
@@ -279,7 +286,10 @@ def test_un_forfait_sort_du_parcours_et_se_dit_a_part(migrated: Settings) -> Non
     # resultats se comparent. En donner une autre ici ferait deux calendriers
     # dans le meme bloc.
     assert non_joue == [
-        ("Non joue", "Coco Gauff — Belinda Bencic le 12/08, forfait adverse, non disputee")
+        (
+            "Non joue",
+            "Coco Gauff — Belinda Bencic le 11/08 23:00 UTC, forfait adverse, non disputee",
+        )
     ]
 
 
@@ -426,3 +436,141 @@ def test_le_preambule_ne_promet_plus_qu_un_forfait_se_lit_comme_un_match_joue(
 
     assert "si bien qu'un forfait s'y lit comme un match joué" not in corps
     assert "L'absence de « Non joué » ne prouve donc pas" in corps
+
+
+# -- Le repos en temps reel ecoule -------------------------------------------
+
+
+def _fuseau(settings: Settings, name: str) -> None:
+    db.execute(
+        "UPDATE competitions SET timezone = ? WHERE id = ?",
+        (name, _competition(settings)),
+        settings=settings,
+    )
+
+
+def test_deux_sessions_du_meme_jour_ne_donnent_plus_deux_repos_differents(
+    migrated: Settings,
+) -> None:
+    """Le defaut mesure sur les demi-finales du Canadian Open : le bloc donnait
+    2j aux joueurs sortis de la session de jour et 1j a ceux de la session du
+    soir, quand l'ecart reel etait d'environ vingt-quatre heures pour tout le
+    monde. La journee de tournoi ne sait pas dire cette grandeur-la."""
+    # Quarts du 11 aout a Montreal : session de jour a 17h00 UTC, session du soir
+    # a 23h50 — soit apres minuit a Paris, donc une autre journee de tournoi.
+    _match(migrated, "Jour", "A", "2026-08-11T17:00:00Z")
+    _match(migrated, "Soir", "B", "2026-08-11T23:50:00Z")
+
+    # Les deux jouent **la meme** demi-finale, le 12 aout a 23h00 UTC.
+    charges = {
+        nom: tennis_load.load_for(nom, _competition(migrated), "2026-08-12T23:00:00Z", migrated)
+        for nom in ("Jour", "Soir")
+    }
+
+    # La journee de tournoi les separe d'une journee entiere...
+    assert (charges["Jour"].days_rest, charges["Soir"].days_rest) == (2, 1)
+    # ...quand sept heures les separent vraiment.
+    assert (charges["Jour"].rest.hours, charges["Soir"].rest.hours) == (30, 23)
+
+
+def test_une_bascule_de_date_a_paris_ne_fait_plus_un_repos_nul(migrated: Settings) -> None:
+    """Six joueuses de Cincinnati recevaient « Repos 0j » : leur premier tour
+    s'etait joue la veille en fin d'apres-midi local, mais 23h00 UTC tombe apres
+    minuit a Paris, si bien que les deux matchs partageaient une date."""
+    _match(migrated, "Mertens", "A", "2026-08-11T23:00:00Z")
+
+    charge = tennis_load.load_for(
+        "Mertens", _competition(migrated), "2026-08-12T21:00:00Z", migrated
+    )
+
+    assert charge.days_rest == 0, "l'ancien defaut, tel quel"
+    assert charge.rest.hours == 22
+
+
+def test_le_repos_dit_sur_quoi_il_a_ete_mesure(migrated: Settings) -> None:
+    """Le chiffre seul ne suffit pas : deux joueurs a « 23 h » et « 26 h » ne se
+    comparent que si l'on sait lequel est releve et lequel est deduit. Aucune
+    source ne publie la duree d'un match — le calcul part donc du coup d'envoi,
+    et la ligne le dit plutot que de laisser croire a une fin de match."""
+    _match(migrated, "Fils", "A", "2026-08-05T18:00:00Z")
+
+    ligne = tennis_load.lines(
+        "Fils", "Autre", _competition(migrated), "2026-08-07T18:00:00Z", migrated
+    )[0][1]
+
+    assert "depuis 05/08 18:00" in ligne, "l'instant de reference est le coup d'envoi"
+    assert "~" not in ligne, "rien n'est estime aujourd'hui, donc rien ne doit le laisser croire"
+
+
+def test_le_fuseau_du_lieu_date_le_fait_la_ou_il_se_produit(migrated: Settings) -> None:
+    """Une heure de Paris presentee comme locale serait pire qu'une heure UTC
+    presentee comme distante. Non renseigne, rien n'est invente."""
+    _match(migrated, "Fils", "A", "2026-08-05T23:00:00Z")
+    args = ("Fils", "Autre", _competition(migrated), "2026-08-07T18:00:00Z")
+
+    sans = tennis_load.lines(*args, migrated)[0][1]
+    _fuseau(migrated, "America/Toronto")
+    avec = tennis_load.lines(*args, migrated)[0][1]
+
+    assert "depuis 05/08 23:00 UTC" in sans
+    assert "depuis 05/08 19:00 local" in avec, "19h00 a Toronto, et le 5, pas le 6"
+
+
+def test_un_fuseau_illisible_vaut_non_renseigne(migrated: Settings) -> None:
+    """Une saisie devenue illisible d'une version de tzdata a l'autre ne doit pas
+    faire tomber le bloc entier pour une colonne d'appoint."""
+    _match(migrated, "Fils", "A", "2026-08-05T18:00:00Z")
+    _fuseau(migrated, "Mars/Olympus_Mons")
+
+    ligne = tennis_load.lines(
+        "Fils", "Autre", _competition(migrated), "2026-08-07T18:00:00Z", migrated
+    )[0][1]
+
+    assert "UTC" in ligne
+
+
+def test_au_dela_de_trois_jours_l_ecart_se_lit_en_jours(migrated: Settings) -> None:
+    """« 121 h » demande une division, « 5 j » se lit d'un coup. En dessous c'est
+    l'inverse — c'est justement la que la journee de tournoi confondait 24 h et
+    0 h. Les heures restent ecrites : c'est la grandeur mesuree."""
+    _match(migrated, "Fils", "A", "2026-08-01T18:00:00Z")
+
+    ligne = tennis_load.lines(
+        "Fils", "Autre", _competition(migrated), "2026-08-06T18:00:00Z", migrated
+    )[0][1]
+
+    assert ligne.startswith("Fils 5 j 0 h")
+
+
+def test_le_mode_d_emploi_du_repos_dit_ce_qu_il_ne_faut_pas_en_faire(migrated: Settings) -> None:
+    """La mention compte autant que le chiffre : sans elle, deux joueurs a
+    « 23 h » et « 30 h » se comparent comme si les deux etaient releves, alors
+    que les deux partent d'un coup d'envoi et ignorent la duree des matchs."""
+    from myassistantbet.services.prompt import build_prompt
+
+    _match(migrated, "Alina Korneeva", "Coco Gauff", "2026-08-09T18:00:00Z")
+    session_id = _session(migrated, "Coco Gauff", "Elena Rybakina", "2026-08-13T00:30:00Z")
+
+    corps = " ".join(build_prompt(session_id, settings=migrated).body.split())
+
+    assert "le temps **réellement écoulé** depuis le dernier match" in corps
+    assert "Ne compare donc pas deux écarts à l'heure près**" in corps
+    assert "en parallèle et non à la place" in corps
+
+
+def test_la_fraicheur_dit_les_bords_de_la_fenetre_de_scan(migrated: Settings) -> None:
+    """« vu depuis le 04/08 » etait ambigu : premier jour du tournoi, ou premier
+    jour ou nous avons regarde ? La borne haute compte autant — vieille de deux
+    jours, elle dit qu'un scan ne tourne plus, et rien d'autre ne le dirait."""
+    _match(migrated, "Fils", "A", "2026-08-05T18:00:00Z")
+
+    fenetre = tennis_load.scan_window(_competition(migrated), migrated)
+
+    assert fenetre.startswith("scans du ")
+    assert fenetre.endswith(" UTC")
+
+
+def test_sans_evenement_la_fenetre_de_scan_ne_dit_rien(migrated: Settings) -> None:
+    """Une fenetre inventee sur une competition jamais scannee ferait chercher un
+    trou de collecte la ou il n'y a rien eu a collecter."""
+    assert tennis_load.scan_window(_competition(migrated), migrated) == ""

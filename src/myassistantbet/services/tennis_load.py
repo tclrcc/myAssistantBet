@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..config import Settings, get_settings
 from ..db import connect
@@ -67,10 +68,40 @@ class Appearance:
     #: la meme chose que « disputee » : nous ne le savons pas, nous n'avons rien
     #: qui dise le contraire. Meme regle que la ligne `Statut` du football.
     outcome: str | None = None
+    #: Coup d'envoi programme, en UTC. C'est le seul instant que nous connaissons
+    #: vraiment : ni la fin du match, ni sa duree ne sont publiees par une source
+    #: que l'application sache lire.
+    start: datetime | None = None
 
     @property
     def contested(self) -> bool:
         return self.outcome is None
+
+
+#: Sur quoi le repos a ete calcule. Le chiffre seul ne suffit pas : un ecart de
+#: deux heures entre deux joueurs se lit tout autrement s'il vient d'une duree
+#: mesuree ou d'un coup d'envoi a un coup d'envoi. La mention compte donc autant
+#: que le nombre, et un repos estime porte un `~`.
+FROM_START = "start"
+FROM_END = "end"
+
+
+@dataclass(frozen=True)
+class Rest:
+    """Le repos d'un joueur avant ce match, et sur quoi il a ete mesure."""
+
+    hours: int
+    #: Journees de tournoi, **en parallele et non a la place**. Les deux mesurent
+    #: des choses differentes : a ecart horaire egal, un tournoi de douze jours
+    #: et un tournoi de sept ne fatiguent pas pareil.
+    days: int | None
+    #: Instant de reference : coup d'envoi du dernier match, ou sa fin quand on
+    #: la connait.
+    since: datetime
+    basis: str = FROM_START
+    #: Vrai quand l'instant de reference est deduit plutot que releve. Aucune
+    #: source ne le permet aujourd'hui — voir `_rest`.
+    estimated: bool = False
 
 
 @dataclass
@@ -100,6 +131,9 @@ class Load:
     #: ne vivent que la. Les taire ferait chercher un match qui n'existe pas ;
     #: les compter avec les autres est le defaut qu'on corrige.
     uncontested: tuple[Appearance, ...] = ()
+    #: Le repos en temps reel ecoule. `None` quand aucune rencontre disputee ne
+    #: precede — la meme condition que `days_rest`.
+    rest: Rest | None = None
 
     @property
     def fragment(self) -> str:
@@ -199,6 +233,7 @@ def load_for(
         first_day=min(connues) if connues else "",
         days=tuple(sorted(item.day for item in disputees)),
         faced=tuple((item.day, item.opponent) for item in disputees),
+        rest=_elapsed(when, disputees, _rest(ici, [item.day for item in disputees])),
         uncontested=tuple(item for item in apparitions if not item.contested),
     )
 
@@ -254,6 +289,7 @@ def _resolve_duplicates(
                         day=str(jour),
                         opponent=autre,
                         outcome=REPLACED if remplacee else marque,
+                        start=played,
                     ),
                 )
             )
@@ -261,6 +297,38 @@ def _resolve_duplicates(
     # lit du premier tour au dernier, et deux rencontres d'une meme journee
     # doivent rester dans leur ordre reel.
     return [item for _, _, item in sorted(resolues, key=lambda row: (row[0], row[1]))]
+
+
+def _elapsed(when: datetime, disputees: list[Appearance], days: int | None) -> Rest | None:
+    """Temps reellement ecoule depuis la derniere rencontre disputee.
+
+    **C'est la grandeur que la journee de tournoi ne sait pas dire.** Sur les
+    demi-finales du Canadian Open, le bloc donnait 2j aux joueurs sortis de la
+    session de jour et 1j a ceux de la session du soir, quand l'ecart reel etait
+    d'environ vingt-quatre heures pour tout le monde. A Cincinnati, six joueuses
+    dont le premier tour s'etait joue la veille en fin d'apres-midi local
+    recevaient « 0j » — une bascule de date a Paris, pas un double.
+
+    **Le calcul part du coup d'envoi precedent, et il faut le dire.** La fin d'un
+    match serait la bonne borne ; ni sa duree ni son heure de fin ne sont
+    publiees par une source que l'application sache lire — verifie le 7 aout
+    2026, et le blocage tient toujours : `tennis-data.co.uk` ne sert que des
+    scores et retarde de dix jours, les pages de match de Tennis Abstract sont
+    interdites par son `robots.txt`, les CSV de Jeff Sackmann ont disparu, et
+    `atptour.com` interdit nos agents. `Rest.basis` porte donc la reponse, et le
+    jour ou une duree entrera, seule cette fonction changera.
+    """
+    if not disputees:
+        return None
+    dernier = max((item.start for item in disputees if item.start), default=None)
+    if dernier is None:
+        return None
+    # Heures **entierement ecoulees**, jamais arrondies au plus proche : `round`
+    # applique la regle bancaire, si bien que 25h30 et 78h30 tomberaient l'une
+    # vers le haut et l'autre vers le bas. Un plancher est monotone et se lit
+    # comme la phrase le dit — « il a eu 25 heures ».
+    hours = int((when - dernier).total_seconds() // 3600)
+    return Rest(hours=max(hours, 0), days=days, since=dernier, basis=FROM_START)
 
 
 def _rest(here: str | None, previous: list[str]) -> int | None:
@@ -271,6 +339,73 @@ def _rest(here: str | None, previous: list[str]) -> int | None:
         return (date.fromisoformat(here) - date.fromisoformat(max(previous))).days
     except ValueError:
         return None
+
+
+#: Au-dela, l'ecart se lit mieux en jours qu'en heures : « 121 h » demande une
+#: division, « 5j » se lit d'un coup. En dessous, c'est l'inverse — c'est
+#: justement la ou la journee de tournoi confondait 24 h et 0 h.
+HOURS_MAX = 72
+
+
+def venue_zone(competition_id: int | None, settings: Settings) -> ZoneInfo | None:
+    """Fuseau du lieu, saisi a la main. `None` quand il n'est pas renseigne.
+
+    Rien ne se deduit d'un libelle, meme regle que la surface : « Cincinnati
+    Open » ne dit pas `America/New_York`, et une table de villes se tromperait
+    le jour ou le tournoi demenage.
+    """
+    if not competition_id:
+        return None
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT timezone FROM competitions WHERE id = ?", (competition_id,)
+        ).fetchone()
+    name = (row["timezone"] if row else None) or ""
+    try:
+        return ZoneInfo(name) if name else None
+    except (ZoneInfoNotFoundError, ValueError):
+        # Une saisie devenue illisible — fuseau supprime d'une version de tzdata
+        # a l'autre — vaut « non renseigne » : la ligne se rend en UTC et le dit,
+        # plutot que de refuser tout le bloc pour une colonne d'appoint.
+        logger.warning("Fuseau illisible sur la competition %s : %s", competition_id, name)
+        return None
+
+
+def _moment(when: datetime, zone: ZoneInfo | None) -> str:
+    """`11/08 18:47 local` ou `11/08 22:47 UTC` — jamais l'un pour l'autre.
+
+    **Une heure de Paris presentee comme locale serait pire qu'une heure UTC
+    presentee comme distante.** C'est l'erreur exacte que la ligne corrige : le
+    forfait de Bencic, annonce le mardi 11 au soir a Toronto, s'ecrivait
+    « le 12/08 » parce que 23h UTC tombe apres minuit a Paris.
+    """
+    if zone is None:
+        return f"{when.astimezone(UTC).strftime('%d/%m %H:%M')} UTC"
+    return f"{when.astimezone(zone).strftime('%d/%m %H:%M')} local"
+
+
+def _rest_fragment(player: str, rest: Rest, zone: ZoneInfo | None) -> str:
+    """`Coco Gauff 78 h (4 j. tournoi, depuis 09/08 14:00 local)`.
+
+    Trois choses dans un ordre voulu : l'ecart reel, l'avancee du tournoi, puis
+    **sur quoi l'ecart a ete mesure**. Le dernier n'est pas un ornement — deux
+    joueurs a « 23 h » et « 26 h » ne se comparent que si l'on sait lequel est
+    releve et lequel est deduit, et sans cette mention l'ecart se lit comme un
+    fait quand il peut n'etre qu'un artefact d'estimation.
+    """
+    approx = "~" if rest.estimated else ""
+    if rest.hours > HOURS_MAX:
+        # Au-dela de trois jours, « 78 h » demande une division pour se situer.
+        # Les deux unites dans un seul nombre plutot que deux nombres cote a
+        # cote : `78 h (3 j)` ferait trois chiffres sur la ligne avec la journee
+        # de tournoi, et c'est un de trop pour un coup d'oeil.
+        ecart = f"{approx}{rest.hours // 24} j {rest.hours % 24} h"
+    else:
+        ecart = f"{approx}{rest.hours} h"
+    detail = [f"{rest.days} j. tournoi"] if rest.days is not None else []
+    mot = "fin" if rest.basis == FROM_END else "depuis"
+    detail.append(f"{mot} {_moment(rest.since, zone)}")
+    return f"{player} {ecart} ({', '.join(detail)})"
 
 
 def lines(
@@ -291,16 +426,22 @@ def lines(
     sur le court : le compter donnait « Coco Gauff 1j » a une joueuse qui
     n'avait pas joue depuis trois jours, sur la ligne meme qui existe pour dire
     sa fraicheur.
+
+    **Un joueur par ligne**, contrairement aux autres lignes du bloc. Chaque
+    fragment porte trois choses — l'ecart, l'avancee du tournoi, l'instant de
+    reference — et deux joueurs bout a bout depassaient largement la largeur ou
+    une ligne se lit d'un coup d'oeil.
     """
     settings = settings or get_settings()
+    zone = venue_zone(competition_id, settings)
     fragments = []
     for player in (home, away):
         if not player:
             continue
-        fragment = load_for(player, competition_id, commence_time, settings).fragment
-        if fragment:
-            fragments.append(f"{player} {fragment}")
-    return [("Repos", " | ".join(fragments))] if fragments else []
+        charge = load_for(player, competition_id, commence_time, settings)
+        if charge.rest is not None:
+            fragments.append(_rest_fragment(player, charge.rest, zone))
+    return [("Repos", "\n".join(fragments))] if fragments else []
 
 
 def path_lines(
@@ -366,6 +507,7 @@ def unplayed_lines(
     jour-la, mais contre quelqu'un d'autre.
     """
     settings = settings or get_settings()
+    zone = venue_zone(competition_id, settings)
     fragments = []
     for player in (home, away):
         if not player:
@@ -373,9 +515,23 @@ def unplayed_lines(
         for item in load_for(player, competition_id, commence_time, settings).uncontested:
             adversaire = _with_elo(item.opponent, oddsapi_key, settings)
             fragments.append(
-                f"{player} — {adversaire} le {_short(item.day)}, {OUTCOMES[str(item.outcome)]}"
+                f"{player} — {adversaire} {_when(item, zone)}, {OUTCOMES[str(item.outcome)]}"
             )
-    return [("Non joue", " | ".join(fragments))] if fragments else []
+    return [("Non joue", "\n".join(fragments))] if fragments else []
+
+
+def _when(item: Appearance, zone: ZoneInfo | None) -> str:
+    """`le 11/08 19:00 local`, ou la journee de tournoi a defaut.
+
+    **Toute la valeur de cette ligne est de dater un fait**, et le forfait de
+    Bencic, annonce le mardi 11 au soir a Toronto, s'ecrivait « le 12/08 » : sa
+    journee de tournoi vient de l'heure de Paris, ou 23h UTC tombe apres minuit.
+    Avec le fuseau du lieu, l'instant se rend a l'heure du lieu ; sans lui, en
+    UTC, annonce comme tel.
+    """
+    if item.start is not None:
+        return f"le {_moment(item.start, zone)}"
+    return f"le {_short(item.day)}"
 
 
 def _short(day: str) -> str:
@@ -463,6 +619,36 @@ def played_since(
         opponents=noms,
         whole_path=bool(charge.opponents) and len(noms) == len(charge.opponents),
     )
+
+
+def scan_window(competition_id: int | None, settings: Settings | None = None) -> str:
+    """`scans du 04/08 09:12 au 12/08 06:30 UTC` — les bords de notre fenetre.
+
+    « vu depuis le 04/08 » etait ambigu : premier jour du tournoi, ou premier
+    jour ou nous avons regarde ? Il a fallu le deviner, et c'est precisement ce
+    que cette ligne existe pour eviter. `events.created_at` porte l'instant ou
+    chaque rencontre est entree en base — donc l'instant ou nous l'avons vue
+    pour la premiere fois.
+
+    **La borne haute compte autant que la basse.** Elle est « maintenant » quand
+    tout va bien, et c'est justement ce qui la rend utile : une borne haute
+    vieille de deux jours dit qu'un scan ne tourne plus, et rien d'autre dans le
+    bloc ne le dirait. En UTC des deux cotes — un instant de collecte n'a pas de
+    lieu, et l'ecrire a l'heure du tournoi serait une precision inventee.
+    """
+    if not competition_id:
+        return ""
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT MIN(created_at) AS debut, MAX(created_at) AS fin FROM events "
+            "WHERE competition_id = ?",
+            (competition_id,),
+        ).fetchone()
+    debut, fin = _parse(row["debut"] if row else None), _parse(row["fin"] if row else None)
+    if debut is None or fin is None:
+        return ""
+    return f"scans du {debut.strftime('%d/%m %H:%M')} au {fin.strftime('%d/%m %H:%M')} UTC"
 
 
 def _since(first_day: str) -> str:

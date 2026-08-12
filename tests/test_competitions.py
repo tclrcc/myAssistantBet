@@ -1063,3 +1063,66 @@ def test_une_competition_hors_catalogue_propose_l_import(
 
     assert "hors catalogue" in page
     assert "importer les matchs" in page
+
+
+# -- Le fuseau du lieu --------------------------------------------------------
+
+
+def test_le_fuseau_se_saisit_a_la_main(migrated: Settings) -> None:
+    """Rien ne se deduit d'un libelle, meme regle que la surface et le niveau :
+    « Cincinnati Open » ne dit pas America/New_York, et une table de villes se
+    tromperait le jour ou le tournoi demenage — le Canadian Open change de ville
+    chaque annee."""
+    competition_id = int(
+        db.query_one(
+            "SELECT id FROM competitions WHERE oddsapi_key = 'tennis_atp_us_open'",
+            settings=migrated,
+        )["id"]
+    )
+
+    competitions_module.set_timezone(competition_id, "America/Toronto", migrated)
+
+    row = db.query_one(
+        "SELECT timezone FROM competitions WHERE id = ?", (competition_id,), settings=migrated
+    )
+    assert row["timezone"] == "America/Toronto"
+
+
+def test_un_fuseau_inconnu_est_refuse(migrated: Settings) -> None:
+    """La surface se contente d'etre ignoree quand elle est inconnue — le seul
+    effet est une ligne d'Elo en moins. Un fuseau accepte sans etre reconnu
+    ferait rendre des heures UTC sous le mot « local », soit l'affirmation
+    exactement inverse : celui-la se refuse."""
+    competition_id = int(
+        db.query_one(
+            "SELECT id FROM competitions WHERE oddsapi_key = 'tennis_atp_us_open'",
+            settings=migrated,
+        )["id"]
+    )
+
+    with pytest.raises(ValueError, match="Mars/Olympus_Mons"):
+        competitions_module.set_timezone(competition_id, "Mars/Olympus_Mons", migrated)
+
+    row = db.query_one(
+        "SELECT timezone FROM competitions WHERE id = ?", (competition_id,), settings=migrated
+    )
+    assert row["timezone"] is None
+
+
+def test_un_fuseau_vide_efface_la_saisie(migrated: Settings) -> None:
+    """Sans fuseau, les instants se rendent en UTC et le disent. C'est une
+    degradation prevue, pas une panne : se tromper doit pouvoir se defaire."""
+    competition_id = int(
+        db.query_one(
+            "SELECT id FROM competitions WHERE oddsapi_key = 'tennis_atp_us_open'",
+            settings=migrated,
+        )["id"]
+    )
+    competitions_module.set_timezone(competition_id, "America/Toronto", migrated)
+
+    competitions_module.set_timezone(competition_id, "  ", migrated)
+
+    row = db.query_one(
+        "SELECT timezone FROM competitions WHERE id = ?", (competition_id,), settings=migrated
+    )
+    assert row["timezone"] is None

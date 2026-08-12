@@ -715,6 +715,24 @@ def competition_surface(
     return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
 
 
+@app.post("/competitions/{competition_id}/timezone", response_class=HTMLResponse)
+def competition_timezone(
+    request: Request, competition_id: int, timezone: str = Form(default="")
+) -> HTMLResponse:
+    """Fixe le fuseau du lieu : il date un fait la ou il se produit.
+
+    Un fuseau illisible est **refuse** et non ignore : accepte, il ferait rendre
+    des heures UTC sous le mot « local », soit l'affirmation exactement inverse.
+    """
+    try:
+        competitions_service.set_timezone(competition_id, timezone, get_settings())
+    except ValueError as exc:
+        return templates.TemplateResponse(
+            request, "_competitions.html", _competitions_context(error=str(exc))
+        )
+    return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
+
+
 @app.post("/competitions/{competition_id}/fixtures", response_class=HTMLResponse)
 async def competition_import_fixtures(request: Request, competition_id: int) -> HTMLResponse:
     """Importe les matchs depuis API-Football, pour ce que The Odds API ne sert pas."""

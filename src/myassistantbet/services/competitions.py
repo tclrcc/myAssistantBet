@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..config import Settings, get_settings
 from ..db import connect
@@ -275,7 +276,7 @@ def list_all(settings: Settings | None = None) -> list[dict[str, Any]]:
         rows = conn.execute(
             "SELECT c.id, c.label, c.oddsapi_key, c.apifootball_league_id, c.priority, "
             "       c.active, c.api_active, c.notes, c.surface, c.category, "
-            "       c.tennisdata_tournaments, "
+            "       c.tennisdata_tournaments, c.timezone, "
             "       s.id AS sport_order, s.key AS sport_key, s.label AS sport_label "
             "FROM competitions c JOIN sports s ON s.id = c.sport_id"
         ).fetchall()
@@ -340,6 +341,32 @@ def set_surface(competition_id: int, surface: str, settings: Settings | None = N
             (value if value in SURFACES else None, competition_id),
         )
     logger.info("Surface de la competition %d : %s", competition_id, value or "non renseignee")
+
+
+def set_timezone(competition_id: int, timezone: str, settings: Settings | None = None) -> None:
+    """Fixe le fuseau du lieu, pour dater un fait la ou il se produit.
+
+    Un nom IANA (`America/Toronto`, `Europe/Warsaw`). Rien ne se deduit d'un
+    libelle, meme regle que la surface : « Cincinnati Open » ne dit pas
+    `America/New_York`, et une table de villes se tromperait le jour ou le
+    tournoi demenage — le Canadian Open change de ville chaque annee.
+
+    **Un fuseau illisible est refuse**, la ou la surface se contente d'etre
+    ignoree. Le contraste est juste : une surface inconnue ne coute qu'une ligne
+    d'Elo en moins, tandis qu'un fuseau accepte sans etre reconnu ferait rendre
+    des heures en UTC sous le mot « local » — l'affirmation exactement inverse.
+    """
+    value = (timezone or "").strip()
+    if value:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"Fuseau inconnu : {value}") from exc
+    with connect(settings) as conn:
+        conn.execute(
+            "UPDATE competitions SET timezone = ? WHERE id = ?", (value or None, competition_id)
+        )
+    logger.info("Fuseau de la competition %d : %s", competition_id, value or "non renseigne")
 
 
 def set_tennisdata_tournaments(

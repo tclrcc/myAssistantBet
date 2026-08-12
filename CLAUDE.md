@@ -1084,6 +1084,72 @@ scannes les jours d'avant. Aucun appel, aucune cle, aucun quota.
   - **Un forfait s'y lisait comme un match joue**, et documenter le defaut ne le corrigeait
     pas. Voir la section suivante.
 
+## Le repos se compte en heures ecoulees, pas en journees de tournoi
+
+La journee de tournoi a corrige un defaut et en a laisse un autre : elle regroupe
+correctement une soiree a cheval sur minuit, mais elle **ne sait pas dire un ecart**.
+Deux mesures qui l'ont revele :
+
+- sur les demi-finales du Canadian Open, le bloc donnait `2j` aux joueurs sortis de la
+  session de jour et `1j` a ceux de la session du soir — une journee entiere d'ecart
+  affiche, quand sept heures les separaient vraiment ;
+- a Cincinnati, six joueuses recevaient `Repos 0j` : leur premier tour s'etait joue la
+  veille en fin d'apres-midi local, mais 23h00 UTC tombe apres minuit a Paris.
+
+`Rest` porte donc **les deux grandeurs a la fois**, et c'est delibere : a ecart horaire
+egal, un tournoi de douze jours et un tournoi de sept ne fatiguent pas pareil. La ligne
+rend un joueur par ligne — trois informations par fragment, deux joueurs bout a bout ne
+se lisaient plus d'un coup d'oeil.
+
+- **`Rest.basis` dit sur quoi l'ecart a ete mesure, et cette mention compte autant que le
+  chiffre.** La bonne borne serait la **fin** du match precedent ; ni la duree ni l'heure
+  de fin ne sont publiees par une source lisible — `tennis-data.co.uk` ne sert que des
+  scores et retarde de dix jours, les pages de match de Tennis Abstract sont interdites
+  par son `robots.txt`, les CSV de Jeff Sackmann ont disparu, `atptour.com` interdit nos
+  agents. Le calcul part donc du **coup d'envoi**, et le preambule dit noir sur blanc de
+  ne pas comparer deux ecarts a l'heure pres : celui qui a joue 2h33 et celui qui est
+  passe en 1h05 portent la meme mention.
+  - Le jour ou une duree entrera — par un chemin autorise, ou a la main — **seule
+    `_elapsed` changera**, et le `~` de `Rest.estimated` distinguera un instant deduit
+    d'un instant releve. Rien n'est estime aujourd'hui, donc aucun `~` ne parait : une
+    machinerie qui ne peut pas se declencher aurait ete du code mort.
+- **Heures entierement ecoulees, jamais `round()`.** La regle bancaire fait tomber 25h30
+  et 78h30 chacune d'un cote ; un plancher est monotone et se lit comme la phrase le dit.
+  Au-dela de `HOURS_MAX` (72), l'ecart passe en `3 j 6 h` — deux unites dans **un seul**
+  nombre, parce que `78 h (3 j)` ferait trois chiffres sur la ligne avec la journee de
+  tournoi, soit un de trop pour un coup d'oeil.
+- **`competitions.timezone` date un fait la ou il se produit** (migration 037). Tout le
+  reste de l'application affiche en `Europe/Paris`, et c'est juste pour une heure de coup
+  d'envoi — c'est celle a laquelle on allume sa television. Ce l'est beaucoup moins pour
+  **dater un fait sur place** : le forfait de Bencic, annonce le mardi 11 aout au soir a
+  Toronto, s'ecrivait « le 12/08 ».
+  - **Rien ne se deduit d'un libelle**, meme regle que la surface et le niveau :
+    « Cincinnati Open » ne dit pas `America/New_York`, et une table de villes se
+    tromperait le jour ou le tournoi demenage — le Canadian Open change de ville chaque
+    annee. La saisie est manuelle, depuis `/competitions`.
+  - **Non renseigne, rien n'est invente** : les instants se rendent en UTC, annonces comme
+    tels. Une heure de Paris presentee comme locale serait pire qu'une heure UTC
+    presentee comme distante.
+  - **Un fuseau illisible est refuse a l'ecriture**, la ou la surface se contente d'etre
+    ignoree. Le contraste est juste : une surface inconnue ne coute qu'une ligne d'Elo,
+    un fuseau accepte sans etre reconnu ferait rendre des heures UTC sous le mot
+    « local ». A la **lecture**, en revanche, il vaut « non renseigne » — un fuseau
+    supprime d'une version de tzdata a l'autre ne doit pas faire tomber le bloc entier.
+  - Ce qu'il **ne** change pas : le regroupement de `tournament_day`, qui se fait par trou
+    horaire et vaut pour les deux hemispheres sans qu'aucun fuseau soit stocke.
+- **`scan_window()` remplace une ambiguite par deux bornes.** « vu depuis le 04/08 » ne
+  disait pas s'il s'agissait du premier jour du tournoi ou du premier jour ou nous avons
+  regarde — il a fallu le deviner. `events.created_at` porte l'instant ou chaque rencontre
+  est entree en base. La borne **haute** compte autant que la basse : elle vaut
+  « maintenant » quand tout va bien, et vieille de deux jours elle dit qu'un scan ne
+  tourne plus, ce que rien d'autre dans le bloc ne dirait. En UTC des deux cotes — un
+  instant de collecte n'a pas de lieu.
+- **Le football n'est pas touche.** Son `Repos` sort de `context._rest_days`, sur les
+  dates de match du fournisseur, et compte en jours calendaires : « un match le 28 au soir
+  et un match le 3 en debut d'apres-midi font 6j de repos, pas 5 tranches de 24 heures ».
+  La semantique y est defendable — les deux symptomes mesures sont tennis, et une session
+  du soir a 01h UTC est l'exception au football.
+
 ## Une rencontre programmee n'est pas une rencontre disputee
 
 Le fournisseur de cotes **programme, il ne rapporte pas**. `Repos` et `Parcours` sortent de

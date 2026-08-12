@@ -355,6 +355,19 @@
              « ABN AMRO World Tennis Tournament » pour Rotterdam. Rien ne se deduit
              d'un libelle : sans cette saisie, aucune ligne « ici » n'est rendue.
              Plusieurs noms se separent par « | », pour un sponsor qui change. #}
+          {# Le fuseau du lieu date un fait la ou il se produit. Sans lui, tout
+             est rendu en UTC et annonce comme tel : une heure de Paris presentee
+             comme locale serait pire qu'une heure UTC presentee comme distante.
+             Rien ne se deduit du libelle — « Cincinnati Open » ne dit pas
+             America/New_York, et le Canadian Open change de ville chaque annee. #}
+          <form class="notes-form" hx-post="/competitions/{{ competition.id }}/timezone"
+                hx-target="#competitions" hx-swap="outerHTML">
+            <input type="text" name="timezone" spellcheck="false"
+                   aria-label="Fuseau du lieu, pour {{ competition.label }}"
+                   placeholder="Fuseau du lieu (America/Toronto)…"
+                   value="{{ competition.timezone or '' }}">
+            <button type="submit" class="link-action">fuseau</button>
+          </form>
           <form class="notes-form" hx-post="/competitions/{{ competition.id }}/tennisdata"
                 hx-target="#competitions" hx-swap="outerHTML">
             <input type="text" name="tennisdata_tournaments" spellcheck="false"

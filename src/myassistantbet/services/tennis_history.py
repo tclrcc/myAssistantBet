@@ -865,8 +865,13 @@ def _freshness_line(
     rows = [f"{STALE_LINES} arretees au {_short(collected.isoformat())}", detail]
     if tennis_round.truncated(competition_id, commence_time, settings):
         # Le **nombre** de tours manquants n'est pas derivable : il demanderait
-        # la taille du tableau, que rien ne donne. Le fait, lui, l'est.
-        rows.append("tours anterieurs non scannes — le debut du tableau nous echappe")
+        # la taille du tableau, que rien ne donne. Le fait, lui, l'est — et la
+        # fenetre de nos scans dit jusqu'ou remonte ce que nous avons pu voir.
+        # « vu depuis le 04/08 » etait ambigu : premier jour du tournoi, ou
+        # premier jour ou nous avons regarde ? Il a fallu le deviner.
+        fenetre = tennis_load.scan_window(competition_id, settings)
+        manque = "tours anterieurs non scannes — le debut du tableau nous echappe"
+        rows.append(f"{manque} ({fenetre})" if fenetre else manque)
     return ("Fraicheur", "\n".join(rows))
 
 
