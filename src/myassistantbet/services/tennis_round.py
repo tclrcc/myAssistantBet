@@ -77,6 +77,18 @@ ROUND_NAMES = {
 #: serie entrent au deuxieme tour.
 PLAUSIBLE_DRAWS = frozenset({4, 8, 16, 24, 28, 32, 48, 56, 64, 96, 128})
 
+#: Ce que la ligne dit quand le tour ne peut pas etre etabli. **La phase n'est
+#: servie par personne** : verifie le 12/08/2026, `/sports/{cle}/events` rend
+#: six champs — `id`, `sport_key`, `sport_title`, `commence_time`, `home_team`,
+#: `away_team` — et rien d'autre, pour zero credit. Le fichier de resultats,
+#: lui, parait une semaine apres coup et ignore les qualifications.
+#:
+#: Elle ne se devine pas non plus : un tableau de qualification ne finit pas par
+#: une finale mais par douze qualifies, donc compter depuis la fin y produit un
+#: nombre qui ne designe rien. La ligne dit donc ce qu'elle sait — la population
+#: vue ne forme pas un tableau — et s'arrete la.
+UNSET_ROUND = "phase non renseignee"
+
 
 @dataclass(frozen=True)
 class Edition:
@@ -98,10 +110,37 @@ def _ceil_power_of_two(value: int) -> int:
     return 1 << (value - 1).bit_length()
 
 
+def is_bracket(players: int) -> bool:
+    """La population vue forme-t-elle un tableau qui existe ?
+
+    **Ecrit une fois et lu deux fois** : le tour ne se nomme que sur un tableau,
+    et `truncated()` dit la meme chose a l'envers. Deux ecritures auraient
+    diverge, et c'est exactement ce qui manquait — le module *savait* que la vue
+    n'etait pas un tableau, et nommait un tour quand meme.
+    """
+    return players > 1 and players in PLAUSIBLE_DRAWS
+
+
 def label_for(edition: Edition, commence_time: str) -> str | None:
     """Nom du tour de ce match, ou None si rien ne peut etre affirme."""
     when = parse(commence_time)
     if when is None or not edition.matches:
+        return None
+
+    if not is_bracket(edition.players):
+        # **Le compte ne decrit un tour que s'il decrit un tableau.** Mesure du
+        # 12/08/2026, sur une soiree de qualifications a Cincinnati : 34 joueurs
+        # vus a 11:05, 76 a 20:15 — aucun des deux n'est une taille de tableau,
+        # et le meme match a pourtant ete rendu « 16e de finale » puis « 32e de
+        # finale ». L'etiquette suivait l'avancement de nos scans, pas le
+        # tournoi.
+        #
+        # Deux causes, indiscernables d'ici et toutes deux fatales au comptage :
+        # un tableau de qualification servi sous la meme cle que le tableau
+        # principal — deux tableaux, donc deux populations melangees — et une
+        # vue qui commence apres le debut du tournoi. La premiere ne finit meme
+        # pas par une finale : compter depuis la fin y produit un nombre qui ne
+        # designe rien et emprunte le vocabulaire du tableau principal.
         return None
 
     # Strictement avant : les matchs simultanes appartiennent au meme tour, et
@@ -165,14 +204,19 @@ def edition_for(matches: Sequence[Any], commence_time: str) -> Edition:
     return Edition()
 
 
-def round_for(
+def _edition_in_base(
     competition_id: int | None,
     commence_time: str,
     settings: Settings | None = None,
-) -> str | None:
-    """Tour d'un match, relu en base. Aucun appel reseau."""
+) -> Edition:
+    """L'edition qui contient ce match, relue en base. Aucun appel reseau.
+
+    Lecture unique, partagee par les trois sorties du module : la ligne, le
+    booleen de troncature et le tour lui-meme les tiraient chacun de leur propre
+    requete, sur la meme table et pour le meme resultat.
+    """
     if not competition_id or not commence_time:
-        return None
+        return Edition()
     settings = settings or get_settings()
     with connect(settings) as conn:
         rows = conn.execute(
@@ -180,7 +224,16 @@ def round_for(
             "ORDER BY commence_time",
             (competition_id,),
         ).fetchall()
-    return label_for(edition_for(rows, commence_time), commence_time)
+    return edition_for(rows, commence_time)
+
+
+def round_for(
+    competition_id: int | None,
+    commence_time: str,
+    settings: Settings | None = None,
+) -> str | None:
+    """Tour d'un match, relu en base. Aucun appel reseau."""
+    return label_for(_edition_in_base(competition_id, commence_time, settings), commence_time)
 
 
 def truncated(
@@ -206,17 +259,8 @@ def truncated(
     tableau valide, rien ne permet de le savoir. Un silence vaut mieux qu'une
     affirmation fausse — c'est la regle du module.
     """
-    if not competition_id or not commence_time:
-        return False
-    settings = settings or get_settings()
-    with connect(settings) as conn:
-        rows = conn.execute(
-            "SELECT home, away, commence_time FROM events WHERE competition_id = ? "
-            "ORDER BY commence_time",
-            (competition_id,),
-        ).fetchall()
-    players = edition_for(rows, commence_time).players
-    return players > 1 and players not in PLAUSIBLE_DRAWS
+    players = _edition_in_base(competition_id, commence_time, settings).players
+    return players > 1 and not is_bracket(players)
 
 
 def lines(
@@ -224,6 +268,22 @@ def lines(
     commence_time: str,
     settings: Settings | None = None,
 ) -> list[tuple[str, str]]:
-    """Ligne « Tour » du bloc CONTEXTE, vide si le tour ne peut etre affirme."""
-    label = round_for(competition_id, commence_time, settings)
-    return [("Tour", label)] if label else []
+    """Ligne « Tour », et **deux etats plutot qu'un silence**.
+
+    Le tour se nomme quand la population vue forme un tableau ; sinon la ligne
+    dit qu'elle ne le forme pas, avec le compte qui le montre. Le silence
+    d'avant se lisait comme « tournoi sans tour », alors qu'il valait « nous ne
+    savons pas ou en est le tableau » — et il laissait surtout la place a une
+    etiquette fausse, puisque le compte etait rendu sans ce garde-fou.
+
+    Le compte est **dans la valeur** : il transforme une affirmation
+    invérifiable en fait verifiable d'un coup d'oeil, meme idiome que la fenetre
+    de `Parcours` et l'heure de releve des marches.
+    """
+    edition = _edition_in_base(competition_id, commence_time, settings)
+    label = label_for(edition, commence_time)
+    if label:
+        return [("Tour", label)]
+    if edition.players > 1:
+        return [("Tour", f"{UNSET_ROUND} ({edition.players} joueurs vus ne forment aucun tableau)")]
+    return []

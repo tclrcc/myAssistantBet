@@ -852,6 +852,7 @@ def _freshness_line(
     if collected is None:
         return None
     fragments = []
+    entrants = []
     for player in (home, away):
         if not player:
             continue
@@ -860,6 +861,27 @@ def _freshness_line(
         )
         if manquants.count:
             fragments.append(f"{player} {manquants.count} non comptes{_which(manquants)}")
+            continue
+        # **Deux silences, et ils ne se lisent pas pareil.** « Rien ne manque »
+        # parce que tout est deja compte decrit l'etat du joueur maintenant ;
+        # « rien ne manque » parce qu'il n'a encore rien joue ici decrit son
+        # etat *avant* le tournoi. Meme motif que les trois etats de l'alerte
+        # meteo et les quatre du lieu : un silence delibere et un silence vide
+        # ne s'ecrivent pas de la meme facon.
+        joues = len(tennis_load.load_for(player, competition_id, commence_time, settings).days)
+        if joues:
+            fragments.append(f"{player} {joues} ici, tous comptes")
+        else:
+            entrants.append(player)
+
+    # « vu » et non « dispute » : nos scans sont la seule source, et le debut
+    # d'un tableau peut leur echapper — c'est ce que dit la troisieme ligne
+    # ci-dessous. Ecrire « aucun match dispute » affirmerait plus que ce que
+    # nous savons, sur la ligne qui existe justement pour borner ce que nous
+    # savons.
+    if entrants:
+        qui = "les deux joueurs entrent" if len(entrants) == 2 else f"{entrants[0]} entre"
+        fragments.append(f"{qui} en lice — aucun match vu dans ce tournoi")
 
     detail = " | ".join(fragments) if fragments else "toutes les lignes a jour"
     rows = [f"{STALE_LINES} arretees au {_short(collected.isoformat())}", detail]

@@ -1165,10 +1165,18 @@ def test_la_fraicheur_compte_ce_que_l_historique_ignore(migrated: Settings) -> N
 
 
 def test_un_historique_a_jour_sur_le_tournoi_le_dit(migrated: Settings) -> None:
-    """Compte a zero, la ligne s'ecrit « toutes les lignes a jour » : l'omettre
-    laisserait chercher un trou la ou il n'y en a pas."""
+    """Compte a zero **et matchs joues ici**, la ligne dit que tout est compte :
+    l'omettre laisserait chercher un trou la ou il n'y en a pas.
+
+    Le match du tournoi tombe **avant** la date de collecte, donc l'historique
+    le connait : c'est le seul cas ou « rien ne manque » decrit vraiment l'etat
+    du joueur maintenant."""
     _serie(migrated, [("6-4 6-4", True)] * 5)
-    competition_id = _tournoi(migrated, "2026-07-03T18:00:00Z")
+    # L'historique va jusqu'au 08/08, le match du tournoi s'est joue le 07 : il
+    # est donc **compte** par Forme, Usure et Profil. Deux jours de retard
+    # suffisent a rendre la ligne, un de moins la ferait disparaitre.
+    _joue(migrated, "2026-08-08", "6-4 6-4", won=True)
+    competition_id = _tournoi(migrated, "2026-08-07T18:00:00Z")
 
     lignes = dict(
         tennis_history.lines(
@@ -1176,7 +1184,36 @@ def test_un_historique_a_jour_sur_le_tournoi_le_dit(migrated: Settings) -> None:
         )
     )
 
-    assert lignes["Fraicheur"].endswith("toutes les lignes a jour")
+    assert "Jiri Lehecka 1 ici, tous comptes" in lignes["Fraicheur"]
+    assert "non comptes" not in lignes["Fraicheur"]
+
+
+def test_un_joueur_qui_entre_en_lice_ne_se_dit_pas_a_jour(migrated: Settings) -> None:
+    """**Deux silences que « toutes les lignes a jour » melangeait.** Rien ne
+    manque parce que tout est deja compte decrit l'etat du joueur maintenant ;
+    rien ne manque parce qu'il n'a encore rien joue ici decrit son etat *avant*
+    le tournoi — et les lignes Forme, Usure et Profil ne parlent alors pas de ce
+    tournoi du tout.
+
+    Vu sur une soiree de qualifications a Cincinnati : deux blocs portaient
+    « toutes les lignes a jour » sous une etiquette de tour identique aux six
+    autres, ce qui ressemblait a une contradiction et a envoye chercher un
+    defaut la ou il n'y en avait pas.
+
+    « vu » et non « dispute » : nos scans sont la seule source, et le debut d'un
+    tableau peut leur echapper."""
+    _serie(migrated, [("6-4 6-4", True)] * 5)
+    competition_id = _tournoi(migrated)
+
+    lignes = dict(
+        tennis_history.lines(
+            "Jiri Lehecka", "Vit Kopriva", "clay", COMMENCE, migrated, competition_id
+        )
+    )
+
+    assert lignes["Fraicheur"].endswith(
+        "les deux joueurs entrent en lice — aucun match vu dans ce tournoi"
+    )
 
 
 def test_la_fraicheur_ne_parait_pas_sans_retard(migrated: Settings) -> None:

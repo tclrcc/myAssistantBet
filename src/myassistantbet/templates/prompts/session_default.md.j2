@@ -840,11 +840,22 @@ trois dernières saisons, ATP et WTA :
     score en sets. Un `3V-1D` en trois sets serrés ne décrit pas le même rapport
     de forces qu'un `3V-1D` en deux sets secs. Un `ab.` signale un match
     interrompu : le score n'est pas tronqué, le match l'a été.
-  · **« Tour »** — le tour du tableau, **toujours compté depuis la fin** : 16e de
-    finale, huitième, quart, demie, finale. **Cette ligne-là** n'écrit jamais
-    « 2e tour », l'ordinal supposant de savoir où est le premier ; « Palmarès »
-    et « Précédent » l'écrivent, elles, une édition passée ayant un tableau
-    connu. « 16e de finale » et « 3e tour » désignent donc parfois le même tour.
+  · **« Tour »** — deux états, et le second est fréquent.
+      · Un nom de tour, **toujours compté depuis la fin** : 16e de finale,
+        huitième, quart, demie, finale. **Cette ligne-là** n'écrit jamais
+        « 2e tour », l'ordinal supposant de savoir où est le premier ;
+        « Palmarès » et « Précédent » l'écrivent, elles, une édition passée
+        ayant un tableau connu. « 16e de finale » et « 3e tour » désignent donc
+        parfois le même tour.
+      · **`phase non renseignée (N joueurs vus ne forment aucun tableau)`** — le
+        tour ne peut pas être établi, et la ligne dit sur quoi elle bute. Deux
+        causes, indiscernables d'ici : le fournisseur sert les **qualifications**
+        sous la clé du tournoi, donc deux tableaux mélangés — un tableau de
+        qualification ne finit d'ailleurs pas par une finale mais par douze
+        qualifiés — ou nos scans ont commencé après le début du tournoi.
+        **Traite alors la phase comme inconnue** : ne suppose ni tour final, ni
+        entrée en lice, et si l'enjeu compte pour ton angle, c'est une recherche
+        à mener. La phase n'est servie par aucune de nos sources.
   · **« Repos »** — le temps **réellement écoulé** depuis le dernier match
     disputé, en heures, un joueur par ligne :
     `Coco Gauff 3 j 6 h (4 j. tournoi, depuis 09/08 14:00 local)`.
@@ -911,9 +922,12 @@ travail** : elle nomme les lignes concernées, compte les matchs de ce tournoi q
 n'y sont pas encore, et **nomme les adversaires de ces matchs-là**. Chaque nom est
 une recherche à mener, et c'est la plus rentable du lot ; « (tout le Parcours) »
 veut dire que la ligne « Parcours » les liste tous. Rien à recalculer ni à
-croiser. Une mention « tours anterieurs non scannes » ajoute que le début du
+croiser. **« entre en lice — aucun match vu dans ce tournoi » n'est pas « à
+jour »** : le premier dit que Forme, Usure, Profil et Marge décrivent l'état du
+joueur **avant** ce tournoi, le second qu'elles comptent bien ce qu'il y a fait.
+Une mention « tours anterieurs non scannes » ajoute que le début du
 tableau précède notre fenêtre de collecte — il manque alors des matchs que même
-« Parcours » ne nomme pas. Seules **« Tour », « Repos » et « Parcours »** portent
+« Parcours » ne nomme pas, et une « entrée en lice » n'y est plus sûre. Seules **« Tour », « Repos » et « Parcours »** portent
 le tournoi en cours, et elles n'en donnent aucun résultat : c'est la première
 recherche à faire.
 {% endif %}{% if 'Parcours' in context_labels %}

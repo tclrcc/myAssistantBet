@@ -98,23 +98,62 @@ def test_la_ligne_du_bloc_se_relit_en_base(migrated: Settings) -> None:
     assert lignes == [("Tour", "demi-finale")]
 
 
-def test_une_vue_partielle_nomme_quand_meme_le_tour(migrated: Settings) -> None:
-    """42 joueurs vus et 20 matchs joues font 22 en lice : le tour a donc
-    commence a 32, et c'est vrai quel que soit le tableau reel. L'ancienne regle
-    se taisait ici parce que 42 n'est la taille d'aucun tableau — elle cherchait
-    le debut. Compte depuis la fin, la question ne se pose plus.
+def test_une_population_qui_ne_forme_aucun_tableau_ne_nomme_aucun_tour(
+    migrated: Settings,
+) -> None:
+    """**Le comptage ne decrit un tour que s'il decrit un tableau.**
 
-    Limite connue et assumee : un tournoi dont **un seul** match a ete scanne
-    rend « finale », deux joueurs en lice etant indiscernables d'une finale. Le
-    cas suppose de n'avoir jamais scanne le tournoi avant ce match.
-    """
+    Cette regle-ci affirmait l'inverse : 42 joueurs vus et 20 matchs joues font
+    22 en lice, donc « le tour a commence a 32, quel que soit le tableau reel ».
+    C'est vrai d'un tableau unique vu en partie ; c'est faux des que la cle sert
+    **deux** tableaux, et The Odds API sert les qualifications sous la cle du
+    tournoi.
+
+    Mesure du 12/08/2026, sur une soiree de qualifications a Cincinnati :
+    34 joueurs vus a 11:05, 76 a 20:15 — aucun des deux n'est une taille de
+    tableau — et le meme match a ete rendu « 16e de finale » puis « 32e de
+    finale ». L'etiquette suivait l'avancement de nos scans.
+
+    Le cout est assume et il faut le connaitre : un tableau unique vu en partie
+    perd son tour lui aussi, alors que son compte etait juste. Les deux
+    situations sont **indiscernables** d'ici, et le module a une regle pour ce
+    cas — en cas de doute, rien."""
     competition_id = _match(migrated, "A", "B", "2026-08-08T12:00:00Z")
     for index in range(20):
         _match(migrated, f"P{index}", f"Q{index}", "2026-08-07T12:00:00Z")
 
     assert tennis_round.lines(competition_id, "2026-08-08T12:00:00Z", migrated) == [
-        ("Tour", "16e de finale")
+        ("Tour", "phase non renseignee (42 joueurs vus ne forment aucun tableau)")
     ]
+
+
+def test_le_meme_match_ne_change_pas_de_tour_quand_le_scan_avance(migrated: Settings) -> None:
+    """**Test de stabilite**, et c'est le defaut qui l'a fait ecrire.
+
+    Shevchenko - O'Connell etait « 16e de finale » dans le lot de 13:05 et
+    « 32e de finale » dans celui de 22:15 : meme match, meme tour reel, deux
+    etiquettes. Entre les deux, le scan avait vu 42 joueurs de plus, et
+    l'etiquette suivait notre avancement plutot que le tournoi.
+
+    Les deux populations reelles sont reproduites ici — 34 joueurs puis 76 — et
+    **aucune ne forme un tableau** : le module se tait aux deux instants au lieu
+    de nommer deux tours differents.
+
+    Ce que le test **n'exige pas** : que le compte entre parentheses ne bouge
+    pas. Il decrit nos scans, pas le match, et le voir grandir est une
+    information juste."""
+    competition_id = _match(migrated, "A", "B", "2026-08-08T12:00:00Z")
+    for index in range(16):
+        _match(migrated, f"P{index}", f"Q{index}", "2026-08-07T12:00:00Z")
+    tot = tennis_round.lines(competition_id, "2026-08-08T12:00:00Z", migrated)
+
+    for index in range(16, 37):
+        _match(migrated, f"R{index}", f"S{index}", "2026-08-09T12:00:00Z")
+    tard = tennis_round.lines(competition_id, "2026-08-08T12:00:00Z", migrated)
+
+    tours = [valeur.split(" (")[0] for _, valeur in tot + tard]
+    assert tours == [tennis_round.UNSET_ROUND] * 2, tot + tard
+    assert "34 joueurs" in tot[0][1] and "76 joueurs" in tard[0][1], "les deux populations reelles"
 
 
 def test_tous_les_tours_se_nomment_depuis_la_fin() -> None:
