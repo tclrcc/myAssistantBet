@@ -26,6 +26,7 @@ from jinja2 import (
 from ..config import PACKAGE_DIR, Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.oddsapi import SCAN_MARKETS
+from .competitions import is_knockout
 from .enrich import markets_for
 from .history import SCALE_VERSION, feedback
 from .labels import affiche, bookmaker_label, is_reference
@@ -543,7 +544,7 @@ def catalogues(
     with connect(settings) as conn:
         rows = conn.execute(
             "SELECT DISTINCT s.key AS sport_key, s.label AS sport_label, "
-            "       c.oddsapi_key AS competition_key, e.commence_time "
+            "       c.oddsapi_key AS competition_key, c.category, e.commence_time "
             "FROM session_events se "
             "JOIN events e ON e.id = se.event_id "
             "JOIN sports s ON s.id = e.sport_id "
@@ -562,7 +563,14 @@ def catalogues(
             # Evenement saisi a la main : aucun appel possible, rien a annoncer.
             continue
         keys.update(SCAN_MARKETS)
-        keys.update(markets_for(row["sport_key"], row["competition_key"], settings))
+        keys.update(
+            markets_for(
+                row["sport_key"],
+                row["competition_key"],
+                settings,
+                knockout=is_knockout(row["category"]),
+            )
+        )
 
     return [
         Catalogue(sport=label, markets=ordered_labels(sport_key, keys))

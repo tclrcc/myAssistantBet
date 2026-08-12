@@ -2155,3 +2155,55 @@ async def test_le_scenario_ne_promet_pas_un_avantage_du_terrain_a_l_etranger(
 
     assert "(a domicile)" not in scenario
     assert "nominalement a domicile, terrain neutre" in scenario
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_l_aller_porte_le_stade_ou_il_s_est_joue(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Le fait decisif d'une manche retour reelle : Dynamo Kyiv avait recu a
+    Lublin, si bien que personne n'avait joue « a l'exterieur » et que le
+    scenario se lisait de travers.
+
+    **Aucun appel de plus** — le stade vient du meme `/fixtures/headtohead`. Dire
+    s'il etait neutre demanderait le stade habituel de l'equipe qui recevait ce
+    jour-la, donc un appel par match : arbitrage rendu, et c'est non. Le nom du
+    lieu suffit a faire sauter l'anomalie aux yeux."""
+    _seed_event(migrated)
+    store(1, KIND_TEAMS, {"home": 376, "away": 377, "league": 113}, migrated)
+    store(
+        1,
+        KIND_H2H,
+        {
+            "home_id": 376,
+            "matches": [
+                {
+                    "home_id": 377,
+                    "home_goals": 1,
+                    "away_goals": 0,
+                    "date": "2026-07-27T15:30:00Z",
+                    "league_id": 113,
+                    "venue": {"id": 999, "name": "Arena Lublin", "city": "Lublin"},
+                }
+            ],
+        },
+        migrated,
+    )
+
+    assert _lines(migrated)["Aller"] == (
+        "0-1 le 27/07, Djurgardens IF recevait a Arena Lublin, Lublin"
+    )
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_un_aller_sans_stade_nomme_ne_change_pas_la_ligne(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Un releve d'avant ce champ n'a pas de stade : la ligne reste ce qu'elle
+    etait, et surtout ne rend pas un « a » orphelin."""
+    _seed_event(migrated)
+    _h2h(migrated, jours=7, buts=(2, 0))
+
+    assert _lines(migrated)["Aller"] == "0-2 le 27/07, Djurgardens IF recevait"

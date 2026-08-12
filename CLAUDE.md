@@ -1084,6 +1084,52 @@ scannes les jours d'avant. Aucun appel, aucune cle, aucun quota.
   - **Un forfait s'y lisait comme un match joue**, et documenter le defaut ne le corrigeait
     pas. Voir la section suivante.
 
+## Avant de coder une heuristique sur des libelles, cherchez l'identifiant
+
+**Regle de revue, tiree de trois defauts de la meme famille.** Le handicap qui semblait mal
+signe, le walkover compte comme un match joue, le repos calcule en dates de Paris, le
+« hors de København » : a chaque fois ce n'est pas le sport qui etait mal modelise, c'est
+**notre lecture de la charge utile** — un artefact de collecte pris pour une propriete du
+monde.
+
+Le cas le plus net est le lieu. Le `venue` d'un match **porte un identifiant** ; un
+commentaire du code affirmait le contraire, et toute l'heuristique nom + ville en
+decoulait, faux positifs compris. Personne n'avait relu la charge utile depuis.
+
+Donc, avant d'ecrire une comparaison de chaines : ouvrir une reponse reelle et chercher
+l'identifiant. S'il existe, c'est lui. S'il n'existe pas, l'ecrire dans le commentaire —
+avec la date de la verification.
+
+## Le marche « Se qualifie »
+
+Vingt-quatre manches retour en une semaine, et le marche qui traduit le mieux un tour a
+elimination directe n'existait **nulle part** : ni en cote, ni meme en « Non servis ».
+C'est l'angle mort exact que le prompt reserve a sa section F — un marche qu'on ne peut ni
+jouer ni declarer absent.
+
+- Le fournisseur le sert (`to_qualify`), et c'est la seule raison pour laquelle ce chantier
+  livre un marche plutot qu'une ligne « Non servis ». **La verification passait avant le
+  code** : le resultat probable etait negatif, et une ligne `Non servis` correcte aurait ete
+  un vrai livrable.
+- **Demande sur les seules coupes**, lues sur `KNOCKOUT_CATEGORIES` — donc sur le **niveau**
+  deja saisi, jamais sur un libelle. Un niveau non renseigne rend faux : un doute ne se paie
+  pas. Ailleurs le marche ne serait jamais servi, et le reclamer couterait un credit par
+  match pour un constat vide — que `coverage` memoriserait ensuite, mais apres l'avoir paye.
+- Sur un tour **aller simple**, il ne sera pas servi non plus, et c'est tres bien : l'absence
+  devient une ligne « Non servis », ce qui est precisement ce qui manquait.
+- Famille `issue` : « Se qualifie » et le 1N2 d'une manche retour repondent a la meme
+  question — qui gagne — sur deux perimetres, le tour et le match. Les separer aurait coupe
+  en deux un echantillon deja court.
+- **La table des familles se seede par une nouvelle migration** (039) et non en modifiant la
+  027 : une migration deja appliquee ne se rejoue pas, et les installations existantes
+  seraient restees sans l'entree. Le test de parite lit desormais **toutes** les migrations
+  qui touchent `market_families`, ce qui est aussi ce qui empeche d'oublier d'en ecrire une.
+- **Non branche cote API-Football** (`BET_MARKETS`), et c'est dit plutot que devine : le nom
+  du pari chez ce fournisseur n'a pas pu etre verifie — sa documentation repond 403 et
+  `/odds/bets` couterait un appel. Le piege est connu — un marche ajoute d'un cote sans
+  l'autre — donc la verification a faire est ecrite ici : un appel a `/odds/bets`, chercher
+  « qualif », ajouter l'entree.
+
 ## La meteo : l'alerte d'abord, les chiffres ensuite
 
 Mesure qui fixe cet ordre, sur cinq sessions reelles : **la temperature n'a jamais rien

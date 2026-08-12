@@ -14,6 +14,7 @@ from ..config import Settings, get_settings
 from ..db import connect
 from ..providers.oddsapi import DEFAULT_BOOKMAKER, SCAN_MARKETS
 from . import coverage, dossier, elo, tennis_history, tennis_load, tennis_round, weather
+from .competitions import is_knockout
 from .context import context_lines
 from .labels import (
     UNTIMED_BOOKMAKERS,
@@ -176,7 +177,7 @@ def _rows(session_id: int, settings: Settings) -> list[Any]:
         return conn.execute(
             "SELECT e.id, e.home, e.away, e.commence_time, e.competition_id, se.note, "
             "       s.key AS sport_key, s.label AS sport_label, "
-            "       c.oddsapi_key, c.surface, "
+            "       c.oddsapi_key, c.surface, c.category, "
             "       COALESCE(c.label, '—') AS competition "
             "FROM session_events se "
             "JOIN events e ON e.id = se.event_id "
@@ -574,7 +575,13 @@ def _unserved_for(
         # cela il ne pouvait ni arriver, ni etre declare manquant — il
         # disparaissait, ce que cette ligne existe precisement pour empecher.
         base_served = coverage.ANCHOR_MARKET in present
-        requested = markets_for(row["sport_key"], row["oddsapi_key"] or "", settings, base_served)
+        requested = markets_for(
+            row["sport_key"],
+            row["oddsapi_key"] or "",
+            settings,
+            base_served,
+            knockout=is_knockout(row["category"]),
+        )
         useful = coverage.useful(
             row["competition_id"], requested, settings, anchor_alone=not base_served
         )
@@ -603,7 +610,7 @@ def renderable_events(
             "SELECT e.id, e.home, e.away, e.commence_time, e.competition_id, se.note, "
             "       e.oddsapi_event_id, "
             "       s.key AS sport_key, COALESCE(c.label, '—') AS competition, "
-            "       c.oddsapi_key, c.surface "
+            "       c.oddsapi_key, c.surface, c.category "
             "FROM session_events se "
             "JOIN events e ON e.id = se.event_id "
             "JOIN sports s ON s.id = e.sport_id "

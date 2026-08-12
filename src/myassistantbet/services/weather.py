@@ -228,6 +228,7 @@ def _alert(row: dict[str, Any]) -> dict[str, Any]:
 def lines(
     event_id: int,
     settings: Settings | None = None,
+    now: datetime | None = None,
 ) -> list[tuple[str, str]]:
     """Ligne « Meteo », relue en base et sans aucun appel.
 
@@ -245,11 +246,12 @@ def lines(
     # celui du lieu dans la meme reponse que les coordonnees. C'est le seul
     # fuseau qui soit certainement celui du stade, et il ne coute rien.
     zone = _zone(payload.get("timezone"))
+    maintenant = now or datetime.now(UTC)
 
     fragments: list[str] = []
     for alerte in payload.get("alerts") or []:
         fragments.append(_alert_fragment(alerte, zone))
-    chiffres = _numbers_fragment(payload, zone)
+    chiffres = _numbers_fragment(payload, zone, maintenant)
     if chiffres:
         fragments.append(chiffres)
     mention = _source_mention(payload)
@@ -271,7 +273,7 @@ def _alert_fragment(alerte: dict[str, Any], zone: Any) -> str:
     return " ".join(parts).replace(" ,", ",")
 
 
-def _numbers_fragment(payload: dict[str, Any], zone: Any) -> str:
+def _numbers_fragment(payload: dict[str, Any], zone: Any, now: datetime) -> str:
     """`24 C, pluie 80 %, rafales 45 km/h a 21:30 local` — et le temps s'il parle.
 
     Le code WMO n'est nomme que s'il decrit de la pluie ou un orage : « nuageux »
@@ -298,9 +300,27 @@ def _numbers_fragment(payload: dict[str, Any], zone: Any) -> str:
         return ""
     quand = _parse(heure.get("time"))
     suffixe = f" a {_moment(quand, zone)}" if quand is not None else ""
+    return ", ".join(bouts) + suffixe + _stamp(payload, zone, now)
+
+
+def _stamp(payload: dict[str, Any], zone: Any, now: datetime) -> str:
+    """`[Open-Meteo, releve 11:00 local]`, ou son **age** quand il a vieilli.
+
+    Trois heures d'ecart sont sans consequence ; le meme mecanisme sur un releve
+    du matin pour un match du soir servirait une prevision perimee avec la meme
+    autorite. Au-dela de notre propre fenetre de fraicheur, la ligne compte donc
+    les heures plutot que de donner une heure — un age se lit sans soustraction.
+
+    Meme exigence que l'age du releve de cotes : deux lignes qui disent la meme
+    chose doivent parler le meme langage.
+    """
     releve = _parse(payload.get("fetched_at"))
-    source = f" [Open-Meteo, releve {_moment(releve, zone)}]" if releve is not None else ""
-    return ", ".join(bouts) + suffixe + source
+    if releve is None:
+        return ""
+    age = now - releve
+    if age >= timedelta(hours=TTL_HOURS):
+        return f" [Open-Meteo, releve il y a {int(age.total_seconds() // 3600)} h]"
+    return f" [Open-Meteo, releve {_moment(releve, zone)}]"
 
 
 def _source_mention(payload: dict[str, Any]) -> str:

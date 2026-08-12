@@ -639,3 +639,59 @@ async def test_un_plancher_d_appels_franchi_ne_dit_pas_le_contexte_partiel(
     assert result.context_note == "", "le contexte, lui, est complet"
     assert "plancher" in result.dossier_note
     assert result.notes == [result.dossier_note], "et l'UI le liste quand meme"
+
+
+# -- « Se qualifie » : demande sur les seules coupes --------------------------
+
+
+def test_le_marche_se_qualifie_n_est_demande_que_sur_une_coupe(migrated: Settings) -> None:
+    """Vingt-quatre manches retour en une semaine, et le marche qui traduit le
+    mieux un tour a elimination directe n'existait nulle part — ni en cote, ni
+    meme en « Non servis ». Sur un championnat, en revanche, il ne serait jamais
+    servi : le reclamer couterait un credit par match pour un constat vide."""
+    from myassistantbet.services.markets import markets_for
+
+    coupe = markets_for("football", "soccer_uefa_europa_league", migrated, knockout=True)
+    championnat = markets_for("football", "soccer_france_ligue_one", migrated, knockout=False)
+
+    assert "to_qualify" in coupe
+    assert "to_qualify" not in championnat
+
+
+def test_un_niveau_non_renseigne_ne_declenche_aucun_credit(migrated: Settings) -> None:
+    """Rien ne se deduit d'un libelle, et un doute ne se paie pas : sans niveau
+    saisi, le marche n'est pas demande."""
+    from myassistantbet.services.competitions import is_knockout
+
+    assert is_knockout("coupe_continentale") is True
+    assert is_knockout("coupe_nationale") is True
+    assert is_knockout("d1_top5") is False
+    assert is_knockout(None) is False
+
+
+def test_le_marche_se_qualifie_a_un_libelle_et_un_rendu(migrated: Settings) -> None:
+    """Un marche demande sans entree dans l'ordre d'affichage sort en **cle
+    brute** dans la ligne « Non servis » — le piege des props buteurs, et celui
+    d'`alternate_totals` avant elles."""
+    from myassistantbet.services.render import (
+        Outcome,
+        RenderableEvent,
+        ordered_labels,
+        render_event,
+    )
+
+    assert ordered_labels("football", ["to_qualify"]) == ["Se qualifie"]
+
+    event = RenderableEvent(
+        index=1,
+        sport_key="football",
+        competition="Ligue Europa",
+        home="Lyon",
+        away="Sparta Prague",
+        commence_local=datetime(2026, 8, 13, 21, 0, tzinfo=UTC),
+        markets={"to_qualify": [Outcome("Lyon", 1.28), Outcome("Sparta Prague", 3.60)]},
+    )
+
+    # Onze caracteres utiles, la limite exacte de `LABEL_MAX` : le libelle laisse
+    # une espace avant sa valeur, ce qui est le minimum lisible.
+    assert "  Se qualifie 1.28 / 3.60" in render_event(event)

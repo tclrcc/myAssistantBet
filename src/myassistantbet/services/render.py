@@ -445,6 +445,10 @@ def _render_generic(label: str, outcomes: list[Outcome]) -> list[str]:
 #: Ordre d'affichage des marches football, et libelle de chaque ligne.
 MARKET_ORDER: list[tuple[str, str]] = [
     ("h2h", "1N2"),
+    # Qui passe le tour, toutes manches confondues. Juste apres le 1N2 : les deux
+    # repondent a « qui gagne », a deux echelles differentes, et sur une manche
+    # retour c'est la seconde qui porte l'enjeu.
+    ("to_qualify", "Se qualifie"),
     ("double_chance", "DC"),
     ("alternate_spreads", "Handicap"),
     ("spreads", "Handicap"),
@@ -544,7 +548,7 @@ def _render_one(
     event: RenderableEvent, target: str, label: str, outcomes: list[Outcome]
 ) -> list[str]:
     """Rendu dedie d'un marche, ou repli generique s'il n'en a pas."""
-    if target in {"h2h", "h2h_s1", "h2h_s2"}:
+    if target in {"h2h", "h2h_s1", "h2h_s2", "to_qualify"}:
         return _render_h2h(event, outcomes, label)
     if target == "double_chance":
         return _render_double_chance(event, outcomes)

@@ -23,6 +23,7 @@ from ..providers.tennisabstract import TennisAbstractClient
 from ..providers.tennisdata import TennisDataClient
 from ..providers.weather import WeatherClient
 from . import coverage, dossier, elo, fixtures, reference, tennis_history, weather
+from .competitions import is_knockout
 from .context import KIND_VENUE, fetch_context
 from .labels import affiche, is_reference, primary_book
 from .markets import (
@@ -299,7 +300,7 @@ def build_estimate(
     with connect(settings) as conn:
         rows = conn.execute(
             "SELECT e.id, e.oddsapi_event_id, e.home, e.away, e.commence_time, "
-            "       s.key AS sport_key, c.oddsapi_key AS competition_key, "
+            "       s.key AS sport_key, c.oddsapi_key AS competition_key, c.category, "
             "       c.id AS competition_id, c.apifootball_league_id, "
             # L'etage A a-t-il ramene ses cotes sur ce match ? Sur une competition
             # que le book principal ne sert pas, la reponse est non, et le 1N2
@@ -347,7 +348,13 @@ def build_estimate(
             estimate.skipped.append(label)
             continue
         base_served = bool(row["base_served"])
-        markets = markets_for(row["sport_key"], row["competition_key"], settings, base_served)
+        markets = markets_for(
+            row["sport_key"],
+            row["competition_key"],
+            settings,
+            base_served,
+            knockout=is_knockout(row["category"]),
+        )
         if not markets:
             if due:
                 estimate.substitutes.append(_substitute_target(row, label))

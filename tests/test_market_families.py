@@ -108,7 +108,15 @@ def test_la_migration_rejoue_la_table_python() -> None:
     que d'en recopier la regle, comme celui des niveaux de competition.
     """
     chemin = Path(market_families.__file__).parent.parent / "migrations"
-    sql = (chemin / "027_familles_de_marches.sql").read_text(encoding="utf-8")
+    # **Toutes** les migrations qui seedent la table, et pas seulement la
+    # premiere : une migration deja appliquee ne se modifie jamais, donc un
+    # marche ajoute apres coup arrive par un nouveau fichier. Les lire toutes
+    # est aussi ce qui empeche d'oublier d'en ecrire un.
+    sql = "\n".join(
+        fichier.read_text(encoding="utf-8")
+        for fichier in sorted(chemin.glob("*.sql"))
+        if "market_families" in fichier.read_text(encoding="utf-8")
+    )
     seed = {
         cle: famille
         for cle, famille in re.findall(r"\('([^']+)', '(\w+)'\)", sql)
@@ -325,3 +333,11 @@ def test_cotes_est_une_entree_seedee_et_non_un_artefact(migrated: Settings) -> N
     # Vue en base : elle ne vient d'aucune selection, donc elle ne figure pas
     # dans la liste « a classer », qui ne lit que `picks`.
     assert all(entry.key != "cotes" for entry in market_families.unclassified(migrated))
+
+
+def test_le_marche_se_qualifie_est_une_issue() -> None:
+    """« Se qualifie » et le 1N2 d'une manche retour repondent a la meme
+    question — qui gagne — sur deux perimetres, le tour et le match. Les separer
+    aurait coupe en deux un echantillon deja court."""
+    assert market_families.family_key("Se qualifie") == "se qualifie"
+    assert market_families.FAMILY_SEED["se qualifie"] == "issue"

@@ -6,7 +6,7 @@ rien change ; l'alerte a change une section entiere, deux fois.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -312,3 +312,38 @@ async def test_regenerer_un_prompt_ne_declenche_aucun_appel(
     respx.reset()
 
     assert "ALERTE" in _line(migrated)
+
+
+@respx.mock
+async def test_un_releve_vieilli_donne_son_age_plutot_que_son_heure(
+    client: WeatherClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Trois heures d'ecart sont sans consequence ; le meme mecanisme sur un
+    releve du matin pour un match du soir servirait une prevision perimee avec la
+    meme autorite. Un age se lit sans soustraction — meme exigence que l'age du
+    releve de cotes."""
+    _seed(migrated)
+    _routes(load_fixture)
+    await weather.refresh_event(client, EVENT, "Mason", "United States", COMMENCE, migrated, NOW)
+
+    tard = NOW + timedelta(hours=8)
+    ligne = dict(weather.lines(EVENT, migrated, now=tard))["Meteo"]
+
+    assert "releve il y a 8 h" in ligne
+    assert "releve 13/08" not in ligne, "l'heure seule ne dit pas l'ecart"
+
+
+@respx.mock
+async def test_un_releve_frais_garde_son_heure(
+    client: WeatherClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Sous la fenetre de fraicheur, l'heure suffit : ecrire « il y a 1 h » sur
+    chaque bloc ferait du bruit pour un ecart qui ne change rien."""
+    _seed(migrated)
+    _routes(load_fixture)
+    await weather.refresh_event(client, EVENT, "Mason", "United States", COMMENCE, migrated, NOW)
+
+    ligne = dict(weather.lines(EVENT, migrated, now=NOW + timedelta(hours=1)))["Meteo"]
+
+    assert "releve 13/08 11:00 local" in ligne
+    assert "il y a" not in ligne

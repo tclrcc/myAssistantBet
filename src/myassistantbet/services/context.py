@@ -929,6 +929,11 @@ async def fetch_context(
                     # la suite des scores. Elle est ce qui distingue un match
                     # aller d'une rencontre de championnat d'il y a deux ans.
                     "league_id": (fixture.get("league") or {}).get("id"),
+                    # Le stade de l'aller, **dans le meme appel**. Il portait le
+                    # fait decisif d'une manche retour reelle : Dynamo Kyiv avait
+                    # recu a Lublin, si bien que personne n'avait joue « a
+                    # l'exterieur » et que le scenario se lisait de travers.
+                    "venue": (fixture.get("fixture") or {}).get("venue") or {},
                 }
             )
         store(report.event_id, KIND_H2H, {"home_id": mapping.home_id, "matches": matches}, settings)
@@ -1430,7 +1435,28 @@ def _return_leg_line(payload: dict[str, Any], league_id: Any, away: str, commenc
     # Le score se lit du point de vue de l'equipe qui recoit aujourd'hui, comme
     # la ligne H2H : deux conventions dans le meme bloc se liraient a l'envers.
     ours, theirs = recent["away_goals"], recent["home_goals"]
-    return f"{ours}-{theirs} le {played.strftime('%d/%m')}, {away} recevait"
+    ligne = f"{ours}-{theirs} le {played.strftime('%d/%m')}, {away} recevait"
+    return ligne + _venue_suffix(recent.get("venue") or {})
+
+
+def _venue_suffix(venue: dict[str, Any]) -> str:
+    """` a l'Arena Lublin, Lublin` — ou rien, quand le stade n'est pas nomme.
+
+    **Le fait brut, et rien de plus.** Dire si ce stade etait neutre demanderait
+    le stade habituel de l'equipe qui recevait ce jour-la, donc un appel de plus
+    par match : arbitrage rendu, et c'est non. Le nom du lieu suffit a faire
+    sauter l'anomalie aux yeux — un club ukrainien qui « recoit » a Lublin se
+    voit sans qu'aucun drapeau soit calcule.
+
+    C'est la meme logique que la requete de recherche de la fiche : quand
+    l'application ne peut pas conclure a cout raisonnable, elle expose le fait et
+    laisse conclure. Ce qu'elle ne peut pas faire, c'est deviner un stade qui
+    n'est pas ecrit.
+    """
+    nom = (venue.get("name") or "").strip()
+    ville = (venue.get("city") or "").strip()
+    lieu = ", ".join(part for part in (nom, ville) if part)
+    return f" a {lieu}" if lieu else ""
 
 
 def _moment(value: str) -> datetime | None:

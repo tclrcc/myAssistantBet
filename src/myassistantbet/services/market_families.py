@@ -99,6 +99,10 @@ FAMILY_SEED: dict[str, str] = {
     "dc": "issue",
     "double chance": "issue",
     "vainqueur": "issue",
+    # Qui passe le tour. C'est une **issue**, a l'echelle de la double
+    # confrontation et non du match : le 1N2 d'une manche retour et « Se
+    # qualifie » repondent a la meme question sur deux perimetres.
+    "se qualifie": "issue",
     "set": "issue",  # « Set 1 », « Set 2 » : le vainqueur d'une manche
     "mt ft": "issue",
     "corners 1n2": "issue",

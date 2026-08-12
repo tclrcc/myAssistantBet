@@ -90,6 +90,16 @@ CATEGORIES_BY_SPORT = {
 #: le verifie.
 CATEGORIES = {**TENNIS_CATEGORIES, **FOOTBALL_CATEGORIES}
 
+#: Niveaux ou une **double confrontation** existe, donc ou le marche « Se
+#: qualifie » a un sens. Il ne se demande que la : sur un championnat il ne
+#: serait jamais servi, et le reclamer couterait un credit par match pour un
+#: constat vide — que `coverage` memoriserait ensuite, mais apres l'avoir paye.
+#:
+#: Le niveau est deja saisi et maintenu ; en tirer cette liste evite une seconde
+#: table qui aurait diverge de la premiere.
+KNOCKOUT_CATEGORIES = frozenset({"coupe_continentale", "coupe_nationale"})
+
+
 #: Rang d'affichage d'un niveau. Une competition sans niveau ferme la marche
 #: plutot que de s'intercaler au hasard. L'ordre de `CATEGORIES` groupe les
 #: niveaux par sport, ce qui suffit a ne pas intercaler un Grand Chelem entre
@@ -100,6 +110,16 @@ CATEGORY_ORDER = {key: index for index, key in enumerate(CATEGORIES)}
 def category_label(key: str | None) -> str:
     """Libelle d'un niveau, chaine vide s'il n'est pas renseigne."""
     return CATEGORIES.get(key or "", "")
+
+
+def is_knockout(category: str | None) -> bool:
+    """La competition se joue-t-elle a elimination directe ?
+
+    Lue sur le **niveau**, deja saisi et maintenu : une seconde table aurait
+    diverge de la premiere, et rien ne se deduit d'un libelle. Un niveau non
+    renseigne rend faux — donc aucun credit depense sur une supposition.
+    """
+    return (category or "") in KNOCKOUT_CATEGORIES
 
 
 def categories_for(sport_key: str | None) -> dict[str, str]:

@@ -81,14 +81,35 @@ PLAYER_PROP_MARKETS: tuple[str, ...] = (
 #: couterait un credit pour une ligne deja affichee.
 FOOTBALL_BASE_MARKETS: tuple[str, ...] = ("h2h",)
 
+#: « Se qualifie » : qui passe le tour, toutes manches confondues. C'est le
+#: marche que **24 manches retour d'une meme semaine** appelaient sans qu'il
+#: existe nulle part — ni en cote, ni en « Non servis », donc dans l'angle mort
+#: que le prompt reserve a la section F.
+#:
+#: Il traduit directement ce que la ligne `Scenario` calcule : un tie plie a 0-3
+#: y vaut un prix, la ou le 1N2 du match retour ne dit rien de la qualification.
+#:
+#: **Demande sur les seules coupes** (`KNOCKOUT_CATEGORIES`) : ailleurs il n'a
+#: aucun sens, et un credit par match pour un constat vide serait paye avant
+#: d'etre memorise. Sur un tour aller simple il ne sera pas servi non plus, et
+#: c'est tres bien : l'absence devient une ligne « Non servis », ce qui est
+#: exactement le livrable qui manquait.
+KNOCKOUT_MARKETS: tuple[str, ...] = ("to_qualify",)
+
 
 def markets_for(
     sport_key: str,
     oddsapi_sport_key: str,
     settings: Settings,
     base_served: bool = True,
+    knockout: bool = False,
 ) -> tuple[str, ...]:
     """Marches a demander pour cet evenement, props incluses si la ligue y donne droit.
+
+    `knockout` dit si la competition se joue a elimination directe : « Se
+    qualifie » n'est demande que la. Le drapeau vient du **niveau** de la
+    competition, deja saisi — le deduire d'un libelle serait une invention, et le
+    stocker une seconde fois l'aurait fait diverger.
 
     `base_served` dit si l'etage A a ramene ses cotes sur cet evenement. A faux,
     le 1N2 est reclame en plus : voir `FOOTBALL_BASE_MARKETS`. Le tennis demande
@@ -99,6 +120,8 @@ def markets_for(
     if sport_key != "football":
         return ()
     base = () if base_served else FOOTBALL_BASE_MARKETS
+    if knockout:
+        base += KNOCKOUT_MARKETS
     if oddsapi_sport_key in settings.player_props_whitelist:
         return base + FOOTBALL_MARKETS + PLAYER_PROP_MARKETS
     return base + FOOTBALL_MARKETS
