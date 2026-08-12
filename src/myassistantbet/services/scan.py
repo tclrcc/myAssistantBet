@@ -21,6 +21,7 @@ from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.base import ProviderError
 from ..providers.oddsapi import SCAN_MARKETS, OddsAPIClient
+from .render import LEAD_TIME_MIN_MINUTES
 
 logger = logging.getLogger(__name__)
 
@@ -92,12 +93,51 @@ def active_competitions(settings: Settings | None = None) -> list[dict[str, Any]
     return [dict(row) for row in rows]
 
 
+def _shift_columns(conn: sqlite3.Connection, payload: dict[str, Any]) -> tuple[str, str] | None:
+    """`(ancien coup d'envoi, instant du constat)` quand l'horaire a bouge.
+
+    **Le fait dominant d'une soiree peut etre un report**, et l'application
+    l'effacait a chaque scan : une journee d'orages a Cincinnati a repousse tout
+    le programme de cinq heures — 17:30 au releve de 12:42, 22:30 a celui de
+    22:15 — et le prompt ne portait que la derniere heure. Le decalage a du etre
+    retrouve dans la presse alors que les deux relevés etaient passes par ici.
+
+    Le seuil est celui de l'age d'un releve (`LEAD_TIME_MIN_MINUTES`, 15) plutot
+    qu'un nombre invente a cote : c'est la meme question — a partir de quand un
+    ecart de temps veut dire quelque chose — et deux reponses differentes a une
+    meme question finissent par diverger.
+
+    Un decalage deja enregistre **n'est pas efface** par un scan qui ne bouge
+    plus : le report a eu lieu, et c'est lui qui decrit la soiree.
+    """
+    row = conn.execute(
+        "SELECT commence_time FROM events WHERE oddsapi_event_id = ?", (payload["id"],)
+    ).fetchone()
+    if row is None:
+        return None
+    avant, apres = _moment(row["commence_time"]), _moment(payload.get("commence_time"))
+    if avant is None or apres is None:
+        return None
+    if abs(apres - avant) < timedelta(minutes=LEAD_TIME_MIN_MINUTES):
+        return None
+    return str(row["commence_time"]), utcnow()
+
+
+def _moment(value: Any) -> datetime | None:
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (AttributeError, TypeError, ValueError):
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
 def _upsert_event(
     conn: sqlite3.Connection,
     payload: dict[str, Any],
     competition: dict[str, Any],
 ) -> int:
     """Insere ou met a jour un evenement, et renvoie son id interne."""
+    moved = _shift_columns(conn, payload)
     conn.execute(
         "INSERT INTO events (sport_id, competition_id, oddsapi_event_id, home, away, "
         "                    commence_time, source, created_at) "
@@ -118,6 +158,12 @@ def _upsert_event(
             utcnow(),
         ),
     )
+    if moved:
+        conn.execute(
+            "UPDATE events SET previous_commence_time = ?, commence_shifted_at = ? "
+            "WHERE oddsapi_event_id = ?",
+            (*moved, payload["id"]),
+        )
     row = conn.execute(
         "SELECT id FROM events WHERE oddsapi_event_id = ?", (payload["id"],)
     ).fetchone()

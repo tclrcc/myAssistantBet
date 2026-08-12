@@ -608,7 +608,7 @@ def renderable_events(
     with connect(settings) as conn:
         rows = conn.execute(
             "SELECT e.id, e.home, e.away, e.commence_time, e.competition_id, se.note, "
-            "       e.oddsapi_event_id, "
+            "       e.oddsapi_event_id, e.previous_commence_time, e.commence_shifted_at, "
             "       s.key AS sport_key, COALESCE(c.label, '—') AS competition, "
             "       c.oddsapi_key, c.surface, c.category "
             "FROM session_events se "
@@ -689,6 +689,16 @@ def renderable_events(
                     # l'heure d'une saisie est celle de la frappe, pas celle d'un
                     # releve de marche, et l'afficher tromperait sur la fraicheur.
                     fetched_local=_local(fetched, settings.tz) if fetched else None,
+                    # Le report d'un horaire se lit **sous** l'heure qu'il
+                    # corrige : une soiree d'orages a deplace tout un programme
+                    # de cinq heures, et le bloc ne portait que l'heure du
+                    # moment.
+                    previous_local=_local(row["previous_commence_time"], settings.tz)
+                    if row["previous_commence_time"]
+                    else None,
+                    shifted_local=_local(row["commence_shifted_at"], settings.tz)
+                    if row["commence_shifted_at"]
+                    else None,
                 )
             )
     return events

@@ -46,6 +46,12 @@ TTL_HOURS = 3
 #: recopie de la charge utile, jamais devine.
 ALERT_SOURCES = {"US": "NWS"}
 
+#: Marqueur d'une alerte en vigueur, en tete de la ligne. **Constante et non
+#: litteral** : le prompt croise l'alerte avec le deplacement des horaires, et
+#: deux ecritures du meme mot auraient fini par ne plus se reconnaitre — meme
+#: regle que `NEUTRAL_MARK`, relu par la fiche de recherche.
+ALERT_MARK = "ALERTE"
+
 #: Codes WMO qui decrivent un temps orageux. Ce sont les seuls que la ligne
 #: nomme : « nuageux » n'a jamais change une lecture de match.
 WMO_STORM = {95: "orage", 96: "orage grelant", 99: "orage grelant fort"}
@@ -262,7 +268,7 @@ def lines(
 
 def _alert_fragment(alerte: dict[str, Any], zone: Any) -> str:
     """`ALERTE Flood Watch (Severe) — NWS Wilmington OH, jusqu'au 12/08 23:00`."""
-    parts = [f"ALERTE {alerte.get('event') or 'non nommee'}"]
+    parts = [f"{ALERT_MARK} {alerte.get('event') or 'non nommee'}"]
     if alerte.get("severity"):
         parts[0] += f" ({alerte['severity']})"
     if alerte.get("sender"):

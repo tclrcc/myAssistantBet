@@ -44,6 +44,7 @@ from .render import (
 from .research import sheet as research_sheet
 from .session import has_started, renderable_events, session_label, started_labels
 from .thresholds import value_of as threshold
+from .weather import ALERT_MARK
 
 logger = logging.getLogger(__name__)
 
@@ -625,6 +626,42 @@ def _collapse_blank_lines(body: str) -> str:
     return re.sub(r"\n{3,}", "\n\n", body)
 
 
+def schedule_notice(events: list[RenderableEvent]) -> str:
+    """Une ligne, et **seulement quand les deux faits se rencontrent**.
+
+    Le soir des orages de Cincinnati, l'alerte du NWS etait en base et les
+    horaires avaient bouge de cinq heures. Les deux informations existaient
+    separement, chacune sur sa ligne, et personne ne les rapprochait — alors que
+    **l'une explique l'autre**, et que leur conjonction dit ce qu'aucune des
+    deux ne dit seule : le programme a deja cede, il peut ceder encore.
+
+    Rien ne s'ecrit si une seule des deux tient : chacune a deja sa ligne, et
+    une conjonction qui se declenche a moitie redirait ce qui est ecrit juste en
+    dessous.
+    """
+    alerte = any(
+        ALERT_MARK in (valeur or "")
+        for event in events
+        for label, valeur in event.context_lines
+        if label == "Meteo"
+    )
+    ecarts = [
+        round((event.commence_local - event.previous_local).total_seconds() / 60)
+        for event in events
+        if event.previous_local is not None
+    ]
+    if not alerte or not ecarts:
+        return ""
+    pire = max(ecarts, key=abs)
+    heures, minutes = divmod(abs(pire), 60)
+    duree = f"{heures}h{minutes:02d}" if heures else f"{minutes} min"
+    return (
+        f"Ce lot : une alerte meteo en vigueur **et** {len(ecarts)} match(s) deja deplace(s) "
+        f"(jusqu'a {'+' if pire > 0 else '-'}{duree}). Le programme a deja glisse aujourd'hui "
+        "et peut glisser encore : les horaires ci-dessous ne sont pas acquis."
+    )
+
+
 def build_prompt(
     session_id: int,
     template_name: str = DEFAULT_TEMPLATE,
@@ -663,6 +700,9 @@ def build_prompt(
         .render(
             date_fr=date_fr(moment),
             event_blocks=blocks,
+            # L'alerte meteo et le deplacement des horaires ne disent rien
+            # separement de ce qu'ils disent ensemble.
+            schedule_notice=schedule_notice(events),
             session_label=session_label(session_id, settings),
             # **Seuls les paliers du lot.** Definir 💥 GIGA+ sur un lot dont la
             # cote maximale vaut 3.40 coute des tokens pour proposer une case

@@ -1629,3 +1629,90 @@ def test_le_preambule_dit_ce_que_l_ecart_au_coup_d_envoi_traverse(migrated: Sett
     assert "ce que cet écart traverse" in corps
     assert "avant les compositions" in corps
     assert "il te dit que ta recherche peut légitimement décrire un marché" in corps
+
+
+# -- Lot 13 : le programme qui glisse ----------------------------------------
+
+
+def test_l_alerte_meteo_et_le_report_ne_se_disent_qu_ensemble(migrated: Settings) -> None:
+    """**Les deux informations existaient separement, et personne ne les
+    rapprochait.** Le soir des orages de Cincinnati, l'alerte du NWS etait en
+    base et les horaires avaient bouge de cinq heures : chacune avait sa ligne,
+    et leur conjonction — qui dit que le programme peut ceder encore — n'etait
+    ecrite nulle part.
+
+    Rien ne s'ecrit si une seule des deux tient : chacune a deja sa ligne."""
+    from datetime import UTC, datetime
+
+    from myassistantbet.services.prompt import schedule_notice
+    from myassistantbet.services.render import RenderableEvent
+
+    def _event(alerte: bool, deplace: bool) -> RenderableEvent:
+        return RenderableEvent(
+            index=1,
+            sport_key="tennis",
+            competition="ATP Cincinnati Open",
+            home="A",
+            away="B",
+            commence_local=datetime(2026, 8, 12, 23, 0, tzinfo=UTC),
+            context_lines=[("Meteo", "ALERTE Flood Watch — NWS Wilmington OH")] if alerte else [],
+            previous_local=datetime(2026, 8, 12, 17, 55, tzinfo=UTC) if deplace else None,
+        )
+
+    assert schedule_notice([_event(alerte=True, deplace=False)]) == ""
+    assert schedule_notice([_event(alerte=False, deplace=True)]) == ""
+    ensemble = schedule_notice([_event(alerte=True, deplace=True)])
+    assert "alerte meteo en vigueur" in ensemble
+    assert "jusqu'a +5h05" in ensemble
+    assert "peut glisser encore" in ensemble
+
+
+def test_le_lot_annonce_le_programme_qui_glisse(
+    migrated: Settings,
+) -> None:
+    """Le croisement arrive **en tete de la section MATCHS**, avant les blocs :
+    il decrit le lot, pas un match."""
+    from myassistantbet import db
+    from myassistantbet.services import board
+    from myassistantbet.services.context import store
+    from myassistantbet.services.manual import build, save
+    from myassistantbet.services.weather import KIND_WEATHER
+
+    event_id = save(
+        build(
+            "tennis",
+            "ATP Cincinnati Open",
+            "Shevchenko",
+            "O'Connell",
+            "2099-01-01",
+            "23:00",
+            "Shevchenko 1.99\nO'Connell 1.87",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+    session_id = board.toggle_selection(event_id, True, migrated)
+    store(
+        event_id,
+        KIND_WEATHER,
+        {
+            "alerts": [{"event": "Flood Watch", "sender": "NWS Wilmington OH"}],
+            "alerts_checked": True,
+            "alert_source": "NWS",
+            "fetched_at": "2099-01-01T20:00:00Z",
+        },
+        migrated,
+    )
+    db.execute(
+        "UPDATE events SET previous_commence_time = '2098-12-31T17:55:00Z', "
+        "commence_shifted_at = '2098-12-31T20:14:00Z' WHERE id = ?",
+        (event_id,),
+        settings=migrated,
+    )
+
+    corps = build_prompt(session_id, settings=migrated).body
+
+    assert "une alerte meteo en vigueur" in corps
+    assert corps.index("une alerte meteo en vigueur") < corps.index("### M1")

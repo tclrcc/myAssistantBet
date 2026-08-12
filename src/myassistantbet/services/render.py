@@ -160,6 +160,12 @@ class RenderableEvent:
     #: Paliers atteignables sur ce bloc, deja formates par `prompt.py`. Vide
     #: quand le lot n'a pas de bandes reglees, ou quand le bloc n'a aucune cote.
     tiers_line: str = ""
+    #: Coup d'envoi precedent et instant du constat, quand l'horaire a bouge de
+    #: plus de `LEAD_TIME_MIN_MINUTES`. Le fait dominant d'une soiree d'orages
+    #: peut etre un report de cinq heures, et l'en-tete ne portait que l'heure
+    #: du moment — le decalage etait a retrouver ailleurs.
+    previous_local: datetime | None = None
+    shifted_local: datetime | None = None
 
 
 # -- Formatage elementaire --------------------------------------------------
@@ -773,14 +779,47 @@ def _unplayable_line(event: RenderableEvent) -> list[str]:
 # -- Bloc complet -----------------------------------------------------------
 
 
-def _header(event: RenderableEvent) -> str:
+def _header(event: RenderableEvent) -> list[str]:
     sport = SPORT_LABELS.get(event.sport_key, event.sport_key.upper())
     when = event.commence_local.strftime("%d/%m %H:%M")
     # Le cyclisme n'a pas de second participant : l'etape tient lieu d'affiche.
-    return (
+    rows = [
         f"### M{event.index} · {sport} · {event.competition} · "
         f"{affiche(event.home, event.away)} · {when}"
-    )
+    ]
+    shift = _shift_line(event)
+    if shift:
+        rows.append(shift)
+    return rows
+
+
+def _shift_line(event: RenderableEvent) -> str:
+    """`(horaire deplace de +5h05, constate le 12/08 22:14)` — ou rien.
+
+    Elle se pose **sous l'heure**, parce que c'est l'heure qu'elle corrige. Une
+    journee d'orages a Cincinnati a repousse tout un programme de cinq heures :
+    l'application avait les deux relevés, n'en gardait qu'un, et le fait
+    dominant de la soiree a du etre retrouve dans la presse.
+
+    Elle reste un **signal** : rien ne s'ecrit quand l'horaire n'a pas bouge, et
+    le seuil est celui de l'age d'un releve — au-dessous, un ecart n'a rien
+    traverse.
+    """
+    if event.previous_local is None:
+        return ""
+    ecart = event.commence_local - event.previous_local
+    minutes = round(ecart.total_seconds() / 60)
+    if not minutes:
+        return ""
+    signe = "+" if minutes > 0 else "-"
+    heures, reste = divmod(abs(minutes), 60)
+    duree = f"{heures}h{reste:02d}" if heures else f"{reste} min"
+    constat = ""
+    if event.shifted_local is not None:
+        constat = f", constate le {event.shifted_local.strftime('%d/%m %H:%M')}"
+    # Deux crans d'indentation : la ligne appartient a l'en-tete, pas au bloc
+    # CONTEXTE, et l'alignement des libelles ne la concerne pas.
+    return f"{INDENT * 2}(horaire deplace de {signe}{duree}{constat})"
 
 
 def _context_block(event: RenderableEvent) -> list[str]:
@@ -855,7 +894,7 @@ def _lead_time(event: RenderableEvent) -> str:
 
 def render_event(event: RenderableEvent) -> str:
     """Bloc texte compact d'un evenement, pret a etre injecte dans le prompt."""
-    parts = [_header(event), *_context_block(event), *_markets_block(event)]
+    parts = [*_header(event), *_context_block(event), *_markets_block(event)]
     return "\n".join(parts)
 
 

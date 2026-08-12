@@ -943,3 +943,46 @@ def test_un_book_de_substitution_ne_declare_rien_non_jouable() -> None:
     }
 
     assert "A relever" not in render_event(event)
+
+
+# -- Le report d'un horaire --------------------------------------------------
+
+
+def _bloc_deplace(**champs: object) -> str:
+    from datetime import UTC, datetime
+
+    event = RenderableEvent(
+        index=5,
+        sport_key="tennis",
+        competition="ATP Cincinnati Open",
+        home="Alexander Shevchenko",
+        away="Christopher O'Connell",
+        commence_local=datetime(2026, 8, 12, 23, 0, tzinfo=UTC),
+        markets={"h2h": [Outcome("Alexander Shevchenko", 1.99)]},
+        **champs,  # type: ignore[arg-type]
+    )
+    return render_event(event)
+
+
+def test_un_horaire_deplace_se_lit_sous_l_heure() -> None:
+    """**Le fait dominant d'une soiree d'orages etait un report de cinq
+    heures**, et l'en-tete ne portait que l'heure du moment : l'information a du
+    etre retrouvee dans la presse alors que l'application avait les deux
+    relevés.
+
+    Elle se pose **sous l'heure**, parce que c'est l'heure qu'elle corrige."""
+    from datetime import UTC, datetime
+
+    bloc = _bloc_deplace(
+        previous_local=datetime(2026, 8, 12, 17, 55, tzinfo=UTC),
+        shifted_local=datetime(2026, 8, 12, 22, 14, tzinfo=UTC),
+    )
+
+    lignes = bloc.splitlines()
+    assert lignes[0].endswith("· 12/08 23:00")
+    assert lignes[1] == "    (horaire deplace de +5h05, constate le 12/08 22:14)"
+
+
+def test_un_horaire_stable_n_ajoute_aucune_ligne() -> None:
+    """La mention est un signal, pas un decor : sans mouvement, rien."""
+    assert "horaire deplace" not in _bloc_deplace()

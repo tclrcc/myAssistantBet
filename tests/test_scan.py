@@ -184,3 +184,64 @@ async def test_borne_de_fenetre_transmise_a_l_api(
 
     request = routes["soccer_france_ligue_one"].calls[0].request
     assert request.url.params["commenceTimeTo"] == "2026-08-04T21:59:59Z"
+
+
+# -- Le report d'un horaire --------------------------------------------------
+
+
+@respx.mock
+async def test_un_horaire_deplace_est_garde(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """**Le fait dominant d'une soiree peut etre un report**, et l'application
+    l'effacait a chaque scan : une journee d'orages a Cincinnati a repousse tout
+    le programme de cinq heures — 17:30 au releve de 12:42, 22:30 a celui de
+    22:15 — et le prompt ne portait que la derniere heure. Le decalage a du etre
+    retrouve dans la presse alors que les deux relevés etaient passes par ici."""
+    payload = load_fixture("oddsapi_allsvenskan_scan.json")
+    _mock_all_competitions({"soccer_sweden_allsvenskan": payload})
+    await run_scan(odds_client, migrated, now=NOW)
+    avant = db.query_one(
+        "SELECT id, commence_time FROM events ORDER BY commence_time", settings=migrated
+    )
+
+    repousse = [dict(item) for item in payload]
+    # +5h05, l'ecart reel de la soiree de Cincinnati, et dans la fenetre de scan.
+    repousse[0]["commence_time"] = "2026-08-03T20:35:00Z"
+    _mock_all_competitions({"soccer_sweden_allsvenskan": repousse})
+    await run_scan(odds_client, migrated, now=NOW)
+
+    apres = db.query_one(
+        "SELECT commence_time, previous_commence_time, commence_shifted_at FROM events "
+        "WHERE id = ?",
+        (avant["id"],),
+        settings=migrated,
+    )
+    assert apres["commence_time"] == "2026-08-03T20:35:00Z"
+    assert apres["previous_commence_time"] == avant["commence_time"]
+    assert apres["commence_shifted_at"], "l'instant du constat, sans quoi un vieux report"
+
+
+@respx.mock
+async def test_un_horaire_stable_n_ecrit_rien(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """La mention doit rester un **signal**, pas un decor : deux scans du meme
+    programme ne produisent aucun report. Le seuil est celui de l'age d'un
+    releve — en dessous, un ecart n'a rien traverse."""
+    payload = load_fixture("oddsapi_allsvenskan_scan.json")
+    _mock_all_competitions({"soccer_sweden_allsvenskan": payload})
+    await run_scan(odds_client, migrated, now=NOW)
+
+    frole = [dict(item) for item in payload]
+    # Dix minutes : sous le seuil, et c'est le cas ordinaire d'un fournisseur
+    # qui reajuste un horaire a la marge.
+    frole[0]["commence_time"] = "2026-08-03T15:40:00Z"
+    _mock_all_competitions({"soccer_sweden_allsvenskan": frole})
+    await run_scan(odds_client, migrated, now=NOW)
+
+    lignes = db.query(
+        "SELECT previous_commence_time FROM events WHERE previous_commence_time IS NOT NULL",
+        settings=migrated,
+    )
+    assert lignes == []
