@@ -1549,3 +1549,72 @@ def test_le_score_en_sets_survit_a_toutes_les_tailles(migrated: Settings) -> Non
 
     assert "Aucun combiné sur ce lot" in corps
     assert "**Score exact en sets**" in corps
+
+
+# -- Le signe du handicap ----------------------------------------------------
+
+
+def _cotes(settings: Settings, event_id: int, lignes: list[tuple[str, str, float | None, float]]):
+    for marche, nom, point, prix in lignes:
+        db.execute(
+            "INSERT INTO odds (event_id, bookmaker, market_key, outcome_name, point, price, "
+            "fetched_at) VALUES (?, 'superbet', ?, ?, ?, ?, ?)",
+            (event_id, marche, nom, point, prix, db.utcnow()),
+            settings=settings,
+        )
+
+
+def _lot_avec_handicap(settings: Settings, meme_signe: bool) -> int:
+    """Un lot d'un match, son 1N2 et un palier de handicap. `meme_signe` rejoue
+    le defaut : les deux moities du palier portent le meme nombre."""
+    session_id = _lot_de(settings, 1)
+    event = db.query_one("SELECT id, home, away FROM events", settings=settings)
+    event_id, home, away = int(event["id"]), event["home"], event["away"]
+    _cotes(
+        settings,
+        event_id,
+        [
+            ("h2h", home, None, 1.73),
+            ("h2h", "Draw", None, 3.90),
+            ("h2h", away, None, 4.60),
+            ("spreads", home, -0.5, 1.70),
+            ("spreads", away, -0.5 if meme_signe else 0.5, 2.12),
+        ],
+    )
+    return session_id
+
+
+def test_le_mode_d_emploi_de_l_alerte_ne_se_paie_que_sur_un_lot_qui_en_porte(
+    migrated: Settings,
+) -> None:
+    """Meme regle que les libelles de contexte, un cran plus loin : cette ligne
+    est faite pour ne **jamais** servir, et son explication ne doit pas peser sur
+    toutes les sessions ou tout va bien."""
+    sain = build_prompt(_lot_avec_handicap(migrated, meme_signe=False), settings=migrated, now=NOW)
+
+    assert "Une ligne « Alerte » suspend cette autorité" not in sain.body
+    assert "Alerte" not in sain.body
+
+
+def test_un_handicap_incoherent_est_annonce_et_explique(migrated: Settings) -> None:
+    """Le prompt affirme que les cotes du bloc font autorite. Une ligne dont le
+    signe contredit le 1N2 du meme bloc est la seule exception, et il faut donc
+    qu'elle soit dite **et** que sa consequence le soit : ne pas selectionner ce
+    handicap."""
+    corps = build_prompt(
+        _lot_avec_handicap(migrated, meme_signe=True), settings=migrated, now=NOW
+    ).body
+
+    assert "Une ligne « Alerte » suspend cette autorité" in corps
+    assert "ne sélectionne pas ce handicap" in corps
+    assert "coté comme le pari inverse" in corps
+
+
+def test_la_convention_du_handicap_football_est_documentee(migrated: Settings) -> None:
+    """Un signe lu a l'envers est l'erreur la plus couteuse que ce bloc puisse
+    produire, et la convention du tennis etait ecrite quand celle du football ne
+    l'etait pas."""
+    corps = " ".join(build_prompt(_lot_de(migrated, 2), settings=migrated, now=NOW).body.split())
+
+    assert "**« Handicap »** porte **une seule ligne, ses deux moitiés**" in corps
+    assert "toujours opposés" in corps

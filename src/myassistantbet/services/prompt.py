@@ -34,6 +34,7 @@ from .render import (
     Outcome,
     RenderableEvent,
     estimate_tokens,
+    handicap_alert,
     market_label,
     ordered_labels,
     render_event,
@@ -674,6 +675,11 @@ def build_prompt(
             # cran de la regle des sports — ce qui n'a pas de donnee est omis —
             # et ca rend au budget de quoi payer ce qui, lui, est la.
             context_labels=sorted({label for event in events for label, _ in event.context_lines}),
+            # Vrai des qu'un bloc porte une ligne « Alerte ». Le mode d'emploi
+            # d'une ligne qui ne parait presque jamais ne se paie pas a chaque
+            # session : meme regle que les libelles de contexte, un cran plus
+            # loin — celle-ci est faite pour ne jamais servir.
+            handicap_alerts=any(handicap_alert(event) for event in events),
             catalogues=catalogues(session_id, settings, moment),
             # Les rappels « (ref.) », calcules plutot que reclames a l'analyse.
             # La section F est plafonnee a trois lignes : deux selections de

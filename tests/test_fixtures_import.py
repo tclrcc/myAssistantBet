@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Iterator
 from datetime import UTC, datetime
 
@@ -322,6 +323,82 @@ async def test_les_issues_sont_traduites_vers_le_format_de_l_application(
         settings=migrated,
     )
     assert [(r["outcome_name"], r["point"]) for r in totals] == [("Over", 2.5), ("Under", 2.5)]
+
+
+#: Le handicap asiatique tel que le fournisseur le sert : **les deux cotes
+#: portent le meme nombre**, ecrit du point de vue de l'equipe qui recoit. Les
+#: valeurs sont celles d'une Supercoupe d'Europe reelle — PSG 1.73 / nul 3.90 /
+#: Aston Villa 4.60 — ou « Away -0.5 » cotait 2.12 quand Aston Villa vainqueur
+#: valait 4.60 : c'etait sa double chance, pas sa victoire.
+ODDS_HANDICAP = {
+    "errors": [],
+    "response": [
+        {
+            "bookmakers": [
+                {
+                    "id": 21,
+                    "name": "888Sport",
+                    "bets": [
+                        {
+                            "name": "Match Winner",
+                            "values": [
+                                {"value": "Home", "odd": "1.73"},
+                                {"value": "Draw", "odd": "3.90"},
+                                {"value": "Away", "odd": "4.60"},
+                            ],
+                        },
+                        {
+                            "name": "Asian Handicap",
+                            "values": [
+                                {"value": "Home -0.5", "odd": "1.70"},
+                                {"value": "Away -0.5", "odd": "2.12"},
+                                {"value": "Home 0.5", "odd": "1.21"},
+                                {"value": "Away 0.5", "odd": "4.35"},
+                            ],
+                        },
+                    ],
+                }
+            ]
+        }
+    ],
+}
+
+
+@respx.mock
+async def test_le_handicap_de_l_exterieur_est_stocke_a_son_propre_signe(
+    http_client: httpx.AsyncClient, migrated: Settings
+) -> None:
+    """Le fournisseur ecrit le handicap **du point de vue de l'equipe qui
+    recoit, des deux cotes** ; The Odds API donne a chaque issue le sien, et
+    c'est cette convention que la base stocke. Sans la conversion, « Away -0.5 »
+    entrait tel quel et le bloc annoncait la double chance de l'exterieur sous
+    le libelle de sa victoire."""
+    event_id = _event_avec_fixture(migrated)
+    respx.get(f"{BASE_URL}/odds").mock(return_value=httpx.Response(200, json=ODDS_HANDICAP))
+
+    await import_odds(APIFootballClient(http_client, migrated), event_id, migrated)
+
+    lignes = {
+        (row["outcome_name"], row["point"]): row["price"]
+        for row in db.query(
+            "SELECT outcome_name, point, price FROM odds WHERE event_id = ? "
+            "AND market_key = 'spreads'",
+            (event_id,),
+            settings=migrated,
+        )
+    }
+    assert lignes == {
+        ("KuPS", -0.5): 1.70,
+        ("U Craiova", 0.5): 2.12,
+        ("KuPS", 0.5): 1.21,
+        ("U Craiova", -0.5): 4.35,
+    }
+    # La consequence, et c'est elle qui compte : chaque cote de l'exterieur a
+    # desormais son miroir a domicile, donc `render` peut reunir les deux
+    # moities d'un palier sur une seule ligne.
+    for (equipe, point), _ in lignes.items():
+        oppose = "U Craiova" if equipe == "KuPS" else "KuPS"
+        assert (oppose, -point) in lignes, f"{equipe} {point} n'a pas de miroir"
 
 
 @respx.mock
@@ -889,3 +966,125 @@ async def test_la_double_chance_nomme_les_equipes(
         )
     }
     assert noms == {"KuPS/Draw", "KuPS/U Craiova", "Draw/U Craiova"}
+
+
+# -- La reprise des lignes deja ecrites (migration 035) -----------------------
+
+
+def _spreads(settings: Settings, event_id: int, book: str, lignes: list[tuple[str, float, float]]):
+    for nom, point, prix in lignes:
+        db.execute(
+            "INSERT INTO odds (event_id, bookmaker, market_key, outcome_name, point, price, "
+            "fetched_at) VALUES (?, ?, 'spreads', ?, ?, ?, ?)",
+            (event_id, book, nom, point, prix, db.utcnow()),
+            settings=settings,
+        )
+
+
+def _rejouer(settings: Settings, fichier: str) -> None:
+    """Rejoue **le texte du fichier**, jamais une copie de la regle : deux
+    ecritures du meme critere n'ont rien qui les empeche de diverger."""
+    from myassistantbet.config import PACKAGE_DIR
+
+    chemin = PACKAGE_DIR / "migrations" / fichier
+    # Connexion brute : le script porte plusieurs instructions, et `db.connect`
+    # ouvre deja une transaction qu'`executescript` validerait au passage.
+    conn = sqlite3.connect(settings.db_path_absolute)
+    try:
+        conn.executescript(chemin.read_text(encoding="utf-8"))
+    finally:
+        conn.close()
+
+
+def _points(settings: Settings, event_id: int, book: str) -> dict[tuple[str, float], float]:
+    return {
+        (row["outcome_name"], row["point"]): row["price"]
+        for row in db.query(
+            "SELECT outcome_name, point, price FROM odds WHERE event_id = ? AND bookmaker = ?",
+            (event_id, book),
+            settings=settings,
+        )
+    }
+
+
+def test_la_migration_reprend_le_releve_de_substitution(migrated: Settings) -> None:
+    """La conversion a l'ingestion ne nettoie pas le passe : les cotes vivantes
+    se refont au prochain releve, mais `prompt_odds` ne se reconstitue jamais.
+
+    Le critere est **structurel** — une paire de prix forme un livre a deux
+    issues ou n'en forme pas — et non une liste de books, qui se configure et
+    n'aurait rien prouve."""
+    event_id = _event_avec_fixture(migrated)
+    # Le defaut : les deux moities du palier portent le meme nombre.
+    _spreads(
+        migrated,
+        event_id,
+        "superbet",
+        [("KuPS", -0.5, 1.70), ("U Craiova", -0.5, 2.12), ("KuPS", 0.5, 1.21)],
+    )
+
+    _rejouer(migrated, "035_signe_du_handicap.sql")
+
+    assert _points(migrated, event_id, "superbet") == {
+        ("KuPS", -0.5): 1.70,
+        ("U Craiova", 0.5): 2.12,
+        ("KuPS", 0.5): 1.21,
+    }
+
+
+def test_la_migration_ne_touche_pas_un_releve_deja_sain(migrated: Settings) -> None:
+    """Le vrai risque d'une reprise de donnees : retourner ce qui allait bien.
+    Sur la base servie, 298 groupes sur 331 sont dans ce cas."""
+    event_id = _event_avec_fixture(migrated)
+    sain = [("KuPS", -1.0, 1.85), ("U Craiova", 1.0, 1.98), ("KuPS", -0.5, 1.52)]
+    _spreads(migrated, event_id, "pinnacle", sain)
+
+    _rejouer(migrated, "035_signe_du_handicap.sql")
+
+    assert _points(migrated, event_id, "pinnacle") == {
+        ("KuPS", -1.0): 1.85,
+        ("U Craiova", 1.0): 1.98,
+        ("KuPS", -0.5): 1.52,
+    }
+
+
+def test_la_migration_rejouee_ne_retourne_rien_une_seconde_fois(migrated: Settings) -> None:
+    """Une reprise de donnees qui s'inverse a chaque passage serait pire que le
+    defaut : le critere ne reconnait plus rien une fois la lecture retablie."""
+    event_id = _event_avec_fixture(migrated)
+    _spreads(migrated, event_id, "superbet", [("KuPS", -0.5, 1.70), ("U Craiova", -0.5, 2.12)])
+
+    _rejouer(migrated, "035_signe_du_handicap.sql")
+    premier = _points(migrated, event_id, "superbet")
+    _rejouer(migrated, "035_signe_du_handicap.sql")
+
+    assert _points(migrated, event_id, "superbet") == premier
+
+
+def test_le_retour_arriere_remet_la_convention_du_fournisseur(migrated: Settings) -> None:
+    """Un script de retour arriere qui ne se joue pas est pire qu'absent : on
+    croit revenir en arriere et la base reste a mi-chemin. Celui-ci se scope sur
+    les books du releve de substitution — le critere structurel de l'aller ne se
+    rejoue pas a l'envers, une ligne reparee etant indiscernable d'une ligne
+    saine."""
+    from pathlib import Path
+
+    event_id = _event_avec_fixture(migrated)
+    _spreads(migrated, event_id, "superbet", [("KuPS", -0.5, 1.70), ("U Craiova", 0.5, 2.12)])
+    _spreads(migrated, event_id, "pinnacle", [("KuPS", -1.0, 1.85), ("U Craiova", 1.0, 1.98)])
+
+    script = Path("deploy/rollback/035_signe_du_handicap.down.sql").read_text(encoding="utf-8")
+    conn = sqlite3.connect(migrated.db_path_absolute)
+    try:
+        conn.executescript(script)
+    finally:
+        conn.close()
+
+    assert _points(migrated, event_id, "superbet") == {
+        ("KuPS", -0.5): 1.70,
+        ("U Craiova", -0.5): 2.12,
+    }
+    assert _points(migrated, event_id, "pinnacle") == {
+        ("KuPS", -1.0): 1.85,
+        ("U Craiova", 1.0): 1.98,
+    }, "The Odds API n'est jamais concerne"

@@ -234,6 +234,67 @@ et sortaient en **cle brute** (`player_goal_scorer_anytime`) dans la ligne « No
 d'un match de Ligue 1. Meme piege que `alternate_totals` avant elles, et il se reproduira a
 chaque marche ajoute a `markets.py` sans l'etre a `render.py`.
 
+## Le signe du handicap : deux fournisseurs, deux conventions
+
+**The Odds API donne a chaque issue son propre handicap** — « Al-Qadsiah -1 » et
+« Al-Shabab +1 » sont les deux moities d'un meme palier, aux signes opposes. **API-Football
+ecrit le handicap du point de vue de l'equipe qui recoit, des deux cotes** : « Home -0.5 »
+et « Away -0.5 » sont la meme ligne, la seconde valeur etant le prix de la **double chance**
+de l'exterieur. Le releve de substitution entrait tel quel, et le bloc annoncait un pari
+pour l'autre.
+
+Mesure qui l'a revele, sur une Supercoupe d'Europe : le bloc servait
+« Aston Villa -0.5 2.12 » quand Aston Villa vainqueur valait 4.60. Le prix etait juste —
+c'est celui de sa double chance — mais le libelle designait le pari inverse. Sur la base
+entiere, 33 rencontres portaient la faute, **toutes** relevees par ce chemin, **aucune** par
+The Odds API.
+
+- La conversion se fait a l'ingestion (`fixtures._outcome`) : la base ne connait qu'une
+  convention, celle ou chaque issue porte son signe. Convertir au rendu aurait demande de
+  savoir de quel fournisseur vient chaque ligne a chaque lecture.
+- **`_render_spreads` rend un seul palier, ses deux moities.** Chaque camp choisissait sa
+  ligne de son cote — la plus proche de 2.00 — si bien que rien ne garantissait que les deux
+  moities affichees fussent les deux faces d'un meme pari. Elles sortent du meme palier et le
+  second signe est l'oppose du premier **par construction** : c'est la seule forme ou
+  l'invariant ne peut pas se defaire, et c'est elle que le test verifie, pas la valeur d'une
+  ligne. Sur des donnees saines la ligne rendue ne bouge pas.
+- `_by_handicap` est **partage par le football et le tennis**, qui n'en tirent pas la meme
+  forme — une ligne d'un cote, une echelle de l'autre. La convention d'ancrage, elle, ne peut
+  pas differer : ecrite deux fois, elle aurait diverge et les deux sports ne se liraient plus
+  pareil. La convention tennis a ete verifiee sur le rendu reel, elle etait juste.
+- **La ligne `Alerte` confronte deux marches**, seule du bloc a le faire : au football `-0.5`
+  **est** la victoire seche et `+0.5` la double chance, donc les deux prix se deduisent du
+  1N2. Le controle n'a **pas de seuil de tolerance** — il demande seulement lequel des deux
+  paris le prix observe decrit le mieux — donc il ne derive ni avec la marge du book ni avec
+  l'ecart entre deux books. `HANDICAP_ALERT_MARGIN` n'est pas cette tolerance mais la
+  condition de lisibilite de la question : a la cote 1.05 les deux paris valent 0.952 et
+  0.981, l'ecart tombe sous le bruit, et on ne demande rien. Un silence vaut mieux qu'une
+  accusation que la donnee ne porte pas.
+  - Elle ne coute rien quand tout va bien, et **son mode d'emploi non plus** :
+    `build_prompt` passe `handicap_alerts`, vrai des qu'un bloc en porte une. Meme regle que
+    `context_labels`, un cran plus loin — cette ligne est faite pour ne jamais servir.
+  - Elle est **rendue avec les lignes de fin de bloc**, qui toutes qualifient le releve.
+    Les autres disent ce qui n'est pas la ; celle-ci dit que ce qui est la ne doit pas etre
+    lu tel quel.
+- **La migration 035 reprend les lignes deja ecrites, sur un critere structurel et non sur
+  une liste de books.** Un book se configure (`APIFOOTBALL_BOOKMAKERS`) et la liste aurait
+  vieilli ; surtout, elle n'aurait rien prouve. Ce qu'on sait dire, c'est qu'une paire de
+  prix forme un livre a deux issues ou n'en forme pas : `1/a + 1/b` vaut un peu plus de 1
+  quand les deux cotes sont les deux faces d'un meme pari, et n'importe quoi sinon. Verifie
+  sur la base servie : 331 groupes, 33 repris, 298 intacts, et les 18 ou les deux lectures se
+  valent — echelles symetriques, ligne nulle — ne bougent pas, parce qu'il n'y a rien a y
+  corriger. Le critere est idempotent : une fois la lecture retablie, il ne reconnait plus
+  rien.
+  - `prompt_odds` est repris avec `odds`, et c'est lui qui compte : les cotes vivantes se
+    refont au prochain releve, le releve fige d'une session **ne se reconstitue pas apres
+    coup**.
+  - **Le retour arriere ne rejoue pas ce critere.** Une ligne reparee est indiscernable d'une
+    ligne saine, et le rejouer retournerait les 298 groupes qui n'ont jamais eu de defaut. Il
+    se scope donc sur les books du releve de substitution — ce que l'aller ne pouvait pas
+    faire, mais qui suffit quand on defait un geste connu au lieu de diagnostiquer.
+- **Le defaut a survecu parce que `render.py` n'avait aucun test de handicap football.** Le
+  tennis en avait trois, dont deux sur le signe.
+
 ## Contexte sportif et mapping
 
 - `providers/apifootball.py` : piege du fournisseur, **les erreurs applicatives arrivent en

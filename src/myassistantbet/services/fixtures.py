@@ -267,13 +267,27 @@ def _outcome(
         side, point = (parts[0], parts[1]) if len(parts) == 2 else (text, None)
         name = {"home": home, "away": away, "draw": "Draw"}.get(side.lower(), side)
         try:
-            return name, float(point) if point is not None else None, None
+            value = float(point) if point is not None else None
         except ValueError:
             return (
                 {"home": home, "away": away, "draw": "Draw"}.get(text.lower(), text),
                 None,
                 None,
             )
+        # **Le fournisseur ecrit le handicap du point de vue de l'equipe qui
+        # recoit, des deux cotes** : « Home -0.5 » et « Away -0.5 » sont les deux
+        # moities d'un meme pari, pas deux paris a -0.5. The Odds API fait
+        # l'inverse — chaque issue porte son propre handicap — et c'est cette
+        # convention-la que la base stocke et que `render` sait lire.
+        #
+        # Sans la conversion, le bloc a servi « Aston Villa -0.5 2.12 » sur une
+        # Supercoupe d'Europe ou Aston Villa vainqueur valait 4.60 : le prix
+        # etait juste, le signe designait le pari inverse. Mesure sur la base
+        # entiere : 33 rencontres portaient la faute, toutes relevees par ce
+        # chemin, aucune par The Odds API.
+        if market == "spreads" and value is not None and side.strip().lower() == "away":
+            value = -value
+        return name, value, None
     if market in {"totals", "totals_h1", "alternate_totals_corners", "alternate_totals_cards"}:
         parts = text.split()
         if len(parts) == 2:

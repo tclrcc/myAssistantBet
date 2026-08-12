@@ -67,7 +67,15 @@ Les autres gardent un équivalent direct et restent sélectionnables : `0` se po
 le handicap européen, les totaux en `.5` tels quels.
 {% endif %}
 
-Ces cotes font autorité. **Ne remplace jamais une cote du bloc par une cote
+{% if handicap_alerts %}
+**Une ligne « Alerte » suspend cette autorité, et pour cette ligne-là
+seulement.** Elle dit qu'un handicap est coté comme le pari inverse : le prix
+affiché est celui de l'autre camp, ou de l'autre côté de la ligne. Le relevé
+s'est contredit lui-même — c'est le 1N2 du même bloc qui l'a dénoncé — donc
+**ne sélectionne pas ce handicap** et ne le cite pas en section A. Le reste du
+bloc reste bon : l'alerte nomme le camp concerné et rien d'autre.
+
+{% endif %}Ces cotes font autorité. **Ne remplace jamais une cote du bloc par une cote
 trouvée en ligne**, même plus récente, même plus juste. Le bloc est ce qui a
 été relevé et enregistré ; une sélection classée sur un autre prix serait
 classée dans le mauvais palier et jouée à un tarif qui n'a jamais existé dans
@@ -691,6 +699,16 @@ fréquences passées, décrites pour situer une équipe — les rapprocher d'une
 serait le calcul d'espérance interdit plus haut, exactement comme pour l'Elo.
 Elles servent à choisir où chercher et à formuler un angle, jamais à l'évaluer
 contre un prix, et une fréquence n'est pas un argument à elle seule.
+
+Une convention de marché, enfin :
+
+  · **« Handicap »** porte **une seule ligne, ses deux moitiés**, dans l'ordre du
+    titre du bloc — jamais deux paris indépendants. `PSG -0.5 1.70 |
+    Aston Villa +0.5 2.12` se lit « PSG doit gagner, coté 1.70 ; Aston Villa ne
+    doit pas perdre, coté 2.12 ». Les deux signes sont donc **toujours
+    opposés** : un handicap donné d'un côté est un handicap reçu de l'autre, et
+    deux fois le même signe serait une erreur de relevé, pas un marché.
+    `0` ne se lit d'aucun côté : la mise est rendue si le match est nul.
 
 {% endif %}
 {% if 'tennis' in sports %}

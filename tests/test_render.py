@@ -244,6 +244,208 @@ def test_marche_totalement_inconnu_est_conserve() -> None:
     assert "Oui 3.40" in render_event(event)
 
 
+# -- Handicap au football ---------------------------------------------------
+
+#: Trois rencontres reelles, avec leur 1N2 et l'echelle de handicap servie par
+#: le book de substitution. Les signes sont ceux que la base porte **apres**
+#: conversion a l'ingestion : chaque issue a le sien.
+HANDICAPS_REELS = [
+    (
+        "Paris Saint Germain",
+        "Aston Villa",
+        [1.73, 3.90, 4.60],
+        [(-0.5, 1.70, 2.12), (0.5, 1.21, 4.35), (-1.5, 2.87, 1.40)],
+        "Paris Saint Germain -0.5 1.70 | Aston Villa +0.5 2.12",
+    ),
+    (
+        "Tromso",
+        "CFR 1907 Cluj",
+        [1.49, 4.35, 5.75],
+        [(-0.5, 1.46, 2.52), (-1.5, 2.27, 1.57), (0.5, 1.12, 5.25)],
+        "Tromso -1.5 2.27 | CFR 1907 Cluj +1.5 1.57",
+    ),
+    (
+        "Dinamo Minsk",
+        "SC Braga",
+        [7.20, 4.80, 1.37],
+        [(-0.5, 6.50, 1.08), (0.5, 2.95, 1.35), (1.5, 1.72, 2.00)],
+        "Dinamo Minsk +1.5 1.72 | SC Braga -1.5 2.00",
+    ),
+]
+
+
+def _match_avec_handicaps(
+    home: str,
+    away: str,
+    h2h: list[float],
+    echelle: list[tuple[float, float, float]],
+    inverser_l_exterieur: bool = False,
+) -> RenderableEvent:
+    """Un bloc football complet. `echelle` donne (handicap du domicile, son prix,
+    le prix de l'exterieur sur la moitie opposee de ce palier)."""
+    spreads = []
+    for point, prix_domicile, prix_exterieur in echelle:
+        spreads.append(Outcome(home, prix_domicile, point))
+        # Le defaut d'origine : l'exterieur recopiait le handicap du domicile au
+        # lieu de porter le sien.
+        spreads.append(Outcome(away, prix_exterieur, point if inverser_l_exterieur else -point))
+    return _event(
+        home=home,
+        away=away,
+        markets={
+            "h2h": [Outcome(home, h2h[0]), Outcome("Draw", h2h[1]), Outcome(away, h2h[2])],
+            "spreads": spreads,
+        },
+    )
+
+
+def _handicaps_rendus(ligne: str, home: str, away: str) -> dict[str, float]:
+    """Relit les handicaps ecrits dans la ligne rendue, par equipe."""
+    lus = {}
+    for fragment in ligne.split(" | "):
+        for equipe in (home, away):
+            if fragment.startswith(equipe):
+                lus[equipe] = float(fragment[len(equipe) :].split()[0])
+    return lus
+
+
+@pytest.mark.parametrize(("home", "away", "h2h", "echelle", "attendu"), HANDICAPS_REELS)
+def test_le_handicap_rend_les_deux_moities_d_un_meme_palier(
+    home: str, away: str, h2h: list[float], echelle: list[tuple[float, float, float]], attendu: str
+) -> None:
+    """Chaque camp choisissait sa ligne de son cote, la plus proche de 2.00 :
+    rien ne garantissait que les deux moities affichees fussent les deux faces
+    d'un meme pari. Elles sortent desormais du meme palier."""
+    event = _match_avec_handicaps(home, away, h2h, echelle)
+
+    assert _lines(event)["Handicap"] == attendu
+
+
+@pytest.mark.parametrize(("home", "away", "h2h", "echelle", "_attendu"), HANDICAPS_REELS)
+def test_les_deux_signes_d_un_handicap_sont_toujours_opposes(
+    home: str,
+    away: str,
+    h2h: list[float],
+    echelle: list[tuple[float, float, float]],
+    _attendu: str,
+) -> None:
+    """L'invariant que le defaut violait : un handicap donne d'un cote est un
+    handicap recu de l'autre. Il tient **par construction** depuis que les deux
+    prix sortent du meme palier, et c'est cette propriete-la qu'on verifie —
+    pas la valeur d'une ligne."""
+    event = _match_avec_handicaps(home, away, h2h, echelle)
+
+    lus = _handicaps_rendus(_lines(event)["Handicap"], home, away)
+
+    assert len(lus) == 2, "les deux camps sont servis"
+    assert lus[home] == -lus[away], f"{lus} : le meme signe des deux cotes"
+
+
+def test_un_handicap_incoherent_avec_le_1n2_leve_une_alerte() -> None:
+    """Aston Villa vainqueur valait 4.60 : « Aston Villa -0.5 2.12 » est le prix
+    de sa double chance sous le libelle de sa victoire. Trois blocs sur trois
+    portaient la faute et rien ne la disait — seul un recoupement a la main avec
+    le 1N2 l'a rattrapee."""
+    home, away, h2h, echelle, _ = HANDICAPS_REELS[0]
+    event = _match_avec_handicaps(home, away, h2h, echelle, inverser_l_exterieur=True)
+
+    lignes = _lines(event)
+
+    assert "Alerte" in lignes, lignes
+    assert "Aston Villa" in lignes["Alerte"]
+    assert "Paris Saint Germain" not in lignes["Alerte"], "seul le camp fautif est nomme"
+
+
+@pytest.mark.parametrize(("home", "away", "h2h", "echelle", "_attendu"), HANDICAPS_REELS)
+def test_un_releve_sain_ne_leve_aucune_alerte(
+    home: str,
+    away: str,
+    h2h: list[float],
+    echelle: list[tuple[float, float, float]],
+    _attendu: str,
+) -> None:
+    """Le controle doit se taire sur les trois memes rencontres une fois le
+    signe corrige, sans quoi il crierait sur tout le board."""
+    event = _match_avec_handicaps(home, away, h2h, echelle)
+
+    assert "Alerte" not in _lines(event)
+
+
+def test_l_alerte_se_tait_quand_les_deux_paris_se_confondent() -> None:
+    """Cote favori extreme, « gagne » et « gagne ou fait nul » ont presque le
+    meme prix : a 1.05 le nul ne vaut que trois points de probabilite, et
+    l'ecart entre les deux hypotheses tombe sous le bruit qui separe deux books.
+
+    Le prix rendu ici **est** celui de la double chance, et l'alerte se tait
+    quand meme : la question a cesse d'etre lisible, et un silence vaut mieux
+    qu'une accusation que la donnee ne porte pas. C'est la seule chose que
+    `HANDICAP_ALERT_MARGIN` decide — le reste du controle n'a pas de seuil."""
+    event = _event(
+        home="Bayern",
+        away="Bochum",
+        markets={
+            "h2h": [Outcome("Bayern", 1.05), Outcome("Draw", 15.0), Outcome("Bochum", 34.0)],
+            "spreads": [Outcome("Bayern", 1.02, -0.5)],
+        },
+    )
+
+    assert "Alerte" not in _lines(event)
+
+
+def test_l_alerte_reste_lisible_sur_l_outsider_du_meme_match() -> None:
+    """Le garde-fou ci-dessus ne doit pas eteindre le controle du **second**
+    camp : cote outsider les deux paris restent tres separes — 0.03 contre 0.10
+    de probabilite implicite — et c'est justement la que le defaut mesure se
+    produisait."""
+    event = _event(
+        home="Bayern",
+        away="Bochum",
+        markets={
+            "h2h": [Outcome("Bayern", 1.05), Outcome("Draw", 15.0), Outcome("Bochum", 34.0)],
+            "spreads": [Outcome("Bochum", 14.0, -0.5)],
+        },
+    )
+
+    assert "Bochum" in _lines(event)["Alerte"]
+
+
+def test_l_alerte_ne_se_pose_pas_sans_1n2() -> None:
+    """Le controle confronte deux marches : sans le second, il n'a pas de
+    reference et ne doit rien affirmer."""
+    event = _event(
+        markets={
+            "spreads": [
+                Outcome("Hacken", 1.70, -0.5),
+                Outcome("Djurgarden", 2.12, -0.5),
+            ]
+        }
+    )
+
+    assert "Alerte" not in _lines(event)
+
+
+def test_un_palier_servi_d_un_seul_cote_reste_rendu() -> None:
+    """Une moitie manquante n'est pas une raison de perdre l'autre : le prix est
+    la, il porte son signe, et le camp absent se voit a ce qu'il manque."""
+    event = _event(
+        markets={"spreads": [Outcome("Hacken", 1.88, -1.5)]},
+    )
+
+    assert _lines(event)["Handicap"] == "Hacken -1.5 1.88"
+
+
+def test_la_ligne_nulle_ne_porte_pas_de_signe() -> None:
+    """`+0` ou `-0` inventerait une direction sur un pari qui n'en a pas : a
+    handicap nul, la mise est rendue si le match est nul, des deux cotes."""
+    event = _event(
+        markets={
+            "spreads": [Outcome("Hacken", 1.93, 0.0), Outcome("Djurgarden", 1.92, 0.0)],
+        }
+    )
+
+    assert _lines(event)["Handicap"] == "Hacken 0 1.93 | Djurgarden 0 1.92"
+
+
 # -- Regles d'omission ------------------------------------------------------
 
 

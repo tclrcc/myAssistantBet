@@ -72,6 +72,20 @@ UNSERVED_NOTE_SUBSTITUTE = "non servis par le book de substitution sur ce match"
 #: prix chez le book principal avant de miser.
 UNPLAYABLE_LABEL = "A relever"
 
+#: Une incoherence **constatee** dans le releve lui-meme, et non une donnee
+#: manquante. Les autres lignes de fin de bloc disent ce qui n'est pas la ;
+#: celle-ci dit que ce qui est la ne doit pas etre lu tel quel.
+ALERT_LABEL = "Alerte"
+
+#: Ecart minimal, en probabilite implicite, entre « gagne » et « gagne ou fait
+#: nul » en dessous duquel le signe d'un handicap ne se controle plus. Sur un
+#: favori extreme les deux paris se confondent — 0.952 contre 0.981 a la cote
+#: 1.05 — et l'ecart tombe sous le bruit qui separe deux books. Au-dessus la
+#: separation est franche : 0.26 sur la Supercoupe qui a revele le defaut, 0.21
+#: sur le plus court des trois blocs fautifs. Sous le seuil, aucune alerte : un
+#: silence vaut mieux qu'une accusation que la donnee ne porte pas.
+HANDICAP_ALERT_MARGIN = 0.05
+
 #: Les paliers que les cotes **de ce bloc** rendent atteignables. Un palier est
 #: une bande de cote : si aucune cote du bloc n'y tombe, aucune selection de ce
 #: match ne pourra s'y ranger, quel que soit l'angle. Mesure qui l'a fait naitre :
@@ -300,22 +314,87 @@ def _render_main_total_only(label: str, outcomes: list[Outcome]) -> list[str]:
     return [line(label, f"O/U {fragments[0]}")] if fragments else []
 
 
+def _signed(value: float) -> str:
+    """`+1.5`, `-0.5`, `0` — le signe est toujours porte, sauf sur la ligne nulle.
+
+    Un handicap sans signe explicite se lit du cote de celui qui le donne, donc
+    de travers une fois sur deux. Le zero, lui, n'a pas de cote : l'ecrire
+    « +0 » ou « -0 » inventerait une direction.
+    """
+    if not value:
+        return "0"
+    return f"+{_point(value)}" if value > 0 else _point(value)
+
+
+def _by_handicap(
+    event: RenderableEvent, outcomes: Iterable[Outcome]
+) -> dict[float, dict[str, float]]:
+    """Regroupe des issues de handicap par palier, vu du **premier nomme**.
+
+    La cle est le handicap de l'equipe (ou du joueur) de gauche dans le titre,
+    signe compris : les deux cotes d'un meme palier tombent alors sous une seule
+    entree, et le signe cesse de suivre le favori. Regrouper sur la valeur
+    absolue faisait designer par « -2.5 » le second joueur quand il etait favori
+    et le premier sinon — les prix restaient justes, mais une selection lue a
+    l'envers est l'erreur la plus couteuse que ce bloc puisse produire.
+
+    La fonction est **partagee par le football et le tennis**, qui n'en tirent
+    pas la meme forme : une seule ligne d'un cote, une echelle de l'autre. La
+    convention d'ancrage, elle, ne peut pas differer — ecrite deux fois, elle
+    aurait diverge, et les deux sports ne se seraient plus lus pareil.
+    """
+    ladder: dict[float, dict[str, float]] = {}
+    for outcome in outcomes:
+        if outcome.point is None:
+            continue
+        anchor = outcome.point if outcome.name == event.home else -outcome.point
+        ladder.setdefault(anchor, {})[outcome.name] = outcome.price
+    return ladder
+
+
+def _main_handicap(ladder: dict[float, dict[str, float]]) -> float | None:
+    """Palier principal : celui dont les deux prix sont les plus proches.
+
+    Meme notion que `main_line` pour un total — la ligne que le book a posee au
+    milieu. A defaut de palier servi des deux cotes, le plus proche de zero.
+    """
+    complete = {point: prices for point, prices in ladder.items() if len(prices) == 2}
+    if complete:
+        return min(
+            complete,
+            key=lambda point: (
+                abs(max(complete[point].values()) - min(complete[point].values())),
+                abs(point),
+            ),
+        )
+    return min(ladder, key=abs) if ladder else None
+
+
 def _render_spreads(
     event: RenderableEvent, outcomes: list[Outcome], label: str = "Handicap"
 ) -> list[str]:
-    """Handicap : la ligne la plus serree pour chaque equipe (ou chaque joueur)."""
-    by_team: dict[str, list[Outcome]] = {}
-    for outcome in outcomes:
-        by_team.setdefault(outcome.name, []).append(outcome)
+    """Handicap : **un seul palier, ses deux cotes**, dans l'ordre du titre.
 
-    fragments = []
-    for team in (event.home, event.away):
-        team_outcomes = [item for item in by_team.get(team, []) if item.point is not None]
-        if not team_outcomes:
-            continue
-        best = min(team_outcomes, key=lambda item: abs(item.price - 2.0))
-        sign = "+" if best.point and best.point > 0 else ""
-        fragments.append(f"{team} {sign}{_point(best.point)} {price(best.price)}")
+    Chaque camp choisissait auparavant sa ligne de son cote — la plus proche de
+    2.00 — si bien que rien ne garantissait que les deux moities affichees
+    soient les deux faces d'un meme pari, ni que leurs signes soient opposes.
+    Elles sortent desormais du meme palier et le second signe est l'oppose du
+    premier **par construction** : c'est la seule forme ou l'invariant ne peut
+    pas se defaire.
+
+    Sur des donnees saines la ligne rendue ne bouge pas — les deux prix les plus
+    proches de 2.00 sont deja les deux faces de la ligne d'equilibre.
+    """
+    ladder = _by_handicap(event, outcomes)
+    point = _main_handicap(ladder)
+    if point is None:
+        return []
+    prices = ladder[point]
+    fragments = [
+        f"{team} {_signed(handicap)} {price(prices[team])}"
+        for team, handicap in ((event.home, point), (event.away, -point))
+        if team in prices
+    ]
     return [line(label, " | ".join(fragments))] if fragments else []
 
 
@@ -331,18 +410,7 @@ def _render_spread_ladder(event: RenderableEvent, outcomes: list[Outcome], label
     l'affiche : lister les deux cotes sous un seul signe evite d'avoir a se
     demander a qui « +2.5 » se rapporte.
     """
-    by_point: dict[float, dict[str, float]] = {}
-    # La cle est le handicap **du premier joueur nomme**, signe compris. Regrouper
-    # sur la valeur absolue faisait suivre le signe au favori : « -2.5 » designait
-    # le second joueur quand il etait favori, le premier sinon. Les prix restaient
-    # justes, mais rien ne disait de quel cote etait le handicap — et une selection
-    # lue a l'envers est l'erreur la plus couteuse que ce bloc puisse produire.
-    for outcome in outcomes:
-        if outcome.point is None:
-            continue
-        anchor = outcome.point if outcome.name == event.home else -outcome.point
-        by_point.setdefault(anchor, {})[outcome.name] = outcome.price
-
+    by_point = _by_handicap(event, outcomes)
     reference = min(by_point, key=abs) if by_point else None
     if reference is None:
         return _render_spreads(event, outcomes, label)
@@ -355,8 +423,7 @@ def _render_spread_ladder(event: RenderableEvent, outcomes: list[Outcome], label
         if home is None and away is None:
             continue
         both = f"{price(home) if home else '·'}/{price(away) if away else '·'}"
-        sign = "+" if point > 0 else ""
-        fragments.append(f"{sign}{_point(point)}: {both}")
+        fragments.append(f"{_signed(point)}: {both}")
     if not fragments:
         return _render_spreads(event, outcomes, label)
     return [line(label, " | ".join(fragments))]
@@ -519,12 +586,17 @@ def _source_tag(event: RenderableEvent, outcomes: Iterable[Outcome]) -> str:
     return f"  [{partial}{names}]"
 
 
-def _render_markets(event: RenderableEvent) -> list[str]:
-    """Rend chaque marche disponible, dans l'ordre, en fusionnant les variantes."""
+def _pooled(event: RenderableEvent) -> dict[str, list[Outcome]]:
+    """Les marches du bloc, variantes « alternate » fusionnees dans leur base."""
     pooled: dict[str, list[Outcome]] = {}
     for key, outcomes in event.markets.items():
-        target = MERGED_MARKETS.get(key, key)
-        pooled.setdefault(target, []).extend(outcomes)
+        pooled.setdefault(MERGED_MARKETS.get(key, key), []).extend(outcomes)
+    return pooled
+
+
+def _render_markets(event: RenderableEvent) -> list[str]:
+    """Rend chaque marche disponible, dans l'ordre, en fusionnant les variantes."""
+    pooled = _pooled(event)
 
     order = MARKET_ORDER_BY_SPORT.get(event.sport_key, MARKET_ORDER)
     rendered: list[str] = []
@@ -597,6 +669,74 @@ def unplayable_markets(event: RenderableEvent) -> list[str]:
     return ordered_labels(event.sport_key, sorted(merged - playable))
 
 
+def handicap_alert(event: RenderableEvent) -> str | None:
+    """Le handicap ±0.5 redit le 1N2 : un ecart y denonce un signe inverse.
+
+    Au football, `-0.5` sur une equipe **est** sa victoire seche, et `+0.5` sa
+    double chance. Les deux prix se deduisent donc du 1N2, ce qui permet de
+    controler le signe du handicap sans rien supposer du fournisseur — c'est le
+    seul controle du bloc qui confronte deux marches l'un a l'autre.
+
+    Le controle n'a pas de seuil de tolerance a regler : il demande seulement
+    lequel des deux paris le prix observe decrit le mieux, ce qui ne derive ni
+    avec la marge du book ni avec l'ecart entre deux books. `HANDICAP_ALERT_MARGIN`
+    n'est pas cette tolerance mais la condition de lisibilite de la question :
+    sous elle, les deux paris se valent et on ne demande rien.
+
+    Mesure qui l'a fait naitre : le fournisseur de substitution ecrit le
+    handicap asiatique du point de vue de l'equipe qui recoit, **des deux
+    cotes**. Le bloc a servi « Aston Villa -0.5 2.12 » quand Aston Villa
+    vainqueur valait 4.60 — le prix de sa double chance sous le libelle de sa
+    victoire. La conversion est faite a l'ingestion ; cette ligne est ce qui
+    dira que le fournisseur a change d'avis, plutot qu'une analyse reelle.
+    """
+    if event.sport_key != "football":
+        return None
+    pooled = _pooled(event)
+    prices = {outcome.name: outcome.price for outcome in pooled.get("h2h", [])}
+    draw, home, away = prices.get("Draw"), prices.get(event.home), prices.get(event.away)
+    if not draw or not home or not away:
+        return None
+
+    ladder = _by_handicap(event, pooled.get("alternate_spreads", []))
+    suspects: list[str] = []
+    for anchor in (-0.5, 0.5):
+        served = ladder.get(anchor)
+        if not served:
+            continue
+        for team, handicap, win in ((event.home, anchor, home), (event.away, -anchor, away)):
+            observed = served.get(team)
+            if observed is None:
+                continue
+            # `-0.5` ne se gagne que sur une victoire, `+0.5` se gagne aussi sur
+            # un nul : la double chance est la somme des deux probabilites.
+            chance = 1 / (1 / win + 1 / draw)
+            attendu, inverse = (win, chance) if handicap < 0 else (chance, win)
+            if abs(1 / attendu - 1 / inverse) < HANDICAP_ALERT_MARGIN:
+                continue
+            if abs(1 / observed - 1 / inverse) < abs(1 / observed - 1 / attendu) and (
+                team not in suspects
+            ):
+                suspects.append(team)
+
+    if not suspects:
+        return None
+    return (
+        f"le handicap de {' et '.join(suspects)} est cote comme le pari inverse "
+        "— signe non fiable sur ce releve, la ligne se lit sur le 1N2"
+    )
+
+
+def _alert_line(event: RenderableEvent) -> list[str]:
+    """Rendue avec les lignes de fin de bloc, qui toutes qualifient le releve.
+
+    Elle ne coute rien tant que rien ne cloche : sur des donnees saines la
+    fonction rend `None`, et le bloc ne porte pas la ligne.
+    """
+    message = handicap_alert(event)
+    return [line(ALERT_LABEL, message)] if message else []
+
+
 def _unplayable_line(event: RenderableEvent) -> list[str]:
     """La ligne est **seche, sans note**, contrairement a « Non servis ».
 
@@ -649,6 +789,7 @@ def _tiers_line(event: RenderableEvent) -> list[str]:
 def _markets_block(event: RenderableEvent) -> list[str]:
     rows = (
         _render_markets(event)
+        + _alert_line(event)
         + _unplayable_line(event)
         + _unserved_line(event)
         + _tiers_line(event)
