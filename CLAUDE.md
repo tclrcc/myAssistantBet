@@ -276,6 +276,13 @@ The Odds API.
   - Elle est **rendue avec les lignes de fin de bloc**, qui toutes qualifient le releve.
     Les autres disent ce qui n'est pas la ; celle-ci dit que ce qui est la ne doit pas etre
     lu tel quel.
+  - **Limite a connaitre : elle ne controle que le barreau ±0.5**, le seul dont la
+    semantique se deduise exactement du 1N2. Les barreaux -1, ±1.5, ±2.5 ne sont garantis
+    que par la conversion a l'ingestion, et rien ne les recoupe : un cinquieme fournisseur
+    qui n'inverserait que les barreaux hauts passerait inapercu. L'etendre demanderait de
+    modeliser la probabilite d'un ecart de deux buts, c'est-a-dire d'inventer un modele —
+    exactement ce que la section 9 interdit. La limite est donc structurelle, pas un manque
+    de soin.
 - **La migration 035 reprend les lignes deja ecrites, sur un critere structurel et non sur
   une liste de books.** Un book se configure (`APIFOOTBALL_BOOKMAKERS`) et la liste aurait
   vieilli ; surtout, elle n'aurait rien prouve. Ce qu'on sait dire, c'est qu'une paire de
@@ -1485,6 +1492,19 @@ l'avait franchi depuis des mois sans que rien ne bronche.
   que la mesure etait fausse, ce qui est autre chose : le nombre a suivi la realite, il
   ne l'a pas autorisee. Regenerer un prompt reel — `build_prompt(session_id)`, aucun
   appel reseau — reste la seule facon de verifier qu'une fixture n'a pas divergé.
+- **Ces deux plafonds ne voient jamais un lot reel, et il ne faut pas les lire comme des
+  limites de production.** Ils vivent dans `tests/`, s'appliquent a deux fixtures de six et
+  trois matchs, et **rien ne les lit a l'execution** : `token_estimate` est calcule,
+  archive et affiche, jamais oppose a quoi que ce soit. Mesure sur les 92 prompts
+  archives : le plus gros pese **21 707 tokens pour 21 blocs** — une soiree de Conference
+  League — soit pres du double de `PROMPT_BUDGET`, sans que rien ne s'y oppose ni n'ait a
+  s'y opposer. Un bloc enrichi coute environ **750 tokens**, le cadre en coute ~6 100.
+  - La confusion est facile et elle a ete faite : « 7 482 tokens pour un lot de six,
+    contre 11 500 permis » se lit comme une marge de securite sur la production, alors que
+    c'est la mesure d'une fixture contre son alarme de non-regression.
+  - Consequence pour la priorisation : **la taille d'un lot n'est pas bornee par le
+    prompt**. Ce qui manque sur un lot de vingt-et-un n'est pas de la place, c'est du
+    budget de recherche — et c'est un tout autre probleme.
 - **Aucune ligne vide double dans un prompt** (`_collapse_blank_lines`). Chaque porte
   du preambule laisse la sienne quand elle ne rend rien : un lot de tennis en portait
   onze coupures de deux lignes ou plus, dont une de quatre. Regler les blancs porte par
