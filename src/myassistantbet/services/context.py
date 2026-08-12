@@ -1269,6 +1269,60 @@ def _return_leg(
     return dict(recent)
 
 
+@dataclass(frozen=True)
+class TieState:
+    """L'etat d'une double confrontation avant la manche retour.
+
+    Ecrit une fois et lu deux fois : la ligne `Scenario` le rend, et la fiche de
+    recherche s'en sert pour classer les dossiers — un tie a un but d'ecart est
+    ce qu'une recherche peut le plus changer, un tie a trois est mort. Deux
+    calculs paralleles auraient fini par ne plus dire la meme chose du meme
+    match.
+    """
+
+    #: Buts de l'equipe qui recoit aujourd'hui, puis de celle qui se deplace.
+    #: Meme convention que `Aller` et `H2H`.
+    home_goals: int
+    away_goals: int
+
+    @property
+    def gap(self) -> int:
+        """Ecart au cumul, toujours positif. Zero = rien n'est fait."""
+        return abs(self.home_goals - self.away_goals)
+
+    @property
+    def trailing_at_home(self) -> bool:
+        """Vrai quand l'equipe **menee** recoit la manche retour.
+
+        C'est la configuration ou l'obligation est la plus exploitable : celui
+        qui doit marquer a le terrain, donc il s'ouvrira.
+        """
+        return self.home_goals < self.away_goals
+
+
+def tie_state(
+    event_id: int, commence_time: str, settings: Settings | None = None
+) -> TieState | None:
+    """L'etat de la double confrontation de cet evenement, ou `None`.
+
+    Relu en base, sans aucun appel : `fetch_context` a persiste la charge utile
+    du `/fixtures/headtohead`, et la manche aller y figure.
+    """
+    settings = settings or get_settings()
+    data = load(event_id, settings)
+    h2h = data.get(KIND_H2H)
+    if not h2h:
+        return None
+    league = (data.get(KIND_TEAMS) or {}).get("league")
+    aller = _return_leg(h2h, league, commence_time)
+    if aller is None:
+        return None
+    pour, contre = aller.get("away_goals"), aller.get("home_goals")
+    if not isinstance(pour, int) or not isinstance(contre, int):
+        return None
+    return TieState(home_goals=pour, away_goals=contre)
+
+
 def _scenario_line(payload: dict[str, Any], league_id: Any, home: str, away: str, when: str) -> str:
     """`cumul 0-2 — Hapoel qualifie en l'etat ; GKS doit gagner de 2…`
 

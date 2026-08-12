@@ -207,6 +207,33 @@ pas des angles : dis ce qu'ils changent sur un match précis, ou ne les cite pas
   · {{ note.line }}
 {%- endfor %}
 {% endif %}
+{% if research.crowded %}
+### BUDGET DE RECHERCHE
+
+Ce lot comporte {{ research.lot }} matchs. Une session couvre environ
+**{{ research.budget }} dossiers** en recherche approfondie. Au-delà, la recherche se
+priorise : les matchs non couverts se rendent en `lecture`, et **c'est un résultat
+attendu, pas un manquement** — la consigne « si la section A laisse trop de trous,
+c'est un PASSE » vise un dossier travaillé et resté creux, pas un dossier qu'un
+budget fini n'a pas permis d'ouvrir.
+{% if research.dossiers %}
+La fiche ci-dessous classe les dossiers par **ce qu'une recherche peut y changer**.
+Elle ne regarde aucune cote : trier sur le prix ne ferait jamais chercher là où le
+marché est confiant, donc ne ferait jamais trouver ce qui le contredit. Traite-les
+dans cet ordre, et dis en section F ceux que tu n'as pas ouverts.
+
+À CHERCHER EN PRIORITÉ
+{% for dossier in research.dossiers %}
+{{ loop.index }}. M{{ dossier.index }} {{ dossier.label }}  [{{ dossier.motifs }}]
+{%- for question in dossier.questions %}
+   - {{ question }}
+{%- endfor %}
+{%- for link in dossier.links %}
+   -> {{ link }}
+{%- endfor %}
+{% endfor %}
+{% endif %}
+{% endif %}
 {% for block in event_blocks %}
 {{ block }}
 {% endfor %}

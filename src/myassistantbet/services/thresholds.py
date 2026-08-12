@@ -129,6 +129,21 @@ THRESHOLDS: dict[str, Threshold] = {
             "recherche. Environ un quart d'une saison ordinaire."
         ),
     ),
+    "recherche_dossiers": Threshold(
+        key="recherche_dossiers",
+        label="Dossiers couverts en recherche approfondie",
+        default=7,
+        low=2,
+        high=30,
+        note=(
+            "Au-delà de ce nombre de matchs, le prompt ouvre une fiche « À CHERCHER EN "
+            "PRIORITÉ » et n'y porte que les dossiers les mieux classés. Mesuré sur un lot "
+            "réel de 21 manches retour : 3 dossiers ont été traités, choisis au jugé, et "
+            "18 sélections sont retombées en « lecture » donc à confiance 1. Le budget de "
+            "requêtes d'une session est fini — ce seuil dit combien il en couvre, et c'est "
+            "une propriété du lecteur, pas des données."
+        ),
+    ),
 }
 
 

@@ -1084,6 +1084,67 @@ scannes les jours d'avant. Aucun appel, aucune cle, aucun quota.
   - **Un forfait s'y lisait comme un match joue**, et documenter le defaut ne le corrigeait
     pas. Voir la section suivante.
 
+## Ou depenser un budget de recherche fini (`services/research.py`)
+
+**Le vrai plafond d'un lot n'est pas le prompt, c'est le lecteur.** Les deux plafonds de
+tokens ne voient jamais un lot reel (voir plus bas) : un lot de 21 blocs pese 21 707 tokens
+et rien ne s'y oppose. Ce qui manque sur vingt-et-un matchs n'est pas de la place, c'est du
+budget de requetes.
+
+Mesure sur cinq sessions reelles, et c'est la derniere ligne qui compte :
+
+| Lot | Matchs | Dossiers traites | Selections a confiance >= 3 |
+| --- | --- | --- | --- |
+| Supercoupe | 1 | 1 | 1 sur 1 |
+| Canadian Open | 4 | 4 | 1 sur 1 |
+| Conference League | **21** | **3** | 2 sur 8 |
+
+Les dix-huit autres sont retombes en `lecture`, donc a confiance 1 — non par distraction,
+mais parce que le lot ne donnait **aucun ordre de passage**. Les trois traites l'ont ete au
+juge, sur les matchs qui paraissaient les plus lisibles, pas les plus rentables.
+
+- **Aucun critere ne regarde les cotes, et c'est une decision.** Un match a 1.08 n'a en
+  apparence pas besoin de recherche — mais trier sur le prix rend le tri **circulaire** :
+  on ne chercherait jamais la ou le marche est confiant, donc jamais l'information qui le
+  contredit. Le preambule limite deja les cotes a deux usages, et un troisieme affaiblirait
+  les deux autres. Un test monte deux fois le meme lot, l'un nu et l'autre charge de cotes
+  extremes, et verifie que la fiche ne bouge pas d'un mot.
+- **Les poids ne sont pas reglables**, contrairement au nombre de dossiers. Ce ne sont pas
+  des preferences mais le rendement mesure de chaque piste ; le seul nombre qui depende de
+  qui lit est **combien de dossiers une session couvre**, et il vit dans `thresholds`.
+- **Trois etats de tie et non deux.** Ouvert (`<= 1`), joue (`>= 3`), et **deux buts au
+  milieu** : ca ne monte pas — deux buts a remonter n'est pas un tour ouvert — et ca ne
+  descend pas non plus, ca se remonte. Le classer avec l'un ou l'autre aurait fait passer un
+  tour jouable pour mort, ou l'inverse.
+- **Un identifiant absent n'est pas une source absente.** Le malus « bloc quasi vide et
+  aucune source » ne s'applique que si l'on a pu **verifier** le rattachement : punir un
+  match de ce qu'on ignore de lui serait l'inverse de ce que cette fiche fait. Trouve en
+  ecrivant le test du tennis.
+- **Le malus demote, il ne veto pas.** Un tour a trois buts d'ecart perd trois points, mais
+  un dossier qui cumule deux criteres forts reste propose. Un veto ferait disparaitre un
+  match sur un seul critere, quand la fiche est un **ordre de passage** et non un filtre.
+- La fiche **ne parait pas** sous le seuil : classer trois dossiers sur trois n'apprend
+  rien, et la ligne de budget ferait renoncer a un match qu'il y avait tout le temps de
+  traiter.
+- **La question emise est ce qui fait la valeur, pas la liste de matchs.** « Cherche sur ce
+  match » ne fait rien gagner ; « la composition annoncee de X sort-elle son onze
+  offensif » se repond en une requete et clot un point. Chaque critere emet la sienne, et
+  les doublons sont retires — deux criteres peuvent viser la meme verification.
+- **Aucun lien profond n'est rendu, et la requete de recherche n'est pas un pis-aller.**
+  Les liens demandent des identifiants que la base ne porte pas — id de match UEFA, adresse
+  du site d'un tournoi ou d'un club. Et surtout, mesure en reel : `atptour.com` refuse nos
+  agents **aussi en lecture directe**, et les scores d'une journee ont ete obtenus par des
+  extraits de recherche pointant vers lui. Le domaine reste l'editeur, donc le niveau de
+  source tient ; c'est le chemin d'acces qui differe. La requete formulee epargne la requete
+  perdue.
+- **Ce que la fiche ne sait pas encore classer**, faute des chantiers qui fournissent la
+  donnee : terrain neutre (P1-4), alerte meteo (P1-5), entraineur en poste depuis moins de
+  trois mois — celui-la demanderait de relire une anciennete ecrite en prose, et un
+  analyseur de « 3 mois » vaut moins qu'une colonne.
+- **`context.tie_state` est ecrit une fois et lu deux fois** : la ligne `Scenario` le rend,
+  la fiche s'en sert pour classer. Deux calculs paralleles auraient fini par ne plus dire la
+  meme chose du meme match — le piege deja paye deux fois par l'assembleur de contexte.
+
 ## Le scenario d'une manche retour se calcule (`context._scenario_line`)
 
 Vingt-quatre manches retour en une semaine, et le meme raisonnement refait a la main a
@@ -1118,6 +1179,13 @@ ca tient en trois soustractions — donc ca ne se delegue pas au modele.
   double confrontation », ce qui etait juste tant que rien ne la calculait. Meme regle que
   `Serie`, `Parcours` et `Non joue` — toute condition ajoutee a une ligne se verifie contre
   la phrase du preambule qui la decrit.
+- **`(a domicile)` suppose un avantage, et cette supposition attend P1-4.** Sur un lot reel
+  de 21 manches retour, trois auraient rendu la mention fausse ou trompeuse : ML Vitebsk
+  « recoit » a Mezokovesd en Hongrie, Dinamo Minsk au Stadion Beroe en Bulgarie, et l'aller
+  de Dynamo Kyiv s'etait joue a Lublin. Le mot **inverse alors le sens de la phrase**. Ce
+  n'est pas un defaut a corriger ici : c'est P1-4 qui fournira le drapeau de terrain neutre,
+  et `_scenario_line` n'aura qu'a le consommer — `Vitebsk (nominalement a domicile, terrain
+  neutre)`. **Dependance notee, pas bug.**
 - Limite assumee, et elle vient de la source : `Scenario` ne parait que si `Aller` parait,
   donc seulement quand le rapprochement API-Football a abouti et que le releve H2H porte
   son `league_id`. Une manche retour dont le contexte n'a pas ete recupere n'a pas de

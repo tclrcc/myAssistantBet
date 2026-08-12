@@ -40,6 +40,7 @@ from .render import (
     render_event,
     unplayable_markets,
 )
+from .research import sheet as research_sheet
 from .session import has_started, renderable_events, session_label, started_labels
 from .thresholds import value_of as threshold
 
@@ -680,6 +681,12 @@ def build_prompt(
             # session : meme regle que les libelles de contexte, un cran plus
             # loin — celle-ci est faite pour ne jamais servir.
             handicap_alerts=any(handicap_alert(event) for event in events),
+            # Ou depenser un budget de recherche fini. Le lot ne donnait aucun
+            # ordre de passage : sur 21 manches retour, 3 dossiers ont ete
+            # traites au juge et 18 selections sont retombees en `lecture`. La
+            # fiche ne parait qu'au-dela du seuil — classer trois dossiers sur
+            # trois n'apprend rien.
+            research=research_sheet(events, settings),
             catalogues=catalogues(session_id, settings, moment),
             # Les rappels « (ref.) », calcules plutot que reclames a l'analyse.
             # La section F est plafonnee a trois lignes : deux selections de
