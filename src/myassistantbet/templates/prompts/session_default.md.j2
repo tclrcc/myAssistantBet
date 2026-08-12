@@ -859,28 +859,17 @@ trois dernières saisons, ATP et WTA :
   · **« Repos »** — le temps **réellement écoulé** depuis le dernier match
     disputé, en heures, un joueur par ligne :
     `Coco Gauff 3 j 6 h (4 j. tournoi, depuis 09/08 14:00 local)`.
-    Trois choses, dans cet ordre.
-      · **L'écart réel.** En heures jusqu'à 72, en jours au-delà — c'est sous
-        trois jours que la mesure compte, et deux joueurs à 23 h et 30 h ne
-        préparent pas le même match même si le tableau a tourné pareil.
-      · **L'avancée du tournoi** (`4 j. tournoi`), en parallèle et non à la
-        place : à écart horaire égal, un tournoi de douze jours et un tournoi
-        de sept ne fatiguent pas pareil. Elle est comptée en **journées de
-        tournoi** et non en dates civiles — au Canada, un match de la session
-        du soir part après minuit à Paris, et deux joueurs sortis de la même
-        soirée doivent tomber sur la même journée.
-      · **Sur quoi l'écart a été mesuré.** `depuis` = depuis le **coup
-        d'envoi** du match précédent, faute de mieux : aucune source lisible ne
-        publie la durée ni l'heure de fin d'un match. `fin` dirait une vraie
-        fin de match, et un `~` marquerait une estimation — aujourd'hui aucun
-        des deux n'apparaît. **Ne compare donc pas deux écarts à l'heure
-        près** : celui qui a joué 2h33 et celui qui est passé en 1h05 portent
-        la même mention.
-    L'instant est écrit à l'heure du lieu quand elle est connue (`local`), en
-    `UTC` sinon — jamais l'un pour l'autre. Une rencontre programmée puis non
-    jouée n'y compte pas, et se lit sur « Non joué ». Et il ne dit rien du
-    **double** — même ligne « Repos » et une charge tout autre. C'est à ta
-    recherche.
+    Trois choses, dans cet ordre : l'écart réel (en heures jusqu'à 72, en jours
+    au-delà), l'avancée du tournoi **en parallèle et non à la place**, comptée
+    en **journées de tournoi** et non en dates civiles — à écart horaire égal,
+    douze jours et sept jours ne fatiguent pas pareil — et l'instant de
+    référence, à l'heure du lieu (`local`) ou en `UTC`, jamais l'un pour
+    l'autre. `depuis` = depuis le **coup d'envoi** du match précédent, aucune
+    source ne publiant sa durée. **Ne compare donc pas deux écarts à l'heure
+    près** : celui qui a joué 2h33 et celui qui est passé en 1h05 portent la même
+    mention. Une rencontre programmée puis non jouée n'y compte pas et se lit
+    sur « Non joué ». Le **double** n'y est pas : même ligne « Repos », charge
+    tout autre. C'est à ta recherche.
   · **« Forme »** — les dix derniers matchs, **toutes surfaces**, la dernière
     lettre étant le dernier match — même sens de lecture que « Forme 5 » au
     football.
@@ -905,6 +894,13 @@ trois dernières saisons, ATP et WTA :
     meilleur battu. C'est elle qui rend « Forme » lisible : la suite de lettres
     traite une victoire sur le 150e comme une victoire sur le 5e. Un « meilleur
     battu » sous la moyenne dit des victoires venues du bas du tableau.
+  · **« Précédent »** — le dernier tournoi **connu de nos données**, tournoi en
+    cours exclu, avec le résultat atteint. C'est le fait que « Forme » détruit :
+    dix lettres ne disent pas qu'un joueur sort d'une finale. Le mot « connu »
+    est la ligne entière : la borne est celle d'« Historique », et sur un joueur
+    à faible couverture — regarde le compte de « Forme » — une date lointaine
+    peut être un **trou de collecte** et non une coupure. Ne conclus donc pas au
+    retour après blessure sans l'avoir vérifié.
   · **« Surface »** — le bilan sur la surface du tournoi, sur douze mois. Absente
     si la surface n'est pas renseignée : la déduire d'un libellé serait une
     invention, comme pour l'Elo.

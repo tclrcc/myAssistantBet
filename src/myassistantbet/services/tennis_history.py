@@ -1142,7 +1142,19 @@ def lines(
             _last_tournament_fragment(away, recent[away], names),
         )
         if last:
-            rendered.append(("Precedent", last))
+            # **« connu » n'est pas un adverbe de prudence, c'est le fait.** Le
+            # bloc a servi « Mark Lajal 1er tour Nordic Open (dur, 14/10) » pour
+            # un match du 12/08, soit dix mois sans competition — donc un retour
+            # apres coupure, l'un des faits que ce prompt designe comme
+            # debloquant les paliers hauts. Verification : le joueur avait joue
+            # Roland-Garros, Birmingham et Wimbledon entre les deux. C'etait un
+            # trou de couverture presente comme un fait, et sur un joueur dont
+            # « Forme » ne portait qu'un match, rien ne l'en distinguait.
+            #
+            # La borne, elle, est deja dans le bloc : « Historique » dit ou
+            # s'arrete le jeu de donnees, deux lignes plus haut. La repeter ici
+            # couterait des tokens pour la meme information.
+            rendered.append(("Precedent", f"dernier connu : {last}"))
 
     on_surface = _pair(
         _surface_fragment(home, recent[home], surface or ""),
