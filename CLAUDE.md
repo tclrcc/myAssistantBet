@@ -1164,6 +1164,32 @@ pas supposee.
   section A comme une caracteristique du match et non en section F comme un manque. Cas
   reel : l'arbitre somalien d'une Supercoupe d'Europe dirigeait son premier match en Europe.
 
+## Le report d'un horaire, et ce qu'il dit avec l'alerte meteo
+
+**Le fait dominant d'une soiree peut etre un report**, et l'application
+l'effacait a chaque scan : `commence_time` est ecrase, donc l'heure d'avant
+n'existait nulle part. Mesure du 12/08/2026 a Cincinnati — 17:30 au releve de
+12:42, 22:30 a celui de 22:15, soit cinq heures que le modele a du retrouver
+dans la presse alors que les deux relevés etaient passes par ici.
+
+- Migration 040, **deux colonnes et non une** : l'heure precedente dit *de
+  combien*, l'instant du constat dit *quand nous l'avons vu*. Sans la seconde,
+  un report vieux de trois jours se lirait comme celui de ce matin.
+- Le seuil est celui de l'age d'un releve (`LEAD_TIME_MIN_MINUTES`, 15) plutot
+  qu'un nombre invente a cote : c'est la meme question — a partir de quand un
+  ecart de temps veut dire quelque chose — et deux reponses a une meme question
+  finissent par diverger.
+- La ligne se pose **sous l'en-tete**, parce que c'est l'heure qu'elle corrige,
+  et reste un **signal** : rien ne s'ecrit quand l'horaire n'a pas bouge. Un
+  report deja enregistre n'est pas efface par un scan qui ne bouge plus — le
+  report a eu lieu, et c'est lui qui decrit la soiree.
+- **L'alerte meteo et le report ne disent ensemble ce qu'aucun ne dit seul** :
+  le programme a deja cede, il peut ceder encore. La ligne est en tete de
+  section MATCHS et **ne parait que si les deux tiennent** — chacune a deja la
+  sienne, et une conjonction a moitie declenchee rediraient ce qui suit.
+  `weather.ALERT_MARK` est une constante et non un litteral recopie, meme regle
+  que `NEUTRAL_MARK`.
+
 ## L'age d'un releve se compte vers le coup d'envoi, pas depuis maintenant
 
 L'en-tete d'un bloc donnait l'heure du releve et rien d'autre : `releve 13:27`. La
@@ -1476,6 +1502,17 @@ juge, sur les matchs qui paraissaient les plus lisibles, pas les plus rentables.
   extraits de recherche pointant vers lui. Le domaine reste l'editeur, donc le niveau de
   source tient ; c'est le chemin d'acces qui differe. La requete formulee epargne la requete
   perdue.
+- **Un bloc plein peut cacher un joueur vide**, et les deux critères ne se recouvrent
+  pas : la densite mesure le remplissage du **bloc**, `_thin_player_reasons` ce qu'il y a
+  derriere les lignes d'un **joueur**. Sur la soiree du 12/08, les deux blocs les plus
+  vides au niveau joueur — `Forme D/1`, `Forme VD/2`, ni Profil ni Marge — avaient un bloc
+  complet par ailleurs : la fiche a propose six dossiers portant tous la meme question et
+  aucun sur les deux joueurs dont on ne savait rien.
+  - **Seuil mesure avant d'etre ecrit**, et la mesure a contredit la crainte qui
+    l'accompagnait : sur les 406 blocs de tennis archives, « moins de trois matchs »
+    designe **5 blocs, soit 1 %** — exactement les cinq de cette soiree. Voisins mesures
+    avec : 2 a moins de deux, 9 a moins de quatre, 15 a moins de cinq. Un critere qui se
+    declencherait partout ne classerait plus rien.
 - **Ce que la fiche ne sait pas encore classer**, faute des chantiers qui fournissent la
   donnee : terrain neutre (P1-4), alerte meteo (P1-5), entraineur en poste depuis moins de
   trois mois — celui-la demanderait de relire une anciennete ecrite en prose, et un
@@ -1710,6 +1747,39 @@ lendemain, si bien que « les matchs d'aujourd'hui » en perdait la moitie.
   sport choisi.
 - Le regroupement se fait sur **toute** la competition et non sur la fenetre : une soiree
   coupee par le bord de la fenetre serait datee de son second match.
+
+## Un comptage ne decrit un tour que s'il decrit un tableau
+
+Prolongement direct du module ci-dessous, et **correction de sa regle
+centrale**. Mesure du 12/08/2026, sur une soiree de qualifications a
+Cincinnati : le meme match a ete rendu « 16e de finale » a 13:05 et « 32e de
+finale » a 22:15. L'etiquette suivait l'avancement de nos scans.
+
+- **La phase n'est servie par personne, et c'est verifie** : `/sports/{cle}/events`
+  rend six champs — `id`, `sport_key`, `sport_title`, `commence_time`,
+  `home_team`, `away_team` — pour zero credit, le point de mesure etant gratuit.
+  Le fichier de resultats, lui, parait une semaine apres coup et ignore les
+  qualifications. Elle ne se devine pas non plus : **un tableau de qualification
+  ne finit pas par une finale mais par douze qualifies**, donc compter depuis la
+  fin y produit un nombre qui ne designe rien et emprunte au passage le
+  vocabulaire du tableau principal.
+- **Le module avait deja le signal et ne s'en servait que pour une mention.**
+  `truncated()` ecrivait « le debut du tableau nous echappe » dans le meme bloc
+  ou `Tour` annoncait « 32e de finale ». `is_bracket()` est desormais lu par les
+  deux : un tour ne se nomme que sur une population qui forme un tableau.
+- **Cout assume, et il faut le connaitre** : un tableau unique vu en partie perd
+  son tour lui aussi, alors que son comptage etait juste — c'est le cas mesure
+  du Canadian Open, 79 joueurs. Les deux situations sont **indiscernables**
+  d'ici, et la regle du module tranche : en cas de doute, rien.
+- La ligne porte **deux etats** plutot qu'un silence : le silence se lisait
+  « tournoi sans tour » quand il valait « nous ne savons pas ou en est le
+  tableau ». Le compte est **dans la valeur** — `phase non renseignee (76
+  joueurs vus ne forment aucun tableau)` — ce qui rend l'affirmation verifiable
+  d'un coup d'oeil, meme idiome que la fenetre de `Parcours`.
+- **La stabilite ne se prouve pas comme on l'attend.** Le compte entre
+  parentheses **bouge** avec nos scans, et c'est juste : il decrit notre vue,
+  pas le match. Ce qui ne doit pas bouger est le **tour**, et c'est ce que le
+  test verifie sur les deux populations reelles de la soiree — 34 puis 76.
 
 ## Le tour d'un match de tennis (`services/tennis_round.py`)
 
