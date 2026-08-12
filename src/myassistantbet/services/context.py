@@ -22,6 +22,7 @@ from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.apifootball import APIFootballClient
 from ..providers.base import ProviderError
+from ..providers.weather import WeatherClient
 from .labels import sort_key
 from .matching import Resolution, resolve_team
 from .render import UNAVAILABLE
@@ -712,6 +713,7 @@ async def fetch_context(
     settings: Settings | None = None,
     cache: dict[str, Any] | None = None,
     now: datetime | None = None,
+    geo_client: WeatherClient | None = None,
 ) -> ContextReport:
     """Recupere et persiste tout le contexte disponible pour un evenement.
 
@@ -722,6 +724,10 @@ async def fetch_context(
 
     `now` ne sert qu'a la composition, seule donnee dont la disponibilite depend
     de l'heure : elle n'est publiee qu'a l'approche du coup d'envoi.
+
+    `geo_client` situe la ville d'un stade que le fournisseur n'identifie pas.
+    Absent, tout le reste marche comme avant et la ligne `Lieu` se rend sans
+    pays — c'est un complement gratuit, jamais une dependance.
     """
     settings = settings or get_settings()
     cache = cache if cache is not None else {}
@@ -820,6 +826,27 @@ async def fetch_context(
                 f"venue:{payload['venue_id']}", lambda: client.venue(int(payload["venue_id"]))
             )
             payload["country"] = (lieu or {}).get("country")
+        elif (
+            geo_client is not None
+            and payload["city"]
+            and venue_state(payload) == VENUE_UNIDENTIFIED
+        ):
+            # **Le geocodage prend le relais la ou l'identifiant manque**, donc
+            # sur les competitions UEFA — 210 matchs sur 210 sans identifiant de
+            # stade, exactement la ou les delocalisations arrivent. Gratuit, sans
+            # cle, memorise par ville : un lot de vingt matchs paie au plus vingt
+            # appels a un service qui n'a pas de quota.
+            try:
+                payload["geo_country"] = await _memo(
+                    f"geo:{sort_key(payload['city'])}",
+                    lambda: _geocoded_country(
+                        geo_client, str(payload["city"]), payload["home_country"]
+                    ),
+                )
+            except ProviderError as exc:
+                # Le geocodeur est un bonus : injoignable, il ne doit pas emporter
+                # le nom du stade, qui est deja la et se lit tres bien seul.
+                report.errors.append(f"pays du lieu : {exc}")
         if payload["city"] or payload["surface"]:
             store(report.event_id, KIND_VENUE, payload, settings)
             report.kinds.append(KIND_VENUE)
@@ -1973,22 +2000,76 @@ VENUE_UNKNOWN = "unknown"
 
 #: Trois lettres du pays, comme le fournisseur les publie en toutes lettres. La
 #: table ne couvre que ce qu'on a vu : un pays absent se rend tel quel, ce qui
-#: est lisible et n'invente rien.
+#: est lisible et n'invente rien. Les libelles viennent de **deux** vocabulaires
+#: — API-Football pour le pays d'un club ou d'un stade identifie, Open-Meteo pour
+#: celui d'une ville geocodee — d'ou les deux orthographes des Pays-Bas.
 COUNTRY_CODES = {
-    "bulgaria": "BGR",
-    "croatia": "HRV",
-    "hungary": "HUN",
-    "israel": "ISR",
-    "poland": "POL",
-    "romania": "ROU",
-    "ukraine": "UKR",
-    "belarus": "BLR",
+    "andorra": "AND",
+    "armenia": "ARM",
     "austria": "AUT",
+    "azerbaijan": "AZE",
+    "belarus": "BLR",
+    "belgium": "BEL",
+    "bosnia and herzegovina": "BIH",
+    "brazil": "BRA",
+    "bulgaria": "BGR",
+    "china": "CHN",
+    "croatia": "HRV",
+    "czechia": "CZE",
     "denmark": "DNK",
-    "sweden": "SWE",
-    "norway": "NOR",
+    "estonia": "EST",
     "finland": "FIN",
+    "france": "FRA",
+    "georgia": "GEO",
+    "germany": "DEU",
+    "greece": "GRC",
+    "hungary": "HUN",
+    "ireland": "IRL",
+    "israel": "ISR",
+    "kazakhstan": "KAZ",
+    "kosovo": "XKX",
+    "latvia": "LVA",
+    "liechtenstein": "LIE",
+    "lithuania": "LTU",
+    "moldova": "MDA",
+    "netherlands": "NLD",
+    "north macedonia": "MKD",
+    "norway": "NOR",
+    "poland": "POL",
+    "portugal": "PRT",
+    "romania": "ROU",
+    "russia": "RUS",
+    "san marino": "SMR",
+    "serbia": "SRB",
+    "slovakia": "SVK",
+    "slovenia": "SVN",
+    "sweden": "SWE",
+    "switzerland": "CHE",
+    "the netherlands": "NLD",
+    "ukraine": "UKR",
+    "united kingdom": "GBR",
 }
+
+#: Les quatre nations britanniques, et ce n'est pas une commodite d'affichage :
+#: API-Football donne « Scotland » au club, Open-Meteo donne « United Kingdom »
+#: a la ville. Sans ce rapprochement, Dundee et Motherwell n'ont **aucun**
+#: candidat dans le pays de leur club — mesure du 12/08/2026 — et un match a
+#: domicile passerait par la branche des delocalisations.
+HOME_NATIONS = {"england", "scotland", "wales", "northern ireland"}
+
+#: Population minimale pour qu'une ville **hors du pays du club** soit retenue,
+#: et rapport minimal avec le meilleur homonyme d'un autre pays.
+#:
+#: Les deux gardent la **branche extraordinaire** : dire qu'un club joue hors de
+#: chez lui sur la foi d'un nom de ville. Mesure sur les villes de stade reelles
+#: (12/08/2026) : les cinq delocalisations connues visent Miskolc 154 521,
+#: Salzburg 157 245, Ploiesti 180 540, Stara Zagora 121 582 et Lublin 336 339 —
+#: toutes au-dessus de cent mille, et toutes seules ou 660 fois plus peuplees que
+#: leur premier homonyme. Le faux positif que le geocodage produisait, lui, tient
+#: en un village : « Brügge », 1 019 habitants en Allemagne, la ou le Club Bruges
+#: est belge. Deux ordres de grandeur separent les deux cas de chaque seuil.
+VENUE_ABROAD_MIN_POPULATION = 20_000
+VENUE_ABROAD_MIN_RATIO = 10
 
 
 def _country_tag(country: str | None) -> str:
@@ -2015,6 +2096,71 @@ def _moved_venue(venue: dict[str, Any]) -> bool:
     """
     ici, habituel = venue.get("venue_id"), venue.get("usual_id")
     return bool(ici and habituel and int(ici) != int(habituel))
+
+
+def _country_key(country: str | None) -> str:
+    """Cle de comparaison de deux pays ecrits par deux fournisseurs.
+
+    Trois divergences constatees, et aucune n'est une faute de frappe : l'article
+    des Pays-Bas, la casse, et les quatre nations britanniques que l'un compte
+    pour des pays et l'autre pour des regions.
+    """
+    cle = sort_key(country).strip().removeprefix("the ")
+    return "united kingdom" if cle in HOME_NATIONS else cle
+
+
+async def _geocoded_country(
+    geo_client: WeatherClient, city: str, home_country: str | None
+) -> str | None:
+    """Pays d'une ville de stade, par le geocodage, ou `None` en cas de doute.
+
+    **C'est la moitie manquante du drapeau de terrain neutre.** Le pays d'un
+    stade ne se demande a API-Football qu'avec un identifiant de stade, et il est
+    nul sur 210 matchs sur 210 d'une saison de Conference League — donc absent
+    exactement la ou les delocalisations arrivent. Le geocodeur, lui, ne coute
+    rien et n'a pas besoin d'identifiant : il a besoin d'un garde-fou.
+
+    **Deux temps, et l'ordre porte toute la regle.**
+
+    1. Un homonyme dans le pays du club emporte la decision. C'est le cas
+       ordinaire — un club joue chez lui — et c'est aussi ce qui rattrape les
+       villes que le geocodeur classe mal : « Ried » rend l'Allemagne (2 987
+       habitants) avant l'Autriche, et le SV Ried est autrichien. Mesure du
+       12/08/2026 : **aucune** des cinq delocalisations connues n'a d'homonyme
+       dans le pays de son club, donc cette preference n'en cache aucune.
+    2. Sinon on affirme que le match se joue a l'etranger, ce qui est une
+       affirmation forte : elle demande une ville d'une taille plausible et un
+       homonyme decisif, faute de quoi **aucun pays n'est rendu**.
+
+    Ce que la regle ne peut pas rattraper, et il faut le savoir : un libelle de
+    ville faux chez le fournisseur. ML Vitebsk recevait a Mezokovesd, en Hongrie,
+    sous un `city` qui dit « Vitebsk » — le pays rendu sera donc le Belarus. La
+    ligne garde pour cela sa mention « terrain neutre non verifiable » : c'est
+    elle, et non le pays, qui dit de ne pas conclure.
+    """
+    rows = await geo_client.places(city)
+    exacts = [row for row in rows if sort_key(row.get("name")) == sort_key(city)]
+    if not exacts:
+        return None
+
+    chez_le_club = _country_key(home_country)
+    if chez_le_club:
+        for row in exacts:
+            if _country_key(row.get("country")) == chez_le_club:
+                return str(row.get("country"))
+
+    peuplees: dict[str, int] = {}
+    for row in exacts:
+        pays = str(row.get("country") or "").strip()
+        if pays:
+            peuplees[pays] = max(peuplees.get(pays, 0), int(row.get("population") or 0))
+    classement = sorted(peuplees.items(), key=lambda entry: -entry[1])
+    if not classement or classement[0][1] < VENUE_ABROAD_MIN_POPULATION:
+        return None
+    suivant = classement[1][1] if len(classement) > 1 else 0
+    if suivant * VENUE_ABROAD_MIN_RATIO > classement[0][1]:
+        return None
+    return classement[0][0]
 
 
 def venue_state(venue: dict[str, Any]) -> str:
@@ -2054,7 +2200,15 @@ def _venue_line(venue: dict[str, Any], home: str) -> str:
     ville = (venue.get("city") or venue.get("usual_city") or "").strip()
     lieu = ", ".join(part for part in (nom, ville) if part)
     if etat == VENUE_UNIDENTIFIED:
-        return f"{lieu} — pas d'identifiant de stade ici, terrain neutre non verifiable"
+        # **Le pays vient du geocodage de la ville**, pas du club : ecrire celui
+        # du club a cote d'un stade qui n'est peut-etre pas le sien affirmerait
+        # justement ce qu'on ne sait pas. Un club israelien qui « recoit » a
+        # Miskolc (HUN) se lit alors sans qu'aucun drapeau soit calcule, et la
+        # mention qui suit dit que la comparaison, elle, reste hors de portee.
+        return (
+            f"{lieu}{_country_tag(venue.get('geo_country'))}"
+            " — pas d'identifiant de stade ici, terrain neutre non verifiable"
+        )
     if etat == VENUE_HOME:
         return f"{lieu}{_country_tag(venue.get('country') or venue.get('home_country'))}"
     return (

@@ -1268,6 +1268,12 @@ module est construit dans cet ordre-la.
   - Le geocodage rend **le fuseau du lieu** dans la meme reponse : une ville saisie recoupe
     gratuitement `competitions.timezone`, et c'est ce fuseau-la que la ligne emploie — le
     seul qui soit certainement celui du stade.
+  - **Le pays servi au geocodage etait celui du club a defaut d'autre chose, et une soiree
+    de coupe d'Europe en sortait sans meteo** : chercher « Miskolc » en Israel ne rend
+    rien, donc aucune ligne, precisement la ou le lieu n'est pas celui qu'on croit. Trois
+    sources desormais, dans l'ordre de ce que chacune prouve — le stade identifie chez le
+    fournisseur, la ville geocodee, puis le club. Le meme appel repare les deux : la ligne
+    `Lieu` y gagne son pays, la meteo sa ville. Le chemin n'avait **aucun test**.
 - Peremption a `TTL_HOURS` (3) : au-dela, une prevision d'orage a eu le temps de se preciser
   ou de se dissiper, et c'est justement le cas ou elle decide. **Le geocodage, lui, ne
   perime jamais** — une ville ne bouge pas, et c'est le seul des trois appels qui se garde.
@@ -1325,13 +1331,44 @@ son but.
     « pas d'identifiant de stade ici, terrain neutre non verifiable ». C'est strictement
     plus informatif qu'un silence — un club israelien qui « recoit » a Miskolc se lit sans
     qu'aucun drapeau soit calcule, ce que l'utilisateur avait lui-meme observe sur Lublin.
-  - **Ce qu'il faudrait pour lever la mutite**, et qui n'a pas ete construit : une table
-    `teams` portant le pays de chaque club, plus le pays du stade obtenu en **geocodant sa
-    ville** — le geocodeur d'Open-Meteo, deja cable pour la meteo, rend un pays structure,
-    gratuitement et sans cle. La comparaison porterait alors sur des **pays** et non sur des
-    noms de stade, ce qui reste conforme a la regle de revue. Chantier a arbitrer : il
-    touche quatre consommateurs (`Lieu`, `Aller`, `Scenario`, la meteo) et demande une passe
-    de saisie par club.
+  - **Le pays de la ville, lui, se geocode** (`_geocoded_country`), et c'est la moitie
+    manquante : gratuit, sans cle, sans quota, et sans identifiant a exiger. La ligne
+    devient `DVTK Stadion, Miskolc (HUN) — pas d'identifiant de stade ici, terrain neutre
+    non verifiable`. Le pays est un **fait sur la ville**, la mention qui suit dit que la
+    comparaison reste hors de portee : c'est elle, et non le pays, qui interdit de conclure.
+    - **Un nom de ville nu ne suffit pas, et deux mesures le prouvent.** Sur les 128 villes
+      de stade de la base, le plus peuple des homonymes donne l'**Allemagne** au Club
+      Bruges — « Brügge », 1 019 habitants, quand Bruges vit sous un autre nom chez le
+      geocodeur — et l'Allemagne encore au SV Ried, autrichien, dont les 87 homonymes
+      exacts placent Ried im Innkreis hors des dix premiers. C'est exactement le faux
+      positif qui avait fait ignorer la ligne.
+    - **Deux temps, et l'ordre porte la regle.** Un homonyme dans le pays du club emporte
+      la decision — cas ordinaire, et il rattrape Ried ; sinon on affirme que le match se
+      joue a l'etranger, ce qui demande une ville de plus de 20 000 habitants et dix fois
+      plus peuplee que son premier homonyme. Mesure : les cinq delocalisations connues
+      visent des villes de 121 000 a 336 000 habitants, seules ou 660 fois plus peuplees
+      que leur homonyme suivant. Deux ordres de grandeur separent les vrais cas des faux
+      de chaque seuil.
+    - **La preference au pays du club ne cache aucune delocalisation**, et c'est mesure
+      plutot que suppose : aucune des cinq n'a d'homonyme dans le pays de son club.
+    - Rejeu de la regle livree sur les releves reels : **113 des 128 villes situees**, 15
+      tues — les traps, les egalites (Dundee, Barcelos, Geneva a 9,2 fois) et les villes
+      trop petites. Avec le pays du club, 11 cas connus sur 13 justes, un tu, un faux.
+    - **Le seul faux est un libelle du fournisseur**, et aucune regle ne le rattrape : ML
+      Vitebsk recevait a Mezokovesd, en Hongrie, sous un `city` qui dit « Vitebsk ». Le
+      pays rendu est donc le Belarus. Le nom du stade, hongrois, et la mention « non
+      verifiable » sont ce qui reste pour le voir — et c'est ce que la ligne disait deja.
+    - **Les deux vocabulaires de pays divergent** et il faut les rapprocher a la main :
+      l'article des Pays-Bas, et les quatre nations britanniques qu'API-Football compte
+      pour des pays quand Open-Meteo dit « United Kingdom ». Sans `HOME_NATIONS`, Dundee
+      et Motherwell n'ont aucun candidat chez eux et passent par la branche des
+      delocalisations.
+  - **Le pays du club, lui, ne demande aucune saisie** — `team.country` arrive dans le
+    `/teams` deja appele pour le stade habituel, et `home_country` le persiste. La table
+    `teams` que B1 supposait ne conditionne donc **pas** le drapeau : ce qui manque au
+    drapeau est la fiabilite du couple (ville, pays), pas la donnee du club. Ce qui reste
+    a arbitrer est le drapeau lui-meme, qui touche quatre consommateurs (`Lieu`, `Aller`,
+    `Scenario`, la meteo).
 - **La ligne est devenue systematique**, et le calcul qui la reservait a la surprise etait
   faux dans l'autre sens : son absence ne se distinguait pas d'un domicile ordinaire, si
   bien qu'un match delocalise dont le lieu n'avait pas ete recupere passait pour un match

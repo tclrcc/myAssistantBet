@@ -56,6 +56,12 @@ NWS_URL = "https://api.weather.gov"
 #: pression ne se traduisent en aucun angle.
 HOURLY = "temperature_2m,precipitation_probability,wind_gusts_10m,weather_code"
 
+#: Homonymes demandes au geocodage. Dix suffisent pour situer une ville dont on
+#: connait deja le pays ; il en faut cent pour decider **quel** est ce pays —
+#: mesure sur les villes de stade reelles, « Ried » en compte 87 exacts.
+COORDINATES_COUNT = 10
+PLACES_COUNT = 100
+
 #: Le NWS **exige** un `User-Agent` qui identifie l'appelant. Le contact vient
 #: des reglages : le coder en dur ferait porter a un autre les appels d'une
 #: installation qui n'est pas la sienne.
@@ -71,6 +77,25 @@ class WeatherClient(BaseHTTPClient):
         contact = (self.settings.weather_contact or "contact non renseigne").strip()
         return {"User-Agent": USER_AGENT.format(contact=contact), "Accept": "application/json"}
 
+    async def places(self, city: str, count: int = PLACES_COUNT) -> list[dict[str, Any]]:
+        """Les homonymes d'un nom de ville, **tels que le fournisseur les rend**.
+
+        `coordinates()` en tire un point ; le lieu d'un match en tire un *pays*,
+        et il lui faut la liste entiere pour savoir s'il y a doute. L'arbitrage
+        reste donc chez l'appelant : les deux n'ont pas la meme question, et
+        celui qui cherche un pays doit pouvoir renoncer.
+
+        Cent et non dix, et c'est mesure : « Ried » compte 87 homonymes exacts,
+        les autrichiens n'entrant qu'apres le dixieme — la liste courte donnait
+        l'Allemagne pour un club autrichien.
+        """
+        response = await self._get(
+            f"{GEOCODING_URL}/v1/search",
+            params={"name": city, "count": count, "language": "en", "format": "json"},
+            headers=self._headers(),
+        )
+        return (response.data or {}).get("results") or []
+
     async def coordinates(self, city: str, country: str | None = None) -> dict[str, Any] | None:
         """Coordonnees d'une ville, **verifiees contre son pays**.
 
@@ -82,12 +107,7 @@ class WeatherClient(BaseHTTPClient):
         Rend aussi le fuseau du lieu, que le fournisseur publie dans la meme
         reponse — de quoi recouper une saisie manuelle sans un appel de plus.
         """
-        response = await self._get(
-            f"{GEOCODING_URL}/v1/search",
-            params={"name": city, "count": 10, "language": "en", "format": "json"},
-            headers=self._headers(),
-        )
-        results = (response.data or {}).get("results") or []
+        results = await self.places(city, COORDINATES_COUNT)
         if not results:
             return None
         if country:

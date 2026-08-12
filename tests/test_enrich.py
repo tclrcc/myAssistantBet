@@ -695,3 +695,60 @@ def test_le_marche_se_qualifie_a_un_libelle_et_un_rendu(migrated: Settings) -> N
     # Onze caracteres utiles, la limite exacte de `LABEL_MAX` : le libelle laisse
     # une espace avant sa valeur, ce qui est le minimum lisible.
     assert "  Se qualifie 1.28 / 3.60" in render_event(event)
+
+
+# -- La meteo suit le lieu du match, pas celui du club -----------------------
+
+
+def _match_avec_lieu(settings: Settings, payload: dict[str, Any]) -> int:
+    """Un match de la shortlist, avec le lieu que le contexte lui connait."""
+    from myassistantbet.services.context import KIND_VENUE, store
+
+    event_id = _tennis_event(settings)
+    db.execute(
+        "UPDATE events SET home = 'Hapoel Tel Aviv', away = 'GKS Katowice' WHERE id = ?",
+        (event_id,),
+        settings=settings,
+    )
+    store(event_id, KIND_VENUE, payload, settings)
+    board_service.toggle_selection(event_id, True, settings)
+    return event_id
+
+
+def test_la_meteo_d_un_match_delocalise_cherche_la_ville_du_stade(migrated: Settings) -> None:
+    """**Le defaut que le pays du stade repare, et il n'avait aucun test.** Le
+    pays servi au geocodage etait celui du club a defaut d'autre chose : chercher
+    « Miskolc » en Israel ne rend rien, donc une soiree de coupe d'Europe sortait
+    sans meteo — precisement la ou le lieu n'est pas celui qu'on croit.
+
+    Trois sources, dans l'ordre de ce qu'elles prouvent : le stade identifie chez
+    le fournisseur, la ville geocodee, puis le club."""
+    from myassistantbet.services.enrich import _weather_targets
+
+    event_id = _match_avec_lieu(
+        migrated,
+        {"city": "Miskolc", "geo_country": "Hungary", "home_country": "Israel"},
+    )
+    session = db.query_one(
+        "SELECT session_id FROM session_events WHERE event_id = ?", (event_id,), settings=migrated
+    )
+
+    cibles = _weather_targets(int(session["session_id"]), migrated)
+
+    assert [(ville, pays) for _, ville, pays, _ in cibles] == [("Miskolc", "Hungary")]
+
+
+def test_le_pays_du_stade_identifie_prime_sur_la_ville_geocodee(migrated: Settings) -> None:
+    """Un identifiant de stade est un fait du fournisseur ; un nom de ville
+    geocode reste un rapprochement. L'ordre suit ce que chacun prouve."""
+    from myassistantbet.services.enrich import _weather_targets
+
+    event_id = _match_avec_lieu(
+        migrated,
+        {"city": "Lublin", "country": "Poland", "geo_country": "Ukraine"},
+    )
+    session = db.query_one(
+        "SELECT session_id FROM session_events WHERE event_id = ?", (event_id,), settings=migrated
+    )
+
+    assert _weather_targets(int(session["session_id"]), migrated)[0][2] == "Poland"

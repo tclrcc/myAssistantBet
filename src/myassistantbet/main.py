@@ -249,7 +249,16 @@ async def fetch_event_context(request: Request, event_id: int) -> HTMLResponse:
     if row is None:
         raise HTTPException(status_code=404, detail="Evenement inconnu")
     client = APIFootballClient(request.app.state.http, settings)
-    report = await context_service.fetch_context(client, dict(row), settings)
+    report = await context_service.fetch_context(
+        client,
+        dict(row),
+        settings,
+        # Le pays du stade quand le fournisseur ne l'identifie pas. Ce bouton doit
+        # ramener ce qu'un enrichissement ramene : deux chemins qui ne recuperent
+        # pas la meme chose est le defaut que l'assembleur de contexte a deja paye
+        # deux fois.
+        geo_client=WeatherClient(request.app.state.http, settings),
+    )
     # Le dossier d'equipe fait partie du contexte sportif du point de vue de
     # l'utilisateur : sans cet appel, ce bouton et l'enrichissement d'une session
     # ne recuperaient pas la meme chose, et la fiche resterait sans entraineur ni

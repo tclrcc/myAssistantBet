@@ -443,10 +443,17 @@ async def _add_context(
     settings: Settings,
     cache: dict[str, Any],
     now: datetime | None = None,
+    geo_client: WeatherClient | None = None,
 ) -> None:
-    """Ajoute le contexte sportif. Un echec ici ne remet jamais en cause les cotes."""
+    """Ajoute le contexte sportif. Un echec ici ne remet jamais en cause les cotes.
+
+    `geo_client` ne sert qu'au pays d'un stade que le fournisseur n'identifie
+    pas : gratuit, sans cle, et sans effet sur le reste quand il manque.
+    """
     try:
-        report = await fetch_context(context_client, target.as_event(), settings, cache, now)
+        report = await fetch_context(
+            context_client, target.as_event(), settings, cache, now, geo_client
+        )
     except Exception as exc:  # noqa: BLE001 — le contexte est un bonus, jamais bloquant
         result.context_errors.append(f"{type(exc).__name__}: {exc}")
         logger.exception("Contexte indisponible pour %s", target.label)
@@ -587,7 +594,13 @@ def _weather_targets(session_id: int, settings: Settings) -> list[tuple[int, str
         # Le stade **du match** d'abord : une rencontre delocalisee n'a pas la
         # meteo du stade habituel, et c'est justement la que ca compte.
         ville = venue.get("city") or venue.get("usual_city") or row["ville_competition"] or ""
-        pays = venue.get("country") or venue.get("home_country")
+        # **Trois sources de pays, dans l'ordre de ce qu'elles prouvent** : le
+        # stade identifie chez le fournisseur, la ville geocodee, puis le club.
+        # La derniere est la seule qui puisse mentir sur une rencontre
+        # delocalisee — et c'etait la seule consultee : « Miskolc » cherche en
+        # Israel ne se geocode pas, donc une soiree de coupe d'Europe sortait
+        # sans meteo, precisement la ou le lieu n'est pas celui qu'on croit.
+        pays = venue.get("country") or venue.get("geo_country") or venue.get("home_country")
         if ville:
             cibles.append((int(row["id"]), str(ville), pays, str(row["commence_time"])))
     return cibles
@@ -672,7 +685,9 @@ async def run_enrich(
             await _add_substitute_odds(context_client, target, result, settings)
 
         if context_client is not None and target.context_possible:
-            await _add_context(context_client, target, result, settings, context_cache, now)
+            await _add_context(
+                context_client, target, result, settings, context_cache, now, weather_client
+            )
 
         report.results.append(result)
         report.done += 1
@@ -693,7 +708,9 @@ async def run_enrich(
         await _add_substitute_odds(context_client, target, result, settings)
 
         if context_client is not None and target.context_possible:
-            await _add_context(context_client, target, result, settings, context_cache, now)
+            await _add_context(
+                context_client, target, result, settings, context_cache, now, weather_client
+            )
 
         report.results.append(result)
         report.done += 1

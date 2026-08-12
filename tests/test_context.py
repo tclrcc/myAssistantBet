@@ -11,6 +11,7 @@ from myassistantbet import db
 from myassistantbet.config import Settings
 from myassistantbet.providers.apifootball import BASE_URL, APIFootballClient
 from myassistantbet.providers.base import ProviderError
+from myassistantbet.providers.weather import GEOCODING_URL, WeatherClient
 from myassistantbet.services.context import (
     KIND_FORM,
     KIND_H2H,
@@ -964,6 +965,202 @@ async def test_un_stade_sans_identifiant_est_quand_meme_nomme(
     assert _lines(migrated)["Lieu"] == (
         "DVTK Stadion, Miskolc — pas d'identifiant de stade ici, terrain neutre non verifiable"
     )
+
+
+def _geo(candidats: list[dict[str, Any]]) -> respx.Route:
+    """Le geocodeur Open-Meteo : gratuit, sans cle, et sans quota."""
+    return respx.get(f"{GEOCODING_URL}/v1/search").mock(
+        return_value=httpx.Response(200, json={"results": candidats})
+    )
+
+
+def _ville_du_match(
+    routes: dict[str, respx.Route], load_fixture: Any, nom: str, ville: str
+) -> None:
+    """Pose un stade **sans identifiant**, comme les competitions UEFA en servent."""
+    matchs = load_fixture("apifootball_fixtures_date.json")
+    matchs["response"][0]["fixture"]["venue"] = {"id": None, "name": nom, "city": ville}
+    routes["fixtures_date"].mock(
+        return_value=httpx.Response(200, json=matchs, headers=RATE_HEADERS)
+    )
+
+
+def _pays_du_club(routes: dict[str, respx.Route], load_fixture: Any, pays: str) -> None:
+    equipe = load_fixture("apifootball_team.json")
+    equipe["response"][0]["team"] = {**equipe["response"][0]["team"], "country": pays}
+    routes["team"].mock(return_value=httpx.Response(200, json=equipe, headers=RATE_HEADERS))
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_pays_d_un_stade_sans_identifiant_vient_du_geocodage(
+    api_client: APIFootballClient,
+    geo_client: WeatherClient,
+    migrated: Settings,
+    load_fixture: Any,
+) -> None:
+    """**La moitie manquante du drapeau.** Le pays d'un stade ne se demande a
+    API-Football qu'avec un identifiant de stade, nul sur 210 matchs sur 210
+    d'une saison de Conference League — donc absent exactement la ou les
+    delocalisations arrivent. Le geocodeur n'en a pas besoin, et ne coute rien.
+
+    Un club israelien qui « recoit » a Miskolc (HUN) se lit alors sans qu'aucun
+    drapeau soit calcule : c'est le partage voulu, le lieu est sur, la
+    comparaison reste declaree hors de portee."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    _ville_du_match(routes, load_fixture, "DVTK Stadion", "Miskolc")
+    _geo([{"name": "Miskolc", "country": "Hungary", "population": 154521}])
+
+    await fetch_context(api_client, EVENT, migrated, geo_client=geo_client)
+
+    assert _lines(migrated)["Lieu"] == (
+        "DVTK Stadion, Miskolc (HUN)"
+        " — pas d'identifiant de stade ici, terrain neutre non verifiable"
+    )
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_un_homonyme_dans_le_pays_du_club_emporte_la_decision(
+    api_client: APIFootballClient,
+    geo_client: WeatherClient,
+    migrated: Settings,
+    load_fixture: Any,
+) -> None:
+    """Mesure du 12/08/2026 : « Ried » compte 87 homonymes exacts, l'Allemagne
+    en tete avec 2 987 habitants, et le SV Ried est **autrichien**. Le plus
+    peuple des homonymes se serait trompe de pays.
+
+    La preference ne cache aucune delocalisation : aucune des cinq connues n'a
+    d'homonyme dans le pays de son club."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    _pays_du_club(routes, load_fixture, "Austria")
+    _ville_du_match(routes, load_fixture, "Innviertel Arena", "Ried")
+    _geo(
+        [
+            {"name": "Ried", "country": "Germany", "population": 2987},
+            {"name": "Ried", "country": "Italy", "population": 1440},
+            {"name": "Ried", "country": "The Netherlands", "population": 405},
+            {"name": "Ried", "country": "Austria", "population": 371},
+        ]
+    )
+
+    await fetch_context(api_client, EVENT, migrated, geo_client=geo_client)
+
+    assert _lines(migrated)["Lieu"].startswith("Innviertel Arena, Ried (AUT)")
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_une_ville_trop_petite_pour_un_stade_ne_situe_rien(
+    api_client: APIFootballClient,
+    geo_client: WeatherClient,
+    migrated: Settings,
+    load_fixture: Any,
+) -> None:
+    """**Le faux positif que le geocodage produisait**, et il est du meme genre
+    que celui qui avait fait ignorer la ligne : « Brugge » ne rend aucun
+    candidat belge — Bruges y vit sous un autre nom — et le premier homonyme est
+    un village allemand de 1 019 habitants.
+
+    Dire qu'un club joue hors de chez lui est une affirmation forte : sans ville
+    de taille plausible, la ligne ne dit rien plutot que de se tromper de pays."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    _pays_du_club(routes, load_fixture, "Belgium")
+    _ville_du_match(routes, load_fixture, "Jan Breydel Stadion", "Brugge")
+    _geo(
+        [
+            {"name": "Brügge", "country": "Germany", "population": 1019},
+            {"name": "Brugge", "country": "Switzerland", "population": 0},
+        ]
+    )
+
+    await fetch_context(api_client, EVENT, migrated, geo_client=geo_client)
+
+    assert _lines(migrated)["Lieu"] == (
+        "Jan Breydel Stadion, Brugge"
+        " — pas d'identifiant de stade ici, terrain neutre non verifiable"
+    )
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_deux_homonymes_de_meme_ordre_ne_tranchent_pas(
+    api_client: APIFootballClient,
+    geo_client: WeatherClient,
+    migrated: Settings,
+    load_fixture: Any,
+) -> None:
+    """Deux vraies villes du meme nom dans deux pays, et le club dans aucun des
+    deux : le plus peuple gagnerait a pile ou face. En cas de doute, rien — la
+    regle du projet, appliquee la ou une erreur serait invisible."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    _ville_du_match(routes, load_fixture, "Estadio Municipal", "Valencia")
+    _geo(
+        [
+            {"name": "Valencia", "country": "Venezuela", "population": 1400000},
+            {"name": "Valencia", "country": "Spain", "population": 800000},
+        ]
+    )
+
+    await fetch_context(api_client, EVENT, migrated, geo_client=geo_client)
+
+    assert "(" not in _lines(migrated)["Lieu"].split(" — ")[0]
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_un_stade_identifie_ne_declenche_aucun_geocodage(
+    api_client: APIFootballClient,
+    geo_client: WeatherClient,
+    migrated: Settings,
+    load_fixture: Any,
+) -> None:
+    """Le geocodage ne prend le relais que la ou l'identifiant manque. Un match
+    au stade habituel est deja situe par le pays du club : appeler couterait un
+    appel par match pour reapprendre ce qu'on sait."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    matchs = load_fixture("apifootball_fixtures_date.json")
+    matchs["response"][0]["fixture"]["venue"] = {
+        "id": 1234,
+        "name": "Bravida Arena",
+        "city": "Goteborg",
+    }
+    routes["fixtures_date"].mock(
+        return_value=httpx.Response(200, json=matchs, headers=RATE_HEADERS)
+    )
+    geo = _geo([{"name": "Goteborg", "country": "Sweden", "population": 579281}])
+
+    await fetch_context(api_client, EVENT, migrated, geo_client=geo_client)
+
+    assert not geo.called
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_un_geocodeur_injoignable_n_emporte_pas_le_nom_du_stade(
+    api_client: APIFootballClient,
+    geo_client: WeatherClient,
+    migrated: Settings,
+    load_fixture: Any,
+) -> None:
+    """Le pays est un complement gratuit, jamais une dependance : sans lui le
+    nom du stade et sa ville se lisent tres bien, et ce sont eux qui font sauter
+    l'anomalie aux yeux."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    _ville_du_match(routes, load_fixture, "DVTK Stadion", "Miskolc")
+    respx.get(f"{GEOCODING_URL}/v1/search").mock(return_value=httpx.Response(404))
+
+    report = await fetch_context(api_client, EVENT, migrated, geo_client=geo_client)
+
+    assert _lines(migrated)["Lieu"].startswith("DVTK Stadion, Miskolc —")
+    assert any("pays du lieu" in erreur for erreur in report.errors)
 
 
 @respx.mock

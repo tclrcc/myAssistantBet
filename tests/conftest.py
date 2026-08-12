@@ -13,6 +13,7 @@ from myassistantbet.config import Settings, get_settings
 from myassistantbet.main import ENRICH_PROGRESS
 from myassistantbet.providers.apifootball import APIFootballClient
 from myassistantbet.providers.oddsapi import OddsAPIClient
+from myassistantbet.providers.weather import WeatherClient
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
@@ -108,3 +109,10 @@ def odds_client(http_client: httpx.AsyncClient, migrated: Settings) -> OddsAPICl
 def api_client(http_client: httpx.AsyncClient, migrated: Settings) -> APIFootballClient:
     """Client API-Football. Trois fichiers de test le demandent."""
     return APIFootballClient(http_client, migrated)
+
+
+@pytest.fixture
+def geo_client(http_client: httpx.AsyncClient, migrated: Settings) -> WeatherClient:
+    """Geocodeur et meteo : deux consommateurs, le lieu d'un match et le temps
+    qu'il y fera. Gratuit, sans cle, sans quota."""
+    return WeatherClient(http_client, migrated)
