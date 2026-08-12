@@ -1084,6 +1084,45 @@ scannes les jours d'avant. Aucun appel, aucune cle, aucun quota.
   - **Un forfait s'y lisait comme un match joue**, et documenter le defaut ne le corrigeait
     pas. Voir la section suivante.
 
+## Le scenario d'une manche retour se calcule (`context._scenario_line`)
+
+Vingt-quatre manches retour en une semaine, et le meme raisonnement refait a la main a
+chaque fois : cumul, qui mene, combien il faut a celui qui est mene. C'est deterministe et
+ca tient en trois soustractions — donc ca ne se delegue pas au modele.
+
+- **La detection est ecrite une seule fois** (`_return_leg`) et sert les deux lignes :
+  `Aller` enonce le fait, `Scenario` en tire l'arithmetique. Deux detections paralleles
+  auraient diverge, et le bloc aurait annonce un scenario sur une rencontre que l'autre
+  ligne ne reconnaissait plus comme un aller — le piege deja paye deux fois par
+  l'assembleur de contexte.
+- **Deux seuils, et il faut les deux** : `doit gagner de 2 pour egaliser, de 3 pour
+  passer`. Egaliser envoie en prolongation, passer gagne le tour dans le temps
+  reglementaire. Les deux ne produisent pas la meme fin de match, et c'est le second qui
+  decide si l'equipe s'ouvre encore a la 80e — un cumul seul laisse ce travail a faire.
+- **Le camp oblige est nomme, et c'est le mot « doit » qui declenche l'angle.** Une
+  obligation de marquer se traduit en total, en handicap ou en marche d'equipe ; un cumul
+  ne se traduit en rien. La mention `(a domicile)` / `(a l'exterieur)` suit, parce que la
+  meme obligation ne produit pas le meme match selon le terrain — c'est la configuration
+  qui a porte les quatre selections d'un lot reel.
+- **Un aller nul n'avantage personne, et c'est la lecture qui se trompe le plus souvent** :
+  sans regle des buts a l'exterieur, `2-2` ne vaut pas mieux que `0-0`. La ligne le dit en
+  toutes lettres plutot que de laisser deduire.
+- **La ligne ne se porte pas garante d'un reglement.** Buts a l'exterieur, prolongation,
+  tirs au but sont des regles de **competition**, pas de l'arithmetique. Le preambule les
+  enonce **une fois pour le lot** — standard UEFA, abolition des buts a l'exterieur en
+  2021 — et dit que la fiche de la competition prime sur lui : elle seule sait qu'une
+  Supercoupe va aux tirs au but sans prolongation. Les affirmer par match couterait des
+  tokens **et** engagerait l'outil sur un reglement qu'il n'a pas lu. Un test verifie
+  qu'aucun de ces trois mots n'entre dans la ligne.
+- Le mode d'emploi d'`Aller` a ete relu avec : il disait « a toi de dire s'il s'agit d'une
+  double confrontation », ce qui etait juste tant que rien ne la calculait. Meme regle que
+  `Serie`, `Parcours` et `Non joue` — toute condition ajoutee a une ligne se verifie contre
+  la phrase du preambule qui la decrit.
+- Limite assumee, et elle vient de la source : `Scenario` ne parait que si `Aller` parait,
+  donc seulement quand le rapprochement API-Football a abouti et que le releve H2H porte
+  son `league_id`. Une manche retour dont le contexte n'a pas ete recupere n'a pas de
+  ligne — comme le reste du bloc.
+
 ## Le repos se compte en heures ecoulees, pas en journees de tournoi
 
 La journee de tournoi a corrige un defaut et en a laisse un autre : elle regroupe

@@ -1237,6 +1237,88 @@ def _h2h_line(payload: dict[str, Any], settings: Settings) -> str:
 RETURN_LEG_DAYS = 21
 
 
+def _return_leg(
+    payload: dict[str, Any], league_id: Any, commence_time: str
+) -> dict[str, Any] | None:
+    """L'aller d'une double confrontation, ou `None`.
+
+    **Ecrite une seule fois**, parce que deux lignes en dependent : le fait
+    (`Aller`) et son arithmetique (`Scenario`). Deux detections paralleles
+    auraient fini par diverger, et le bloc aurait annonce un scenario sur une
+    rencontre que l'autre ligne ne reconnaissait plus comme un aller.
+
+    Trois conditions, et il faut les trois : **meme competition**, **terrain
+    inverse** — celui qui recoit aujourd'hui se deplacait — et moins de
+    `RETURN_LEG_DAYS` jours. Le terrain inverse est le discriminant fort ; sans
+    lui, deux journees de championnat rapprochees passeraient pour une double
+    confrontation.
+    """
+    matches = payload.get("matches") or []
+    home_id = payload.get("home_id")
+    if not matches or home_id is None or league_id is None:
+        return None
+    start = _moment(commence_time)
+    recent = max(matches, key=lambda item: str(item.get("date") or ""))
+    played = _moment(str(recent.get("date") or ""))
+    if start is None or played is None:
+        return None
+    if recent.get("league_id") != league_id or recent.get("home_id") == home_id:
+        return None
+    if not 0 <= (start - played).days <= RETURN_LEG_DAYS:
+        return None
+    return dict(recent)
+
+
+def _scenario_line(payload: dict[str, Any], league_id: Any, home: str, away: str, when: str) -> str:
+    """`cumul 0-2 — Hapoel qualifie en l'etat ; GKS doit gagner de 2…`
+
+    **C'est un calcul, et un calcul ne se delegue pas au modele.** Sur une
+    semaine de tours preliminaires, vingt-quatre manches retour ont demande le
+    meme raisonnement refait a la main : cumul, qui mene, combien il faut a
+    celui qui est mene. Il est deterministe et tient en trois soustractions.
+
+    **Deux seuils, et il faut les deux.** Egaliser envoie en prolongation,
+    passer gagne le tour dans le temps reglementaire : les deux ne produisent
+    pas la meme fin de match, et c'est le second qui decide si l'equipe s'ouvre
+    encore a la 80e. Un cumul seul laisse ce travail a faire.
+
+    **Le camp oblige est nomme, et c'est le mot « doit » qui declenche l'angle**
+    — une obligation de marquer se traduit en total, en handicap ou en marche
+    d'equipe, la ou un cumul ne se traduit en rien. On dit aussi lequel des deux
+    recoit : une obligation a domicile et la meme a l'exterieur ne produisent
+    pas le meme scenario.
+
+    Ce que la ligne **ne dit pas** : la regle des buts a l'exterieur, la
+    prolongation, les tirs au but. Ce sont des regles de competition, pas de
+    l'arithmetique — le preambule les enonce une fois pour le lot, et la fiche
+    de la competition prime sur lui. Les affirmer par match, c'est se porter
+    garant d'un reglement qu'on n'a pas lu.
+    """
+    aller = _return_leg(payload, league_id, when)
+    if aller is None:
+        return ""
+    # Meme convention que « Aller » et « H2H » : du point de vue de l'equipe qui
+    # recoit **aujourd'hui**, laquelle se deplacait a l'aller.
+    pour, contre = aller.get("away_goals"), aller.get("home_goals")
+    if not isinstance(pour, int) or not isinstance(contre, int):
+        return ""
+
+    cumul = f"cumul {pour}-{contre}"
+    if pour == contre:
+        # Rien n'est fait : sans regle des buts a l'exterieur, le vainqueur du
+        # match passe et un nul prolonge. C'est le cas ou la lecture se trompe
+        # le plus souvent, parce qu'un 2-2 a l'aller **n'avantage personne**.
+        return f"{cumul} — rien n'est fait, le vainqueur de ce match passe"
+
+    menant, mene = (home, away) if pour > contre else (away, home)
+    ecart = abs(pour - contre)
+    lieu = "a domicile" if mene == home else "a l'exterieur"
+    return (
+        f"{cumul} — {menant} qualifie en l'etat ; "
+        f"{mene} ({lieu}) doit gagner de {ecart} pour egaliser, de {ecart + 1} pour passer"
+    )
+
+
 def _return_leg_line(payload: dict[str, Any], league_id: Any, away: str, commence_time: str) -> str:
     """`0-0 le 06/08, Hammarby recevait` — l'aller d'une double confrontation.
 
@@ -1260,19 +1342,9 @@ def _return_leg_line(payload: dict[str, Any], league_id: Any, away: str, commenc
     Un releve d'avant ce champ n'a pas de `league_id` : aucune ligne, jusqu'au
     prochain enrichissement.
     """
-    matches = payload.get("matches") or []
-    home_id = payload.get("home_id")
-    if not matches or home_id is None or league_id is None:
-        return ""
-    start = _moment(commence_time)
-    recent = max(matches, key=lambda item: str(item.get("date") or ""))
-    played = _moment(str(recent.get("date") or ""))
-    if start is None or played is None:
-        return ""
-    if recent.get("league_id") != league_id or recent.get("home_id") == home_id:
-        return ""
-    jours = (start - played).days
-    if not 0 <= jours <= RETURN_LEG_DAYS:
+    recent = _return_leg(payload, league_id, commence_time)
+    played = _moment(str((recent or {}).get("date") or ""))
+    if recent is None or played is None:
         return ""
     # Le score se lit du point de vue de l'equipe qui recoit aujourd'hui, comme
     # la ligne H2H : deux conventions dans le meme bloc se liraient a l'envers.
@@ -1550,11 +1622,17 @@ def context_lines(
         # L'aller precede la suite des scores : la premiere entree de « H2H »
         # est le meme match, et le lecteur doit savoir a quoi elle correspond
         # avant de la lire comme un antecedent parmi d'autres.
-        aller = _return_leg_line(
-            h2h, (data.get(KIND_TEAMS) or {}).get("league"), away, commence_time
-        )
+        league = (data.get(KIND_TEAMS) or {}).get("league")
+        aller = _return_leg_line(h2h, league, away, commence_time)
         if aller:
             lines.append(("Aller", aller))
+        # L'arithmetique de la double confrontation, juste sous le fait dont
+        # elle se deduit : cumul, qui est qualifie en l'etat, ce qu'il faut a
+        # l'autre. Vingt-quatre manches retour en une semaine ont demande ce
+        # meme calcul refait a la main, et il est deterministe.
+        scenario = _scenario_line(h2h, league, home, away, commence_time)
+        if scenario:
+            lines.append(("Scenario", scenario))
         rendered = _h2h_line(h2h, settings)
         if rendered:
             lines.append((f"H2H ({len(h2h.get('matches') or [])})", rendered))

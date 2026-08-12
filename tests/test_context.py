@@ -1545,8 +1545,19 @@ async def test_un_effectif_stable_ne_produit_aucune_ligne(
     assert "Effectif" not in _lines(migrated)
 
 
-def _h2h(settings: Settings, *, jours: int, league: int | None = 113, inverse: bool = True) -> None:
-    """Une confrontation directe unique, datee par rapport au match analyse."""
+def _h2h(
+    settings: Settings,
+    *,
+    jours: int,
+    league: int | None = 113,
+    inverse: bool = True,
+    buts: tuple[int, int] = (2, 0),
+) -> None:
+    """Une confrontation directe unique, datee par rapport au match analyse.
+
+    `buts` est le score de l'aller **tel qu'il s'est joue** : le premier nombre
+    pour celui qui recevait ce jour-la, donc pour l'equipe qui se deplace
+    aujourd'hui."""
     joue = datetime(2026, 8, 3, 15, 30, tzinfo=UTC) - timedelta(days=jours)
     store(1, KIND_TEAMS, {"home": 376, "away": 377, "league": 113, "season": 2026}, settings)
     store(
@@ -1558,8 +1569,8 @@ def _h2h(settings: Settings, *, jours: int, league: int | None = 113, inverse: b
                 {
                     # `inverse` : celui qui recoit aujourd'hui se deplacait.
                     "home_id": 377 if inverse else 376,
-                    "home_goals": 2,
-                    "away_goals": 0,
+                    "home_goals": buts[0],
+                    "away_goals": buts[1],
                     "date": joue.isoformat(),
                     "league_id": league,
                 }
@@ -1928,3 +1939,165 @@ def test_le_seuil_de_l_enjeu_se_lit_dans_les_reglages(migrated: Settings) -> Non
     save_threshold("enjeu_min_journees", "2", migrated)
 
     assert "indicatif" not in _lines(migrated)["Enjeu"]
+
+
+# -- Le scenario d'une manche retour -----------------------------------------
+
+#: Les configurations rencontrees en deux jours de tours preliminaires. `buts`
+#: est le score de l'aller du point de vue de celui qui recevait alors, donc de
+#: **Djurgardens IF**, qui se deplace aujourd'hui. `BK Hacken` recoit.
+SCENARIOS = [
+    (
+        "avance de trois, qualification acquise en l'etat",
+        (3, 0),
+        "cumul 0-3 — Djurgardens IF qualifie en l'etat ; "
+        "BK Hacken (a domicile) doit gagner de 3 pour egaliser, de 4 pour passer",
+    ),
+    (
+        "avance de deux, le cas le plus frequent de la semaine",
+        (2, 0),
+        "cumul 0-2 — Djurgardens IF qualifie en l'etat ; "
+        "BK Hacken (a domicile) doit gagner de 2 pour egaliser, de 3 pour passer",
+    ),
+    (
+        "avance d'un but",
+        (1, 0),
+        "cumul 0-1 — Djurgardens IF qualifie en l'etat ; "
+        "BK Hacken (a domicile) doit gagner de 1 pour egaliser, de 2 pour passer",
+    ),
+    (
+        "l'equipe qui recoit aujourd'hui mene : l'obligation change de camp",
+        (0, 2),
+        "cumul 2-0 — BK Hacken qualifie en l'etat ; "
+        "Djurgardens IF (a l'exterieur) doit gagner de 2 pour egaliser, de 3 pour passer",
+    ),
+    (
+        "aller nul avec buts — la lecture qui se trompe le plus souvent",
+        (2, 2),
+        "cumul 2-2 — rien n'est fait, le vainqueur de ce match passe",
+    ),
+    (
+        "aller nul et vierge",
+        (0, 0),
+        "cumul 0-0 — rien n'est fait, le vainqueur de ce match passe",
+    ),
+]
+
+
+@pytest.mark.parametrize(("cas", "buts", "attendu"), SCENARIOS)
+def test_le_scenario_d_une_manche_retour_est_calcule(
+    migrated: Settings, cas: str, buts: tuple[int, int], attendu: str
+) -> None:
+    """Vingt-quatre manches retour en une semaine ont demande le meme calcul
+    refait a la main : cumul, qui mene, combien il faut a celui qui est mene.
+    Il est deterministe, donc il ne se delegue pas au modele."""
+    _seed_event(migrated)
+    _h2h(migrated, jours=7, buts=buts)
+
+    assert _lines(migrated)["Scenario"] == attendu, cas
+
+
+def test_le_scenario_separe_egaliser_de_passer(migrated: Settings) -> None:
+    """Les deux seuils ne produisent pas la meme fin de match, et c'est le
+    second qui decide si l'equipe s'ouvre encore a la 80e. Un cumul seul laisse
+    ce travail a faire."""
+    _seed_event(migrated)
+    _h2h(migrated, jours=7, buts=(2, 0))
+
+    ligne = _lines(migrated)["Scenario"]
+
+    assert "doit gagner de 2 pour egaliser" in ligne
+    assert "de 3 pour passer" in ligne
+
+
+def test_le_scenario_ne_se_porte_pas_garant_d_un_reglement(migrated: Settings) -> None:
+    """La regle des buts a l'exterieur, la prolongation et les tirs au but sont
+    des regles de **competition**, pas de l'arithmetique. Le preambule les
+    enonce une fois pour le lot et la fiche de la competition prime : les
+    affirmer par match reviendrait a se porter garant d'un reglement qu'on n'a
+    pas lu — la Supercoupe d'Europe va aux tirs au but sans prolongation."""
+    _seed_event(migrated)
+    _h2h(migrated, jours=7, buts=(2, 0))
+
+    ligne = _lines(migrated)["Scenario"]
+
+    for mot in ("prolongation", "tirs au but", "buts a l'exterieur"):
+        assert mot not in ligne, f"« {mot} » est une regle, pas un calcul"
+
+
+@pytest.mark.parametrize(
+    ("cas", "kwargs"),
+    [
+        ("une autre competition", {"league": 3}),
+        ("le meme terrain, donc pas un retour", {"inverse": False}),
+        ("trop ancien pour une double confrontation", {"jours": 40}),
+    ],
+)
+def test_aucun_scenario_hors_des_trois_conditions(
+    migrated: Settings, cas: str, kwargs: dict[str, Any]
+) -> None:
+    """La detection est **partagee** avec « Aller » : deux ecritures auraient
+    fini par diverger, et le bloc aurait annonce un scenario sur une rencontre
+    que l'autre ligne ne reconnaissait plus comme un aller."""
+    _seed_event(migrated)
+    _h2h(migrated, **{"jours": 7, **kwargs})
+
+    assert "Scenario" not in _lines(migrated), cas
+
+
+def test_le_mode_d_emploi_du_scenario_ne_se_paie_que_sur_un_lot_qui_en_porte(
+    migrated: Settings,
+) -> None:
+    """Meme regle que partout : le preambule ne documente que les lignes que le
+    lot porte vraiment. Une manche retour est l'exception, pas l'ordinaire."""
+    from myassistantbet.services import board as board_service
+    from myassistantbet.services.prompt import build_prompt
+
+    _seed_event(migrated)
+    session_id = board_service.toggle_selection(1, True, migrated)
+    # Avant le coup d'envoi : un match commence quitte le prompt.
+    avant = datetime(2026, 8, 3, 12, 0, tzinfo=UTC)
+
+    sans = " ".join(build_prompt(session_id, settings=migrated, now=avant).body.split())
+    _h2h(migrated, jours=7, buts=(2, 0))
+    avec = " ".join(build_prompt(session_id, settings=migrated, now=avant).body.split())
+
+    assert "**« Scénario »** est un **calcul**" not in sans
+    assert "**« Scénario »** est un **calcul**" in avec
+
+
+def test_le_preambule_porte_la_regle_que_la_ligne_ne_dit_pas(migrated: Settings) -> None:
+    """La ligne fait de l'arithmetique, le preambule porte le reglement — une
+    fois pour le lot, et en disant que la fiche de la competition prime. Sans
+    quoi le bloc affirmerait une prolongation sur une Supercoupe qui va
+    directement aux tirs au but."""
+    from myassistantbet.services import board as board_service
+    from myassistantbet.services.prompt import build_prompt
+
+    _seed_event(migrated)
+    _h2h(migrated, jours=7, buts=(2, 0))
+    session_id = board_service.toggle_selection(1, True, migrated)
+    avant = datetime(2026, 8, 3, 12, 0, tzinfo=UTC)
+
+    corps = " ".join(build_prompt(session_id, settings=migrated, now=avant).body.split())
+
+    assert "abolie en Coupe d'Europe depuis 2021" in corps
+    assert "La fiche de la compétition prime sur cette phrase" in corps
+
+
+def test_le_mode_d_emploi_de_l_aller_renvoie_au_scenario(migrated: Settings) -> None:
+    """« a toi de dire s'il s'agit d'une double confrontation » etait juste tant
+    que rien ne la calculait. Toute condition ajoutee a une ligne se verifie
+    contre la phrase du preambule qui la decrit."""
+    from myassistantbet.services import board as board_service
+    from myassistantbet.services.prompt import build_prompt
+
+    _seed_event(migrated)
+    _h2h(migrated, jours=7, buts=(2, 0))
+    session_id = board_service.toggle_selection(1, True, migrated)
+    avant = datetime(2026, 8, 3, 12, 0, tzinfo=UTC)
+
+    corps = " ".join(build_prompt(session_id, settings=migrated, now=avant).body.split())
+
+    assert "à toi de dire s'il s'agit d'une double confrontation" not in corps
+    assert "La ligne « Scénario » en tire l'arithmétique" in corps

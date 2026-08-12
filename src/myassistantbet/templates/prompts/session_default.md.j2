@@ -655,10 +655,34 @@ plus — un joueur écarté avant la fenêtre lue n'y figure pas.
 {% endif %}{% if 'Aller' in context_labels %}
 **« Aller »** dit que ces deux équipes se sont rencontrées dans cette
 compétition, chez l'autre, il y a moins de trois semaines — score du point de
-vue de l'équipe qui reçoit aujourd'hui, comme « H2H ». C'est un fait, pas une
-conclusion : à toi de dire s'il s'agit d'une double confrontation, ce qui est
-presque certain sur un tour européen. Si c'en est une, c'est **le premier
-déterminant du scénario** et il prime sur la forme et le classement.
+vue de l'équipe qui reçoit aujourd'hui, comme « H2H ». C'est un fait, et
+lorsqu'il s'agit d'une double confrontation — presque certain sur un tour
+européen — c'est **le premier déterminant du scénario**, avant la forme et le
+classement. La ligne « Scénario » en tire l'arithmétique.
+{% endif %}{% if 'Scenario' in context_labels %}
+**« Scénario »** est un **calcul**, pas un relevé : le cumul des deux manches,
+qui est qualifié en l'état, et ce qu'il faut à l'autre. Deux seuils, et il faut
+les deux — `doit gagner de 2 pour égaliser, de 3 pour passer`. Égaliser envoie
+en prolongation, passer gagne le tour dans le temps réglementaire : les deux ne
+produisent pas la même fin de match, et c'est le second qui décide si l'équipe
+s'ouvre encore à la 80e.
+
+**Le camp obligé est nommé, et c'est de là que part l'angle.** Une obligation de
+marquer se traduit en total, en handicap ou en marché d'équipe ; un cumul ne se
+traduit en rien. La mention `(à domicile)` ou `(à l'extérieur)` n'est pas
+décorative : la même obligation ne produit pas le même match selon le terrain.
+
+Un aller nul — `2-2` comme `0-0` — **n'avantage personne**, et c'est la lecture
+qui se trompe le plus souvent : sans règle des buts à l'extérieur, un 2-2 ne
+vaut pas mieux qu'un 0-0.
+
+Ce que la ligne ne dit **pas**, parce que ce sont des règles de compétition et
+non de l'arithmétique : la règle des buts à l'extérieur — **abolie en Coupe
+d'Europe depuis 2021** —, la prolongation et les tirs au but. Le standard UEFA
+est : cumul égal à la fin des 90 minutes de la manche retour, prolongation puis
+tirs au but. **La fiche de la compétition prime sur cette phrase** : elle seule
+sait qu'une Supercoupe va aux tirs au but sans prolongation, ou qu'une coupe
+nationale rejoue le match. Si elle ne dit rien et que le tour est serré, vérifie.
 {% endif %}{% if 'Buteurs' in context_labels %}
 **« Buteurs »** — les trois meilleurs de chaque équipe, avec leur total et la
 part inscrite sur penalty : douze buts dont dix sur penalty ne se parient pas

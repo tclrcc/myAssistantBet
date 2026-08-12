@@ -96,6 +96,10 @@ CONTEXT_ICONS = {
     # L'aller d'une double confrontation : meme signe que la confrontation
     # directe, dont il est la premiere entree.
     "Aller": "duel",
+    # L'arithmetique de la double confrontation. Le signe de l'enjeu et non
+    # celui du duel : « Aller » dit qui a joue qui, « Scenario » dit ce qui se
+    # joue ce soir.
+    "Scenario": "enjeu",
     "H2H ici": "epingle",
     "H2H": "duel",
     "Tour": "echelons",
