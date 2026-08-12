@@ -53,6 +53,13 @@ MEDIUM = 2
 WEAK = 1
 PENALTY = -3
 
+#: En dessous de combien de matchs les lignes de forme d'un joueur ne decrivent
+#: plus rien. **Mesure sur les 406 blocs de tennis archives** : ce seuil designe
+#: 5 blocs (1 %), quand « moins de quatre » en designe 9 et « moins de cinq »
+#: 15. Un critere de priorite doit designer une minorite stricte, sinon il ne
+#: classe plus rien — c'est la regle appliquee avant de l'ecrire.
+THIN_PLAYER_MATCHES = 3
+
 #: Ecart au cumul jusqu'auquel un tour est **ouvert** : un but, ou rien du tout.
 #: Mesure : les quatre selections de maniere d'un lot reel venaient toutes de la.
 OPEN_TIE_GAP = 1
@@ -376,15 +383,54 @@ def _tennis_reasons(event: RenderableEvent, lignes: dict[str, str]) -> list[Reas
     """
     if event.sport_key != "tennis":
         return []
+    reasons = []
     valeur = lignes.get("Fraicheur") or ""
-    if "non comptes" not in valeur:
-        return []
+    if "non comptes" in valeur:
+        reasons.append(
+            Reason(
+                MEDIUM,
+                "tours de ce tournoi non recenses",
+                "Score set par set, duree et statistiques de service des tours deja joues ici ?",
+            )
+        )
+    reasons += _thin_player_reasons(lignes)
+    return reasons
+
+
+def _thin_player_reasons(lignes: dict[str, str]) -> list[Reason]:
+    """Un joueur dont **toutes** les lignes de forme tiennent sur deux matchs.
+
+    Le critere de densite regarde le taux de remplissage du **bloc** ; celui-ci
+    regarde ce qu'il y a derriere les lignes d'un **joueur**. Les deux ne se
+    recouvrent pas : sur la soiree du 12/08, les deux blocs les plus vides du
+    lot au niveau joueur — `Forme D/1` pour Lajal, `Forme VD/2` pour Mejia, ni
+    Profil ni Marge — avaient un bloc complet par ailleurs, donc aucun critere
+    ne les designait. La fiche a propose six dossiers portant tous la meme
+    question et aucun sur les deux joueurs dont on ne savait rien.
+
+    **Seuil mesure avant d'etre ecrit**, et c'est ce que la regle de revue
+    demande : sur les 406 blocs de tennis archives, « moins de trois matchs »
+    designe **5 blocs, soit 1 %** — les cinq de cette soiree-la. Un critere qui
+    se declencherait partout ne classerait plus rien ; a 1 %, il designe une
+    minorite stricte. Les seuils voisins ont ete mesures avec : 2 blocs a moins
+    de deux matchs, 9 a moins de quatre, 15 a moins de cinq.
+    """
+    forme = lignes.get("Forme") or ""
+    maigres = [
+        (nom.strip(), int(compte))
+        for fragment in forme.split(" | ")
+        if (paire := re.match(r"^(.*?)\s+[VD]+/(\d+)$", fragment.strip()))
+        for nom, compte in [paire.groups()]
+        if int(compte) < THIN_PLAYER_MATCHES
+    ]
     return [
         Reason(
             MEDIUM,
-            "tours de ce tournoi non recenses",
-            "Score set par set, duree et statistiques de service des tours deja joues ici ?",
+            f"{nom} : {compte} match(s) derriere ses lignes",
+            f"Resultats et etat de {nom} depuis son dernier match connu :"
+            f" le bloc ne porte que {compte} match(s).",
         )
+        for nom, compte in maigres
     ]
 
 

@@ -444,3 +444,31 @@ def test_la_question_d_un_bloc_pauvre_nomme_les_lignes_manquantes(migrated: Sett
     assert "ni enjeu, ni forme 5" in question
     assert "compte rendu" in question
     assert "ce que le bloc ne porte pas" not in question.lower()
+
+
+def test_un_joueur_dont_les_lignes_tiennent_sur_deux_matchs_est_designe(
+    migrated: Settings,
+) -> None:
+    """**Le critere de densite regarde le bloc, celui-ci regarde le joueur**, et
+    les deux ne se recouvrent pas. Sur la soiree du 12/08, les deux blocs les
+    plus vides du lot au niveau joueur — `Forme D/1` pour Lajal, `Forme VD/2`
+    pour Mejia — avaient un bloc complet par ailleurs : aucun critere ne les
+    designait, et la fiche a propose six dossiers portant tous la meme question.
+
+    Seuil mesure avant d'etre ecrit : sur les 406 blocs de tennis archives,
+    « moins de trois matchs » designe 5 blocs, soit 1 %."""
+    maigre = _event(
+        1, sport="tennis", context=[("Forme", "Mark Lajal D/1 | Dalibor Svrcina VDVDDDDVVD/10")]
+    )
+    fourni = _event(2, sport="tennis", context=[("Forme", "A VDVDDDDVVD/10 | B DDVDDDVDVD/10")])
+    lot = [maigre, fourni] + [_event(i, sport="tennis", context=[]) for i in range(3, 9)]
+
+    fiche = research.sheet(lot, migrated)
+
+    dossiers = {item.index: item for item in fiche.dossiers}
+    assert 1 in dossiers, "le joueur a un match derriere ses lignes"
+    assert 2 not in dossiers or "match(s) derriere" not in dossiers[2].motifs
+    assert any("Mark Lajal" in question for question in dossiers[1].questions)
+    assert all("Dalibor Svrcina" not in question for question in dossiers[1].questions), (
+        "seul le joueur maigre est designe"
+    )
