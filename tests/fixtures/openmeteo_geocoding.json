@@ -1,0 +1,37 @@
+{
+  "results": [
+    {
+      "id": 4517009,
+      "name": "Mason",
+      "latitude": 39.36006,
+      "longitude": -84.30994,
+      "country_code": "US",
+      "timezone": "America/New_York",
+      "population": 34558,
+      "country": "United States",
+      "admin1": "Ohio"
+    },
+    {
+      "id": 5074343,
+      "name": "Mason",
+      "latitude": 42.5,
+      "longitude": -96.0,
+      "country_code": "US",
+      "timezone": "America/Chicago",
+      "population": 180,
+      "country": "United States",
+      "admin1": "Nebraska"
+    },
+    {
+      "id": 2643339,
+      "name": "Mason",
+      "latitude": 51.5,
+      "longitude": -0.1,
+      "country_code": "GB",
+      "timezone": "Europe/London",
+      "population": 900,
+      "country": "United Kingdom",
+      "admin1": "England"
+    }
+  ]
+}

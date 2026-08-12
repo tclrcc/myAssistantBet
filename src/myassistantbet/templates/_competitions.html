@@ -368,6 +368,17 @@
                    value="{{ competition.timezone or '' }}">
             <button type="submit" class="link-action">fuseau</button>
           </form>
+          {# La ville situe la meteo : aucun fournisseur ne sert le lieu d'un
+             tournoi, et « ATP Cincinnati Open » se joue a Mason. Le geocodage en
+             tire aussi le fuseau, donc cette saisie recoupe la precedente. #}
+          <form class="notes-form" hx-post="/competitions/{{ competition.id }}/city"
+                hx-target="#competitions" hx-swap="outerHTML">
+            <input type="text" name="city" spellcheck="false"
+                   aria-label="Ville du tournoi, pour {{ competition.label }}"
+                   placeholder="Ville du tournoi (Mason)…"
+                   value="{{ competition.city or '' }}">
+            <button type="submit" class="link-action">ville</button>
+          </form>
           <form class="notes-form" hx-post="/competitions/{{ competition.id }}/tennisdata"
                 hx-target="#competitions" hx-swap="outerHTML">
             <input type="text" name="tennisdata_tournaments" spellcheck="false"

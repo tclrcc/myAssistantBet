@@ -7,6 +7,7 @@ dans l'UI, et compare au plancher `ODDS_API_CREDIT_FLOOR` avant tout depart.
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -14,14 +15,15 @@ from datetime import datetime
 from typing import Any
 
 from ..config import Settings, get_settings
-from ..db import connect
+from ..db import connect, query
 from ..providers.apifootball import APIFootballClient
 from ..providers.base import ProviderError, last_known_quota
 from ..providers.oddsapi import DEFAULT_BOOKMAKER, PROVIDER, OddsAPIClient, expected_cost
 from ..providers.tennisabstract import TennisAbstractClient
 from ..providers.tennisdata import TennisDataClient
-from . import coverage, dossier, elo, fixtures, reference, tennis_history
-from .context import fetch_context
+from ..providers.weather import WeatherClient
+from . import coverage, dossier, elo, fixtures, reference, tennis_history, weather
+from .context import KIND_VENUE, fetch_context
 from .labels import affiche, is_reference, primary_book
 from .markets import (
     markets_for,
@@ -530,6 +532,60 @@ async def _refresh_tennis_history(
         logger.exception("Historique tennis indisponible : %s", exc)
 
 
+async def _refresh_weather(
+    client: WeatherClient,
+    session_id: int,
+    settings: Settings,
+    now: datetime | None,
+) -> None:
+    """Meteo de chaque match de la shortlist, par le lieu qu'on lui connait.
+
+    **Deux chemins, un seul service.** Au football la ville vient du lieu du
+    match, deja persiste par `fetch_context` — donc le stade reel, y compris
+    quand la rencontre est delocalisee. Au tennis elle vient de la competition,
+    saisie a la main : aucun fournisseur ne sert le lieu d'un tournoi, et
+    « ATP Cincinnati Open » se joue a Mason.
+
+    Aucune erreur n'est propagee : la meteo est un bonus, et un service
+    injoignable ne doit pas faire echouer un enrichissement. Le manque se dit
+    dans la ligne, jamais par un silence.
+    """
+    for event_id, ville, pays, coup in _weather_targets(session_id, settings):
+        try:
+            await weather.refresh_event(client, event_id, ville, pays, coup, settings, now)
+        except Exception as exc:  # noqa: BLE001 — un bonus ne fait jamais echouer
+            logger.warning("Meteo indisponible pour l'evenement %s : %s", event_id, exc)
+
+
+def _weather_targets(session_id: int, settings: Settings) -> list[tuple[int, str, str | None, str]]:
+    """`(event_id, ville, pays, coup d'envoi)` pour chaque match de la shortlist.
+
+    Le lieu du football est relu dans `context`, la ville du tennis dans
+    `competitions` : c'est la meme requete, et rapprocher les deux ici evite deux
+    parcours de shortlist qui auraient fini par diverger.
+    """
+    rows = query(
+        "SELECT e.id, e.commence_time, c.city AS ville_competition, "
+        "       (SELECT payload_json FROM context x "
+        "         WHERE x.event_id = e.id AND x.kind = ? LIMIT 1) AS lieu "
+        "FROM session_events se JOIN events e ON e.id = se.event_id "
+        "LEFT JOIN competitions c ON c.id = e.competition_id "
+        "WHERE se.session_id = ?",
+        (KIND_VENUE, session_id),
+        settings=settings,
+    )
+    cibles = []
+    for row in rows:
+        venue = json.loads(row["lieu"]) if row["lieu"] else {}
+        # Le stade **du match** d'abord : une rencontre delocalisee n'a pas la
+        # meteo du stade habituel, et c'est justement la que ca compte.
+        ville = venue.get("city") or venue.get("usual_city") or row["ville_competition"] or ""
+        pays = venue.get("country") or venue.get("home_country")
+        if ville:
+            cibles.append((int(row["id"]), str(ville), pays, str(row["commence_time"])))
+    return cibles
+
+
 async def run_enrich(
     client: OddsAPIClient,
     session_id: int,
@@ -539,6 +595,7 @@ async def run_enrich(
     now: datetime | None = None,
     elo_client: TennisAbstractClient | None = None,
     history_client: TennisDataClient | None = None,
+    weather_client: WeatherClient | None = None,
 ) -> EnrichReport:
     """Enrichit tous les evenements d'une session : marches profonds puis contexte.
 
@@ -635,6 +692,12 @@ async def run_enrich(
         report.done += 1
         if on_progress:
             on_progress(report)
+
+    # La meteo **apres** le contexte, et non pendant : les coordonnees d'un match
+    # de football se deduisent du lieu, que `fetch_context` vient d'ecrire. Elle
+    # est gratuite et sans cle, donc hors du garde-fou de credit — comme l'Elo.
+    if weather_client is not None:
+        await _refresh_weather(weather_client, session_id, settings, now)
 
     report.finished = True
     logger.info(

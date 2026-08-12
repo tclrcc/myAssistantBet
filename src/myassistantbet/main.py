@@ -24,6 +24,7 @@ from .providers.base import ProviderError
 from .providers.oddsapi import OddsAPIClient
 from .providers.tennisabstract import TennisAbstractClient
 from .providers.tennisdata import TennisDataClient
+from .providers.weather import WeatherClient
 from .scheduler import build_scheduler
 from .services import board as board_service
 from .services import competitions as competitions_service
@@ -526,6 +527,9 @@ async def start_enrich(request: Request, session_id: int) -> HTMLResponse:
                 # contexte football qui depend d'un abonnement.
                 elo_client=TennisAbstractClient(request.app.state.http, settings),
                 history_client=TennisDataClient(request.app.state.http, settings),
+                # Gratuite et sans cle, comme l'Elo et l'historique tennis : elle
+                # ne consulte donc aucun garde-fou de credit.
+                weather_client=WeatherClient(request.app.state.http, settings),
             )
 
         task = asyncio.create_task(_run())
@@ -712,6 +716,19 @@ def competition_surface(
 ) -> HTMLResponse:
     """Fixe la surface d'une competition : elle decide quel Elo de surface est rendu."""
     competitions_service.set_surface(competition_id, surface, get_settings())
+    return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
+
+
+@app.post("/competitions/{competition_id}/city", response_class=HTMLResponse)
+def competition_city(
+    request: Request, competition_id: int, city: str = Form(default="")
+) -> HTMLResponse:
+    """Fixe la ville d'une competition : elle situe la meteo du lieu.
+
+    Aucun fournisseur ne sert le lieu d'un tournoi de tennis, et le libelle ne
+    le dit pas — « ATP Cincinnati Open » se joue a Mason.
+    """
+    competitions_service.set_city(competition_id, city, get_settings())
     return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
 
 

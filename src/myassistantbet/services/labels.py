@@ -136,6 +136,9 @@ CONTEXT_ICONS = {
     "Precedent": "medaille",
     #: Un match delocalise : l'epingle dit un endroit, pas un terrain.
     "Lieu": "epingle",
+    # L'alerte officielle passe avant les degres : le panneau dit un fait qui peut
+    # empecher la rencontre, pas un temps qu'il fait.
+    "Meteo": "interdit",
     "Pelouse": "stade",
     "References": "lien",
     "Infos": "note",

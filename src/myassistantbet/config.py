@@ -104,6 +104,14 @@ class Settings(BaseSettings):
     #: L'echantillon reste court : cet ordre se corrige sans toucher au code.
     apifootball_bookmakers: str = "888Sport,William Hill,BetVictor,10Bet,Bet365,Superbet"
 
+    # --- Meteo -------------------------------------------------------------
+    #: Contact envoye dans le `User-Agent` des appels meteo. Le National Weather
+    #: Service **l'exige** — « a User Agent is required to identify your
+    #: application », contact souhaite — et le coder en dur ferait porter a un
+    #: autre les appels d'une installation qui n'est pas la sienne. Vide, les
+    #: appels partent en s'annoncant sans contact plutot que de ne pas partir.
+    weather_contact: str = ""
+
     @property
     def apifootball_books(self) -> tuple[str, ...]:
         """Substituts de Betclic, dans l'ordre de preference."""

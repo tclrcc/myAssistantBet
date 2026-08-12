@@ -276,7 +276,7 @@ def list_all(settings: Settings | None = None) -> list[dict[str, Any]]:
         rows = conn.execute(
             "SELECT c.id, c.label, c.oddsapi_key, c.apifootball_league_id, c.priority, "
             "       c.active, c.api_active, c.notes, c.surface, c.category, "
-            "       c.tennisdata_tournaments, c.timezone, "
+            "       c.tennisdata_tournaments, c.timezone, c.city, "
             "       s.id AS sport_order, s.key AS sport_key, s.label AS sport_label "
             "FROM competitions c JOIN sports s ON s.id = c.sport_id"
         ).fetchall()
@@ -367,6 +367,25 @@ def set_timezone(competition_id: int, timezone: str, settings: Settings | None =
             "UPDATE competitions SET timezone = ? WHERE id = ?", (value or None, competition_id)
         )
     logger.info("Fuseau de la competition %d : %s", competition_id, value or "non renseigne")
+
+
+def set_city(competition_id: int, city: str, settings: Settings | None = None) -> None:
+    """Fixe la ville d'une competition, pour la meteo du lieu.
+
+    Rien ne se deduit d'un libelle, meme regle que la surface et le fuseau :
+    « ATP Cincinnati Open » se joue a **Mason**, et le Canadian Open change de
+    ville chaque annee. Vide efface la saisie — sans ville, aucune ligne de
+    meteo, ce qui vaut mieux que la meteo d'ailleurs.
+
+    Aucune validation possible ici : c'est le geocodage qui dira si la ville
+    existe, et il refuse les homonymes que le pays ne departage pas.
+    """
+    value = (city or "").strip()
+    with connect(settings) as conn:
+        conn.execute(
+            "UPDATE competitions SET city = ? WHERE id = ?", (value or None, competition_id)
+        )
+    logger.info("Ville de la competition %d : %s", competition_id, value or "non renseignee")
 
 
 def set_tennisdata_tournaments(

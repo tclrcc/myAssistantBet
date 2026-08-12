@@ -187,6 +187,7 @@ def _dossier(event: RenderableEvent, settings: Settings) -> Dossier:
     item.reasons += _tie_reasons(event, settings)
     item.reasons += _density_reasons(event, labels, settings)
     item.reasons += _venue_reasons(lignes)
+    item.reasons += _weather_reasons(lignes)
     item.reasons += _squad_reasons(lignes)
     item.reasons += _rotation_reasons(lignes)
     item.reasons += _tennis_reasons(event, lignes)
@@ -299,6 +300,26 @@ def _venue_reasons(lignes: dict[str, str]) -> list[Reason]:
             MEDIUM,
             "terrain neutre",
             "Ou se joue reellement ce match, et quel public est attendu ?",
+        )
+    ]
+
+
+def _weather_reasons(lignes: dict[str, str]) -> list[Reason]:
+    """Une alerte officielle en vigueur, et rien d'autre.
+
+    Mesure : sur cinq sessions, la temperature n'a jamais rien change ; l'alerte
+    a change une section entiere, deux fois, parce qu'elle disait que la
+    rencontre pouvait ne pas se jouer. Le critere ne se declenche donc pas sur
+    « 30 C, pluie 80 % » — un lot d'ete monterait en entier — mais sur le seul
+    fait qui puisse l'emporter sur tout le reste du bloc.
+    """
+    if "ALERTE" not in (lignes.get("Meteo") or ""):
+        return []
+    return [
+        Reason(
+            MEDIUM,
+            "alerte meteo en vigueur",
+            "Etat de l'alerte a l'heure du coup d'envoi : report, huis clos, terrain praticable ?",
         )
     ]
 

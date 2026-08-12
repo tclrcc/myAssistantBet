@@ -1,0 +1,17 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "properties": {
+        "event": "Flood Watch",
+        "severity": "Severe",
+        "urgency": "Future",
+        "certainty": "Possible",
+        "onset": "2026-08-13T09:17:00-04:00",
+        "ends": "2026-08-14T03:00:00-04:00",
+        "senderName": "NWS Wilmington OH",
+        "headline": "Flood Watch issued August 13 at 9:17AM EDT until August 13 at 11:00PM EDT"
+      }
+    }
+  ]
+}

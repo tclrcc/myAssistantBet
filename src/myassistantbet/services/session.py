@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from ..db import connect
 from ..providers.oddsapi import DEFAULT_BOOKMAKER, SCAN_MARKETS
-from . import coverage, dossier, elo, tennis_history, tennis_load, tennis_round
+from . import coverage, dossier, elo, tennis_history, tennis_load, tennis_round, weather
 from .context import context_lines
 from .labels import (
     UNTIMED_BOOKMAKERS,
@@ -432,6 +432,10 @@ def context_block(
         # Le dossier d'equipe se memorise par equipe et non par match : il est
         # relu ici, comme le reste, sans un appel.
         lines += dossier.dossier_lines(event_id, home, away, commence_time, settings)
+    # La meteo vaut pour les deux sports, donc avant leur separation : une alerte
+    # aux orages arrete un tournoi de tennis comme une soiree de coupe. Relue en
+    # base, sans aucun appel.
+    lines += weather.lines(event_id, settings)
     if sport_key == "tennis":
         # Le tour se deduit du nombre de joueurs encore en lice, donc de nos
         # propres scans : aucune source ne le publie a temps. Il vient en tete

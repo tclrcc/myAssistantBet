@@ -1084,6 +1084,60 @@ scannes les jours d'avant. Aucun appel, aucune cle, aucun quota.
   - **Un forfait s'y lisait comme un match joue**, et documenter le defaut ne le corrigeait
     pas. Voir la section suivante.
 
+## La meteo : l'alerte d'abord, les chiffres ensuite
+
+Mesure qui fixe cet ordre, sur cinq sessions reelles : **la temperature n'a jamais rien
+change**. L'alerte, si — deux fois, parce qu'elle disait que la rencontre pouvait ne pas se
+jouer. Un chiffre interessant et un fait bloquant ne se lisent pas au meme rang, et le
+module est construit dans cet ordre-la.
+
+- **Trois etats d'alerte, et le troisieme est celui qui compte.** « aucune alerte NWS en
+  vigueur » dit qu'on a regarde ; « alertes officielles non interrogees (Bulgaria) » dit
+  que **personne n'a regarde** ; « alertes NWS injoignables » dit que la source n'a pas
+  repondu. Les confondre reproduirait exactement le defaut d'`Absents : donnees non
+  disponibles`, qui rendait « aucun absent » sur une competition non couverte — un silence
+  qui ressemble a une information.
+- **Un seul service national est branche** (`ALERT_SOURCES`), et c'est une limite assumee :
+  chaque pays a le sien, et il n'existe pas d'agregateur qui soit lui-meme l'instance —
+  MeteoAlarm agrege l'Europe mais n'emet rien. **L'emetteur est recopie de la charge utile**
+  (« NWS Wilmington OH »), jamais devine : c'est lui qui fait la source de niveau 1.
+- **Les chiffres valent a l'heure du coup d'envoi**, pas pour la journee : l'orage de
+  l'apres-midi peut etre passe. Et ils portent **l'heure de leur releve**, comme l'en-tete
+  des cotes — une prevision de huit heures plus tot n'engage pas grand-chose sur un orage.
+- **Le pays departage les homonymes du geocodage**, et en cas de doute il n'y a pas de
+  ligne : « Mason » existe en Ohio, dans le Nebraska et en Angleterre, et la meteo de la
+  mauvaise ville serait une erreur **invisible** — le genre le plus couteux.
+- **Deux chemins, un seul service.** Au football la ville vient du lieu du match, deja
+  persiste — donc le stade reel, delocalisation comprise. Au tennis elle vient de
+  `competitions.city` (migration 038), saisie a la main : aucun fournisseur ne sert le lieu
+  d'un tournoi, et « ATP Cincinnati Open » se joue a **Mason**. Sans cette colonne, les deux
+  cas ou la meteo a reellement change une analyse — un tournoi de tennis et une soiree de
+  coupe — n'auraient ete couverts qu'a moitie.
+  - Le geocodage rend **le fuseau du lieu** dans la meme reponse : une ville saisie recoupe
+    gratuitement `competitions.timezone`, et c'est ce fuseau-la que la ligne emploie — le
+    seul qui soit certainement celui du stade.
+- Peremption a `TTL_HOURS` (3) : au-dela, une prevision d'orage a eu le temps de se preciser
+  ou de se dissiper, et c'est justement le cas ou elle decide. **Le geocodage, lui, ne
+  perime jamais** — une ville ne bouge pas, et c'est le seul des trois appels qui se garde.
+- Gratuit, sans cle, sans quota : **rien dans `api_usage`**, meme regle que l'Elo tennis et
+  l'historique des matchs. La meteo passe donc **hors du garde-fou de credit**, apres le
+  contexte dont elle tire les coordonnees.
+
+**Sur les `robots.txt`, et c'est une decision a connaitre.** `api.weather.gov` et
+`api.open-meteo.com` servent tous deux `User-agent: * / Disallow: /`. Ce sont des **APIs
+publiques documentees**, dont les conditions autorisent explicitement l'acces
+programmatique — « all of the information presented via the API is intended to be open
+data, free to use for any purpose » cote NWS, acces programmatique non commercial sous
+CC-BY 4.0 cote Open-Meteo. Le `Disallow: /` d'un hote d'API ecarte les robots
+d'indexation ; il ne s'adresse pas a un client d'API, et **ni l'un ni l'autre ne nomme
+d'agent ni ne porte de reserve de droits**. C'est ce qui les distingue d'`atptour.com`, qui
+interdit `ClaudeBot` nommement et porte un `Content-Signal: ai-train=no` — refuse, et qui
+doit le rester.
+  - Deux obligations en decoulent, tenues dans le code : le NWS **exige** un `User-Agent`
+    qui identifie l'appelant avec un contact (`WEATHER_CONTACT`, vide par defaut, jamais
+    code en dur) ; Open-Meteo demande l'**attribution** CC-BY, d'ou son nom rendu dans la
+    ligne et pas seulement dans les logs.
+
 ## Le lieu, et ce que « domicile » suppose
 
 **Le faux positif a coute plus que l'absence de ligne.** La comparaison portait sur deux

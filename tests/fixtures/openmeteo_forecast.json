@@ -1,0 +1,34 @@
+{
+  "latitude": 39.36,
+  "longitude": -84.31,
+  "timezone": "GMT",
+  "hourly_units": {
+    "time": "iso8601",
+    "temperature_2m": "°C",
+    "precipitation_probability": "%",
+    "wind_gusts_10m": "km/h",
+    "weather_code": "wmo code"
+  },
+  "hourly": {
+    "time": [
+      "2026-08-13T22:00",
+      "2026-08-13T23:00"
+    ],
+    "temperature_2m": [
+      28.3,
+      27.6
+    ],
+    "precipitation_probability": [
+      17,
+      19
+    ],
+    "wind_gusts_10m": [
+      5.4,
+      7.6
+    ],
+    "weather_code": [
+      3,
+      3
+    ]
+  }
+}

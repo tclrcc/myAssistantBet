@@ -1,0 +1,24 @@
+-- La ville d'une competition, pour situer ce que le fournisseur ne situe pas.
+--
+-- Au football, le lieu d'un match vient d'API-Football : stade, ville, et pays
+-- quand la rencontre est deplacee. La meteo s'en deduit donc sans rien saisir.
+--
+-- **Au tennis, rien.** The Odds API ne sert aucun lieu, et le libelle ne se
+-- deduit pas : « ATP Cincinnati Open » ne se joue pas a Cincinnati mais a Mason,
+-- et le Canadian Open change de ville chaque annee. Or les deux cas ou la meteo
+-- a reellement change une analyse sont un tournoi de tennis a Cincinnati et une
+-- soiree de coupe en Silesie : livrer la meteo sans le tennis aurait laisse
+-- dehors la moitie de ce qui la justifie.
+--
+-- Une ville se saisit donc a la main, une competition a la fois, comme la
+-- surface, le niveau et le fuseau. **Et elle rend le fuseau gratuit** : le
+-- geocodage publie le fuseau du lieu dans la meme reponse, si bien qu'une ville
+-- saisie ici recoupe la colonne `timezone` de la migration 037 sans un appel de
+-- plus. Les deux restent distinctes — un fuseau se corrige a la main sans
+-- toucher a la ville, et une ville sert au-dela du fuseau.
+--
+-- Non renseignee, aucune ligne de meteo au tennis, et rien n'est invente. Le
+-- geocodage refuse deja les homonymes que le pays ne departage pas : la meteo
+-- d'une autre ville serait une erreur invisible, et c'est le pire genre.
+
+ALTER TABLE competitions ADD COLUMN city TEXT;
