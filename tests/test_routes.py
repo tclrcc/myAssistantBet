@@ -425,7 +425,9 @@ def test_la_shortlist_affiche_la_densite(client: TestClient, isolated_settings: 
     page = " ".join(client.get(f"/session/{session_id}").text.split())
 
     assert "<th>Contexte</th>" in page
-    assert "0/24" in page
+    # 25 depuis que « Lieu » a cesse d'etre conditionnelle : elle se rend sur
+    # tout match dont le lieu a ete recupere, y compris pour le dire inconnu.
+    assert "0/25" in page
 
 
 def test_un_enrichissement_vide_est_annonce(

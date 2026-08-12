@@ -35,7 +35,8 @@ from dataclasses import dataclass, field
 from ..config import Settings, get_settings
 from ..db import connect
 from . import context as context_service
-from .labels import affiche
+from .context import NEUTRAL_MARK
+from .labels import affiche, context_family, expected_context
 from .render import RenderableEvent
 from .session import context_density
 from .thresholds import value_of as threshold
@@ -73,6 +74,10 @@ THIN_DENSITY = 50
 #: mieux ailleurs. Le cas mesure : un bloc a 2 lignes sur 24, sur une
 #: competition sans identifiant de ligue — chercher n'y a rien donne.
 BARREN_DENSITY = 30
+
+#: Nombre de lignes manquantes nommees dans la question d'un bloc pauvre. Toutes
+#: les citer ferait une question de quinze noms que personne ne lit.
+MISSING_NAMED = 4
 
 #: Prochain match d'une equipe, en jours, sous lequel la rotation devient un
 #: facteur. Lu dans la ligne « Calendrier », qui l'ecrit deja.
@@ -181,6 +186,7 @@ def _dossier(event: RenderableEvent, settings: Settings) -> Dossier:
 
     item.reasons += _tie_reasons(event, settings)
     item.reasons += _density_reasons(event, labels, settings)
+    item.reasons += _venue_reasons(lignes)
     item.reasons += _squad_reasons(lignes)
     item.reasons += _rotation_reasons(lignes)
     item.reasons += _tennis_reasons(event, lignes)
@@ -250,14 +256,51 @@ def _density_reasons(event: RenderableEvent, labels: list[str], settings: Settin
     if part < BARREN_DENSITY and sterile:
         return [Reason(PENALTY, f"bloc quasi vide ({part} %) et aucune source", "")]
     if part < THIN_DENSITY:
+        # **La question nomme les lignes manquantes**, parce que l'application
+        # les connait. « Ce que le bloc ne porte pas » etait un doublon mou de
+        # la question precedente et ne disait pas ou aller ; deux questions
+        # precises valent mieux que trois dont une est du remplissage — la meme
+        # regle que « ne remplis jamais un palier avec du vide ».
+        manquantes = _missing(labels, event.sport_key)
         return [
             Reason(
                 MEDIUM,
                 f"bloc pauvre ({part} %)",
-                "Forme recente, absences et enjeu : ce que le bloc ne porte pas ?",
+                f"Bloc a {part} % : ni {', ni '.join(manquantes)}. "
+                "Chercher un compte rendu du dernier match des deux equipes.",
             )
         ]
     return []
+
+
+def _missing(labels: list[str], sport_key: str) -> list[str]:
+    """Les lignes que ce bloc n'a pas, limitees a ce qui se cite.
+
+    Toutes les nommer ferait une question de quinze noms que personne ne lit :
+    `MISSING_NAMED` en garde les premieres, dans l'ordre du referentiel — donc
+    les plus decisives d'abord.
+    """
+    present = {context_family(label) for label in labels}
+    absentes = [label for label in expected_context(sport_key) if label not in present]
+    return [label.lower() for label in absentes[:MISSING_NAMED]] or ["aucune ligne"]
+
+
+def _venue_reasons(lignes: dict[str, str]) -> list[Reason]:
+    """Un terrain neutre change qui pousse et qui subit — et le public avec.
+
+    Le fait portait deux des huit selections d'un lot reel. La question ne porte
+    pas sur le lieu, qui est deja ecrit, mais sur ce que le lieu **change** : le
+    public est le vrai sujet.
+    """
+    if NEUTRAL_MARK not in (lignes.get("Lieu") or ""):
+        return []
+    return [
+        Reason(
+            MEDIUM,
+            "terrain neutre",
+            "Ou se joue reellement ce match, et quel public est attendu ?",
+        )
+    ]
 
 
 def _squad_reasons(lignes: dict[str, str]) -> list[Reason]:

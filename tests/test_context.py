@@ -810,16 +810,21 @@ async def test_une_pelouse_naturelle_ne_produit_aucune_ligne(
 
 @respx.mock
 @pytest.mark.anyio
-async def test_un_match_delocalise_le_dit(
+async def test_un_match_hors_du_pays_du_receveur_est_un_terrain_neutre(
     api_client: APIFootballClient, migrated: Settings, load_fixture: Any
 ) -> None:
-    """Quatre « domiciles » d'une soiree de qualifications se jouaient ailleurs
-    — Kyiv a Lublin, Beitar a Ploiesti — sans que le bloc en dise un mot."""
+    """Dinamo Minsk « recevait » au Stadion Beroe en Bulgarie, ML Vitebsk a
+    Mezokovesd en Hongrie, Hapoel Tel-Aviv a Miskolc : trois « domiciles » qui
+    n'en sont pas, et le bloc n'en disait rien.
+
+    Neutre veut dire **hors du pays du club**, pas seulement hors de son stade :
+    c'est la difference entre une contrainte logistique et une contrainte
+    politique ou securitaire, et seule la seconde change la lecture."""
     _seed_event(migrated)
     routes = _mock_all(load_fixture)
     matchs = load_fixture("apifootball_fixtures_date.json")
     matchs["response"][0]["fixture"]["venue"] = {
-        "id": None,
+        "id": 999,
         "name": "Arena Lublin",
         "city": "Lublin",
     }
@@ -829,60 +834,56 @@ async def test_un_match_delocalise_le_dit(
 
     await fetch_context(api_client, EVENT, migrated)
 
-    assert _lines(migrated)["Lieu"] == "Arena Lublin, Lublin — hors de Goteborg"
+    assert _lines(migrated)["Lieu"] == (
+        "Arena Lublin, Lublin (POL) — TERRAIN NEUTRE, BK Hacken recoit hors de son pays"
+    )
 
 
 @respx.mock
 @pytest.mark.anyio
-async def test_un_match_a_domicile_ne_produit_aucune_ligne_de_lieu(
+async def test_un_stade_different_dans_le_meme_pays_n_est_pas_neutre(
     api_client: APIFootballClient, migrated: Settings, load_fixture: Any
 ) -> None:
-    """Le lieu n'est rendu que s'il surprend : « joue chez lui » sous chaque
-    affiche couterait des tokens pour ne rien apprendre."""
+    """Travaux, sanction, capacite : un club deplace dans son pays reste chez
+    lui, **le public suit**. Le confondre avec un exil ferait chercher un
+    facteur qui n'existe pas."""
     _seed_event(migrated)
     routes = _mock_all(load_fixture)
     matchs = load_fixture("apifootball_fixtures_date.json")
-    matchs["response"][0]["fixture"]["venue"] = {"id": None, "name": "Bravida", "city": "Goteborg"}
+    matchs["response"][0]["fixture"]["venue"] = {"id": 999, "name": "Ullevi", "city": "Goteborg"}
     routes["fixtures_date"].mock(
         return_value=httpx.Response(200, json=matchs, headers=RATE_HEADERS)
     )
+    stade = load_fixture("apifootball_venue.json")
+    stade["response"][0]["country"] = "Sweden"
+    routes["venue"].mock(return_value=httpx.Response(200, json=stade, headers=RATE_HEADERS))
 
     await fetch_context(api_client, EVENT, migrated)
 
-    assert "Lieu" not in _lines(migrated)
+    ligne = _lines(migrated)["Lieu"]
+    assert "TERRAIN NEUTRE" not in ligne
+    assert ligne == "Ullevi, Goteborg (SWE)"
 
 
 @respx.mock
 @pytest.mark.anyio
-async def test_une_ville_inconnue_n_invente_pas_de_delocalisation(
+async def test_le_meme_stade_sous_deux_orthographes_n_est_pas_une_delocalisation(
     api_client: APIFootballClient, migrated: Settings, load_fixture: Any
 ) -> None:
-    """On ne remplace pas une inconnue par une supposition."""
-    _seed_event(migrated)
-    routes = _mock_all(load_fixture)
-    equipe = load_fixture("apifootball_team.json")
-    equipe["response"][0]["venue"] = {**equipe["response"][0]["venue"], "city": None}
-    routes["team"].mock(return_value=httpx.Response(200, json=equipe, headers=RATE_HEADERS))
+    """**Le faux positif qui a fait ignorer la ligne.** « Parken Stadium,
+    Copenhagen — hors de København » annoncait une delocalisation entre deux
+    orthographes de la meme ville, et le bruit a fini par rendre la ligne
+    inutile — l'inverse de son but.
 
-    await fetch_context(api_client, EVENT, migrated)
-
-    assert "Lieu" not in _lines(migrated)
-
-
-@respx.mock
-@pytest.mark.anyio
-async def test_un_meme_stade_sous_deux_noms_de_ville_n_est_pas_une_delocalisation(
-    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
-) -> None:
-    """Constate en reel : `Veritas Stadion / Turku` contre `Veritas Stadion /
-    Åbo`, et `Stadion Partizana / Belgrade` contre `… / Beograd`. Deux noms de
-    la meme ville — la comparaison sur la ville seule inventait un match
-    delocalise sur deux des dix qu'elle signalait."""
+    La comparaison porte desormais sur les **identifiants** : le `venue` d'un
+    match en a un, et le commentaire qui disait le contraire datait d'une
+    lecture trop rapide de la charge utile."""
     _seed_event(migrated)
     routes = _mock_all(load_fixture)
     matchs = load_fixture("apifootball_fixtures_date.json")
+    # Meme stade que celui de l'equipe, sous un autre nom de ville.
     matchs["response"][0]["fixture"]["venue"] = {
-        "id": None,
+        "id": 1234,
         "name": "Bravida Arena",
         "city": "Gothenburg",
     }
@@ -892,23 +893,25 @@ async def test_un_meme_stade_sous_deux_noms_de_ville_n_est_pas_une_delocalisatio
 
     await fetch_context(api_client, EVENT, migrated)
 
-    assert "Lieu" not in _lines(migrated), "meme stade : la ville s'ecrit comme elle veut"
+    ligne = _lines(migrated)["Lieu"]
+    assert "TERRAIN NEUTRE" not in ligne, "meme identifiant : la ville s'ecrit comme elle veut"
+    assert ligne == "Bravida Arena, Gothenburg (SWE)"
 
 
 @respx.mock
 @pytest.mark.anyio
-async def test_un_nom_de_stade_proche_ne_masque_pas_une_delocalisation(
+async def test_le_pays_du_stade_ne_se_demande_pas_sur_un_match_a_domicile(
     api_client: APIFootballClient, migrated: Settings, load_fixture: Any
 ) -> None:
-    """L'autre moitie du piege : le fournisseur a garde « Teddy Stadium » pour
-    un Beitar Jerusalem joue a Ploiesti. Le nom seul aurait laisse passer."""
+    """Le stade habituel n'a pas besoin d'etre situe : on sait deja que le club y
+    est chez lui, et l'appel couterait une requete par match."""
     _seed_event(migrated)
     routes = _mock_all(load_fixture)
     matchs = load_fixture("apifootball_fixtures_date.json")
     matchs["response"][0]["fixture"]["venue"] = {
-        "id": None,
-        "name": "Bravida Stadium",
-        "city": "Ploiesti",
+        "id": 1234,
+        "name": "Bravida Arena",
+        "city": "Goteborg",
     }
     routes["fixtures_date"].mock(
         return_value=httpx.Response(200, json=matchs, headers=RATE_HEADERS)
@@ -916,10 +919,30 @@ async def test_un_nom_de_stade_proche_ne_masque_pas_une_delocalisation(
 
     await fetch_context(api_client, EVENT, migrated)
 
-    assert _lines(migrated)["Lieu"] == "Bravida Stadium, Ploiesti — hors de Goteborg"
+    assert not routes["venue"].called
 
 
-# -- Statistiques de saison : deja payees, longtemps jetees --------------------
+@respx.mock
+@pytest.mark.anyio
+async def test_sans_identifiant_le_lieu_se_declare_inconnu(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Troisieme etat, et il compte autant que les deux autres : un domicile
+    **suppose** qui n'en est pas serait pire qu'un « non renseigne » franc.
+
+    C'est la meme regle que le fuseau du lieu — declarer ce qu'on n'a pas vaut
+    mieux que promouvoir une approximation."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    matchs = load_fixture("apifootball_fixtures_date.json")
+    matchs["response"][0]["fixture"]["venue"] = {"id": None, "name": "Inconnu", "city": "Ailleurs"}
+    routes["fixtures_date"].mock(
+        return_value=httpx.Response(200, json=matchs, headers=RATE_HEADERS)
+    )
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    assert _lines(migrated)["Lieu"] == "donnees non disponibles pour cette competition"
 
 
 @respx.mock
@@ -2101,3 +2124,34 @@ def test_le_mode_d_emploi_de_l_aller_renvoie_au_scenario(migrated: Settings) -> 
 
     assert "à toi de dire s'il s'agit d'une double confrontation" not in corps
     assert "La ligne « Scénario » en tire l'arithmétique" in corps
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_scenario_ne_promet_pas_un_avantage_du_terrain_a_l_etranger(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """« (a domicile) » suppose un avantage, et sur un lot reel trois manches
+    retour auraient rendu la mention fausse : Vitebsk « recevait » en Hongrie,
+    Minsk en Bulgarie. Le mot inverse alors le sens de la phrase."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    matchs = load_fixture("apifootball_fixtures_date.json")
+    matchs["response"][0]["fixture"]["venue"] = {
+        "id": 999,
+        "name": "Arena Lublin",
+        "city": "Lublin",
+    }
+    routes["fixtures_date"].mock(
+        return_value=httpx.Response(200, json=matchs, headers=RATE_HEADERS)
+    )
+
+    await fetch_context(api_client, EVENT, migrated)
+    # L'aller s'est joue chez l'adversaire, qui mene : nous sommes menes « chez
+    # nous », sauf que ce chez-nous est en Pologne.
+    _h2h(migrated, jours=7, buts=(2, 0))
+
+    scenario = _lines(migrated)["Scenario"]
+
+    assert "(a domicile)" not in scenario
+    assert "nominalement a domicile, terrain neutre" in scenario

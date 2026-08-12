@@ -202,6 +202,21 @@ class APIFootballClient(BaseHTTPClient):
         rows = await self._fetch("/teams", {"id": team_id})
         return rows[0] if rows else None
 
+    async def venue(self, venue_id: int) -> dict[str, Any] | None:
+        """Fiche d'un stade, et surtout **son pays**.
+
+        Ni `/fixtures` ni `/teams` ne servent le pays d'un stade : le premier
+        rend `{id, name, city}`, le second le stade habituel sans pays non plus.
+        C'est la seule facon d'avoir cette donnee **structuree**, et la deduire
+        du nom d'une ville serait une invention — « Ploiesti » ne dit pas
+        « Roumanie » a une machine.
+
+        L'appel n'est emis que sur une rencontre effectivement delocalisee, donc
+        quelques fois par lot : le stade habituel n'a pas besoin d'etre situe.
+        """
+        rows = await self._fetch("/venues", {"id": venue_id})
+        return rows[0] if rows else None
+
     async def top_scorers(self, league_id: int, season: int) -> list[dict[str, Any]]:
         """Vingt meilleurs buteurs d'une competition, en un appel.
 

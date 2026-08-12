@@ -753,12 +753,26 @@ async def fetch_context(
         home_team = await _memo(f"team:{mapping.home_id}", lambda: client.team(mapping.home_id))
         usual = ((home_team or {}).get("venue")) or {}
         payload = {
+            "venue_id": mapping.venue.get("id"),
             "name": mapping.venue.get("name"),
             "city": mapping.venue.get("city"),
+            "usual_id": usual.get("id"),
             "usual_name": usual.get("name"),
             "usual_city": usual.get("city"),
             "surface": usual.get("surface"),
+            # Pays du club qui recoit, tel que le fournisseur le declare. C'est
+            # a lui que le pays du stade se compare : un club dont la federation
+            # n'est pas celle du lieu ne recoit pas, il est heberge.
+            "home_country": ((home_team or {}).get("team") or {}).get("country"),
         }
+        # **Le pays du stade ne se demande que sur une rencontre deplacee.** Le
+        # stade habituel n'a pas besoin d'etre situe — on sait deja que le club
+        # y est chez lui — et l'appel coute une requete par match sinon.
+        if _moved_venue(payload):
+            lieu = await _memo(
+                f"venue:{payload['venue_id']}", lambda: client.venue(int(payload["venue_id"]))
+            )
+            payload["country"] = (lieu or {}).get("country")
         if payload["city"] or payload["surface"]:
             store(report.event_id, KIND_VENUE, payload, settings)
             report.kinds.append(KIND_VENUE)
@@ -1323,7 +1337,14 @@ def tie_state(
     return TieState(home_goals=pour, away_goals=contre)
 
 
-def _scenario_line(payload: dict[str, Any], league_id: Any, home: str, away: str, when: str) -> str:
+def _scenario_line(
+    payload: dict[str, Any],
+    league_id: Any,
+    home: str,
+    away: str,
+    when: str,
+    neutral: bool = False,
+) -> str:
     """`cumul 0-2 — Hapoel qualifie en l'etat ; GKS doit gagner de 2…`
 
     **C'est un calcul, et un calcul ne se delegue pas au modele.** Sur une
@@ -1367,6 +1388,12 @@ def _scenario_line(payload: dict[str, Any], league_id: Any, home: str, away: str
     menant, mene = (home, away) if pour > contre else (away, home)
     ecart = abs(pour - contre)
     lieu = "a domicile" if mene == home else "a l'exterieur"
+    # **« a domicile » suppose un avantage, et cette supposition se verifie.**
+    # Sur un lot reel de manches retour, trois auraient rendu la mention fausse :
+    # Vitebsk « recevait » en Hongrie, Minsk en Bulgarie. Le mot inverse alors le
+    # sens de la phrase, et c'est le drapeau de terrain neutre qui le rattrape.
+    if mene == home and neutral:
+        lieu = "nominalement a domicile, terrain neutre"
     return (
         f"{cumul} — {menant} qualifie en l'etat ; "
         f"{mene} ({lieu}) doit gagner de {ecart} pour egaliser, de {ecart + 1} pour passer"
@@ -1576,12 +1603,15 @@ def context_lines(
             lines.append((label, rendered))
 
     venue = data.get(KIND_VENUE) or {}
+    # Lu avant le bloc des confrontations : « Scenario » s'en sert pour ne pas
+    # promettre un avantage du terrain a une equipe qui joue a l'etranger.
+    neutre = venue_state(venue) == VENUE_NEUTRAL if venue else False
     if venue:
-        # Le lieu n'est rendu que s'il surprend : ecrire « joue chez lui » sous
-        # chaque affiche couterait des tokens pour ne rien apprendre.
-        moved = _relocated(venue)
-        if moved:
-            lines.append(("Lieu", moved))
+        # **Systematique, et les trois etats sont ecrits.** Ne rendre que la
+        # surprise revenait a faire passer pour un domicile ordinaire un match
+        # dont le lieu n'avait pas ete recupere — un domicile suppose qui n'en
+        # est pas coute plus qu'une ligne de plus par bloc.
+        lines.append(("Lieu", _venue_line(venue, home)))
         surface = (venue.get("surface") or "").strip().lower()
         if surface and "grass" not in surface:
             lines.append(("Pelouse", SURFACE_LABELS.get(surface, surface)))
@@ -1684,7 +1714,7 @@ def context_lines(
         # elle se deduit : cumul, qui est qualifie en l'etat, ce qu'il faut a
         # l'autre. Vingt-quatre manches retour en une semaine ont demande ce
         # meme calcul refait a la main, et il est deterministe.
-        scenario = _scenario_line(h2h, league, home, away, commence_time)
+        scenario = _scenario_line(h2h, league, home, away, commence_time, neutre)
         if scenario:
             lines.append(("Scenario", scenario))
         rendered = _h2h_line(h2h, settings)
@@ -1785,33 +1815,102 @@ SURFACE_LABELS = {
 }
 
 
-def _relocated(venue: dict[str, Any]) -> str:
-    """Ligne de lieu quand un match ne se joue pas chez l'equipe qui recoit.
+#: Ce que la ligne `Lieu` peut dire d'un match. Trois etats et non un booleen :
+#: un domicile **suppose** qui n'en est pas serait pire qu'un « non renseigne »
+#: franc — meme regle que le fuseau du lieu, et pour la meme raison.
+#: Marqueur rendu dans la ligne `Lieu`. Constante et non litteral : la fiche de
+#: recherche le relit pour classer, et deux ecritures auraient diverge.
+NEUTRAL_MARK = "TERRAIN NEUTRE"
 
-    Le `venue` d'un match n'a pas d'identifiant exploitable : restent son nom et
-    sa ville. **Il faut que les deux different**, et voici pourquoi — la ville
-    seule se trompe, le nom seul laisse passer :
+VENUE_HOME = "home"
+VENUE_NEUTRAL = "neutral"
+VENUE_UNKNOWN = "unknown"
 
-    - `Veritas Stadion / Turku` contre `Veritas Stadion / Åbo` : meme stade,
-      deux noms de la meme ville finlandaise. Idem `Belgrade` et `Beograd`.
-    - `Teddy Stadium / Ploiesti` contre `Teddi Malcha Stadium / Jerusalem` :
-      le fournisseur garde un nom de stade proche alors que la rencontre est
-      bel et bien delocalisee en Roumanie.
+#: Trois lettres du pays, comme le fournisseur les publie en toutes lettres. La
+#: table ne couvre que ce qu'on a vu : un pays absent se rend tel quel, ce qui
+#: est lisible et n'invente rien.
+COUNTRY_CODES = {
+    "bulgaria": "BGR",
+    "croatia": "HRV",
+    "hungary": "HUN",
+    "israel": "ISR",
+    "poland": "POL",
+    "romania": "ROU",
+    "ukraine": "UKR",
+    "belarus": "BLR",
+    "austria": "AUT",
+    "denmark": "DNK",
+    "sweden": "SWE",
+    "norway": "NOR",
+    "finland": "FIN",
+}
 
-    En cas de doute — une seule des deux differences, ou une donnee manquante —
-    aucune ligne. On ne remplace pas une inconnue par une supposition, et une
-    delocalisation inventee se lit comme un fait.
+
+def _country_tag(country: str | None) -> str:
+    """`(BGR)`, ou le nom entier quand il n'est pas dans la table, ou rien."""
+    name = (country or "").strip()
+    if not name:
+        return ""
+    return f" ({COUNTRY_CODES.get(name.casefold(), name)})"
+
+
+def _moved_venue(venue: dict[str, Any]) -> bool:
+    """Le match se joue-t-il ailleurs que dans le stade habituel du receveur ?
+
+    **Sur les identifiants, jamais sur les libelles.** La comparaison de chaines
+    a produit exactement le bruit qu'elle devait supprimer : « Parken Stadium,
+    Copenhagen — hors de København » annoncait une delocalisation entre deux
+    orthographes de la meme ville. La ligne a fini par etre ignoree, c'est-a-dire
+    l'inverse de son but.
+
+    Le `venue` d'un match **a** un identifiant — le commentaire qui disait le
+    contraire datait d'une lecture trop rapide de la charge utile. Deux
+    identifiants connus et differents sont un fait ; tout le reste est une
+    inconnue.
     """
-    city = sort_key((venue.get("city") or "").strip())
-    usual_city = sort_key((venue.get("usual_city") or "").strip())
-    name = sort_key((venue.get("name") or "").strip())
-    usual_name = sort_key((venue.get("usual_name") or "").strip())
-    if not (city and usual_city and name and usual_name):
-        return ""
-    if city == usual_city or name == usual_name:
-        return ""
-    lieu = f"{(venue.get('name') or '').strip()}, {(venue.get('city') or '').strip()}"
-    return f"{lieu} — hors de {(venue.get('usual_city') or '').strip()}"
+    ici, habituel = venue.get("venue_id"), venue.get("usual_id")
+    return bool(ici and habituel and int(ici) != int(habituel))
+
+
+def venue_state(venue: dict[str, Any]) -> str:
+    """Lequel des trois etats decrit ce match.
+
+    Neutre veut dire **hors du pays du club qui recoit**, et pas seulement hors
+    de son stade : un match deplace pour travaux ou sanction reste chez lui, le
+    public suit. C'est la difference entre une contrainte logistique et une
+    contrainte politique ou securitaire, et seule la seconde change la lecture.
+    """
+    if not venue.get("venue_id") or not venue.get("usual_id"):
+        return VENUE_UNKNOWN
+    if not _moved_venue(venue):
+        return VENUE_HOME
+    pays, chez_lui = venue.get("country"), venue.get("home_country")
+    if not pays or not chez_lui:
+        return VENUE_UNKNOWN
+    return VENUE_NEUTRAL if sort_key(pays) != sort_key(chez_lui) else VENUE_HOME
+
+
+def _venue_line(venue: dict[str, Any], home: str) -> str:
+    """`Stadion Beroe, Stara Zagora (BGR) — TERRAIN NEUTRE, X recoit hors de son pays`.
+
+    La ligne est **systematique** et non plus reservee a la surprise. Elle
+    l'etait pour epargner des tokens, et le calcul etait faux dans l'autre
+    sens : son absence ne se distinguait pas d'un domicile ordinaire, si bien
+    qu'un match delocalise dont le lieu n'avait pas ete recupere passait pour un
+    match a domicile. Trois etats, tous ecrits.
+    """
+    etat = venue_state(venue)
+    if etat == VENUE_UNKNOWN:
+        return UNAVAILABLE
+    nom = (venue.get("name") or venue.get("usual_name") or "").strip()
+    ville = (venue.get("city") or venue.get("usual_city") or "").strip()
+    lieu = ", ".join(part for part in (nom, ville) if part)
+    if etat == VENUE_HOME:
+        return f"{lieu}{_country_tag(venue.get('country') or venue.get('home_country'))}"
+    return (
+        f"{lieu}{_country_tag(venue.get('country'))} — {NEUTRAL_MARK}, "
+        f"{home} recoit hors de son pays"
+    )
 
 
 def _profile_suffix(profile: dict[str, Any]) -> str:

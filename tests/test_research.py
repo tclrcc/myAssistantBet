@@ -391,3 +391,56 @@ def test_le_prompt_dit_qu_aucune_cote_ne_trie(migrated: Settings) -> None:
     )
 
     assert "Elle ne regarde aucune cote" in corps
+
+
+# -- Le terrain neutre, et la question qui nomme ce qui manque ----------------
+
+
+def test_un_terrain_neutre_monte_le_dossier(migrated: Settings) -> None:
+    """Le fait portait deux des huit selections d'un lot reel. La question ne
+    porte pas sur le lieu, qui est deja ecrit, mais sur ce qu'il change : le
+    public est le vrai sujet."""
+    from myassistantbet.services.context import NEUTRAL_MARK
+
+    contexte = _dense() + [
+        (
+            "Lieu",
+            f"Stadion Beroe, Stara Zagora (BGR) — {NEUTRAL_MARK}, Club 1 recoit hors de son pays",
+        )
+    ]
+    fiche = research.sheet(
+        [_event(1, context=contexte)] + [_event(i) for i in range(2, 22)], migrated
+    )
+
+    assert [item.index for item in fiche.dossiers] == [1]
+    assert "terrain neutre" in fiche.dossiers[0].motifs
+    assert "quel public est attendu" in fiche.dossiers[0].questions[0]
+
+
+def test_un_lieu_ordinaire_ne_monte_rien(migrated: Settings) -> None:
+    """La ligne « Lieu » est desormais systematique : sa seule presence ne dit
+    rien, c'est le marqueur qui compte."""
+    contexte = _dense() + [("Lieu", "Bravida Arena, Goteborg (SWE)")]
+
+    fiche = research.sheet(
+        [_event(1, context=contexte)] + [_event(i) for i in range(2, 22)], migrated
+    )
+
+    assert fiche.dossiers == []
+
+
+def test_la_question_d_un_bloc_pauvre_nomme_les_lignes_manquantes(migrated: Settings) -> None:
+    """« Ce que le bloc ne porte pas » etait un doublon mou et ne disait pas ou
+    aller. L'application connait les lignes absentes : elle les nomme."""
+    _en_base(migrated, 1001, 1)
+    _aller(migrated, 1001, buts_adversaire=1)
+
+    fiche = research.sheet(
+        [_event(1, 1001, context=[("Classement", "1er")])] + [_event(i) for i in range(2, 22)],
+        migrated,
+    )
+    question = next(q for q in fiche.dossiers[0].questions if q.startswith("Bloc a "))
+
+    assert "ni enjeu, ni forme 5" in question
+    assert "compte rendu" in question
+    assert "ce que le bloc ne porte pas" not in question.lower()

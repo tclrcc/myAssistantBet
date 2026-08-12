@@ -159,7 +159,7 @@ CONTEXT_ICONS = {
 #: chaque match paraitrait pauvre pour de mauvaises raisons :
 #:
 #:   · `Aller` n'existe que sur une manche retour, `Statut` que sur un report,
-#:     `Lieu` que sur une delocalisation, `Pelouse` que sur un synthetique ;
+#:     `Pelouse` que sur un synthetique ;
 #:   · `Compos` depend de l'**heure** — elles paraissent une heure avant le coup
 #:     d'envoi, et un match du lendemain n'en aura jamais a la generation ;
 #:   · `Effectif` est le substitut employe la ou `/injuries` ne couvre pas : le
@@ -172,6 +172,11 @@ CONTEXT_ICONS = {
 #:     qui, justement, porte un match de moins.
 CONTEXT_EXPECTED: dict[str, tuple[str, ...]] = {
     "football": (
+        # `Lieu` a rejoint le referentiel le jour ou elle a cesse d'etre
+        # conditionnelle : elle porte desormais trois etats et se rend sur tout
+        # match dont le lieu a ete recupere, y compris pour dire qu'il est
+        # inconnu. L'exclure sous-estimerait la densite d'un bloc complet.
+        "Lieu",
         "Classement",
         "Enjeu",
         "Forme 5",

@@ -710,6 +710,21 @@ est : cumul égal à la fin des 90 minutes de la manche retour, prolongation pui
 tirs au but. **La fiche de la compétition prime sur cette phrase** : elle seule
 sait qu'une Supercoupe va aux tirs au but sans prolongation, ou qu'une coupe
 nationale rejoue le match. Si elle ne dit rien et que le tour est serré, vérifie.
+{% endif %}{% if 'Lieu' in context_labels %}
+**« Lieu »** donne le stade, la ville et le pays, et porte **trois états** :
+
+  · un lieu seul — `Poljud, Split (HRV)` — le club reçoit chez lui ;
+  · **« TERRAIN NEUTRE »** — le match se joue **hors du pays du club qui
+    reçoit**, pour une raison politique ou sécuritaire. Ce n'est pas un détail
+    logistique : personne ne joue à domicile, le public de l'équipe « recevante »
+    n'est pas là, et « Scénario » cesse alors de lui prêter l'avantage du terrain.
+    C'est un fait à vérifier en priorité — quel public est réellement attendu ;
+  · `données non disponibles` — le lieu n'a pas été récupéré. **Ce n'est pas un
+    domicile ordinaire**, et c'est pour ça que la ligne s'écrit quand même : son
+    absence se confondrait avec un match chez soi.
+
+Un stade différent **dans le même pays** — travaux, sanction, capacité — n'est
+pas un terrain neutre et ne porte donc pas la mention : le public suit.
 {% endif %}{% if 'Buteurs' in context_labels %}
 **« Buteurs »** — les trois meilleurs de chaque équipe, avec leur total et la
 part inscrite sur penalty : douze buts dont dix sur penalty ne se parient pas

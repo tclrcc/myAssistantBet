@@ -1,0 +1,14 @@
+{
+  "errors": [],
+  "response": [
+    {
+      "id": 999,
+      "name": "Arena Lublin",
+      "address": "Krochmalna 65",
+      "city": "Lublin",
+      "country": "Poland",
+      "capacity": 15500,
+      "surface": "grass"
+    }
+  ]
+}

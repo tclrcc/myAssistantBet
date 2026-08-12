@@ -1084,6 +1084,49 @@ scannes les jours d'avant. Aucun appel, aucune cle, aucun quota.
   - **Un forfait s'y lisait comme un match joue**, et documenter le defaut ne le corrigeait
     pas. Voir la section suivante.
 
+## Le lieu, et ce que « domicile » suppose
+
+**Le faux positif a coute plus que l'absence de ligne.** La comparaison portait sur deux
+chaines — nom de stade et ville — et devait voir les deux differer. Elle a produit
+« Parken Stadium, Copenhagen — hors de København » : une delocalisation annoncee entre deux
+orthographes de la meme ville. La ligne a fini par etre ignoree, c'est-a-dire l'inverse de
+son but.
+
+- **Sur les identifiants, jamais sur les libelles.** Le `venue` d'un match **a** un
+  identifiant ; le commentaire qui affirmait le contraire datait d'une lecture trop rapide
+  de la charge utile, et toute l'heuristique nom + ville en decoulait. Deux identifiants
+  connus et differents sont un fait ; tout le reste est une inconnue.
+- **Neutre veut dire hors du pays du club, pas hors de son stade.** Un club deplace pour
+  travaux ou sanction reste chez lui — le public suit. C'est la difference entre une
+  contrainte logistique et une contrainte politique ou securitaire, et seule la seconde
+  change la lecture. Trois cas d'une meme semaine relevent de la seconde : Dinamo Minsk au
+  Stadion Beroe (Bulgarie), ML Vitebsk a Mezokovesd (Hongrie), Hapoel Tel-Aviv a Miskolc.
+- **Le pays vient d'une donnee structuree** (`/venues`), jamais d'un nom de ville :
+  « Ploiesti » ne dit pas « Roumanie » a une machine. L'appel n'est emis **que sur une
+  rencontre effectivement deplacee** — le stade habituel n'a pas besoin d'etre situe, on
+  sait deja que le club y est chez lui. Quelques appels par lot, et un test verifie qu'un
+  match a domicile n'en declenche aucun.
+- **Trois etats et non un booleen**, et le troisieme compte autant que les deux autres :
+  un domicile **suppose** qui n'en est pas serait pire qu'un « non renseigne » franc. Meme
+  regle que le fuseau du lieu.
+- **La ligne est devenue systematique**, et le calcul qui la reservait a la surprise etait
+  faux dans l'autre sens : son absence ne se distinguait pas d'un domicile ordinaire, si
+  bien qu'un match delocalise dont le lieu n'avait pas ete recupere passait pour un match
+  chez soi. Elle a donc rejoint `CONTEXT_EXPECTED` — l'exclure sous-estimait la densite
+  d'un bloc complet — et le denominateur football passe de 24 a 25.
+- **Trois consommateurs, un seul calcul** (`venue_state`) : la ligne `Lieu`, la mention de
+  `Scenario` — `nominalement a domicile, terrain neutre`, sans quoi le mot « domicile »
+  inverse le sens de la phrase — et le critere de la fiche de recherche. Le marqueur rendu
+  est une constante (`NEUTRAL_MARK`) et non un litteral recopie : la fiche le relit.
+- **Ce qui n'a pas ete construit** : aucune table `teams`. Le pays vient du fournisseur,
+  donc P1-4 n'a besoin d'aucune saisie ; creer la table pour y poser `site_url` et un stade
+  en attendant un lecteur serait exactement la faute de `/players/squads`, collecte des
+  mois sans personne pour la lire et retiree par la migration 022. Elle se creera le jour
+  ou P1-1a en aura besoin — avec ses deux colonnes d'un coup, ce qui donne la meme passe de
+  saisie unique.
+- Limite connue : les **coordonnees** demandees a l'origine ne sont servies par aucun de nos
+  endpoints. Stade, ville et pays le sont ; le reste aurait ete invente.
+
 ## Ou depenser un budget de recherche fini (`services/research.py`)
 
 **Le vrai plafond d'un lot n'est pas le prompt, c'est le lecteur.** Les deux plafonds de

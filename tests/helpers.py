@@ -82,6 +82,10 @@ def mock_context_routes(
             params__contains={"date": "2026-08-03"},
         ),
         "standings": _mock("/standings", "apifootball_standings.json"),
+        # Le pays d'un stade : ni `/fixtures` ni `/teams` ne le servent, et le
+        # deduire d'un nom de ville serait une invention. L'appel n'est emis que
+        # sur une rencontre effectivement deplacee.
+        "venue": _mock("/venues", "apifootball_venue.json"),
         "stats_home": _mock(
             "/teams/statistics",
             "apifootball_stats_home.json",
