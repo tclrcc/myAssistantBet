@@ -33,10 +33,18 @@ PARIS = ZoneInfo("Europe/Paris")
 #: Ces blocs sont montes a la main, sans contexte : c'est l'inverse du lot mesure
 #: par `test_prompt.PROMPT_BUDGET`, ou le poids vient des blocs et non de l'en-tete.
 #:
-#: Mesure : **8188**. Meme regle que `test_prompt.PROMPT_BUDGET`, et meme
-#: decision — c'est une alarme contre une explosion involontaire, pas un budget
-#: qui arbitre les ajouts : la mesure plus environ 2000 tokens.
-MIXED_BUDGET = 10000
+#: Meme regle que `test_prompt.PROMPT_BUDGET`, et meme decision : c'est une
+#: alarme contre une explosion involontaire, pas un budget qui arbitre les
+#: ajouts. La marge de ~2000 tokens posee avec la mesure de **8188** a fini par
+#: arbitrer quand meme — a 10009 pour 10000, une convention de marche de cinq
+#: lignes la franchissait.
+#:
+#: Elle vaut donc **le double de la mesure**, ce qui nomme la classe d'accident
+#: qu'un compte de tokens peut encore attraper : un lot rendu deux fois, un
+#: preambule injecte par match au lieu de l'etre par lot. Le raisonnement
+#: complet, et pourquoi une porte de preambule cassee n'en fait plus partie, est
+#: au commentaire de `test_prompt.PROMPT_BUDGET`.
+MIXED_BUDGET = 20000
 
 
 @pytest.fixture

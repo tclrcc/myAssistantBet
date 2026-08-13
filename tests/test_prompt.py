@@ -67,15 +67,32 @@ PARIS = ZoneInfo("Europe/Paris")
 #: porte de preambule cassee qui rendrait tout le mode d'emploi sur chaque lot,
 #: ou d'un bloc duplique.
 #:
-#: Il vaut la mesure **plus environ 2000 tokens**, soit largement au-dessus de
-#: ce qu'un ajout delibere peut couter et largement en dessous d'un rendu qui
-#: derape. A ~500 il transformait chaque ligne ajoutee en arbitrage, et trois
-#: sessions de suite s'y sont usees.
+#: **La marge etait de ~2000 tokens, et cette valeur-la n'a pas tenu.** Elle a
+#: fini par arbitrer de nouveau : les deux alarmes etaient a leur limite — 11606
+#: pour 11500 ici, 10009 pour 10000 sur le lot mixte — et une convention de
+#: marche de cinq lignes les a franchies toutes les deux. Une alarme qui se
+#: declenche sur un ajout delibere de 106 tokens ne mesure plus une explosion,
+#: elle rationne.
+#:
+#: **Il faut donc dire ce qu'une alarme de tokens peut encore attraper, et ce
+#: qu'elle ne peut plus.** Un preambule rendu en entier sur un lot d'un seul
+#: sport coute de 1429 a 2098 tokens (mesure au dossier du projet : 6555 pour
+#: les deux sports, 5126 pour le football seul, 4457 pour le tennis seul), et un
+#: bloc duplique environ 750. Ces montants sont **du meme ordre que la
+#: croissance deliberee qu'on vient d'autoriser** : aucun seuil ne peut separer
+#: les deux. Une porte de preambule cassee se garde donc par les tests qui
+#: portent sur la porte elle-meme — ceux du garde-fou de sport et de
+#: `context_labels` — et non par un compte de tokens.
+#:
+#: Ce qui reste a l'alarme est le **derapage structurel** : un lot rendu deux
+#: fois, une boucle qui repete un bloc, un preambule injecte par match au lieu
+#: de l'etre par lot. Elle vaut donc **le double de la mesure**, ce qui nomme
+#: exactement cette classe d'accident au lieu d'un nombre choisi pour tenir.
 #:
 #: Ce qui n'a pas change : la densite reste un objectif de qualite — une ligne
 #: sans donnee est omise, un mode d'emploi se garde sur son libelle. Le plafond
 #: ne remplace pas ces regles, il ne les faisait deja pas respecter.
-PROMPT_BUDGET = 11500
+PROMPT_BUDGET = 23000
 
 
 async def _session_enrichie(
