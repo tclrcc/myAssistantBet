@@ -25,7 +25,7 @@ from ..providers.tennisdata import TennisDataClient
 from ..providers.weather import WeatherClient
 from . import coverage, dossier, elo, fixtures, reference, tennis_history, weather
 from .competitions import is_knockout
-from .context import KIND_ABORTED, KIND_VENUE, fetch_context
+from .context import KIND_ABORTED, KIND_VENUE, SHEETS_LAST, fetch_context
 from .context import store as store_context
 from .labels import affiche, is_reference, primary_book
 from .markets import (
@@ -83,17 +83,42 @@ class EnrichTarget:
         }
 
 
-#: Appels API-Football qu'un match consomme pour son contexte complet, mesure
-#: sur le lot du 13/08/2026 : **345 appels pour 12 matchs**, soit 28,75 — et
-#: c'est le regime **couteux**, celui ou `/injuries` ne couvre pas et ou les
-#: quatre feuilles de chaque equipe sont lues. Le detail : 108 statistiques de
-#: match, 92 compositions, 69 fixtures, 24 statistiques d'equipe, 15 entraineurs.
+#: Appels d'un match **hors feuilles de match**, mesure le 13/08/2026 sur le lot
+#: des qualifications d'Europa League, a `SHEETS_LAST = 4` : 345 appels
+#: API-Football pour 12 matchs, dont 92 compositions. Soit 28,75 par match, dont
+#: 7,67 de feuilles — reste 21,08, arrondi au-dessus.
 #:
-#: La valeur est arrondie au-dessus pour que le garde-fou se trompe du bon
-#: cote : s'arreter un match trop tot coute un bloc, s'arreter un match trop
-#: tard produit exactement l'objet qu'on cherche a ne plus fabriquer — un bloc
-#: a moitie rempli, indiscernable d'une competition mal couverte.
-CONTEXT_CALLS_PER_MATCH = 30
+#: Le detail du releve : 108 statistiques de match, 92 compositions, 69 fixtures,
+#: 24 statistiques d'equipe, 15 entraineurs, 12 lieux, 12 cotes, 12 H2H.
+#:
+#: C'est le regime **couteux**, celui ou `/injuries` ne couvre pas la competition
+#: et ou les feuilles de chaque equipe sont donc lues.
+CONTEXT_CALLS_BASE = 22
+
+#: Cout des feuilles, par match. Deux equipes, `SHEETS_LAST` feuilles chacune.
+#: Mesure : 7,67 par match a 4 feuilles, soit 0,96 par emplacement — la
+#: memorisation par rencontre et les feuilles non encore publiees expliquent
+#: l'ecart au nominal de 8. On compte donc l'emplacement plein.
+SHEETS_CALLS_PER_TEAM = 2
+
+
+def context_calls_per_match(settings: Settings | None = None) -> int:
+    """Cout d'un match en appels API-Football, **derive de `SHEETS_LAST`**.
+
+    **Une constante mesuree sous un reglage cesse d'etre vraie quand le reglage
+    change, et rien dans le code ne le rappelle au lecteur suivant.** La valeur
+    de 30 avait ete mesuree a `SHEETS_LAST = 4` ; la porter a 6 ajoute deux
+    feuilles par equipe, soit quatre appels par match, et le garde-fou aurait
+    sous-estime le cout restant — donc autorise un match que le budget ne couvre
+    pas, et fabrique le bloc a moitie rempli qu'il existe pour interdire. Il se
+    serait trompe dans la seule direction qu'il ne doit pas prendre.
+
+    `settings` n'est pas lu : `SHEETS_LAST` est une constante du module de
+    contexte, pas un reglage en base. L'argument est la pour que la signature ne
+    change pas le jour ou elle le devient.
+    """
+    return CONTEXT_CALLS_BASE + SHEETS_CALLS_PER_TEAM * SHEETS_LAST
+
 
 #: Raison rendue dans le bloc et dans le rapport. Constante et non litteral
 #: recopie : trois surfaces la portent — le bloc, l'ecran d'enrichissement et le
@@ -489,7 +514,10 @@ def _budget_covers_a_match(settings: Settings) -> bool:
 
     Le seuil est calcule et non constant : un nombre absolu s'arreterait trop tot
     sur un lot de quatre matchs et trop tard sur un lot de vingt. Ce qui decide
-    est le cout du prochain match, `CONTEXT_CALLS_PER_MATCH`, mesure.
+    est le cout du prochain match, `context_calls_per_match()`, mesure et **derive
+    de `SHEETS_LAST`** : une constante figee cesserait d'etre vraie au premier
+    changement de reglage, et sous-estimer ferait passer un match que le budget
+    ne couvre pas.
 
     **Un quota inconnu laisse partir**, comme le plancher du dossier : c'est
     l'etat d'une installation qui n'a jamais appele le fournisseur, et refuser y
@@ -500,7 +528,8 @@ def _budget_covers_a_match(settings: Settings) -> bool:
     quota = last_known_quota(APIFOOTBALL_PROVIDER, settings)
     if quota is None or quota.get("remaining") is None:
         return True
-    return int(quota["remaining"]) - CONTEXT_CALLS_PER_MATCH >= settings.apifootball_call_floor
+    cout = context_calls_per_match(settings)
+    return int(quota["remaining"]) - cout >= settings.apifootball_call_floor
 
 
 def _abort(

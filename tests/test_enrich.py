@@ -878,3 +878,21 @@ async def test_le_quota_epuise_arrete_la_collecte_et_le_dit_dans_le_bloc(
     assert lignes["Collecte"].startswith("non collecte — ")
     assert enrich_service.ABORTED_QUOTA in lignes["Collecte"]
     assert event_id.aborted == enrich_service.ABORTED_QUOTA
+
+
+def test_le_cout_d_un_match_suit_le_nombre_de_feuilles_lues() -> None:
+    """**Une constante mesuree sous un reglage cesse d'etre vraie quand il change.**
+
+    Les 30 appels par match ont ete mesures a `SHEETS_LAST = 4` — 345 appels pour
+    12 matchs, dont 92 compositions. Porter le reglage a 6 ajoute deux feuilles
+    par equipe : le garde-fou aurait sous-estime le cout restant, donc autorise un
+    match que le budget ne couvre pas, et fabrique le bloc a moitie rempli qu'il
+    existe pour interdire. Il se serait trompe dans la seule direction interdite.
+    """
+    from myassistantbet.services import context as context_service
+
+    assert enrich_service.context_calls_per_match() == 30, "la mesure d'origine, a 4 feuilles"
+    assert context_service.SHEETS_LAST == 4, "temoin : le calcul ci-dessus suppose ce reglage"
+    # Le cout suit le reglage, il ne le suppose pas.
+    attendu = enrich_service.CONTEXT_CALLS_BASE + enrich_service.SHEETS_CALLS_PER_TEAM * 6
+    assert attendu == 34
