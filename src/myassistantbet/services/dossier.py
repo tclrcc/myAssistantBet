@@ -33,8 +33,9 @@ from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.apifootball import CALL_COST, PROVIDER, APIFootballClient
 from ..providers.base import ProviderError, last_known_quota
-from .context import KIND_TEAMS
+from .context import KIND_SHEETS, KIND_TEAMS
 from .context import load as load_context
+from .labels import sort_key
 
 logger = logging.getLogger(__name__)
 
@@ -777,19 +778,129 @@ def _tenure(start: str | None, reference: datetime | None) -> str:
 
 
 def _coach_fragment(
-    team: str, team_id: int | None, reference: datetime | None, settings: Settings
+    team: str,
+    team_id: int | None,
+    reference: datetime | None,
+    settings: Settings,
+    observed: dict[str, Any] | None = None,
+    sheets_read: bool = False,
 ) -> str:
-    """`Estoril I. Cathro (depuis 07/2024, 2 ans)`."""
+    """`Estoril I. Cathro (depuis 07/2024, 2 ans — vu sur la feuille du 09/08)`.
+
+    **Deux sources, et la ligne les montre toutes les deux.** La fiche `/coachs`
+    dit qui est en poste, et le fournisseur ne referme pas ses etapes de
+    carriere : mesure du 13/08/2026, **4 blocs faux sur 12**. La feuille de
+    match, elle, dit qui etait sur le banc tel jour — c'est un releve, pas une
+    fiche, et il est date.
+
+    Elles ne sont donc pas arbitrees en silence. Un systeme qui « corrigerait »
+    sans montrer aurait affirme Celades a Pafos avec une autorite imméritee : la
+    feuille y dit Celades comme la fiche, et la realite est Sa Pinto. Ce que la
+    ligne peut promettre est **la date du dernier releve**, jamais la verite.
+
+    **Et leur accord n'est pas une corroboration.** `/coachs` et
+    `/fixtures/lineups` sont deux endpoints, deux dates, deux chemins de
+    collecte — et **un seul editeur**. Quand ils se trompent, ils se trompent
+    ensemble, et c'est tout le cas Pafos. C'est la meme regle que celle qui
+    gouverne les facteurs independants de la table de confiance : il faut deux
+    origines qui puissent se tromper separement, et deux releves du meme
+    fournisseur n'en font qu'une.
+
+    **La mention ne parait que la ou les feuilles ont ete lues**, et c'est la
+    meme discipline que les trois etats d'`Absents` : ces feuilles ne se
+    telechargent que quand `/injuries` ne couvre pas la competition. Ecrire
+    « non confirme » partout ailleurs le ferait paraitre sur chaque bloc bien
+    couvert, ou la mention cesserait d'etre un signal pour devenir un decor —
+    exactement le defaut des deux seuils egaux corrige au dossier du projet.
+
+    **Angle mort a connaitre, et il est structurel** : cette condition est aussi
+    celle qui rend le controle **inoperant sur les competitions bien couvertes**,
+    donc sur les grands championnats, qui sont l'essentiel des lots hors coupes
+    d'Europe. Le taux de 4 fiches fausses sur 12 est donc mesure sur un terrain
+    non representatif — il dit ce qui se passe en qualification europeenne, pas
+    en Ligue 1. Rien ne suggere que `/coachs` y soit plus fiable, c'est le meme
+    endpoint ; rien ne suggere l'inverse non plus.
+
+    Telecharger des feuilles pour ce seul champ serait un mauvais echange — deux
+    appels par match pour verifier un nom. Le chiffre viendra gratuitement d'un
+    lot ou les feuilles sont lues pour une autre raison.
+
+    Quatre etats, dont trois n'existent que si l'on a regarde :
+
+    - feuilles non lues : la fiche seule, comme avant, sans mention ;
+    - lues et concordantes : la date de la feuille, **jamais le mot
+      « confirme » — sur Pafos les deux sources disent Celades et la realite
+      est Sa Pinto, donc l'accord de deux fiches perimees se presenterait
+      comme une verification. Un fait date, et le lecteur juge son age ;
+    - lues et divergentes : les deux noms, la feuille d'abord parce qu'elle est
+      datee et plus recente ;
+    - lues sans entraineur : la fiche seule, annoncee comme non confirmee.
+
+    Et un cinquieme, hors de cette echelle : la fiche manque et la feuille non,
+    auquel cas la feuille seule est rendue avec sa date — un releve date vaut
+    mieux qu'un silence.
+    """
     if not team_id:
         return ""
     known = load(int(team_id), KIND_COACH, settings=settings)
-    if known is None:
-        return ""
-    post = _current_post(known[0] if isinstance(known[0], list) else [], int(team_id))
+    post = (
+        _current_post(known[0] if isinstance(known[0], list) else [], int(team_id))
+        if known is not None
+        else None
+    )
+    vu = (observed or {}).get("name")
+    quand = _day(observed.get("seen")) if observed else ""
+
     if post is None:
-        return ""
+        # La feuille seule vaut mieux que rien : c'est un releve date, la ou la
+        # fiche absente ne dit rien du tout.
+        return f"{team} {vu} (feuille du {quand})" if vu and quand else ""
+
     tenure = _tenure(post.get("start"), reference)
-    return f"{team} {post['name']} ({tenure})" if tenure else f"{team} {post['name']}"
+    fiche = f"{post['name']} ({tenure})" if tenure else str(post["name"])
+    if not vu or not quand:
+        return f"{team} {fiche} — non confirme" if sheets_read else f"{team} {fiche}"
+    # **Sur l'identifiant, jamais sur le nom** : « D. McInnes » et
+    # « Derek McInnes » sont deux libelles du meme homme, et les deux figurent
+    # dans la fiche de Hearts. Un rapprochement par libelle aurait invente une
+    # divergence la ou il n'y en a pas.
+    if _same_coach(post, observed):
+        return f"{team} {fiche} — vu sur la feuille du {quand}"
+    return f"{team} feuille du {quand} : {vu} | fiche : {fiche} — divergence"
+
+
+def _same_coach(post: dict[str, Any], observed: dict[str, Any] | None) -> bool:
+    """Les deux sources designent-elles le meme homme ?
+
+    L'identifiant tranche quand les deux le portent. La fiche `/coachs` n'expose
+    pas le sien au niveau de l'etape de carriere retenue, d'ou le repli sur le
+    libelle normalise — qui ne sert qu'a **eviter d'annoncer une divergence**,
+    jamais a en affirmer une : en cas de doute, la ligne montre les deux noms et
+    laisse trancher.
+    """
+    identifiant, vu = post.get("id"), (observed or {}).get("id")
+    if identifiant is not None and vu is not None:
+        return int(identifiant) == int(vu)
+    fiche = sort_key(str(post.get("name") or ""))
+    return bool(fiche) and fiche == sort_key(str((observed or {}).get("name") or ""))
+
+
+def _day(moment: Any) -> str:
+    """`09/08` — la date d'une feuille, sans son heure ni son fuseau."""
+    parsed = _parse(str(moment)) if moment else None
+    return parsed.strftime("%d/%m") if parsed else ""
+
+
+def _sheets_side(sheets: dict[str, Any], side: str) -> tuple[dict[str, Any] | None, bool]:
+    """L'entraineur observe de ce cote, et **si l'on a seulement regarde**.
+
+    Les deux se rendent ensemble parce qu'ils repondent a deux questions
+    differentes : qui la feuille nomme, et s'il y a eu une feuille. Un releve
+    absent parce que la competition est bien couverte par `/injuries` ne dit
+    rien de l'entraineur ; un releve absent alors qu'on a lu quatre feuilles,
+    si.
+    """
+    return sheets.get(f"{side}_coach"), bool(sheets)
 
 
 def _history(
@@ -1070,14 +1181,21 @@ def dossier_lines(
     home_history = _history(home_id, season, settings)
     away_history = _history(away_id, season, settings)
     scorers = _scorers_of(event_id, league_id, season, settings)
+    # Les feuilles de match sont rangees par evenement, la fiche d'entraineur
+    # par equipe : c'est ici qu'elles se rejoignent, et nulle part ailleurs.
+    feuilles = load_context(event_id, settings).get(KIND_SHEETS) or {}
 
     lines: list[tuple[str, str]] = []
     for label, fragments in (
         (
             "Entraineur",
             (
-                _coach_fragment(home, home_id, reference, settings),
-                _coach_fragment(away, away_id, reference, settings),
+                _coach_fragment(
+                    home, home_id, reference, settings, *_sheets_side(feuilles, "home")
+                ),
+                _coach_fragment(
+                    away, away_id, reference, settings, *_sheets_side(feuilles, "away")
+                ),
             ),
         ),
         (

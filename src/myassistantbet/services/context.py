@@ -578,6 +578,38 @@ def _sheet_names(rows: list[dict[str, Any]], team_id: Any) -> list[str]:
     return []
 
 
+def _sheet_coach(rows: list[dict[str, Any]], team_id: Any, date: Any) -> dict[str, Any] | None:
+    """L'entraineur **sur le banc** ce jour-la, avec son identifiant et la date.
+
+    **La donnee etait deja telechargee et jetee.** `/fixtures/lineups` sert un
+    objet `coach` par equipe — `{"id": 25689, "name": "Derek McInnes", …}` — et
+    ces feuilles sont lues pour reconstruire un effectif, donc payees. Seuls les
+    noms de joueurs en etaient extraits.
+
+    C'est ce qui manquait pour dater la fiche `/coachs`, dont le fournisseur ne
+    referme pas les etapes de carriere. Mesure du 13/08/2026 sur les quatre
+    fiches fausses d'un lot de douze : la feuille donne le bon entraineur sur
+    **trois** — Rangers (McInnes contre R. Martin en fiche), Anderlecht (Vitor
+    Bruno contre Jeremy Taravel), Hearts (Wouter Vrancken contre D. McInnes) —
+    et se trompe avec la fiche sur la quatrieme, Pafos, ou les deux sources
+    disent Celades. Celle-la n'est pas rattrapable : elle porte alors la date de
+    sa derniere feuille, ce qui la date sans l'affirmer.
+
+    **L'identifiant est ce qui rend la comparaison sure**, et c'est la regle de
+    revue du projet : « D. McInnes » et « Derek McInnes » sont deux libelles du
+    meme homme — les deux figurent d'ailleurs dans la fiche de Hearts — et un
+    rapprochement sur le nom aurait invente une divergence sur les deux.
+    """
+    for row in rows:
+        if (row.get("team") or {}).get("id") != team_id:
+            continue
+        coach = row.get("coach") or {}
+        if not coach.get("name"):
+            return None
+        return {"id": coach.get("id"), "name": coach["name"], "seen": date}
+    return None
+
+
 def _missing_players(sheets: list[tuple[Any, list[str]]]) -> list[dict[str, Any]]:
     """Joueurs vus regulierement puis disparus, avec la date de leur derniere feuille.
 
@@ -1009,6 +1041,7 @@ async def fetch_context(
                 f"recent:{team_id}", lambda tid=team_id: client.last_fixtures(tid, RECENT_LAST)
             )
             sheets = []
+            banc: dict[str, Any] | None = None
             for fixture in _latest_played(fixtures, SHEETS_LAST):
                 fixture_id = (fixture.get("fixture") or {}).get("id")
                 if fixture_id is None:
@@ -1016,10 +1049,16 @@ async def fetch_context(
                 rows = await _memo(
                     f"lineups:{fixture_id}", lambda fid=fixture_id: client.lineups(fid)
                 )
+                date = (fixture.get("fixture") or {}).get("date")
                 names = _sheet_names(rows, team_id)
                 if names:
-                    sheets.append(((fixture.get("fixture") or {}).get("date"), names))
+                    sheets.append((date, names))
+                # `_latest_played` rend du plus recent au plus ancien : le
+                # premier entraineur rencontre est le dernier observe.
+                if banc is None and (vu := _sheet_coach(rows, team_id, date)):
+                    banc = vu
             payload[side] = _missing_players(sheets)
+            payload[f"{side}_coach"] = banc
             # **Les bornes de ce qui a ete lu**, et non de ce qui a ete demande :
             # une feuille que le fournisseur n'a pas encore publiee est sautee,
             # si bien que la fenetre reelle est plus courte que `SHEETS_LAST`.

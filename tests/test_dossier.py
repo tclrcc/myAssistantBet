@@ -23,7 +23,7 @@ from myassistantbet.main import app
 from myassistantbet.providers.apifootball import BASE_URL, PROVIDER, APIFootballClient
 from myassistantbet.providers.base import record_api_usage
 from myassistantbet.services import dossier
-from myassistantbet.services.context import KIND_TEAMS
+from myassistantbet.services.context import KIND_SHEETS, KIND_TEAMS
 from myassistantbet.services.context import store as store_context
 
 from .helpers import (
@@ -98,6 +98,75 @@ async def test_le_dossier_porte_l_entraineur_et_son_anciennete(
         "BK Hacken P. Gustafsson (depuis 06/2023, 3 ans) | "
         "Djurgardens IF M. Lindqvist (depuis 06/2026, 1 mois)"
     )
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_la_feuille_de_match_date_la_fiche_d_entraineur(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """**Deux sources, et la ligne les montre toutes les deux.**
+
+    Mesure du 13/08/2026 : 4 fiches fausses sur 12 blocs, parce que le
+    fournisseur ne referme pas ses etapes de carriere. L'entraineur du banc, lui,
+    etait deja telecharge — `/fixtures/lineups` le sert avec son identifiant, et
+    ces feuilles sont lues pour reconstruire un effectif — puis jete.
+
+    Rejeu du lot avec les observations reelles : la feuille rattrape **trois**
+    des quatre — Rangers, Anderlecht, Hearts. La quatrieme, Pafos, dit Celades
+    des deux cotes quand la realite est Sa Pinto, et c'est pour elle que la ligne
+    n'ecrit jamais « confirme » : l'accord de deux fiches perimees se
+    presenterait comme une verification.
+    """
+    _seed_event(migrated)
+    _mock_dossier(load_fixture)
+    store_context(
+        1,
+        KIND_SHEETS,
+        {
+            "available": True,
+            "home": [],
+            "away": [],
+            # Concordance : meme identifiant que la fiche, donc la feuille date.
+            "home_coach": {"id": 1001, "name": "P. Gustafsson", "seen": "2026-08-09T15:00:00Z"},
+            # Divergence : le banc du 09/08 nomme quelqu'un d'autre.
+            "away_coach": {"id": 2002, "name": "Wouter Vrancken", "seen": "2026-08-09T14:00:00Z"},
+        },
+        migrated,
+    )
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+    ligne = _lines(migrated)["Entraineur"]
+
+    assert "BK Hacken P. Gustafsson (depuis 06/2023, 3 ans) — vu sur la feuille du 09/08" in ligne
+    assert "confirme" not in ligne, "un accord de deux fiches n'est pas une verification"
+    assert (
+        "Djurgardens IF feuille du 09/08 : Wouter Vrancken | "
+        "fiche : M. Lindqvist (depuis 06/2026, 1 mois) — divergence"
+    ) in ligne
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_sans_feuille_lue_la_fiche_d_entraineur_ne_porte_aucune_mention(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Les feuilles ne se telechargent que la ou `/injuries` ne couvre pas.
+
+    Ecrire « non confirme » partout ailleurs ferait paraitre la mention sur
+    chaque bloc bien couvert, ou elle cesserait d'etre un signal pour devenir un
+    decor — le defaut exact des deux seuils egaux. Meme discipline que les trois
+    etats d'`Absents` : « on a regarde » et « on n'a pas regarde » ne se
+    confondent pas.
+    """
+    _seed_event(migrated)
+    _mock_dossier(load_fixture)
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+    ligne = _lines(migrated)["Entraineur"]
+
+    assert "non confirme" not in ligne
+    assert "feuille" not in ligne
 
 
 @respx.mock
