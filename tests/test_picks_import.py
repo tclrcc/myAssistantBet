@@ -6,6 +6,7 @@ from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
+from markupsafe import escape
 
 from myassistantbet import db
 from myassistantbet.config import Settings
@@ -613,3 +614,201 @@ def test_l_import_lit_la_mention_de_cote_de_reference(migrated: Settings) -> Non
 
     assert [pick.price_source for pick in preview.picks] == ["reference", "betclic"]
     assert [pick.price for pick in preview.picks] == ["1.92", "1.85"]
+
+
+# -- Un match deja commence, voire fini -------------------------------------
+#
+# **La garde reclamait un motif qu'aucune surface n'offrait.** `add_pick`
+# l'accepte depuis la migration 034 et `ParsedPick` le porte, mais ni le tableau
+# d'import ni la saisie a la main ne proposaient les deux valeurs : le refus
+# etait donc absolu, precisement sur le chemin qu'il devait laisser ouvert. Un
+# lot de six lignes rendait « Rien d'importe » sans qu'aucun geste puisse le
+# debloquer.
+
+TABLEAU_COMMENCE = """| # | Match | Marché | Sélection | Cote | Palier | Conf/5 |
+|---|-------|--------|-----------|------|--------|--------|
+| 1 | Hurkacz – Giron | Vainqueur | Hubert Hurkacz | 1.65 (ref.) | 🟢 SAFE | 3 |
+"""
+
+
+def _match_fini(settings: Settings, home: str, away: str) -> int:
+    """Un match dont le coup d'envoi est passe depuis longtemps.
+
+    Il **reste dans la shortlist** — un match qui a commence quitte le board
+    mais pas la session — donc `anchor` le retrouve et l'apercu le rapproche.
+    """
+    sport = db.query_one("SELECT id FROM sports WHERE key = 'tennis'", settings=settings)
+    db.execute(
+        "INSERT INTO events (sport_id, home, away, commence_time, source, created_at) "
+        "VALUES (?, ?, ?, '2020-01-01T15:00:00Z', 'oddsapi', ?)",
+        (sport["id"], home, away, db.utcnow()),
+        settings=settings,
+    )
+    return int(db.query_one("SELECT MAX(id) AS id FROM events", settings=settings)["id"])
+
+
+def _session_finie(settings: Settings) -> int:
+    event_id = _match_fini(settings, "Hubert Hurkacz", "Marcos Giron")
+    return board_service.toggle_selection(event_id, True, settings)
+
+
+def test_une_ligne_sur_un_match_commence_est_decochee_avec_son_motif(
+    migrated: Settings,
+) -> None:
+    """Elle reste **proposee** : la decision est peut-etre anterieure, seule la
+    saisie est tardive. Decochee, parce qu'une ligne qui echoue au milieu de
+    vingt se remarque moins qu'une case qu'on doit cocher."""
+    session_id = _session_finie(migrated)
+
+    preview = picks_import.build_preview(session_id, TABLEAU_COMMENCE, migrated)
+
+    assert preview.picks[0].started
+    assert not preview.picks[0].keep
+    assert "match déjà commencé" in " ".join(preview.picks[0].problems)
+
+
+def test_le_motif_saisi_recoche_la_ligne(migrated: Settings) -> None:
+    session_id = _session_finie(migrated)
+    preview = picks_import.build_preview(session_id, TABLEAU_COMMENCE, migrated)
+
+    preview.picks[0].late_reason = "differee"
+
+    assert preview.picks[0].keep
+    assert "match déjà commencé" not in " ".join(preview.picks[0].problems)
+
+
+def test_l_apercu_offre_le_menu_des_deux_motifs(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """**Le contrôle manquant**, et le seul qui débloque le lot. Deux valeurs et
+    pas de texte libre : leur mélange est ce qui a rendu inexploitables les 37
+    sélections tardives de la base."""
+    session_id = _session_finie(isolated_settings)
+
+    page = client.post(
+        f"/history/{session_id}/picks/preview", data={"table": TABLEAU_COMMENCE}
+    ).text
+
+    assert 'name="late_1"' in page
+    # Par `escape` et non sur le texte brut : les libelles portent une
+    # apostrophe (« coup d'envoi ») que Jinja rend en `&#39;`. Comparer les deux
+    # textes bruts ferait echouer le test pour la mauvaise raison, et inviterait
+    # a l'affaiblir plutot qu'a lire ce qu'il dit.
+    for label in history_service.LATE_REASONS.values():
+        assert str(escape(label)) in page
+
+
+def test_le_motif_arrive_en_base_par_l_import(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Le bout qui manquait : la route ne transmettait pas le champ."""
+    session_id = _session_finie(isolated_settings)
+    preview = picks_import.build_preview(session_id, TABLEAU_COMMENCE, isolated_settings)
+    pick = preview.picks[0]
+
+    response = client.post(
+        f"/history/{session_id}/picks/import",
+        data={
+            f"keep_{pick.index}": "1",
+            f"event_{pick.index}": str(pick.event_id or ""),
+            f"market_{pick.index}": pick.market,
+            f"selection_{pick.index}": pick.selection,
+            f"price_{pick.index}": pick.price,
+            f"price_source_{pick.index}": pick.price_source,
+            f"tier_{pick.index}": pick.tier,
+            f"late_{pick.index}": "live",
+        },
+    )
+
+    assert "Rien d'importé" not in response.text
+    ligne = db.query_one(
+        "SELECT late_reason, price, price_source FROM picks", settings=isolated_settings
+    )
+    assert ligne["late_reason"] == "live"
+    # La cote de reference traverse l'import avec sa mention : c'est elle qui dit
+    # que le palier repose sur un prix qu'on n'obtiendra pas.
+    assert ligne["price"] == 1.65
+    assert ligne["price_source"] == "reference"
+
+
+def test_sans_motif_l_import_refuse_toujours_la_ligne(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """La garde reste une garde : le menu l'ouvre, il ne la leve pas."""
+    session_id = _session_finie(isolated_settings)
+    preview = picks_import.build_preview(session_id, TABLEAU_COMMENCE, isolated_settings)
+    pick = preview.picks[0]
+
+    page = client.post(
+        f"/history/{session_id}/picks/import",
+        data={
+            f"keep_{pick.index}": "1",
+            f"event_{pick.index}": str(pick.event_id or ""),
+            f"market_{pick.index}": pick.market,
+            f"selection_{pick.index}": pick.selection,
+            f"tier_{pick.index}": pick.tier,
+        },
+    ).text
+
+    assert "déjà commencé" in page
+    assert db.query_one("SELECT COUNT(*) AS n FROM picks", settings=isolated_settings)["n"] == 0
+
+
+def test_la_saisie_a_la_main_offre_le_meme_menu(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Les deux chemins d'ecriture portent le meme vocabulaire : un motif
+    disponible a l'import et absent du formulaire ferait chercher la difference
+    dans la donnee plutot que dans la surface."""
+    session_id = _session_finie(isolated_settings)
+
+    page = client.get(f"/history/{session_id}").text
+
+    assert 'name="late_reason"' in page
+    for label in history_service.LATE_REASONS.values():
+        assert str(escape(label)) in page
+
+
+def test_le_motif_arrive_en_base_par_la_saisie_a_la_main(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    session_id = _session_finie(isolated_settings)
+    event_id = db.query_one("SELECT MAX(id) AS id FROM events", settings=isolated_settings)["id"]
+
+    client.post(
+        f"/history/{session_id}/picks",
+        data={
+            "tier": "safe",
+            "market": "Vainqueur",
+            "selection": "Hurkacz",
+            "event_id": str(event_id),
+            "late_reason": "differee",
+        },
+    )
+
+    ligne = db.query_one("SELECT late_reason FROM picks", settings=isolated_settings)
+    assert ligne["late_reason"] == "differee"
+
+
+def test_le_motif_est_relu_sur_la_feuille_de_session(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """**Une donnee que rien ne lit finit par se retirer** — le sort exact de
+    l'effectif collecte des mois sans lecteur. Celle-ci decide de la lecture du
+    prix : une selection `live` porte une cote qui n'a jamais ete un prix
+    d'avant-match, et aucune autre ligne de la feuille ne le dit."""
+    session_id = _session_finie(isolated_settings)
+    event_id = db.query_one("SELECT MAX(id) AS id FROM events", settings=isolated_settings)["id"]
+    history_service.add_pick(
+        session_id,
+        "safe",
+        "Vainqueur",
+        "Hurkacz",
+        event_id=str(event_id),
+        late_reason="live",
+        settings=isolated_settings,
+    )
+
+    page = client.get(f"/history/{session_id}").text
+
+    assert str(escape(history_service.LATE_REASONS["live"])) in page

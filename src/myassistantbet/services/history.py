@@ -176,6 +176,12 @@ class Pick:
     #: lecteur. C'est en la relisant qu'on voit si deux angles etaient vraiment
     #: independants ou deux facons de dire la meme chose.
     independence_note: str = ""
+    #: Motif d'une selection posee **apres** le coup d'envoi. Rendu sur la
+    #: feuille de session pour la meme raison que la note d'independance : une
+    #: donnee que rien ne lit finit par se retirer, et celle-ci decide de la
+    #: lecture du prix — `differee` laisse l'etiquette valide et le prix
+    #: douteux, `live` invalide les deux.
+    late_reason: str = ""
     #: D'ou vient la cote recopiee, ce qu'on a reellement obtenu, et le palier
     #: recalcule dessus. `tier` reste le palier **provisoire** : il vaut tant
     #: qu'aucun prix n'a ete releve, ce qui est le cas ordinaire.
@@ -197,6 +203,17 @@ class Pick:
     #: compareraient mal.
     created_at: str = ""
     commence_time: str = ""
+
+    @property
+    def late_label(self) -> str:
+        """Le motif d'une saisie tardive, en toutes lettres. Vide sans motif.
+
+        Une propriete plutot qu'un champ passe au gabarit : le vocabulaire vit
+        dans `LATE_REASONS` et nulle part ailleurs — l'ecrire une seconde fois
+        cote rendu l'aurait fait diverger au premier libelle ajuste, exactement
+        le piege de la liste de marches de `markets.py`.
+        """
+        return LATE_REASONS.get(self.late_reason, "")
 
     @property
     def antecedence(self) -> bool:
@@ -893,6 +910,7 @@ def _pick(row: Any, tier_labels: dict[str, str], tz: str = "") -> Pick:
         price_real=_column(row, "price_real"),
         tier_real=_column(row, "tier_real") or "",
         independence_note=_column(row, "independence_note") or "",
+        late_reason=_column(row, "late_reason") or "",
         sport_label=_column(row, "sport_label") or "",
         market_key=_column(row, "market_key") or "",
         sport_key=_column(row, "sport_key") or "",

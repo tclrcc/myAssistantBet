@@ -2812,6 +2812,24 @@ selections tranchees ont ete posees apres le coup d'envoi.
   vingt se remarque moins qu'une case qu'on doit cocher. `ParsedPick.started`
   porte le drapeau, `PickableEvent` l'a recu pour que le rapprochement par le
   voisinage se comporte comme celui par la shortlist.
+  - Le motif se donne **la ou la ligne est refusee** : une colonne « Apres le
+    coup d'envoi » dans le tableau d'import, un menu dans la saisie a la main.
+    Elle voisine celle de l'independance — ce sont les deux seules colonnes qui
+    disent pourquoi une ligne est decochee, et une meme ligne peut reclamer les
+    deux, une seconde selection sur un match commence.
+  - **Le motif est relu sur la feuille de session**, comme la note
+    d'independance et pour la meme raison : une donnee que rien ne lit finit par
+    se retirer. Celle-ci decide de la lecture du prix — une selection `live`
+    porte une cote qui n'a jamais ete un prix d'avant-match, et aucune autre
+    ligne de la feuille ne le dit. `Pick.late_label` resout le libelle depuis
+    `LATE_REASONS`, jamais recopie cote gabarit.
+  - **Un match fini se saisit comme un match commence** : c'est le meme etat, et
+    la garde ne connait que lui. Le voisinage de `pickable_events` couvre 24 h
+    avant et 48 h apres, `query` leve la fenetre au-dela — rien a ajouter.
+  - La mention `(ref.)` traverse l'import intacte, et c'est ce qui rend le
+    chemin utilisable : ces selections-la sont justement celles dont le prix ne
+    vient pas du book principal, donc celles ou le palier repose sur une cote
+    qu'on n'obtiendra pas.
 - **Le refus n'est pas absolu : il reclame un motif**, sur un chemin qu'on veut
   rare. Sans lui, la garde dirait combien de selections sont tardives et jamais
   **pourquoi** — or les deux cas legitimes ne se ressemblent pas, et c'est leur
@@ -2821,6 +2839,23 @@ selections tranchees ont ete posees apres le coup d'envoi.
   - `live` — pari reellement pris en cours de match. Les deux sont invalides.
   - **Pas de troisieme choix, pas de texte libre** : ils feraient retomber dans
     le melange que cette colonne existe pour defaire.
+  - **Et il l'a pourtant ete pendant deux jours, parce que le motif n'avait
+    aucune surface pour se saisir.** `add_pick` l'acceptait, `ParsedPick` le
+    portait, la ligne se decochait avec le bon message — mais ni le tableau
+    d'import ni le formulaire manuel n'offraient les deux valeurs, et les deux
+    routes ne transmettaient pas le champ. Un lot de six selections rendait
+    « Rien d'importe » avec, en face de chaque ligne, une question a laquelle
+    rien ne permettait de repondre. La garde etait donc **absolue**,
+    exactement sur le chemin qu'elle devait laisser ouvert.
+    - **Le service et sa surface se livrent ensemble, ou la regle qu'on croit
+      poser n'est pas celle qui s'applique.** Rien n'a casse : les tests du
+      service passaient — ils appellent `add_pick` directement — et ceux de
+      l'import montaient tous des matchs a venir, un commentaire de fixture
+      allant jusqu'a ecarter le cas comme relevant « d'un test dedie » qui
+      n'existait pas. Meme forme que B1, disparu neuf lots durant.
+    - Ce qui l'aurait attrape est ce qui garde maintenant les deux chemins :
+      un test qui poste le formulaire et **relit la base**, jamais un test qui
+      appelle le service.
 - **La garde ne valide pas le passe.** Elle ne touche que l'avenir : les 37
   restent ecartees definitivement, et le **11/08/2026** est la borne a partir de
   laquelle une population est propre **par construction** plutot que par

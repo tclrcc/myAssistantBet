@@ -55,6 +55,10 @@
              ligne du regroupement sans un mot. #}
           <th>Type</th>
           <th>2<sup>e</sup> sur le match</th>
+          {# Les deux colonnes de justification se suivent : ce sont les seules
+             qui disent pourquoi une ligne est décochée, et une ligne peut
+             réclamer les deux — une seconde sélection sur un match commencé. #}
+          <th>Après le coup d'envoi</th>
           <th>Source</th>
           <th>À vérifier</th>
         </tr>
@@ -111,6 +115,24 @@
                    placeholder="angle indépendant ?"
                    aria-label="Justification d'indépendance, ligne {{ pick.index }}"
                    value="{{ pick.independence }}">
+            {% else %}<span class="muted">—</span>{% endif %}
+          </td>
+          <td>
+            {# Le match a déjà commencé, et il a peut-être fini. La ligne reste
+               importable — la décision est peut-être antérieure, seule la saisie
+               est tardive — mais le motif est obligatoire : sans lui la garde
+               dirait combien de sélections sont tardives et jamais pourquoi.
+               Menu fermé, comme partout : un champ libre ferait retomber dans le
+               mélange que cette colonne existe pour défaire. #}
+            {% if pick.started %}
+            <select name="late_{{ pick.index }}"
+                    aria-label="Motif d'une saisie après le coup d'envoi, ligne {{ pick.index }}">
+              <option value="">—</option>
+              {% for key, label in late_reasons.items() %}
+                <option value="{{ key }}"
+                        {% if key == pick.late_reason %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            </select>
             {% else %}<span class="muted">—</span>{% endif %}
           </td>
           <td>
@@ -207,6 +229,19 @@
     <label class="grow">Angle indépendant ?
       <input type="text" name="independence_note"
              placeholder="obligatoire si le match porte déjà une sélection"></label>
+    {# Exigé dès que le match a commencé, fini compris. Le refus n'est pas
+       absolu : il réclame un motif, sur un chemin qu'on veut rare. Les deux cas
+       ne se ressemblent pas — une décision prise à temps garde une étiquette
+       valide et un prix douteux, un pari pris en cours de match perd les deux —
+       et c'est leur mélange qui a rendu inexploitables les 37 sélections
+       tardives de la base. #}
+    <label class="grow">Après le coup d'envoi
+      <select name="late_reason">
+        <option value="">— match à venir</option>
+        {% for key, label in late_reasons.items() %}
+          <option value="{{ key }}">{{ label }}</option>
+        {% endfor %}
+      </select></label>
     <label class="narrow">Source
       <select name="source_level">
         <option value="">—</option>

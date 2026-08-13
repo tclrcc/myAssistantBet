@@ -982,6 +982,12 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         # de son regroupement sans un mot.
         "angles": history_service.ANGLES,
         "source_levels": history_service.SOURCE_LEVELS,
+        # Le motif d'une selection posee apres le coup d'envoi. La garde le
+        # reclame depuis la migration 034 et **aucune surface ne l'offrait** :
+        # le refus etait donc absolu, sur le seul chemin qu'il devait laisser
+        # ouvert. Deux valeurs, pas de texte libre — leur melange est ce qui a
+        # rendu inexploitables les 37 selections tardives de la base.
+        "late_reasons": history_service.LATE_REASONS,
         # D'ou vient la cote recopiee. Un 1.92 de reference et un 1.92 du book
         # principal ne decrivent pas le meme marche : sans cette colonne, le
         # taux par bande de cote melangeait deux populations.
@@ -1061,6 +1067,7 @@ async def add_pick(request: Request, session_id: int) -> HTMLResponse:
             source_level=form.get("source_level", ""),
             price_source=form.get("price_source", ""),
             independence_note=form.get("independence_note", ""),
+            late_reason=form.get("late_reason", ""),
             settings=get_settings(),
         )
     except history_service.HistoryError as exc:
@@ -1104,6 +1111,7 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
                 source_level=form.get(f"source_{index}", ""),
                 price_source=form.get(f"price_source_{index}", ""),
                 independence_note=form.get(f"independence_{index}", ""),
+                late_reason=form.get(f"late_{index}", ""),
                 settings=settings,
             )
             created += 1
