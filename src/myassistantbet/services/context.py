@@ -2199,6 +2199,35 @@ def venue_state(venue: dict[str, Any]) -> str:
     return VENUE_NEUTRAL if sort_key(pays) != sort_key(chez_lui) else VENUE_HOME
 
 
+def _venue_halves(venue: dict[str, Any]) -> tuple[str, str, str]:
+    """Le stade et la ville **du match**, et le nom de la moitie qui manque.
+
+    **Les deux moities viennent du meme releve, ou l'absente se dit.** Les
+    remplir chacune de son cote — le nom du match, la ville a defaut celle du
+    stade habituel — ne produit pas une information incomplete mais **un lieu
+    qui n'existe pas**. Mesure du 13/08/2026 : le fournisseur ne servait aucun
+    nom de stade pour KI Klaksvik, seulement la ville, et le bloc a rendu
+    `Injector Arena, Torshavn` — Injector Arena est le terrain de KI, a
+    Klaksvik, quand la rencontre se jouait au stade national de Torshavn.
+
+    C'est une autre classe de defaut que l'omission, et c'est pour ca qu'il
+    passe : une omission se voit, un fait fabrique se cite. Celui-la sortait
+    meme sous une mention rassurante — « pas d'identifiant de stade ici, terrain
+    neutre non verifiable » — qui invite a lire l'anomalie sans dire qu'elle a
+    ete composee. Il a fallu une recherche pour la defaire, sur le seul match du
+    lot ou quelqu'un a regarde.
+
+    Trois formes sur les douze matchs du lot : les deux moities servies (9), la
+    ville seule (KI Klaksvik), le stade seul (Egnatia Rrogozhinë). Le cas ou
+    rien n'est servi est deja traite en amont par `VENUE_UNKNOWN`.
+    """
+    nom = (venue.get("name") or "").strip()
+    ville = (venue.get("city") or "").strip()
+    if nom and ville:
+        return nom, ville, ""
+    return nom, ville, "stade non precise" if not nom else "ville non precisee"
+
+
 def _venue_line(venue: dict[str, Any], home: str) -> str:
     """`Stadion Beroe, Stara Zagora (BGR) — TERRAIN NEUTRE, X recoit hors de son pays`.
 
@@ -2211,9 +2240,22 @@ def _venue_line(venue: dict[str, Any], home: str) -> str:
     etat = venue_state(venue)
     if etat == VENUE_UNKNOWN:
         return UNAVAILABLE
-    nom = (venue.get("name") or venue.get("usual_name") or "").strip()
-    ville = (venue.get("city") or venue.get("usual_city") or "").strip()
+    nom, ville, manquant = _venue_halves(venue)
     lieu = ", ".join(part for part in (nom, ville) if part)
+    if manquant:
+        # La moitie absente est **nommee**, et le stade habituel arrive derriere
+        # son propre libelle : c'est le seul endroit ou il peut paraitre sans se
+        # faire passer pour le lieu du match.
+        habituel = ", ".join(
+            part
+            for part in (
+                (venue.get("usual_name") or "").strip(),
+                (venue.get("usual_city") or "").strip(),
+            )
+            if part
+        )
+        rappel = f" (habituel : {habituel})" if habituel else ""
+        return f"{lieu} — {manquant}{rappel}, terrain neutre non verifiable"
     if etat == VENUE_UNIDENTIFIED:
         # **Le pays vient du geocodage de la ville**, pas du club : ecrire celui
         # du club a cote d'un stade qui n'est peut-etre pas le sien affirmerait

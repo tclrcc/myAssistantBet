@@ -1214,6 +1214,40 @@ async def test_sans_lieu_du_tout_la_ligne_se_declare_inconnue(
 
 @respx.mock
 @pytest.mark.anyio
+async def test_une_moitie_de_lieu_absente_ne_se_comble_pas_avec_le_stade_habituel(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """**Le bloc n'omettait pas une qualification, il inventait un lieu.**
+
+    Mesure du 13/08/2026 : le fournisseur ne servait aucun nom de stade pour
+    KI Klaksvik, seulement la ville. Chaque moitie se repliant de son cote sur le
+    stade habituel, le bloc a rendu `Injector Arena, Torshavn` — Injector Arena
+    est le terrain de KI, a Klaksvik, quand la rencontre se jouait au stade
+    national de Torshavn. Et la mention qui suivait, « terrain neutre non
+    verifiable », invitait a lire l'anomalie sans dire qu'elle avait ete
+    composee : une omission se signale, un fait fabrique se cite.
+    """
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    matchs = load_fixture("apifootball_fixtures_date.json")
+    matchs["response"][0]["fixture"]["venue"] = {"id": None, "name": None, "city": "Torshavn"}
+    routes["fixtures_date"].mock(
+        return_value=httpx.Response(200, json=matchs, headers=RATE_HEADERS)
+    )
+
+    await fetch_context(api_client, EVENT, migrated)
+    ligne = _lines(migrated)["Lieu"]
+
+    assert ligne.startswith("Torshavn — stade non precise")
+    # Le stade habituel reste rendu, mais **derriere son propre libelle** :
+    # c'est le seul endroit ou il peut paraitre sans se faire passer pour le
+    # lieu du match, et c'est ce qui rend l'ecart lisible d'un coup d'oeil.
+    assert "(habituel : " in ligne
+    assert not ligne.startswith("Injector"), "le stade habituel ne prend jamais la tete"
+
+
+@respx.mock
+@pytest.mark.anyio
 async def test_les_lignes_de_saison_ne_coutent_aucun_appel_de_plus(
     api_client: APIFootballClient, migrated: Settings, load_fixture: Any
 ) -> None:
