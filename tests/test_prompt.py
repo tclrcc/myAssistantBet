@@ -1637,6 +1637,27 @@ def test_la_convention_du_handicap_football_est_documentee(migrated: Settings) -
     assert "toujours opposés" in corps
 
 
+def test_la_convention_over_under_est_documentee(migrated: Settings) -> None:
+    """L'ordre des deux prix d'un total n'etait ecrit **nulle part** au football,
+    quand le handicap et le total de jeux du tennis avaient chacun le leur.
+
+    Il a donc fallu le deduire par recoupement, sur un `0.5: 1.05/9.50` ou seule
+    l'invraisemblance du second prix disait lequel etait le Over. Une inversion
+    n'aurait rien casse : elle enregistre la selection au mauvais prix **et**
+    dans le mauvais palier, donc elle corrompt a la fois le suivi par bande de
+    cote et le taux de reussite — la classe d'erreur exacte que la convention du
+    handicap previent deja.
+    """
+    corps = " ".join(build_prompt(_lot_de(migrated, 2), settings=migrated, now=NOW).body.split())
+
+    assert "**le Over d'abord, le Under ensuite**" in corps
+    assert "`2.5: 1.70/2.10`" in corps
+    # Les trois marches qui passent par le meme rendu, et le seul qui n'y passe
+    # pas : `Eq. buts` nomme son cote et ne porte qu'un prix.
+    assert "**« MT O/U »**, **« Corners »** et **« Cartons »**" in corps
+    assert "ne porte qu'un seul côté" in corps
+
+
 def test_le_preambule_dit_ce_que_l_ecart_au_coup_d_envoi_traverse(migrated: Settings) -> None:
     """Une journee entiere a ete analysee sur des cotes relevees huit heures
     avant le coup d'envoi sans que rien ne le signale. L'en-tete le dit

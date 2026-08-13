@@ -811,7 +811,7 @@ serait le calcul d'espérance interdit plus haut, exactement comme pour l'Elo.
 Elles servent à choisir où chercher et à formuler un angle, jamais à l'évaluer
 contre un prix, et une fréquence n'est pas un argument à elle seule.
 
-Une convention de marché, enfin :
+Deux conventions de marché, enfin :
 
   · **« Handicap »** porte **une seule ligne, ses deux moitiés**, dans l'ordre du
     titre du bloc — jamais deux paris indépendants. `PSG -0.5 1.70 |
@@ -820,6 +820,11 @@ Une convention de marché, enfin :
     opposés** : un handicap donné d'un côté est un handicap reçu de l'autre, et
     deux fois le même signe serait une erreur de relevé, pas un marché.
     `0` ne se lit d'aucun côté : la mise est rendue si le match est nul.
+  · **« O/U »** porte, pour chaque ligne, **le Over d'abord, le Under ensuite**,
+    séparés par une barre. `2.5: 1.70/2.10` se lit « plus de 2,5 buts coté 1.70 ;
+    moins de 2,5 buts coté 2.10 ». La même convention vaut pour **« MT O/U »**,
+    **« Corners »** et **« Cartons »**. `Eq. buts` fonctionne autrement : elle
+    nomme explicitement son sens (`Pafos O1.5 2.38`) et ne porte qu'un seul côté.
 
 {% endif %}
 {% if 'tennis' in sports %}
