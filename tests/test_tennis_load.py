@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime
 
 from myassistantbet import db
 from myassistantbet.config import Settings
@@ -16,6 +16,12 @@ def _competition(settings: Settings) -> int:
         "SELECT id FROM competitions WHERE oddsapi_key = ?", (TOURNOI,), settings=settings
     )
     return int(row["id"])
+
+
+#: Les lots de ce fichier sont dates au 13/08/2026 : rendre le prompt a
+#: l'horloge du jour ferait sortir leur seul match du lot des que cette
+#: date est passee, et le preambule teste se fermerait sur sa propre porte.
+_AVANT_LE_COUP_D_ENVOI = datetime(2026, 8, 12, 20, 0, tzinfo=UTC)
 
 
 def _match(settings: Settings, home: str, away: str, when: str) -> None:
@@ -408,9 +414,13 @@ def test_le_mode_d_emploi_de_non_joue_ne_se_paie_que_sur_un_lot_qui_en_porte(
     _match(migrated, "Belinda Bencic", "Coco Gauff", "2026-08-11T23:00:00Z")
     session_id = _session(migrated, "Coco Gauff", "Elena Rybakina", "2026-08-13T00:30:00Z")
 
-    sain = " ".join(build_prompt(session_id, settings=migrated).body.split())
+    sain = " ".join(
+        build_prompt(session_id, settings=migrated, now=_AVANT_LE_COUP_D_ENVOI).body.split()
+    )
     _marquer(migrated, "Belinda Bencic", "Coco Gauff", tennis_load.WALKOVER)
-    forfait = " ".join(build_prompt(session_id, settings=migrated).body.split())
+    forfait = " ".join(
+        build_prompt(session_id, settings=migrated, now=_AVANT_LE_COUP_D_ENVOI).body.split()
+    )
 
     assert "**« Non joué »** liste les rencontres programmées" not in sain
     assert "**« Non joué »** liste les rencontres programmées" in forfait
@@ -432,7 +442,9 @@ def test_le_preambule_ne_promet_plus_qu_un_forfait_se_lit_comme_un_match_joue(
     _match(migrated, "Alina Korneeva", "Coco Gauff", "2026-08-09T18:00:00Z")
     session_id = _session(migrated, "Coco Gauff", "Elena Rybakina", "2026-08-13T00:30:00Z")
 
-    corps = " ".join(build_prompt(session_id, settings=migrated).body.split())
+    corps = " ".join(
+        build_prompt(session_id, settings=migrated, now=_AVANT_LE_COUP_D_ENVOI).body.split()
+    )
 
     assert "si bien qu'un forfait s'y lit comme un match joué" not in corps
     assert "L'absence de « Non joué » ne prouve donc pas" in corps
@@ -551,7 +563,9 @@ def test_le_mode_d_emploi_du_repos_dit_ce_qu_il_ne_faut_pas_en_faire(migrated: S
     _match(migrated, "Alina Korneeva", "Coco Gauff", "2026-08-09T18:00:00Z")
     session_id = _session(migrated, "Coco Gauff", "Elena Rybakina", "2026-08-13T00:30:00Z")
 
-    corps = " ".join(build_prompt(session_id, settings=migrated).body.split())
+    corps = " ".join(
+        build_prompt(session_id, settings=migrated, now=_AVANT_LE_COUP_D_ENVOI).body.split()
+    )
 
     assert "le temps **réellement écoulé** depuis le dernier match" in corps
     assert "Ne compare donc pas deux écarts à l'heure près**" in corps
