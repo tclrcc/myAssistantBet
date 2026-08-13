@@ -11,6 +11,16 @@
     <div class="report {% if progress.finished and progress.failures %}report-warn{% endif %}">
       {% if progress.finished %}
         Enrichissement terminé : {{ progress.matches }} match(s), {{ progress.cost }} crédit(s) consommé(s).
+        {% if progress.aborted_reason %}
+        {# Une barre qui s'arrete sans explication est le meme defaut qu'un bloc
+           muet : la cause se dit ici comme elle se dit dans le bloc et dans le
+           prompt, avec le meme vocabulaire. #}
+        <p class="alert">
+          Collecte interrompue — {{ progress.aborted_reason }}.
+          {{ progress.aborted | length }} match(s) non collecté(s) :
+          {{ progress.aborted | map(attribute='label') | join(', ') }}.
+        </p>
+        {% endif %}
         {% if progress.failures %}
         <ul class="failures">
           {% for failure in progress.failures %}
@@ -28,7 +38,11 @@
         </ul>
         {% endif %}
       {% else %}
+        {% if progress.aborted_reason %}
+        Collecte interrompue — {{ progress.aborted_reason }}
+        {% else %}
         Enrichissement en cours — {{ progress.phase }} {{ progress.done }}/{{ progress.total }} étape(s)
+        {% endif %}
       {% endif %}
       <div class="progress"><div class="bar" style="width: {{ progress.percent }}%"></div></div>
     </div>

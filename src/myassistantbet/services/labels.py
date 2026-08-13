@@ -61,6 +61,10 @@ CONTEXT_ICONS = {
     # panneau d'interdiction est le bon signe : la ligne ne decrit pas le match,
     # elle dit qu'il n'aura pas lieu.
     "Statut": "interdit",
+    # La collecte s'est arretee avant ce match. Meme signe que `Statut` : ni
+    # l'une ni l'autre ne decrit la rencontre — elles disent que ce qui suit ne
+    # doit pas se lire comme d'habitude.
+    "Collecte": "interdit",
     "Classement": "trophee",
     "Enjeu": "enjeu",
     "Palmares": "medaille",

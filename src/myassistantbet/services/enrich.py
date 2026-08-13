@@ -16,6 +16,7 @@ from typing import Any
 
 from ..config import Settings, get_settings
 from ..db import connect, query
+from ..providers.apifootball import PROVIDER as APIFOOTBALL_PROVIDER
 from ..providers.apifootball import APIFootballClient
 from ..providers.base import ProviderError, last_known_quota
 from ..providers.oddsapi import DEFAULT_BOOKMAKER, PROVIDER, OddsAPIClient, expected_cost
@@ -24,7 +25,8 @@ from ..providers.tennisdata import TennisDataClient
 from ..providers.weather import WeatherClient
 from . import coverage, dossier, elo, fixtures, reference, tennis_history, weather
 from .competitions import is_knockout
-from .context import KIND_VENUE, fetch_context
+from .context import KIND_ABORTED, KIND_VENUE, fetch_context
+from .context import store as store_context
 from .labels import affiche, is_reference, primary_book
 from .markets import (
     markets_for,
@@ -79,6 +81,24 @@ class EnrichTarget:
             "commence_time": self.commence_time,
             "apifootball_league_id": self.apifootball_league_id,
         }
+
+
+#: Appels API-Football qu'un match consomme pour son contexte complet, mesure
+#: sur le lot du 13/08/2026 : **345 appels pour 12 matchs**, soit 28,75 — et
+#: c'est le regime **couteux**, celui ou `/injuries` ne couvre pas et ou les
+#: quatre feuilles de chaque equipe sont lues. Le detail : 108 statistiques de
+#: match, 92 compositions, 69 fixtures, 24 statistiques d'equipe, 15 entraineurs.
+#:
+#: La valeur est arrondie au-dessus pour que le garde-fou se trompe du bon
+#: cote : s'arreter un match trop tot coute un bloc, s'arreter un match trop
+#: tard produit exactement l'objet qu'on cherche a ne plus fabriquer — un bloc
+#: a moitie rempli, indiscernable d'une competition mal couverte.
+CONTEXT_CALLS_PER_MATCH = 30
+
+#: Raison rendue dans le bloc et dans le rapport. Constante et non litteral
+#: recopie : trois surfaces la portent — le bloc, l'ecran d'enrichissement et le
+#: prompt — et trois ecritures auraient diverge, comme `NEUTRAL_MARK` avant elle.
+ABORTED_QUOTA = "quota du fournisseur de contexte epuise en cours d'enrichissement"
 
 
 def _substitute_due(row: Any) -> bool:
@@ -253,6 +273,10 @@ class EnrichResult:
     #: d'appels franchi ne rend pas le contexte partiel — il est complet — et
     #: l'annoncer sous ce nom enverrait chercher un probleme de rapprochement.
     dossier_errors: list[str] = field(default_factory=list)
+    #: Renseigne quand la collecte s'est arretee **avant** ce match. Tenu a part
+    #: du contexte et du dossier, comme eux le sont l'un de l'autre : un contexte
+    #: partiel et un contexte jamais demande n'appellent pas le meme geste.
+    aborted: str | None = None
 
     @property
     def ok(self) -> bool:
@@ -275,6 +299,10 @@ class EnrichResult:
     @property
     def notes(self) -> list[str]:
         """Tout ce qui merite une mention visible pour ce match."""
+        if self.aborted:
+            # Seule mention quand elle est la : les autres diraient ce qui manque
+            # dans un bloc qui n'a pas ete interroge du tout.
+            return [f"non collecte — {self.aborted}"]
         return [note for note in (self.context_note, self.dossier_note) if note]
 
 
@@ -290,6 +318,10 @@ class EnrichReport:
     done: int = 0
     results: list[EnrichResult] = field(default_factory=list)
     finished: bool = False
+    #: Renseigne des que le garde-fou de quota a rompu la collecte. Porte par le
+    #: rapport et non par un resultat : la cause est unique, les matchs touches
+    #: sont multiples.
+    aborted_reason: str | None = None
     #: Libelle de la phase en cours, affiche a cote de la progression. Sans lui,
     #: une barre qui avance sur des etapes ne dit pas sur quoi elle avance.
     phase: str = ""
@@ -298,6 +330,11 @@ class EnrichReport:
     def matches(self) -> int:
         """Matchs traites. Un resultat par match, cree avant la premiere phase."""
         return len(self.results)
+
+    @property
+    def aborted(self) -> list[EnrichResult]:
+        """Matchs que la collecte n'a pas atteints."""
+        return [result for result in self.results if result.aborted]
 
     @property
     def cost(self) -> int:
@@ -445,6 +482,43 @@ def _store(event_id: int, payload: dict[str, Any], settings: Settings) -> tuple[
     with connect(settings) as conn:
         rows = replace_odds(conn, event_id, payload)
     return markets, rows
+
+
+def _budget_covers_a_match(settings: Settings) -> bool:
+    """Reste-t-il de quoi enrichir **un match entier** au-dessus du plancher ?
+
+    Le seuil est calcule et non constant : un nombre absolu s'arreterait trop tot
+    sur un lot de quatre matchs et trop tard sur un lot de vingt. Ce qui decide
+    est le cout du prochain match, `CONTEXT_CALLS_PER_MATCH`, mesure.
+
+    **Un quota inconnu laisse partir**, comme le plancher du dossier : c'est
+    l'etat d'une installation qui n'a jamais appele le fournisseur, et refuser y
+    serait un blocage sans objet. La lecture est fraiche depuis que les
+    tentatives en echec ecrivent aussi leur compteur — auparavant elle se figeait
+    au dernier appel abouti, donc precisement quand le quota s'effondrait.
+    """
+    quota = last_known_quota(APIFOOTBALL_PROVIDER, settings)
+    if quota is None or quota.get("remaining") is None:
+        return True
+    return int(quota["remaining"]) - CONTEXT_CALLS_PER_MATCH >= settings.apifootball_call_floor
+
+
+def _abort(
+    target: EnrichTarget,
+    reason: str,
+    results: dict[int, EnrichResult],
+    settings: Settings,
+) -> None:
+    """Marque un match comme **non collecte**, dans le rapport et dans son bloc.
+
+    La mention doit voyager jusqu'au prompt, pas seulement jusqu'au rapport : le
+    rapport n'est pas lu par l'analyse. Un bloc laisse vide par epuisement de
+    quota arriverait sinon avec une densite basse et des lignes muettes, et se
+    lirait exactement comme une competition mal couverte — le silence presente
+    comme une information, que le projet corrige partout ailleurs.
+    """
+    results[target.event_id].aborted = reason
+    store_context(target.event_id, KIND_ABORTED, {"reason": reason}, settings)
 
 
 async def _add_substitute_odds(
@@ -770,6 +844,15 @@ async def run_enrich(
         for target in lot:
             if not target.context_possible:
                 continue
+            # **Avant chaque match, et sur son cout complet.** Verifier apres
+            # coup, ou sur un seuil absolu, laisserait passer une interruption
+            # au milieu d'un match — donc un bloc a moitie rempli, exactement
+            # l'objet ambigu que ce garde-fou existe pour ne plus fabriquer.
+            if report.aborted_reason is None and not _budget_covers_a_match(settings):
+                report.aborted_reason = ABORTED_QUOTA
+            if report.aborted_reason:
+                _abort(target, report.aborted_reason, results, settings)
+                continue
             await _add_context(
                 context_client,
                 target,
@@ -786,6 +869,11 @@ async def run_enrich(
         # vient d'ecrire. C'est la seule raison pour laquelle elle est troisieme.
         for target in lot:
             if not target.substitute:
+                continue
+            if report.aborted_reason is None and not _budget_covers_a_match(settings):
+                report.aborted_reason = ABORTED_QUOTA
+            if report.aborted_reason:
+                _abort(target, report.aborted_reason, results, settings)
                 continue
             await _add_substitute_odds(context_client, target, results[target.event_id], settings)
             _step("substitution")

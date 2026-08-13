@@ -37,6 +37,17 @@ libellé d'un bloc, et comment le lire — est en **fin de prompt**, sous
 « COMMENT LIRE LES BLOCS ». Il n'y décide de rien : tout ce qui décide de ce que
 tu rends est ici et dans la section SORTIE ATTENDUE.
 
+{% endif %}{% if 'Collecte' in context_labels %}**COLLECTE INTERROMPUE.** Un ou plusieurs blocs de ce lot portent une ligne
+**« Collecte : non collecté »** en tête. Ce match **n'a pas été interrogé** — la
+collecte s'est arrêtée avant lui, quota épuisé. Ce qui manque dans son bloc n'est
+donc ni une limite de couverture du fournisseur, ni une source restée muette :
+c'est une question qui n'a pas été posée.
+
+Deux conséquences, et la seconde prime sur une règle énoncée plus bas. La
+recherche web est le **seul** chemin sur ce match. Et il ne se rend **pas** en
+`lecture` : la tolérance accordée aux matchs non recherchés suppose un bloc plein
+qu'on n'a pas complété en ligne, alors qu'ici il n'y a rien à lire.
+
 {% endif %}Une ligne **« Stats match »** marquée « données non disponibles » signifie que le
 fournisseur ne publie ni corners, ni cartons, ni tirs sur cette compétition.
 Fait acquis, pas trou de collecte — mais la recherche peut le combler.
@@ -220,10 +231,11 @@ pas des angles : dis ce qu'ils changent sur un match précis, ou ne les cite pas
 
 Ce lot comporte {{ research.lot }} matchs. Une session couvre environ
 **{{ research.budget }} dossiers** en recherche approfondie. Au-delà, la recherche se
-priorise : les matchs non couverts se rendent en `lecture`, et **c'est un résultat
-attendu, pas un manquement** — la consigne « si la section A laisse trop de trous,
-c'est un PASSE » vise un dossier travaillé et resté creux, pas un dossier qu'un
-budget fini n'a pas permis d'ouvrir.
+priorise : les matchs **non recherchés** se rendent en `lecture`, et **c'est un
+résultat attendu, pas un manquement** — la consigne « si la section A laisse trop de
+trous, c'est un PASSE » vise un dossier travaillé et resté creux, pas un dossier
+qu'un budget fini n'a pas permis d'ouvrir. Leur bloc est là, plein : il y a quelque
+chose à lire.
 {% if research.dossiers %}
 La fiche ci-dessous classe les dossiers par **ce qu'une recherche peut y changer**.
 Elle ne regarde aucune cote : trier sur le prix ne ferait jamais chercher là où le

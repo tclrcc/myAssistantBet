@@ -132,6 +132,20 @@ KIND_INJURIES = "injuries"
 #: Effectif reconstruit des feuilles de match recentes, la ou `/injuries` ne
 #: couvre pas. Ce n'est pas une liste d'absents : c'est une liste de joueurs
 #: qu'on ne voit plus, ce qui n'est pas la meme chose et se rend comme tel.
+#: Le match n'a **pas ete interroge** : la collecte s'est arretee avant lui.
+#:
+#: Quatrieme cas, et il ne se confond avec aucun des trois que porte `Absents` —
+#: une liste, « non interroges » (le fournisseur ne couvre pas), « source
+#: injoignable » (elle n'a pas repondu). Ici la source n'a rien refuse et n'a pas
+#: manque : on ne lui a rien demande.
+#:
+#: Il ne vit donc pas sur `Absents` mais **en tete du bloc**, parce qu'il
+#: qualifie tout ce qui suit : sans lui, un bloc vide par epuisement de quota
+#: arrive dans la session avec une densite basse et des lignes muettes, et se lit
+#: exactement comme une competition mal couverte. C'est le silence presente comme
+#: une information, une couche plus bas.
+KIND_ABORTED = "aborted"
+
 KIND_SHEETS = "sheets"
 KIND_H2H = "h2h"
 KIND_RECENT = "recent"
@@ -1755,6 +1769,14 @@ def context_lines(
     settings = settings or get_settings()
     data = load(event_id, settings)
     lines: list[tuple[str, str]] = []
+
+    # **En tete du bloc, parce qu'elle qualifie tout ce qui suit** : rien de ce
+    # qui manque en dessous n'est un fait de couverture. Les autres lignes
+    # negatives disent ce que le fournisseur ne sert pas ; celle-ci dit qu'on ne
+    # lui a rien demande.
+    aborted = data.get(KIND_ABORTED) or {}
+    if aborted.get("reason"):
+        lines.append(("Collecte", f"non collecte — {aborted['reason']}"))
 
     # Saisie manuelle : profil d'etape, startlist et references d'abord, car
     # c'est tout ce dont dispose un evenement qu'aucune API ne couvre.

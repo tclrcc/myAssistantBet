@@ -12,6 +12,7 @@ from myassistantbet.config import Settings
 from myassistantbet.providers.oddsapi import BASE_URL, OddsAPIClient
 from myassistantbet.services import board as board_service
 from myassistantbet.services import enrich as enrich_service
+from myassistantbet.services.context import context_lines
 from myassistantbet.services.enrich import (
     build_estimate,
     run_enrich,
@@ -813,3 +814,67 @@ async def test_le_releve_de_substitution_passe_apres_le_contexte(
     assert ordre.index("substitution") > max(
         index for index, phase in enumerate(ordre) if phase == "contexte"
     )
+
+
+@respx.mock
+async def test_le_quota_epuise_arrete_la_collecte_et_le_dit_dans_le_bloc(
+    odds_client: OddsAPIClient,
+    migrated: Settings,
+    load_fixture: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**La rupture doit voyager jusqu'au bloc, pas seulement jusqu'au rapport.**
+
+    Le rapport n'est pas lu par l'analyse ; le prompt, si. Un bloc laisse vide par
+    epuisement de quota y arriverait avec une densite basse et des lignes muettes,
+    et se lirait exactement comme une competition mal couverte — le silence
+    presente comme une information, une couche plus bas que les trois etats
+    d'`Absents`.
+
+    C'est un **quatrieme** cas et il ne se confond avec aucun des trois : la
+    source n'a rien refuse et n'a pas manque, on ne lui a rien demande.
+    """
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    respx.get(EVENT_ODDS_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("oddsapi_event_odds_football.json"), headers=QUOTA_HEADERS
+        )
+    )
+    # Le compteur est sous le plancher augmente du cout d'un match : la phase
+    # contexte ne doit pas partir du tout.
+    monkeypatch.setattr(enrich_service, "_budget_covers_a_match", lambda settings: False)
+
+    appels: list[str] = []
+
+    async def _contexte(*args: Any, **kwargs: Any) -> None:
+        appels.append("contexte")
+
+    monkeypatch.setattr(enrich_service, "_add_context", _contexte)
+
+    report = await run_enrich(
+        odds_client,
+        session_id,
+        migrated,
+        context_client=object(),  # type: ignore[arg-type]
+        now=NOW,
+    )
+
+    assert appels == [], "aucun appel de contexte sous le plancher"
+    assert report.aborted_reason == enrich_service.ABORTED_QUOTA
+    assert report.aborted, "le rapport nomme les matchs non collectes"
+    # Et le bloc le porte : c'est la seule surface que l'analyse lit.
+    event_id = report.aborted[0]
+    lignes = dict(
+        context_lines(
+            db.query_one("SELECT id FROM events LIMIT 1", settings=migrated)["id"],
+            "BK Hacken",
+            "Djurgardens IF",
+            "2026-08-03T15:30:00Z",
+            migrated,
+        )
+    )
+    assert lignes["Collecte"].startswith("non collecte — ")
+    assert enrich_service.ABORTED_QUOTA in lignes["Collecte"]
+    assert event_id.aborted == enrich_service.ABORTED_QUOTA

@@ -368,14 +368,21 @@ def test_le_prompt_ouvre_la_fiche_au_dela_du_budget(migrated: Settings) -> None:
     qu'un dossier non ouvert par manque de budget est un resultat attendu."""
     from myassistantbet.services.prompt import build_prompt
 
-    corps = build_prompt(
+    rendu = build_prompt(
         _lot(migrated, 21), settings=migrated, now=datetime(2026, 8, 13, 12, tzinfo=UTC)
     ).body
+    # Sur le texte **remis a plat** : la coupure de ligne n'est pas la regle, et
+    # une reformulation qui la deplace ne doit pas casser une assertion de sens.
+    corps = " ".join(rendu.split())
 
     assert "Ce lot comporte 21 matchs" in corps
-    assert "c'est un résultat\nattendu, pas un manquement" in corps
-    assert "À CHERCHER EN PRIORITÉ" in corps
-    assert corps.count("   -> rechercher") == 7, "une entree par dossier, plafonnee au budget"
+    # « non recherches » et non « non couverts » : le second designait aussi un
+    # match dont la **collecte** n'a pas eu lieu, ou `lecture` est vide de sens.
+    assert "les matchs **non recherchés** se rendent en `lecture`" in corps
+    assert "**c'est un résultat attendu, pas un manquement**" in corps
+    assert "Leur bloc est là, plein : il y a quelque chose à lire." in corps
+    assert "À CHERCHER EN PRIORITÉ" in rendu
+    assert rendu.count("   -> rechercher") == 7, "une entree par dossier, plafonnee au budget"
 
 
 def test_le_prompt_dit_qu_aucune_cote_ne_trie(migrated: Settings) -> None:
