@@ -132,6 +132,66 @@ async def test_retry_puis_succes_sur_429(odds_client: OddsAPIClient) -> None:
 
 
 @respx.mock
+async def test_une_tentative_echouee_laisse_une_lecture_de_compteur(
+    odds_client: OddsAPIClient, migrated: Settings
+) -> None:
+    """**Une tentative qui ne aboutit pas ne journalisait rien du tout.**
+
+    `_account` n'est appele qu'au retour : un retry, un echec apres trois
+    tentatives ou un HTTP >= 400 non retentable ne laissaient aucune trace, alors
+    que l'appel etait bien parti. Mesure du 06/08/2026 chez API-Football : le
+    compteur est tombe de 7 497 a 97 pour **2 953 appels journalises**, soit
+    ~4 450 invisibles — et les autres jours tombent au chiffre pres, donc ce
+    n'est pas une derive de comptage mais un chemin sans instrumentation.
+
+    La lecture porte `cost = 0` : le cout d'une tentative echouee depend du
+    fournisseur — un appel est un appel chez API-Football, rien chez The Odds
+    API qui facture au marche servi — et le facturer generiquement aurait fausse
+    l'un des deux. Ce qui fait foi est la difference entre deux lectures.
+    """
+    respx.get(ODDS_URL).mock(
+        side_effect=[
+            httpx.Response(429, text="slow down", headers={"x-requests-remaining": "41"}),
+            httpx.Response(200, json=[], headers=QUOTA_HEADERS),
+        ]
+    )
+
+    await odds_client.get_odds("soccer_sweden_allsvenskan")
+
+    lignes = db.query(
+        "SELECT cost, remaining, outcome FROM api_usage ORDER BY id", settings=migrated
+    )
+    assert [row["outcome"] for row in lignes] == ["retry", None]
+    lecture, facture = lignes
+    assert (lecture["cost"], lecture["remaining"]) == (0, 41), "la lecture ne facture rien"
+    assert facture["cost"] > 0, "l'appel abouti reste facture comme avant"
+
+
+@respx.mock
+async def test_un_echec_definitif_laisse_ses_lectures_de_compteur(
+    odds_client: OddsAPIClient, migrated: Settings
+) -> None:
+    """Trois tentatives infructueuses consommaient et n'ecrivaient rien.
+
+    C'est le chemin le plus couteux du defaut : sur un quota sature, chaque
+    endpoint part trois fois et le journal reste vide, donc le bandeau annonce un
+    quota qui ne bouge plus au moment ou il s'effondre.
+    """
+    respx.get(ODDS_URL).mock(
+        return_value=httpx.Response(503, text="indisponible", headers={"x-requests-remaining": "7"})
+    )
+
+    with pytest.raises(ProviderError):
+        await odds_client.get_odds("soccer_sweden_allsvenskan")
+
+    lignes = db.query("SELECT cost, remaining, outcome FROM api_usage", settings=migrated)
+    assert len(lignes) == 3, "une lecture par tentative"
+    assert {row["outcome"] for row in lignes} == {"retry"}
+    assert {row["remaining"] for row in lignes} == {7}
+    assert sum(row["cost"] for row in lignes) == 0
+
+
+@respx.mock
 async def test_abandon_apres_trois_tentatives(odds_client: OddsAPIClient) -> None:
     route = respx.get(ODDS_URL).mock(return_value=httpx.Response(503, text="indisponible"))
 

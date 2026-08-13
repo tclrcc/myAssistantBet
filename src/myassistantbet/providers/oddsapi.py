@@ -51,6 +51,16 @@ class OddsAPIClient(BaseHTTPClient):
     def _params(self, **extra: Any) -> dict[str, Any]:
         return {"apiKey": self._settings.odds_api_key, **extra}
 
+    def _quota_reading(self, headers: dict[str, str]) -> int | None:
+        """Les credits restants, quel que soit le sort de l'appel.
+
+        Une tentative echouee ne consomme **pas** de credit ici — le fournisseur
+        facture au marche servi — mais la lire n'en reste pas moins utile : elle
+        date le compteur, et c'est ce qui permet de distinguer une consommation
+        invisible d'une absence d'appel.
+        """
+        return _as_int(headers.get("x-requests-remaining"))
+
     def _account(self, endpoint: str, response: ProviderResponse, estimated_cost: int) -> int:
         """Trace la consommation reelle de l'appel et renvoie le cout retenu.
 

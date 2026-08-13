@@ -57,14 +57,43 @@ def record_api_usage(
     cost: int,
     remaining: int | None,
     settings: Settings | None = None,
+    outcome: str | None = None,
 ) -> None:
-    """Trace la consommation de quota d'un appel dans `api_usage`."""
+    """Trace la consommation de quota d'un appel dans `api_usage`.
+
+    `outcome` NULL est le cas ordinaire : un appel abouti et facture. Une valeur
+    designe une **lecture** de compteur prise sur une tentative qui n'a pas
+    abouti, et `cost` vaut alors 0 — voir `record_quota_reading`.
+    """
     with connect(settings) as conn:
         conn.execute(
-            "INSERT INTO api_usage (provider, endpoint, cost, remaining, called_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (provider, endpoint, cost, remaining, utcnow()),
+            "INSERT INTO api_usage (provider, endpoint, cost, remaining, called_at, outcome) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (provider, endpoint, cost, remaining, utcnow(), outcome),
         )
+
+
+def record_quota_reading(
+    provider: str,
+    endpoint: str,
+    remaining: int | None,
+    outcome: str,
+    settings: Settings | None = None,
+) -> None:
+    """Enregistre le compteur lu sur une tentative **qui n'a pas abouti**.
+
+    **Le cout n'est pas connu ici, et c'est pour ca qu'il vaut 0.** Une tentative
+    echouee consomme chez API-Football — un appel est un appel — et ne consomme
+    pas chez The Odds API, qui facture au marche servi. Facturer generiquement
+    aurait fausse l'un des deux ; ne rien ecrire les faussait tous les deux.
+
+    Ce qui fait foi est donc la **difference entre deux lectures consecutives**
+    de `remaining`. Tout ecart entre cette difference et la somme des couts
+    journalises est de la consommation invisible, et c'est exactement ce qu'on
+    cherche a rendre mesurable : le 06/08, le compteur a chute de 7 497 a 97
+    pour 2 953 appels journalises.
+    """
+    record_api_usage(provider, endpoint, 0, remaining, settings, outcome=outcome)
 
 
 def last_known_quota(provider: str, settings: Settings | None = None) -> dict[str, Any] | None:
@@ -96,6 +125,29 @@ class BaseHTTPClient:
     #: corps HTTP 200. Le backoff ordinaire (1s, 2s) convient a une coupure
     #: reseau, pas a un quota par minute, qui ne se libere pas en deux secondes.
     payload_retry_delay: float = 0.0
+
+    def _quota_reading(self, headers: dict[str, str]) -> int | None:
+        """Compteur de quota restant lu dans les en-tetes, si ce fournisseur en a un.
+
+        Le nom de l'en-tete differe d'un fournisseur a l'autre — et certains
+        n'en ont aucun, l'Elo tennis ou la meteo n'ayant pas de quota du tout.
+        Par defaut, rien a lire : seul un client qui connait son en-tete le
+        redefinit.
+        """
+        return None
+
+    def _observe_attempt(self, path: str, headers: dict[str, str], outcome: str) -> None:
+        """Note le compteur d'une tentative **qui ne sera pas facturee**.
+
+        Appelee depuis la boucle de retry, donc sur chaque reponse HTTP qui
+        n'est pas celle qu'on rend. Sans elle, un enrichissement en rafale sur
+        un quota sature journalise **zero** appel la ou il en consomme trois par
+        endpoint : la saturation de debit arrive en HTTP 200 chez API-Football,
+        et elle est donc retentee.
+        """
+        remaining = self._quota_reading(headers)
+        if remaining is not None:
+            record_quota_reading(self.provider_name, path, remaining, outcome, self._settings)
 
     def _transient_payload_error(self, data: Any) -> str | None:
         """Erreur transitoire portee par le corps d'une reponse HTTP 200.
@@ -216,9 +268,18 @@ class BaseHTTPClient:
                     last_error = transient
                     last_status = None
                     floor_delay = self.payload_retry_delay
+                    # **Elle a pourtant consomme.** Une saturation de debit
+                    # arrive en HTTP 200, donc elle passe le filtre de statut,
+                    # elle est retentee, et rien ne la journalisait.
+                    self._observe_attempt(path, dict(response.headers), "retry")
                 else:
                     last_status = response.status_code
                     last_error = f"HTTP {response.status_code} — {response.text[:200]}"
+                    self._observe_attempt(
+                        path,
+                        dict(response.headers),
+                        "retry" if response.status_code in RETRY_STATUSES else "error",
+                    )
                     if response.status_code not in RETRY_STATUSES:
                         break
 

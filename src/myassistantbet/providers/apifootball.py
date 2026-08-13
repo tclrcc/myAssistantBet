@@ -70,6 +70,10 @@ class APIFootballClient(BaseHTTPClient):
     def _headers(self) -> dict[str, str]:
         return {"x-apisports-key": self._settings.apifootball_key}
 
+    def _quota_reading(self, headers: dict[str, str]) -> int | None:
+        """Le compteur journalier du fournisseur, quel que soit le sort de l'appel."""
+        return _as_int(headers.get("x-ratelimit-requests-remaining"))
+
     def _account(self, endpoint: str, response: ProviderResponse) -> None:
         if response.from_cache:
             logger.info("%s %s servi par le cache dev", PROVIDER, endpoint)
