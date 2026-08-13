@@ -1754,3 +1754,58 @@ def test_le_lot_annonce_le_programme_qui_glisse(
 
     assert "une alerte meteo en vigueur" in corps
     assert corps.index("une alerte meteo en vigueur") < corps.index("### M1")
+
+
+def test_les_facteurs_independants_se_comptent_par_editeur(migrated: Settings) -> None:
+    """**Le mot « independant » servait deux fois, et n'etait defini que pour
+    l'autre.**
+
+    En section C il designe deux selections qui tombent ensemble ; dans la table
+    de confiance, deux faits qui se confirment. Par contagion, deux absences du
+    meme effectif se lisaient comme un seul facteur, et le cran 5 devenait
+    inatteignable — les blocs ne comptant jamais comme source, il aurait fallu
+    deux faits de recherche portant sur deux clubs differents.
+
+    Le critere est **l'editeur**, pas la source, ni la date, ni la page. Le
+    defaut a d'ailleurs ete rencontre dans le code avant le prompt : `/coachs` et
+    `/fixtures/lineups` sont deux endpoints, deux dates, **un seul editeur** —
+    leur accord sur Pafos n'etait pas une corroboration mais la meme erreur lue
+    deux fois.
+    """
+    corps = " ".join(build_prompt(_lot_de(migrated, 2), settings=migrated, now=NOW).body.split())
+
+    assert "**deux éditeurs distincts**" in corps
+    assert "sont **un seul facteur**" in corps
+    assert "l'éditeur d'origine est le club" in corps
+    assert "se tromper séparément" in corps
+    # Et la distinction avec la section D est dite, sans quoi le mot recouvrirait
+    # de nouveau les deux notions.
+    assert "pas la corrélation des issues" in corps
+
+
+def test_la_section_f_porte_trois_rubriques_nommees(migrated: Settings) -> None:
+    """Trois demandes heterogenes se disputaient un budget de trois lignes.
+
+    Les marches manquants, les informations non trouvees et les dossiers non
+    ouverts repondent a trois questions differentes ; sous un plafond commun, la
+    premiere rubrique remplie evincait les autres. Sur le lot du 13/08 la
+    troisieme etait vide — tous les marches demandes apparaissaient — et le
+    format ne permettait pas de dire « aucun » sans consommer le budget.
+    """
+    corps = " ".join(build_prompt(_lot_de(migrated, 2), settings=migrated, now=NOW).body.split())
+
+    assert "**Dossiers non ouverts**" in corps
+    assert "**Informations non trouvées**" in corps
+    assert "**Marchés manquants**" in corps
+    assert "« aucun » est une réponse" in corps
+
+
+def test_le_plafond_de_la_section_b_est_asymetrique(migrated: Settings) -> None:
+    """Un plafond unique rationnait un dossier riche et laissait s'etaler un
+    renoncement. Un PASSE bien argumente est court par nature ; s'il s'allonge,
+    c'est qu'il hesite."""
+    corps = " ".join(build_prompt(_lot_de(migrated, 2), settings=migrated, now=NOW).body.split())
+
+    assert "**12 lignes** sur un dossier qui porte au moins un fait nommé et daté" in corps
+    assert "**4 lignes** sur un PASSE" in corps
+    assert "8 lignes maximum chacune" not in corps, "l'ancien plafond uniforme a disparu"
