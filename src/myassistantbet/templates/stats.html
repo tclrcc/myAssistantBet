@@ -415,6 +415,27 @@
        Les deux colonnes ne portent pas sur la même population tant que
        l'historique n'a pas de bloc structuré — c'est le **désaccord** qui se
        lit, ligne du dessous, pas la différence des deux taux. #}
+    {# LES SÉLECTIONS RAMENÉES EN LECTURE. Mesure qui fonde le chantier : 0
+       sélection en `lecture` sur 149, quand le budget de recherche vaut sept
+       dossiers pour des lots de 57 à 72 matchs. Ce bloc est un **compte**, pas
+       un taux : il est juste à tout effectif, donc aucun seuil ne le garde. #}
+    {% if analysis.override.total %}
+    <article class="chart-card">
+      <h3>Dossiers non ouverts</h3>
+      <p class="chart-note">{{ analysis.override.line }}</p>
+      {% call why("Ce que ce compte sépare") %}
+      <p>Une sélection portant sur un match que l'analyse déclare elle-même
+      n'avoir pas ouvert est enregistrée en lecture, cran 1, quel que soit le
+      niveau de source annoncé. La distribution compte plus que le total :
+      un <b>3</b> revendiqué est de l'inflation — l'analyse s'est notée comme si
+      elle avait cherché ; un <b>5</b>, qui suppose deux faits datés d'éditeurs
+      distincts, est de la fabrication. Ces sélections sortent de la matrice des
+      transitions : « le modèle applique mal sa table » et « le modèle revendique
+      une recherche qu'il n'a pas faite » sont deux fautes, donc deux
+      compteurs.</p>
+      {% endcall %}
+    </article>
+    {% endif %}
     {{ card("Par cran calculé", analysis.by_confidence_computed,
             note=analysis.notation.line ~ (" · " ~ analysis.notation.clause_line
                                            if analysis.notation.clause_line else ""),
@@ -812,6 +833,7 @@
           <th class="num">Passés</th>
           <th class="num">Sélections</th>
           <th class="num">Réussite</th>
+          <th class="num">Lecture forcée</th>
           {# **Une mesure de corrélation, pas de densité.** Deux sélections sur
              la même rencontre ne sont pas deux observations : le résidu du bloc
              de tête suppose l'indépendance, et cette colonne dit de combien
@@ -855,6 +877,16 @@
             {%- if row.rates.settled %}{{ row.rates.won }}/{{ row.rates.settled }}
               {%- if row.rates.thin %} <span class="muted small">peu</span>{% endif %}
             {%- else %}—{% endif %}
+          </td>
+          {# **Un taux d'override élevé est un signal sur le modèle, pas sur les
+             matchs** : il dit combien de fois l'analyse s'est notée comme si elle
+             avait cherché. La ligne des dossiers ouverts l'accompagne — un
+             dossier hors de l'ordre proposé est légitime, un écart systématique
+             dirait que le tri ne sert à rien. #}
+          <td class="num">
+            {%- if row.overridden %}{{ row.overridden }}{% else %}—{% endif %}
+            {%- if row.priority_line %}
+            <span class="muted small">{{ row.priority_line }}</span>{% endif %}
           </td>
           <td class="num">
             {%- if row.density %}{{ '%.1f'|format(row.density) }}{% else %}—{% endif %}

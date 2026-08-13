@@ -15,11 +15,14 @@ jamais.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 
 import pytest
+from fastapi.testclient import TestClient
 
 from myassistantbet import db
 from myassistantbet.config import Settings
+from myassistantbet.main import app
 from myassistantbet.services import picks_import
 from myassistantbet.services.confidence import (
     Claim,
@@ -29,9 +32,21 @@ from myassistantbet.services.confidence import (
     publisher_of,
     read_blocks,
 )
-from myassistantbet.services.history import add_pick, analysis, set_result
+from myassistantbet.services.history import (
+    add_pick,
+    analysis,
+    prompt_priorities,
+    set_open_dossiers,
+    set_result,
+)
 
 LOIN = "2099-01-01T20:45:00Z"
+
+
+@pytest.fixture
+def client(isolated_settings: Settings) -> Iterator[TestClient]:
+    with TestClient(app) as test_client:
+        yield test_client
 
 
 def _fait(publisher: str = "motherwellfc.co.uk", level: int = 1) -> dict[str, object]:
@@ -264,7 +279,7 @@ def test_un_nombre_de_blocs_different_ne_rattache_rien(migrated: Settings) -> No
     preview = picks_import.build_preview(session_id, deux_blocs, migrated)
 
     assert preview.picks[0].claim is None
-    assert any("bloc(s) de confiance" in note for note in preview.ignored)
+    assert any("bloc(s) de confiance" in note for note in preview.notes)
 
 
 def test_le_cran_calcule_arrive_en_base(migrated: Settings) -> None:
@@ -516,7 +531,7 @@ def test_des_blocs_dans_le_desordre_ne_rattachent_rien(migrated: Settings) -> No
     preview = picks_import.build_preview(session_id, _avec_blocs("M2", "M1"), migrated)
 
     assert [pick.claim for pick in preview.picks] == [None, None]
-    assert any("repères de match" in note for note in preview.ignored)
+    assert any("repères de match" in note for note in preview.notes)
 
 
 def test_sans_prompt_archive_rien_n_est_rattache(migrated: Settings) -> None:
@@ -531,7 +546,7 @@ def test_sans_prompt_archive_rien_n_est_rattache(migrated: Settings) -> None:
     )
 
     assert preview.picks[0].claim is None
-    assert any("repères de match" in note for note in preview.ignored)
+    assert any("repères de match" in note for note in preview.notes)
 
 
 def test_un_prompt_d_une_autre_generation_ne_valide_pas_a_moitie(migrated: Settings) -> None:
@@ -631,7 +646,7 @@ def test_l_egalite_est_stricte_apres_normalisation(migrated: Settings) -> None:
     preview = picks_import.build_preview(session_id, rendu, migrated)
 
     assert [pick.claim for pick in preview.picks] == [None, None]
-    assert any("repères de match" in note for note in preview.ignored)
+    assert any("repères de match" in note for note in preview.notes)
 
 
 def test_un_en_tete_de_forme_inattendue_invalide_la_paire(migrated: Settings) -> None:
@@ -691,7 +706,7 @@ def test_le_rejet_nomme_la_paire_en_cause(migrated: Settings) -> None:
 
     preview = picks_import.build_preview(session_id, rendu, migrated)
 
-    note = " ".join(preview.ignored)
+    note = " ".join(preview.notes)
     assert "ligne 2" in note
     assert "bloc M2" in note
     assert "attendu « reims brest »" in note, "la chaine attendue, apres normalisation"
@@ -707,7 +722,7 @@ def test_sans_prompt_le_rejet_le_dit(migrated: Settings) -> None:
         migrated,
     )
 
-    assert any("Aucun prompt n'est archivé" in note for note in preview.ignored)
+    assert any("Aucun prompt n'est archivé" in note for note in preview.notes)
 
 
 def test_une_paire_invalide_fait_tomber_le_lot_entier(migrated: Settings) -> None:
@@ -733,3 +748,266 @@ def test_le_gabarit_impose_de_recopier_l_affiche(migrated: Settings) -> None:
 
     assert "telle qu'elle est écrite en\ntête du bloc" in corps
     assert "sans abréger" in corps
+
+
+# == CHANTIER 2 : le niveau de source cesse d'etre pris au mot ===============
+#
+# **Mesure : 0 selection en `lecture` sur 149**, quand le budget de recherche
+# vaut sept dossiers pour des lots de 57 a 72 matchs. Le defaut doit donc etre
+# `lecture`, jamais « ouvert » : un `lecture` de trop se voit et se corrige, un
+# niveau de source gonfle qui passe pour verifie ne se voit pas.
+
+
+def _avec_dossiers(rendu: str, ligne: str) -> str:
+    return rendu + "\n" + ligne + "\n"
+
+
+def test_une_selection_sur_un_dossier_ouvert_garde_son_niveau(migrated: Settings) -> None:
+    session_id, _ = _lot_de_deux(migrated)
+    rendu = _avec_dossiers(_avec_blocs("M1", "M2"), "dossiers_ouverts: [M1]")
+
+    preview = picks_import.build_preview(session_id, rendu, migrated)
+
+    assert [pick.opened for pick in preview.picks] == [True, False]
+
+
+def test_sans_ligne_de_dossiers_tout_part_en_lecture(migrated: Settings) -> None:
+    """**Fail-closed.** Liste absente : rien n'est demontre ouvert."""
+    session_id, _ = _lot_de_deux(migrated)
+
+    preview = picks_import.build_preview(session_id, _avec_blocs("M1", "M2"), migrated)
+
+    assert [pick.opened for pick in preview.picks] == [False, False]
+    assert any("dossiers_ouverts" in note for note in preview.notes)
+
+
+def test_une_liste_vide_est_une_declaration_et_non_un_manque(migrated: Settings) -> None:
+    """Les deux appellent le meme traitement, pas le meme message."""
+    session_id, _ = _lot_de_deux(migrated)
+    rendu = _avec_dossiers(_avec_blocs("M1", "M2"), "dossiers_ouverts: []")
+
+    preview = picks_import.build_preview(session_id, rendu, migrated)
+
+    assert [pick.opened for pick in preview.picks] == [False, False]
+    assert any("Aucun dossier déclaré ouvert" in note for note in preview.notes)
+
+
+def test_un_repere_qui_ne_se_resout_pas_fait_tout_tomber(migrated: Settings) -> None:
+    """Meme raisonnement que la somme de controle de l'appariement : ce qui ne
+    se demontre pas ne s'ecrit pas comme un acquis."""
+    session_id, _ = _lot_de_deux(migrated)
+    rendu = _avec_dossiers(_avec_blocs("M1", "M2"), "dossiers_ouverts: [M1, M99]")
+
+    preview = picks_import.build_preview(session_id, rendu, migrated)
+
+    assert [pick.opened for pick in preview.picks] == [False, False]
+    assert any("ne se résolvent contre aucun prompt" in note for note in preview.notes)
+
+
+def test_la_ligne_de_dossiers_ne_casse_pas_le_compte_des_blocs(migrated: Settings) -> None:
+    """Le gabarit la demande hors de tout bloc, mais un rendu peut la cloturer
+    quand meme : comptee comme un bloc en echec, elle couterait les crans du
+    lot entier pour une ligne qui n'en est pas un."""
+    session_id, _ = _lot_de_deux(migrated)
+    rendu = _avec_blocs("M1", "M2") + '\n```conf\n{"dossiers_ouverts": [M1]}\n```\n'
+
+    preview = picks_import.build_preview(session_id, rendu, migrated)
+
+    assert [pick.claim is not None for pick in preview.picks] == [True, True]
+    assert [pick.opened for pick in preview.picks] == [True, False]
+
+
+def test_l_ecrasement_arrive_en_base(migrated: Settings) -> None:
+    session_id = _session(migrated)
+    add_pick(
+        session_id,
+        "safe",
+        "1N2",
+        "Lyon",
+        confidence="4",
+        source_level="1",
+        claim=_bloc(
+            source_level=1,
+            faits=[_fait("motherwellfc.co.uk"), _fait("bbc.co.uk", 2)],
+            manque_touche_facteur=False,
+        ),
+        opened=False,
+        settings=migrated,
+    )
+
+    ligne = db.query_one(
+        "SELECT confidence, confidence_computed, confidence_claimed, research_overridden, "
+        "       source_level, facts_json FROM picks",
+        settings=migrated,
+    )
+    assert ligne["confidence"] == 4, "l'annonce reste ecrite telle quelle"
+    assert ligne["confidence_computed"] == 1, "le verdict final"
+    assert ligne["confidence_claimed"] == 5, "ce que la declaration aurait donne"
+    assert ligne["research_overridden"] == 1
+    assert ligne["source_level"] == "lecture"
+    assert "motherwellfc.co.uk" in ligne["facts_json"], (
+        "les faits restent en base : c'est la trace de la fabrication"
+    )
+
+
+def test_la_saisie_a_la_main_n_est_jamais_ecrasee(migrated: Settings) -> None:
+    """`None` veut dire « on ne sait pas » : l'override juge une declaration de
+    modele, pas un geste humain."""
+    session_id = _session(migrated)
+
+    add_pick(session_id, "safe", "1N2", "Lyon", source_level="1", settings=migrated)
+
+    ligne = db.query_one("SELECT source_level, research_overridden FROM picks", settings=migrated)
+    assert ligne["source_level"] == "1"
+    assert ligne["research_overridden"] is None
+
+
+def _ecrasee(settings: Settings, session_id: int, confiance: str, bloc: str) -> None:
+    pick_id = add_pick(
+        settings=settings,
+        session_id=session_id,
+        tier="safe",
+        market="1N2",
+        selection="Lyon",
+        confidence=confiance,
+        claim=bloc,
+        opened=False,
+    )
+    set_result(pick_id, "win", settings)
+
+
+def test_l_override_compte_la_distribution_et_non_le_total(migrated: Settings) -> None:
+    """**Deux fautes que le compte seul confondrait.** Un 3 revendique est de
+    l'inflation ; un 5 — deux faits dates, deux editeurs, une origine — est de la
+    fabrication, et ca ne se traite pas pareil."""
+    session_id = _session(migrated)
+    cinq = _bloc(
+        source_level=1,
+        faits=[_fait("motherwellfc.co.uk"), _fait("bbc.co.uk", 2)],
+        manque_touche_facteur=False,
+    )
+    trois = _bloc(source_level=1, faits=[_fait()], manque_touche_facteur=True)
+    _ecrasee(migrated, session_id, "5", cinq)
+    for _ in range(2):
+        _ecrasee(migrated, session_id, "3", trois)
+
+    override = analysis(settings=migrated).override
+
+    assert override.total == 3
+    assert override.claimed == [(3, 2), (5, 1)]
+    assert override.fabricated == 1, "le 5 revendique des faits sur un dossier non ouvert"
+    assert "dont 1 avec des faits déclarés" in override.line
+
+
+def test_les_ecrasees_sortent_de_la_matrice_des_transitions(migrated: Settings) -> None:
+    """**Sinon la matrice ne mesurerait plus que l'override.** Le modele annonce
+    3, l'application force 1 : ce desaccord ne dit pas « il applique mal sa
+    table », il dit « il revendique une recherche qu'il n'a pas faite ». Deux
+    fautes, deux compteurs."""
+    session_id = _session(migrated)
+    trois = _bloc(source_level=1, faits=[_fait()], manque_touche_facteur=True)
+    for _ in range(9):
+        _ecrasee(migrated, session_id, "4", trois)
+
+    report = analysis(settings=migrated)
+
+    assert report.override.total == 9
+    assert report.notation.comparable == 0, "aucune ecrasee ne pese sur la notation"
+    assert report.notation.transitions == []
+    assert report.notation.clause_line == ""
+
+
+def test_la_liste_declaree_est_memorisee_a_l_import(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """La liste **entiere**, y compris les dossiers sans selection : c'est elle
+    qui se compare a l'ordre de passage que l'application avait propose."""
+    session_id, _ = _lot_de_deux(isolated_settings)
+
+    client.post(
+        f"/history/{session_id}/picks/import",
+        data={
+            "open_dossiers": "M1 M4 M7",
+            "keep_1": "1",
+            "market_1": "1N2",
+            "selection_1": "Lyon",
+            "tier_1": "safe",
+        },
+    )
+
+    ligne = db.query_one(
+        "SELECT open_dossiers FROM sessions WHERE id = ?", (session_id,), settings=isolated_settings
+    )
+    assert ligne["open_dossiers"] == "M1 M4 M7"
+
+
+def test_l_apercu_n_ecrit_toujours_rien(client: TestClient, isolated_settings: Settings) -> None:
+    """La liste se memorise a l'import, pas a la lecture : l'apercu est une
+    proposition, et une proposition n'ecrit pas."""
+    session_id, _ = _lot_de_deux(isolated_settings)
+    rendu = _avec_dossiers(_avec_blocs("M1", "M2"), "dossiers_ouverts: [M1]")
+
+    client.post(f"/history/{session_id}/picks/preview", data={"table": rendu})
+
+    ligne = db.query_one(
+        "SELECT open_dossiers FROM sessions WHERE id = ?", (session_id,), settings=isolated_settings
+    )
+    assert ligne["open_dossiers"] is None
+
+
+def test_la_page_expose_les_overrides_par_session(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """**Un taux d'override eleve est un signal sur le modele, pas sur les
+    matchs.** Il dit combien de fois l'analyse s'est notee comme si elle avait
+    cherche, et il doit se voir la ou l'on relit une session."""
+    session_id = _session(isolated_settings)
+    _ecrasee(
+        isolated_settings,
+        session_id,
+        "4",
+        _bloc(source_level=1, faits=[_fait()], manque_touche_facteur=False),
+    )
+
+    page = client.get("/stats").text
+
+    assert "Lecture forcée" in page
+    assert "Dossiers non ouverts" in page
+
+
+def test_l_ordre_de_passage_se_lit_dans_le_prompt_archive(migrated: Settings) -> None:
+    """La fiche recalculee aujourd'hui ne donnerait plus le meme classement
+    qu'au moment de l'analyse : c'est le corps archive qui fait foi."""
+    session_id, _ = _lot_de_deux(migrated)
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 'session_default.md.j2', ?, 0, ?)",
+        (session_id, "1. M1 Lyon – Nice  [tour ouvert]\n2. M2 Reims – Brest  [x]\n", db.utcnow()),
+        settings=migrated,
+    )
+
+    assert prompt_priorities(migrated)[session_id] == {"M1", "M2"}
+
+
+def test_un_dossier_hors_ordre_propose_est_compte_sans_etre_juge(
+    migrated: Settings,
+) -> None:
+    """Un dossier ouvert hors priorite est **legitime** — la section F demande
+    justement de le dire. C'est l'ecart systematique qui vaudrait d'etre su, et
+    il se mesure sans rien decider dessus."""
+    session_id, _ = _lot_de_deux(migrated)
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 'session_default.md.j2', ?, 0, ?)",
+        (session_id, "1. M1 Lyon – Nice  [tour ouvert]\n", db.utcnow()),
+        settings=migrated,
+    )
+    set_open_dossiers(session_id, {"M1", "M2"}, migrated)
+
+    ligne = next(
+        row for row in analysis(settings=migrated).by_session if row.session_id == session_id
+    )
+
+    assert ligne.opened == 2
+    assert ligne.on_priority == 1
+    assert "dont 1 hors ordre proposé" in ligne.priority_line

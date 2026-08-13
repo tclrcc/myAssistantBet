@@ -3791,6 +3791,64 @@ leur editeur, et si un manque de la section A touche le facteur porteur — et
   de contenu n'est pas une coupe, c'est une regression** : la bonne reaction est de la
   reprendre ailleurs, jamais d'affaiblir l'assertion.
 
+## Le niveau de source cesse d'etre pris au mot (migration 043)
+
+**Mesure : 0 selection en `lecture` sur 149**, quand le budget de recherche vaut sept
+dossiers pour des lots de 57 a 72 matchs. Le preambule presente pourtant `lecture` comme
+« une reponse normale et frequente » : elle n'a jamais ete donnee une seule fois. Le niveau
+de source est donc gonfle, et la table qui le regroupe ne mesure rien.
+
+**Les deux chantiers partent ensemble, et l'ordre n'est pas negociable.** Livrer le cran
+calcule seul aurait ete **pire que l'etat d'avant** : le modele declare un `source_level`
+sur les matchs qu'il n'a pas ouverts, l'application en aurait deduit un cran
+**deterministe** a partir d'une declaration gonflee, et le faux aurait gagne l'apparence du
+calcul. Une colonne libre etait inoffensive parce qu'on la savait molle.
+
+- **Le defaut est `lecture`, jamais « ouvert ».** Liste absente, illisible, ou portant un
+  repere qui ne se resout contre aucun prompt : **tout le lot** passe en lecture, cran 1.
+  Meme raisonnement que la somme de controle de l'appariement — un `lecture` de trop se
+  voit et se corrige, un niveau de source gonfle qui passe pour verifie ne se voit pas.
+- **Une ligne structuree, jamais la prose de la section F.** Celle-ci est redigee pour etre
+  lue, change de tournure d'une session a l'autre, et ses reperes s'y trouvent au milieu de
+  phrases qui expliquent pourquoi. `dossiers_ouverts: [M1, M4, M7]` se donne a cote, et la
+  prose garde son travail.
+  - Demandee **hors de tout bloc de code**, mais `read_blocks` ecarte quand meme un bloc
+    qui la porte : comptee comme un bloc de confiance en echec, elle ferait diverger le
+    compte des blocs de celui des lignes et couterait les crans du lot entier.
+- **Les M-numeros passent par la machinerie du chantier 1**, jamais par une seconde
+  resolution : c'est le meme prompt qui valide les blocs et qui resout la liste, sans quoi
+  deux lectures paralleles finiraient par designer deux matchs sous le meme repere.
+- **L'override enregistre l'ecart, pas seulement le compte** (`Override.claimed`). Un `3`
+  revendique sur un dossier non ouvert est de l'**inflation** — l'analyse s'est notee comme
+  si elle avait cherche ; un `5`, qui suppose deux faits dates d'editeurs distincts et une
+  origine, est de la **fabrication**. Deux fautes, et le total seul les confondrait. Les
+  faits restent en base : c'est la trace.
+- **`Notation` exclut les ecrasees**, et c'est indispensable : sans cela la majorite des
+  desaccords viendrait de l'override — le modele annonce 3, l'application force 1 — et la
+  matrice des transitions ne mesurerait plus que lui, en designant toujours la meme clause
+  du gabarit, qui n'y serait pour rien.
+- **`opened=None` n'ecrase rien**, et c'est le cas de la saisie a la main : l'override juge
+  une declaration de modele, pas un geste humain. Un champ absent du formulaire vaut
+  « on ne sait pas » — l'apercu, lui, l'emet toujours.
+- **Un compte, jamais un taux**, donc aucun seuil ne le garde : il est juste a tout
+  effectif, meme regle que le compte des non-classees.
+- **La liste declaree se memorise a l'import et jamais a l'apercu.** Un test de longue date
+  garde ce contrat — « l'apercu n'ecrit rien » — et il a attrape la premiere version, qui
+  ecrivait a la lecture. Elle voyage donc par un champ cache, comme le bloc de confiance.
+- **Mesure sans decision** : la liste declaree se compare a l'ordre de passage que
+  l'application avait propose, relu dans le **corps archive** — la fiche recalculee
+  aujourd'hui ne donnerait plus le meme classement. Un dossier hors priorite est
+  **legitime**, la section F demande justement de le dire ; c'est un ecart systematique qui
+  dirait que le tri par « ce qu'une recherche peut y changer » ne sert a rien.
+
+**Defaut trouve par un test existant, et il valait pour tout le chantier precedent** :
+`ImportPreview.ignored` **garde le rendu du tableau entier**. Y verser une remarque —
+un bloc de confiance rejete, un appariement refuse, un dossier non ouvert — faisait
+disparaitre l'import en entier, donc coutait la possibilite d'importer pour un detail.
+D'ou `notes`, second canal : ce qui accompagne un apercu **lisible** n'est pas ce qui
+empeche de le lire. La distinction n'existait pas, et les trois messages ajoutes depuis
+deux chantiers tombaient tous du mauvais cote.
+
 ## Les crans de confiance, et les paliers qu'on n'atteint pas
 
 - **Les crans 2 et 4 n'avaient aucune definition**, et tout tombait donc en 3 : le prompt

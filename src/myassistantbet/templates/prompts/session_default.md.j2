@@ -498,6 +498,19 @@ fait passeraient pour deux origines qui peuvent se tromper séparément.
 `manque_touche_facteur` n'a pas de défaut — c'est lui seul qui sépare les crans
 3, 4 et 5, et sans lui le cran reste inconnu.
 
+**Enfin, une ligne pour toute la session**, à côté des blocs et **hors de tout
+bloc de code** — la liste des matchs sur lesquels tu as réellement ouvert un
+dossier de recherche, par leur repère de bloc :
+
+    dossiers_ouverts: [M1, M4, M7, M8]
+
+Écris-la même vide (`dossiers_ouverts: []`). Toute sélection portant sur un match absent de cette liste
+est enregistrée en `lecture`, quel que soit le niveau de source annoncé — et
+c'est le cas ordinaire, le budget de recherche ne couvrant qu'une poignée de
+matchs par lot. La section F continue d'expliquer en prose ce que tu n'as pas
+ouvert et pourquoi ; cette ligne-ci ne remplace pas ce texte, elle le rend
+lisible par l'application.
+
 Les crans 2 et 4 n'avaient aucune définition, et tout tombait donc en 3 : sur
 cent sélections, 99 % portaient un 3 ou un 4, et les crans 1 et 5 n'ont jamais
 servi. Une échelle dont deux crans sur cinq portent tout ne note plus rien.

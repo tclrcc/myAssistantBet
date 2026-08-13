@@ -297,10 +297,69 @@ class Reading:
         return [claim for claim in self.claims if claim.match == label]
 
 
+#: La ligne des dossiers ouverts, au niveau de la session :
+#: `dossiers_ouverts: [M1, M4, M7]`. Une **ligne structuree** et non la prose de
+#: la section F : celle-ci est redigee pour etre lue, elle change de tournure
+#: d'une session a l'autre, et ses reperes s'y trouvent au milieu de phrases qui
+#: expliquent pourquoi. La prose garde son travail a cote.
+OPEN_LINE = re.compile(r"dossiers_ouverts\"?\s*:\s*\[([^\]]*)\]", re.IGNORECASE)
+
+#: Un repere de bloc, tel que le prompt les numerote.
+MARK = re.compile(r"M\d+")
+
+
+@dataclass(frozen=True)
+class Opened:
+    """Les dossiers que l'analyse declare avoir ouverts.
+
+    **Le defaut est `lecture`, jamais « ouvert ».** Toute la valeur du chantier
+    tient la : liste absente, illisible, ou portant un repere qui ne se resout
+    pas, et l'ensemble des selections de la session passe en lecture. Meme
+    raisonnement que la somme de controle de l'appariement — un `lecture` de
+    trop se voit et se corrige, un niveau de source gonfle qui passe pour
+    verifie ne se voit pas.
+    """
+
+    marks: frozenset[str] = frozenset()
+    #: La ligne etait presente et lisible. **Faux n'est pas « aucun dossier »** :
+    #: une liste vide est une declaration, une ligne absente est un manque, et
+    #: les deux appellent le meme traitement mais pas le meme message.
+    declared: bool = False
+
+    @property
+    def note(self) -> str:
+        if not self.declared:
+            return (
+                "Aucune ligne « dossiers_ouverts: [M1, M4, …] » dans le rendu : toutes "
+                "les sélections sont enregistrées en lecture, cran 1."
+            )
+        if not self.marks:
+            return (
+                "Aucun dossier déclaré ouvert : toutes les sélections sont enregistrées "
+                "en lecture, cran 1."
+            )
+        return ""
+
+
+def read_opened(raw: str) -> Opened:
+    """Lit la ligne des dossiers ouverts. Absente, elle ne se devine pas."""
+    found = OPEN_LINE.search(raw or "")
+    if found is None:
+        return Opened()
+    return Opened(marks=frozenset(MARK.findall(found.group(1).upper())), declared=True)
+
+
 def read_blocks(raw: str) -> Reading:
     """Tous les blocs structures d'un rendu, dans leur ordre d'apparition."""
     reading = Reading()
     for index, body in enumerate(BLOCK.findall(raw or ""), start=1):
+        # La ligne des dossiers ouverts se donne hors de tout bloc, mais un
+        # rendu peut la cloturer quand meme. L'ecarter ici plutot que de la
+        # rejeter : comptee comme un bloc de confiance en echec, elle ferait
+        # diverger le compte des blocs de celui des lignes et couterait les
+        # crans de tout le lot pour une ligne qui n'en est pas un.
+        if OPEN_LINE.search(body):
+            continue
         try:
             reading.claims.append(parse(body))
         except ClaimError as exc:

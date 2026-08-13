@@ -116,6 +116,12 @@ NO_COMPETITION = "Hors compétition"
 #: porte une etiquette **valide** et un prix douteux ; un pari reellement pris
 #: en cours de match porte les deux comme invalides. Un troisieme choix, ou un
 #: champ libre, ferait retomber dans le melange que cette colonne defait.
+#: Le niveau de source d'une selection ecrasee, et le cran qui va avec. Ecrits
+#: une fois : c'est la meme regle que celle du preambule — `lecture` impose la
+#: confiance 1 — et la recopier ailleurs l'aurait fait diverger.
+READING_LEVEL = "lecture"
+FORCED_RUNG = 1
+
 LATE_REASONS = {
     "differee": "Saisie différée — décision prise avant le coup d'envoi",
     "live": "Live assumé — pari pris en cours de match",
@@ -810,6 +816,49 @@ _BLOCK_HEADER = re.compile(r"^### M\d+ · (.+)$", re.MULTILINE)
 _NUMBERED_HEADER = re.compile(r"^### (M\d+) · (.+)$", re.MULTILINE)
 
 
+def set_open_dossiers(
+    session_id: int, marks: frozenset[str] | set[str], settings: Settings | None = None
+) -> None:
+    """Memorise les dossiers que le rendu declare avoir ouverts.
+
+    **La liste entiere, et pas seulement son effet ligne par ligne.** Un dossier
+    ouvert qui n'a produit aucune selection ne laisse aucune trace dans `picks`,
+    et c'est pourtant lui qui manque a la comparaison avec l'ordre de passage
+    que l'application avait propose : un ecart systematique entre les deux dirait
+    que le tri par « ce qu'une recherche peut y changer » ne sert a rien.
+
+    Ecrase a chaque lecture : le dernier rendu colle decrit l'analyse en cours.
+    """
+    with connect(settings) as conn:
+        conn.execute(
+            "UPDATE sessions SET open_dossiers = ? WHERE id = ?",
+            (" ".join(sorted(marks, key=lambda mark: int(mark[1:]))) or None, session_id),
+        )
+
+
+#: L'ordre de passage propose par l'application, tel que le prompt le rend :
+#: `1. M3 Lyon – Nice  [motifs]`. Il est **archive avec le corps**, donc relisable
+#: sans regenerer la fiche — qui, recalculee aujourd'hui, ne donnerait plus le
+#: meme classement qu'au moment de l'analyse.
+_PRIORITY_LINE = re.compile(r"^\d+\.\s+(M\d+)\s", re.MULTILINE)
+
+
+def prompt_priorities(settings: Settings | None = None) -> dict[int, set[str]]:
+    """Les dossiers proposes par session, tous prompts confondus.
+
+    L'union et non le dernier : un dossier propose puis sorti du classement par
+    une regeneration a bien ete propose, et l'ecart qu'on mesure porte sur ce que
+    l'analyse a **vu passer**.
+    """
+    found: dict[int, set[str]] = {}
+    with connect(settings) as conn:
+        for row in conn.execute("SELECT session_id, body FROM prompts"):
+            found.setdefault(int(row["session_id"]), set()).update(
+                _PRIORITY_LINE.findall(row["body"] or "")
+            )
+    return found
+
+
 def prompt_headers(session_id: int, settings: Settings | None = None) -> list[dict[str, str]]:
     """Les en-tetes de blocs de chaque prompt de la session, du plus recent.
 
@@ -1411,6 +1460,7 @@ def add_pick(
     independence_note: str = "",
     late_reason: str = "",
     claim: str = "",
+    opened: bool | None = None,
     played: bool = False,
     result: str = "pending",
     settings: Settings | None = None,
@@ -1477,6 +1527,19 @@ def add_pick(
         # deux ecritures les aurait fait diverger au premier rendu ou la colonne
         # du tableau et le bloc ne disent pas la meme chose.
         source_value = _vocabulary(declaration.source_level, SOURCE_LEVELS) or source_value
+
+    # L'OVERRIDE DE RECHERCHE. Une selection sur un dossier que l'analyse declare
+    # elle-meme n'avoir pas ouvert est une **lecture des blocs**, quoi qu'elle
+    # ait annonce. Mesure : 0 `lecture` sur 149, pour un budget de sept dossiers
+    # sur des lots de 57 a 72 matchs.
+    #
+    # `None` veut dire « on ne sait pas » et n'ecrase rien : c'est le cas de la
+    # saisie a la main, qui est un geste humain et non une declaration de modele.
+    claimed = declaration.rung if declaration is not None else None
+    computed = claimed
+    overridden = opened is False
+    if overridden:
+        source_value, computed = READING_LEVEL, FORCED_RUNG
     # D'ou vient la cote recopiee. Facultative comme les deux precedentes : une
     # valeur inconnue vaut « on ne sait pas », jamais un refus.
     price_origin = _vocabulary(price_source, PRICE_SOURCES)
@@ -1557,8 +1620,9 @@ def add_pick(
             "                   confidence, played, stake, result, angle, source_level, "
             "                   price_source, independence_note, market_key, "
             "                   late_reason, confidence_computed, facts_json, "
-            "                   gap_touches_factor, distinct_publishers, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "                   gap_touches_factor, distinct_publishers, "
+            "                   confidence_claimed, research_overridden, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 attached,
@@ -1576,10 +1640,12 @@ def add_pick(
                 note or None,
                 resolved,
                 late,
-                declaration.rung if declaration is not None else None,
+                computed,
                 declaration.raw if declaration is not None else None,
                 _flag(declaration.gap_touches_factor) if declaration is not None else None,
                 declaration.distinct_publishers if declaration is not None else None,
+                claimed if overridden else None,
+                _flag(None if opened is None else not opened),
                 utcnow(),
             ),
         )
@@ -1871,6 +1937,25 @@ class SessionRate:
     #: Le prompt le plus lourd de la session. Sert de garde-fou de poids, pas
     #: de mesure de qualite.
     tokens: int = 0
+    #: Selections ramenees en lecture faute de dossier ouvert. **Un taux eleve
+    #: est un signal sur le modele, pas sur les matchs** : il dit combien de
+    #: fois l'analyse s'est notee comme si elle avait cherche.
+    overridden: int = 0
+    #: Les dossiers que le rendu declarait avoir ouverts, et combien d'entre eux
+    #: figuraient dans l'ordre de passage que l'application avait propose. Un
+    #: dossier hors priorite est **legitime** — la section F demande justement de
+    #: le dire — mais un ecart systematique dirait que le tri par « ce qu'une
+    #: recherche peut y changer » ne sert a rien. Mesure, aucune decision.
+    opened: int = 0
+    on_priority: int = 0
+
+    @property
+    def priority_line(self) -> str:
+        """« 4 dossiers ouverts, dont 1 hors de l'ordre proposé »."""
+        if not self.opened:
+            return ""
+        hors = self.opened - self.on_priority
+        return f"{self.opened} ouvert(s)" + (f", dont {hors} hors ordre proposé" if hors else "")
 
     @property
     def selection_rate(self) -> float | None:
@@ -2041,6 +2126,10 @@ class Analysis:
     by_confidence_computed: list[RateRow] = field(default_factory=list)
     #: L'accord entre les deux crans. Voir `Notation`.
     notation: Notation = field(default_factory=lambda: Notation())
+    #: Les selections ramenees en lecture faute de dossier ouvert. Tenu **hors**
+    #: de `notation` : ce sont deux fautes distinctes, et les melanger ferait
+    #: designer toujours la meme clause du gabarit.
+    override: Override = field(default_factory=lambda: Override())
     by_sport: list[RateRow] = field(default_factory=list)
     #: Niveau de competition. Un Grand Chelem et un 250 ne se jouent ni sur le
     #: meme format ni contre les memes joueurs, une Ligue des champions et une
@@ -2852,6 +2941,7 @@ def _by_session(
     known: dict[int, Lot],
     sport_labels: dict[str, str],
     tz: str,
+    priorities: dict[int, set[str]] | None = None,
 ) -> list[SessionRate]:
     """Une ligne par session : le lot vu, les matchs retenus, ce que ca a donne.
 
@@ -2860,6 +2950,7 @@ def _by_session(
     faire disparaitre laisserait croire qu'elle n'a pas eu lieu.
     """
     grouped: dict[int, list[Any]] = {}
+    priorities = priorities or {}
     for row in picks:
         grouped.setdefault(int(row["session_id"]), []).append(row)
 
@@ -2889,6 +2980,9 @@ def _by_session(
             tokens=int(row["tokens"] or 0),
             feedback_active=bool(_column(row, "feedback_active")),
             guarded=str(row["created_at"]) >= GUARD_IN_SERVICE,
+            overridden=sum(1 for pick in mine if _column(pick, "research_overridden")),
+            opened=len(declared := str(_column(row, "open_dossiers") or "").split()),
+            on_priority=len(set(declared) & set(priorities.get(session_id, ()))),
         )
         for pick in mine:
             _count(entry.rates, pick["result"] or "pending", pick)
@@ -2995,13 +3089,80 @@ class Notation:
         )
 
 
+@dataclass
+class Override:
+    """Les selections ecrasees faute de dossier ouvert.
+
+    **Deux fautes que le compte seul confondrait**, et c'est pourquoi la
+    distribution compte plus que le total. Un `3` revendique sur un dossier que
+    l'analyse declare elle-meme n'avoir pas ouvert est de l'**inflation** : elle
+    s'est notee comme si elle avait cherche. Un `5` — deux faits dates, deux
+    editeurs distincts, une origine — est de la **fabrication** : les faits
+    n'existent pas, et ca ne se traite pas pareil.
+
+    Un compte, jamais un taux : il est juste a tout effectif, comme celui des
+    non-classees. Aucun seuil ne le garde donc.
+    """
+
+    total: int = 0
+    #: `(cran revendique, compte)`, du plus frequent au moins.
+    claimed: list[tuple[int, int]] = field(default_factory=list)
+    #: Seuil a partir duquel un cran revendique suppose des faits produits. Un
+    #: 4 demande un fait date verifie, un 5 en demande deux d'editeurs
+    #: distincts : au-dela de 3, l'analyse n'a pas seulement gonfle son niveau,
+    #: elle a decrit une recherche.
+    fabricated_from: int = 4
+
+    @property
+    def fabricated(self) -> int:
+        return sum(count for rung, count in self.claimed if rung >= self.fabricated_from)
+
+    @property
+    def line(self) -> str:
+        if not self.total:
+            return ""
+        detail = " · ".join(f"{rung} revendiqué ×{count}" for rung, count in self.claimed)
+        fabrique = (
+            f" · dont {self.fabricated} avec des faits déclarés sur un dossier non ouvert"
+            if self.fabricated
+            else ""
+        )
+        return f"{self.total} sélection(s) ramenée(s) en lecture — {detail}{fabrique}"
+
+
+def _override(rows: list[Any], results: list[str]) -> Override:
+    """Compte les ecrasements et la distribution de ce qui etait revendique."""
+    found = Override()
+    tally: dict[int, int] = {}
+    for row, result in zip(rows, results, strict=True):
+        if result not in ("win", "loss") or not _column(row, "research_overridden"):
+            continue
+        found.total += 1
+        # Ce que la declaration aurait donne ; a defaut de bloc lisible, ce que
+        # le modele avait annonce. Les deux disent la meme chose ici : jusqu'ou
+        # la selection se serait notee sans dossier derriere.
+        rung = _column(row, "confidence_claimed") or _column(row, "confidence")
+        if rung is not None:
+            tally[int(rung)] = tally.get(int(rung), 0) + 1
+    found.claimed = sorted(tally.items(), key=lambda item: (-item[1], -item[0]))
+    return found
+
+
 def _notation(rows: list[Any], results: list[str], minimum: int) -> Notation:
-    """Confronte les deux crans, selection par selection."""
+    """Confronte les deux crans, selection par selection.
+
+    **Les selections ecrasees en sortent**, et c'est indispensable : depuis
+    l'override, la majorite des desaccords viendrait de lui — le modele annonce
+    3, l'application force 1. Ce desaccord-la ne dit pas « le modele applique mal
+    sa table », il dit « le modele revendique une recherche qu'il n'a pas
+    faite ». Deux fautes differentes, deux compteurs ; les melanger ferait
+    designer toujours la meme clause du gabarit, qui n'y serait pour rien.
+    """
     found = Notation(minimum=minimum)
     ecarts: list[int] = []
     passages: dict[tuple[int, int], int] = {}
     for row, result in zip(rows, results, strict=True):
-        if result not in ("win", "loss"):
+        if result not in ("win", "loss") or _column(row, "research_overridden"):
             continue
         computed = _column(row, "confidence_computed")
         declared = _column(row, "confidence")
@@ -3043,7 +3204,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
             "       k.price_source, k.price_real, k.tier_real, "
             # Le cran calcule, a cote du cran annonce. Les deux sont lus dans la
             # meme passe : leur ecart est une mesure, pas un sous-produit.
-            "       k.confidence_computed, "
+            "       k.confidence_computed, k.confidence_claimed, k.research_overridden, "
             # L'heure du coup d'envoi : c'est elle qui decide si le prix
             # enregistre est un prix d'avant-match. Voir `_antecedence`.
             "       e.commence_time, "
@@ -3072,7 +3233,10 @@ def analysis(settings: Settings | None = None) -> Analysis:
             # sur trois sessions, puis suspendu, et la garde d'anteriorite ne
             # vaut que pour ce qui vient apres elle.
             "  (SELECT MAX(p.feedback_active) FROM prompts p "
-            "     WHERE p.session_id = s.id) AS feedback_active "
+            "     WHERE p.session_id = s.id) AS feedback_active, "
+            # Les dossiers que le rendu declarait avoir ouverts. Se compare a
+            # l'ordre de passage que l'application avait propose.
+            "  s.open_dossiers "
             "FROM sessions s ORDER BY s.created_at DESC, s.id DESC"
         ).fetchall()
 
@@ -3084,7 +3248,9 @@ def analysis(settings: Settings | None = None) -> Analysis:
     # mesure pas ce que vaut une etiquette mais ce qui a ete retenu du lot : un
     # match passe ou pris l'a ete quel que soit le moment ou sa ligne a ete
     # saisie. Le filtre ci-dessous ne s'y applique donc pas.
-    report.by_session = _by_session(sessions, rows, lots(settings), sport_labels, settings.tz)
+    report.by_session = _by_session(
+        sessions, rows, lots(settings), sport_labels, settings.tz, prompt_priorities(settings)
+    )
 
     # LE FILTRE D'ANTERIORITE, applique **une seule fois et pour tout le reste**.
     #
@@ -3187,6 +3353,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
     for entry in report.by_confidence_computed:
         entry.band = bands.get(int(entry.key)) if entry.key.isdigit() else None
     report.notation = _notation(rows, results, report.minimum_rows)
+    report.override = _override(rows, results)
 
     report.by_sport = sorted(
         _rate_tally(

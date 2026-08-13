@@ -1096,6 +1096,12 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
     _require_session(session_id)
     form = {key: str(value) for key, value in (await request.form()).items()}
     settings = get_settings()
+    # La liste entiere se garde a **l'import** et non a l'apercu, qui n'ecrit
+    # rien : elle inclut les dossiers ouverts qui n'ont produit aucune
+    # selection, et c'est elle qui se compare a l'ordre de passage propose.
+    history_service.set_open_dossiers(
+        session_id, set(form.get("open_dossiers", "").split()), settings
+    )
     created, failures = 0, []
     for index in sorted({key.split("_")[-1] for key in form if key.startswith("keep_")}):
         try:
@@ -1113,6 +1119,10 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
                 independence_note=form.get(f"independence_{index}", ""),
                 late_reason=form.get(f"late_{index}", ""),
                 claim=form.get(f"claim_{index}", ""),
+                # Le drapeau de dossier ouvert voyage avec la ligne. Absent, il
+                # vaut « on ne sait pas » et n'ecrase rien : c'est le cas de la
+                # saisie a la main, qui est un geste humain.
+                opened=(form[f"opened_{index}"] == "1" if f"opened_{index}" in form else None),
                 settings=settings,
             )
             created += 1

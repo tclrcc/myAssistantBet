@@ -39,7 +39,15 @@
     <b>Rien n'est enregistré</b> : corrige, décoche ce que tu ne veux pas, puis valide.
   </p>
 
+  {% if preview.notes %}
+  <p class="notice notice-warn">{{ preview.notes | join(' ') }}</p>
+  {% endif %}
+
   <form method="post" action="/history/{{ session_id }}/picks/import">
+    {# La liste des dossiers ouverts voyage avec le formulaire : l'aperçu
+       n'écrit rien, c'est l'import qui la mémorise. #}
+    <input type="hidden" name="open_dossiers"
+           value="{{ preview.opened.marks | sort | join(' ') }}">
     <table class="board import-table">
       <thead>
         <tr>
@@ -101,6 +109,13 @@
                main dedans — soit il a été lu, soit il ne l'a pas été et le cran
                reste inconnu. Le pictogramme dit lequel des deux, et le cran
                calculé se lit dessus avant l'écriture. #}
+            <input type="hidden" name="opened_{{ pick.index }}"
+                   value="{{ '1' if pick.opened else '0' }}">
+            {% if not pick.opened %}
+            <span class="badge warn" title="Dossier non ouvert : enregistrée en lecture, cran 1">
+              lecture
+            </span>
+            {% endif %}
             {% if pick.claim %}
             <input type="hidden" name="claim_{{ pick.index }}" value="{{ pick.claim.raw }}">
             <span class="badge" title="Cran calculé sur {{ pick.claim.facts | length }} fait(s), {{ pick.claim.distinct_publishers }} éditeur(s) distinct(s)">

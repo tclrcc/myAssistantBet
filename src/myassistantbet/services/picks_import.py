@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..config import Settings, get_settings
-from .confidence import Claim, read_blocks
+from .confidence import Claim, Opened, read_blocks, read_opened
 from .grid import GridRow, anchor, build_view
 from .history import ANGLES, PickableEvent, list_picks, pickable_events, prompt_headers
 from .history import tiers as load_tiers
@@ -89,6 +89,10 @@ class ParsedPick:
     #: calculable. Vide quand le rendu n'en portait pas — la ligne reste
     #: importable, le cran restera simplement inconnu.
     claim: Claim | None = None
+    #: L'analyse declare avoir **ouvert un dossier** sur ce match. Faux par
+    #: defaut, et c'est tout le chantier : ce qui n'est pas demontre ouvert est
+    #: une lecture des blocs, quel que soit le niveau de source annonce.
+    opened: bool = False
     #: Une selection identique existe deja dans la session, ou plus haut dans
     #: le meme tableau. Elle reste proposee — c'est peut-etre voulu — mais
     #: decochee : coller deux fois le meme rendu ne doit pas doubler l'historique.
@@ -131,6 +135,11 @@ class ParsedPick:
             issues.append("2e sélection sur ce match : dire l'angle indépendant")
         if self.started and not self.late_reason:
             issues.append("match déjà commencé : saisie différée, ou live assumé ?")
+        # Ni un refus ni une case a cocher : la ligne s'importe telle quelle,
+        # ecrasee. Le dire ici evite qu'un `lecture` en base passe pour une
+        # declaration franche du modele.
+        if not self.opened:
+            issues.append("dossier non ouvert : enregistrée en lecture, cran 1")
         return issues
 
 
@@ -139,7 +148,20 @@ class ImportPreview:
     """Proposition d'import. Rien n'est ecrit avant validation."""
 
     picks: list[ParsedPick] = field(default_factory=list)
+    #: Ce qui empeche de lire le collage. **Non vide, le tableau ne s'affiche
+    #: pas du tout** : c'est la porte du gabarit, et y verser une remarque ferait
+    #: disparaitre l'import entier pour un detail.
     ignored: list[str] = field(default_factory=list)
+    #: Ce qui accompagne un apercu **lisible** : blocs rejetes, appariement
+    #: refuse, dossiers non ouverts. La distinction n'est pas cosmetique — un
+    #: bloc de confiance illisible ne doit pas couter la possibilite d'importer
+    #: le tableau, il ne coute que les crans.
+    notes: list[str] = field(default_factory=list)
+    #: Les dossiers que le rendu declare avoir ouverts. Conserve entier — et pas
+    #: seulement applique ligne par ligne — parce que c'est la **liste** qui se
+    #: compare a l'ordre de passage propose par l'application, y compris pour
+    #: les dossiers qui n'ont produit aucune selection.
+    opened: Opened = field(default_factory=Opened)
 
     @property
     def count(self) -> int:
@@ -393,14 +415,61 @@ def parse_table(
             "Aucun tableau de sélections reconnu : colle la section C, "
             "en-tête compris (« Match | Marché | Sélection | … »)."
         )
-    _attach_claims(preview, raw, headers)
+    valide = _attach_claims(preview, raw, headers)
+    _apply_research(preview, raw, headers or [], valide)
     return preview
+
+
+def _apply_research(
+    preview: ImportPreview,
+    raw: str,
+    headers: list[dict[str, str]],
+    valide: dict[str, str] | None,
+) -> None:
+    """Marque les selections portant sur un dossier que l'analyse n'a pas ouvert.
+
+    **Le defaut est `lecture`, jamais « ouvert », et toute la valeur du chantier
+    tient la.** Mesure : 0 selection en `lecture` sur 149, quand le budget de
+    recherche vaut sept dossiers pour des lots de 57 a 72 matchs. Le niveau de
+    source est donc gonfle, et la table qui le regroupe ne mesure rien.
+
+    Liste absente, illisible, ou portant un repere qui ne se resout contre aucun
+    prompt : **tout le lot** passe en lecture. Meme raisonnement que la somme de
+    controle de l'appariement — un `lecture` de trop se voit et se corrige, un
+    niveau de source gonfle qui passe pour verifie ne se voit pas.
+    """
+    opened = read_opened(raw)
+    preview.opened = opened
+    # Le meme prompt que les blocs, quand ils en ont designe un. Sans blocs, le
+    # premier qui porte **tous** les reperes declares : deux resolutions
+    # paralleles finiraient par designer deux matchs sous le meme numero.
+    mapping = valide or next(
+        (candidate for candidate in headers if opened.marks <= set(candidate)), None
+    )
+    if mapping is not None and not opened.marks <= set(mapping):
+        mapping = None
+    affiches: set[str] = set()
+    if mapping is not None:
+        affiches = {_fold(_affiche_of(mapping[mark])) for mark in opened.marks}
+    if opened.note:
+        preview.notes.append(opened.note)
+    elif mapping is None:
+        preview.notes.append(
+            "Les repères de « dossiers_ouverts » ne se résolvent contre aucun prompt de "
+            "cette session : toutes les sélections sont enregistrées en lecture, cran 1."
+        )
+    for pick in preview.picks:
+        pick.opened = bool(affiches) and _fold(pick.match_text) in affiches
 
 
 def _attach_claims(
     preview: ImportPreview, raw: str, headers: list[dict[str, str]] | None = None
-) -> None:
+) -> dict[str, str] | None:
     """Rattache les blocs de confiance aux lignes du tableau, **par l'ordre**.
+
+    Rend le prompt qui a valide, pour que la liste des dossiers ouverts se
+    resolve contre **le meme** — deux resolutions paralleles finiraient par
+    designer deux matchs differents sous le meme repere.
 
     Le gabarit demande un bloc par ligne, dans l'ordre du tableau. Le champ
     `match` porte le numero de bloc du prompt (`M8`), qui **change d'une
@@ -419,18 +488,19 @@ def _attach_claims(
     les paires : une seule qui ne correspond pas, et rien n'est rattache.
     """
     reading = read_blocks(raw)
-    preview.ignored.extend(reading.rejected)
+    preview.notes.extend(reading.rejected)
     if not reading.claims:
-        return
+        return None
     if len(reading.claims) != len(preview.picks):
-        preview.ignored.append(
+        preview.notes.append(
             f"{len(reading.claims)} bloc(s) de confiance pour {len(preview.picks)} "
             "ligne(s) : aucun n'est rattaché, le cran resterait faux sans qu'on le voie. "
             "Complète les blocs manquants et recolle."
         )
         return
-    if not _verified(preview.picks, reading.claims, headers or []):
-        preview.ignored.append(
+    valide = _select(preview.picks, reading.claims, headers or [])
+    if valide is None:
+        preview.notes.append(
             "Les repères de match des blocs (M1, M2…) ne correspondent à aucun prompt de "
             "cette session, ligne par ligne. Rien n'est rattaché — un cran décalé serait "
             "faux sans se voir. "
@@ -438,7 +508,7 @@ def _attach_claims(
             + "Corrige l'affiche dans le tableau, telle qu'elle est écrite en tête du "
             "bloc, et recolle."
         )
-        return
+        return None
     for pick, claim in zip(preview.picks, reading.claims, strict=True):
         pick.claim = claim
         # Le bloc fait foi sur les deux colonnes qu'il porte aussi : c'est la
@@ -447,6 +517,7 @@ def _attach_claims(
         pick.source = claim.source_level or pick.source
         if claim.declared is not None:
             pick.confidence = str(claim.declared)
+    return valide
 
 
 def _mismatch(picks: list[ParsedPick], claims: list[Claim], headers: list[dict[str, str]]) -> str:
@@ -481,8 +552,10 @@ def _mismatch(picks: list[ParsedPick], claims: list[Claim], headers: list[dict[s
     return ""
 
 
-def _verified(picks: list[ParsedPick], claims: list[Claim], headers: list[dict[str, str]]) -> bool:
-    """Vrai si **un** prompt de la session valide toutes les paires a la fois.
+def _select(
+    picks: list[ParsedPick], claims: list[Claim], headers: list[dict[str, str]]
+) -> dict[str, str] | None:
+    """Le prompt de la session qui valide toutes les paires a la fois, ou rien.
 
     **Une paire qui ne passe pas fait tomber le lot entier**, jamais elle seule :
     la retirer en laissant passer les autres serait le « meilleur des prompts
@@ -497,11 +570,13 @@ def _verified(picks: list[ParsedPick], claims: list[Claim], headers: list[dict[s
     prompts paire par paire reviendrait a piocher la lecture qui arrange, ce qui
     ne demontrerait plus rien.
     """
-    if not headers:
-        return False
-    return any(
-        all(_pairs(pick, claim, mapping) for pick, claim in zip(picks, claims, strict=True))
-        for mapping in headers
+    return next(
+        (
+            mapping
+            for mapping in headers
+            if all(_pairs(pick, claim, mapping) for pick, claim in zip(picks, claims, strict=True))
+        ),
+        None,
     )
 
 
