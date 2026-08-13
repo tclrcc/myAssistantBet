@@ -11,6 +11,7 @@ from myassistantbet import db
 from myassistantbet.config import Settings
 from myassistantbet.providers.oddsapi import BASE_URL, OddsAPIClient
 from myassistantbet.services import board as board_service
+from myassistantbet.services import enrich as enrich_service
 from myassistantbet.services.enrich import (
     build_estimate,
     run_enrich,
@@ -752,3 +753,63 @@ def test_le_pays_du_stade_identifie_prime_sur_la_ville_geocodee(migrated: Settin
     )
 
     assert _weather_targets(int(session["session_id"]), migrated)[0][2] == "Poland"
+
+
+@respx.mock
+async def test_le_releve_de_substitution_passe_apres_le_contexte(
+    odds_client: OddsAPIClient,
+    migrated: Settings,
+    load_fixture: Any,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**L'ordre des phases n'est pas un rangement, c'est une dependance.**
+
+    `fixtures.import_odds` exige `events.apifootball_fixture_id`, et ce champ est
+    ecrit par `fetch_context` a la resolution du rapprochement — son propre
+    message d'erreur l'admet, « enrichir d'abord ». Les deux boucles d'avant
+    appelaient pourtant le releve **avant** le contexte : pour un evenement connu
+    de The Odds API et jamais enrichi, le champ etait nul, le releve echouait, et
+    il ne reussissait qu'a la seconde passe.
+
+    Le defaut ne s'etait jamais vu parce que les cas mesures portaient tous sur
+    des matchs importes depuis API-Football, ou l'identifiant est pose des
+    l'import. Il ne se mesure pas, il se lit : c'est une propriete du programme.
+    """
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    respx.get(EVENT_ODDS_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("oddsapi_event_odds_football.json"), headers=QUOTA_HEADERS
+        )
+    )
+    # Aucun prix du book principal : c'est la condition du releve de
+    # substitution, et c'est l'etat d'une competition que Betclic ne sert pas.
+    db.execute("DELETE FROM odds", settings=migrated)
+
+    ordre: list[str] = []
+
+    async def _contexte(*args: Any, **kwargs: Any) -> None:
+        ordre.append("contexte")
+
+    async def _substitution(*args: Any, **kwargs: Any) -> None:
+        ordre.append("substitution")
+
+    monkeypatch.setattr(enrich_service, "_add_context", _contexte)
+    monkeypatch.setattr(enrich_service, "_add_substitute_odds", _substitution)
+
+    await run_enrich(
+        odds_client,
+        session_id,
+        migrated,
+        context_client=object(),  # type: ignore[arg-type]
+        now=NOW,
+    )
+
+    assert ordre, "les deux phases doivent avoir tourne"
+    assert "contexte" in ordre and "substitution" in ordre
+    # Aucune substitution ne precede le dernier contexte : les phases ne
+    # s'entrelacent pas, et c'est ce que la dependance exige.
+    assert ordre.index("substitution") > max(
+        index for index, phase in enumerate(ordre) if phase == "contexte"
+    )

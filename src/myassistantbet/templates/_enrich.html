@@ -10,7 +10,7 @@
   {% if progress %}
     <div class="report {% if progress.finished and progress.failures %}report-warn{% endif %}">
       {% if progress.finished %}
-        Enrichissement terminé : {{ progress.done }} match(s), {{ progress.cost }} crédit(s) consommé(s).
+        Enrichissement terminé : {{ progress.matches }} match(s), {{ progress.cost }} crédit(s) consommé(s).
         {% if progress.failures %}
         <ul class="failures">
           {% for failure in progress.failures %}
@@ -28,7 +28,7 @@
         </ul>
         {% endif %}
       {% else %}
-        Enrichissement en cours — {{ progress.done }}/{{ progress.total }}
+        Enrichissement en cours — {{ progress.phase }} {{ progress.done }}/{{ progress.total }} étape(s)
       {% endif %}
       <div class="progress"><div class="bar" style="width: {{ progress.percent }}%"></div></div>
     </div>

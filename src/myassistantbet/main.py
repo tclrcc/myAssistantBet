@@ -512,7 +512,7 @@ async def start_enrich(request: Request, session_id: int) -> HTMLResponse:
     running = ENRICH_PROGRESS.get(session_id)
     if running is None or running.finished:
         estimate = enrich_service.build_estimate(session_id, settings)
-        ENRICH_PROGRESS[session_id] = enrich_service.EnrichReport(total=estimate.total_events)
+        ENRICH_PROGRESS[session_id] = enrich_service.EnrichReport(total=estimate.steps())
         client = OddsAPIClient(request.app.state.http, settings)
         # Sans cle API-Football, on enrichit les cotes sans contexte plutot que
         # d'echouer : le bloc CONTEXTE sera simplement absent.

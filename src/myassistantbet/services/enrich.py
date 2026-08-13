@@ -158,6 +158,33 @@ class Estimate:
         return len(self.targets) + len(self.substitutes)
 
     @property
+    def all_targets(self) -> list[EnrichTarget]:
+        """Le lot entier, achetables d'abord. **Un seul ordre, lu par les trois phases.**"""
+        return [*self.targets, *self.substitutes]
+
+    def steps(self, *, context: bool = True) -> int:
+        """Etapes que l'enrichissement va executer, toutes phases confondues.
+
+        La progression se compte en **etapes et non en matchs** depuis que les
+        phases sont separees : un match est touche par une a trois d'entre elles,
+        et compter les matchs laisserait la barre a zero pendant les deux
+        premieres pour tout sauter a la troisieme. La regle vit ici, pour que la
+        route qui pose le rapport et celle qui l'execute comptent pareil.
+
+        `context` dit si le client API-Football est la. Sans lui, les phases 2 et
+        3 ne tournent pas du tout : les compter ferait plafonner la barre a
+        moitie course, ce qui se lirait comme un enrichissement interrompu.
+        """
+        lot = self.all_targets
+        if not context:
+            return len(self.targets)
+        return (
+            len(self.targets)
+            + sum(1 for target in lot if target.context_possible)
+            + sum(1 for target in lot if target.substitute)
+        )
+
+    @property
     def cost(self) -> int:
         return sum(target.cost for target in self.targets)
 
@@ -255,10 +282,22 @@ class EnrichResult:
 class EnrichReport:
     """Bilan complet, et progression pendant l'execution."""
 
+    #: **Etapes** prevues, pas matchs : depuis que les phases sont separees, un
+    #: match est touche par une a trois d'entre elles. Compter les matchs
+    #: laisserait la barre a zero pendant deux phases pour tout sauter a la
+    #: derniere. Le nombre de matchs se lit sur `matches`.
     total: int = 0
     done: int = 0
     results: list[EnrichResult] = field(default_factory=list)
     finished: bool = False
+    #: Libelle de la phase en cours, affiche a cote de la progression. Sans lui,
+    #: une barre qui avance sur des etapes ne dit pas sur quoi elle avance.
+    phase: str = ""
+
+    @property
+    def matches(self) -> int:
+        """Matchs traites. Un resultat par match, cree avant la premiere phase."""
+        return len(self.results)
 
     @property
     def cost(self) -> int:
@@ -617,11 +656,33 @@ async def run_enrich(
     history_client: TennisDataClient | None = None,
     weather_client: WeatherClient | None = None,
 ) -> EnrichReport:
-    """Enrichit tous les evenements d'une session : marches profonds puis contexte.
+    """Enrichit tous les evenements d'une session, en **trois phases**.
 
     Le garde-fou de quota est verifie avant de partir. Un evenement en echec
     n'interrompt pas les suivants, et un contexte manquant n'empeche jamais les
     cotes d'etre recuperees.
+
+    | Phase | Budget | Ce qu'elle produit |
+    | --- | --- | --- |
+    | 1 · cotes achetees | credits Odds API, plancher | marches profonds |
+    | 2 · contexte | appels API-Football | **resout `apifootball_fixture_id`** |
+    | 3 · releve de substitution | appels API-Football | ce que le book principal ne sert pas |
+
+    **L'ordre des trois n'est pas un rangement, c'est une dependance.**
+    `fixtures.import_odds` exige `events.apifootball_fixture_id`, et ce champ est
+    ecrit par `fetch_context` a la resolution du rapprochement — son propre
+    message d'erreur l'admet, « enrichir d'abord ». Les deux boucles precedentes
+    appelaient pourtant le releve **avant** le contexte : pour un evenement connu
+    de The Odds API et jamais enrichi, le champ etait nul, le releve echouait, et
+    il ne reussissait qu'a la seconde passe. Le defaut ne s'etait jamais vu
+    parce que les cas mesures portaient tous sur des matchs deja enrichis.
+
+    **Et une phase contexte unique retire l'ordonnancement du contexte a une
+    contrainte du fournisseur de cotes.** Les deux boucles d'avant separaient
+    achetables et relevables — separation juste pour les credits, qui ne
+    concernent que la phase 1 — mais les deux consommaient des appels
+    API-Football, si bien qu'une rupture de quota sacrifiait systematiquement
+    les relevables. Le lot du 13/08 etait entierement dans le second groupe.
     """
     settings = settings or get_settings()
     # Avant tout garde-fou de credit : l'Elo est gratuit, et c'est justement
@@ -632,7 +693,7 @@ async def run_enrich(
         await _refresh_tennis_history(history_client, session_id, settings, now)
 
     estimate = build_estimate(session_id, settings, now)
-    report = EnrichReport(total=estimate.total_events)
+    report = EnrichReport(total=estimate.steps(context=context_client is not None))
 
     if not estimate.allowed:
         report.finished = True
@@ -647,8 +708,22 @@ async def run_enrich(
     # meme ligue : on ne les paie qu'une fois par enrichissement.
     context_cache: dict[str, Any] = {}
 
+    # Un resultat par match, cree **avant** la premiere phase : les trois y
+    # ecrivent tour a tour, et un match n'a qu'une ligne de rapport quel que
+    # soit le nombre de phases qui le touchent.
+    lot = estimate.all_targets
+    results = {target.event_id: EnrichResult(label=target.label) for target in lot}
+    report.results = [results[target.event_id] for target in lot]
+
+    def _step(phase: str) -> None:
+        report.phase = phase
+        report.done += 1
+        if on_progress:
+            on_progress(report)
+
+    # -- Phase 1 : ce qui se paie en credits ---------------------------------
     for target in estimate.targets:
-        result = EnrichResult(label=target.label)
+        result = results[target.event_id]
         try:
             payload, cost = await client.get_event_odds(
                 target.oddsapi_sport_key,
@@ -676,46 +751,44 @@ async def run_enrich(
             result.error = f"reponse inexploitable : {type(exc).__name__}: {exc}"
             logger.exception("Reponse inexploitable pour %s", target.label)
 
-        # Achete d'abord, releve ensuite, et dans cet ordre : ce que The Odds API
-        # sert prime, le releve ne comble que ce qui reste. Un evenement peut
-        # etre les deux — la competition vend quelques marches sans qu'aucun
-        # vienne du book principal — et il ne doit alors figurer que dans une
-        # seule liste, sinon son contexte serait paye deux fois.
-        if target.substitute and context_client is not None:
-            await _add_substitute_odds(context_client, target, result, settings)
+        _step("cotes")
 
-        if context_client is not None and target.context_possible:
-            await _add_context(
-                context_client, target, result, settings, context_cache, now, weather_client
+    if context_client is None:
+        # Les deux phases suivantes lui appartiennent entierement. Elles ne
+        # tournent donc pas, et ne comptent aucune etape — `percent` vaut 100 des
+        # que le rapport est fini, la barre ne reste pas en suspens.
+        for target in estimate.substitutes:
+            results[target.event_id].error = results[target.event_id].error or (
+                "aucun client API-Football : ni cotes de substitution ni contexte"
             )
-
-        report.results.append(result)
-        report.done += 1
-        if on_progress:
-            on_progress(report)
-
-    # Matchs que The Odds API ne connait pas : releve de substitution puis
-    # contexte. Aucun credit n'est en jeu, donc ce bloc passe apres le garde-fou
-    # sans avoir a le consulter — c'est justement quand il n'y a plus rien a
-    # acheter que ces matchs sont tout ce qui reste.
-    for target in estimate.substitutes:
-        result = EnrichResult(label=target.label)
-        if context_client is None:
-            result.error = "aucun client API-Football : ni cotes de substitution ni contexte"
-            report.results.append(result)
-            report.done += 1
-            continue
-        await _add_substitute_odds(context_client, target, result, settings)
-
-        if context_client is not None and target.context_possible:
+    else:
+        # -- Phase 2 : le contexte, sur le lot entier ------------------------
+        # **Une seule passe, achetables et relevables melanges.** Les deux
+        # consomment des appels API-Football : les traiter en deux groupes
+        # faisait decider l'ordre du contexte par une contrainte du fournisseur
+        # de cotes, et sacrifiait systematiquement le second groupe.
+        for target in lot:
+            if not target.context_possible:
+                continue
             await _add_context(
-                context_client, target, result, settings, context_cache, now, weather_client
+                context_client,
+                target,
+                results[target.event_id],
+                settings,
+                context_cache,
+                now,
+                weather_client,
             )
+            _step("contexte")
 
-        report.results.append(result)
-        report.done += 1
-        if on_progress:
-            on_progress(report)
+        # -- Phase 3 : le releve de substitution, qui depend de la phase 2 ---
+        # `import_odds` exige `apifootball_fixture_id`, que `fetch_context`
+        # vient d'ecrire. C'est la seule raison pour laquelle elle est troisieme.
+        for target in lot:
+            if not target.substitute:
+                continue
+            await _add_substitute_odds(context_client, target, results[target.event_id], settings)
+            _step("substitution")
 
     # La meteo **apres** le contexte, et non pendant : les coordonnees d'un match
     # de football se deduisent du lieu, que `fetch_context` vient d'ecrire. Elle
@@ -725,9 +798,9 @@ async def run_enrich(
 
     report.finished = True
     logger.info(
-        "Enrichissement termine : %d/%d evenements, cout %d credits, %d echec(s)",
-        report.done - len(report.failures),
-        report.total,
+        "Enrichissement termine : %d evenements en %d etapes, cout %d credits, %d echec(s)",
+        report.matches - len(report.failures),
+        report.done,
         report.cost,
         len(report.failures),
     )
