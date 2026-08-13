@@ -111,8 +111,15 @@ LATE_BANDS = ("61-75", "76-90", "91-105")
 LATE_GOAL_BANDS = ("76-90", "91-105")
 
 #: Formations rendues au plus. Deux suffisent a dire « une equipe stable » ou
-#: « un effectif tournant » ; les sept que le fournisseur peut lister ne
-#: diraient rien de plus pour sept fois le cout en tokens.
+#: « un effectif tournant ».
+#:
+#: **Le cout invoque ici etait imaginaire, et il a fait perdre du temps.** Le
+#: commentaire annoncait « sept fois le cout en tokens » pour les sept
+#: formations que le fournisseur peut lister — mesure du 13/08/2026 sur les 24
+#: equipes d'un lot : la charge utile en porte **1,4 en moyenne**, 5 au plus. La
+#: coupe ne mord donc quasiment jamais, et le chiffre a fait retenir cette
+#: constante comme un gisement de tokens a rouvrir alors qu'il n'y a rien
+#: dessous. Un cout suppose se mesure avant d'etre ecrit, comme un fait.
 FORMATIONS_KEEP = 2
 
 #: Lettres API-Football -> lettres francaises. Attention au piege : « D » cote
