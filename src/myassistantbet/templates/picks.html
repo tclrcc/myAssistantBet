@@ -97,6 +97,16 @@
           <td class="num">
             <input type="text" class="tiny" name="confidence_{{ pick.index }}"
                    value="{{ pick.confidence }}">
+            {# Le bloc structuré voyage caché : il n'y a rien à corriger à la
+               main dedans — soit il a été lu, soit il ne l'a pas été et le cran
+               reste inconnu. Le pictogramme dit lequel des deux, et le cran
+               calculé se lit dessus avant l'écriture. #}
+            {% if pick.claim %}
+            <input type="hidden" name="claim_{{ pick.index }}" value="{{ pick.claim.raw }}">
+            <span class="badge" title="Cran calculé sur {{ pick.claim.facts | length }} fait(s), {{ pick.claim.distinct_publishers }} éditeur(s) distinct(s)">
+              cran {{ pick.claim.rung or '?' }}
+            </span>
+            {% endif %}
           </td>
           <td>
             <select name="angle_{{ pick.index }}">

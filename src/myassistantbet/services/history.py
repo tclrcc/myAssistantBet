@@ -21,6 +21,8 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from .competitions import category_label, category_rank
+from .confidence import Claim, ClaimError
+from .confidence import parse as parse_claim
 from .inference import (
     ALPHA,
     Equivalence,
@@ -182,6 +184,13 @@ class Pick:
     #: lecture du prix — `differee` laisse l'etiquette valide et le prix
     #: douteux, `live` invalide les deux.
     late_reason: str = ""
+    #: Le cran **calcule** par l'application, a cote de `confidence` qui reste le
+    #: cran **annonce**. Les deux se gardent : leur ecart est la seule mesure
+    #: possible de savoir si le modele notait au hasard, et c'est la question qui
+    #: a fait naitre le calcul. `None` quand le bloc structure manque ou ne se
+    #: lit pas — jamais un repli sur l'annonce.
+    confidence_computed: int | None = None
+    distinct_publishers: int | None = None
     #: D'ou vient la cote recopiee, ce qu'on a reellement obtenu, et le palier
     #: recalcule dessus. `tier` reste le palier **provisoire** : il vaut tant
     #: qu'aucun prix n'a ete releve, ce qui est le cas ordinaire.
@@ -911,6 +920,8 @@ def _pick(row: Any, tier_labels: dict[str, str], tz: str = "") -> Pick:
         tier_real=_column(row, "tier_real") or "",
         independence_note=_column(row, "independence_note") or "",
         late_reason=_column(row, "late_reason") or "",
+        confidence_computed=_column(row, "confidence_computed"),
+        distinct_publishers=_column(row, "distinct_publishers"),
         sport_label=_column(row, "sport_label") or "",
         market_key=_column(row, "market_key") or "",
         sport_key=_column(row, "sport_key") or "",
@@ -1378,6 +1389,7 @@ def add_pick(
     price_source: str = "",
     independence_note: str = "",
     late_reason: str = "",
+    claim: str = "",
     played: bool = False,
     result: str = "pending",
     settings: Settings | None = None,
@@ -1422,6 +1434,28 @@ def add_pick(
     # les statistiques, comme pour un niveau de competition.
     angle_value = _vocabulary(angle, ANGLES)
     source_value = _vocabulary(source_level, SOURCE_LEVELS)
+
+    # LE CRAN CALCULE. Le gabarit definit la table des crans comme une fonction
+    # de trois choses verifiables ; le modele l'appliquait lui-meme, et la mesure
+    # dit ce que ca valait — 90 % du volume sur deux crans, aucun cran 1 sur 149,
+    # et un ordre non monotone. Ce qui est deterministe se calcule.
+    #
+    # **Aucun repli silencieux sur la valeur declaree.** Un bloc illisible laisse
+    # le cran a NULL et journalise : retomber sur l'annonce ferait passer pour
+    # calculee une note qui ne l'est pas, et le taux de desaccord — la seule
+    # chose que ce chantier mesure — annoncerait un accord parfait.
+    declaration: Claim | None = None
+    if (claim or "").strip():
+        try:
+            declaration = parse_claim(claim)
+        except ClaimError as exc:
+            logger.warning("Bloc de confiance illisible, cran laisse inconnu : %s", exc)
+    if declaration is not None:
+        # Le bloc structure fait foi sur le niveau de source : c'est la meme
+        # declaration, sous une forme que l'application sait relire. En laisser
+        # deux ecritures les aurait fait diverger au premier rendu ou la colonne
+        # du tableau et le bloc ne disent pas la meme chose.
+        source_value = _vocabulary(declaration.source_level, SOURCE_LEVELS) or source_value
     # D'ou vient la cote recopiee. Facultative comme les deux precedentes : une
     # valeur inconnue vaut « on ne sait pas », jamais un refus.
     price_origin = _vocabulary(price_source, PRICE_SOURCES)
@@ -1501,8 +1535,9 @@ def add_pick(
             "INSERT INTO picks (session_id, event_id, tier, market, selection, price, "
             "                   confidence, played, stake, result, angle, source_level, "
             "                   price_source, independence_note, market_key, "
-            "                   late_reason, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "                   late_reason, confidence_computed, facts_json, "
+            "                   gap_touches_factor, distinct_publishers, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 attached,
@@ -1520,10 +1555,19 @@ def add_pick(
                 note or None,
                 resolved,
                 late,
+                declaration.rung if declaration is not None else None,
+                declaration.raw if declaration is not None else None,
+                _flag(declaration.gap_touches_factor) if declaration is not None else None,
+                declaration.distinct_publishers if declaration is not None else None,
                 utcnow(),
             ),
         )
         return int(cursor.lastrowid)
+
+
+def _flag(value: bool | None) -> int | None:
+    """Un booleen a trois etats, tel que SQLite le porte. `None` reste `None`."""
+    return None if value is None else int(value)
 
 
 def set_result(pick_id: int, result: str, settings: Settings | None = None) -> None:
@@ -1968,6 +2012,14 @@ class Analysis:
     minimum_rows: int = ANALYSIS_MIN_ROWS
     by_tier: list[RateRow] = field(default_factory=list)
     by_confidence: list[RateRow] = field(default_factory=list)
+    #: Le meme axe, sur le cran **calcule** par l'application. Tenu a part de
+    #: `by_confidence` et jamais fusionne : les deux colonnes ne portent pas sur
+    #: la meme population tant que l'ancienne n'a pas de bloc structure, et les
+    #: melanger ferait lire un ecart de taux la ou il n'y a qu'un ecart de
+    #: couverture.
+    by_confidence_computed: list[RateRow] = field(default_factory=list)
+    #: L'accord entre les deux crans. Voir `Notation`.
+    notation: Notation = field(default_factory=lambda: Notation())
     by_sport: list[RateRow] = field(default_factory=list)
     #: Niveau de competition. Un Grand Chelem et un 250 ne se jouent ni sur le
     #: meme format ni contre les memes joueurs, une Ligue des champions et une
@@ -2823,6 +2875,72 @@ def _by_session(
     return found
 
 
+@dataclass
+class Notation:
+    """L'accord entre le cran annonce et le cran calcule.
+
+    **C'est la mesure pour laquelle les deux colonnes coexistent.** Un cran
+    calcule qui retomberait toujours sur l'annonce dirait que le modele
+    appliquait deja la table ; un desaccord large dit qu'il notait a l'estime.
+    Ni l'un ni l'autre ne se sait sans garder les deux.
+
+    Comptee sur les selections **tranchees**, comme tout le reste de la page :
+    une selection en attente n'a pas encore de quoi peser.
+    """
+
+    #: Selections portant les deux valeurs. C'est le seul denominateur honnete
+    #: du taux de desaccord — les autres n'ont rien a comparer.
+    comparable: int = 0
+    agreed: int = 0
+    #: Annoncees sans bloc structure lisible. **Compte a part et jamais fondu
+    #: dans l'accord** : un cran manquant n'est pas un cran d'accord, et c'est
+    #: l'erreur que la page a deja payee sur les lignes maigres.
+    uncomputed: int = 0
+    #: Ecart moyen en crans, signe. Positif : le modele se notait plus haut que
+    #: la table ne l'autorise.
+    drift: float = 0.0
+
+    @property
+    def disagreed(self) -> int:
+        return self.comparable - self.agreed
+
+    @property
+    def rate(self) -> float | None:
+        """Part de desaccord, ou `None` faute de quoi que ce soit a comparer."""
+        return self.disagreed / self.comparable if self.comparable else None
+
+    @property
+    def line(self) -> str:
+        """« 12 sur 30 en desaccord · le modele se note +0.4 cran trop haut »."""
+        if not self.comparable:
+            return f"aucune sélection ne porte les deux crans · {self.uncomputed} sans bloc lu"
+        sens = "trop haut" if self.drift > 0 else "trop bas"
+        return (
+            f"{self.disagreed} sur {self.comparable} en désaccord · "
+            f"le modèle se note {self.drift:+.1f} cran {sens}"
+        )
+
+
+def _notation(rows: list[Any], results: list[str]) -> Notation:
+    """Confronte les deux crans, selection par selection."""
+    found = Notation()
+    ecarts: list[int] = []
+    for row, result in zip(rows, results, strict=True):
+        if result not in ("win", "loss"):
+            continue
+        computed = _column(row, "confidence_computed")
+        declared = _column(row, "confidence")
+        if computed is None or declared is None:
+            found.uncomputed += 1
+            continue
+        found.comparable += 1
+        if int(computed) == int(declared):
+            found.agreed += 1
+        ecarts.append(int(declared) - int(computed))
+    found.drift = sum(ecarts) / len(ecarts) if ecarts else 0.0
+    return found
+
+
 def analysis(settings: Settings | None = None) -> Analysis:
     """Taux de reussite de **toutes** les selections, jouees ou non.
 
@@ -2840,6 +2958,9 @@ def analysis(settings: Settings | None = None) -> Analysis:
             "SELECT k.id, k.session_id, k.tier, k.result, k.market, k.confidence, k.played, "
             "       k.event_id, k.created_at, k.price, k.angle, k.source_level, "
             "       k.price_source, k.price_real, k.tier_real, "
+            # Le cran calcule, a cote du cran annonce. Les deux sont lus dans la
+            # meme passe : leur ecart est une mesure, pas un sous-produit.
+            "       k.confidence_computed, "
             # L'heure du coup d'envoi : c'est elle qui decide si le prix
             # enregistre est un prix d'avant-match. Voir `_antecedence`.
             "       e.commence_time, "
@@ -2958,6 +3079,31 @@ def analysis(settings: Settings | None = None) -> Analysis:
     bands = load_bands(settings, reference=_global_rate(rows, results))
     for entry in report.by_confidence:
         entry.band = bands.get(int(entry.key)) if entry.key.isdigit() else None
+
+    # Le meme axe, sur le cran **calcule**. Rendu a cote et jamais a la place :
+    # tant que les deux populations ne se recouvrent pas, comparer leurs taux
+    # comparerait deux echantillons differents — c'est le desaccord qui se lit,
+    # pas la difference des taux.
+    report.by_confidence_computed = sorted(
+        _rate_tally(
+            [
+                (
+                    str(row["confidence_computed"]),
+                    f"cran calculé {row['confidence_computed']}",
+                    result,
+                    row,
+                )
+                for row, result in zip(rows, results, strict=True)
+                if _column(row, "confidence_computed") is not None
+            ],
+            readable=report.minimum_rows,
+        ),
+        key=lambda item: item.key,
+        reverse=True,
+    )
+    for entry in report.by_confidence_computed:
+        entry.band = bands.get(int(entry.key)) if entry.key.isdigit() else None
+    report.notation = _notation(rows, results)
 
     report.by_sport = sorted(
         _rate_tally(

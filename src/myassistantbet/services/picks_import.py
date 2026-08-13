@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..config import Settings, get_settings
+from .confidence import Claim, read_blocks
 from .grid import GridRow, anchor, build_view
 from .history import ANGLES, PickableEvent, list_picks, pickable_events
 from .history import tiers as load_tiers
@@ -82,6 +83,12 @@ class ParsedPick:
     #: qu'une case qu'on doit cocher. Meme traitement que l'independance.
     started: bool = False
     late_reason: str = ""
+    #: Le bloc structure qui porte les faits declares. Lu dans le **meme**
+    #: copier-coller que le tableau : demander un second geste ferait perdre la
+    #: colonne le jour ou on l'oublie, et c'est la seule qui rende le cran
+    #: calculable. Vide quand le rendu n'en portait pas — la ligne reste
+    #: importable, le cran restera simplement inconnu.
+    claim: Claim | None = None
     #: Une selection identique existe deja dans la session, ou plus haut dans
     #: le meme tableau. Elle reste proposee — c'est peut-etre voulu — mais
     #: decochee : coller deux fois le meme rendu ne doit pas doubler l'historique.
@@ -385,7 +392,43 @@ def parse_table(
             "Aucun tableau de sélections reconnu : colle la section C, "
             "en-tête compris (« Match | Marché | Sélection | … »)."
         )
+    _attach_claims(preview, raw)
     return preview
+
+
+def _attach_claims(preview: ImportPreview, raw: str) -> None:
+    """Rattache les blocs de confiance aux lignes du tableau, **par l'ordre**.
+
+    Le gabarit demande un bloc par ligne, dans l'ordre du tableau, et c'est la
+    seule jointure sure : le champ `match` porte le numero de bloc du prompt
+    (`M8`), qui ne survit pas a la generation suivante et n'a donc rien a quoi se
+    rattacher a l'import. Il reste declare — il rend la liste des rejets
+    lisible — mais il ne joint rien.
+
+    **En cas de nombre different, aucun rattachement.** Aligner sept blocs sur
+    huit lignes decalerait les faits d'une selection a l'autre, ce qui est pire
+    qu'un cran inconnu : le cran serait faux et personne ne le verrait. Le
+    desaccord se dit, comme les lignes rejetees de la saisie manuelle.
+    """
+    reading = read_blocks(raw)
+    preview.ignored.extend(reading.rejected)
+    if not reading.claims:
+        return
+    if len(reading.claims) != len(preview.picks):
+        preview.ignored.append(
+            f"{len(reading.claims)} bloc(s) de confiance pour {len(preview.picks)} "
+            "ligne(s) : aucun n'est rattaché, le cran resterait faux sans qu'on le voie. "
+            "Complète les blocs manquants et recolle."
+        )
+        return
+    for pick, claim in zip(preview.picks, reading.claims, strict=True):
+        pick.claim = claim
+        # Le bloc fait foi sur les deux colonnes qu'il porte aussi : c'est la
+        # meme declaration sous une forme relisable, et en garder deux
+        # ecritures les aurait fait diverger au premier rendu discordant.
+        pick.source = claim.source_level or pick.source
+        if claim.declared is not None:
+            pick.confidence = str(claim.declared)
 
 
 def build_preview(

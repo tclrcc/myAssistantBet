@@ -1112,6 +1112,7 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
                 price_source=form.get(f"price_source_{index}", ""),
                 independence_note=form.get(f"independence_{index}", ""),
                 late_reason=form.get(f"late_{index}", ""),
+                claim=form.get(f"claim_{index}", ""),
                 settings=settings,
             )
             created += 1

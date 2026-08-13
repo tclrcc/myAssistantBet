@@ -3670,6 +3670,73 @@ ecrite dans le rendu, lue une fois, puis perdue.
   justification manque : `add_pick` la refuserait, et une ligne qui echoue se remarque
   moins qu'une case qu'on doit cocher.
 
+## Le cran se calcule (`services/confidence.py`, migration 042)
+
+**Definir les crans n'a pas suffi, et la mesure le dit.** La table des cinq crans a ete
+ecrite pour reparer un defaut mesure — 99 % du volume sur deux crans. Sept jours et
+quarante-neuf selections plus tard, sur 141 tranchees : **90 % du volume sur les crans 3
+et 4**, toujours **aucune en cran 1 sur 149**, et un ordre qui n'est pas monotone —
+cran 2 a 77 % (10/13), cran 4 a 60 % (31/52), cran 3 a 44 % (33/75). Le palier ordonne a
+p = 0,000 ; la confiance non, p = 0,131.
+
+Definir une regle et la confier au modele ne la fait donc pas appliquer. C'est le meme
+constat que pour le comptage de la section C et pour la famille d'un marche, et il a la
+meme reponse : **ce que l'application peut trancher de facon deterministe ne se delegue
+pas.** Le gabarit demande desormais les **entrees** — niveau de source, faits dates avec
+leur editeur, et si un manque de la section A touche le facteur porteur — et
+`Claim.rung` applique la table.
+
+- **Les deux valeurs se gardent, et c'est tout l'objet.** `confidence` reste le cran
+  **annonce**, `confidence_computed` le cran **calcule**. `Notation` mesure leur ecart :
+  un calcul qui retomberait toujours sur l'annonce dirait que le modele appliquait deja
+  la table, un desaccord large dit qu'il notait a l'estime. Ni l'un ni l'autre ne se sait
+  sans garder les deux — d'ou le refus, ecrit dans le brief comme dans le code, de
+  remplacer l'une par l'autre.
+- **Aucun renommage**, precedent de la migration 030 : `confidence` **est** deja la valeur
+  declaree, et la renommer toucherait six gabarits pour un gain nul.
+- **`Conf/5` reste demande au modele**, contrairement a la lettre du brief, et pour deux
+  raisons qui se recoupent. La section D s'en sert (« n'ajoute jamais une jambe sous
+  confiance 3 ») : sans cran declare, cette regle n'a plus de sujet. Et surtout le taux de
+  desaccord — que le brief exige — a besoin des **deux** valeurs sur les **memes**
+  selections : cesser de demander l'annonce le rendrait calculable seulement sur
+  l'historique, qui n'a pas de cran calcule. Les deux moities du brief se contredisaient ;
+  c'est celle qui porte la mesure qui a gagne.
+- **Aucun repli silencieux sur l'annonce.** Un bloc illisible journalise et laisse le cran
+  a `NULL`. Retomber sur la valeur declaree ferait passer pour calculee une note qui ne
+  l'est pas, et le taux de desaccord annoncerait alors un accord parfait — l'inverse exact
+  de ce qu'on mesure.
+- **Le bloc voyage dans le meme copier-coller que le tableau.** Un second geste ferait
+  perdre la colonne le jour ou on l'oublie, et c'est la seule qui rende le cran calculable.
+  - La jointure se fait **par l'ordre**, jamais sur le champ `match` : il porte le numero
+    de bloc du prompt (`M8`), qui change d'une generation a l'autre et n'a donc rien a quoi
+    se rattacher a l'import. Il reste declare parce qu'il rend la liste des rejets lisible.
+  - **Nombre different, aucun rattachement.** Aligner sept blocs sur huit lignes decalerait
+    les faits d'une selection a l'autre : le cran serait **faux** et personne ne le verrait.
+    Un cran inconnu se voit, un cran faux non.
+- **L'unicite d'editeur se teste sur le domaine normalise** (`publisher_of`), jamais sur le
+  titre. `motherwellfc.co.uk` et `https://www.motherwellfc.co.uk/news/…` sont un seul
+  facteur ; ce qui n'est pas un domaine — « Motherwell FC » — n'en est aucun, parce que ce
+  qui n'est pas verifiable ne compte pas. Le cas que le code **ne sait pas** trancher reste
+  ecrit dans le gabarit : deux medias rapportant la meme conference de presse sont un seul
+  facteur, et seuls deux domaines distincts s'en detectent.
+- **`manque_touche_facteur` n'a pas de defaut, et c'est le troisieme etat.** Les crans 3, 4
+  et 5 ne se distinguent que par lui ; absent, `rung` rend `None`. Le deviner reviendrait a
+  choisir un cran a la place de l'analyse — meme famille que le drapeau de terrain neutre,
+  qu'un champ dont on a mesure qu'il ment interdit de calculer.
+- **Rien n'est retro-rempli**, et le script de reprise n'existe pas plutot que d'etre vide :
+  les 149 selections d'avant n'ont aucun bloc, et un faisceau d'information ne s'invente pas
+  apres coup. `NULL` est la verite. Meme arbitrage que `price_source` a la migration 030.
+- **Deux tests du gabarit ont refuse la coupe, et ils avaient raison.** La regle « tout
+  ajout au preambule budgete sa propre coupe » a ete appliquee sur les paragraphes que le
+  calcul semblait rendre inutiles — « deux editeurs distincts » et « exiger le vide rendrait
+  le cran 5 inatteignable ». Les deux sont gardes par un test, et les deux **changent encore
+  ce que le modele fait** : le premier est desormais la regle de comptage de l'application,
+  enoncee a celui qui la remplit ; le second corrige un defaut mesure. Ils sont restaures
+  mot pour mot, l'ajout est net de +876 caracteres, et les deux plafonds tiennent
+  largement — ils valent aujourd'hui le double de leur mesure. **Une coupe qui casse un test
+  de contenu n'est pas une coupe, c'est une regression** : la bonne reaction est de la
+  reprendre ailleurs, jamais d'affaiblir l'assertion.
+
 ## Les crans de confiance, et les paliers qu'on n'atteint pas
 
 - **Les crans 2 et 4 n'avaient aucune definition**, et tout tombait donc en 3 : le prompt

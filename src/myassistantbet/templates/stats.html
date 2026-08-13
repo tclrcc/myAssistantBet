@@ -406,6 +406,27 @@
                     sur du bruit.",
             empty="Aucune confiance annoncée sur les sélections tranchées.",
             comparison=analysis.confidence_comparison) }}
+    {# LE CRAN CALCULÉ, à côté de l'annoncé et jamais à sa place. Le gabarit
+       définit la table des crans comme une fonction de trois choses
+       vérifiables, et le modèle l'appliquait lui-même : 90 % du volume sur deux
+       crans, aucun cran 1 sur 149, et un ordre non monotone. Ce qui est
+       déterministe se calcule.
+
+       Les deux colonnes ne portent pas sur la même population tant que
+       l'historique n'a pas de bloc structuré — c'est le **désaccord** qui se
+       lit, ligne du dessous, pas la différence des deux taux. #}
+    {{ card("Par cran calculé", analysis.by_confidence_computed,
+            note=analysis.notation.line,
+            reason="Le cran est calculé par l'application à partir de ce que l'analyse
+                    déclare : le niveau des sources, le nombre d'éditeurs distincts, et
+                    si un manque de la section A touche le facteur porteur. Le cran
+                    annoncé est conservé à côté — leur écart est la seule mesure possible
+                    de savoir si le modèle notait au hasard. Une sélection dont le bloc
+                    n'a pas été lu reste sans cran calculé : jamais un repli sur
+                    l'annonce, qui ferait afficher un accord parfait.",
+            empty="Aucun cran calculé : les sélections d'avant ce chantier n'ont pas de
+                   bloc structuré, et rien ne les rétro-remplit — un faisceau
+                   d'information ne s'invente pas après coup.") }}
     {# Un palier est une bande de cote, et le prompt affirme qu'il « sert à
        calculer un taux de réussite par bande de cote dans le temps ». Un 1.92
        de référence et un 1.92 du book principal ne décrivent pas le même
@@ -640,6 +661,12 @@
       <div>
         <h3>Par confiance annoncée</h3>
         {% with rows = analysis.by_confidence, heading = "Confiance" %}
+          {% include "_rates.html" %}
+        {% endwith %}
+      </div>
+      <div>
+        <h3>Par cran calculé</h3>
+        {% with rows = analysis.by_confidence_computed, heading = "Cran calculé" %}
           {% include "_rates.html" %}
         {% endwith %}
       </div>
