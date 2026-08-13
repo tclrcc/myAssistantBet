@@ -677,3 +677,59 @@ def test_le_seuil_de_la_matrice_est_celui_de_la_page(migrated: Settings) -> None
     report = analysis(settings=migrated)
 
     assert report.notation.minimum == report.minimum_rows
+
+
+# -- L'echec doit nommer la paire, sinon il est terminal ---------------------
+
+
+def test_le_rejet_nomme_la_paire_en_cause(migrated: Settings) -> None:
+    """« Ça se rattrape en recollant » n'est un chemin de reprise que si le
+    message dit **quoi** corriger : recoller le meme texte echoue a l'identique,
+    et il ne reste rien a faire."""
+    session_id, _ = _lot_de_deux(migrated)
+    rendu = _avec_blocs("M1", "M2").replace("Reims – Brest", "Reims")
+
+    preview = picks_import.build_preview(session_id, rendu, migrated)
+
+    note = " ".join(preview.ignored)
+    assert "ligne 2" in note
+    assert "bloc M2" in note
+    assert "attendu « reims brest »" in note, "la chaine attendue, apres normalisation"
+    assert "reçu « reims »" in note
+
+
+def test_sans_prompt_le_rejet_le_dit(migrated: Settings) -> None:
+    session_id = _session(migrated)
+
+    preview = picks_import.build_preview(
+        session_id,
+        _rendu(source_level=1, faits=[_fait()], manque_touche_facteur=False),
+        migrated,
+    )
+
+    assert any("Aucun prompt n'est archivé" in note for note in preview.ignored)
+
+
+def test_une_paire_invalide_fait_tomber_le_lot_entier(migrated: Settings) -> None:
+    """**Jamais un retrait paire par paire.** Laisser passer les autres serait le
+    « meilleur des prompts paire par paire » qu'on a ecarte, et l'appariement des
+    lignes restantes ne serait plus demontre par rien."""
+    session_id, _ = _lot_de_deux(migrated)
+    rendu = _avec_blocs("M1", "M2").replace("Reims – Brest", "Reims")
+
+    preview = picks_import.build_preview(session_id, rendu, migrated)
+
+    assert [pick.claim for pick in preview.picks] == [None, None], (
+        "la ligne 1 était pourtant appariée : elle tombe avec le lot"
+    )
+
+
+def test_le_gabarit_impose_de_recopier_l_affiche(migrated: Settings) -> None:
+    """Le mode d'echec le plus probable de l'egalite stricte est l'abreviation,
+    et une phrase le supprime. Meme regle que la cote, recopiee au centime pres."""
+    from myassistantbet.services.prompt import build_prompt
+
+    corps = build_prompt(_session(migrated), settings=migrated).body
+
+    assert "telle qu'elle est écrite en\ntête du bloc" in corps
+    assert "sans abréger" in corps

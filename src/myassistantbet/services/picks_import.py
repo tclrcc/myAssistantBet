@@ -431,10 +431,12 @@ def _attach_claims(
         return
     if not _verified(preview.picks, reading.claims, headers or []):
         preview.ignored.append(
-            "Les repères de match des blocs (M1, M2…) ne correspondent à aucun prompt "
-            "de cette session, ligne par ligne : les blocs sont peut-être dans un autre "
-            "ordre que le tableau. Rien n'est rattaché — un cran décalé serait faux sans "
-            "se voir."
+            "Les repères de match des blocs (M1, M2…) ne correspondent à aucun prompt de "
+            "cette session, ligne par ligne. Rien n'est rattaché — un cran décalé serait "
+            "faux sans se voir. "
+            + (_mismatch(preview.picks, reading.claims, headers or []) or "")
+            + "Corrige l'affiche dans le tableau, telle qu'elle est écrite en tête du "
+            "bloc, et recolle."
         )
         return
     for pick, claim in zip(preview.picks, reading.claims, strict=True):
@@ -447,13 +449,49 @@ def _attach_claims(
             pick.confidence = str(claim.declared)
 
 
+def _mismatch(picks: list[ParsedPick], claims: list[Claim], headers: list[dict[str, str]]) -> str:
+    """La premiere paire qui bloque, nommee — sinon l'echec est **terminal**.
+
+    « Ça se rattrape en recollant » n'est un chemin de reprise que si le message
+    dit **quoi** corriger : recoller le meme texte echoue a l'identique, et il ne
+    reste rien a faire. La paire est donc sortie avec son indice, la chaine
+    attendue et la chaine recue, **apres normalisation** — c'est sous cette forme
+    que la comparaison a eu lieu, et deux caracteres a corriger se voient alors.
+
+    Le prompt retenu pour le **message** est celui qui s'en approche le plus.
+    Cela n'affaiblit pas la garde : la validation, elle, reste en tout ou rien —
+    ce choix ne sert qu'a designer une paire, jamais a en accepter une.
+    """
+    if not headers:
+        return "Aucun prompt n'est archivé pour cette session. "
+    proche = min(
+        headers,
+        key=lambda mapping: sum(
+            not _pairs(pick, claim, mapping) for pick, claim in zip(picks, claims, strict=True)
+        ),
+    )
+    for index, (pick, claim) in enumerate(zip(picks, claims, strict=True), start=1):
+        if not _pairs(pick, claim, proche):
+            attendu = _fold(_affiche_of(proche.get(claim.match, ""))) or "—"
+            recu = _fold(pick.match_text) or "—"
+            return (
+                f"Première paire en cause : ligne {index}, bloc {claim.match or '?'} — "
+                f"attendu « {attendu} », reçu « {recu} ». "
+            )
+    return ""
+
+
 def _verified(picks: list[ParsedPick], claims: list[Claim], headers: list[dict[str, str]]) -> bool:
     """Vrai si **un** prompt de la session valide toutes les paires a la fois.
 
+    **Une paire qui ne passe pas fait tomber le lot entier**, jamais elle seule :
+    la retirer en laissant passer les autres serait le « meilleur des prompts
+    paire par paire » qu'on a justement ecarte, et l'appariement des lignes
+    restantes ne serait plus demontre par rien.
+
     Le rapprochement se fait sur le **texte de la colonne Match**, pas sur
     l'evenement resolu : c'est l'appariement du modele qu'on verifie, et il doit
-    l'etre meme sur une ligne dont le rapprochement de nom a echoue — sinon un
-    match mal orthographie ferait perdre les crans de tout le lot.
+    l'etre meme sur une ligne dont le rapprochement de nom a echoue.
 
     Un prompt valide l'ensemble ou ne le valide pas. Retenir le meilleur des
     prompts paire par paire reviendrait a piocher la lecture qui arrange, ce qui
@@ -476,9 +514,10 @@ HEADER_AFFICHE = 2
 def _affiche_of(header: str) -> str:
     """L'affiche seule, extraite de l'en-tete d'un bloc de prompt.
 
-    Une forme inattendue rend `""`, donc invalide la paire : cette fonction est
-    une **somme de controle**, et une somme de controle qui s'accommode de ce
-    qu'elle ne reconnait pas ne controle plus rien.
+    Une forme inattendue rend `""`, ce qui fait echouer la paire — donc tomber le
+    lot, `_verified` etant en tout ou rien. Cette fonction est une **somme de
+    controle**, et une somme de controle qui s'accommode de ce qu'elle ne
+    reconnait pas ne controle plus rien.
     """
     parts = [part.strip() for part in header.split(" · ")]
     return parts[HEADER_AFFICHE] if len(parts) >= HEADER_FIELDS else ""
