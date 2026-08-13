@@ -3696,9 +3696,21 @@ leur editeur, et si un manque de la section A touche le facteur porteur — et
   - D'ou `Notation.transitions`, **le seul champ actionnable du bloc** : un desaccord
     disperse est du bruit de redaction, un desaccord concentre sur un passage — 4 annonce
     que la table met a 3 — nomme la clause a reprendre.
-  - Le seuil de `dominant` est **strictement** plus de la moitie, et l'inegalite large
-    etait fausse : deux desaccords partages un-un les auraient declares concentres tous
-    les deux. Trouve en ecrivant le test.
+  - **Deux conditions avant qu'une clause soit designee, et l'effectif passe en premier.**
+    `Notation.minimum` **reutilise le seuil de la page** (`minimum_rows`) au lieu d'en
+    inventer un : sous quel compte une repartition ne veut plus rien dire est une propriete
+    des donnees, pas du bloc qui les affiche. La raison est plus forte ici qu'ailleurs — la
+    sortie n'est pas un taux mais une **consigne**, reecrire une clause du gabarit, et la
+    publier sur trois desaccords ferait reecrire un texte sur du bruit. Le seuil
+    **descend dans l'objet**, il n'y est pas lu d'une constante.
+  - La concentration ensuite, **strictement** plus de la moitie : l'inegalite large etait
+    fausse, deux desaccords partages un-un les auraient declares concentres tous les deux.
+    Trouve en ecrivant le test.
+  - **Deux tests ont du etre releves au-dessus du seuil avec lui**, et l'un serait sinon
+    passe **pour la mauvaise raison** : ecrit sur deux desaccords, il verifiait un
+    `dominant is None` que le plancher d'effectif rendait vrai tout seul, et il aurait
+    continue de passer si la regle de concentration disparaissait. Un test qui change de
+    cause en gardant son resultat est un test mort qui en a l'air vivant.
   - **La formulation d'origine de cette section disait le contraire**, et disait faux.
     Meme regle que partout ici : une condition qui change se verifie contre la phrase qui
     l'explique — ici le module, la migration, la carte de la page et ce paragraphe.
@@ -3731,8 +3743,21 @@ leur editeur, et si un manque de la section A touche le facteur porteur — et
     paire par paire reviendrait a piocher la lecture qui arrange, ce qui ne demontrerait
     plus rien. Sans aucun prompt archive, rien n'est rattache.
   - Le rapprochement porte sur le **texte de la colonne Match** et non sur l'evenement
-    resolu : c'est l'appariement du modele qu'on verifie, et une affiche mal orthographiee
-    ne doit pas faire perdre les crans de tout le lot.
+    resolu : c'est l'appariement du modele qu'on verifie, et il doit l'etre meme sur une
+    ligne dont le rapprochement de nom a echoue.
+  - **Normalisation deterministe, puis egalite stricte** — et c'est le seul reglage qui
+    tienne les deux bouts. Une egalite sur le texte brut ferait tomber tout un lot sur un
+    tiret long rendu en tiret court ; une similarite floue laisserait passer l'appariement
+    decale qu'on cherche a attraper. `_fold` absorbe la **typographie** — casse, accents,
+    tirets, espaces, `Győri ETO FC` contre `Gyori ETO FC` — et rien d'autre.
+    - La premiere version comparait par **contenance**, ce qui etait le cote flou : « Lyon »
+      se serait trouve dans n'importe quel en-tete portant Lyon, y compris celui de l'autre
+      match. La comparaison porte donc sur le **segment d'affiche** de l'en-tete, extrait
+      par position, et un en-tete de forme inattendue invalide la paire — une somme de
+      controle qui s'accommode de ce qu'elle ne reconnait pas ne controle plus rien.
+    - **Ce qu'une orthographe reellement differente coute est les crans du lot entier**, et
+      c'est le bon sens du compromis : la perte est visible, elle se rattrape en recollant,
+      et elle ne s'ecrit jamais en base.
 - **L'unicite se teste sur l'editeur d'origine, pas sur le domaine qui publie**
   (`Fact.source`). La normalisation de domaine seule sur-comptait l'independance
   **exactement la ou le gabarit previent** : un agregateur qui reprend un blog, ou deux

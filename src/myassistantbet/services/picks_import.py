@@ -467,15 +467,51 @@ def _verified(picks: list[ParsedPick], claims: list[Claim], headers: list[dict[s
     )
 
 
+#: L'en-tete d'un bloc de prompt : `sport · competition · affiche · heure`. Le
+#: repere `M8` a deja ete retire par la lecture, il reste quatre champs.
+HEADER_FIELDS = 4
+HEADER_AFFICHE = 2
+
+
+def _affiche_of(header: str) -> str:
+    """L'affiche seule, extraite de l'en-tete d'un bloc de prompt.
+
+    Une forme inattendue rend `""`, donc invalide la paire : cette fonction est
+    une **somme de controle**, et une somme de controle qui s'accommode de ce
+    qu'elle ne reconnait pas ne controle plus rien.
+    """
+    parts = [part.strip() for part in header.split(" · ")]
+    return parts[HEADER_AFFICHE] if len(parts) >= HEADER_FIELDS else ""
+
+
 def _pairs(pick: ParsedPick, claim: Claim, mapping: dict[str, str]) -> bool:
     """Ce bloc designe-t-il bien la ligne avec laquelle il a ete apparie.
+
+    **Normalisation deterministe, puis egalite stricte.** C'est le seul reglage
+    qui tienne les deux bouts. Une egalite stricte sur le texte brut ferait
+    tomber tout un lot sur un tiret long rendu en tiret court ou sur un accent
+    perdu ; une similarite floue laisserait passer l'appariement decale qu'on
+    cherche justement a attraper. `_fold` absorbe la **typographie** — casse,
+    accents, tirets, espaces, `Győri ETO FC` contre `Gyori ETO FC` — et rien
+    d'autre.
+
+    **Ce qu'une orthographe reellement differente coute est donc les crans du
+    lot entier**, et c'est le bon sens du compromis : la perte est visible, elle
+    se rattrape en recollant, et elle ne s'ecrit jamais en base. Un cran decale
+    ne se voit pas.
+
+    La comparaison porte sur l'**affiche seule** et non sur l'en-tete complet :
+    chercher la cellule quelque part dans la ligne est un test de contenance,
+    donc flou par construction — « Lyon » se serait trouve dans n'importe quel
+    en-tete portant Lyon, y compris celui de l'autre match.
 
     Les deux valeurs vides ne se valident pas l'une l'autre : une colonne Match
     absente et un repere inconnu rendraient le controle vrai sans rien avoir
     verifie, ce qui est exactement le silence qu'il existe pour supprimer.
     """
-    cell, header = _fold(pick.match_text), _fold(mapping.get(claim.match, ""))
-    return bool(cell) and bool(header) and cell in header
+    cell = _fold(pick.match_text)
+    header = _fold(_affiche_of(mapping.get(claim.match, "")))
+    return bool(cell) and bool(header) and cell == header
 
 
 def build_preview(

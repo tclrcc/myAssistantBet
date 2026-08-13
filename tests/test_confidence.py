@@ -560,32 +560,120 @@ def test_un_desaccord_concentre_designe_la_clause_a_reecrire(migrated: Settings)
     """**Ce que l'ecart mesure a change de nature.** Les deux valeurs sortent du
     meme faisceau : l'ecart ne teste plus le flair du modele, il teste s'il
     applique sa propre table. Un desaccord concentre sur un passage designe une
-    clause ambigue, qui se reecrit."""
+    clause ambigue, qui se reecrit.
+
+    **L'effectif est volontairement au-dessus du seuil de la page** : en dessous,
+    le test passerait par le plancher et ne dirait plus rien de la
+    concentration.
+    """
     session_id = _session(migrated)
     quatre = _bloc(source_level=1, faits=[_fait()], manque_touche_facteur=False)
     trois = _bloc(source_level=1, faits=[_fait()], manque_touche_facteur=True)
-    for _ in range(3):
+    for _ in range(6):
         _tranchee(migrated, session_id, "4", trois)  # annonce 4, table 3
-    _tranchee(migrated, session_id, "4", quatre)  # accord
+    for _ in range(2):
+        _tranchee(migrated, session_id, "4", quatre)  # accord
 
     notation = analysis(settings=migrated).notation
 
-    assert notation.transitions == [(4, 3, 3)]
-    assert notation.dominant == (4, 3, 3)
+    assert notation.comparable == 8
+    assert notation.transitions == [(4, 3, 6)]
+    assert notation.dominant == (4, 3, 6)
     assert "un 4 annoncé que la table met à 3" in notation.clause_line
 
 
 def test_un_desaccord_disperse_ne_designe_aucune_clause(migrated: Settings) -> None:
     """Sous la moitie, le desaccord est du bruit de redaction : en nommer une
-    clause quand meme ferait reecrire le gabarit sur rien."""
+    clause quand meme ferait reecrire le gabarit sur rien.
+
+    **L'effectif est au-dessus du seuil a dessein.** Ecrit sur deux desaccords,
+    ce test passait par le plancher d'effectif et ne verifiait plus l'ex aequo —
+    il aurait continue de passer si la regle de concentration disparaissait.
+    """
     session_id = _session(migrated)
     trois = _bloc(source_level=1, faits=[_fait()], manque_touche_facteur=True)
     lecture = _bloc(source_level="lecture", faits=[])
-    _tranchee(migrated, session_id, "4", trois)  # 4 -> 3
-    _tranchee(migrated, session_id, "3", lecture)  # 3 -> 1
+    for _ in range(4):
+        _tranchee(migrated, session_id, "4", trois)  # 4 -> 3
+    for _ in range(4):
+        _tranchee(migrated, session_id, "3", lecture)  # 3 -> 1
 
     notation = analysis(settings=migrated).notation
 
-    assert notation.disagreed == 2
+    assert notation.comparable == 8, "au-dessus du seuil, donc c'est bien l'ex aequo"
+    assert notation.disagreed == 8
     assert notation.dominant is None
     assert notation.clause_line == ""
+
+
+# -- La somme de controle : normalisation deterministe, egalite stricte ------
+
+
+def test_la_typographie_est_absorbee_par_la_normalisation(migrated: Settings) -> None:
+    """Casse, accents et tirets ne doivent pas faire tomber un lot entier : le
+    tiret long du prompt rendu en tiret court est le cas courant."""
+    session_id, _ = _lot_de_deux(migrated)
+    rendu = _avec_blocs("M1", "M2").replace("Lyon – Nice", "lyon - NICE")
+
+    preview = picks_import.build_preview(session_id, rendu, migrated)
+
+    assert [pick.claim is not None for pick in preview.picks] == [True, True]
+
+
+def test_l_egalite_est_stricte_apres_normalisation(migrated: Settings) -> None:
+    """**Une similarite floue ne controlerait plus rien.** Une affiche reduite a
+    un seul nom se trouverait dans plusieurs en-tetes, donc ne prouverait pas
+    l'appariement. Elle est refusee, et la perte est visible — c'est le bon sens
+    du compromis, un cran decale ne se voyant pas."""
+    session_id, _ = _lot_de_deux(migrated)
+    rendu = _avec_blocs("M1", "M2").replace("Lyon – Nice", "Lyon")
+
+    preview = picks_import.build_preview(session_id, rendu, migrated)
+
+    assert [pick.claim for pick in preview.picks] == [None, None]
+    assert any("repères de match" in note for note in preview.ignored)
+
+
+def test_un_en_tete_de_forme_inattendue_invalide_la_paire(migrated: Settings) -> None:
+    """Une somme de controle qui s'accommode de ce qu'elle ne reconnait pas ne
+    controle plus rien."""
+    session_id, _ = _lot_de_deux(migrated)
+    db.execute("DELETE FROM prompts WHERE session_id = ?", (session_id,), settings=migrated)
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 'session_default.md.j2', ?, 0, ?)",
+        (session_id, "### M1 · Lyon – Nice\n### M2 · Reims – Brest\n", db.utcnow()),
+        settings=migrated,
+    )
+
+    preview = picks_import.build_preview(session_id, _avec_blocs("M1", "M2"), migrated)
+
+    assert [pick.claim for pick in preview.picks] == [None, None]
+
+
+# -- Le seuil d'effectif garde aussi la matrice -----------------------------
+
+
+def test_aucune_clause_n_est_designee_sous_le_seuil(migrated: Settings) -> None:
+    """**Le seuil de la page, reutilise et non redefini.** La sortie de ce bloc
+    est une consigne — reecrire une clause du gabarit — donc la publier sur trois
+    desaccords ferait reecrire un texte sur du bruit."""
+    session_id = _session(migrated)
+    trois = _bloc(source_level=1, faits=[_fait()], manque_touche_facteur=True)
+    for _ in range(3):
+        _tranchee(migrated, session_id, "4", trois)
+
+    notation = analysis(settings=migrated).notation
+
+    assert notation.disagreed == 3
+    assert notation.transitions == [(4, 3, 3)], "le comptage reste fait"
+    assert notation.dominant is None, "mais rien ne se conclut sous le seuil"
+    assert notation.clause_line == ""
+
+
+def test_le_seuil_de_la_matrice_est_celui_de_la_page(migrated: Settings) -> None:
+    """Reutilise, jamais redefini : sous quel compte une repartition ne veut plus
+    rien dire est une propriete des donnees, pas du bloc qui les affiche."""
+    report = analysis(settings=migrated)
+
+    assert report.notation.minimum == report.minimum_rows

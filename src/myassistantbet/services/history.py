@@ -2931,6 +2931,12 @@ class Notation:
     #: compte)`. C'est **le seul champ actionnable du bloc** — il nomme la clause
     #: du gabarit a reecrire.
     transitions: list[tuple[int, int, int]] = field(default_factory=list)
+    #: Effectif sous lequel rien ne se conclut. **Le seuil de la page, reutilise
+    #: et non redefini** — sous quel compte une repartition ne veut plus rien
+    #: dire est une propriete des donnees, pas du bloc qui les affiche. Il
+    #: **descend dans l'objet** au lieu d'etre lu d'une constante : une classe
+    #: qui va chercher son propre reglage est intestable hors d'une base.
+    minimum: int = ANALYSIS_MIN_ROWS
 
     @property
     def disagreed(self) -> int:
@@ -2938,25 +2944,32 @@ class Notation:
 
     @property
     def dominant(self) -> tuple[int, int, int] | None:
-        """Le passage le plus frequent, s'il porte **plus de la moitie**.
+        """Le passage le plus frequent, sous **deux** conditions.
 
-        Le seuil n'est pas un reglage mais la definition de « concentre », et
-        l'inegalite est **stricte** a dessein : deux desaccords partages un-un
-        n'en designent aucun, et « au moins la moitie » les aurait declares
-        concentres tous les deux. Trouve en ecrivant le test — la version large
-        nommait une clause sur un ex aequo.
+        **L'effectif d'abord.** Sous `minimum`, rien ne se conclut : c'est le
+        seuil que la page applique deja a tout regroupement, et cette
+        repartition-ci n'y echappe pas. La sortie de ce bloc n'est pas un taux
+        mais une **consigne** — reecrire une clause du gabarit — donc la publier
+        sur trois desaccords ferait reecrire un texte sur du bruit, ce qui coute
+        plus qu'un silence.
 
-        En dessous, le desaccord est disperse et aucune clause ne se designe :
-        reecrire le gabarit sur du bruit couterait plus que de ne rien faire.
+        **La concentration ensuite**, et l'inegalite est **stricte** a dessein :
+        deux desaccords partages un-un n'en designent aucun, et « au moins la
+        moitie » les aurait declares concentres tous les deux. Trouve en ecrivant
+        le test — la version large nommait une clause sur un ex aequo.
         """
-        if not self.transitions:
+        if self.comparable < self.minimum or not self.transitions:
             return None
         first = self.transitions[0]
         return first if first[2] * 2 > self.disagreed else None
 
     @property
     def clause_line(self) -> str:
-        """« 8 des 12 désaccords sont un 4 annoncé que la table met à 3 »."""
+        """La clause du gabarit a reprendre, quand une seule se designe.
+
+        Vide tant que `dominant` ne rend rien — donc vide sur un effectif court,
+        et vide sur un desaccord disperse.
+        """
         if self.dominant is None:
             return ""
         declared, computed, count = self.dominant
@@ -2982,9 +2995,9 @@ class Notation:
         )
 
 
-def _notation(rows: list[Any], results: list[str]) -> Notation:
+def _notation(rows: list[Any], results: list[str], minimum: int) -> Notation:
     """Confronte les deux crans, selection par selection."""
-    found = Notation()
+    found = Notation(minimum=minimum)
     ecarts: list[int] = []
     passages: dict[tuple[int, int], int] = {}
     for row, result in zip(rows, results, strict=True):
@@ -3173,7 +3186,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
     )
     for entry in report.by_confidence_computed:
         entry.band = bands.get(int(entry.key)) if entry.key.isdigit() else None
-    report.notation = _notation(rows, results)
+    report.notation = _notation(rows, results, report.minimum_rows)
 
     report.by_sport = sorted(
         _rate_tally(
