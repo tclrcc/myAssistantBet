@@ -67,11 +67,21 @@ OPEN_TIE_GAP = 1
 #: Ecart au cumul a partir duquel un tour est **joue**. A trois buts, une
 #: recherche ne change plus rien au scenario — c'est le seul critere negatif qui
 #: porte sur le sport plutot que sur notre collecte.
-#:
-#: Entre les deux — deux buts — ni l'un ni l'autre. Deux buts a remonter n'est
-#: pas un tour ouvert, mais ca se remonte : classer cet ecart avec l'un ou
-#: l'autre aurait fait passer un tour jouable pour mort, ou l'inverse.
 DEAD_TIE_GAP = 3
+
+#: Poids d'un tour encore ouvert, **par ecart au cumul**.
+#:
+#: La documentation annoncait « trois etats » ; le code en produisait trois
+#: autres — ouvert (+3), **rien du tout**, mort (-3). L'ecart de deux buts, cense
+#: etre le troisieme, ne declenchait aucune raison : mesure sur le lot du
+#: 13/08/2026, M12 (Egnatia, ecart 2) marquait comme un match sans manche aller,
+#: et se retrouvait a egalite avec M10 (ecart 1). Un tour a deux buts se remonte,
+#: donc il ne vaut pas zero ; il ne vaut pas non plus un tour a un but.
+#:
+#: L'echelle est graduee plutot que ternaire : un aller nul est plus ouvert qu'un
+#: ecart d'un but, qui est plus ouvert qu'un ecart de deux. Les trois etats
+#: existent enfin, et ils sont ceux que le code produit.
+OPEN_TIE_WEIGHTS = {0: 4, 1: 3, 2: 2}
 
 #: Densite du bloc, en pourcentage des lignes attendues, sous laquelle notre
 #: collecte a laisse un trou que la recherche peut combler.
@@ -113,6 +123,11 @@ class Dossier:
     index: int
     label: str
     reasons: list[Reason] = field(default_factory=list)
+    #: Ecart au cumul de la manche aller, quand il y en a une. Sert au
+    #: **departage** et non au score, que `OPEN_TIE_WEIGHTS` porte deja.
+    gap: int | None = None
+    #: Remplissage du bloc, en pourcentage. Second critere de departage.
+    density: int = 0
     #: Ou aller. Aujourd'hui une requete de recherche par dossier : c'est le
     #: chemin qui a reellement fonctionne, et aucun lien profond n'est
     #: construisible sans identifiants que la base ne porte pas encore.
@@ -121,6 +136,36 @@ class Dossier:
     @property
     def score(self) -> int:
         return sum(reason.weight for reason in self.reasons)
+
+    @property
+    def rank_key(self) -> tuple[int, int, int, int]:
+        """Ordre de passage : score, puis **ce qui veut dire quelque chose**.
+
+        **Le departage etait l'heure du coup d'envoi**, par l'index du bloc, et
+        ca n'a aucun rapport avec ce qu'une recherche peut changer. Mesure sur le
+        lot du 13/08/2026 : M10 finissait 8e a egalite de score avec M4, et
+        sortait des sept dossiers proposes sur ce seul critere — c'est lui qui a
+        produit la meilleure information de la soiree.
+
+        **Et le tri par heure n'est pas neutre, il est oriente.** Les diffuseurs
+        programment les grosses affiches en dernier ; l'audience est correlee a
+        la couverture presse, donc a ce qu'une recherche peut trouver. Trier par
+        heure croissante trie approximativement par interet decroissant, et
+        systematiquement plutot qu'accidentellement — le meme lot le refera a
+        chaque journee europeenne.
+
+        Deux criteres signifiants le remplacent. **L'ecart au cumul croissant**
+        d'abord : a score egal, un tie plus serre passe avant. **La densite
+        decroissante** ensuite : c'est la que la recherche complete au lieu de
+        tout reconstruire. L'index ne sert plus que de dernier recours, pour que
+        l'ordre reste deterministe.
+        """
+        return (
+            -self.score,
+            self.gap if self.gap is not None else DEAD_TIE_GAP,
+            -self.density,
+            self.index,
+        )
 
     @property
     def motifs(self) -> str:
@@ -174,7 +219,7 @@ def sheet(events: list[RenderableEvent], settings: Settings | None = None) -> Sh
     # Un score nul ou negatif ne se propose pas : la fiche dirait « cherche
     # ici » sur un dossier dont tous les criteres disent l'inverse.
     retenus = [item for item in dossiers if item.score > 0]
-    retenus.sort(key=lambda item: (-item.score, item.index))
+    retenus.sort(key=lambda item: item.rank_key)
     resultat.dossiers = retenus[:budget]
     logger.info(
         "fiche de recherche : %d dossiers retenus sur %d, budget %d",
@@ -191,6 +236,8 @@ def _dossier(event: RenderableEvent, settings: Settings) -> Dossier:
     lignes = {label: value for label, value in event.context_lines if value}
     item = Dossier(index=event.index, label=affiche(event.home, event.away))
 
+    item.gap = _gap_of(event, settings)
+    item.density = _density_of(event, labels, settings) or 0
     item.reasons += _tie_reasons(event, settings)
     item.reasons += _density_reasons(event, labels, settings)
     item.reasons += _venue_reasons(lignes)
@@ -209,11 +256,17 @@ def _tie_reasons(event: RenderableEvent, settings: Settings) -> list[Reason]:
     a un but d'ecart ou d'un aller nul. A trois buts, l'inverse : le scenario est
     ecrit, et une recherche n'y changera rien.
 
-    **Trois etats et non deux, et l'ecart de deux buts est le troisieme.** Il ne
-    monte pas — deux buts a remonter n'est pas un tour ouvert — et il ne descend
-    pas non plus : il se remonte, et l'obligation qui va avec reste exploitable.
-    Le classer avec l'un ou l'autre aurait fait passer un tour jouable pour mort,
-    ou l'inverse.
+    **Trois etats et non deux, et l'ecart de deux buts est le troisieme** — mais
+    il ne l'etait que dans la documentation. Le code produisait ouvert (+3), rien
+    du tout, mort (-3) : a deux buts, aucune raison ne se declenchait, et M12 du
+    lot du 13/08 marquait comme un match sans manche aller. `OPEN_TIE_WEIGHTS`
+    gradue l'echelle, et les trois etats existent enfin.
+
+    **`l'equipe menee recoit` est un modificateur, pas un critere primaire**, et
+    le peser `STRONG` en faisait l'egal du fait qu'il y ait encore un tour a
+    jouer. Il doublait le score d'un tie ouvert : sur le lot du 13/08, M1 et M5
+    montaient a 7 quand M10 restait a 5, et l'ecart au cumul y etait le meme.
+    Recevoir change le scenario, il ne cree pas l'enjeu.
     """
     if not event.event_id:
         return []
@@ -224,10 +277,11 @@ def _tie_reasons(event: RenderableEvent, settings: Settings) -> list[Reason]:
         return [Reason(PENALTY, f"tour joue : ecart {etat.gap}", "")]
 
     raisons = []
-    if etat.gap <= OPEN_TIE_GAP:
+    poids = OPEN_TIE_WEIGHTS.get(etat.gap)
+    if poids:
         raisons.append(
             Reason(
-                STRONG,
+                poids,
                 "aller nul" if not etat.gap else f"tie ouvert : ecart {etat.gap}",
                 "Absences des deux cotes, et onze annonce ?",
             )
@@ -237,12 +291,33 @@ def _tie_reasons(event: RenderableEvent, settings: Settings) -> list[Reason]:
         # retour : celui qui doit marquer a le terrain, donc il s'ouvrira.
         raisons.append(
             Reason(
-                STRONG,
+                MEDIUM,
                 "l'equipe menee recoit",
                 f"Composition annoncee de {event.home} : sort-elle son onze offensif ?",
             )
         )
     return raisons
+
+
+def _density_of(event: RenderableEvent, labels: list[str], settings: Settings) -> int | None:
+    """Remplissage du bloc en pourcentage, ou None si le sport n'a pas de referentiel.
+
+    **Un seul calcul, deux lecteurs** : le critere de bloc pauvre et le
+    departage. Deux appels separes auraient fini par ne plus dire la meme chose
+    du meme bloc — le piege deja paye deux fois par l'assembleur de contexte.
+    """
+    density = context_density(labels, event.sport_key, settings)
+    if not density.expected:
+        return None
+    return round(100 * density.filled / density.expected)
+
+
+def _gap_of(event: RenderableEvent, settings: Settings) -> int | None:
+    """Ecart au cumul de la manche aller, ou None s'il n'y en a pas."""
+    if not event.event_id:
+        return None
+    etat = context_service.tie_state(event.event_id, _when(event), settings)
+    return None if etat is None else etat.gap
 
 
 def _density_reasons(event: RenderableEvent, labels: list[str], settings: Settings) -> list[Reason]:
@@ -252,10 +327,9 @@ def _density_reasons(event: RenderableEvent, labels: list[str], settings: Settin
     a 2 sur 24 sur une competition que le fournisseur ne couvre pas, elle n'a
     rien trouve non plus, et le savoir d'avance epargne une requete.
     """
-    density = context_density(labels, event.sport_key, settings)
-    if not density.expected:
+    part = _density_of(event, labels, settings)
+    if part is None:
         return []
-    part = round(100 * density.filled / density.expected)
     # **Un identifiant absent n'est pas une source absente.** Sans evenement en
     # base on ne peut pas savoir si la competition est rattachee, et l'ecarter
     # au benefice du doute reviendrait a punir un match de ce qu'on ignore de

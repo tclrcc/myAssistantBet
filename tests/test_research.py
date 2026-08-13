@@ -178,10 +178,15 @@ def test_un_tie_ouvert_passe_devant_un_tie_joue(migrated: Settings) -> None:
     assert "tie ouvert : ecart 1" in fiche.dossiers[0].motifs
 
 
-def test_un_ecart_de_deux_buts_ne_monte_ni_ne_descend(migrated: Settings) -> None:
-    """Deux buts a remonter n'est pas un tour ouvert, mais ca se remonte :
-    classer cet ecart avec l'un ou l'autre aurait fait passer un tour jouable
-    pour mort, ou l'inverse. Reste l'obligation asymetrique, qui tient."""
+def test_un_ecart_de_deux_buts_est_un_etat_a_part_entiere(migrated: Settings) -> None:
+    """**Les « trois etats » etaient documentes, pas produits.**
+
+    Le code rendait ouvert (+3), *rien du tout*, mort (-3) : a deux buts aucune
+    raison ne se declenchait. Mesure sur le lot du 13/08/2026 — M12 (Egnatia,
+    ecart 2) marquait comme un match sans manche aller, et se retrouvait a
+    egalite avec M10, dont l'ecart valait 1. Un tour a deux buts se remonte, donc
+    il ne vaut pas zero ; il ne vaut pas non plus un tour a un but.
+    """
     events = []
     for index, ecart in enumerate([2] + [3] * 9, start=1):
         event_id = 300 + index
@@ -193,14 +198,22 @@ def test_un_ecart_de_deux_buts_ne_monte_ni_ne_descend(migrated: Settings) -> Non
     premier = fiche.dossiers[0]
 
     assert premier.index == 1
-    assert "tie ouvert" not in premier.motifs, "deux buts n'est pas un tour ouvert"
-    assert "l'equipe menee recoit" in premier.motifs
-    assert premier.score == research.STRONG, "l'obligation seule, sans bonus de tour ouvert"
+    assert "tie ouvert : ecart 2" in premier.motifs
+    # L'echelle est graduee : moins qu'un ecart de 1, plus que rien.
+    assert research.OPEN_TIE_WEIGHTS[2] < research.OPEN_TIE_WEIGHTS[1]
+    assert research.OPEN_TIE_WEIGHTS[1] < research.OPEN_TIE_WEIGHTS[0]
 
 
-def test_l_equipe_menee_qui_recoit_pese_autant_que_le_tie_ouvert(migrated: Settings) -> None:
-    """L'obligation asymetrique est le fait le plus exploitable d'une manche
-    retour : celui qui doit marquer a le terrain, donc il s'ouvrira."""
+def test_l_equipe_menee_qui_recoit_est_un_modificateur_pas_un_critere(
+    migrated: Settings,
+) -> None:
+    """L'obligation asymetrique reste exploitable, mais **recevoir ne cree pas
+    l'enjeu** : elle change le scenario d'un tour qui existe deja.
+
+    Pesee `STRONG`, elle egalait le fait qu'il y ait encore un tour a jouer et
+    doublait donc le score d'un tie ouvert. Mesure sur le lot du 13/08/2026 : M1
+    et M5 montaient a 7 quand M10 restait a 5, pour le meme ecart au cumul.
+    """
     _en_base(migrated, 401, 1)
     _aller(migrated, 401, buts_adversaire=1)  # l'adversaire mene : nous sommes menes a domicile
     _en_base(migrated, 402, 2)
@@ -212,6 +225,8 @@ def test_l_equipe_menee_qui_recoit_pese_autant_que_le_tie_ouvert(migrated: Setti
 
     assert scores[1] > scores[2], "l'obligation a domicile pese plus"
     assert "l'equipe menee recoit" in next(i for i in fiche.dossiers if i.index == 1).motifs
+    # Modificateur, donc strictement moins qu'un tour ouvert du meme ecart.
+    assert research.OPEN_TIE_WEIGHTS[1] > research.MEDIUM
 
 
 def test_un_dossier_sans_aucun_critere_n_est_pas_propose(migrated: Settings) -> None:
@@ -479,3 +494,36 @@ def test_un_joueur_dont_les_lignes_tiennent_sur_deux_matchs_est_designe(
     assert all("Dalibor Svrcina" not in question for question in dossiers[1].questions), (
         "seul le joueur maigre est designe"
     )
+
+
+def test_le_departage_ne_se_fait_plus_sur_l_heure_du_coup_d_envoi(migrated: Settings) -> None:
+    """**Le tri par heure n'est pas neutre, il est oriente.**
+
+    A egalite de score, les dossiers etaient departages par l'index du bloc,
+    c'est-a-dire par l'heure du coup d'envoi. Or les diffuseurs programment les
+    grosses affiches en dernier, et l'audience est correlee a la couverture
+    presse, donc a ce qu'une recherche peut trouver : trier par heure croissante
+    trie approximativement par interet decroissant, systematiquement plutot
+    qu'accidentellement.
+
+    Deux criteres signifiants le remplacent — ecart au cumul croissant, puis
+    densite decroissante. L'index ne sert plus que de dernier recours, pour que
+    l'ordre reste deterministe.
+    """
+    serre = research.Dossier(index=9, label="tard", gap=0, density=40)
+    large = research.Dossier(index=1, label="tot", gap=2, density=40)
+    for dossier in (serre, large):
+        dossier.reasons.append(research.Reason(research.MEDIUM, "meme score", ""))
+
+    assert sorted([large, serre], key=lambda item: item.rank_key)[0] is serre, (
+        "a score egal, le tie le plus serre passe avant, meme s'il part plus tard"
+    )
+
+    # A ecart egal, c'est le bloc le mieux fourni : la recherche y complete au
+    # lieu de tout reconstruire.
+    fourni = research.Dossier(index=9, label="fourni", gap=1, density=90)
+    pauvre = research.Dossier(index=1, label="pauvre", gap=1, density=30)
+    for dossier in (fourni, pauvre):
+        dossier.reasons.append(research.Reason(research.MEDIUM, "meme score", ""))
+
+    assert sorted([pauvre, fourni], key=lambda item: item.rank_key)[0] is fourni
