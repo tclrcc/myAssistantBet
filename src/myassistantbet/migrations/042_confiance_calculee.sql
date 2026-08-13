@@ -20,9 +20,13 @@
 -- six gabarits, quatre services et la moitie des tests pour un gain nul. Elle
 -- reste ecrite comme avant et devient une lecture seule de plus.
 --
--- **Les deux valeurs se gardent.** L'ecart entre le cran annonce et le cran
--- calcule est la seule mesure possible de savoir si le modele notait au hasard.
--- Le jeter serait perdre la reponse a la question qui fait naitre ce chantier.
+-- **Les deux valeurs se gardent**, et ce que leur ecart mesure a change de
+-- nature en cours de route. Tant que le modele notait seul, on aurait mesure son
+-- flair ; depuis qu'il declare ses entrees et que la table s'applique dans le
+-- code, les deux valeurs sortent du **meme** faisceau. L'ecart teste donc s'il
+-- applique correctement sa propre table : c'est un lint sur la redaction du
+-- gabarit, et un desaccord concentre sur un passage — 3 vers 4, 4 vers 5 —
+-- designe la clause a reecrire.
 
 -- Le cran calcule. NULL est le cas ordinaire sur tout l'existant : les champs
 -- dont il se deduit n'ont jamais ete collectes, et les retro-remplir

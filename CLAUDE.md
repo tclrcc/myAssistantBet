@@ -3686,12 +3686,22 @@ pas.** Le gabarit demande desormais les **entrees** — niveau de source, faits 
 leur editeur, et si un manque de la section A touche le facteur porteur — et
 `Claim.rung` applique la table.
 
-- **Les deux valeurs se gardent, et c'est tout l'objet.** `confidence` reste le cran
-  **annonce**, `confidence_computed` le cran **calcule**. `Notation` mesure leur ecart :
-  un calcul qui retomberait toujours sur l'annonce dirait que le modele appliquait deja
-  la table, un desaccord large dit qu'il notait a l'estime. Ni l'un ni l'autre ne se sait
-  sans garder les deux — d'ou le refus, ecrit dans le brief comme dans le code, de
-  remplacer l'une par l'autre.
+- **Les deux valeurs se gardent, et ce que leur ecart mesure a change de nature en cours
+  de chantier.** `confidence` reste le cran **annonce**, `confidence_computed` le cran
+  **calcule**. Tant que le modele notait seul, l'ecart aurait mesure son flair ; depuis
+  qu'il declare ses entrees et que la table s'applique dans le code, **les deux valeurs
+  sortent du meme faisceau**. L'ecart teste donc s'il applique correctement sa propre
+  table : c'est un **lint sur la redaction du gabarit**, pas sur son jugement — et c'est
+  plus utile ainsi, une clause ambigue se reecrivant quand un jugement ne se corrige pas.
+  - D'ou `Notation.transitions`, **le seul champ actionnable du bloc** : un desaccord
+    disperse est du bruit de redaction, un desaccord concentre sur un passage — 4 annonce
+    que la table met a 3 — nomme la clause a reprendre.
+  - Le seuil de `dominant` est **strictement** plus de la moitie, et l'inegalite large
+    etait fausse : deux desaccords partages un-un les auraient declares concentres tous
+    les deux. Trouve en ecrivant le test.
+  - **La formulation d'origine de cette section disait le contraire**, et disait faux.
+    Meme regle que partout ici : une condition qui change se verifie contre la phrase qui
+    l'explique — ici le module, la migration, la carte de la page et ce paragraphe.
 - **Aucun renommage**, precedent de la migration 030 : `confidence` **est** deja la valeur
   declaree, et la renommer toucherait six gabarits pour un gain nul.
 - **`Conf/5` reste demande au modele**, contrairement a la lettre du brief, et pour deux
@@ -3707,18 +3717,37 @@ leur editeur, et si un manque de la section A touche le facteur porteur — et
   de ce qu'on mesure.
 - **Le bloc voyage dans le meme copier-coller que le tableau.** Un second geste ferait
   perdre la colonne le jour ou on l'oublie, et c'est la seule qui rende le cran calculable.
-  - La jointure se fait **par l'ordre**, jamais sur le champ `match` : il porte le numero
-    de bloc du prompt (`M8`), qui change d'une generation a l'autre et n'a donc rien a quoi
-    se rattacher a l'import. Il reste declare parce qu'il rend la liste des rejets lisible.
-  - **Nombre different, aucun rattachement.** Aligner sept blocs sur huit lignes decalerait
-    les faits d'une selection a l'autre : le cran serait **faux** et personne ne le verrait.
-    Un cran inconnu se voit, un cran faux non.
-- **L'unicite d'editeur se teste sur le domaine normalise** (`publisher_of`), jamais sur le
-  titre. `motherwellfc.co.uk` et `https://www.motherwellfc.co.uk/news/…` sont un seul
-  facteur ; ce qui n'est pas un domaine — « Motherwell FC » — n'en est aucun, parce que ce
-  qui n'est pas verifiable ne compte pas. Le cas que le code **ne sait pas** trancher reste
-  ecrit dans le gabarit : deux medias rapportant la meme conference de presse sont un seul
-  facteur, et seuls deux domaines distincts s'en detectent.
+  - La jointure se fait **par l'ordre**, et le champ `match` en est la **somme de
+    controle**. Le numero de bloc (`M8`) change d'une generation a l'autre, donc il ne peut
+    pas servir de cle ; mais il est coherent **a l'interieur d'un rendu**, et les en-tetes
+    `### M8 · sport · competition · affiche · heure` sont archives avec le corps du prompt
+    depuis toujours. L'information dormait deja en base.
+  - **Le compte seul ne suffisait pas, et c'etait le point faible de la premiere version.**
+    Nombre egal et ordre different donnait des crans tous decales d'un rang, **en
+    silence** — et un cran faux ne se voit pas, la ou un cran inconnu se voit. Meme
+    raisonnement que la garde d'anteriorite : ce qui ne peut pas se relire ne doit pas
+    pouvoir s'ecrire.
+  - **Un prompt valide l'ensemble ou ne le valide pas.** Retenir le meilleur des prompts
+    paire par paire reviendrait a piocher la lecture qui arrange, ce qui ne demontrerait
+    plus rien. Sans aucun prompt archive, rien n'est rattache.
+  - Le rapprochement porte sur le **texte de la colonne Match** et non sur l'evenement
+    resolu : c'est l'appariement du modele qu'on verifie, et une affiche mal orthographiee
+    ne doit pas faire perdre les crans de tout le lot.
+- **L'unicite se teste sur l'editeur d'origine, pas sur le domaine qui publie**
+  (`Fact.source`). La normalisation de domaine seule sur-comptait l'independance
+  **exactement la ou le gabarit previent** : un agregateur qui reprend un blog, ou deux
+  titres rapportant la meme conference de presse, sortent sur deux domaines distincts et
+  auraient produit un cran 5 — alors que le gabarit dit depuis toujours que l'editeur
+  d'origine est alors le club, donc **un seul facteur**. Le domaine qui publie ne peut pas
+  le savoir : c'est une propriete du contenu, pas de l'URL.
+  - `editeur_origine` est donc demande **des que le site qui publie n'est pas celui qui a
+    produit l'information**, et vide dans le cas ordinaire ou les deux se confondent.
+  - Il est normalise et **refuse** comme `editeur` s'il n'est pas un domaine : une origine
+    illisible laisserait compter l'independance sur le relais.
+  - `publisher_of` reste ce qui tranche le reste : `motherwellfc.co.uk` et
+    `https://www.motherwellfc.co.uk/news/…` sont un seul facteur, et ce qui n'est pas un
+    domaine — « Motherwell FC » — n'en est aucun, parce que ce qui n'est pas verifiable ne
+    compte pas.
 - **`manque_touche_facteur` n'a pas de defaut, et c'est le troisieme etat.** Les crans 3, 4
   et 5 ne se distinguent que par lui ; absent, `rung` rend `None`. Le deviner reviendrait a
   choisir un cran a la place de l'analyse — meme famille que le drapeau de terrain neutre,

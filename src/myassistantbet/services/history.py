@@ -803,6 +803,27 @@ def list_sessions(settings: Settings | None = None) -> list[SessionSummary]:
 #: generation a l'autre pour un meme match.
 _BLOCK_HEADER = re.compile(r"^### M\d+ · (.+)$", re.MULTILINE)
 
+#: Le meme en-tete, **avec** son repere. Le numero de bloc ne survit pas d'une
+#: generation a l'autre — c'est pour ca que `_BLOCK_HEADER` le jette — mais il
+#: est coherent a l'interieur d'un rendu, ce qui en fait une somme de controle
+#: pour l'import : voir `picks_import._verified`.
+_NUMBERED_HEADER = re.compile(r"^### (M\d+) · (.+)$", re.MULTILINE)
+
+
+def prompt_headers(session_id: int, settings: Settings | None = None) -> list[dict[str, str]]:
+    """Les en-tetes de blocs de chaque prompt de la session, du plus recent.
+
+    Une liste **par prompt** et non un dictionnaire fusionne : `M8` designe deux
+    matchs differents dans deux generations, et les melanger validerait un
+    appariement qu'aucun rendu n'a jamais produit.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        bodies = conn.execute(
+            "SELECT body FROM prompts WHERE session_id = ? ORDER BY id DESC", (session_id,)
+        ).fetchall()
+    return [dict(_NUMBERED_HEADER.findall(row["body"] or "")) for row in bodies]
+
 
 @dataclass
 class Lot:
@@ -2879,10 +2900,17 @@ def _by_session(
 class Notation:
     """L'accord entre le cran annonce et le cran calcule.
 
-    **C'est la mesure pour laquelle les deux colonnes coexistent.** Un cran
-    calcule qui retomberait toujours sur l'annonce dirait que le modele
-    appliquait deja la table ; un desaccord large dit qu'il notait a l'estime.
-    Ni l'un ni l'autre ne se sait sans garder les deux.
+    **Ce que cet ecart mesure a change de nature, et le libelle doit le dire.**
+    Tant que le modele notait seul, on aurait mesure son flair. Depuis qu'il
+    declare ses entrees et que l'application applique la table, les deux valeurs
+    sortent du **meme** faisceau : leur ecart ne teste plus son jugement, il
+    teste s'il applique correctement sa propre table. C'est un **lint sur la
+    redaction du gabarit**, pas sur l'analyse — et c'est plus utile ainsi, parce
+    qu'une clause ambigue se reecrit quand un jugement ne se corrige pas.
+
+    D'ou `transitions` : un desaccord disperse est du bruit de redaction, un
+    desaccord concentre sur un passage — 3 vers 4, 4 vers 5 — designe la clause
+    a reprendre.
 
     Comptee sur les selections **tranchees**, comme tout le reste de la page :
     une selection en attente n'a pas encore de quoi peser.
@@ -2899,10 +2927,43 @@ class Notation:
     #: Ecart moyen en crans, signe. Positif : le modele se notait plus haut que
     #: la table ne l'autorise.
     drift: float = 0.0
+    #: Les passages en desaccord, du plus frequent au moins : `(annonce, calcule,
+    #: compte)`. C'est **le seul champ actionnable du bloc** — il nomme la clause
+    #: du gabarit a reecrire.
+    transitions: list[tuple[int, int, int]] = field(default_factory=list)
 
     @property
     def disagreed(self) -> int:
         return self.comparable - self.agreed
+
+    @property
+    def dominant(self) -> tuple[int, int, int] | None:
+        """Le passage le plus frequent, s'il porte **plus de la moitie**.
+
+        Le seuil n'est pas un reglage mais la definition de « concentre », et
+        l'inegalite est **stricte** a dessein : deux desaccords partages un-un
+        n'en designent aucun, et « au moins la moitie » les aurait declares
+        concentres tous les deux. Trouve en ecrivant le test — la version large
+        nommait une clause sur un ex aequo.
+
+        En dessous, le desaccord est disperse et aucune clause ne se designe :
+        reecrire le gabarit sur du bruit couterait plus que de ne rien faire.
+        """
+        if not self.transitions:
+            return None
+        first = self.transitions[0]
+        return first if first[2] * 2 > self.disagreed else None
+
+    @property
+    def clause_line(self) -> str:
+        """« 8 des 12 désaccords sont un 4 annoncé que la table met à 3 »."""
+        if self.dominant is None:
+            return ""
+        declared, computed, count = self.dominant
+        return (
+            f"{count} des {self.disagreed} désaccords sont un {declared} annoncé que la "
+            f"table met à {computed} : c'est cette clause du gabarit qui est ambiguë."
+        )
 
     @property
     def rate(self) -> float | None:
@@ -2925,6 +2986,7 @@ def _notation(rows: list[Any], results: list[str]) -> Notation:
     """Confronte les deux crans, selection par selection."""
     found = Notation()
     ecarts: list[int] = []
+    passages: dict[tuple[int, int], int] = {}
     for row, result in zip(rows, results, strict=True):
         if result not in ("win", "loss"):
             continue
@@ -2936,8 +2998,16 @@ def _notation(rows: list[Any], results: list[str]) -> Notation:
         found.comparable += 1
         if int(computed) == int(declared):
             found.agreed += 1
+        else:
+            passages[(int(declared), int(computed))] = (
+                passages.get((int(declared), int(computed)), 0) + 1
+            )
         ecarts.append(int(declared) - int(computed))
     found.drift = sum(ecarts) / len(ecarts) if ecarts else 0.0
+    found.transitions = sorted(
+        ((declared, computed, count) for (declared, computed), count in passages.items()),
+        key=lambda item: (-item[2], item[0], item[1]),
+    )
     return found
 
 

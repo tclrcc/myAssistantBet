@@ -416,14 +416,18 @@
        l'historique n'a pas de bloc structuré — c'est le **désaccord** qui se
        lit, ligne du dessous, pas la différence des deux taux. #}
     {{ card("Par cran calculé", analysis.by_confidence_computed,
-            note=analysis.notation.line,
+            note=analysis.notation.line ~ (" · " ~ analysis.notation.clause_line
+                                           if analysis.notation.clause_line else ""),
             reason="Le cran est calculé par l'application à partir de ce que l'analyse
-                    déclare : le niveau des sources, le nombre d'éditeurs distincts, et
-                    si un manque de la section A touche le facteur porteur. Le cran
-                    annoncé est conservé à côté — leur écart est la seule mesure possible
-                    de savoir si le modèle notait au hasard. Une sélection dont le bloc
-                    n'a pas été lu reste sans cran calculé : jamais un repli sur
-                    l'annonce, qui ferait afficher un accord parfait.",
+                    déclare : le niveau des sources, le nombre d'éditeurs d'origine
+                    distincts, et si un manque de la section A touche le facteur porteur.
+                    Le cran annoncé est conservé à côté, mais leur écart ne mesure pas le
+                    flair du modèle : les deux valeurs sortent du même faisceau, donc
+                    l'écart dit s'il applique correctement sa propre table. C'est un lint
+                    sur la rédaction du gabarit — un désaccord concentré sur un passage
+                    désigne la clause à réécrire. Une sélection dont le bloc n'a pas été
+                    lu reste sans cran calculé : jamais un repli sur l'annonce, qui
+                    ferait afficher un accord parfait.",
             empty="Aucun cran calculé : les sélections d'avant ce chantier n'ont pas de
                    bloc structuré, et rien ne les rétro-remplit — un faisceau
                    d'information ne s'invente pas après coup.") }}

@@ -17,9 +17,13 @@ portent tout, et dans le desordre, ne note plus rien.
 Ce module ne fait donc que deux choses, et aucune ne touche a la base :
 lire ce que l'analyse a declare, et appliquer la table.
 
-**Il ne remplace pas la valeur declaree, il la double.** L'ecart entre les deux
-est la seule mesure possible de savoir si le modele notait au hasard : le jeter
-serait perdre la reponse a la question qui a fait naitre ce module.
+**Il ne remplace pas la valeur declaree, il la double** — et ce que leur ecart
+mesure a change de nature au passage. Tant que le modele notait seul, on aurait
+mesure son flair ; depuis qu'il declare ses entrees et que la table s'applique
+ici, les deux valeurs sortent du **meme** faisceau. L'ecart teste donc s'il
+applique correctement sa propre table : c'est un **lint sur la redaction du
+gabarit**, pas sur son jugement. Plus utile ainsi — une clause ambigue se
+reecrit, un jugement ne se corrige pas.
 """
 
 from __future__ import annotations
@@ -75,16 +79,37 @@ def publisher_of(raw: str) -> str:
 class Fact:
     """Un fait date, tel que l'analyse le declare.
 
-    Les quatre champs sont **obligatoires**. Un fait incomplet ne se repare pas
-    a moitie : sans editeur il ne compte dans aucune unicite, sans date il ne se
-    verifie pas, et l'accepter quand meme ferait porter un cran par une
-    affirmation que personne ne peut recouper.
+    Les quatre premiers champs sont **obligatoires**. Un fait incomplet ne se
+    repare pas a moitie : sans editeur il ne compte dans aucune unicite, sans
+    date il ne se verifie pas, et l'accepter quand meme ferait porter un cran
+    par une affirmation que personne ne peut recouper.
     """
 
     statement: str
     day: str
     publisher: str
     level: int
+    #: L'editeur **d'origine**, quand il differe de celui qui publie. Vide dans
+    #: le cas ordinaire, ou les deux se confondent.
+    #:
+    #: **Sans lui, la normalisation de domaine sur-compte l'independance
+    #: exactement la ou le gabarit previent.** Un article OneFootball qui reprend
+    #: Glorioso 1904, ou deux titres rapportant la meme conference de presse,
+    #: sortent sur deux domaines distincts et feraient un cran 5 — alors que le
+    #: gabarit dit depuis toujours que l'editeur d'origine est alors le club, et
+    #: que ca ne fait **qu'un seul facteur**. Le domaine qui publie ne peut pas
+    #: le savoir : c'est une propriete du contenu, pas de l'URL.
+    origin: str = ""
+
+    @property
+    def source(self) -> str:
+        """L'origine si elle est declaree, l'editeur sinon.
+
+        **C'est elle qui compte l'independance**, jamais `publisher` : deux faits
+        qui remontent a la meme conference de presse ne peuvent pas se tromper
+        separement, quel que soit le nombre de sites qui les relaient.
+        """
+        return self.origin or self.publisher
 
 
 @dataclass
@@ -99,7 +124,8 @@ class Claim:
     #: reviendrait a choisir un cran a la place de l'analyse.
     gap_touches_factor: bool | None = None
     #: Ce que le modele avait annonce. Conserve ici pour que l'ecart se mesure
-    #: sans relire la base, jamais lu par le calcul.
+    #: sans relire la base, et **jamais lu par le calcul** : le cran se deduit
+    #: des entrees, sans quoi l'annonce se validerait elle-meme.
     declared: int | None = None
     match: str = ""
     raw: str = ""
@@ -116,8 +142,11 @@ class Claim:
         faits d'editeurs distincts, tous en niveau 1-2 » — et le compte stocke
         est celui que la regle a employe. Un compte plus large s'afficherait a
         cote d'un cran qu'il n'expliquerait pas.
+
+        Compte sur `Fact.source` et non sur `publisher` : c'est l'origine qui
+        peut se tromper, pas le site qui relaie.
         """
-        return len({fact.publisher for fact in self.strong_facts})
+        return len({fact.source for fact in self.strong_facts})
 
     @property
     def reading_only(self) -> bool:
@@ -196,11 +225,19 @@ def _fact(payload: object) -> Fact:
     statement = str(payload.get("enonce") or payload.get("statement") or "").strip()
     if not statement:
         raise ClaimError("un fait sans enonce ne se verifie pas")
+    # L'origine est facultative — le cas ordinaire est qu'elle se confonde avec
+    # l'editeur — mais si elle est declaree elle doit etre un domaine comme lui.
+    # Une origine illisible laisserait compter l'independance sur le relais.
+    declared_origin = str(payload.get("editeur_origine") or payload.get("origin") or "").strip()
+    origin = publisher_of(declared_origin) if declared_origin else ""
+    if declared_origin and not origin:
+        raise ClaimError(f"editeur d'origine sans domaine exploitable : {declared_origin!r}")
     return Fact(
         statement=statement,
         day=_day(payload.get("date")),
         publisher=publisher,
         level=_level(payload.get("niveau") or payload.get("level")),
+        origin=origin,
     )
 
 

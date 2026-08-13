@@ -481,11 +481,16 @@ et le sien est mesuré, donc réponds sur ce que tu as réellement vu.
  "manque_touche_facteur": false}
 ```
 
-`editeur` est le **domaine** de la source, jamais le titre de l'article :
-c'est lui qui compte les origines distinctes. `faits` vide est une réponse
-normale et impose `source_level: "lecture"`. `manque_touche_facteur` n'a pas de
-défaut — c'est lui seul qui sépare les crans 3, 4 et 5, et sans lui le cran
-reste inconnu.
+`editeur` est le **domaine** de la source, jamais le titre de l'article.
+Ajoute `editeur_origine` — un domaine lui aussi — **dès que le site qui publie
+n'est pas celui qui a produit l'information** : un agrégateur qui reprend un
+blog, deux titres qui rapportent la même conférence de presse. C'est sur
+l'origine que les facteurs se comptent, et sans ce champ deux relais du même
+fait passeraient pour deux origines qui peuvent se tromper séparément.
+
+`faits` vide est une réponse normale et impose `source_level: "lecture"`.
+`manque_touche_facteur` n'a pas de défaut — c'est lui seul qui sépare les crans
+3, 4 et 5, et sans lui le cran reste inconnu.
 
 Les crans 2 et 4 n'avaient aucune définition, et tout tombait donc en 3 : sur
 cent sélections, 99 % portaient un 3 ou un 4, et les crans 1 et 5 n'ont jamais

@@ -19,7 +19,7 @@ from typing import Any
 from ..config import Settings, get_settings
 from .confidence import Claim, read_blocks
 from .grid import GridRow, anchor, build_view
-from .history import ANGLES, PickableEvent, list_picks, pickable_events
+from .history import ANGLES, PickableEvent, list_picks, pickable_events, prompt_headers
 from .history import tiers as load_tiers
 
 #: Une ligne de tableau Markdown : `| a | b | c |`.
@@ -317,6 +317,7 @@ def parse_table(
     known: set[tuple[Any, ...]] | None = None,
     nearby: list[PickableEvent] | None = None,
     taken: set[int] | None = None,
+    headers: list[dict[str, str]] | None = None,
 ) -> ImportPreview:
     """Lit le tableau de selections. Ne rapproche jamais un match au hasard.
 
@@ -392,23 +393,30 @@ def parse_table(
             "Aucun tableau de sélections reconnu : colle la section C, "
             "en-tête compris (« Match | Marché | Sélection | … »)."
         )
-    _attach_claims(preview, raw)
+    _attach_claims(preview, raw, headers)
     return preview
 
 
-def _attach_claims(preview: ImportPreview, raw: str) -> None:
+def _attach_claims(
+    preview: ImportPreview, raw: str, headers: list[dict[str, str]] | None = None
+) -> None:
     """Rattache les blocs de confiance aux lignes du tableau, **par l'ordre**.
 
-    Le gabarit demande un bloc par ligne, dans l'ordre du tableau, et c'est la
-    seule jointure sure : le champ `match` porte le numero de bloc du prompt
-    (`M8`), qui ne survit pas a la generation suivante et n'a donc rien a quoi se
-    rattacher a l'import. Il reste declare — il rend la liste des rejets
-    lisible — mais il ne joint rien.
+    Le gabarit demande un bloc par ligne, dans l'ordre du tableau. Le champ
+    `match` porte le numero de bloc du prompt (`M8`), qui **change d'une
+    generation a l'autre** et ne peut donc pas servir de cle de jointure — mais
+    il est coherent **a l'interieur d'un meme rendu**, ce qui en fait une somme
+    de controle.
 
-    **En cas de nombre different, aucun rattachement.** Aligner sept blocs sur
-    huit lignes decalerait les faits d'une selection a l'autre, ce qui est pire
-    qu'un cran inconnu : le cran serait faux et personne ne le verrait. Le
-    desaccord se dit, comme les lignes rejetees de la saisie manuelle.
+    **Le compte seul ne suffisait pas.** Nombre egal et ordre different donnait
+    des crans tous decales d'un rang, en silence — et un cran faux ne se voit
+    pas, la ou un cran inconnu se voit. Meme raisonnement que la garde
+    d'anteriorite : ce qui ne peut pas se relire ne doit pas pouvoir s'ecrire.
+
+    Le controle se fait donc contre les **en-tetes de blocs du prompt archive**,
+    qui portent `### M8 · sport · competition · affiche · heure`. Un rendu vient
+    forcement de l'un d'eux, et c'est le prompt entier qui doit valider **toutes**
+    les paires : une seule qui ne correspond pas, et rien n'est rattache.
     """
     reading = read_blocks(raw)
     preview.ignored.extend(reading.rejected)
@@ -421,6 +429,14 @@ def _attach_claims(preview: ImportPreview, raw: str) -> None:
             "Complète les blocs manquants et recolle."
         )
         return
+    if not _verified(preview.picks, reading.claims, headers or []):
+        preview.ignored.append(
+            "Les repères de match des blocs (M1, M2…) ne correspondent à aucun prompt "
+            "de cette session, ligne par ligne : les blocs sont peut-être dans un autre "
+            "ordre que le tableau. Rien n'est rattaché — un cran décalé serait faux sans "
+            "se voir."
+        )
+        return
     for pick, claim in zip(preview.picks, reading.claims, strict=True):
         pick.claim = claim
         # Le bloc fait foi sur les deux colonnes qu'il porte aussi : c'est la
@@ -429,6 +445,37 @@ def _attach_claims(preview: ImportPreview, raw: str) -> None:
         pick.source = claim.source_level or pick.source
         if claim.declared is not None:
             pick.confidence = str(claim.declared)
+
+
+def _verified(picks: list[ParsedPick], claims: list[Claim], headers: list[dict[str, str]]) -> bool:
+    """Vrai si **un** prompt de la session valide toutes les paires a la fois.
+
+    Le rapprochement se fait sur le **texte de la colonne Match**, pas sur
+    l'evenement resolu : c'est l'appariement du modele qu'on verifie, et il doit
+    l'etre meme sur une ligne dont le rapprochement de nom a echoue — sinon un
+    match mal orthographie ferait perdre les crans de tout le lot.
+
+    Un prompt valide l'ensemble ou ne le valide pas. Retenir le meilleur des
+    prompts paire par paire reviendrait a piocher la lecture qui arrange, ce qui
+    ne demontrerait plus rien.
+    """
+    if not headers:
+        return False
+    return any(
+        all(_pairs(pick, claim, mapping) for pick, claim in zip(picks, claims, strict=True))
+        for mapping in headers
+    )
+
+
+def _pairs(pick: ParsedPick, claim: Claim, mapping: dict[str, str]) -> bool:
+    """Ce bloc designe-t-il bien la ligne avec laquelle il a ete apparie.
+
+    Les deux valeurs vides ne se valident pas l'une l'autre : une colonne Match
+    absente et un repere inconnu rendraient le controle vrai sans rien avoir
+    verifie, ce qui est exactement le silence qu'il existe pour supprimer.
+    """
+    cell, header = _fold(pick.match_text), _fold(mapping.get(claim.match, ""))
+    return bool(cell) and bool(header) and cell in header
 
 
 def build_preview(
@@ -447,4 +494,15 @@ def build_preview(
     # commence a quitte le board et n'a jamais pu y etre coche.
     nearby = [event for event in pickable_events(session_id, settings) if not event.in_session]
     taken = {pick.event_id for pick in list_picks(session_id, settings) if pick.event_id}
-    return parse_table(raw, rows, load_tiers(settings), known, nearby, taken)
+    # Les en-tetes des prompts archives : c'est contre eux que l'appariement des
+    # blocs de confiance se verifie. L'information dormait deja en base — les
+    # corps sont stockes depuis toujours.
+    return parse_table(
+        raw,
+        rows,
+        load_tiers(settings),
+        known,
+        nearby,
+        taken,
+        prompt_headers(session_id, settings),
+    )

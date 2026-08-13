@@ -253,21 +253,6 @@ def _session(settings: Settings) -> int:
     return int(db.query_one("SELECT MAX(id) AS id FROM sessions", settings=settings)["id"])
 
 
-def test_le_bloc_est_lu_dans_le_meme_copier_coller_que_le_tableau(migrated: Settings) -> None:
-    """Un second geste ferait perdre la colonne le jour ou on l'oublie, et c'est
-    la seule qui rende le cran calculable."""
-    session_id = _session(migrated)
-
-    preview = picks_import.build_preview(
-        session_id,
-        _rendu(source_level=1, confiance=4, faits=[_fait()], manque_touche_facteur=False),
-        migrated,
-    )
-
-    assert preview.picks[0].claim is not None
-    assert preview.picks[0].claim.rung == 4
-
-
 def test_un_nombre_de_blocs_different_ne_rattache_rien(migrated: Settings) -> None:
     """**Aligner sept blocs sur huit lignes decalerait les faits d'une selection
     a l'autre** : le cran serait faux et personne ne le verrait. Le desaccord se
@@ -398,3 +383,209 @@ def test_l_axe_calcule_vit_a_cote_de_l_annonce(migrated: Settings) -> None:
 
     assert [row.key for row in report.by_confidence] == ["4"]
     assert [row.key for row in report.by_confidence_computed] == ["1"]
+
+
+# -- L'editeur d'origine : ce que le domaine ne peut pas voir ---------------
+#
+# **La normalisation de domaine sur-compte l'independance exactement la ou le
+# gabarit previent.** Un article qui reprend un autre editeur, ou deux titres
+# qui rapportent la meme conference de presse, sortent sur deux domaines
+# distincts et feraient un cran 5 — alors que ca ne fait qu'un seul facteur.
+
+
+def test_deux_relais_de_la_meme_origine_ne_font_qu_un_facteur() -> None:
+    """Le cas que `publisher_of` ne peut pas trancher seul : c'est une propriete
+    du contenu, pas de l'URL."""
+    reprise = _fait("onefootball.com")
+    reprise["editeur_origine"] = "glorioso1904.com"
+    source = _fait("glorioso1904.com")
+
+    claim = parse(_bloc(source_level=1, faits=[reprise, source], manque_touche_facteur=False))
+
+    assert claim.distinct_publishers == 1
+    assert claim.rung == 4, "deux relais du meme fait ne peuvent pas se tromper separement"
+
+
+def test_deux_medias_sur_la_meme_conference_de_presse_ne_font_qu_un_facteur() -> None:
+    """« l'editeur d'origine est le club » — la phrase du gabarit, executee."""
+    premier = _fait("bbc.co.uk", 2)
+    premier["editeur_origine"] = "motherwellfc.co.uk"
+    second = _fait("skysports.com", 2)
+    second["editeur_origine"] = "motherwellfc.co.uk"
+
+    claim = parse(_bloc(source_level=2, faits=[premier, second], manque_touche_facteur=False))
+
+    assert claim.rung == 4
+
+
+def test_sans_origine_declaree_l_editeur_compte_comme_avant() -> None:
+    """Le cas ordinaire : les deux se confondent, le champ reste vide."""
+    claim = parse(
+        _bloc(
+            source_level=1,
+            faits=[_fait("motherwellfc.co.uk"), _fait("bbc.co.uk", 2)],
+            manque_touche_facteur=False,
+        )
+    )
+
+    assert claim.rung == 5
+
+
+def test_une_origine_illisible_est_refusee() -> None:
+    """Meme severite que l'editeur : une origine qui n'est pas un domaine
+    laisserait compter l'independance sur le relais."""
+    reprise = _fait("onefootball.com")
+    reprise["editeur_origine"] = "le blog de Glorioso"
+
+    with pytest.raises(ClaimError, match="origine"):
+        parse(_bloc(source_level=1, faits=[reprise], manque_touche_facteur=False))
+
+
+# -- La somme de controle de l'appariement ----------------------------------
+#
+# **Le compte seul ne suffisait pas** : nombre egal et ordre different donnait
+# des crans tous decales d'un rang, en silence. Un cran faux ne se voit pas, la
+# ou un cran inconnu se voit.
+
+
+def _lot_de_deux(settings: Settings) -> tuple[int, str]:
+    """Une session de deux matchs, avec le prompt archive qui les numerote."""
+    sport = db.query_one("SELECT id FROM sports WHERE key = 'football'", settings=settings)
+    for home, away in (("Lyon", "Nice"), ("Reims", "Brest")):
+        db.execute(
+            "INSERT INTO events (sport_id, home, away, commence_time, source, created_at) "
+            "VALUES (?, ?, ?, ?, 'oddsapi', ?)",
+            (sport["id"], home, away, LOIN, db.utcnow()),
+            settings=settings,
+        )
+    db.execute(
+        "INSERT INTO sessions (label, created_at) VALUES ('essai', ?)",
+        (db.utcnow(),),
+        settings=settings,
+    )
+    session_id = int(db.query_one("SELECT MAX(id) AS id FROM sessions", settings=settings)["id"])
+    corps = (
+        "### M1 · Football · Ligue 1 · Lyon – Nice · 01/01 20:45\n"
+        "### M2 · Football · Ligue 1 · Reims – Brest · 01/01 20:45\n"
+    )
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 'session_default.md.j2', ?, 0, ?)",
+        (session_id, corps, db.utcnow()),
+        settings=settings,
+    )
+    return session_id, corps
+
+
+TABLEAU_DEUX = """| # | Match | Marché | Sélection | Cote | Palier | Conf/5 |
+|---|-------|--------|-----------|------|--------|--------|
+| 1 | Lyon – Nice | 1N2 | Lyon | 1.65 | 🟢 SAFE | 4 |
+| 2 | Reims – Brest | 1N2 | Reims | 1.80 | 🔵 FUN | 3 |
+"""
+
+
+def _avec_blocs(*reperes: str) -> str:
+    rendu = TABLEAU_DEUX
+    for repere in reperes:
+        bloc = _bloc(match=repere, source_level=1, faits=[_fait()], manque_touche_facteur=False)
+        rendu += f"\n```conf\n{bloc}\n```\n"
+    return rendu
+
+
+def test_le_bloc_est_lu_dans_le_meme_copier_coller_et_apparie_au_prompt(
+    migrated: Settings,
+) -> None:
+    """Un second geste ferait perdre la colonne le jour ou on l'oublie, et c'est
+    la seule qui rende le cran calculable. L'appariement, lui, se verifie contre
+    les en-tetes du prompt archive."""
+    session_id, _ = _lot_de_deux(migrated)
+
+    preview = picks_import.build_preview(session_id, _avec_blocs("M1", "M2"), migrated)
+
+    assert [pick.claim is not None for pick in preview.picks] == [True, True]
+    assert [pick.claim.rung for pick in preview.picks] == [4, 4]
+    assert not preview.ignored
+
+
+def test_des_blocs_dans_le_desordre_ne_rattachent_rien(migrated: Settings) -> None:
+    """**Le defaut que le compte ne voyait pas.** Deux blocs pour deux lignes,
+    mais inverses : sans somme de controle, chaque cran atterrissait sur l'autre
+    selection sans qu'aucun compteur ne bouge."""
+    session_id, _ = _lot_de_deux(migrated)
+
+    preview = picks_import.build_preview(session_id, _avec_blocs("M2", "M1"), migrated)
+
+    assert [pick.claim for pick in preview.picks] == [None, None]
+    assert any("repères de match" in note for note in preview.ignored)
+
+
+def test_sans_prompt_archive_rien_n_est_rattache(migrated: Settings) -> None:
+    """Ce qui ne peut pas se relire ne doit pas pouvoir s'ecrire : sans en-tetes,
+    l'ordre n'est verifiable par rien."""
+    session_id = _session(migrated)
+
+    preview = picks_import.build_preview(
+        session_id,
+        _rendu(source_level=1, faits=[_fait()], manque_touche_facteur=False),
+        migrated,
+    )
+
+    assert preview.picks[0].claim is None
+    assert any("repères de match" in note for note in preview.ignored)
+
+
+def test_un_prompt_d_une_autre_generation_ne_valide_pas_a_moitie(migrated: Settings) -> None:
+    """**Un prompt valide l'ensemble ou ne le valide pas.** Retenir le meilleur
+    des prompts paire par paire reviendrait a piocher la lecture qui arrange."""
+    session_id, _ = _lot_de_deux(migrated)
+    # Une generation anterieure ou M1 designait l'autre affiche.
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 'session_default.md.j2', ?, 0, ?)",
+        (session_id, "### M1 · Football · Ligue 1 · Reims – Brest · 01/01 20:45\n", db.utcnow()),
+        settings=migrated,
+    )
+
+    preview = picks_import.build_preview(session_id, _avec_blocs("M1", "M2"), migrated)
+
+    assert [pick.claim is not None for pick in preview.picks] == [True, True], (
+        "la generation la plus recente valide bien les deux paires"
+    )
+
+
+# -- La matrice des transitions ---------------------------------------------
+
+
+def test_un_desaccord_concentre_designe_la_clause_a_reecrire(migrated: Settings) -> None:
+    """**Ce que l'ecart mesure a change de nature.** Les deux valeurs sortent du
+    meme faisceau : l'ecart ne teste plus le flair du modele, il teste s'il
+    applique sa propre table. Un desaccord concentre sur un passage designe une
+    clause ambigue, qui se reecrit."""
+    session_id = _session(migrated)
+    quatre = _bloc(source_level=1, faits=[_fait()], manque_touche_facteur=False)
+    trois = _bloc(source_level=1, faits=[_fait()], manque_touche_facteur=True)
+    for _ in range(3):
+        _tranchee(migrated, session_id, "4", trois)  # annonce 4, table 3
+    _tranchee(migrated, session_id, "4", quatre)  # accord
+
+    notation = analysis(settings=migrated).notation
+
+    assert notation.transitions == [(4, 3, 3)]
+    assert notation.dominant == (4, 3, 3)
+    assert "un 4 annoncé que la table met à 3" in notation.clause_line
+
+
+def test_un_desaccord_disperse_ne_designe_aucune_clause(migrated: Settings) -> None:
+    """Sous la moitie, le desaccord est du bruit de redaction : en nommer une
+    clause quand meme ferait reecrire le gabarit sur rien."""
+    session_id = _session(migrated)
+    trois = _bloc(source_level=1, faits=[_fait()], manque_touche_facteur=True)
+    lecture = _bloc(source_level="lecture", faits=[])
+    _tranchee(migrated, session_id, "4", trois)  # 4 -> 3
+    _tranchee(migrated, session_id, "3", lecture)  # 3 -> 1
+
+    notation = analysis(settings=migrated).notation
+
+    assert notation.disagreed == 2
+    assert notation.dominant is None
+    assert notation.clause_line == ""
