@@ -422,6 +422,41 @@ async def test_une_saturation_de_debit_est_retentee(
 
 @respx.mock
 @pytest.mark.anyio
+async def test_un_quota_journalier_epuise_n_est_jamais_retente(
+    http_client: httpx.AsyncClient, migrated: Settings
+) -> None:
+    """**Les deux plafonds arrivent par le meme chemin, un seul retombe.**
+
+    Le debit par minute se libere en quelques secondes et vaut un backoff ; le
+    quota journalier ne se libere qu'a minuit. Le retenter brule trois unites
+    par appel exactement quand il n'en reste plus, et recommence pour chaque
+    appel restant de l'enrichissement.
+
+    Le declencheur n'a pas ete observe en direct : la cle du quota journalier
+    est `requests` et non `ratelimit`, donc elle sort deja par le chemin des
+    erreurs definitives. Ce qui est fragile est le repli sur le **message** —
+    le jour ou le fournisseur formule son plafond journalier avec les mots
+    « too many requests », il basculerait dans le retry sans qu'aucun test ne
+    bronche. C'est ce jour-la que ce test sert.
+    """
+    route = respx.get(f"{BASE_URL}/injuries").mock(
+        return_value=httpx.Response(
+            200,
+            json={"errors": {"requests": "Too many requests for the day. Your plan allows 7500."}},
+            headers=RATE_HEADERS,
+        )
+    )
+    client = APIFootballClient(http_client, migrated, backoff_base=0)
+    client.payload_retry_delay = 0
+
+    with pytest.raises(ProviderError):
+        await client.injuries(1)
+
+    assert route.call_count == 1, "une seule tentative : rien ne retombera avant minuit"
+
+
+@respx.mock
+@pytest.mark.anyio
 async def test_une_cle_invalide_echoue_sans_insister(
     http_client: httpx.AsyncClient, migrated: Settings
 ) -> None:

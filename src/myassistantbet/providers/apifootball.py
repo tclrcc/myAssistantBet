@@ -25,6 +25,25 @@ CALL_COST = 1
 #: passager : le meme appel aboutit une fois le compteur retombe.
 TRANSIENT_ERROR_KEYS = frozenset({"ratelimit"})
 
+#: Ce qui, dans un message de saturation, dit que **rien ne retombera
+#: aujourd'hui**. Le plafond de ce fournisseur est double : un debit par minute,
+#: qui se libere en quelques secondes et vaut donc un backoff, et un quota
+#: journalier, qui ne se libere qu'a minuit.
+#:
+#: Les deux arrivent par le meme chemin — une enveloppe HTTP 200 — et le second
+#: ne doit **jamais** etre retente : trois tentatives a cinq secondes brulent
+#: trois unites du quota exactement quand il n'en reste plus, et recommencent
+#: pour chaque appel restant de l'enrichissement.
+#:
+#: Le garde-fou est **defensif et son declencheur n'a pas ete observe en
+#: direct** (verifie le 13/08/2026) : la cle du quota journalier est `requests`
+#: et non `ratelimit`, donc elle sort deja par le chemin des erreurs
+#: definitives. Ce qui est fragile est le repli `too many requests`, un
+#: attrape-tout sur le **message** : le jour ou le fournisseur formule son
+#: plafond journalier avec ces trois mots, il basculerait dans le retry sans
+#: qu'aucun test ne bronche. Ces marqueurs sont donc lus **avant** lui.
+DAILY_LIMIT_MARKERS = ("for the day", "per day", "daily", "your plan")
+
 
 def _envelope_errors(payload: Any) -> list[tuple[str, str]]:
     """Erreurs de l'enveloppe, en paires (cle, message).
@@ -61,9 +80,19 @@ class APIFootballClient(BaseHTTPClient):
         d'une journee de championnat — quelques dizaines d'appels en rafale —
         laisse des trous definitifs dans le contexte la ou une seconde
         d'attente aurait suffi.
+
+        **Mais les deux plafonds arrivent par ce meme chemin**, et un seul des
+        deux retombe. Le debit par minute se libere en quelques secondes ; le
+        quota journalier ne se libere qu'a minuit, et le retenter brule trois
+        unites par appel exactement quand il n'en reste plus. Un message qui
+        nomme la journee ou le plan est donc definitif, quelle que soit sa cle,
+        et il est reconnu **avant** l'attrape-tout sur « too many requests ».
         """
         for key, message in _envelope_errors(data):
-            if key.lower() in TRANSIENT_ERROR_KEYS or "too many requests" in message.lower():
+            texte = message.lower()
+            if any(marqueur in texte for marqueur in DAILY_LIMIT_MARKERS):
+                return None
+            if key.lower() in TRANSIENT_ERROR_KEYS or "too many requests" in texte:
                 return f"debit depasse : {message}"
         return None
 
