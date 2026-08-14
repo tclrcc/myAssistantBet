@@ -864,25 +864,87 @@ def _coach_fragment(
     # « Derek McInnes » sont deux libelles du meme homme, et les deux figurent
     # dans la fiche de Hearts. Un rapprochement par libelle aurait invente une
     # divergence la ou il n'y en a pas.
-    if _same_coach(post, observed):
+    etat = _coach_match(post, observed)
+    if etat == COACH_SAME:
         return f"{team} {fiche} — vu sur la feuille du {quand}"
+    if etat == COACH_INITIAL:
+        # **Le nom de la feuille, parce qu'il est le plus complet** : elle donne
+        # le prenom entier la ou la fiche l'abrege, et c'est ce prenom qui rend
+        # une recherche possible. L'anciennete, elle, ne vient que de la fiche.
+        complet = f"{vu} ({tenure})" if tenure else str(vu)
+        return f"{team} {complet} — feuille du {quand}, apparié sur l'initiale du prénom"
     return f"{team} feuille du {quand} : {vu} | fiche : {fiche} — divergence"
 
 
-def _same_coach(post: dict[str, Any], observed: dict[str, Any] | None) -> bool:
-    """Les deux sources designent-elles le meme homme ?
+#: Les deux sources nomment le meme homme, et c'est etabli — identifiant, ou
+#: libelles identiques une fois casse et accents replies.
+COACH_SAME = "same"
+#: Elles sont **compatibles** sans qu'on puisse conclure : meme nom de famille,
+#: prenom reduit a une initiale d'un cote. C'est le cas ordinaire, et le nommer
+#: est tout l'objet du correctif — mais deux prenoms partageant l'initiale et le
+#: nom sont deux hommes differents, et les fratries existent au football.
+COACH_INITIAL = "initial"
+#: Deux noms qui ne se rejoignent pas.
+COACH_DIFFERENT = "different"
+
+
+def _initials_match(fiche: str, vu: str) -> bool:
+    """Un libelle abrege et un libelle complet designent-ils le meme nom ?
+
+    « A. Blessin » et « Alexander Blessin » : meme nom de famille, et l'initiale
+    du prenom concorde. Le rapprochement se fait sur les libelles **deja replies**
+    — casse et accents — des deux cotes, sans quoi « N. Usaï » et « Nicolas Usai »
+    resteraient deux hommes pour un trema.
+
+    Le nom de famille se compare en **suffixe** et non token a token : « J.
+    Machado Sacramento » et « João Pedro Machado Sacramento » portent deux
+    prenoms d'un cote et un seul de l'autre, et exiger la meme longueur y
+    inventerait une divergence.
+    """
+    for abrege, complet in ((fiche, vu), (vu, fiche)):
+        tete, *reste = abrege.split()
+        initiale = tete.rstrip(".")
+        if len(initiale) != 1 or not reste:
+            continue
+        prenom, *nom = complet.split()
+        if not nom or prenom.rstrip(".") == initiale:
+            # Deux abreges, ou un complet sans nom de famille : rien a trancher
+            # ici, l'egalite stricte l'a deja fait ou le fera pas.
+            continue
+        if prenom.startswith(initiale) and nom[-len(reste) :] == reste:
+            return True
+    return False
+
+
+def _coach_match(post: dict[str, Any], observed: dict[str, Any] | None) -> str:
+    """Ce que les deux sources permettent de dire du meme homme.
 
     L'identifiant tranche quand les deux le portent. La fiche `/coachs` n'expose
     pas le sien au niveau de l'etape de carriere retenue, d'ou le repli sur le
     libelle normalise — qui ne sert qu'a **eviter d'annoncer une divergence**,
-    jamais a en affirmer une : en cas de doute, la ligne montre les deux noms et
-    laisse trancher.
+    jamais a en affirmer une.
+
+    **Trois etats, parce que le troisieme se produit tout le temps.** Mesure du
+    14/08/2026 sur le lot du jour : 20 paires annoncees « divergence », dont
+    **10 sont le meme homme** sous deux ecritures — « Laurent Guyot » contre
+    « L. Guyot ». La comparaison stricte les declarait differents, et la ligne la
+    plus decisive du dossier d'equipe se noyait dans son propre bruit.
+
+    Mais un appariement sur une initiale **ne conclut pas** : deux prenoms
+    partageant l'initiale et le nom sont deux hommes, et les fratries existent au
+    football. La ligne dit alors ce sur quoi elle repose, au lieu de trancher —
+    meme regle que partout, le cas indecidable se nomme.
     """
     identifiant, vu = post.get("id"), (observed or {}).get("id")
     if identifiant is not None and vu is not None:
-        return int(identifiant) == int(vu)
+        return COACH_SAME if int(identifiant) == int(vu) else COACH_DIFFERENT
     fiche = sort_key(str(post.get("name") or ""))
-    return bool(fiche) and fiche == sort_key(str((observed or {}).get("name") or ""))
+    observe = sort_key(str((observed or {}).get("name") or ""))
+    if not fiche or not observe:
+        return COACH_DIFFERENT
+    if fiche == observe:
+        return COACH_SAME
+    return COACH_INITIAL if _initials_match(fiche, observe) else COACH_DIFFERENT
 
 
 def _day(moment: Any) -> str:

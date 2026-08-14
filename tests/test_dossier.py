@@ -1462,3 +1462,101 @@ def _lot(settings: Settings, sport: str) -> int:
         "INSERT INTO session_events (session_id, event_id) VALUES (1, 900)", settings=settings
     )
     return 1
+
+
+# -- L'entraineur : trois etats, et le troisieme est le cas ordinaire --------
+
+
+@pytest.mark.parametrize(
+    ("feuille", "fiche"),
+    [
+        ("Laurent Guyot", "L. Guyot"),
+        ("Sylvain Ripoll", "S. Ripoll"),
+        ("Olivier Frapolli", "O. Frapolli"),
+        ("Pablo Correa", "P. Correa"),
+        # Le cas diacritique : le repli s'applique **des deux cotes**, sinon un
+        # trema suffit a faire deux hommes d'un seul.
+        ("Nicolas Usai", "N. Usaï"),
+        ("Alexander Blessin", "A. Blessin"),
+        # Un nom de famille compose contre deux prenoms : la comparaison se fait
+        # en suffixe, exiger la meme longueur inventerait une divergence.
+        ("João Pedro Machado Sacramento", "J. Machado Sacramento"),
+    ],
+)
+def test_un_prenom_abrege_ne_fait_pas_deux_hommes(feuille: str, fiche: str) -> None:
+    """**Mesure du 14/08/2026 : 20 paires annoncees « divergence », dont 10 sont
+    le meme homme sous deux ecritures.**
+
+    La comparaison stricte les declarait differents, et la ligne la plus
+    decisive du dossier d'equipe se noyait dans son propre bruit.
+    """
+    assert dossier._coach_match({"name": fiche}, {"name": feuille}) == dossier.COACH_INITIAL
+
+
+@pytest.mark.parametrize(
+    ("feuille", "fiche"),
+    [
+        ("Ian Cathro", "Philippe Montanier"),
+        ("David Vignes", "M. Pires"),
+        ("Dietmar Kuhbauer", "João Pedro Machado Sacramento"),
+        ("Lars Friis", "O. Cinel"),
+        ("Tiago Margarido", "Gil Lameiras"),
+        ("Tian Tang", "Peng Han"),
+        # Meme initiale, nom de famille different : c'est bien une divergence.
+        ("Mario Despotovic", "M. Senft"),
+        ("David Guion", "G. Proment"),
+    ],
+)
+def test_une_vraie_divergence_reste_dite(feuille: str, fiche: str) -> None:
+    assert dossier._coach_match({"name": fiche}, {"name": feuille}) == dossier.COACH_DIFFERENT
+
+
+def test_deux_libelles_identiques_concluent(migrated: Settings) -> None:
+    """L'egalite stricte, elle, tranche : c'est le meme libelle."""
+    assert dossier._coach_match({"name": "Derek McInnes"}, {"name": "derek mcinnes"}) == (
+        dossier.COACH_SAME
+    )
+
+
+def test_l_identifiant_prime_sur_le_libelle() -> None:
+    """Deux libelles du meme homme figurent dans la meme fiche : l'identifiant
+    tranche quand les deux sources le portent."""
+    assert dossier._coach_match({"id": 7, "name": "D. McInnes"}, {"id": 7, "name": "Derek"}) == (
+        dossier.COACH_SAME
+    )
+    assert dossier._coach_match(
+        {"id": 7, "name": "A. Blessin"}, {"id": 9, "name": "A. Blessin"}
+    ) == (dossier.COACH_DIFFERENT)
+
+
+def test_la_ligne_d_initiale_ne_conclut_pas_et_porte_le_prenom_entier(
+    migrated: Settings,
+) -> None:
+    """**Le cas indecidable se nomme.**
+
+    Deux prenoms partageant l'initiale et le nom sont deux hommes differents que
+    la regle declarera compatibles — rare, mais les fratries existent au
+    football. La ligne dit donc sur quoi elle repose au lieu de trancher, et
+    porte le prenom **entier** de la feuille : c'est lui qui rend une recherche
+    possible, la fiche l'abregeant.
+    """
+    dossier.store(
+        12,
+        dossier.KIND_COACH,
+        [{"id": 1, "name": "N. Usaï", "career": [{"team": {"id": 12}, "start": "2026-07-01"}]}],
+        settings=migrated,
+    )
+
+    ligne = dossier._coach_fragment(
+        "Stade de Reims",
+        12,
+        NOW,
+        migrated,
+        observed={"name": "Nicolas Usai", "seen": "2026-08-08T18:00:00+00:00"},
+        sheets_read=True,
+    )
+
+    assert "Nicolas Usai" in ligne, "le prenom entier vient de la feuille"
+    assert "apparié sur l'initiale du prénom" in ligne
+    assert "divergence" not in ligne
+    assert "vu sur la feuille" not in ligne, "elle ne conclut pas non plus a l'identite"

@@ -817,7 +817,28 @@ de fois qu'elle joue.
   entraineur parti, affirme comme un fait. L'anciennete se compte dans l'equipe du match
   et jamais depuis le premier poste de la carriere, et une prise de fonction posterieure
   au match ne rend aucune duree — un nombre negatif presente comme une anciennete.
-  - **Cette regle ne tranche que dans 15 % des cas, et c'est mesure** : sur les 110
+  - **Trois etats, et le troisieme est le cas ordinaire.** Mesure du 14/08/2026 sur le lot
+  du jour : **20 paires annoncees « divergence », dont 10 sont le meme homme** sous deux
+  ecritures — « Laurent Guyot » contre « L. Guyot ». La comparaison stricte les declarait
+  differents, et la ligne la plus decisive du dossier d'equipe se noyait dans son propre
+  bruit : 13 blocs sur 25 la portaient, 7 la gardent.
+  - `COACH_INITIAL` **ne conclut pas**, et c'est le point : deux prenoms partageant
+    l'initiale et le nom sont deux hommes, et les fratries existent au football. La ligne
+    dit sur quoi elle repose — « apparié sur l'initiale du prénom » — au lieu de trancher.
+    Meme regle que partout : le cas indecidable se nomme.
+  - Elle porte le prenom **de la feuille**, le plus complet : c'est avec lui qu'on cherche,
+    la fiche l'abregeant. L'anciennete, elle, ne vient que de la fiche.
+  - **Le repli des accents etait deja applique des deux cotes** (`sort_key`), et n'a jamais
+    ete la cause : « N. Usaï » et « Nicolas Usai » se replient tous deux en « usai ». Ce
+    qui les separait etait l'initiale seule. Le fold reste indispensable — c'est lui qui
+    permet au nom de famille de se comparer — mais il ne suffisait pas.
+  - Le nom de famille se compare **en suffixe** : « J. Machado Sacramento » contre « João
+    Pedro Machado Sacramento » porte deux prenoms d'un cote et un seul de l'autre, et
+    exiger la meme longueur y inventerait une divergence.
+  - Le chapitre COMMENT LIRE LES BLOCS definit **les trois** mentions et ce que chacune
+    permet de conclure : un libelle sans definition est le defaut que ce prompt evite
+    partout.
+- **Cette regle ne tranche que dans 15 % des cas, et c'est mesure** : sur les 110
     clubs en base, **92 ont plusieurs etapes ouvertes** chez eux — le fournisseur ne
     referme pas ses fiches. Le reste du temps c'est le **depart le plus recent** qui
     decide : heuristique juste plus souvent qu'aucune autre, mais heuristique.
