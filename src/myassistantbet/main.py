@@ -11,7 +11,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 import httpx
-from fastapi import FastAPI, Form, HTTPException, Request
+from fastapi import FastAPI, Form, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -46,10 +46,10 @@ from .services import picks_import as picks_import_service
 from .services import prompt as prompt_service
 from .services import session as session_service
 from .services import set_scores as set_scores_service
+from .services import stats_export as stats_export_service
 from .services import tennis_history as tennis_history_service
 from .services import tennis_load as tennis_load_service
 from .services import thresholds as thresholds_service
-from .services.inference import EQUIVALENCE_MARGIN, MARGIN_REFERENCE
 from .services.scan import run_scan
 
 logging.basicConfig(
@@ -944,27 +944,41 @@ def history_page(request: Request) -> HTMLResponse:
 
 @app.get("/stats", response_class=HTMLResponse)
 def stats_page(request: Request) -> HTMLResponse:
-    """Deux mesures distinctes : ce que vaut l'analyse, ce que valent les paris."""
-    settings = get_settings()
+    """Deux mesures distinctes : ce que vaut l'analyse, ce que valent les paris.
+
+    Le contexte est assemble par `stats_export.report()`, qui sert aussi
+    l'export : la page et le fichier lisent le **meme** objet, et rien ne se
+    recalcule d'un cote. Un chiffre qui differerait entre les deux serait pire
+    que pas d'export du tout.
+    """
     return templates.TemplateResponse(
         request,
         "stats.html",
-        {
-            "analysis": history_service.analysis(settings),
-            # Point de comparaison du residu, pas une estimation du vrai
-            # overround : il montre ou le constat cesse de tenir.
-            "margin_reference": MARGIN_REFERENCE,
-            # Le seuil produit sous lequel un second axe ne se justifie pas.
-            "equivalence_margin": EQUIVALENCE_MARGIN,
-            "labelling": history_service.labelling(settings),
-            "stats": history_service.stats(settings),
-            "coupon_rates": coupons_service.rates(settings),
-            # La seule mesure de la page qui ne melange aucun prix : quatre
-            # issues, verifiables sur n'importe quelle feuille de match.
-            "set_scores": set_scores_service.report(settings),
-            "set_score_options": list(set_scores_service.SCORES),
-            "set_score_matrix": set_scores_service.matrix_rows(set_scores_service.report(settings)),
-        },
+        stats_export_service.report(get_settings()).context,
+    )
+
+
+@app.get("/api/stats/export")
+def stats_export(fmt: str = Query("md", alias="format")) -> Response:
+    """Le meme etat des lieux en un fichier autoportant.
+
+    `md` pour un lecteur — humain ou modele — hors de l'application, `json`
+    pour une machine. Aucun calcul ici : la route choisit une ecriture.
+    """
+    if fmt not in stats_export_service.FORMATS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Format inconnu : {fmt}. Attendu : {', '.join(stats_export_service.FORMATS)}.",
+        )
+    found = stats_export_service.report(get_settings())
+    name = stats_export_service.filename(found, fmt)
+    headers = {"Content-Disposition": f'attachment; filename="{name}"'}
+    if fmt == "json":
+        return JSONResponse(stats_export_service.as_json(found), headers=headers)
+    return PlainTextResponse(
+        stats_export_service.as_markdown(found),
+        media_type="text/markdown; charset=utf-8",
+        headers=headers,
     )
 
 

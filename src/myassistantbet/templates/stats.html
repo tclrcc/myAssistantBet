@@ -9,7 +9,13 @@
       Deux questions distinctes : ce que vaut l'analyse, et ce que valent tes paris.
     </p>
   </div>
+  {# L'export existe pour faire relire cette page ailleurs : un fichier unique,
+     autoportant, ou chaque taux porte son dénominateur et son intervalle — que
+     l'écran, lui, dessine sur la barre. Les deux formats sortent du **même**
+     assemblage que la page. #}
   <div class="actions">
+    <a class="button" href="/api/stats/export?format=md">Exporter (Markdown)</a>
+    <a class="button" href="/api/stats/export?format=json">Exporter (JSON)</a>
     <a class="button" href="/history">Sessions</a>
     <a class="button" href="/">← Board</a>
   </div>
