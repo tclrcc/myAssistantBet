@@ -3598,6 +3598,36 @@ absence, la ligne disparait, et l'interface a l'air normale. C'est la forme la
 plus couteuse qu'un defaut puisse prendre sur cette page, puisqu'elle se
 confond avec le message qu'elle est censee porter.
 
+## Une assertion enonce ce qui doit etre vrai, jamais ce qui est sorti
+
+**Quatre tests casses dans un seul chantier, tous de la meme forme** : l'assertion avait
+ete ecrite en recopiant la sortie du jour au lieu d'enoncer la propriete. Aucun ne
+verifiait ce qu'il croyait verifier, et aucun n'a rien appris en cassant.
+
+- **La valeur du jour.** `assert "11 jambes"` : 11 est le reglage de la base servie, le
+  seed de la migration 003 en donne 9. Le test passe chez l'un et casse chez l'autre sans
+  qu'une regle ait bouge. Ce qui doit etre vrai est que le nombre annonce **soit celui que
+  le calcul rend** — donc `safe_legs_available(...)` dans l'assertion elle-meme. Meme regle
+  que pour les paliers hauts : le critere est une propriete, jamais les valeurs du jour.
+- **Le formatage.** `assert "N'ajoute\njamais une jambe"` : le retour a la ligne n'est pas
+  la regle, c'est une largeur de colonne. Un mot ajoute trois phrases plus haut deplace la
+  coupe et casse un test qui ne verifiait pas ca. La phrase se compare **a plat**
+  (`" ".join(texte.split())`), comme le fait deja le test de la section D.
+- **La formulation exacte quand seule la substance compte.** Un test qui recopie une phrase
+  entiere casse a chaque reecriture, et la reaction naturelle — realigner l'assertion sur
+  la nouvelle sortie — ne verifie plus rien d'autre qu'elle-meme.
+
+La question a se poser en ecrivant l'assertion : **si elle casse, aura-t-on appris quelque
+chose ?** Si la reponse est « il faudra recopier la nouvelle sortie », elle decrit au lieu
+de contraindre.
+
+**Et la reciproque garde le garde-fou, sans quoi cette regle deviendrait un permis
+d'affaiblir les tests** : une assertion qui casse sur un changement **de fond** n'est pas
+fragile, elle fait son travail. Deux tests du gabarit ont refuse une coupe du preambule et
+ils avaient raison ; une coupe qui casse un test de contenu est une regression, pas une
+coupe. La difference se lit sur ce que la casse revele — une decision changee, ou une
+largeur de colonne.
+
 ## Un seuil descend dans l'objet, il ne va pas se chercher lui-meme
 
 Regle generale, apprise trois fois — sur `RateRow.minimum`, sur le seuil
