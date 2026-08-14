@@ -353,3 +353,77 @@ def test_la_page_et_l_export_lisent_le_meme_assemblage(migrated: Settings) -> No
     assert contexte["stats"] is found.stats
     assert contexte["set_scores"] is found.set_scores
     assert contexte["set_score_matrix"] is found.set_score_matrix
+
+
+# -- Le residu decline -------------------------------------------------------
+#
+# La page ventilait des taux bruts par angle, par marche et par confiance : la
+# metrique retiree de la tete, et pour la raison exacte qui a failli faire
+# conclure deux fois — « Issue 48 % contre Maniere 79 % » et « SAFE 66 % contre
+# FUN 40 % » opposent des populations qui ne jouent pas aux memes prix.
+
+
+def test_le_residu_se_decline_avec_son_taux_brut_a_cote(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """**Le taux brut reste, jamais seul.** Il dit combien de fois ca tombe, ce
+    qui est lisible tant qu'il ne sert pas a comparer deux regroupements."""
+    _lot_complet(isolated_settings)
+    corps = stats_export.as_markdown(stats_export.report(isolated_settings))
+
+    titres = [
+        titre
+        for sections in _markdown_blocks(corps).values()
+        for titre in sections
+        if titre.startswith("Résidu au prix")
+    ]
+    assert titres, "au moins un axe doit se decliner sur cette fixture"
+
+    section = corps.split("### Résidu au prix, par cran de confiance")[1].split("###")[0]
+    for colonne in ("Tranchées", "Gagnées", "Payées par les prix", "Écart", "Taux", "Intervalle"):
+        assert colonne in section, f"« {colonne} » manque au tableau"
+
+
+def test_la_page_ne_conclut_rien_sur_le_residu_decline(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Elle affiche, elle ne conclut pas. Une ligne qui s'ecarte est **marquee**,
+    et l'horizon dit a quelle distance les autres se trancheraient — comme le
+    fait deja la carte « ce qui s'ecarte »."""
+    _lot_complet(isolated_settings)
+    page = client.get("/stats").text
+
+    assert "Résidu au prix, par cran de confiance" in page
+    # Aucune phrase de conclusion : ni verdict, ni recommandation.
+    for interdit in ("donc tu devrais", "il faut privilégier", "ce cran est meilleur"):
+        assert interdit not in page
+
+    analyse = history_service.analysis(settings=isolated_settings)
+    portees = [row for row in analyse.residual_by_confidence if row.horizon]
+    for row in portees:
+        assert f"{row.horizon} sélection(s) de plus" in page
+
+
+def test_un_axe_trop_court_ne_se_decline_pas(migrated: Settings) -> None:
+    """**Un axe qui ne porte que du bruit vaut mieux non affiche.** Mesure du
+    14/08/2026 : le marche donne 13 niveaux dont huit sous dix selections, et une
+    case a trois lignes rend un intervalle que personne ne lira. Le seuil est
+    celui de la page, jamais un second."""
+    analyse = history_service.analysis(settings=migrated)
+
+    assert analyse.residual_by_confidence == []
+    assert analyse.residual_by_angle == []
+    assert analyse.residual_by_market == []
+
+
+def test_le_residu_decline_ne_porte_aucun_indicateur_financier(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Meme garde que le reste : le residu compare des issues tranchees a des
+    prix deja enregistres, et rien n'y est multiplie par une mise."""
+    _lot_complet(isolated_settings)
+    charge = stats_export.as_json(stats_export.report(isolated_settings))
+
+    for axe in charge["residuals"].values():
+        for ligne in axe:
+            assert not ({"stake", "mise", "profit", "roi", "gain"} & set(ligne))

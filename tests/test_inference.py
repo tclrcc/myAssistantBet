@@ -34,6 +34,7 @@ from myassistantbet.services.inference import (
     poisson_binomial,
     required_for_gap,
     required_sample,
+    residual_horizon,
     two_proportions,
     wilson,
 )
@@ -706,3 +707,37 @@ def test_un_constat_qui_tient_a_toute_marge_n_a_pas_de_bascule() -> None:
 
     assert ecrasant.p_value < ALPHA
     assert ecrasant.tipping_margin is None, "aucune marge plausible ne l'explique"
+
+
+# -- L'horizon d'un residu ---------------------------------------------------
+
+
+def test_l_horizon_dit_a_quelle_distance_le_deficit_tiendrait() -> None:
+    """La page n'a pas a conclure, mais elle doit dire a quelle distance la
+    question se tranche. Sans ce nombre, une ligne non concluante ne se
+    distingue pas d'une ligne qu'il ne sert a rien de regarder a nouveau."""
+    # Dix selections a 2.00, quatre gagnees : deficit d'une victoire, loin du
+    # seuil. En repliquant le meme regime, il finit par tenir.
+    residu = Residual(observed=4, implied=[0.5] * 10)
+
+    horizon = residual_horizon(residu)
+
+    assert horizon is not None and horizon > 0
+    replique = Residual(observed=4 * (1 + horizon // 10), implied=[0.5] * (10 + horizon))
+    assert replique.p_value < ALPHA
+
+
+def test_un_deficit_deja_etabli_n_a_pas_d_horizon() -> None:
+    """Il n'y a plus rien a attendre : la question est tranchee."""
+    residu = Residual(observed=2, implied=[0.5] * 30)
+
+    assert residu.p_value < ALPHA
+    assert residual_horizon(residu) is None
+
+
+def test_un_residu_positif_ou_vide_n_a_pas_d_horizon() -> None:
+    """**Un etat limite est un resultat, pas une absence de resultat** : un
+    residu positif n'a rien a etablir, et l'horizon ne doit pas repondre comme
+    s'il s'agissait d'un deficit qu'on attend."""
+    assert residual_horizon(Residual(observed=9, implied=[0.5] * 10)) is None
+    assert residual_horizon(Residual(observed=0, implied=[])) is None

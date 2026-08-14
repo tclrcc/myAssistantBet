@@ -35,6 +35,7 @@ from .inference import (
     omnibus,
     ordinal_trend,
     required_sample,
+    residual_horizon,
     two_proportions,
     wilson,
 )
@@ -2354,6 +2355,14 @@ class Analysis:
     #: niveau 1-2 tient-elle mieux qu'une lecture ?
     by_angle: list[RateRow] = field(default_factory=list)
     by_source: list[RateRow] = field(default_factory=list)
+    #: Les memes axes, mais sur le **residu au prix** plutot que sur le taux
+    #: brut. Le taux brut ne compare pas ce qu'il pretend comparer : deux
+    #: regroupements qui ne jouent pas aux memes prix ne se departagent pas par
+    #: leur frequence de reussite. Rendus **a cote** des taux, jamais a la
+    #: place — le taux dit combien de fois ca tombe, ce qui reste lisible.
+    residual_by_angle: list[ResidualRow] = field(default_factory=list)
+    residual_by_confidence: list[ResidualRow] = field(default_factory=list)
+    residual_by_market: list[ResidualRow] = field(default_factory=list)
     #: Selections tranchees qui ne portent ni l'une ni l'autre. Meme role que
     #: `uncategorised` : fermer l'addition plutot que de laisser des lignes
     #: quitter un regroupement sans un mot. Les cent premieres selections sont
@@ -3107,6 +3116,104 @@ def _rate_tally(
     return [row for row in grouped.values() if row.settled >= minimum]
 
 
+@dataclass
+class ResidualRow:
+    """Le residu au prix d'un regroupement, avec de quoi le lire.
+
+    **Le taux brut ne compare pas ce qu'il pretend comparer**, et la semaine du
+    14/08/2026 l'a montre deux fois : « Issue 48 % contre Maniere 79 % » et
+    « SAFE 66 % contre FUN 40 % » ont paru concluants a deux lecteurs
+    differents, alors que les deux opposent des populations qui ne jouent pas
+    aux memes prix. Le residu, lui, compare chaque selection a **son** prix.
+
+    Le taux brut reste a cote, jamais seul : il dit combien de fois ca tombe,
+    ce qui reste lisible tant qu'il ne sert pas a comparer deux populations.
+    """
+
+    key: str
+    label: str
+    residual: Residual
+    won: int = 0
+    settled: int = 0
+    #: Selections **supplementaires** au meme regime pour que le deficit tienne.
+    #: La page n'a pas a conclure, mais elle doit dire a quelle distance la
+    #: question se tranche.
+    horizon: int | None = None
+
+    @property
+    def rate(self) -> float | None:
+        return self.won / self.settled if self.settled else None
+
+    @property
+    def rate_label(self) -> str:
+        return f"{self.rate:.0%}" if self.rate is not None else "—"
+
+    @property
+    def interval(self) -> tuple[float, float] | None:
+        return wilson(self.won, self.settled)
+
+    @property
+    def interval_label(self) -> str:
+        bornes = self.interval
+        return f"[{bornes[0]:.0%} – {bornes[1]:.0%}]" if bornes else "—"
+
+    @property
+    def gap_label(self) -> str:
+        gap = self.residual.gap
+        return f"{gap:+.1f}" if gap is not None else "—"
+
+    @property
+    def expected_label(self) -> str:
+        return f"{self.residual.expected:.1f}"
+
+    @property
+    def established(self) -> bool:
+        """Le deficit s'ecarte de ce que les prix annoncaient.
+
+        **Ce n'est pas une conclusion de la page** : c'est le meme test que le
+        bloc de tete, applique a une ligne, et la page l'affiche sans en tirer
+        de phrase. Ce qui separe se voit ; ce qui se conclut appartient au
+        lecteur.
+        """
+        return self.settled > 0 and (self.residual.gap or 0) < 0 and self.residual.p_value < ALPHA
+
+
+def _residual_rows(
+    entries: list[tuple[str, str, Any]], minimum: int = ANALYSIS_MIN_ROWS
+) -> list[ResidualRow]:
+    """Le residu au prix, groupe par cle. Les lignes trop courtes sont retirees.
+
+    **Un axe qui ne porte que du bruit vaut mieux non affiche.** Mesure du
+    14/08/2026 sur les 103 selections a anteriorite etablie : le marche donne 13
+    niveaux dont **huit sous dix selections**, et une case a trois lignes rend un
+    intervalle si large que personne ne le lira. Le seuil est celui de la page,
+    jamais un second — sous quel compte un taux ne veut plus rien dire est une
+    propriete des donnees.
+    """
+    groupes: dict[str, tuple[str, list[Any]]] = {}
+    for key, label, row in entries:
+        groupes.setdefault(key, (label, []))[1].append(row)
+
+    rendus: list[ResidualRow] = []
+    for key, (label, lignes) in groupes.items():
+        gagnees = sum(1 for row in lignes if str(row["result"]) == "win")
+        implied = [1.0 / float(row["price"]) for row in lignes]
+        residual = Residual(observed=gagnees, implied=implied)
+        if len(lignes) < minimum:
+            continue
+        rendus.append(
+            ResidualRow(
+                key=key,
+                label=label,
+                residual=residual,
+                won=gagnees,
+                settled=len(lignes),
+                horizon=residual_horizon(residual),
+            )
+        )
+    return sorted(rendus, key=lambda row: -row.settled)
+
+
 def _by_family(tally: list[RateRow], known: dict[str, str]) -> tuple[list[Family], int]:
     """Groupe les marches par famille. Rend aussi ce qui n'en a aucune.
 
@@ -3581,6 +3688,52 @@ def analysis(settings: Settings | None = None) -> Analysis:
         entry.band = bands.get(int(entry.key)) if entry.key.isdigit() else None
     report.notation = _notation(rows, results, report.minimum_rows)
     report.override = _override(rows, results)
+
+    # **Le residu au prix, decline.** La page ventilait des taux bruts par angle,
+    # par marche et par confiance : la metrique retiree de la tete, et pour la
+    # raison exacte qui a failli faire conclure deux fois cette semaine —
+    # « Issue 48 % contre Maniere 79 % » et « SAFE 66 % contre FUN 40 % »
+    # opposent des populations qui ne jouent pas aux memes prix.
+    #
+    # La population est celle du bloc de tete, a anteriorite etablie : un prix
+    # enregistre apres le coup d'envoi ne decrit plus le marche d'avant-match, et
+    # tout le residu en depend.
+    prices = [
+        row
+        for row, result in zip(rows, results, strict=True)
+        if result in ("win", "loss") and _antecedence(row) and (_column(row, "price") or 0) > 1.0
+    ]
+    report.residual_by_angle = _residual_rows(
+        [
+            (row["angle"], ANGLES.get(row["angle"], row["angle"]), row)
+            for row in prices
+            if row["angle"]
+        ],
+        minimum=report.minimum_rows,
+    )
+    report.residual_by_confidence = sorted(
+        _residual_rows(
+            [
+                (str(row["confidence"]), f"confiance {row['confidence']}", row)
+                for row in prices
+                if row["confidence"] is not None
+            ],
+            minimum=report.minimum_rows,
+        ),
+        key=lambda item: item.key,
+        reverse=True,
+    )
+    # Le **meme** regroupement de libelles que la carte des taux : deux
+    # normalisations paralleles auraient fini par ne plus decrire les memes
+    # lignes, et leurs deux cartes se seraient contredites.
+    report.residual_by_market = _residual_rows(
+        [
+            (_market_key(row["market"]), (row["market"] or "").strip(), row)
+            for row in prices
+            if _market_key(row["market"])
+        ],
+        minimum=report.minimum_rows,
+    )
 
     report.by_sport = sorted(
         _rate_tally(

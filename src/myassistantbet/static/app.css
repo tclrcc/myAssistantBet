@@ -1590,6 +1590,18 @@ details.readout > .why-body { padding: 0 var(--s4) var(--s4); margin-top: 0; }
   font-size: 0.8rem;
 }
 .chart-note + details.why { margin-top: var(--s2); }
+/* Le residu decline. Un tableau et non des barres : un ecart signe n'a ni
+   echelle de 0 a 100 % ni longueur qui veuille dire quelque chose.
+   `table-scroll` tient la regle du projet — un tableau large defile dans son
+   conteneur, jamais la page. */
+.table-scroll { overflow-x: auto; }
+.board.compact th,
+.board.compact td { padding: 0.3rem 0.5rem; font-size: 0.8rem; }
+/* La ligne qui s'ecarte de ses propres prix. **Elle marque, elle ne conclut
+   pas** : aucune phrase n'accompagne cette teinte, c'est la page qui affiche et
+   le lecteur qui decide. */
+.board.compact tr.is-apart { background: var(--accent-soft); }
+.board.compact tr.is-apart td:first-child { box-shadow: inset 2px 0 var(--accent-line); }
 /* Un constat sur l'echelle elle-meme, pose sur la carte qu'il decrit. En
    bandeau au-dessus du bloc, il etait recopie pour chaque echelle : deux
    paragraphes presque identiques dont seul le premier tiers changeait. */

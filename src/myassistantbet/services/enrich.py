@@ -1,14 +1,21 @@
 """Etage B — marches profonds, match par match.
 
-Chaque marche demande coute 1 credit (un seul bookmaker, donc une seule region).
-Le cout est donc parfaitement previsible : il est estime avant l'appel, affiche
-dans l'UI, et compare au plancher `ODDS_API_CREDIT_FLOOR` avant tout depart.
+**Le cout ne se deduit pas du nombre de marches demandes** : The Odds API facture
+ceux qui sont **servis**. Un marche qu'aucun book interroge ne rend est gratuit —
+mesure du 14/08/2026, voir `unit_cost()`, qui calibre l'estimation sur le facture
+observe plutot que sur la formule multiplicative de la documentation.
+
+L'estimation est faite avant l'appel, affichee dans l'UI, et comparee au plancher
+`ODDS_API_CREDIT_FLOOR` avant tout depart. Un refus du plancher se journalise
+avec ce qu'il a refuse : sans cette ligne, savoir combien d'appels il a bloques
+est impossible apres coup.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -44,7 +51,6 @@ from .session import has_started
 logger = logging.getLogger(__name__)
 
 
-#: Marches profonds football (SPEC.md section 4).
 @dataclass
 class EnrichTarget:
     """Un evenement a enrichir, et le detail de ce qu'il va couter."""
@@ -336,6 +342,39 @@ class Estimate:
             # plancher sera verifiable des le premier appel.
             return True
         return self.remaining_after is not None and self.remaining_after >= self.floor
+
+    @property
+    def floor_blocked(self) -> bool:
+        """Le plancher de credits, et lui seul, refuse cet enrichissement.
+
+        Distinct de `not allowed`, qui couvre aussi « rien de coche » et « rien
+        a enrichir » : ce sont trois situations differentes, et les confondre
+        journaliserait un incident sur un board vide.
+        """
+        return bool(self.targets) and self.remaining is not None and not self.allowed
+
+    def floor_log(self) -> str:
+        """La ligne a journaliser quand le plancher mord.
+
+        **Un garde-fou qui ne dit pas quand il se declenche est un angle mort**,
+        et c'est la deuxieme fois qu'on le paie — les causes de contexte avant
+        la migration 044, puis celui-ci. Le refus n'etait journalise que par son
+        motif d'interface, sans nommer ce qui avait ete refuse : le jour ou il a
+        fallu savoir combien d'appels il avait bloques, la reponse etait « non
+        mesurable ».
+
+        La ligne porte donc **ce qui a ete refuse** — les competitions et leur
+        compte — l'estimation, et le quota restant. Pas une carte, pas une
+        table : ce refus doit rester rare, et une table vide se lirait comme une
+        mesure absente.
+        """
+        par_competition = Counter(target.competition_key or "?" for target in self.targets)
+        detail = ", ".join(f"{cle} x{compte}" for cle, compte in sorted(par_competition.items()))
+        return (
+            f"Plancher de credits : {len(self.targets)} match(s) refuses "
+            f"({detail}) — estimation {self.cost}, restant {self.remaining}, "
+            f"plancher {self.floor}"
+        )
 
     @property
     def blocked_reason(self) -> str | None:
@@ -898,6 +937,10 @@ async def run_enrich(
         reason = estimate.blocked_reason or "Enrichissement impossible."
         report.results.append(EnrichResult(label="—", error=reason))
         logger.warning("Enrichissement refuse : %s", reason)
+        # Le plancher a sa ligne a lui : sans elle, savoir combien d'appels il a
+        # bloques est impossible apres coup — c'est ce qui s'est produit.
+        if estimate.floor_blocked:
+            logger.warning("%s", estimate.floor_log())
         if on_progress:
             on_progress(report)
         return report

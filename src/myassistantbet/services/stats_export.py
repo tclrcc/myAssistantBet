@@ -89,6 +89,9 @@ SECTIONS: tuple[Section, ...] = (
     Section(ANALYSIS_BLOCK, "Par marché"),
     Section(ANALYSIS_BLOCK, "Par type d'angle"),
     Section(ANALYSIS_BLOCK, "Par niveau de source"),
+    Section(ANALYSIS_BLOCK, "Résidu au prix, par cran de confiance"),
+    Section(ANALYSIS_BLOCK, "Résidu au prix, par type d'angle"),
+    Section(ANALYSIS_BLOCK, "Résidu au prix, par marché"),
     Section(ANALYSIS_BLOCK, "Angle « manière » rendu en vainqueur"),
     Section("", SELECTION_BLOCK),
     Section(SELECTION_BLOCK, "Par session"),
@@ -189,6 +192,18 @@ class StatsReport:
             (Section(ANALYSIS_BLOCK, "Par famille de marché"), bool(analysis.by_family)),
             (Section(ANALYSIS_BLOCK, "Par marché"), bool(analysis.by_market)),
             (Section(ANALYSIS_BLOCK, "Par type d'angle"), bool(analysis.by_angle)),
+            (
+                Section(ANALYSIS_BLOCK, "Résidu au prix, par cran de confiance"),
+                bool(analysis.residual_by_confidence),
+            ),
+            (
+                Section(ANALYSIS_BLOCK, "Résidu au prix, par type d'angle"),
+                bool(analysis.residual_by_angle),
+            ),
+            (
+                Section(ANALYSIS_BLOCK, "Résidu au prix, par marché"),
+                bool(analysis.residual_by_market),
+            ),
             (Section(ANALYSIS_BLOCK, "Par niveau de source"), bool(analysis.by_source)),
             (
                 Section(ANALYSIS_BLOCK, "Angle « manière » rendu en vainqueur"),
@@ -345,6 +360,28 @@ def filename(found: StatsReport, fmt: str = "md") -> str:
 # -- Ecriture JSON ----------------------------------------------------------
 
 
+def _residual_row(row: history_service.ResidualRow) -> dict[str, Any]:
+    """Un niveau et son residu au prix, avec son taux brut a cote.
+
+    Le taux y figure parce qu'il reste lisible pour ce qu'il est ; il n'y figure
+    **jamais seul**, et c'est toute la difference avec les cartes de taux.
+    """
+    return {
+        "key": row.key,
+        "label": row.label,
+        "settled": row.settled,
+        "won": row.won,
+        "expected": row.residual.expected,
+        "gap": row.residual.gap,
+        "p_value": row.residual.p_value,
+        "rate": row.rate,
+        "interval": list(row.interval) if row.interval else None,
+        #: Selections supplementaires au meme regime pour que l'ecart tienne.
+        "horizon": row.horizon,
+        "established": row.established,
+    }
+
+
 def _rate(row: history_service.RateRow) -> dict[str, Any]:
     """Un regroupement, avec **toujours** son denominateur et son intervalle."""
     return {
@@ -488,6 +525,14 @@ def as_json(found: StatsReport) -> dict[str, Any]:
             "by_source": [_rate(row) for row in analysis.by_source],
             "carried": [_rate(row) for row in analysis.carried_rows],
             "folded": analysis.folded_rows,
+        },
+        # Le residu decline. Rendu **a cote** des taux et jamais a leur place :
+        # un taux dit combien de fois ca tombe, un residu si ca tombe plus
+        # souvent que les prix ne l'annoncaient.
+        "residuals": {
+            "by_confidence": [_residual_row(row) for row in analysis.residual_by_confidence],
+            "by_angle": [_residual_row(row) for row in analysis.residual_by_angle],
+            "by_market": [_residual_row(row) for row in analysis.residual_by_market],
         },
         "discrimination": {
             "horizons": [
@@ -653,6 +698,49 @@ def _card(
     if Section(block, title) not in found.sections:
         return []
     return ["", f"### {title}", "", *_rate_table(rows)]
+
+
+def _residual_card(
+    found: StatsReport, title: str, rows: list[history_service.ResidualRow]
+) -> list[str]:
+    """Le residu au prix d'un axe : son tableau, et l'horizon de chaque ligne.
+
+    **Le taux brut y figure a cote et jamais seul.** Il dit combien de fois ca
+    tombe, ce qui reste lisible tant qu'il ne sert pas a comparer deux
+    regroupements qui ne jouent pas aux memes prix — la faute exacte que ces
+    cartes existent pour eviter.
+    """
+    if Section(ANALYSIS_BLOCK, title) not in found.sections:
+        return []
+    out = [
+        "",
+        f"### {title}",
+        "",
+        "| Niveau | Tranchées | Gagnées | Payées par les prix | Écart | Taux | Intervalle |",
+        "| --- | ---: | ---: | ---: | ---: | ---: | --- |",
+    ]
+    for row in rows:
+        marque = " **·**" if row.established else ""
+        out.append(
+            f"| {row.label}{marque} | {row.settled} | {row.won} | {row.expected_label} | "
+            f"{row.gap_label} | {row.rate_label} | {row.interval_label} |"
+        )
+    horizons = [row for row in rows if row.horizon]
+    if horizons:
+        out.append("")
+        for row in horizons:
+            out.append(
+                f"- « {row.label} » : il faudrait environ {row.horizon} sélection(s) de "
+                "plus au même régime pour que cet écart tienne."
+            )
+    if any(row.established for row in rows):
+        out += [
+            "",
+            "Les lignes marquées **·** s'écartent de leurs propres prix au seuil habituel "
+            "de la page. Ce n'est pas une conclusion : c'est le même test que le bloc de "
+            "tête, appliqué à une ligne.",
+        ]
+    return out
 
 
 def as_markdown(found: StatsReport) -> str:
@@ -852,6 +940,14 @@ def as_markdown(found: StatsReport) -> str:
         out += _card(found, ANALYSIS_BLOCK, "Par marché", analysis.by_market)
         out += _card(found, ANALYSIS_BLOCK, "Par type d'angle", analysis.by_angle)
         out += _card(found, ANALYSIS_BLOCK, "Par niveau de source", analysis.by_source)
+        # Les trois cartes ci-dessus ventilent des **taux bruts** ; celles-ci
+        # comparent chaque selection a son prix. Les deux se lisent ensemble, et
+        # seule la seconde permet de comparer deux regroupements.
+        out += _residual_card(
+            found, "Résidu au prix, par cran de confiance", analysis.residual_by_confidence
+        )
+        out += _residual_card(found, "Résidu au prix, par type d'angle", analysis.residual_by_angle)
+        out += _residual_card(found, "Résidu au prix, par marché", analysis.residual_by_market)
         if Section(ANALYSIS_BLOCK, "Angle « manière » rendu en vainqueur") in found.sections:
             taux = (
                 f" — {analysis.conflicts.rate * 100:.0f} %"

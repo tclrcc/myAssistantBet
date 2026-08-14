@@ -3958,6 +3958,27 @@ visees et cote cible — et la cible reste une cible, jamais un plancher.
     c'est-a-dire la metrique retiree de la tete de `/stats` : un taux sans son prix ne
     mesure rien, et les cotes courtes gagnent plus souvent par construction. Elle est
     ecrite ici pour qu'une relecture ne la prenne pas pour une validation.
+  - **Ce qui aurait permis de trancher proprement existe desormais** : le residu au prix,
+    decline par cran de confiance, par type d'angle et par marche. C'est ce qui a ete fait
+    a la place du Fisher ci-dessus, et il faut le lire comme tel — la note ne dit pas
+    seulement ce qu'on a refuse. Un taux brut ne compare pas ce qu'il pretend comparer ;
+    le residu compare chaque selection a **son** prix, donc deux regroupements qui ne
+    jouent pas aux memes cotes s'y departagent honnetement.
+    - Mesure du 14/08/2026 sur les 103 selections a anteriorite etablie : le taux brut
+      donnait `conf 3` a 36 % contre `conf 4` a 66 %, ce qui se lit « le cran 4 est
+      meilleur ». Le residu dit autre chose et de plus utile — **`conf 4` est exactement a
+      parite avec ses prix** (+0,1 sur 38) et **`conf 3` porte tout le deficit global**
+      (-11,1 sur 53, seul niveau qui s'ecarte au seuil de la page). Le meme calcul sur
+      l'angle rend `Issue` a -2,5 sur 21 et `Maniere` a +3,8 sur 19 : l'ecart de 31 points
+      de taux brut se reduit a presque rien une fois les prix pris en compte.
+    - **La page affiche et ne conclut pas** : la ligne qui s'ecarte est marquee, et
+      `residual_horizon()` dit combien de selections de plus au meme regime il faudrait
+      pour que les autres tiennent — meme role que `required_sample` sur la carte « ce qui
+      s'ecarte ». Aucune phrase n'accompagne la marque.
+    - **Un axe qui ne porte que du bruit ne s'affiche pas.** Le marche donne 13 niveaux
+      dont huit sous dix selections ; le seuil est celui de la page (`minimum_rows`),
+      jamais un second — sous quel compte un taux ne veut plus rien dire est une propriete
+      des donnees, pas de la carte qui les montre.
   - **Le critere ecarte l'a ete par la mesure, lui.** Nommer les deux ou trois confiances
     les plus basses designerait des jambes qui ne sont pas plus fragiles : 54 % contre
     58 %, et l'omnibus exact sur les confiances 2/3/4 des bandes sures donne p = 0,19.

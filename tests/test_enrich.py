@@ -203,6 +203,51 @@ async def test_estimation_bloquee_sous_le_plancher(
 
 
 @respx.mock
+async def test_le_plancher_journalise_ce_qu_il_refuse(
+    odds_client: OddsAPIClient,
+    migrated: Settings,
+    load_fixture: Any,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """**Un garde-fou qui ne dit pas quand il se declenche est un angle mort**,
+    et c'est la deuxieme fois qu'on le paie apres les causes de contexte
+    (migration 044). Le refus n'etait journalise que par son motif d'interface,
+    sans nommer ce qui avait ete refuse : le jour ou il a fallu savoir combien
+    d'appels le plancher avait bloques, la reponse etait « non mesurable »."""
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    db.execute(
+        "INSERT INTO api_usage (provider, endpoint, cost, remaining, called_at) "
+        "VALUES ('oddsapi', '/x', 2, 505, '2099-01-01T00:00:00Z')",
+        settings=migrated,
+    )
+    estimate = build_estimate(session_id, migrated, NOW)
+
+    assert estimate.floor_blocked is True
+    ligne = estimate.floor_log()
+
+    assert "soccer_sweden_allsvenskan x1" in ligne, "ce qui a ete refuse, nomme"
+    assert "estimation 14" in ligne
+    assert "restant 505" in ligne
+    assert "plancher 500" in ligne
+
+
+@respx.mock
+async def test_un_board_vide_ne_journalise_aucun_plancher(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """`floor_blocked` est distinct de `not allowed`, qui couvre aussi « rien de
+    coche » et « rien a enrichir » : les confondre journaliserait un incident sur
+    un board vide."""
+    session_id = board_service.current_session(migrated)
+    estimate = build_estimate(session_id, migrated, NOW)
+
+    assert estimate.allowed is False
+    assert estimate.floor_blocked is False
+
+
+@respx.mock
 async def test_un_match_commence_ne_coute_plus_rien(
     odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
 ) -> None:

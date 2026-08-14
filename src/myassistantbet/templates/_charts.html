@@ -194,6 +194,57 @@
 
    Une session sans lot connu garde sa ligne : elle n'a soumis aucun prompt, et
    la faire disparaître laisserait croire qu'elle n'a pas eu lieu. #}
+{# Le résidu au prix, décliné. **Un tableau et non des barres** : un résidu est
+   un écart signé, il n'a ni échelle de 0 à 100 % ni longueur qui veuille dire
+   quelque chose. Le taux brut l'accompagne, jamais seul — il dit combien de
+   fois ça tombe, ce qui reste lisible tant qu'il ne sert pas à comparer deux
+   populations qui ne jouent pas aux mêmes prix.
+
+   La page **affiche et ne conclut pas** : `is-apart` ne porte aucune phrase,
+   seulement le fait que la ligne s'écarte de ses prix. #}
+{# Rendue **seulement si elle porte des lignes** : un titre sans tableau serait
+   une section que le registre d'export ne declare pas, donc une parite rompue —
+   et un axe vide n'apprend rien qu'un axe absent n'apprenne deja. #}
+{% macro residuals(title, rows) %}
+  <article class="chart-card">
+    <h3>{{ title }}</h3>
+    <div class="table-scroll">
+      <table class="board compact">
+        <thead>
+          <tr>
+            <th>Niveau</th>
+            <th class="num">Tranchées</th>
+            <th class="num">Gagnées</th>
+            <th class="num">Payées</th>
+            <th class="num">Écart</th>
+            <th class="num">Taux</th>
+            <th>Intervalle</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in rows %}
+          <tr{% if row.established %} class="is-apart"{% endif %}>
+            <td>{{ row.label }}</td>
+            <td class="num">{{ row.settled }}</td>
+            <td class="num">{{ row.won }}</td>
+            <td class="num">{{ row.expected_label }}</td>
+            <td class="num">{{ row.gap_label }}</td>
+            <td class="num">{{ row.rate_label }}</td>
+            <td>{{ row.interval_label }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% for row in rows if row.horizon %}
+    <p class="chart-note">
+      « {{ row.label }} » : il faudrait environ {{ row.horizon }} sélection(s) de plus
+      au même régime pour que cet écart tienne.
+    </p>
+    {% endfor %}
+  </article>
+{% endmacro %}
+
 {% macro sessions(rows) %}
   <div class="bars wide-labels">
     {% for row in rows %}

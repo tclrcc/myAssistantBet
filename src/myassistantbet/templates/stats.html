@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_charts.html" import card, tile, tally, hero, mix, sessions, families, why %}
+{% from "_charts.html" import card, tile, tally, hero, mix, sessions, families, why, residuals %}
 {% block title %}Statistiques — MyAssistantBet{% endblock %}
 {% block content %}
 <div class="page-head">
@@ -545,6 +545,46 @@
                       de statistiques, d'un agrégateur — ou d'aucun fait daté ? C'est la
                       seule question de cette page dont la réponse changerait la méthode.") }}
     {% endif %}
+    {# LE RÉSIDU, DÉCLINÉ. Les cartes ci-dessus ventilent des **taux bruts** :
+       la métrique retirée de la tête de page, et pour la raison exacte qui a
+       failli faire conclure deux fois — « Issue 48 % contre Manière 79 % » et
+       « SAFE 66 % contre FUN 40 % » opposent des populations qui ne jouent pas
+       aux mêmes prix. Ces trois cartes comparent chaque sélection à **son**
+       prix, et le taux brut reste à côté sans jamais être seul.
+
+       La page affiche et ne conclut pas : elle marque la ligne qui s'écarte, et
+       dit à quelle distance les autres se trancheraient. #}
+    {% if analysis.residual_by_confidence or analysis.residual_by_angle
+          or analysis.residual_by_market %}
+    <div class="charts is-single">
+      {% if analysis.residual_by_confidence %}
+        {{ residuals("Résidu au prix, par cran de confiance", analysis.residual_by_confidence) }}
+      {% endif %}
+      {% if analysis.residual_by_angle %}
+        {{ residuals("Résidu au prix, par type d'angle", analysis.residual_by_angle) }}
+      {% endif %}
+      {% if analysis.residual_by_market %}
+        {{ residuals("Résidu au prix, par marché", analysis.residual_by_market) }}
+      {% endif %}
+    </div>
+    {% call why("Pourquoi ces trois cartes doublent les précédentes") %}
+    <p>
+      Les cartes de taux disent <strong>combien de fois ça tombe</strong> ; celles-ci
+      disent si ça tombe plus ou moins souvent que <strong>les prix ne l'annonçaient</strong>.
+      Les deux sont utiles, et seule la seconde permet de comparer deux regroupements :
+      un niveau qui ne joue que des favoris courts gagnera plus souvent sans rien avoir
+      apporté. « Payées » est la somme des <code>1/cote</code> des sélections du niveau,
+      et « Écart » la différence avec les victoires observées.
+    </p>
+    <p>
+      Aucune conclusion n'est écrite ici. Une ligne mise en évidence s'écarte de ses
+      propres prix au seuil habituel de la page ; les autres ne s'écartent pas
+      <em>encore</em>, et la note dit combien de sélections il en faudrait de plus au
+      même régime. Ce que ça veut dire est à toi.
+    </p>
+    {% endcall %}
+    {% endif %}
+
     {# Le prompt demandait à l'analyse de compter ces lignes elle-même — « si plus
        de la moitié du tableau porte sur le vainqueur, relis-les avec leur colonne
        Type ». Les deux colonnes sont en base : le compte se fait ici, une fois,

@@ -561,6 +561,44 @@ def required_for_gap(reference: float, gap: float) -> int | None:
     return required_sample(other, reference)
 
 
+#: Multiplicateur maximal explore par `residual_horizon`. Au-dela, l'horizon
+#: n'est plus une echeance mais un refus deguise : dire « il en faudrait 40 fois
+#: plus » n'aide personne a decider quand regarder a nouveau.
+HORIZON_MAX_FACTOR = 20
+
+
+def residual_horizon(residual: Residual, alpha: float = ALPHA) -> int | None:
+    """Selections **supplementaires** au meme regime pour que le deficit tienne.
+
+    Le pendant, pour un residu, de ce que `required_sample` fait pour deux
+    proportions : la page n'a pas a conclure, mais elle doit dire a quelle
+    distance la question se tranche. Sans ce nombre, une ligne non concluante ne
+    se distingue pas d'une ligne qu'il ne sert a rien de regarder a nouveau.
+
+    Le calcul replique l'echantillon a l'identique — memes prix, meme taux
+    observe — et cherche le premier multiplicateur ou `P(X <= observe)` passe
+    sous le seuil. C'est une **echeance**, pas une prediction : elle suppose que
+    le regime ne change pas, ce que rien ne garantit.
+
+    Rend `None` quand le deficit est deja etabli, quand il n'y en a pas — un
+    residu positif ou nul n'a rien a etablir — ou quand l'horizon depasse
+    `HORIZON_MAX_FACTOR` fois l'echantillon actuel.
+    """
+    if residual.settled == 0 or (residual.gap or 0) >= 0:
+        return None
+    if residual.p_value < alpha:
+        return None
+    for facteur in range(2, HORIZON_MAX_FACTOR + 1):
+        replique = Residual(
+            observed=residual.observed * facteur,
+            implied=list(residual.implied) * facteur,
+            margin=residual.margin,
+        )
+        if replique.p_value < alpha:
+            return residual.settled * (facteur - 1)
+    return None
+
+
 # -- Ce qu'une ligne porte --------------------------------------------------
 
 
