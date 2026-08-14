@@ -1653,7 +1653,7 @@ def add_pick(
             "                   confidence, played, stake, result, angle, source_level, "
             "                   source_level_effective, "
             "                   price_source, independence_note, market_key, "
-            "                   late_reason, confidence_computed, facts_json, "
+            "                   late_reason, confidence_computed, claim_raw_json, "
             "                   gap_touches_factor, distinct_publishers, "
             "                   confidence_claimed, research_overridden, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -2131,14 +2131,32 @@ class AuditedColumn:
 #: ferait crier au defaut sur une base saine — exactement la faute que cet audit
 #: existe pour attraper.
 #:
-#: `facts_json` porte, malgre son nom, **le bloc entier** (`Claim.raw`) : non
-#: nulle veut dire « un bloc de confiance a ete apparie », quel que soit son
-#: contenu. Un bloc `"faits": []` est une reponse normale que le gabarit impose
-#: meme ; auditer les faits confondrait le cas ordinaire avec le manque.
+#: `claim_raw_json` porte **le bloc entier** (`Claim.raw`) : non nulle veut dire
+#: « un bloc de confiance a ete apparie », quel que soit son contenu. C'est bien
+#: ce qu'il faut auditer — un bloc `"faits": []` est une reponse **normale**, que
+#: le gabarit impose meme avec `source_level: lecture`, donc auditer les faits
+#: confondrait le cas ordinaire avec le manque. La colonne s'appelait
+#: `facts_json` jusqu'au 14/08/2026, et ce nom a fait construire un garde-fou
+#: entier sur la premisse inverse (migration 046).
+#:
+#: **`confidence_claimed` en est absente, et cette exclusion se documente parce
+#: qu'elle est un raisonnement humain — la classe de raisonnement que cet audit
+#: existe pour remplacer.** Elle ne s'ecrit **que** sur une selection ecrasee
+#: (`add_pick` : `claimed if overridden else None`), donc nulle partout est son
+#: etat normal et le restera sur une base ou aucun dossier n'est jamais declare
+#: ferme. L'ajouter de bonne foi ferait crier au defaut sur une base saine.
+#:
+#: L'objection est juste et il faut la connaitre : « nulle partout est son etat
+#: normal » etait aussi vrai de `confidence_computed` jusqu'au 13/08/2026 au soir.
+#: Ce qui separe les deux n'est pas leur taux de remplissage mais **ce qui les
+#: remplit** : `confidence_computed` s'ecrit sur chaque import portant un bloc,
+#: `confidence_claimed` sur le seul sous-cas de l'ecrasement. Le critere reste
+#: donc « toute selection importee devrait la porter », et elle n'y repond pas.
+#: Verifie le 14/08/2026.
 AUDITED_COLUMNS: tuple[AuditedColumn, ...] = (
     AuditedColumn("angle", 26, "le type d'angle"),
     AuditedColumn("source_level", 26, "le niveau de source"),
-    AuditedColumn("facts_json", 42, "le bloc de confiance"),
+    AuditedColumn("claim_raw_json", 42, "le bloc de confiance"),
     AuditedColumn("confidence_computed", 42, "le cran calculé"),
     AuditedColumn("research_overridden", 43, "les dossiers ouverts"),
 )

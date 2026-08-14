@@ -29,6 +29,7 @@ from myassistantbet.services.prompt import (
     date_fr,
     list_templates,
     load_tiers,
+    research_capped,
     save_prompt,
 )
 from myassistantbet.services.scan import active_competitions, run_scan
@@ -1882,3 +1883,81 @@ def test_le_mode_d_emploi_des_agregats_de_coupe_ne_se_paie_pas_ailleurs(
     )
 
     assert AGREGATS_DE_COUPE not in championnat
+
+
+# -- Le budget de recherche borne les paliers hauts --------------------------
+
+
+def test_les_paliers_hauts_ne_depassent_pas_les_dossiers_ouvrables(migrated: Settings) -> None:
+    """**Tout palier haut réclame un fait daté, donc un dossier ouvert.**
+
+    Le quota autorisait plus que la méthode ne permet de justifier — une
+    invitation à remplir, exactement ce que le prompt nomme ailleurs comme
+    l'erreur la plus coûteuse.
+    """
+    tiers = load_tiers(migrated)
+
+    bornes = research_capped(tiers, lot=28, budget=2)
+
+    hauts = [high for _tier, _low, high in bornes[QUOTA_FLOOR_TIERS:]]
+    assert sum(hauts) == 2
+    # La coupe part du bas : un fait daté justifie plus facilement un 2.50 qu'un
+    # 9.00, donc c'est le palier haut le plus sûr qui garde ses places, et les
+    # suivants tombent a zero.
+    assert hauts[0] == 2
+    assert hauts[1:] == [0] * len(hauts[1:])
+
+
+def test_les_deux_paliers_les_plus_surs_ne_sont_pas_bornes(migrated: Settings) -> None:
+    """La règle du gabarit porte sur les paliers **au-delà des deux plus sûrs** :
+    ce sont eux qui réclament un fait nommé et daté, pas les autres."""
+    tiers = load_tiers(migrated)
+
+    bornes = research_capped(tiers, lot=28, budget=2)
+
+    # La propriete, jamais le nombre : les quotas se reglent, et un test qui
+    # les recopie serait faux le jour ou on les change.
+    for tier, _low, high in bornes[:QUOTA_FLOOR_TIERS]:
+        assert high == tier.quota_for(28, safest=True)[1], "inchangés, budget nul ou pas"
+
+
+def test_un_lot_plus_court_que_le_budget_borne_sur_le_lot(migrated: Settings) -> None:
+    """Sur un lot plus court que le budget, la fiche de priorité ne se rend même
+    pas et tout match peut recevoir un dossier. Borner au budget seul accorderait
+    plus de paliers hauts qu'il n'y a de matchs."""
+    tiers = load_tiers(migrated)
+
+    bornes = research_capped(tiers, lot=1, budget=7)
+
+    assert sum(high for _tier, _low, high in bornes[QUOTA_FLOOR_TIERS:]) <= 1
+
+
+def test_le_total_haut_vaut_le_plus_petit_des_trois_plafonds(migrated: Settings) -> None:
+    """**La propriete, et non le nombre du jour.**
+
+    Le total des paliers hauts vaut le plus petit de ce que trois choses
+    autorisent : les quotas reglés, le budget de recherche, et la taille du lot.
+    Ecrite comme une propriete, elle reste vraie quand on regle un quota — ce
+    qu'un test qui recopierait les valeurs seedees ne ferait pas.
+    """
+    tiers = load_tiers(migrated)
+    budget = threshold_value("recherche_dossiers", migrated)
+
+    for lot in (1, 5, 10, 21, 28):
+        libre = sum(tier.quota_for(lot, safest=False)[1] for tier in tiers[QUOTA_FLOOR_TIERS:])
+        borne = sum(
+            high for _tier, _low, high in research_capped(tiers, lot, budget)[QUOTA_FLOOR_TIERS:]
+        )
+        assert borne == min(libre, budget, lot), f"lot {lot}"
+
+
+def test_le_prompt_annonce_le_budget_plutot_que_de_le_faire_deduire(
+    migrated: Settings,
+) -> None:
+    """« Calculé et annoncé comme tel, pas formulé en consigne » : une borne
+    qu'il faut recalculer soi-même ne contraint rien."""
+    corps = " ".join(build_prompt(_lot_de(migrated, 4), settings=migrated, now=NOW).body.split())
+
+    assert "tiennent déjà compte du budget de recherche" in corps
+    assert "cette session en ouvre 4" in corps, "le lot borne le budget, pas le réglage"
+    assert "Le calcul est fait" in corps

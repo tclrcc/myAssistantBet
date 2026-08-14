@@ -1,0 +1,18 @@
+-- `facts_json` ne porte pas les faits : elle porte **le bloc entier**.
+--
+-- La colonne stocke `Claim.raw`, c'est-a-dire la charge utile du bloc ```conf
+-- telle qu'elle a ete lue (`json.dumps(payload, sort_keys=True)`). Non nulle,
+-- elle veut donc dire « un bloc a ete apparie a cette selection », quel que soit
+-- son contenu — et un bloc `"faits": []` est une reponse **normale**, que le
+-- gabarit impose meme avec `source_level: lecture`.
+--
+-- **Le nom a deja produit une erreur de raisonnement**, et pas une petite : il a
+-- fait construire un garde-fou entier sur la premisse inverse — « auditer
+-- facts_json sur sa nullite confondrait le cas ordinaire avec le defaut » —
+-- alors que la donnee ne tend pas ce piege, seulement son nom. La colonne vient
+-- par ailleurs d'entrer dans `AUDITED_COLUMNS` : son nom partait se figer dans
+-- une seconde dependance.
+--
+-- Renommage sec, sans changement de contenu ni de semantique : ce que la colonne
+-- portait hier, elle le porte aujourd'hui sous le nom qui le dit.
+ALTER TABLE picks RENAME COLUMN facts_json TO claim_raw_json;

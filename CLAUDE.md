@@ -2105,6 +2105,49 @@ se deduit donc, ou ne se dit pas.
     rien des matchs, alors que le compte, lui, est juste. Sans lui, des selections
     quittaient le regroupement sans qu'une seule ligne ne le signale.
 
+## Le budget de recherche borne les paliers hauts
+
+Tout palier **au-dela des deux plus surs** reclame un fait nomme et date de la
+section A, donc un dossier ouvert ; et une session n'en ouvre qu'un nombre fini
+(`recherche_dossiers`). Le quota autorisait plus que la methode ne permet de
+justifier — une invitation a remplir, l'erreur que le prompt nomme lui-meme
+comme la plus couteuse.
+
+- **La frontiere est celle du gabarit, et le code la placait deja la** :
+  `QUOTA_FLOOR_TIERS` vaut 2, les paliers hauts sont donc ULTRA FUN et au-dessus.
+  Verifie avant d'ecrire une ligne.
+- **La contrainte porte sur le total des paliers hauts, jamais palier par
+  palier.** Un `min` par palier ne mordrait jamais : le plus genereux des trois
+  vaut 3 ou 4 quand le budget en ouvre 7. C'est leur **somme** qui consomme le
+  budget.
+- **La coupe part du bas** — le palier haut le plus sur d'abord : un fait date
+  justifie plus facilement un 2.50 qu'un 9.00.
+- **Les dossiers disponibles valent `min(budget, lot)`** et non le budget seul :
+  sur un lot plus court que le budget, la fiche de priorite ne se rend meme pas
+  et tout match peut recevoir un dossier.
+- **Calcule et annonce, jamais formule en consigne** : le prompt ecrit les
+  bornes du lot et dit combien de dossiers la session ouvre. Une borne qu'il
+  faut recalculer soi-meme ne contraint rien — meme regle que la reduction des
+  quotas a la taille du lot.
+
+**Ou elle mord, et c'est mesure le 14/08/2026** :
+
+| Reglage des paliers | Total hauts | Dossiers | Mord ? |
+| --- | --- | --- | --- |
+| seed d'origine (4 + 3 + 2) | 9 | 7 | **oui**, ramene a 7 |
+| production, quotas resserres (3 + 2 + 1) | 6 | 7 | non |
+
+Sur la base servie la contrainte **ne mord sur aucun lot** : les quotas y ont ete
+resserres a la main sous le budget. C'est une **porte fermee, pas un defaut
+repare** — meme forme que le rejet d'une cote hors bande, dont l'audit avait
+trouve zero ligne concernee. Ce qu'elle empeche est que les deux nombres derivent
+l'un de l'autre en silence : relever un quota_max ou descendre
+`recherche_dossiers` a sa borne basse la fait mordre aussitot.
+
+Corollaire pour les tests : le critere est une **propriete** — le total haut vaut
+`min(quotas regles, budget, lot)` — et jamais les valeurs du jour, qui different
+deja entre le seed et la base servie.
+
 ## Le preambule ne documente que les sports du lot
 
 Le mode d'emploi des lignes — quarante lignes pour le tennis, autant pour le football —
@@ -4039,6 +4082,16 @@ recollant ; dit apres l'import, il ne se repare plus.
   - Le message d'un collage sans bloc ne dit pas « complete les blocs » comme
     celui du compte : ce n'est pas le rendu qui en manque, c'est le collage qui
     les a laisses.
+
+### Les trois selections perdues a l'import du 14/08/2026
+
+**Elles ne sont pas reprises, et c'est une decision.** La session 11 porte trois
+selections a `lecture` / cran 1 : leurs blocs ```conf existaient dans le rendu et
+n'ont pas ete colles. Les recoller injecterait trois crans **reconstitues apres
+coup** dans la population qui doit justement mesurer si un cran declare tient
+mieux qu'une lecture — et rien n'atteste que les blocs existaient, sauf un
+souvenir. C'est le meme arbitrage que partout : un faisceau d'information ne
+s'invente pas apres coup.
 
 ### Une colonne muette depuis sa naissance doit se voir
 

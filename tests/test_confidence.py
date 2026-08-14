@@ -307,14 +307,14 @@ def test_le_cran_calcule_arrive_en_base(migrated: Settings) -> None:
 
     ligne = db.query_one(
         "SELECT confidence, confidence_computed, distinct_publishers, gap_touches_factor, "
-        "       facts_json, source_level FROM picks",
+        "       claim_raw_json, source_level FROM picks",
         settings=migrated,
     )
     assert ligne["confidence"] == 4, "le cran annonce reste ecrit tel quel"
     assert ligne["confidence_computed"] == 5
     assert ligne["distinct_publishers"] == 2
     assert ligne["gap_touches_factor"] == 0
-    assert "motherwellfc.co.uk" in ligne["facts_json"]
+    assert "motherwellfc.co.uk" in ligne["claim_raw_json"]
     assert ligne["source_level"] == "1"
 
 
@@ -841,7 +841,7 @@ def test_l_ecrasement_arrive_en_base(migrated: Settings) -> None:
 
     ligne = db.query_one(
         "SELECT confidence, confidence_computed, confidence_claimed, research_overridden, "
-        "       source_level, source_level_effective, facts_json FROM picks",
+        "       source_level, source_level_effective, claim_raw_json FROM picks",
         settings=migrated,
     )
     assert ligne["confidence"] == 4, "l'annonce reste ecrite telle quelle"
@@ -853,7 +853,7 @@ def test_l_ecrasement_arrive_en_base(migrated: Settings) -> None:
     # accord parfait entre ce que l'application a ecrit et ce qu'elle relit.
     assert ligne["source_level"] == "1", "l'annonce de niveau reste ecrite telle quelle"
     assert ligne["source_level_effective"] == "lecture", "l'effectif vit a cote"
-    assert "motherwellfc.co.uk" in ligne["facts_json"], (
+    assert "motherwellfc.co.uk" in ligne["claim_raw_json"], (
         "les faits restent en base : c'est la trace de la fabrication"
     )
 

@@ -156,6 +156,48 @@ class Tier:
         return f"{low}-{high} {self.emoji}"
 
 
+def research_capped(tiers: Sequence[Tier], lot: int, budget: int) -> list[tuple[Tier, int, int]]:
+    """Les bornes de chaque palier, **le budget de recherche deduit**.
+
+    Tout palier au-dela des deux plus surs reclame un fait nomme et date de la
+    section A, donc un dossier ouvert ; et une session n'en ouvre qu'un nombre
+    fini. Le quota autorisait plus que la methode ne permet de justifier — une
+    invitation a remplir, exactement ce que le prompt nomme ailleurs comme
+    l'erreur la plus couteuse.
+
+    **La contrainte porte sur le total des paliers hauts, pas palier par
+    palier.** Un `min` par palier ne mordrait jamais : le plus genereux des
+    trois vaut 3 quand le budget par defaut en ouvre 7. C'est leur somme qui
+    consomme le budget, et c'est elle qu'il faut borner.
+
+    La coupe part du **bas** — le palier haut le plus sur d'abord — parce qu'un
+    fait date justifie plus facilement un 2.50 qu'un 9.00.
+
+    **Les dossiers disponibles sont `min(budget, lot)`** et non le budget seul :
+    sur un lot plus court que le budget, la fiche de priorite ne se rend meme
+    pas, et tout match peut recevoir un dossier. Borner au budget y accorderait
+    plus de paliers hauts qu'il n'y a de matchs.
+
+    Mesure du 14/08/2026, et il faut la connaitre : **au reglage par defaut la
+    contrainte ne mord sur aucun lot**. Les trois paliers hauts totalisent 6 au
+    plus par construction, quand `recherche_dossiers` en ouvre 7. Elle mord des
+    que le seuil descend a 5 — sa borne basse est 2 — ou qu'un quota_max
+    augmente. C'est une porte fermee, pas un defaut repare : les deux nombres ne
+    peuvent plus deriver l'un de l'autre en silence.
+    """
+    dossiers = max(0, min(budget, lot))
+    rendus: list[tuple[Tier, int, int]] = []
+    for rank, tier in enumerate(tiers):
+        safest = rank < QUOTA_FLOOR_TIERS
+        low, high = tier.quota_for(lot, safest=safest)
+        if not safest:
+            high = min(high, dossiers)
+            dossiers -= high
+            low = min(low, high)
+        rendus.append((tier, low, high))
+    return rendus
+
+
 @dataclass(frozen=True)
 class Price:
     """Une cote du lot, avec de quoi la retrouver dans son bloc."""
@@ -793,11 +835,18 @@ def build_prompt(
             # sur ceux du lot : un lot sans 🟢 SAFE ferait sinon du palier
             # suivant « l'un des deux plus surs », et lui accorderait un
             # plancher de 1 que la regle ne lui donne pas.
+            # Le budget de recherche est deduit des paliers hauts : chacun
+            # reclame un fait date, donc un dossier ouvert, et une session n'en
+            # ouvre qu'un nombre fini. Calcule et annonce comme tel — jamais
+            # formule en consigne, qui laisserait le calcul a faire.
             quotas=[
-                tier.quota_line(len(blocks), safest=rank < QUOTA_FLOOR_TIERS)
-                for rank, tier in enumerate(tiers)
+                f"{low}-{high} {tier.emoji}"
+                for tier, low, high in research_capped(
+                    tiers, len(blocks), threshold("recherche_dossiers", settings)
+                )
                 if tier in (scope.present or tiers)
             ],
+            research_budget=min(threshold("recherche_dossiers", settings), len(blocks)),
             exact_scores=any(
                 key.startswith("correct_score") for event in events for key in event.markets
             ),
