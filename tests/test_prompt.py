@@ -967,6 +967,36 @@ async def test_les_regles_qui_decident_restent_en_tete(
     assert "les lignes en quart ne se posent pas" in tete
 
 
+@respx.mock
+async def test_le_preambule_dit_qu_un_marche_a_relever_est_jouable(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """**Le gabarit sous-vendait ce qu'il porte.**
+
+    Mesure du 14/08/2026 : `betclic_fr` sert **un seul marche** sur 364 matchs
+    de la base, le vainqueur. Toute la profondeur — handicap, totaux, buts par
+    equipe — arrive par un book de reference. Ecarter les marches « A relever »
+    revient donc a ne garder que le 1N2, precisement ce que la section B demande
+    de depasser ; et une analyse reelle a deja renonce a deux angles de jeux
+    pour cette raison.
+
+    Le renfort porte sur la **place** accordee a la regle, pas sur la regle : le
+    prix figé et l'interdiction de comparer les books restent intacts.
+    """
+    session_id = await _session_enrichie(odds_client, migrated, load_fixture, enrich=False)
+    plat = " ".join(build_prompt(session_id, settings=migrated, now=NOW).body.split())
+
+    assert "Un marché « A relever » est pleinement sélectionnable" in plat
+    assert "il ne te reste que le 1N2" in plat
+    assert "Elle dit que **notre collecte** ne le remonte pas" in plat
+    # La regle n'a pas bouge, et c'est ce qui distingue un renfort d'un
+    # relachement : le prix du bloc reste celui qu'on enregistre, et comparer
+    # les books reste interdit.
+    assert "recopie la cote du bloc au centime près" in plat
+    assert "tu ne remplaces jamais une cote du bloc par une cote trouvée en ligne" in plat
+    assert "Ce n'est pas une invitation à comparer les books" in plat
+
+
 def test_le_renvoi_se_garde_comme_le_chapitre_qu_il_annonce(migrated: Settings) -> None:
     """La porte du chapitre est celle de son contenu, `sports`, et non
     `context_labels` : ses paragraphes de football et de tennis se gardent sur le

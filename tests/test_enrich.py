@@ -9,13 +9,14 @@ import respx
 
 from myassistantbet import db
 from myassistantbet.config import Settings
-from myassistantbet.providers.oddsapi import BASE_URL, OddsAPIClient
+from myassistantbet.providers.oddsapi import BASE_URL, OddsAPIClient, expected_cost
 from myassistantbet.services import board as board_service
 from myassistantbet.services import enrich as enrich_service
 from myassistantbet.services.context import context_lines
 from myassistantbet.services.enrich import (
     build_estimate,
     run_enrich,
+    unit_cost,
 )
 from myassistantbet.services.markets import (
     FOOTBALL_MARKETS,
@@ -102,6 +103,82 @@ async def test_estimation_un_credit_par_marche(
     assert estimate.remaining_after == 4807
     assert estimate.allowed is True
     assert estimate.blocked_reason is None
+
+
+def _facture(settings: Settings, cle: str, couts: list[int]) -> None:
+    """Des appels d'etage B deja factures sur cette competition."""
+    for index, cout in enumerate(couts):
+        db.execute(
+            "INSERT INTO api_usage (provider, endpoint, cost, remaining, called_at) "
+            "VALUES ('oddsapi', ?, ?, 9000, '2026-08-14T10:00:00Z')",
+            (f"/sports/{cle}/events/evt{index}/odds", cout),
+            settings=settings,
+        )
+
+
+def test_le_cout_se_calibre_sur_le_facture_et_non_sur_la_formule(migrated: Settings) -> None:
+    """**The Odds API facture les marches servis, pas les marches demandes.**
+
+    Mesure du 14/08/2026 sur les 569 appels d'etage B de la base : moyenne 2,32
+    au football et 3,94 au tennis, maximum 11, jamais 15 ni 17. Au tennis, 10
+    marches sont demandes et 5 servis — 158 appels factures exactement 5, les
+    cinq marches par set etant gratuits.
+
+    La formule `nb_marches x nb_regions` surestimait donc d'un facteur 4 a 7, et
+    c'est sur elle que le plancher de credits refusait des appels.
+    """
+    _facture(migrated, "soccer_france_ligue_two", [2, 2, 3])
+
+    calibre = unit_cost("soccer_france_ligue_two", "football", migrated)
+
+    assert calibre is not None
+    # Le **maximum** observe, avec sa marge : une estimation sert a ne pas
+    # franchir un plancher, donc elle se trompe du bon cote.
+    assert calibre == 4
+    assert calibre < expected_cost(list(FOOTBALL_MARKETS), ["betclic_fr"]), (
+        "la formule doit rester au-dessus, c'est tout l'objet de la calibration"
+    )
+
+
+def test_le_cout_se_replie_sur_le_sport_puis_sur_la_formule(migrated: Settings) -> None:
+    """Trois etages, et le dernier est la formule : une competition jamais
+    appelee n'a rien a mesurer, et on prefere y surestimer que depasser le
+    plancher."""
+    _facture(migrated, "soccer_france_ligue_two", [2, 2, 3])
+
+    # Competition inconnue, meme prefixe de cle : le repli de sport joue.
+    assert unit_cost("soccer_belgium_first_div", "football", migrated) == 4
+    # Aucun appel de ce sport : rien a calibrer, l'appelant retombe sur la formule.
+    assert unit_cost("tennis_atp_gstaad", "tennis", migrated) is None
+    assert unit_cost("", "football", migrated) is None
+
+
+def test_un_echantillon_trop_court_ne_calibre_rien(migrated: Settings) -> None:
+    """Un seul releve anormal deplacerait l'estimation de toute une competition."""
+    _facture(migrated, "soccer_france_ligue_two", [2, 2])
+
+    assert unit_cost("soccer_france_ligue_two", "football", migrated) is None
+
+
+@respx.mock
+async def test_l_estimation_suit_le_facture_observe(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Le bout du fil : ce que le plancher compare est le cout calibre.
+
+    Sans lui, `ODDS_API_CREDIT_FLOOR` refusait des appels sur un chiffre
+    fantome — le defaut vivant que cette calibration ferme.
+    """
+    session_id = await _seed_session(
+        odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json")
+    )
+    formule = build_estimate(session_id, migrated, NOW).cost
+
+    _facture(migrated, "soccer_sweden_allsvenskan", [2, 2, 3])
+    calibre = build_estimate(session_id, migrated, NOW).cost
+
+    assert calibre < formule, "la calibration doit abaisser l'estimation"
+    assert calibre == 4 * len(build_estimate(session_id, migrated, NOW).targets)
 
 
 @respx.mock

@@ -74,6 +74,20 @@ UNSERVED_NOTE = "aucun des {count} books interroges ({books}) ne les sert sur ce
 #: interroge, et il n'y en a qu'un — donc rien a enumerer ici.
 UNSERVED_NOTE_SUBSTITUTE = "non servis par le book de substitution sur ce match"
 
+#: Troisieme note, et elle dit **ce qui a ete observe** : ces marches sont servis
+#: ailleurs dans la competition, ils ne sont pas arrives sur ce match-la.
+#:
+#: Elle manquait, et son absence faisait mentir la ligne. `_unserved_for` a trois
+#: causes ; la deuxieme — demande et non recu **pour ce match** — se rendait sous
+#: la note de competition, qui affirme donc au-dela de ce qui a ete constate. Or
+#: la consequence de lecture n'est pas la meme : sur la competition, la ligne dit
+#: a l'analyste de ne pas chercher ; sur un seul match, elle ne le dit plus — ce
+#: peut n'etre qu'un trou de ce releve-la.
+UNSERVED_NOTE_MATCH = (
+    "demandes et non revenus sur ce match — servis ailleurs dans la competition, "
+    "donc a verifier plutot qu'a ecarter"
+)
+
 #: Troisieme etat, distinct des deux precedents : le marche **est la**, mais
 #: aucun de ses prix ne vient du book principal. Le prix affiche situe le marche,
 #: ce n'est pas celui qu'on obtiendra — il reste a relever avant de miser.
@@ -174,6 +188,10 @@ class RenderableEvent:
     #: Marches demandes a l'API et jamais servis sur cette competition. Les
     #: taire laisserait croire a un bloc incomplet plutot qu'a une limite connue.
     unserved: list[str] = field(default_factory=list)
+    #: Marches demandes et non revenus **sur ce match**, alors que la competition
+    #: les sert ailleurs. Tenus a part : leur note dit ce qui a ete observe, et
+    #: la consequence de lecture differe — celle-ci n'interdit pas de chercher.
+    unserved_here: list[str] = field(default_factory=list)
     #: Vrai quand les cotes viennent d'un book de repli et non du fournisseur
     #: principal : la cause d'une absence n'est alors pas la meme.
     substitute: bool = False
@@ -706,10 +724,24 @@ def _unserved_line(event: RenderableEvent) -> list[str]:
     # comparer les cles laissait annoncer « Handicap non servi » juste sous une
     # ligne de handicap affichee. Constate en reel sur un match de Super League.
     served = set(event.markets) | {MERGED_MARKETS.get(key, key) for key in event.markets}
-    absent = (key for key in event.unserved if MERGED_MARKETS.get(key, key) not in served)
-    labels = ordered_labels(event.sport_key, absent)
-    note = UNSERVED_NOTE_SUBSTITUTE if event.substitute else unserved_note()
-    return [line(UNSERVED_LABEL, f"{', '.join(labels)} — {note}")] if labels else []
+
+    def _rendus(keys: Sequence[str]) -> list[str]:
+        absent = (key for key in keys if MERGED_MARKETS.get(key, key) not in served)
+        return ordered_labels(event.sport_key, absent)
+
+    lignes: list[str] = []
+    labels = _rendus(event.unserved)
+    if labels:
+        note = UNSERVED_NOTE_SUBSTITUTE if event.substitute else unserved_note()
+        lignes.append(line(UNSERVED_LABEL, f"{', '.join(labels)} — {note}"))
+    # **Une ligne par cause, jamais fondues.** Une absence constatee sur la
+    # competition et une absence constatee sur ce match n'appellent pas le meme
+    # comportement, et les ranger sous la meme note faisait affirmer la premiere
+    # sur des faits qui ne portaient que la seconde.
+    ici = _rendus(event.unserved_here)
+    if ici:
+        lignes.append(line(UNSERVED_LABEL, f"{', '.join(ici)} — {UNSERVED_NOTE_MATCH}"))
+    return lignes
 
 
 def unplayable_markets(event: RenderableEvent) -> list[str]:

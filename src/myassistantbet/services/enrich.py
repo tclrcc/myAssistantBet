@@ -75,9 +75,21 @@ class EnrichTarget:
     #: dans les deux et paierait son contexte deux fois.
     substitute: bool = False
 
+    #: Ce que cet appel coutera vraiment, **calibre sur le facture observe**.
+    #: Pose a la construction plutot que calcule en propriete : la calibration
+    #: lit la base, et une classe qui va chercher son propre reglage serait
+    #: intestable hors d'une base — meme regle que `RateRow.minimum`.
+    estimated_cost: int = 0
+
     @property
     def cost(self) -> int:
-        return expected_cost(list(self.markets), list(self.bookmakers))
+        """Le cout calibre s'il existe, la formule multiplicative sinon.
+
+        **La formule surestime d'un facteur 4 a 7**, voir `unit_cost()`. Le
+        repli n'est donc pas un equivalent : il vaut pour une competition
+        jamais appelee, ou l'on prefere surestimer que depasser le plancher.
+        """
+        return self.estimated_cost or expected_cost(list(self.markets), list(self.bookmakers))
 
     @property
     def context_possible(self) -> bool:
@@ -114,6 +126,68 @@ CONTEXT_CALLS_BASE = 22
 #: memorisation par rencontre et les feuilles non encore publiees expliquent
 #: l'ecart au nominal de 8. On compte donc l'emplacement plein.
 SHEETS_CALLS_PER_TEAM = 2
+
+
+#: Appels d'etage B au-dela desquels le facture observe fait foi. En dessous,
+#: un seul releve anormal deplacerait l'estimation de toute une competition.
+COST_MIN_SAMPLE = 3
+
+#: Facteur de securite sur le facture observe. Un marche qui se met a etre servi
+#: renchérit l'appel : la mesure decrit ce qui est revenu jusqu'ici, pas un
+#: plafond. Un quart de marge suffit — la formule multiplicative, elle, en
+#: prenait entre 300 et 600 %.
+COST_MARGIN = 1.25
+
+
+def unit_cost(competition_key: str, sport_key: str, settings: Settings | None = None) -> int | None:
+    """Cout d'un appel d'etage B, **calibre sur ce qui a ete facture**.
+
+    **The Odds API facture les marches SERVIS, pas les marches demandes**, et
+    c'est contre-intuitif : la formule `nb_marches x nb_regions` de la
+    documentation decrit ce qu'on reclame, pas ce qu'on paie. Un marche qu'aucun
+    book interroge ne sert ne coute **rien**.
+
+    Mesure du 14/08/2026, sur les 569 appels d'etage B de la base :
+
+    - moyenne **2,32 credits** au football et **3,94** au tennis, maximum 11,
+      **jamais 15 ni 17** — les tailles que la formule predit ;
+    - au tennis, 10 marches sont demandes et 5 seulement sont servis
+      (`h2h`, `spreads`, `alternate_spreads`, `totals`, `alternate_totals`) :
+      158 appels ont ete factures exactement **5**. Les cinq marches par set,
+      jamais servis, sont gratuits ;
+    - `expected_cost()` surestimait donc d'un facteur **4 a 7**, et
+      `ODDS_API_CREDIT_FLOOR` refusait des appels sur ce chiffre-la.
+
+    Le prochain lecteur reecrira la formule multiplicative de bonne foi : elle
+    est dans la documentation du fournisseur et elle a l'air juste. C'est
+    pourquoi la mesure est ecrite ici avec sa date.
+
+    La calibration se fait **par competition d'abord** — ce qu'un book sert
+    varie plus d'une competition a l'autre que d'un sport a l'autre — puis par
+    sport, puis rien. On prend le **maximum observe** et non la moyenne : une
+    estimation sert a ne pas franchir un plancher, donc elle se trompe du bon
+    cote.
+    """
+    settings = settings or get_settings()
+    if not competition_key:
+        return None
+    # Le repli de sport se lit sur le **prefixe de la cle** (`soccer_`,
+    # `tennis_`) et non sur une table de correspondance : la cle est celle du
+    # fournisseur, et une table aurait vieilli au premier sport ajoute.
+    prefixe = competition_key.split("_", 1)[0]
+    for motif in (
+        f"/sports/{competition_key}/events/%/odds",
+        f"/sports/{prefixe}_%/events/%/odds",
+    ):
+        couts = [
+            int(row["cost"])
+            for row in query(
+                "SELECT cost FROM api_usage WHERE endpoint LIKE ?", (motif,), settings=settings
+            )
+        ]
+        if len(couts) >= COST_MIN_SAMPLE:
+            return max(1, int(max(couts) * COST_MARGIN + 0.5))
+    return None
 
 
 def context_calls_per_match(settings: Settings | None = None) -> int:
@@ -504,6 +578,11 @@ def build_estimate(
                 markets=markets,
                 substitute=due,
                 bookmakers=(DEFAULT_BOOKMAKER, *settings.reference_books),
+                # Calibre sur le facture observe : la formule multiplicative
+                # surestime d'un facteur 4 a 7, et c'est sur elle que le
+                # plancher de credits refusait des appels.
+                estimated_cost=unit_cost(row["competition_key"] or "", row["sport_key"], settings)
+                or 0,
                 competition_id=row["competition_id"],
                 apifootball_league_id=row["apifootball_league_id"],
                 competition_key=row["competition_key"],

@@ -591,8 +591,14 @@ def _unserved_for(
     primary: str,
     unserved: dict[int, set[str]],
     settings: Settings,
-) -> list[str]:
+) -> tuple[list[str], list[str]]:
     """Marches modelises absents du bloc, et pour la bonne raison.
+
+    Rend **deux listes** : ce qui manque sur toute la competition, et ce qui
+    manque sur ce match-la. Elles se rendaient jusqu'ici sous une seule note,
+    qui affirmait la competition dans les deux cas — donc au-dela de ce qui
+    avait ete observe, sur une ligne dont l'effet est de dire a l'analyste de ne
+    pas chercher. C'est le pire endroit du bloc ou avoir tort.
 
     Trois cas, trois causes qu'il ne faut pas confondre :
 
@@ -610,7 +616,7 @@ def _unserved_for(
     barren = set(unserved.get(row["competition_id"], set()))
     if _is_substitute(row, primary):
         order = MARKET_ORDER_BY_SPORT.get(row["sport_key"], MARKET_ORDER)
-        return [key for key, _ in order if key not in present and key != "outright"]
+        return [key for key, _ in order if key not in present and key != "outright"], []
     if _is_enriched(row["sport_key"], present):
         # `base_served` doit refleter ce que **cet** evenement porte, exactement
         # comme dans `enrich` : sur une competition que le book principal ne sert
@@ -628,8 +634,14 @@ def _unserved_for(
         useful = coverage.useful(
             row["competition_id"], requested, settings, anchor_alone=not base_served
         )
-        barren |= {key for key in useful if key not in present}
-    return sorted(barren)
+        # **Observe sur ce match, jamais sur la competition** : `coverage` a
+        # juge ces marches disponibles, et ils ne sont pas arrives ici. Les
+        # ranger avec les constats de competition faisait affirmer que la
+        # competition ne les sert pas, ce qui est faux — un handicap jeux servi
+        # sur une affiche et pas sur l'autre.
+        ici = {key for key in useful if key not in present} - barren
+        return sorted(barren), sorted(ici)
+    return sorted(barren), []
 
 
 def renderable_events(
@@ -708,6 +720,10 @@ def renderable_events(
                     fetched = odd["fetched_at"]
 
             primary = primary_book(books)
+            # Deux causes, deux listes : ce que la competition ne sert pas, et
+            # ce qui n'est pas arrive **sur ce match**. Elles ne se lisent pas
+            # pareil — la premiere dit de ne pas chercher, la seconde non.
+            absents, absents_ici = _unserved_for(row, set(markets), primary, unserved, settings)
             events.append(
                 RenderableEvent(
                     index=index,
@@ -726,7 +742,8 @@ def renderable_events(
                     # jouable et laquelle ne faisait que situer le marche.
                     bookmaker_label=bookmaker_label(primary) if primary else "—",
                     primary_book=primary,
-                    unserved=_unserved_for(row, set(markets), primary, unserved, settings),
+                    unserved=absents,
+                    unserved_here=absents_ici,
                     substitute=_is_substitute(row, primary),
                     # `fetched` n'a ete alimente que par les bookmakers relevables :
                     # l'heure d'une saisie est celle de la frappe, pas celle d'un

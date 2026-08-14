@@ -830,6 +830,40 @@ def test_un_evenement_sans_cote_dit_quand_meme_ce_qui_manque() -> None:
     assert f"Hand. jeux — {unserved_note()}" in rendered
 
 
+def test_un_marche_absent_de_ce_match_seul_ne_se_dit_pas_de_la_competition() -> None:
+    """**La ligne mentait sur une de ses trois causes.**
+
+    `_unserved_for` distingue ce que la competition ne sert pas de ce qui n'est
+    pas revenu **sur ce match**, et les deux se rendaient sous la meme note —
+    celle qui affirme la competition. Or c'est une ligne dont l'effet est de
+    dire a l'analyste de ne pas chercher : l'affirmer au-dela de ce qui a ete
+    observe est le pire endroit du bloc ou avoir tort.
+    """
+    event = _tennis(
+        markets={"h2h": [Outcome("Alcaraz", 1.4)]},
+        unserved=["h2h_s1"],
+        unserved_here=["spreads"],
+    )
+    lignes = [ligne for ligne in render_event(event).splitlines() if "Non servis" in ligne]
+
+    assert len(lignes) == 2, "une ligne par cause, jamais fondues"
+    assert unserved_note() in lignes[0] and "Set 1" in lignes[0]
+    assert "Hand. jeux" in lignes[1]
+    assert "sur ce match" in lignes[1]
+    assert "servis ailleurs dans la competition" in lignes[1]
+    # Et surtout : la note de competition ne doit pas s'appliquer a ce constat.
+    assert unserved_note() not in lignes[1]
+
+
+def test_une_seule_cause_ne_rend_qu_une_ligne() -> None:
+    """Le cas ordinaire ne se paie pas la distinction."""
+    event = _tennis(markets={"h2h": [Outcome("Alcaraz", 1.4)]}, unserved_here=["spreads"])
+    lignes = [ligne for ligne in render_event(event).splitlines() if "Non servis" in ligne]
+
+    assert len(lignes) == 1
+    assert "a verifier plutot qu'a ecarter" in lignes[0]
+
+
 def test_le_handicap_jeux_est_signe_du_point_de_vue_du_premier_joueur() -> None:
     """Constate sur un prompt reel : regroupe sur la valeur absolue, le signe
     suivait le **favori**. « -2.5 » designait le second joueur quand il etait

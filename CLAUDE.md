@@ -120,6 +120,56 @@ servie par le cache de developpement (`DEV_CACHE=1`) ne consomme rien et n'ecrit
 Etage A (`services/scan.py`) : `h2h,totals` sur `betclic_fr` seul, soit 2 credits par
 competition active.
 
+**La facturation porte sur les marches SERVIS, pas sur les marches demandes.** C'est
+contre-intuitif, la formule `nb_marches x nb_regions` est dans la documentation du
+fournisseur, et le prochain lecteur la reecrira de bonne foi — d'ou cette mesure, datee.
+
+Mesure du 14/08/2026 sur les **569 appels d'etage B** de la base :
+
+- moyenne **2,32 credits** au football et **3,94** au tennis, maximum 11, **jamais 15 ni
+  17**, les tailles que la formule predit. Distribution : 197 appels a 2, 169 a 3, 158 a 5,
+  8 a 11, 11 a 0 ;
+- au tennis, **10 marches sont demandes et 5 servis** (`h2h`, `spreads`,
+  `alternate_spreads`, `totals`, `alternate_totals`) — et 158 appels ont ete factures
+  exactement **5**. Les cinq marches par set, jamais servis, sont **gratuits** ;
+- confirme en direct par le sondage `regions=eu` du meme jour : 15 marches demandes,
+  **7 credits factures**.
+
+Consequence, et c'etait un defaut vivant : `expected_cost()` surestimait d'un facteur
+**4 a 7**, et `ODDS_API_CREDIT_FLOOR` refusait des appels sur ce chiffre-la.
+`enrich.unit_cost()` calibre donc l'estimation sur le facture observe — par competition
+d'abord, par prefixe de cle ensuite, la formule en dernier repli.
+
+- Le **maximum** observe et non la moyenne, avec une marge de 25 % : une estimation sert a
+  ne pas franchir un plancher, donc elle se trompe du bon cote. Mesure a la livraison :
+  Ligue 2 passe de 15 a 3, Super League chinoise a 4, Cincinnati de 10 a 6.
+- Sous `COST_MIN_SAMPLE` (3) appels, rien n'est calibre : un seul releve anormal
+  deplacerait l'estimation de toute une competition.
+- Le repli de sport se lit sur le **prefixe de la cle** (`soccer_`, `tennis_`) et non sur
+  une table de correspondance, qui aurait vieilli au premier sport ajoute.
+- **Le defaut est reel mais n'a jamais mordu, et rien ne l'aurait dit** : les refus du
+  plancher ne sont journalises nulle part — meme angle mort que les causes de contexte
+  avant la migration 044. Ce qui se mesure : le quota est passe de 500 a 120 du 04 au
+  06/08, puis a 20 000 le 06/08 au soir, et n'est jamais redescendu sous **17 384** — soit
+  34 fois le plancher. L'estimation fantome n'a donc eu aucune occasion de bloquer quoi
+  que ce soit depuis huit jours.
+
+**Aucun book francais ne sert la profondeur, et la question est close** (sondage
+`regions=eu`, 14/08/2026, un match de Super Lig, 7 credits). Quinze books ont repondu :
+**Betclic (FR) sert `h2h` et rien d'autre**, comme sur les 364 matchs de la base. Les
+marches profonds existent chez Pinnacle, Codere (IT), Coolbet et Matchbook — aucun
+jouable en France. Neuf des quinze marches demandes ne sont servis par **personne** en
+region `eu` : `correct_score`, `correct_score_h1`, `btts_h1`, `halftime_fulltime`,
+`team_totals`, `alternate_team_totals`, `alternate_totals_corners`,
+`alternate_totals_cards`, `corners_1x2`.
+
+- Elargir le perimetre interrogé n'ajouterait donc **aucun prix jouable**. Ce n'est pas un
+  arbitrage de cout : c'est une absence d'offre, mesuree.
+- Le sondage reste **hors du perimetre regulier** : 7 a 17 credits une fois se paient, un
+  book de plus dans chaque appel non.
+- La profondeur **est** collectee, en reference, et c'est le gabarit qui la sous-vendait —
+  voir « Le rendu compact » et la place accordee a `A relever`.
+
 `services/coverage.py` memorise ce qu'une competition sert vraiment, pour ne pas repayer
 deux fois le meme constat vide. **Les books interroges font partie de la cle** : un marche
 constate absent chez Betclic seul ne prouve rien sur un book de reference, et le
@@ -230,6 +280,15 @@ non negociables, toutes couvertes par des tests :
     ligne, et la declarer non jouable ferait chercher un prix affiche juste au-dessus.
   - Un evenement servi par un **book de substitution** n'en produit aucune : tous ses prix
     sont de reference par construction, et le bloc le dit deja en entier.
+- **`A relever` a droit a la place que la mesure lui donne.** Le gabarit disait une fois,
+  en passant, qu'un tel marche est selectionnable, et consacrait bien plus de place a
+  interdire la comparaison entre books. Or `betclic_fr` sert **un seul marche** sur les
+  364 matchs de la base : ecarter les lignes `A relever`, c'est ne garder que le 1N2 —
+  exactement ce que la section B demande de depasser, et une analyse reelle a deja renonce
+  a deux angles de jeux pour cette raison. Le chapitre le dit donc en toutes lettres, avec
+  la mesure. **La regle, elle, n'a pas bouge** : la cote du bloc reste celle qu'on
+  enregistre, et comparer les books reste interdit. C'est la place qui etait fausse, pas
+  la regle — un test verifie que les deux moities y sont.
 - les marches demandes a l'API et jamais servis deviennent une ligne `Non servis` : une
   absence constatee est une information, et la taire fait chercher un handicap jeux qui
   n'existe pas. **Trois causes distinctes**, portees par `session._unserved_for` :
@@ -240,6 +299,20 @@ non negociables, toutes couvertes par des tests :
   The Odds API ne connait pas la rencontre. Un evenement d'etage A n'annonce rien de
   profond : ces marches n'ont pas ete reclames, et les lister ferait chercher une panne la
   ou il n'y a qu'un enrichissement jamais lance.
+  - **Trois causes et deux notes seulement : la ligne mentait sur la deuxieme.**
+    `_unserved_line` n'en connaissait que deux — substitution, ou generique — et la cause
+    « demande mais non recu **pour ce match** » se rendait donc sous « aucun book
+    interroge ne les sert **sur cette competition** », c'est-a-dire en affirmant bien
+    au-dela de ce qui avait ete observe. Sur une ligne dont l'effet est d'interdire de
+    chercher, c'est le pire endroit du bloc ou avoir tort.
+  - `_unserved_for` rend donc **deux listes** et `_unserved_line` **une ligne par cause**,
+    jamais fondues : les deux constats n'appellent pas le meme comportement. Sur la
+    competition, on ne cherche pas — ca ne changera pas d'une affiche a l'autre ; sur un
+    seul match, ce peut n'etre qu'un trou de ce releve-la, et le marche existe peut-etre
+    chez le bookmaker.
+  - Le chapitre COMMENT LIRE LES BLOCS definit **les trois** notes et le comportement de
+    chacune, meme regle que `Arbitre` et `Absents` : un libelle sans definition dans le
+    chapitre est le defaut que ce prompt evite partout.
 - `services/markets.py` detient la liste des marches demandes, parce que `enrich` et
   `session` en ont besoin tous les deux. La copier des deux cotes les aurait fait diverger,
   et le prompt aurait annonce `Non servis` sur un marche que l'outil ne demande plus.

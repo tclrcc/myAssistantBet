@@ -59,10 +59,46 @@ par d'autres books, et ça ne change rien ici puisqu'il n'y a aucun prix à
 recopier. N'imagine donc aucune sélection dessus, et ne les reporte pas en
 section F : ce n'est pas une recherche qui a échoué.
 
+**Cette ligne a trois notes, et elles n'appellent pas le même comportement.**
+Lis-la jusqu'au bout, c'est la note qui décide :
+
+  · **« aucun des N books interrogés (…) ne les sert sur cette compétition »** —
+    constaté sur toute la compétition, sur plusieurs matchs. N'y cherche rien :
+    ça ne changera pas d'une affiche à l'autre.
+  · **« demandés et non revenus sur ce match — servis ailleurs dans la
+    compétition »** — constaté **sur ce match seulement**. La compétition les
+    sert, ce relevé-ci ne les a pas ramenés. Ça peut être un trou ponctuel, donc
+    le marché existe peut-être chez le bookmaker : c'est vérifiable, et ça ne
+    t'interdit pas de chercher.
+  · **« non servis par le book de substitution sur ce match »** — The Odds API
+    ne connaît pas cette rencontre, et le book de remplacement a une offre plus
+    étroite. Rien à régler, rien à chercher côté collecte.
+
 Une ligne **« A relever »** est tout autre chose, et ne se lit pas comme un
 refus : ces marchés sont affichés au-dessus, mais aucun de leurs prix ne vient du
 bookmaker principal. Le prix affiché situe le marché ; celui qu'on obtiendra se
 lit chez le bookmaker au moment de miser. Pas sa place en section F non plus.
+
+**Un marché « A relever » est pleinement sélectionnable, et c'est le point le
+plus important de ce chapitre.** Mesure sur la base : le bookmaker principal ne
+sert **qu'un seul marché** via notre fournisseur, le vainqueur — sur 364 matchs,
+football et tennis confondus. Tout le reste, handicap, totaux, buts par équipe,
+arrive par un book de référence. Donc :
+
+  · si tu écartes les marchés « A relever », il ne te reste que le 1N2, celui que
+    ce prompt te demande précisément de dépasser ;
+  · une ligne « A relever » ne dit pas que le marché manque chez le bookmaker.
+    Elle dit que **notre collecte** ne le remonte pas. C'est déjà arrivé qu'une
+    analyse renonce à deux angles de jeux pour ça, alors que les paris étaient
+    posables ;
+  · la marche à suivre est celle de la ligne : recopie la cote du bloc au
+    centime près avec sa mention `(ref.)`, et relève le prix réel avant de miser.
+    La cote enregistrée reste celle du bloc — voir plus bas, elle fait autorité.
+
+Ce n'est pas une invitation à comparer les books : tu ne choisis pas un marché
+parce qu'il serait mieux payé ailleurs, et tu ne remplaces jamais une cote du
+bloc par une cote trouvée en ligne. Tu constates simplement que le marché existe
+et qu'il est jouable.
 {% if common_unplayable %}
 **Sur ce lot, {{ common_unplayable | join(' et ') }} sont à relever dans la
 majorité des blocs** : la ligne n'y est donc pas répétée. Un bloc qui en porte
