@@ -460,6 +460,16 @@ class FixtureMapping:
     #: est une chaine libre, sans identifiant et sans pays — « M. Oliver ». Vide
     #: quand la designation n'est pas tombee.
     referee: str = ""
+    #: La competition sert-elle des arbitres du tout, mesure sur **les matchs du
+    #: jour deja recuperes** : aucun appel de plus. Verifie le 14/08/2026, les
+    #: 32 fixtures d'un tour de DFB-Pokal portent toutes un arbitre nul, quand
+    #: une saison de Conference League en sert 209 sur 210.
+    #:
+    #: Le fournisseur n'a pas de drapeau pour ca, et le manque ne se lit pas sur
+    #: un match seul : « non encore designe » et « jamais servi ici » sont le
+    #: meme vide. Ce que la journee entiere permet de distinguer, elle, decide
+    #: d'un comportement oppose — attendre, ou aller chercher.
+    referee_served: bool = True
 
 
 async def _memoized(cache: dict[str, Any], key: str, coroutine_factory: Any) -> Any:
@@ -530,6 +540,12 @@ async def resolve_fixture(
         coverage=coverage,
         venue=(fixture.get("fixture") or {}).get("venue") or {},
         referee=str((fixture.get("fixture") or {}).get("referee") or "").strip(),
+        # Mesure sur la journee, pas sur ce match : c'est la seule facon de
+        # separer une designation qui n'est pas tombee d'une competition qui
+        # n'en publie jamais chez ce fournisseur.
+        referee_served=any(
+            str((item.get("fixture") or {}).get("referee") or "").strip() for item in fixtures
+        ),
     )
     # Memorise pour tout ce qui se recupere par equipe. Volontairement absent de
     # `report.kinds` : ce n'est pas un contexte recupere, c'est le moyen d'en
@@ -1205,7 +1221,12 @@ async def fetch_context(
     # des blocs sans que rien ne permette de le lire — et parce que chercher
     # « qui arbitre X - Y » coutait une requete avant meme de chercher son
     # historique.
-    store(report.event_id, KIND_REFEREE, {"name": mapping.referee}, settings)
+    store(
+        report.event_id,
+        KIND_REFEREE,
+        {"name": mapping.referee, "served": mapping.referee_served},
+        settings,
+    )
     report.kinds.append(KIND_REFEREE)
 
     # Profil corners et cartons, sur les memes matchs recents. Le prompt
@@ -2716,9 +2737,24 @@ def _referee_line(payload: dict[str, Any]) -> str:
     Le troisieme etat — « aucun historique dans cette confederation » — n'est
     pas rendu ici parce qu'il ne se constate pas d'ici : c'est un **resultat de
     recherche**, et le preambule dit que c'en est un valable.
+
+    **« Non encore designe » et « non servi ici » sont deux vides, et ils
+    appellent des comportements opposes** : le premier dit d'attendre, le second
+    dit d'aller chercher. Ecrire le premier partout faisait renoncer a une
+    recherche qui aboutit — la DFB publie ses designations, quand le fournisseur
+    n'en sert aucune sur cette competition. La distinction se mesure sur les
+    matchs du jour deja recuperes, sans un appel de plus.
+
+    Un releve anterieur a cette mesure n'a pas le drapeau : il vaut « servi »,
+    donc le comportement d'avant, plutot qu'une affirmation qu'on ne peut pas
+    gager.
     """
     nom = (payload.get("name") or "").strip()
-    return nom or "non encore designe"
+    if nom:
+        return nom
+    return (
+        "non encore designe" if payload.get("served", True) else "non servi sur cette competition"
+    )
 
 
 def _profile_suffix(profile: dict[str, Any]) -> str:

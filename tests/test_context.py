@@ -28,6 +28,7 @@ from myassistantbet.services.context import (
     KIND_MAPPING,
     KIND_PROFILE,
     KIND_RECENT,
+    KIND_REFEREE,
     KIND_STANDINGS,
     KIND_TEAMS,
     SHEETS_LAST,
@@ -2586,11 +2587,17 @@ async def test_une_designation_qui_n_est_pas_tombee_se_dit(
     api_client: APIFootballClient, migrated: Settings, load_fixture: Any
 ) -> None:
     """Deux etats a distinguer, et ils appellent deux comportements opposes : un
-    arbitre non designe ne se cherche pas, il s'attend. Un arbitre nomme, si."""
+    arbitre non designe ne se cherche pas, il s'attend. Un arbitre nomme, si.
+
+    **La journee decide, pas le match** : la designation de celui-ci n'est pas
+    tombee, mais la competition en sert — c'est ce qui la distingue d'une
+    competition qui n'en publie aucun chez ce fournisseur.
+    """
     _seed_event(migrated)
     routes = _mock_all(load_fixture)
     matchs = load_fixture("apifootball_fixtures_date.json")
     matchs["response"][0]["fixture"]["referee"] = None
+    matchs["response"][1]["fixture"]["referee"] = "M. Oliver"
     routes["fixtures_date"].mock(
         return_value=httpx.Response(200, json=matchs, headers=RATE_HEADERS)
     )
@@ -2937,3 +2944,43 @@ def test_les_deux_formulations_ne_se_recopient_pas() -> None:
         assert CAUSE_UI_NOTES[cause] != CAUSE_BLOCK_NOTES[cause]
     # Les deux causes qui se reparent d'un geste, et elles seules.
     assert {CAUSE_UNMAPPED, CAUSE_UNRESOLVED} == COLLECTION_FAULTS
+
+
+# -- L'arbitre : trois etats, et le troisieme se mesure ----------------------
+
+
+@respx.mock
+async def test_une_competition_qui_ne_sert_aucun_arbitre_le_dit(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """**« Non encore designe » et « non servi ici » appellent des comportements
+    opposes** : le premier dit d'attendre, le second dit d'aller chercher.
+
+    Mesure du 14/08/2026 : les 32 fixtures d'un tour de DFB-Pokal portent toutes
+    un arbitre nul, quand une saison de Conference League en sert 209 sur 210.
+    Ecrire « non encore designe » partout faisait renoncer a une recherche qui
+    aboutit — la DFB publie ses designations.
+    """
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    payload = load_fixture("apifootball_fixtures_date.json")
+    for item in payload["response"]:
+        item["fixture"]["referee"] = None
+    routes["fixtures_date"].mock(
+        return_value=httpx.Response(200, json=payload, headers=RATE_HEADERS)
+    )
+
+    await fetch_context(api_client, dict(EVENT), migrated)
+
+    assert _lines(migrated)["Arbitre"] == "non servi sur cette competition"
+
+
+def test_un_releve_anterieur_a_la_mesure_garde_le_comportement_d_avant(
+    migrated: Settings,
+) -> None:
+    """Le drapeau manque sur les releves d'avant : il vaut « servi », donc
+    l'ancien libelle, plutot qu'une affirmation qu'on ne peut pas gager."""
+    _seed_event(migrated)
+    store(1, KIND_REFEREE, {"name": ""}, migrated)
+
+    assert _lines(migrated)["Arbitre"] == "non encore designe"
