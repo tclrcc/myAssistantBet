@@ -308,3 +308,141 @@ async def test_une_competition_rattachee_ne_declenche_rien(
 
     assert report.total_events == 2
     assert report.unmapped == []
+
+
+# -- Historique des cotes ---------------------------------------------------
+#
+# `replace_odds` fait un DELETE puis un INSERT : seul le dernier releve
+# survivait, donc l'etat d'avant n'existait nulle part une heure apres un scan.
+# Meme defaut que `commence_time` avant la migration 040.
+#
+# **Ce chantier n'affiche rien, ne lit rien, n'alerte sur rien** : il arrete une
+# perte. Les tests portent donc sur ce qui est ecrit, et sur rien d'autre.
+
+
+@respx.mock
+async def test_un_prix_qui_bouge_laisse_sa_trace(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Les deux bornes, le book et le marche : « le prix a change entre 11h22 et
+    15h06 » n'est pas « il a change a 15h06 », et un mouvement Pinnacle ne dit
+    pas la meme chose qu'un mouvement Betclic."""
+    payload = load_fixture("oddsapi_allsvenskan_scan.json")
+    routes = _mock_all_competitions({"soccer_sweden_allsvenskan": payload})
+    await run_scan(odds_client, migrated, now=NOW)
+
+    avant = db.query_one(
+        "SELECT price, fetched_at FROM odds WHERE outcome_name = 'BK Hacken' "
+        "AND market_key = 'h2h'",
+        settings=migrated,
+    )
+    payload[0]["bookmakers"][0]["last_update"] = "2026-08-04T15:06:00Z"
+    payload[0]["bookmakers"][0]["markets"] = [
+        {"key": "h2h", "outcomes": [{"name": "BK Hacken", "price": 1.55}]}
+    ]
+    routes["soccer_sweden_allsvenskan"].mock(
+        return_value=httpx.Response(200, json=payload, headers=QUOTA_HEADERS)
+    )
+    await run_scan(odds_client, migrated, now=NOW)
+
+    lignes = db.query("SELECT * FROM odds_history", settings=migrated)
+    assert len(lignes) == 1
+    trace = lignes[0]
+    assert trace["previous_price"] == avant["price"]
+    assert trace["price"] == 1.55
+    # La borne basse : sans elle, tout mouvement parait instantane.
+    assert trace["previous_fetched_at"] == avant["fetched_at"]
+    assert trace["fetched_at"] == "2026-08-04T15:06:00Z"
+    assert trace["observed_at"], "l'instant de notre lecture, distinct du releve"
+    assert trace["bookmaker"] and trace["market_key"] == "h2h"
+    assert trace["outcome_name"] == "BK Hacken"
+
+
+@respx.mock
+async def test_un_prix_stable_n_ecrit_rien(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Un prix stable ne dit rien qu'`odds` ne dise deja, et l'ecrire a chaque
+    scan noierait les mouvements sous leur propre bruit."""
+    payload = load_fixture("oddsapi_allsvenskan_scan.json")
+    _mock_all_competitions({"soccer_sweden_allsvenskan": payload})
+    await run_scan(odds_client, migrated, now=NOW)
+    await run_scan(odds_client, migrated, now=NOW)
+
+    assert db.query("SELECT id FROM odds_history", settings=migrated) == []
+
+
+@respx.mock
+async def test_un_premier_releve_n_est_pas_un_mouvement(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Il n'y a rien avant lui : ecrire une ligne ferait passer une arrivee pour
+    une derive, et le premier scan d'une journee en produirait des milliers."""
+    payload = load_fixture("oddsapi_allsvenskan_scan.json")
+    _mock_all_competitions({"soccer_sweden_allsvenskan": payload})
+    await run_scan(odds_client, migrated, now=NOW)
+
+    assert db.query("SELECT id FROM odds_history", settings=migrated) == []
+    assert db.query("SELECT id FROM odds", settings=migrated), "les cotes, elles, sont la"
+
+
+@respx.mock
+async def test_les_issues_d_un_meme_marche_ne_se_confondent_pas(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """`Over 2.5` et `Over 3.5` sont deux issues du meme marche : `point` fait
+    partie de l'identite, sinon un mouvement s'attribuerait a la mauvaise ligne.
+    """
+    payload = load_fixture("oddsapi_allsvenskan_scan.json")
+    routes = _mock_all_competitions({"soccer_sweden_allsvenskan": payload})
+    payload[0]["bookmakers"][0]["markets"] = [
+        {
+            "key": "totals",
+            "outcomes": [
+                {"name": "Over", "price": 1.90, "point": 2.5},
+                {"name": "Over", "price": 3.10, "point": 3.5},
+            ],
+        }
+    ]
+    routes["soccer_sweden_allsvenskan"].mock(
+        return_value=httpx.Response(200, json=payload, headers=QUOTA_HEADERS)
+    )
+    await run_scan(odds_client, migrated, now=NOW)
+
+    # Seule la ligne 3.5 bouge au releve suivant.
+    payload[0]["bookmakers"][0]["markets"][0]["outcomes"][1]["price"] = 3.60
+    routes["soccer_sweden_allsvenskan"].mock(
+        return_value=httpx.Response(200, json=payload, headers=QUOTA_HEADERS)
+    )
+    await run_scan(odds_client, migrated, now=NOW)
+
+    lignes = db.query("SELECT point, previous_price, price FROM odds_history", settings=migrated)
+    assert len(lignes) == 1
+    assert lignes[0]["point"] == 3.5
+    assert (lignes[0]["previous_price"], lignes[0]["price"]) == (3.10, 3.60)
+
+
+def test_aucune_surface_ne_lit_l_historique_des_cotes() -> None:
+    """**Le garde-fou du chantier, et il est volontaire.**
+
+    L'etape 1 arrete une perte : elle n'affiche rien, ne lit rien, n'alerte sur
+    rien, et ne pose aucun seuil. La raison n'est pas technique — voir CLAUDE.md,
+    « L'historique des cotes » : une derive affichee avant que le lot soit fige
+    orienterait la constitution du lot et le choix des dossiers, donc le tri
+    circulaire que le preambule refuse, un cran en amont et sans qu'aucune regle
+    du gabarit soit violee.
+
+    Ce test tombera le jour ou une surface la lira. Ce sera alors une decision a
+    prendre, pas un detail a corriger.
+    """
+    from pathlib import Path
+
+    racine = Path(__file__).resolve().parents[1] / "src" / "myassistantbet"
+    lecteurs = [
+        chemin.relative_to(racine).as_posix()
+        for chemin in racine.rglob("*")
+        if chemin.suffix in (".py", ".html", ".j2")
+        and chemin.name not in ("scan.py",)
+        and "odds_history" in chemin.read_text(encoding="utf-8")
+    ]
+    assert lecteurs == [], f"l'historique des cotes est lu par : {lecteurs}"

@@ -3690,6 +3690,67 @@ qui font la regle :
 - **C'est ce qui rend `as_of` honnete plutot que decoratif.** Une lecture faite
   sur une copie datee porte vraiment la date qu'elle affiche.
 
+## L'historique des cotes (migration 048) : la table seule, et pourquoi rien ne la lit
+
+**Ce chantier n'affiche rien, ne lit rien, n'alerte sur rien, et ne pose aucun seuil.** Il
+arrete une perte : `scan.replace_odds` fait un DELETE puis un INSERT par (evenement, book,
+marche), donc **seul le dernier releve survit** et l'etat d'avant n'existe nulle part une
+heure apres un scan. Meme defaut que `commence_time` avant la migration 040, meme forme de
+correctif — on garde la valeur precedente et l'instant du constat.
+
+- **Deux bornes, et il faut les deux.** « Le prix a change entre 11h22 et 15h06 » n'est pas
+  « il a change a 15h06 » : sans `previous_fetched_at`, tout mouvement parait instantane et
+  un scan quotidien ferait passer une derive de vingt-quatre heures pour un decrochage.
+  `observed_at` s'y ajoute — le fournisseur date son releve, nous datons notre lecture.
+- **Le book et le marche sur chaque ligne.** Mesure du 14/08/2026 sur les seuls releves
+  comparables de la base — 63 issues de `h2h`, 26 h d'ecart moyen : **1,0 % de mouvement
+  moyen**, 2 au-dela de 10 %. Tous marches confondus la moyenne monte a 23 %, entierement
+  a cause des cotes longues : une derive sur un score exact a 34.00 n'est pas comparable a
+  une derive sur un 1N2, et les melanger rendrait toute lecture fausse.
+- Seuls les prix **qui changent** sont ecrits. Un prix stable ne dit rien qu'`odds` ne dise
+  deja ; un premier releve n'est pas un mouvement, et l'ecrire ferait passer chaque arrivee
+  de match pour une derive.
+
+### Aucune surface avant que le lot soit fige, et ce n'est pas une precaution technique
+
+Le preambule limite les cotes a **deux usages**, et un troisieme a deja ete propose puis
+refuse — trier les dossiers de recherche par le prix, qui rendrait le tri circulaire. Une
+derive affichee serait ce troisieme usage.
+
+**La frontiere « l'UI jamais le prompt » ne suffit pas**, et c'est le point a retenir : une
+alerte sur le board oriente au moment ou le lot se constitue et ou les dossiers se
+choisissent. **La contamination passe par le lecteur, pas par le texte** — le tri
+circulaire se produit un cran en amont, sans qu'aucune regle du gabarit soit violee.
+
+Donc : **rien sur le board, rien sur la shortlist, rien sur aucune surface consultee avant
+que le lot soit fige.** Si quelque chose s'affiche un jour, ce sera sur une surface
+**post-selection**. Un test garde la porte : il echoue des qu'un fichier autre que `scan.py`
+mentionne `odds_history`, et il doit alors etre traite comme une decision a prendre, pas
+comme un detail a corriger. Le premier reflexe dans six mois sera une colonne sur le board.
+
+### L'usage cible, et la mesure qui le validerait
+
+« Combien de cotes bougent, de combien, a quelle heure » **ne repondrait pas a la
+question** : ca dirait que les cotes bougent, ce qu'on sait deja, et on aurait un detecteur
+de mouvement sans savoir ce qu'il detecte — donc un seuil d'alerte choisi au juge, le
+`p = 0,0148` dans une autre couche.
+
+**La question est : un mouvement au-dela d'un seuil precede-t-il un fait date et
+trouvable ?** Une composition publiee, une absence annoncee, un forfait. Sans cette
+validation, la table ne doit rien produire.
+
+- **Cette mesure demande un travail manuel sur un echantillon** : prendre quelques dizaines
+  de mouvements notables, chercher ce qui les a suivis dans les heures d'apres, et compter.
+  **Personne ne l'automatisera** — il n'existe aucune source qui date les faits sportifs
+  assez finement pour les apparier a un horodatage de cote.
+- Piste, et **piste seulement, pas une decision** : la derive ne signale pas un match, elle
+  **date un fait**. Le gabarit dit deja qu'un releve « avant les compositions » decrit un
+  marche que le bloc ne reflete plus ; un mouvement horodate dirait **a quelle heure
+  chercher** ce qui l'a fait bouger. Ce serait un outil de recherche — il aide a trouver le
+  fait, il ne remplace pas le fait, et la selection s'appuierait sur la compo trouvee et
+  jamais sur le mouvement qui a fait chercher. Formule ainsi, ca ne contredit pas « les
+  cotes ne sont jamais un argument en soi ». Ca reste a valider par la mesure ci-dessus.
+
 ## Le biais d'exposition : resultat negatif, et la lecture ne le tranchera jamais
 
 **Question posee le 14/08/2026** : un match rendu plusieurs fois dans la meme session

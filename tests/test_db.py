@@ -28,6 +28,7 @@ EXPECTED_TABLES = {
     "market_coverage",
     "market_families",
     "odds",
+    "odds_history",
     "picks",
     "player_context",
     "preferences",

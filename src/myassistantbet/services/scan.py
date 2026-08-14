@@ -188,6 +188,66 @@ def _upsert_event(
     return int(row["id"])
 
 
+def _outcome_key(row: Any) -> tuple[Any, ...]:
+    """Ce qui fait qu'une issue est **la meme** d'un releve a l'autre.
+
+    `point` et `description` en font partie : `Over 2.5` et `Over 3.5` sont deux
+    issues du meme marche, et deux props ne different que par le joueur.
+    """
+    return (row["outcome_name"], row["description"], row["point"])
+
+
+def _record_moves(
+    conn: sqlite3.Connection,
+    event_id: int,
+    book_key: str,
+    market_key: str,
+    previous: dict[tuple[Any, ...], Any],
+    fetched_at: str,
+    outcomes: list[dict[str, Any]],
+) -> None:
+    """Garde les prix qui ont bouge, avant que le DELETE ne les efface.
+
+    **Ce module n'en lit rien et n'en fait rien** : il arrete une perte, et c'est
+    tout le chantier. `odds` ne conserve que le dernier releve, donc l'etat
+    d'avant n'existe nulle part une heure apres un scan — meme defaut que
+    `commence_time` avant la migration 040.
+
+    Seuls les prix **qui changent** sont ecrits. Un prix stable ne dit rien
+    qu'`odds` ne dise deja, et l'ecrire a chaque scan noierait les mouvements
+    sous leur propre bruit.
+    """
+    observed_at = utcnow()
+    for outcome in outcomes:
+        price = outcome.get("price")
+        name = outcome.get("name")
+        if price is None or name is None:
+            continue
+        ancien = previous.get((name, outcome.get("description"), outcome.get("point")))
+        if ancien is None or float(ancien["price"]) == float(price):
+            continue
+        conn.execute(
+            "INSERT INTO odds_history (event_id, bookmaker, market_key, outcome_name, "
+            "                          description, point, previous_price, price, "
+            "                          previous_fetched_at, fetched_at, observed_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                event_id,
+                book_key,
+                market_key,
+                name,
+                outcome.get("description"),
+                outcome.get("point"),
+                float(ancien["price"]),
+                float(price),
+                # La borne basse : sans elle, tout mouvement parait instantane.
+                ancien["fetched_at"],
+                fetched_at,
+                observed_at,
+            ),
+        )
+
+
 def replace_odds(conn: sqlite3.Connection, event_id: int, payload: dict[str, Any]) -> int:
     """Remplace les cotes de l'evenement pour chaque (bookmaker, marche) recu."""
     inserted = 0
@@ -202,6 +262,26 @@ def replace_odds(conn: sqlite3.Connection, event_id: int, payload: dict[str, Any
             if not market_key:
                 continue
 
+            # Lu **avant** le DELETE : c'est le seul instant ou l'etat d'avant
+            # existe encore. Le relire apres serait relire ce qu'on vient
+            # d'ecrire.
+            previous = {
+                _outcome_key(row): row
+                for row in conn.execute(
+                    "SELECT outcome_name, description, point, price, fetched_at FROM odds "
+                    "WHERE event_id = ? AND bookmaker = ? AND market_key = ?",
+                    (event_id, book_key, market_key),
+                )
+            }
+            _record_moves(
+                conn,
+                event_id,
+                book_key,
+                market_key,
+                previous,
+                fetched_at,
+                market.get("outcomes") or [],
+            )
             conn.execute(
                 "DELETE FROM odds WHERE event_id = ? AND bookmaker = ? AND market_key = ?",
                 (event_id, book_key, market_key),
