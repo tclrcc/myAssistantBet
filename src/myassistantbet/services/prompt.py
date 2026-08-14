@@ -26,7 +26,7 @@ from jinja2 import (
 from ..config import PACKAGE_DIR, Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.oddsapi import SCAN_MARKETS
-from .competitions import is_knockout
+from .competitions import is_knockout, reads_domestic_aggregates
 from .enrich import markets_for
 from .history import SCALE_VERSION, feedback
 from .labels import affiche, bookmaker_label, is_reference
@@ -579,6 +579,29 @@ def catalogues(
     ]
 
 
+def domestic_aggregates(events: list[RenderableEvent], settings: Settings | None = None) -> bool:
+    """Un bloc du lot lit-il ses agregats hors de sa propre competition ?
+
+    La question se pose sur les **matchs rendus** et non sur la session : un
+    prompt restreint a une competition ne doit pas payer le mode d'emploi d'une
+    lecture croisee qui ne s'y produit pas. Meme regle que les libelles de
+    contexte, un cran plus loin.
+    """
+    settings = settings or get_settings()
+    ids = [event.event_id for event in events if event.event_id]
+    if not ids:
+        return False
+    placeholders = ",".join("?" * len(ids))
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT c.oddsapi_key FROM events e "
+            "JOIN competitions c ON c.id = e.competition_id "
+            f"WHERE e.id IN ({placeholders})",
+            ids,
+        ).fetchall()
+    return any(reads_domestic_aggregates(row["oddsapi_key"]) for row in rows)
+
+
 def competition_notes(
     session_id: int,
     settings: Settings | None = None,
@@ -729,6 +752,11 @@ def build_prompt(
             # session : meme regle que les libelles de contexte, un cran plus
             # loin — celle-ci est faite pour ne jamais servir.
             handicap_alerts=any(handicap_alert(event) for event in events),
+            # Vrai des qu'un bloc du lot lit ses agregats dans le championnat
+            # domestique de ses equipes. Meme regle que les libelles de
+            # contexte : le mode d'emploi d'une lecture croisee ne se paie pas
+            # sur une soiree de championnat, ou elle ne se produit jamais.
+            domestic_aggregates=domestic_aggregates(events, settings),
             # Ou depenser un budget de recherche fini. Le lot ne donnait aucun
             # ordre de passage : sur 21 manches retour, 3 dossiers ont ete
             # traites au juge et 18 selections sont retombees en `lecture`. La

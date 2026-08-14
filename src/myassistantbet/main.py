@@ -241,7 +241,8 @@ async def fetch_event_context(request: Request, event_id: int) -> HTMLResponse:
     settings = get_settings()
     with db.connect(settings) as conn:
         row = conn.execute(
-            "SELECT e.id, e.home, e.away, e.commence_time, c.apifootball_league_id "
+            "SELECT e.id, e.home, e.away, e.commence_time, c.apifootball_league_id, "
+            "       c.oddsapi_key "
             "FROM events e LEFT JOIN competitions c ON c.id = e.competition_id "
             "WHERE e.id = ?",
             (event_id,),
@@ -251,7 +252,15 @@ async def fetch_event_context(request: Request, event_id: int) -> HTMLResponse:
     client = APIFootballClient(request.app.state.http, settings)
     report = await context_service.fetch_context(
         client,
-        dict(row),
+        # Le bouton d'un match seul doit ramener ce qu'un enrichissement ramene :
+        # deux chemins qui ne recuperent pas la meme chose sont le defaut que
+        # l'assembleur de contexte a deja paye deux fois.
+        dict(row)
+        | {
+            "domestic_aggregates": competitions_service.reads_domestic_aggregates(
+                row["oddsapi_key"]
+            )
+        },
         settings,
         # Le pays du stade quand le fournisseur ne l'identifie pas. Ce bouton doit
         # ramener ce qu'un enrichissement ramene : deux chemins qui ne recuperent

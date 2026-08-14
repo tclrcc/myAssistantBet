@@ -2653,3 +2653,169 @@ async def test_un_titulaire_d_une_autre_competition_n_est_jamais_porte_manquant(
     await fetch_context(api_client, EVENT, migrated)
 
     assert "Effectif" not in _lines(migrated)
+
+
+# -- Agregats de saison d'un match de coupe ---------------------------------
+
+
+def _leagues_payload(league_id: int, name: str, kind: str = "League") -> dict[str, Any]:
+    """Une reponse `/leagues?team=` a une seule competition."""
+    return {
+        "errors": [],
+        "response": [
+            {
+                "league": {"id": league_id, "name": name, "type": kind},
+                "country": {"name": "Sweden"},
+                "seasons": [{"year": 2026, "current": True, "coverage": {"standings": True}}],
+            }
+        ],
+    }
+
+
+def _standings_payload(league_id: int, name: str, team_id: int, rank: int) -> dict[str, Any]:
+    return {
+        "errors": [],
+        "response": [
+            {
+                "league": {
+                    "id": league_id,
+                    "name": name,
+                    "season": 2026,
+                    "standings": [
+                        [
+                            {
+                                "rank": rank,
+                                "team": {"id": team_id, "name": "peu importe"},
+                                "points": 12,
+                                "all": {"played": 6},
+                                "description": "Relegation Round",
+                            }
+                        ]
+                    ],
+                }
+            }
+        ],
+    }
+
+
+def _mock_domestic(away_leagues: dict[str, Any]) -> None:
+    """Les routes propres a une coupe, posees **avant** les generiques.
+
+    respx retient la premiere route qui correspond : les mocks specifiques
+    doivent donc etre enregistres en tete, sinon le `/leagues` generique de
+    `helpers` repondrait a la place.
+    """
+    respx.get(f"{BASE_URL}/leagues", params__contains={"team": "376"}).mock(
+        return_value=httpx.Response(
+            200, json=_leagues_payload(113, "Allsvenskan"), headers=RATE_HEADERS
+        )
+    )
+    respx.get(f"{BASE_URL}/leagues", params__contains={"team": "377"}).mock(
+        return_value=httpx.Response(200, json=away_leagues, headers=RATE_HEADERS)
+    )
+    respx.get(f"{BASE_URL}/standings", params__contains={"league": "114"}).mock(
+        return_value=httpx.Response(
+            200, json=_standings_payload(114, "Superettan", 377, 1), headers=RATE_HEADERS
+        )
+    )
+
+
+@respx.mock
+async def test_les_agregats_d_une_coupe_viennent_du_championnat_domestique(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """**Une coupe n'a ni classement ni assez de matchs pour une frequence.**
+
+    `/teams/statistics` et `/standings` sont scopes a une competition : sur un
+    tour de coupe, ses participants y ont joue un ou deux matchs. Le bloc
+    perdait ses dix lignes les plus decisives exactement la ou l'ecart de
+    niveau **est** le fait de la rencontre.
+    """
+    _seed_event(migrated)
+    _mock_domestic(_leagues_payload(114, "Superettan"))
+    _mock_all(load_fixture)
+
+    report = await fetch_context(api_client, dict(EVENT, domestic_aggregates=True), migrated)
+
+    assert report.ok
+    lignes = _lines(migrated)
+    # Chaque agregat porte sa competition d'origine : sans elle, « 1er » contre
+    # « 4e » se lirait comme un match equilibre alors que ce sont deux divisions.
+    assert "BK Hacken (Allsvenskan)" in lignes["Classement"]
+    assert "Djurgardens IF (Superettan)" in lignes["Classement"]
+    assert "BK Hacken (Allsvenskan)" in lignes["Forme 5"]
+    assert "BK Hacken (Allsvenskan)" in lignes["Dom/Ext"]
+
+
+@respx.mock
+async def test_l_enjeu_ne_suit_pas_le_classement_hors_de_sa_competition(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Un championnat declare « Relegation » ou « Play-offs ». Ce n'est pas
+    l'enjeu d'un tour de coupe, et le prompt batit des scenarios de motivation
+    sur cette ligne — le format d'une coupe releve de sa fiche, pas du bloc."""
+    _seed_event(migrated)
+    _mock_domestic(_leagues_payload(114, "Superettan"))
+    _mock_all(load_fixture)
+
+    await fetch_context(api_client, dict(EVENT, domestic_aggregates=True), migrated)
+
+    lignes = _lines(migrated)
+    assert "Classement" in lignes, "le classement, lui, est bien lu"
+    assert "Enjeu" not in lignes
+
+
+@respx.mock
+async def test_un_championnat_domestique_ambigu_produit_un_motif_nomme(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """**Un trou sans motif est precisement ce qu'on repare.**
+
+    Le fournisseur classe parfois une supercoupe en `League` : deux
+    championnats en cours, et on ne tranche pas — trancher attribuerait a une
+    equipe les statistiques d'une autre competition. Mais dix lignes
+    disparaissent alors du bloc, et sans motif elles se liraient comme une
+    equipe sans passe.
+    """
+    _seed_event(migrated)
+    ambigu = _leagues_payload(114, "Superettan")
+    ambigu["response"].append(
+        {
+            "league": {"id": 999, "name": "Supercup", "type": "League"},
+            "country": {"name": "Sweden"},
+            "seasons": [{"year": 2026, "current": True, "coverage": {"standings": True}}],
+        }
+    )
+    _mock_domestic(ambigu)
+    _mock_all(load_fixture)
+
+    await fetch_context(api_client, dict(EVENT, domestic_aggregates=True), migrated)
+
+    lignes = _lines(migrated)
+    assert "Agregats" in lignes
+    assert "Djurgardens IF : plusieurs championnats" in lignes["Agregats"]
+    assert "Superettan, Supercup" in lignes["Agregats"]
+    # L'equipe resolue garde les siens : le motif porte sur l'autre seulement.
+    assert "BK Hacken (Allsvenskan)" in lignes["Classement"]
+    assert "Djurgardens IF" not in lignes["Classement"]
+
+
+@respx.mock
+async def test_hors_coupe_rien_ne_change(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """La regle ne se declenche que sur les competitions qui la declarent.
+
+    Sans elle, aucun appel supplementaire n'est emis, le nom des equipes reste
+    nu et l'enjeu se rend comme avant.
+    """
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    equipes = respx.get(f"{BASE_URL}/leagues", params__contains={"team": "376"})
+
+    await fetch_context(api_client, dict(EVENT), migrated)
+
+    assert not equipes.called, "aucun appel de championnat domestique hors coupe"
+    lignes = _lines(migrated)
+    assert "(Allsvenskan)" not in lignes["Classement"]
+    assert routes["standings"].called

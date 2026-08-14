@@ -751,7 +751,19 @@ Marquée **« (après Nj — indicatif) »**, elle sort d'un classement de débu
 à la 3e journée, « Relegation Playoffs » décrit l'ordre alphabétique autant que
 le niveau. Elle reste écrite, mais ne bâtis aucun scénario de motivation dessus
 sans l'avoir vérifié.
-{% if 'Forme 5' in context_labels %}
+{% if domestic_aggregates %}
+**Sur un match de coupe, les agrégats de saison viennent du championnat
+domestique de chaque équipe**, et chaque ligne porte le sien —
+`Hansa Rostock (3. Liga) 8e` contre `VfB Stuttgart (Bundesliga) 2e`. Une coupe
+n'a ni classement ni assez de matchs joués pour qu'une fréquence veuille dire
+quelque chose.
+
+**Les deux tables ne se comparent donc pas.** Le fait de la rencontre est
+l'**écart de division**, jamais la différence de rangs : un 1er de 3. Liga
+contre un 8e de Bundesliga n'est pas un match équilibré. « Enjeu » ne paraît pas
+— celui du championnat n'est pas celui d'un tour de coupe — et le format se lit
+sur la fiche de la compétition.
+{% endif %}{% if 'Forme 5' in context_labels %}
 **« Forme 5 »** mélange deux fenêtres, et **chaque moitié porte son propre
 dénominateur** : `Silkeborg ND (2j) 10-6/5` = deux matchs joués dans cette
 compétition, d'où deux lettres, et dix buts marqués pour six encaissés sur les

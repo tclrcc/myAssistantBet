@@ -154,6 +154,13 @@ CONTEXT_ICONS = {
     # match — elle dit ce que la collecte a rapporte, pas ce que les equipes
     # valent.
     "Densite": "jauge",
+    # Le championnat d'ou sortent les agregats de saison n'a pas ete etabli.
+    # Une seule ligne pour les dix qu'elle explique, comme « Stats match » pour
+    # ses trois : dix absences separees se feraient chercher une par une.
+    # Meme pictogramme que « Stats match », et pour la meme raison : les deux
+    # lignes disent qu'un groupe de lignes n'a pas pu etre etabli, pas ce que
+    # les equipes valent.
+    "Agregats": "interdit",
 }
 
 

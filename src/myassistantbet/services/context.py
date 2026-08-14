@@ -172,6 +172,36 @@ INJURIES_NOTES = {
     ),
     INJURIES_UNREACHABLE: "source injoignable au dernier releve — a retenter ou a chercher",
 }
+#: Championnat domestique de chaque equipe, sur les competitions ou les agregats
+#: de saison se lisent ailleurs que dans la competition du match.
+#:
+#: `/teams/statistics` et `/standings` sont scopes a une competition. Sur une
+#: coupe, cela ne decrit rien : les participants y ont joue un ou deux matchs —
+#: donc sous `SEASON_MIN_MATCHES` — et une coupe n'a pas de classement. Mesure
+#: du 14/08/2026 : la DFB-Pokal annonce `standings`, `injuries`, `lineups` et
+#: `statistics_fixtures` **tous a faux**, et ses 32 fixtures du tour portent un
+#: arbitre nul. Rattachee seule, elle ne ramenait que l'affiche et le lieu.
+KIND_DOMESTIC = "domestic"
+
+#: Un seul championnat en cours : c'est celui-la, et les agregats s'y lisent.
+DOMESTIC_RESOLVED = "resolved"
+#: Plusieurs, et **on ne tranche pas**. Le fournisseur classe parfois une
+#: supercoupe en `League` : choisir la premiere attribuerait a une equipe les
+#: statistiques d'une autre competition, ce qui est pire qu'une ligne absente.
+DOMESTIC_AMBIGUOUS = "ambiguous"
+#: Aucun. Une equipe de coupe nationale peut ne pas figurer en championnat chez
+#: le fournisseur — un club amateur, une reserve.
+DOMESTIC_NONE = "none"
+
+#: **Un trou sans motif est precisement ce que ce chantier repare.** Les deux
+#: etats ci-dessous font disparaitre dix lignes du bloc ; les taire les ferait
+#: lire comme une equipe sans passe, alors que c'est notre rapprochement qui
+#: n'aboutit pas. Meme regle que les trois etats de la ligne `Absents`.
+DOMESTIC_NOTES = {
+    DOMESTIC_AMBIGUOUS: "plusieurs championnats en cours chez le fournisseur",
+    DOMESTIC_NONE: "aucun championnat en cours chez le fournisseur",
+}
+
 KIND_LINEUPS = "lineups"
 KIND_MAPPING = "mapping_pending"
 KIND_MANUAL_NOTE = "manual_note"
@@ -760,6 +790,77 @@ async def _fetch_profile(
     return _profile_from_fixtures(stats_by_fixture, team_id)
 
 
+async def _domestic_league(
+    client: APIFootballClient, team_id: int, cache: dict[str, Any]
+) -> dict[str, Any]:
+    """Le championnat domestique d'une equipe, ou le motif de son absence.
+
+    **Un seul `type=League` en cours, sinon rien.** Le type vient du
+    fournisseur, il ne se deduit d'aucun libelle — meme regle que partout
+    ailleurs. Mesure du 14/08/2026 sur neuf equipes : huit en portent
+    exactement un, la neuvieme deux, le fournisseur classant une supercoupe
+    en `League`. Trancher a sa place attribuerait a une equipe les
+    statistiques d'une autre competition.
+
+    La couverture du championnat vient de la **meme reponse**, donc du meme
+    appel : celle de la coupe ne dit rien de lui, et l'appeler pour la
+    connaitre couterait une requete par equipe.
+    """
+    rows = await _memoized(cache, f"domestic:{team_id}", lambda: client.team_leagues(team_id))
+    found: list[dict[str, Any]] = []
+    for row in rows:
+        league = row.get("league") or {}
+        if league.get("type") != "League":
+            continue
+        season = next((item for item in row.get("seasons") or [] if item.get("current")), None)
+        if season is None:
+            continue
+        found.append(
+            {
+                "state": DOMESTIC_RESOLVED,
+                "league_id": int(league["id"]),
+                "label": str(league.get("name") or ""),
+                "season": int(season["year"]),
+                "standings": bool((season.get("coverage") or {}).get("standings")),
+            }
+        )
+    if len(found) == 1:
+        return found[0]
+    return {
+        "state": DOMESTIC_AMBIGUOUS if found else DOMESTIC_NONE,
+        "candidates": [item["label"] for item in found],
+    }
+
+
+def _aggregate_scope(
+    mapping: FixtureMapping, domestic: dict[str, Any], side: str
+) -> tuple[int, int] | None:
+    """(ligue, saison) ou lire les agregats de cette equipe.
+
+    Sans releve domestique, c'est la competition du match — le cas ordinaire.
+    Avec, c'est le championnat de l'equipe, et `None` quand il n'a pas ete
+    etabli : une ligne absente vaut mieux qu'une ligne prise ailleurs.
+    """
+    if not domestic:
+        return mapping.league_id, mapping.season
+    entry = domestic.get(side) or {}
+    if entry.get("state") != DOMESTIC_RESOLVED:
+        return None
+    return int(entry["league_id"]), int(entry["season"])
+
+
+def _standings_covered(mapping: FixtureMapping, domestic: dict[str, Any], side: str) -> bool:
+    """La couverture du classement, lue au bon endroit.
+
+    Sur un match a agregats domestiques, celle de la coupe est **fausse pour la
+    question posee** : elle dit qu'une coupe n'a pas de classement, ce qu'on
+    savait, et ferait taire le championnat qu'on interroge a la place.
+    """
+    if not domestic:
+        return bool(mapping.coverage.get("standings", True))
+    return bool((domestic.get(side) or {}).get("standings"))
+
+
 async def fetch_context(
     client: APIFootballClient,
     event: dict[str, Any],
@@ -814,24 +915,47 @@ async def fetch_context(
     async def _memo(key: str, coroutine_factory: Any) -> Any:
         return await _memoized(cache, key, coroutine_factory)
 
+    # **Ou lire les agregats de saison.** Sur une coupe, la competition du match
+    # ne les porte pas : ses participants y ont joue un ou deux matchs et elle
+    # n'a pas de classement. La regle se declare par competition et ne se deduit
+    # d'aucun drapeau du fournisseur — celui-ci decrit ce qu'il sert, pas la
+    # nature de la competition.
+    domestic: dict[str, Any] = {}
+    if event.get("domestic_aggregates"):
+        try:
+            for side, team_id in (("home", mapping.home_id), ("away", mapping.away_id)):
+                domestic[side] = await _domestic_league(client, team_id, cache)
+            store(report.event_id, KIND_DOMESTIC, domestic, settings)
+            report.kinds.append(KIND_DOMESTIC)
+        except ProviderError as exc:
+            report.errors.append(f"championnat domestique : {exc}")
+            domestic = {}
+
     # Classement — partage par toutes les rencontres de la ligue.
     try:
-        if not mapping.coverage.get("standings", True):
+        scopes = {side: _aggregate_scope(mapping, domestic, side) for side in ("home", "away")}
+        if not any(_standings_covered(mapping, domestic, side) for side in ("home", "away")):
             # Le fournisseur annonce qu'il n'a pas de classement ici : ne pas
             # l'appeler, et surtout ne pas laisser la ligne disparaitre en
             # silence — une absence declaree est une information.
             store(report.event_id, KIND_STANDINGS, {"available": False}, settings)
             report.kinds.append(KIND_STANDINGS)
             raise _NotCovered
-        standings = await _memo(
-            f"standings:{mapping.league_id}:{mapping.season}",
-            lambda: client.standings(mapping.league_id, mapping.season),
-        )
-        payload = {
-            "home": _standings_entry(standings, mapping.home_id),
-            "away": _standings_entry(standings, mapping.away_id),
-        }
-        if payload["home"] or payload["away"]:
+        payload: dict[str, Any] = {}
+        for side, team_id in (("home", mapping.home_id), ("away", mapping.away_id)):
+            scope = scopes[side]
+            if scope is None or not _standings_covered(mapping, domestic, side):
+                continue
+            league_id, season = scope
+            # **Une table par ligue, et deux quand les equipes n'en partagent
+            # pas.** C'est exactement ce qu'un tour de coupe demande : le rang
+            # d'un club de 3. Liga ne se lit pas dans la table de Bundesliga.
+            standings = await _memo(
+                f"standings:{league_id}:{season}",
+                lambda lid=league_id, yr=season: client.standings(lid, yr),
+            )
+            payload[side] = _standings_entry(standings, team_id)
+        if payload.get("home") or payload.get("away"):
             store(report.event_id, KIND_STANDINGS, payload, settings)
             report.kinds.append(KIND_STANDINGS)
     except _NotCovered:
@@ -843,9 +967,13 @@ async def fetch_context(
     try:
         stats = {}
         for side, team_id in (("home", mapping.home_id), ("away", mapping.away_id)):
+            scope = _aggregate_scope(mapping, domestic, side)
+            if scope is None:
+                continue
+            league_id, season = scope
             stats[side] = await _memo(
-                f"stats:{mapping.league_id}:{mapping.season}:{team_id}",
-                lambda tid=team_id: client.team_statistics(mapping.league_id, mapping.season, tid),
+                f"stats:{league_id}:{season}:{team_id}",
+                lambda lid=league_id, yr=season, tid=team_id: client.team_statistics(lid, yr, tid),
             )
         if any(stats.values()):
             store(report.event_id, KIND_FORM, stats, settings)
@@ -1754,6 +1882,45 @@ async def refresh_due_lineups(
     return sweep
 
 
+def _domestic_names(home: str, away: str, domestic: dict[str, Any]) -> tuple[str, str]:
+    """Les noms d'equipe tels que les **lignes d'agregats** les nomment.
+
+    « Karlsruher SC (2. Bundesliga) » : la competition d'origine voyage avec le
+    nom, donc avec chacune des dix lignes qui en sortent. Hors coupe, rien ne
+    change — le nom reste le nom.
+    """
+    rendered = []
+    for name, side in ((home, "home"), (away, "away")):
+        entry = domestic.get(side) or {}
+        label = entry.get("label") if entry.get("state") == DOMESTIC_RESOLVED else ""
+        rendered.append(f"{name} ({label})" if label else name)
+    return rendered[0], rendered[1]
+
+
+def _domestic_note(home: str, away: str, domestic: dict[str, Any]) -> str:
+    """Le motif, quand un championnat domestique n'a pas ete etabli.
+
+    **Un trou sans motif est precisement ce que ce chantier repare.** Dix
+    lignes disparaissent du bloc ; sans cette ligne, elles se liraient comme
+    une equipe sans passe, alors que c'est notre rapprochement qui n'aboutit
+    pas. Une seule ligne pour les dix, comme `Stats match` pour ses trois.
+    """
+    manquants = []
+    for name, side in ((home, "home"), (away, "away")):
+        entry = domestic.get(side) or {}
+        note = DOMESTIC_NOTES.get(str(entry.get("state")))
+        if note:
+            candidats = entry.get("candidates") or []
+            detail = f" ({', '.join(candidats)})" if candidats else ""
+            manquants.append(f"{name} : {note}{detail}")
+    if not manquants:
+        return ""
+    return (
+        " · ".join(manquants) + " — les agrégats de saison de cette équipe sont absents du bloc, "
+        "pas de son histoire"
+    )
+
+
 def context_lines(
     event_id: int,
     home: str,
@@ -1788,34 +1955,58 @@ def context_lines(
     if manual.get("links"):
         lines.append(("References", " ".join(manual["links"])))
 
+    # **Sur un match de coupe, les agregats viennent d'ailleurs, et chacun le
+    # dit.** Le nom de l'equipe porte sa competition d'origine dans toutes les
+    # lignes qui en sortent : sans elle, « 1er » contre « 8e » se lit comme un
+    # match equilibre alors que l'ecart de division **est** le fait de la
+    # rencontre. La decoration se pose sur le nom plutot que dans chaque
+    # fragment — dix lignes a modifier, dix occasions de diverger.
+    domestic = data.get(KIND_DOMESTIC) or {}
+    home_agg, away_agg = _domestic_names(home, away, domestic)
+    if domestic:
+        note = _domestic_note(home, away, domestic)
+        if note:
+            lines.append(("Agregats", note))
+
     standings = data.get(KIND_STANDINGS) or {}
     if standings and not standings.get("available", True):
         lines.append(("Classement", UNAVAILABLE))
         standings = {}
     ranked = _pair(
-        _rank_fragment(home, standings.get("home")), _rank_fragment(away, standings.get("away"))
+        _rank_fragment(home_agg, standings.get("home")),
+        _rank_fragment(away_agg, standings.get("away")),
     )
     if ranked:
         lines.append(("Classement", ranked))
 
-    stakes = _pair(
-        _stake_fragment(home, standings.get("home")), _stake_fragment(away, standings.get("away"))
-    )
-    if stakes:
-        lines.append(("Enjeu", stakes))
+    # **L'enjeu ne suit pas le classement hors de sa competition.** Un
+    # championnat declare « Relegation » ou « Play-offs » : ce n'est pas l'enjeu
+    # d'un tour de coupe, et le prompt batit des scenarios de motivation sur
+    # cette ligne. Le format d'une coupe — elimination directe, tour unique —
+    # releve de la fiche de competition, pas du bloc.
+    if not domestic:
+        stakes = _pair(
+            _stake_fragment(home, standings.get("home")),
+            _stake_fragment(away, standings.get("away")),
+        )
+        if stakes:
+            lines.append(("Enjeu", stakes))
 
     form = data.get(KIND_FORM) or {}
     recent = data.get(KIND_RECENT) or {}
+    # Les lettres viennent de la seule competition lue, les buts des cinq
+    # derniers matchs toutes competitions : la competition nommee qualifie donc
+    # la premiere moitie, et le `/5` de la seconde marque deja la sienne.
     forms = _pair(
-        _form_fragment(home, form.get("home"), recent.get("home")),
-        _form_fragment(away, form.get("away"), recent.get("away")),
+        _form_fragment(home_agg, form.get("home"), recent.get("home")),
+        _form_fragment(away_agg, form.get("away"), recent.get("away")),
     )
     if forms:
         lines.append(("Forme 5", forms))
 
     sides = _pair(
-        _prefix(home, _side_record(form.get("home"), "home")),
-        _prefix(away, _side_record(form.get("away"), "away")),
+        _prefix(home_agg, _side_record(form.get("home"), "home")),
+        _prefix(away_agg, _side_record(form.get("away"), "away")),
     )
     if sides:
         lines.append(("Dom/Ext", sides))
@@ -1832,7 +2023,7 @@ def context_lines(
         ("Buts tard.", _late_goals_fragment),
         ("Formations", _formation_fragment),
     ):
-        rendered = _pair(fragment(home, form.get("home")), fragment(away, form.get("away")))
+        rendered = _pair(fragment(home_agg, form.get("home")), fragment(away_agg, form.get("away")))
         if rendered:
             lines.append((label, rendered))
 
@@ -1875,8 +2066,8 @@ def context_lines(
 
     # Juste apres la moyenne par match : meme sujet, autre grandeur.
     card_timing = _pair(
-        _card_timing_fragment(home, form.get("home")),
-        _card_timing_fragment(away, form.get("away")),
+        _card_timing_fragment(home_agg, form.get("home")),
+        _card_timing_fragment(away_agg, form.get("away")),
     )
     if card_timing:
         lines.append(("Cartons tps", card_timing))

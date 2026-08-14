@@ -1809,3 +1809,67 @@ def test_le_plafond_de_la_section_b_est_asymetrique(migrated: Settings) -> None:
     assert "**12 lignes** sur un dossier qui porte au moins un fait nommé et daté" in corps
     assert "**4 lignes** sur un PASSE" in corps
     assert "8 lignes maximum chacune" not in corps, "l'ancien plafond uniforme a disparu"
+
+
+def _lot_de_coupe(migrated: Settings) -> int:
+    """Un lot d'un match, rattache a une competition a agregats domestiques."""
+    event_id = save(
+        build(
+            "football",
+            "DFB-Pokal",
+            "Hansa Rostock",
+            "VfB Stuttgart",
+            "2026-08-04",
+            "20:45",
+            "Hansa Rostock 4.10\nNul 3.80\nVfB Stuttgart 1.75",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+    db.execute(
+        "UPDATE competitions SET oddsapi_key = 'soccer_germany_dfb_pokal' "
+        "WHERE id = (SELECT competition_id FROM events WHERE id = ?)",
+        (event_id,),
+        settings=migrated,
+    )
+    return board_service.toggle_selection(event_id, True, migrated)
+
+
+#: La phrase que la porte du preambule commande. Ecrite une fois : les deux
+#: tests qui l'encadrent doivent viser exactement le meme texte, sinon l'un des
+#: deux passerait sur une reformulation.
+AGREGATS_DE_COUPE = "les agrégats de saison viennent du championnat domestique"
+
+
+def test_le_mode_d_emploi_des_agregats_de_coupe_parait_sur_une_coupe(
+    migrated: Settings,
+) -> None:
+    """Sans lui, « 1er » contre « 8e » se lit comme un match equilibre."""
+    coupe = " ".join(build_prompt(_lot_de_coupe(migrated), settings=migrated, now=NOW).body.split())
+
+    assert AGREGATS_DE_COUPE in coupe
+    # Le fait de la rencontre est l'ecart de division, pas la difference de rangs.
+    assert "Les deux tables ne se comparent donc pas" in coupe
+
+
+def test_le_mode_d_emploi_des_agregats_de_coupe_ne_se_paie_pas_ailleurs(
+    migrated: Settings,
+) -> None:
+    """Meme regle que les libelles de contexte, un cran plus loin.
+
+    Une soiree de championnat n'a aucune lecture croisee a expliquer : lui
+    facturer le paragraphe reviendrait a payer le mode d'emploi d'une ligne
+    qu'aucun bloc ne porte — le defaut que les portes du preambule corrigent.
+
+    **Le lot se monte dans une base neuve, et c'est le piege du test** : les
+    deux `toggle_selection` d'une meme journee alimentent la **meme** session,
+    si bien qu'un lot de championnat monte a la suite d'un lot de coupe porte
+    encore le match de coupe — et la porte s'ouvre pour la bonne raison.
+    """
+    championnat = " ".join(
+        build_prompt(_lot_de(migrated, 2), settings=migrated, now=NOW).body.split()
+    )
+
+    assert AGREGATS_DE_COUPE not in championnat

@@ -180,6 +180,23 @@ class APIFootballClient(BaseHTTPClient):
         year, _ = await self.season_coverage(league_id)
         return year
 
+    async def team_leagues(self, team_id: int) -> list[dict[str, Any]]:
+        """Competitions en cours d'une equipe, avec leur type et leur couverture.
+
+        Sert a trouver le **championnat domestique** d'une equipe engagee en
+        coupe : `/teams/statistics` et `/standings` sont scopes a une
+        competition, et une coupe n'a ni classement ni assez de matchs pour
+        qu'une frequence veuille dire quelque chose.
+
+        Le type vient du fournisseur (`League` contre `Cup`), il ne se devine
+        pas d'un libelle. Mesure du 14/08/2026 sur neuf equipes : huit portent
+        exactement un `type=League` en cours — Bayern en a six competitions et
+        une seule ligue — et la neuvieme en porte deux, le fournisseur classant
+        une supercoupe en `League`. C'est ce cas-la que la regle d'appel doit
+        refuser plutot que de trancher a sa place.
+        """
+        return await self._fetch("/leagues", {"team": team_id, "current": "true"})
+
     async def fixtures_by_date(
         self, date_iso: str, league_id: int, season: int
     ) -> list[dict[str, Any]]:

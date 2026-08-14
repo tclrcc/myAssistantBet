@@ -24,7 +24,7 @@ from ..providers.tennisabstract import TennisAbstractClient
 from ..providers.tennisdata import TennisDataClient
 from ..providers.weather import WeatherClient
 from . import coverage, dossier, elo, fixtures, reference, tennis_history, weather
-from .competitions import is_knockout
+from .competitions import is_knockout, reads_domestic_aggregates
 from .context import KIND_ABORTED, KIND_VENUE, SHEETS_LAST, fetch_context
 from .context import store as store_context
 from .labels import affiche, is_reference, primary_book
@@ -52,6 +52,10 @@ class EnrichTarget:
     competition_id: int | None = None
     #: Necessaire au contexte API-Football. Absent = pas de contexte possible.
     apifootball_league_id: int | None = None
+    #: Cle The Odds API de la competition. Distincte d'`oddsapi_sport_key`, qui
+    #: est vide sur une cible de substitution : c'est elle qui dit ou se lisent
+    #: les agregats de saison, et la question se pose aussi sur ces cibles-la.
+    competition_key: str = ""
     home: str = ""
     away: str = ""
     commence_time: str = ""
@@ -80,6 +84,9 @@ class EnrichTarget:
             "away": self.away,
             "commence_time": self.commence_time,
             "apifootball_league_id": self.apifootball_league_id,
+            # Resolu ici plutot que dans `context` : la regle se declare par
+            # competition, et c'est la competition qu'on tient a cet endroit.
+            "domestic_aggregates": reads_domestic_aggregates(self.competition_key),
         }
 
 
@@ -157,6 +164,7 @@ def _substitute_target(row: Any, label: str) -> EnrichTarget:
         substitute=True,
         competition_id=row["competition_id"],
         apifootball_league_id=row["apifootball_league_id"],
+        competition_key=row["competition_key"],
         home=row["home"],
         away=row["away"],
         commence_time=row["commence_time"],
@@ -491,6 +499,7 @@ def build_estimate(
                 bookmakers=(DEFAULT_BOOKMAKER, *settings.reference_books),
                 competition_id=row["competition_id"],
                 apifootball_league_id=row["apifootball_league_id"],
+                competition_key=row["competition_key"],
                 home=row["home"],
                 away=row["away"],
                 commence_time=row["commence_time"],
