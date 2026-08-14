@@ -12,7 +12,7 @@ from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services import coupons as coupons_service
-from myassistantbet.services import market_families
+from myassistantbet.services import history, market_families
 from myassistantbet.services.competitions import set_category
 from myassistantbet.services.history import (
     ANALYSIS_MIN_DAYS,
@@ -2983,3 +2983,81 @@ def test_le_schema_permet_le_croisement_confiance_palier(migrated: Settings) -> 
     colonnes = {row["name"] for row in db.query("PRAGMA table_info(picks)", settings=migrated)}
 
     assert {"confidence", "tier", "tier_real"} <= colonnes
+
+
+# -- Une colonne muette depuis sa naissance ---------------------------------
+
+
+def _session_nue(migrated: Settings, label: str) -> int:
+    """Une session sans match : l'audit ne regarde que `picks`."""
+    db.execute(
+        "INSERT INTO sessions (label, created_at) VALUES (?, ?)",
+        (label, db.utcnow()),
+        settings=migrated,
+    )
+    return int(db.query_one("SELECT MAX(id) AS id FROM sessions", settings=migrated)["id"])
+
+
+def _pick_recent(migrated: Settings, session_id: int, selection: str, **extra: object) -> int:
+    pick_id = history.add_pick(session_id, "safe", "1N2", selection, settings=migrated, **extra)
+    db.execute(
+        "UPDATE picks SET created_at = '2099-01-01T12:00:00Z' WHERE id = ?",
+        (pick_id,),
+        settings=migrated,
+    )
+    return pick_id
+
+
+def test_une_colonne_muette_depuis_sa_naissance_se_voit(migrated: Settings) -> None:
+    """**Meme defaut qu'une densite a zero** : un echec qui produit exactement la
+    meme sortie qu'un succes.
+
+    La carte « par cran calcule » disait « aucun cran calcule » en l'imputant aux
+    selections d'avant le chantier — c'etait vrai, et ca masquait que les
+    nouvelles non plus n'en portaient pas.
+    """
+    for jour in ("01", "02"):
+        session_id = _session_nue(migrated, f"{jour}/01/2099")
+        _pick_recent(migrated, session_id, f"Lyon {jour}")
+
+    trous = {gap.column: gap for gap in history.column_gaps(migrated)}
+
+    assert "confidence_computed" in trous
+    gap = trous["confidence_computed"]
+    assert gap.sessions == 2
+    assert gap.alert, "deux sessions d'import d'affilee : ce n'est plus un collage manque"
+    assert "le cran calculé n'a reçu aucune valeur depuis sa mise en service" in gap.line
+
+
+def test_une_seule_session_ne_declenche_pas_l_alerte(migrated: Settings) -> None:
+    """**Un compte de sessions, jamais de lignes.** Une session peut rater son
+    collage ; le seuil s'echelonne tout seul avec la taille du lot, ce qu'un
+    seuil en lignes ne fait pas."""
+    session_id = _session_nue(migrated, "01/01/2099")
+    for index in range(12):
+        _pick_recent(migrated, session_id, f"Lyon {index}")
+
+    gap = next(g for g in history.column_gaps(migrated) if g.column == "confidence_computed")
+
+    assert gap.picks == 12, "douze lignes, et pourtant pas d'alerte"
+    assert gap.sessions == 1
+    assert not gap.alert
+
+
+def test_une_colonne_alimentee_ne_figure_pas_dans_l_audit(migrated: Settings) -> None:
+    """Une seule valeur suffit a prouver que le chemin fonctionne : l'audit
+    cherche le **silence complet**, pas une couverture basse."""
+    session_id = _session_nue(migrated, "01/01/2099")
+    _pick_recent(migrated, session_id, "Lyon", angle="issue")
+    _pick_recent(migrated, session_id, "Nice")
+
+    trous = {gap.column for gap in history.column_gaps(migrated)}
+
+    assert "angle" not in trous
+    assert "confidence_computed" in trous, "l'autre colonne, elle, reste muette"
+
+
+def test_une_colonne_sans_ligne_posterieure_se_tait(migrated: Settings) -> None:
+    """Un chantier livre ce matin n'a rien a prouver avant le premier import :
+    sans ligne posterieure a sa migration, il n'y a pas de silence a constater."""
+    assert history.column_gaps(migrated) == []

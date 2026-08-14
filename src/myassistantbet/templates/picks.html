@@ -39,6 +39,15 @@
     <b>Rien n'est enregistré</b> : corrige, décoche ce que tu ne veux pas, puis valide.
   </p>
 
+  {# **Ce que le collage a porté, avant que quoi que ce soit soit enregistré.**
+     C'est le seul moment où l'information est encore récupérable : un collage
+     ligne par ligne depuis le tableau de la section C laisse les blocs derrière
+     lui, et le dire une semaine plus tard sur la page de statistiques signale
+     un défaut qui se réparait en dix secondes en recollant. #}
+  <p class="notice {% if preview.complete %}notice-ok{% else %}notice-warn{% endif %}">
+    {{ preview.readout }}
+  </p>
+
   {% if preview.notes %}
   <p class="notice notice-warn">{{ preview.notes | join(' ') }}</p>
   {% endif %}

@@ -3996,6 +3996,81 @@ calcul. Une colonne libre etait inoffensive parce qu'on la savait molle.
   **legitime**, la section F demande justement de le dire ; c'est un ecart systematique qui
   dirait que le tri par « ce qu'une recherche peut y changer » ne sert a rien.
 
+### Un format produit et jamais transmis — le quatrieme cas
+
+**Ni un parseur muet, ni un modele defaillant, ni une persistance ratee.** Les
+`confidence_computed`, `confidence_claimed` et `research_overridden` a **0 sur
+149** ont fait soupconner un chantier mort ; la mesure dit autre chose, et la
+chronologie tranche :
+
+| Prompt | Session | Date | Blocs ```conf demandes | `dossiers_ouverts` |
+| --- | --- | --- | --- | --- |
+| 105-109 | s10 et avant | ≤ 13/08 17:09 | **non** | **non** |
+| 110 | s10 | 13/08 21:26 | oui | non |
+| 111-112 | s11 | 14/08 | oui | oui |
+
+Les migrations 042 et 043 ont ete appliquees le 13/08 a 20:55 et 21:47 ; les
+picks de la session 10 ont ete importes a 13:08 **le meme jour**. Les sessions 2
+a 10 ne pouvaient pas porter de blocs — le gabarit ne les demandait pas encore.
+**Une seule session a eu l'occasion**, et elle n'en porte pas : le « 0 sur 149 »
+mesurait un import, pas deux chantiers de silence.
+
+- **Le chemin fonctionne de bout en bout**, et c'est la trace qui le prouve :
+  la session 11 porte `research_overridden` sur ses trois picks, ce qui ne
+  s'ecrit que si `read_opened` a tourne, si les reperes ont ete resolus et si le
+  champ cache a traverse le formulaire.
+- **Ce qui manquait est l'entree.** Le rendu produisait les blocs ; le collage
+  ligne par ligne depuis le tableau de la section C les a laisses derriere lui.
+- **Et l'import l'acceptait en silence** : `_attach_claims` portait
+  `if not reading.claims: return None`. Un bloc pour trois lignes avertissait,
+  **zero bloc ne disait rien** — la seule branche muette du module, et c'est
+  celle qui a servi.
+- La somme de controle sur `match` n'a donc **jamais tourne** sur cette session :
+  `_select` est en aval de cette garde, et il n'y avait rien a apparier.
+
+**Le releve d'apercu repare la cause** (`ImportPreview.readout`) : selections
+detectees, blocs apparies, etat de la ligne `dossiers_ouverts`, affiches avant
+la validation — **le seul moment ou l'information est encore recuperable**. Un
+defaut dit une semaine plus tard sur la page de statistiques se repare en
+recollant ; dit apres l'import, il ne se repare plus.
+  - Le compte porte sur les blocs **apparies**, jamais sur les blocs presents :
+    deux blocs dans le desordre ne rattachent rien, et annoncer deux crans que
+    l'import n'ecrira pas serait pire que zero.
+  - Le message d'un collage sans bloc ne dit pas « complete les blocs » comme
+    celui du compte : ce n'est pas le rendu qui en manque, c'est le collage qui
+    les a laisses.
+
+### Une colonne muette depuis sa naissance doit se voir
+
+**Meme defaut que la densite a zero** : un echec qui produit exactement la meme
+sortie qu'un succes. La carte « par cran calcule » disait « aucun cran calcule »
+en l'imputant aux selections d'avant le chantier — c'etait vrai, et ca masquait
+que les nouvelles non plus n'en portaient pas.
+
+- **Une colonne a 0 % n'est pas un signal ; une colonne a 0 % sur les lignes
+  posterieures a sa propre migration en est un.** L'age d'une colonne ne demande
+  ni table ni saisie : `schema_migrations.applied_at` est deja en base.
+- **Le seuil se compte en sessions d'import, jamais en lignes**
+  (`COLUMN_GAP_MIN_SESSIONS`, 2). Une session peut rater son collage, deux
+  d'affilee est systematique — et le seuil s'echelonne tout seul avec la taille
+  du lot, ce qu'un seuil en lignes ne fait pas. En dessous, la ligne se rend sans
+  le style d'alerte et dit combien de sessions sont concernees.
+- **Le critere d'entree est le geste qui remplit la colonne** : celles qu'un
+  import alimente, jamais celles qui dependent d'une saisie a la main.
+  `price_real` reste dehors, sa couverture basse etant deja dite ailleurs et
+  pour une autre raison.
+- **`confidence_claimed` en est absente a dessein** : elle ne s'ecrit que sur une
+  selection ecrasee, donc nulle partout est son etat normal. L'auditer ferait
+  crier au defaut sur une base saine — la faute exacte que cet audit attrape.
+- **`facts_json` porte, malgre son nom, le bloc entier** (`Claim.raw`). Non
+  nulle veut donc dire « un bloc a ete apparie », quel que soit son contenu — et
+  c'est ce qu'il faut auditer. Un bloc `"faits": []` est une reponse **normale**,
+  que le gabarit impose meme avec `source_level: lecture` : auditer les faits
+  confondrait le cas ordinaire avec le manque. Le nom, lui, tend ce piege a tout
+  lecteur suivant.
+- Se tait sur une colonne dont aucune ligne n'est encore passee : un chantier
+  livre ce matin n'a rien a prouver avant le premier import.
+
 ### La declaration reste l'entree de la mesure (migration 045)
 
 **`source_level` etait ecrase** par l'override : la valeur declaree disparaissait au profit

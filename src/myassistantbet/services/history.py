@@ -2094,6 +2094,130 @@ class Horizon:
         return ceil(self.missing * 2 / SETTLED_PER_SESSION)
 
 
+#: Sessions d'import distinctes que la serie nulle doit couvrir avant qu'une
+#: colonne muette soit une alerte.
+#:
+#: **Un compte de sessions, jamais de lignes** : une session peut rater son
+#: collage, deux d'affilee est systematique — et le seuil s'echelonne tout seul
+#: avec la taille du lot, ce qu'un seuil en lignes ne fait pas. En dessous, la
+#: ligne se rend quand meme, sans le style d'alerte : elle dit alors combien de
+#: sessions sont concernees, ce qui suffit a la relire la fois suivante.
+COLUMN_GAP_MIN_SESSIONS = 2
+
+
+@dataclass(frozen=True)
+class AuditedColumn:
+    """Une colonne qu'un **import** alimente, et la migration qui l'a creee.
+
+    **Le critere d'entree est le geste qui la remplit.** Une colonne nourrie par
+    une saisie a la main — `price_real` — est basse pour une raison connue et
+    deja dite ailleurs ; une colonne que chaque import devrait remplir et qui
+    reste nulle est un defaut invisible, parce qu'elle produit exactement la
+    meme sortie qu'un succes.
+    """
+
+    column: str
+    #: Migration qui l'a creee. Sa date d'application est **deja en base**
+    #: (`schema_migrations.applied_at`) : l'age d'une colonne ne demande donc ni
+    #: table ni saisie, seulement de le lire.
+    version: int
+    label: str
+
+
+#: Ce que l'audit surveille.
+#:
+#: `confidence_claimed` en est **absente a dessein** : elle ne s'ecrit que sur
+#: une selection ecrasee, donc nulle partout est son etat normal. L'auditer
+#: ferait crier au defaut sur une base saine — exactement la faute que cet audit
+#: existe pour attraper.
+#:
+#: `facts_json` porte, malgre son nom, **le bloc entier** (`Claim.raw`) : non
+#: nulle veut dire « un bloc de confiance a ete apparie », quel que soit son
+#: contenu. Un bloc `"faits": []` est une reponse normale que le gabarit impose
+#: meme ; auditer les faits confondrait le cas ordinaire avec le manque.
+AUDITED_COLUMNS: tuple[AuditedColumn, ...] = (
+    AuditedColumn("angle", 26, "le type d'angle"),
+    AuditedColumn("source_level", 26, "le niveau de source"),
+    AuditedColumn("facts_json", 42, "le bloc de confiance"),
+    AuditedColumn("confidence_computed", 42, "le cran calculé"),
+    AuditedColumn("research_overridden", 43, "les dossiers ouverts"),
+)
+
+
+@dataclass
+class ColumnGap:
+    """Une colonne restee nulle sur tout ce qui a ete importe depuis sa naissance.
+
+    **Meme defaut qu'une densite a zero** : un echec qui produit exactement la
+    meme sortie qu'un succes. La carte « par cran calcule » disait « aucun cran
+    calcule » en l'imputant aux selections d'avant le chantier — c'etait vrai, et
+    ca masquait que les nouvelles non plus n'en portaient pas.
+    """
+
+    column: str
+    label: str
+    #: Date d'application de la migration qui l'a creee.
+    since: str
+    #: Sessions d'import distinctes posterieures a cette date.
+    sessions: int
+    picks: int
+    minimum: int = COLUMN_GAP_MIN_SESSIONS
+
+    @property
+    def alert(self) -> bool:
+        return self.sessions >= self.minimum
+
+    @property
+    def line(self) -> str:
+        jour = self.since[:10] if self.since else "?"
+        return (
+            f"{self.label} n'a reçu aucune valeur depuis sa mise en service le {jour} : "
+            f"{self.picks} sélection(s) enregistrée(s) sur {self.sessions} session(s) "
+            "d'import, toutes vides."
+        )
+
+
+def column_gaps(settings: Settings | None = None) -> list[ColumnGap]:
+    """Les colonnes muettes depuis leur naissance.
+
+    **L'age d'une colonne ne demande aucune donnee nouvelle** : la date
+    d'application de sa migration est deja en base. Une colonne a 0 % n'est pas
+    un signal — les lignes d'avant ne pouvaient pas la porter — mais une colonne
+    a 0 % sur les lignes **posterieures a sa propre migration** en est un.
+
+    Se tait sur une colonne dont aucune ligne n'est encore passee : un chantier
+    livre ce matin n'a rien a prouver avant le premier import.
+    """
+    found: list[ColumnGap] = []
+    with connect(settings) as conn:
+        for audited in AUDITED_COLUMNS:
+            row = conn.execute(
+                "SELECT applied_at FROM schema_migrations WHERE version = ?",
+                (audited.version,),
+            ).fetchone()
+            if row is None or not row["applied_at"]:
+                continue
+            since = str(row["applied_at"])
+            state = conn.execute(
+                f"SELECT COUNT(*) AS picks, COUNT(DISTINCT session_id) AS sessions, "  # noqa: S608
+                f"       SUM({audited.column} IS NOT NULL) AS remplies "
+                "FROM picks WHERE created_at > ?",
+                (since,),
+            ).fetchone()
+            if not state["picks"] or state["remplies"]:
+                continue
+            found.append(
+                ColumnGap(
+                    column=audited.column,
+                    label=audited.label,
+                    since=since,
+                    sessions=int(state["sessions"]),
+                    picks=int(state["picks"]),
+                )
+            )
+    return found
+
+
 @dataclass
 class AxisGap:
     """Un axe dont l'addition ne retombe pas sur le total tranche.
@@ -2214,6 +2338,11 @@ class Analysis:
     #: C'est le seul chiffre de la page qu'aucun regroupement ne peut faire
     #: baisser : il sert de temoin a tous les autres.
     recorded: int = 0
+    #: Colonnes restees nulles sur tout ce qui a ete importe depuis leur
+    #: naissance. **Meme defaut qu'une densite a zero** : un echec qui produit
+    #: exactement la meme sortie qu'un succes, et que rien ne distinguait d'un
+    #: chantier livre mais pas encore exerce.
+    column_gaps: list[ColumnGap] = field(default_factory=list)
     #: Axes dont l'addition ne retombe pas sur `recorded`. Vide en marche
     #: normale ; non vide, la page le dit en clair plutot que d'afficher un
     #: denominateur amputé.
@@ -3612,6 +3741,10 @@ def analysis(settings: Settings | None = None) -> Analysis:
 
     report.as_of = utcnow()
     report.gaps = _audit(report, tally)
+    # Lu hors de la passe d'agregation : l'audit porte sur **toutes** les
+    # selections enregistrees, pas sur celles que la page retient — une colonne
+    # muette l'est aussi sur les lignes que le filtre d'anteriorite ecarte.
+    report.column_gaps = column_gaps(settings)
     return report
 
 

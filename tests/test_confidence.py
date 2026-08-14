@@ -1180,3 +1180,58 @@ def test_une_recherche_qui_n_a_pas_eu_lieu_se_compte(migrated: Settings) -> None
     assert report.override.researched == 1, "seule celle qui cite un editeur"
     assert report.override.fabricated == 0, "aucun cran haut : les deux comptes different"
     assert "1 citent un éditeur sans que le dossier ait été ouvert" in report.override.line
+
+
+# -- Le collage incomplet se voit a l'apercu --------------------------------
+
+
+def test_un_collage_sans_bloc_le_dit_avant_l_import(migrated: Settings) -> None:
+    """**La seule branche muette du module, et c'est celle qui a servi.**
+
+    Un bloc pour trois lignes avertissait ; zero bloc ne disait rien, si bien
+    qu'un collage ligne par ligne depuis le tableau de la section C passait sans
+    un mot — les blocs etaient produits, jamais transmis. Trois selections sont
+    entrees ainsi, et le defaut ne s'est vu qu'une semaine plus tard.
+    """
+    session_id = _session(migrated)
+
+    preview = picks_import.build_preview(session_id, TABLEAU, migrated)
+
+    assert preview.count == 1
+    assert preview.claims_attached == 0
+    assert not preview.complete
+    assert "1 sélection(s) détectée(s)" in preview.readout
+    assert "0 bloc(s) de confiance apparié(s)" in preview.readout
+    assert "ligne dossiers_ouverts absente" in preview.readout
+    # Le message ne dit pas « complete les blocs » comme celui du compte : ce
+    # n'est pas le rendu qui en manque, c'est le collage qui les a laisses.
+    assert any("recolle la réponse entière" in note for note in preview.notes)
+
+
+def test_un_collage_complet_ne_porte_aucun_avertissement(migrated: Settings) -> None:
+    """L'autre moitie : le releve se lit en vert quand tout est la, sans quoi
+    l'avertissement deviendrait un decor qu'on cesse de voir."""
+    session_id, _ = _lot_de_deux(migrated)
+    rendu = _avec_blocs("M1", "M2") + "\ndossiers_ouverts: [M1, M2]\n"
+
+    preview = picks_import.build_preview(session_id, rendu, migrated)
+
+    assert preview.claims_attached == 2
+    assert preview.complete
+    assert "2 bloc(s) de confiance apparié(s)" in preview.readout
+    assert "ligne dossiers_ouverts lue (2 dossier(s))" in preview.readout
+
+
+def test_un_appariement_refuse_ne_compte_aucun_bloc(migrated: Settings) -> None:
+    """Le releve compte les blocs **apparies**, pas les blocs presents.
+
+    Deux blocs dans le desordre ne rattachent rien — un cran decale serait faux
+    sans se voir — et le compte doit dire zero, sans quoi il annoncerait des
+    crans que l'import n'ecrira pas.
+    """
+    session_id, _ = _lot_de_deux(migrated)
+
+    preview = picks_import.build_preview(session_id, _avec_blocs("M2", "M1"), migrated)
+
+    assert preview.claims_attached == 0
+    assert not preview.complete

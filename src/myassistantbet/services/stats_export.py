@@ -232,6 +232,18 @@ class StatsReport:
                 "de tout ce relevé : leur antériorité n'est pas établie, donc leur "
                 "étiquette non plus."
             )
+        for gap in analysis.column_gaps:
+            # **Une reserve qui voyage.** Un fichier relu ailleurs doit dire
+            # qu'une de ses colonnes n'a jamais rien recu : sans elle, un
+            # regroupement vide s'y lit comme une mesure a zero.
+            notes.append(
+                gap.line
+                + (
+                    " Deux sessions d'import d'affilée sans une valeur : rien ne l'alimente."
+                    if gap.alert
+                    else " Une seule session concernée : peut-être un collage incomplet."
+                )
+            )
         if not analysis.consistent:
             detail = "".join(f" {gap.line}." for gap in analysis.gaps)
             notes.append(

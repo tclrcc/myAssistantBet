@@ -17,7 +17,14 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..config import Settings, get_settings
-from .confidence import Claim, Opened, read_blocks, read_opened
+from .confidence import (
+    OPEN_MALFORMED,
+    OPEN_READ,
+    Claim,
+    Opened,
+    read_blocks,
+    read_opened,
+)
 from .grid import GridRow, anchor, build_view
 from .history import ANGLES, PickableEvent, list_picks, pickable_events, prompt_headers
 from .history import tiers as load_tiers
@@ -179,6 +186,48 @@ class ImportPreview:
     def same_event_count(self) -> int:
         """Lignes portant sur un match qu'une autre selection porte deja."""
         return sum(1 for pick in self.picks if pick.same_event)
+
+    @property
+    def claims_attached(self) -> int:
+        """Lignes auxquelles un bloc de confiance a ete apparie.
+
+        **Le compte porte sur la presence du bloc, jamais sur son contenu.** Un
+        bloc `"faits": []` est une reponse normale — le gabarit l'impose meme,
+        avec `source_level: lecture` — donc compter les faits confondrait le cas
+        ordinaire avec le defaut. C'est la meme faute que partout ailleurs : la
+        meme sortie pour un succes et pour un manque.
+        """
+        return sum(1 for pick in self.picks if pick.claim is not None)
+
+    @property
+    def readout(self) -> str:
+        """Ce que le collage a vraiment porte, avant que quoi que ce soit soit
+        enregistre.
+
+        **C'est le seul moment ou l'information est encore recuperable.** Un
+        collage ligne par ligne depuis le tableau de la section C laisse les
+        blocs derriere lui ; le dire une semaine plus tard sur la page de
+        statistiques signale un defaut qui se reparait en dix secondes en
+        recollant.
+        """
+        etats = {
+            OPEN_READ: f"ligne dossiers_ouverts lue ({len(self.opened.marks)} dossier(s))",
+            OPEN_MALFORMED: "ligne dossiers_ouverts illisible",
+        }
+        return (
+            f"{self.count} sélection(s) détectée(s) · "
+            f"{self.claims_attached} bloc(s) de confiance apparié(s) · "
+            + etats.get(self.opened.state, "ligne dossiers_ouverts absente")
+        )
+
+    @property
+    def complete(self) -> bool:
+        """Le collage porte tout ce que le gabarit demande.
+
+        Faux, le releve se lit en avertissement : ce qui manque ne se rattrape
+        pas apres l'import.
+        """
+        return bool(self.picks) and self.claims_attached == self.count and self.opened.declared
 
 
 def _signature(event_id: int | None, market: str, selection: str) -> tuple[Any, ...]:
@@ -490,6 +539,21 @@ def _attach_claims(
     reading = read_blocks(raw)
     preview.notes.extend(reading.rejected)
     if not reading.claims:
+        # **La seule branche muette du module, et c'est celle qui a servi.** Un
+        # bloc pour trois lignes avertissait ; zero bloc ne disait rien, si bien
+        # qu'un collage ligne par ligne depuis le tableau de la section C passait
+        # sans un mot — les blocs etaient produits, jamais transmis, et rien a
+        # l'ecran ne le disait. Trois selections sont entrees ainsi.
+        #
+        # Le message ne dit pas « complete les blocs » comme celui du compte : ce
+        # n'est pas le rendu qui manque de blocs, c'est le collage qui les a
+        # laisses derriere lui.
+        if preview.picks:
+            preview.notes.append(
+                f"Aucun bloc de confiance dans ce collage, pour {len(preview.picks)} "
+                "ligne(s) : le cran ne sera pas calculé. Ils suivent le tableau dans le "
+                "rendu — recolle la réponse entière plutôt que les seules lignes."
+            )
         return None
     if len(reading.claims) != len(preview.picks):
         preview.notes.append(

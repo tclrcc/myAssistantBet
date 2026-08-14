@@ -667,6 +667,29 @@
      seulement baisser un compte que personne ne recompte. Le témoin est lu
      directement dans `picks`, sans jointure — une jointure devenue stricte le
      laisserait intact et ferait bouger tout le reste. #}
+  {# **Une colonne muette depuis sa naissance produit exactement la même sortie
+     qu'un succès**, et rien ne l'en distinguait : la carte « par cran calculé »
+     disait « aucun cran calculé » en l'imputant aux sélections d'avant le
+     chantier — c'était vrai, et ça masquait que les nouvelles non plus n'en
+     portaient pas. L'âge d'une colonne ne demande aucune donnée nouvelle : la
+     date d'application de sa migration est déjà en base.
+
+     Le seuil se compte en **sessions** et non en lignes : une session peut
+     rater son collage, deux d'affilée est systématique — et ça s'échelonne
+     tout seul avec la taille du lot. #}
+  {% for gap in analysis.column_gaps %}
+  <p class="block-warn{% if gap.alert %} is-alert{% endif %}">
+    <strong>{{ gap.line }}</strong>
+    {% if gap.alert %}
+    Deux sessions d'import d'affilée sans une valeur : ce n'est plus un collage
+    manqué, c'est que rien ne l'alimente. Le compte se répare à l'import, pas ici.
+    {% else %}
+    Une seule session concernée : peut-être un collage incomplet. À relire au
+    prochain import — c'est le seul moment où l'information est récupérable.
+    {% endif %}
+  </p>
+  {% endfor %}
+
   {% if not analysis.consistent %}
   <p class="block-warn is-alert">
     <strong>Ce que la page compte ne retombe pas sur ce que porte la base.</strong>
