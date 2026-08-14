@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 from myassistantbet import db
 from myassistantbet.config import Settings
+from myassistantbet.services import context as context_service
 from myassistantbet.services import research
 from myassistantbet.services.context import KIND_H2H, KIND_TEAMS, store
 from myassistantbet.services.render import RenderableEvent
@@ -527,3 +528,41 @@ def test_le_departage_ne_se_fait_plus_sur_l_heure_du_coup_d_envoi(migrated: Sett
         dossier.reasons.append(research.Reason(research.MEDIUM, "meme score", ""))
 
     assert sorted([pauvre, fourni], key=lambda item: item.rank_key)[0] is fourni
+
+
+# -- Le motif de l'echec decide du budget ------------------------------------
+
+
+def test_un_bloc_vide_faute_de_rattachement_ne_vaut_aucun_budget(migrated: Settings) -> None:
+    """**Deux blocs vides ne valent pas le meme budget.**
+
+    Un bloc vide parce que personne n'a pose la question ne se comble pas par
+    une recherche : il se comble par une saisie, et le dossier couterait alors
+    une place a un match ou chercher sert vraiment. Le motif le nomme au lieu
+    de le laisser deviner d'une densite a zero.
+    """
+    _en_base(migrated, 701, 1, rattachee=False)
+    _aller(migrated, 701, buts_adversaire=0, buts_nous=1)
+
+    fiche = research.sheet(
+        [_event(1, 701, context=[])] + [_event(i) for i in range(2, 22)], migrated
+    )
+
+    assert fiche.dossiers == []
+
+
+def test_un_bloc_vide_faute_de_couverture_est_le_meilleur_dossier(migrated: Settings) -> None:
+    """L'inverse exact : la competition est rattachee, le fournisseur a ete
+    interroge et ne sert rien. La recherche y est le **seul** chemin, donc c'est
+    la que le budget rapporte le plus."""
+    _en_base(migrated, 702, 1)
+    context_service.record_outcome(702, context_service.CAUSE_NOT_COVERED, migrated)
+
+    fiche = research.sheet(
+        [_event(1, 702, context=[])] + [_event(i) for i in range(2, 22)], migrated
+    )
+
+    assert [item.index for item in fiche.dossiers] == [1]
+    assert "non interrogés" in fiche.dossiers[0].motifs
+    question = next(q for q in fiche.dossiers[0].questions if "non couverte" in q)
+    assert "compte rendu" in question

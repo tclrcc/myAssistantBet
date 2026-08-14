@@ -15,7 +15,13 @@ from ..db import connect
 from ..providers.oddsapi import DEFAULT_BOOKMAKER, SCAN_MARKETS
 from . import coverage, dossier, elo, tennis_history, tennis_load, tennis_round, weather
 from .competitions import is_knockout
-from .context import context_lines
+from .context import (
+    CAUSE_BLOCK_NOTES,
+    CAUSE_UI_NOTES,
+    COLLECTION_FAULTS,
+    context_lines,
+    failure_causes,
+)
 from .labels import (
     UNTIMED_BOOKMAKERS,
     affiche,
@@ -121,10 +127,30 @@ class ShortlistEvent:
     started: bool = False
     #: Lignes de contexte peuplees sur celles attendues pour ce sport.
     density: Density = field(default_factory=Density)
+    #: **Pourquoi** le bloc est vide ou pauvre. Meme cause que celle du bloc, et
+    #: **une autre redaction** : le bloc parle a une analyse qui va chercher,
+    #: l'ecran parle a qui va reparer. Une competition non rattachee se corrige
+    #: en une saisie ; sur un bloc, la meme information dit seulement que ce qui
+    #: manque ne parle pas des equipes.
+    cause: str = ""
 
     @property
     def affiche(self) -> str:
         return affiche(self.home, self.away)
+
+    @property
+    def cause_label(self) -> str:
+        """Le motif tel que l'ecran le dit, vide s'il n'y en a pas."""
+        return CAUSE_UI_NOTES.get(self.cause, "")
+
+    @property
+    def repairable(self) -> bool:
+        """Un geste repare ce bloc — un rattachement, un rapprochement.
+
+        Ce n'est pas la meme urgence qu'une competition non couverte, ou il n'y
+        a rien a reparer : c'est la seule distinction dont l'ecran ait besoin.
+        """
+        return self.cause in COLLECTION_FAULTS
 
     @property
     def enriched(self) -> bool:
@@ -280,6 +306,10 @@ def build_view(
 
     counts = _market_counts([int(row["id"]) for row in rows], settings)
     densities = _densities(rows, settings)
+    # Une requete pour toute la shortlist : la cause se resout a la lecture, et
+    # la resoudre evenement par evenement rendrait l'ecran lent a mesure que la
+    # selection grandit — le defaut deja paye par le classement Elo.
+    causes = failure_causes([int(row["id"]) for row in rows], settings)
     groups: dict[str, list[ShortlistEvent]] = {}
     for row in rows:
         event_id = int(row["id"])
@@ -298,6 +328,7 @@ def build_view(
                 deep_markets=deep,
                 started=has_started(row["commence_time"], now),
                 density=densities.get(event_id, Density()),
+                cause=causes.get(event_id, ""),
             )
         )
 
@@ -493,22 +524,34 @@ def _context_for(
     )
     density = context_density([label for label, _ in lines], row["sport_key"], settings)
     if density.known and (density.empty or density.thin):
-        lines.append(("Densite", _density_note(density)))
+        cause = failure_causes([int(row["id"])], settings).get(int(row["id"]), "")
+        lines.append(("Densite", _density_note(density, cause)))
     return lines
 
 
-def _density_note(density: Density) -> str:
-    """« 3/24 lignes — bloc pauvre, la recherche web a plus a apporter qu'ailleurs »."""
+def _density_note(density: Density, cause: str = "") -> str:
+    """« 3/24 lignes — bloc pauvre », et **pourquoi**.
+
+    Le motif prolonge la ligne plutot que d'en occuper une seconde : il qualifie
+    la densite, il n'ajoute pas un fait sur le match. Et il parle a une analyse
+    qui va chercher — ce qui compte pour elle est de savoir si ce qu'elle ne lit
+    pas est une absence de fait ou une absence de collecte, parce que la reponse
+    decide si la recherche web peut combler le trou. L'ecran, lui, en dit une
+    autre : il parle a qui va reparer.
+    """
+    motif = CAUSE_BLOCK_NOTES.get(cause, "")
     if density.empty:
-        return (
+        note = (
             f"{density.label} ligne — aucun contexte récupéré sur ce match. "
             "Tout ce qui suit vient des cotes seules."
         )
-    return (
-        f"{density.label} lignes — bloc pauvre. Ce qui manque n'a pas été "
-        "collecté, ce n'est pas un match sans histoire : la recherche web y a "
-        "plus à apporter qu'ailleurs."
-    )
+    else:
+        note = (
+            f"{density.label} lignes — bloc pauvre. Ce qui manque n'a pas été "
+            "collecté, ce n'est pas un match sans histoire : la recherche web y a "
+            "plus à apporter qu'ailleurs."
+        )
+    return f"{note} {motif}." if motif else note
 
 
 def _is_substitute(row: Any, primary: str) -> bool:

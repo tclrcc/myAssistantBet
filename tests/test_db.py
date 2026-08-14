@@ -19,6 +19,7 @@ EXPECTED_TABLES = {
     "competitions",
     "confidence_bands",
     "context",
+    "context_outcomes",
     "coupons",
     "events",
     "league_context",

@@ -172,6 +172,85 @@ INJURIES_NOTES = {
     ),
     INJURIES_UNREACHABLE: "source injoignable au dernier releve — a retenter ou a chercher",
 }
+
+#: Pourquoi le bloc d'un match est vide ou pauvre.
+#:
+#: **Quatre causes se repliaient sur une densite a zero**, qui se lit « pas de
+#: donnees » alors qu'elle veut dire « on n'a pas pose la bonne question ». Les
+#: trois matchs saoudiens du 14/08 en sont l'exemple : leur competition n'etait
+#: rattachee a aucune ligue, donc rien n'a jamais ete demande, et le bloc
+#: ressemblait trait pour trait a celui d'une competition mal couverte.
+#:
+#: **Le vocabulaire est celui de la ligne `Absents`**, et il n'y en a pas de
+#: second : les deux etats deja nommes la-bas decrivent exactement les memes
+#: faits ici — le fournisseur ne couvre pas, le fournisseur n'a pas repondu.
+#: Deux lexiques pour une meme distinction auraient fini par diverger.
+CAUSE_SERVED = INJURIES_SERVED
+#: Le fournisseur ne couvre pas cette competition. Ne changera pas.
+CAUSE_NOT_COVERED = INJURIES_NOT_ASKED
+#: Il n'a pas repondu ce jour-la. Se retente.
+CAUSE_UNREACHABLE = INJURIES_UNREACHABLE
+#: **Defaut de collecte**, et il n'existait aucun mot pour lui : la competition
+#: n'est rattachee a aucune ligue, donc `context_possible` est faux et aucun
+#: appel n'est emis. Rien ne se retente, il faut saisir une correspondance.
+CAUSE_UNMAPPED = "unmapped"
+#: **Defaut de collecte** lui aussi : la ligue est connue, la rencontre non.
+#: Le rapprochement de noms n'a pas abouti, et il se resout a la main.
+CAUSE_UNRESOLVED = "unresolved"
+
+#: **Le nom d'une cause, ecrit une seule fois.** Les deux redactions ci-dessous
+#: le reprennent : ce sont deux facons de s'adresser a deux lecteurs, pas deux
+#: vocabulaires. Les deux causes deja nommees sur la ligne `Absents` gardent
+#: leur mot exact — c'est le meme fait, et deux noms l'auraient dedouble.
+CAUSE_LABELS = {
+    CAUSE_UNMAPPED: "compétition non rattachée",
+    CAUSE_UNRESOLVED: "fixture non résolue",
+    CAUSE_NOT_COVERED: "non interrogés",
+    CAUSE_UNREACHABLE: "source injoignable",
+}
+
+#: Le motif **dans le bloc**. Il parle a une analyse qui va chercher : ce qui
+#: compte pour elle est de savoir si la recherche web peut combler le trou, et
+#: si ce qu'elle ne lit pas est une absence de fait ou une absence de collecte.
+CAUSE_BLOCK_NOTES = {
+    CAUSE_UNMAPPED: (
+        "cette compétition n'est rattachée à aucune source de contexte : rien n'a "
+        "été demandé, et rien de ce qui manque ici ne dit quoi que ce soit des équipes"
+    ),
+    CAUSE_UNRESOLVED: (
+        "la rencontre n'a pas été rapprochée chez le fournisseur de contexte : "
+        "rien n'a pu être lu, et l'absence ne parle pas des équipes"
+    ),
+    CAUSE_NOT_COVERED: (
+        "le fournisseur ne couvre pas cette compétition : la recherche est le seul "
+        "chemin, et c'est ici qu'elle rapporte le plus"
+    ),
+    CAUSE_UNREACHABLE: (
+        "la source de contexte n'a pas répondu au dernier relevé : ce qui manque "
+        "existe et sera peut-être là au prochain enrichissement"
+    ),
+}
+
+#: Le meme motif **dans l'interface**, et il ne s'adresse pas a la meme
+#: personne : le bloc parle a une analyse qui va chercher, l'ecran parle a qui
+#: va reparer. D'ou deux redactions et non une seule recopiee — l'une nomme un
+#: geste, l'autre nomme une consequence de lecture.
+CAUSE_REPAIRS = {
+    CAUSE_UNMAPPED: "à relier depuis /competitions",
+    CAUSE_UNRESOLVED: "à trancher depuis /mapping",
+    CAUSE_NOT_COVERED: "le fournisseur ne couvre pas cette compétition, rien à réparer",
+    CAUSE_UNREACHABLE: "au dernier relevé, à retenter",
+}
+
+CAUSE_UI_NOTES = {
+    cause: f"{CAUSE_LABELS[cause]} — {geste}" for cause, geste in CAUSE_REPAIRS.items()
+}
+
+#: Les deux causes qui se reparent d'un geste. La fiche de priorite de recherche
+#: s'en sert : un bloc vide parce que **personne n'a demande** ne vaut aucun
+#: budget de recherche — il vaut une saisie — quand un bloc vide parce que le
+#: fournisseur ne couvre pas est le meilleur dossier du lot.
+COLLECTION_FAULTS = frozenset({CAUSE_UNMAPPED, CAUSE_UNRESOLVED})
 #: Championnat domestique de chaque equipe, sur les competitions ou les agregats
 #: de saison se lisent ailleurs que dans la competition du match.
 #:
@@ -234,6 +313,10 @@ class ContextReport:
     mapping_pending: bool = False
     kinds: list[str] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    #: **Pourquoi** rien n'est revenu, quand rien n'est revenu. Quatre causes se
+    #: repliaient jusqu'ici sur une densite a zero, qui se lit « pas de
+    #: donnees » alors qu'elle veut dire « on n'a pas pose la bonne question ».
+    cause: str = ""
 
     @property
     def ok(self) -> bool:
@@ -260,6 +343,68 @@ def load(event_id: int, settings: Settings | None = None) -> dict[str, Any]:
             "SELECT kind, payload_json FROM context WHERE event_id = ?", (event_id,)
         ).fetchall()
     return {row["kind"]: json.loads(row["payload_json"]) for row in rows}
+
+
+def record_outcome(event_id: int, cause: str, settings: Settings | None = None) -> None:
+    """Journalise l'issue d'une tentative de contexte.
+
+    **Une ligne par tentative, jamais un etat courant** : c'est ce qui donne le
+    denominateur. `served` s'y ecrit comme les echecs, sans quoi on compterait
+    des pannes sans savoir sur combien d'essais.
+
+    Trois des quatre causes se relisent a tout moment — une competition non
+    rattachee et une fixture non resolue sont des etats de la base. « Source
+    injoignable », lui, **n'existe qu'a l'instant de l'appel** : resolu a la
+    lecture seulement, il disparaitrait au releve suivant et son taux serait
+    immesurable, alors que c'est le seul des quatre qui dise quelque chose du
+    fournisseur plutot que de notre saisie.
+    """
+    with connect(settings) as conn:
+        conn.execute(
+            "INSERT INTO context_outcomes (event_id, cause, seen_at) VALUES (?, ?, ?)",
+            (event_id, cause, utcnow()),
+        )
+
+
+def failure_causes(event_ids: list[int], settings: Settings | None = None) -> dict[int, str]:
+    """La cause d'un contexte manquant, evenement par evenement.
+
+    **Resolue a la lecture**, comme la famille d'un marche ou le niveau d'une
+    competition : rattacher une competition repare tous ses matchs passes sans
+    reprise de donnees. Seule « source injoignable » se relit dans le journal —
+    elle n'est pas un etat de la base, et rien d'autre ne s'en souvient.
+
+    L'ordre des tests suit la chaine d'appel : ce qui n'a jamais ete demande
+    passe avant ce qui a ete demande sans reponse.
+    """
+    if not event_ids:
+        return {}
+    placeholders = ",".join("?" * len(event_ids))
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT e.id, e.mapping_pending, s.key AS sport_key, c.apifootball_league_id, "
+            "       (SELECT o.cause FROM context_outcomes o WHERE o.event_id = e.id "
+            "         ORDER BY o.seen_at DESC, o.id DESC LIMIT 1) AS dernier "
+            "FROM events e "
+            "JOIN sports s ON s.id = e.sport_id "
+            "LEFT JOIN competitions c ON c.id = e.competition_id "
+            f"WHERE e.id IN ({placeholders})",
+            event_ids,
+        ).fetchall()
+
+    found: dict[int, str] = {}
+    for row in rows:
+        # Le contexte sportif n'existe qu'au football : ailleurs, un bloc pauvre
+        # n'a pas de cause a nommer, il a d'autres sources.
+        if row["sport_key"] != "football":
+            continue
+        if row["apifootball_league_id"] is None:
+            found[int(row["id"])] = CAUSE_UNMAPPED
+        elif row["mapping_pending"]:
+            found[int(row["id"])] = CAUSE_UNRESOLVED
+        elif row["dernier"] in (CAUSE_UNREACHABLE, CAUSE_NOT_COVERED):
+            found[int(row["id"])] = str(row["dernier"])
+    return found
 
 
 def set_mapping_pending(event_id: int, pending: bool, settings: Settings | None = None) -> None:
@@ -900,16 +1045,22 @@ async def fetch_context(
             "competition non rattachee a une ligue API-Football : aucun contexte n'est "
             "possible, et rien n'a ete appele. Le rattachement se saisit depuis /competitions."
         )
+        report.cause = CAUSE_UNMAPPED
+        record_outcome(report.event_id, report.cause, settings)
         return report
 
     try:
         mapping = await resolve_fixture(client, event, settings, cache)
     except ProviderError as exc:
         report.errors.append(str(exc))
+        report.cause = CAUSE_UNREACHABLE
+        record_outcome(report.event_id, report.cause, settings)
         return report
 
     if mapping is None:
         report.mapping_pending = True
+        report.cause = CAUSE_UNRESOLVED
+        record_outcome(report.event_id, report.cause, settings)
         return report
 
     async def _memo(key: str, coroutine_factory: Any) -> Any:
@@ -1245,6 +1396,16 @@ async def fetch_context(
     except ProviderError as exc:
         report.errors.append(f"h2h : {exc}")
 
+    # **La cause se lit sur ce qui est revenu, jamais sur les drapeaux de
+    # couverture.** Ceux-ci disent ce que le fournisseur declare servir ; le
+    # constat, lui, tient compte de ce qui a ete lu ailleurs — une coupe qui
+    # annonce tout a faux porte quand meme ses agregats depuis le championnat
+    # domestique de ses equipes, et la declarer « non couverte » serait faux.
+    if report.kinds:
+        report.cause = CAUSE_SERVED
+    else:
+        report.cause = CAUSE_UNREACHABLE if report.errors else CAUSE_NOT_COVERED
+    record_outcome(report.event_id, report.cause, settings)
     return report
 
 

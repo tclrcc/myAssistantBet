@@ -25,7 +25,14 @@ from ..providers.tennisdata import TennisDataClient
 from ..providers.weather import WeatherClient
 from . import coverage, dossier, elo, fixtures, reference, tennis_history, weather
 from .competitions import is_knockout, reads_domestic_aggregates
-from .context import KIND_ABORTED, KIND_VENUE, SHEETS_LAST, fetch_context
+from .context import (
+    CAUSE_UNMAPPED,
+    KIND_ABORTED,
+    KIND_VENUE,
+    SHEETS_LAST,
+    fetch_context,
+    record_outcome,
+)
 from .context import store as store_context
 from .labels import affiche, is_reference, primary_book
 from .markets import (
@@ -881,6 +888,14 @@ async def run_enrich(
         # de cotes, et sacrifiait systematiquement le second groupe.
         for target in lot:
             if not target.context_possible:
+                # **Le seul chemin ou la cause n'atteint jamais `fetch_context`.**
+                # Un match de football dont la competition n'est rattachee a
+                # aucune ligue est saute ici, donc rien ne s'ecrirait sur lui —
+                # et c'est precisement le cas des trois matchs saoudiens, ceux
+                # qu'il faut compter. Le journal a besoin de la tentative comme
+                # des reussites, sinon il n'a pas de denominateur.
+                if target.sport_key == "football":
+                    record_outcome(target.event_id, CAUSE_UNMAPPED, settings)
                 continue
             # **Avant chaque match, et sur son cout complet.** Verifier apres
             # coup, ou sur un seuil absolu, laisserait passer une interruption

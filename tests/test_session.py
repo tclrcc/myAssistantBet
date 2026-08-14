@@ -512,3 +512,56 @@ def test_la_densite_a_son_pictogramme() -> None:
     """Toute ligne ajoutee a un bloc entre dans `CONTEXT_ICONS` le meme jour :
     sans quoi la colonne se vide sans rien dire."""
     assert labels.context_icon("Densite")
+
+
+def _match_sans_rattachement(migrated: Settings) -> int:
+    """Un match de football dont la competition n'a aucune ligue de contexte.
+
+    C'est la situation exacte des trois matchs saoudiens du 14/08 : une
+    competition creee sans correspondance, donc muette, sans que rien ne le
+    dise. Un evenement manuel en cree une par effet de bord, sans identifiant.
+    """
+    return save(
+        build(
+            "football",
+            "Saudi Pro League",
+            "Neom",
+            "Al-Fayha",
+            "2026-08-04",
+            "20:45",
+            "Neom 2.10",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+
+
+def test_la_ligne_densite_porte_le_motif_de_l_echec(migrated: Settings) -> None:
+    """**Le motif prolonge la densite, il n'occupe pas une seconde ligne.**
+
+    Il qualifie la densite plutot que d'ajouter un fait sur le match, et il
+    parle a une analyse qui va chercher : savoir si ce qu'elle ne lit pas est
+    une absence de fait ou une absence de collecte decide si la recherche web
+    peut combler le trou.
+    """
+    session_id = board_service.toggle_selection(_match_sans_rattachement(migrated), True, migrated)
+
+    event = session_service.renderable_events(session_id, migrated, NOW)[0]
+    lignes = dict(event.context_lines)
+
+    assert "0/26 ligne" in lignes["Densite"]
+    assert "n'est rattachée à aucune source de contexte" in lignes["Densite"]
+
+
+def test_la_shortlist_dit_le_geste_et_non_la_consequence(migrated: Settings) -> None:
+    """**Deux lecteurs, deux redactions.** Le bloc dit a l'analyse que ce qui
+    manque ne parle pas des equipes ; l'ecran dit a qui repare ou cliquer."""
+    session_id = board_service.toggle_selection(_match_sans_rattachement(migrated), True, migrated)
+
+    view = session_service.build_view(session_id, settings=migrated)
+    event = view.groups[0][1][0]
+
+    assert event.cause_label == "compétition non rattachée — à relier depuis /competitions"
+    assert event.repairable, "un geste repare ce bloc, contrairement a une competition non couverte"

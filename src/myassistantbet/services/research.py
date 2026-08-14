@@ -35,7 +35,7 @@ from dataclasses import dataclass, field
 from ..config import Settings, get_settings
 from ..db import connect
 from . import context as context_service
-from .context import NEUTRAL_MARK
+from .context import CAUSE_LABELS, CAUSE_NOT_COVERED, COLLECTION_FAULTS, NEUTRAL_MARK
 from .labels import affiche, context_family, expected_context
 from .render import RenderableEvent
 from .session import context_density
@@ -335,6 +335,25 @@ def _density_reasons(event: RenderableEvent, labels: list[str], settings: Settin
     # au benefice du doute reviendrait a punir un match de ce qu'on ignore de
     # lui — l'inverse de ce que cette fiche existe pour faire.
     sterile = event.event_id and not _has_context_source(event, settings)
+    cause = _cause_of(event, settings)
+    # **Deux blocs vides ne valent pas le meme budget, et c'est tout l'objet du
+    # typage.** Un bloc vide parce que personne n'a pose la question ne se
+    # comble pas par une recherche : il se comble par une saisie, et le dossier
+    # coute alors une place a un match ou chercher sert. Un bloc vide parce que
+    # le fournisseur ne couvre pas la competition est l'inverse — la recherche
+    # y est le **seul** chemin, donc le meilleur dossier du lot.
+    if cause in COLLECTION_FAULTS:
+        return [Reason(PENALTY, f"bloc à {part} % — {CAUSE_LABELS[cause]}", "")]
+    if part < THIN_DENSITY and cause == CAUSE_NOT_COVERED:
+        return [
+            Reason(
+                STRONG,
+                f"bloc à {part} %, {CAUSE_LABELS[cause]}",
+                f"Bloc a {part} % et competition non couverte par le fournisseur : "
+                "chercher un compte rendu du dernier match des deux equipes, et la "
+                "composition probable — rien d'autre ne les servira.",
+            )
+        ]
     if part < BARREN_DENSITY and sterile:
         return [Reason(PENALTY, f"bloc quasi vide ({part} %) et aucune source", "")]
     if part < THIN_DENSITY:
@@ -524,6 +543,18 @@ def _links(event: RenderableEvent) -> list[str]:
     """
     quand = event.commence_local.strftime("%d/%m/%Y")
     return [f'rechercher "{event.home} {event.away} {event.competition} {quand}"']
+
+
+def _cause_of(event: RenderableEvent, settings: Settings) -> str:
+    """Pourquoi ce bloc est vide, quand une cause a pu etre nommee.
+
+    **La meme resolution que le bloc et que l'ecran**, appelee ici pour trier :
+    trois lectures paralleles de la meme question auraient fini par classer un
+    match sur un motif que le bloc ne porte pas.
+    """
+    if not event.event_id:
+        return ""
+    return context_service.failure_causes([event.event_id], settings).get(event.event_id, "")
 
 
 def _has_context_source(event: RenderableEvent, settings: Settings) -> bool:

@@ -13,6 +13,15 @@ from myassistantbet.providers.apifootball import BASE_URL, APIFootballClient
 from myassistantbet.providers.base import ProviderError
 from myassistantbet.providers.weather import GEOCODING_URL, WeatherClient
 from myassistantbet.services.context import (
+    CAUSE_BLOCK_NOTES,
+    CAUSE_LABELS,
+    CAUSE_NOT_COVERED,
+    CAUSE_SERVED,
+    CAUSE_UI_NOTES,
+    CAUSE_UNMAPPED,
+    CAUSE_UNREACHABLE,
+    CAUSE_UNRESOLVED,
+    COLLECTION_FAULTS,
     KIND_FORM,
     KIND_H2H,
     KIND_INJURIES,
@@ -23,6 +32,7 @@ from myassistantbet.services.context import (
     KIND_TEAMS,
     SHEETS_LAST,
     context_lines,
+    failure_causes,
     fetch_context,
     load,
     refresh_due_lineups,
@@ -2819,3 +2829,111 @@ async def test_hors_coupe_rien_ne_change(
     lignes = _lines(migrated)
     assert "(Allsvenskan)" not in lignes["Classement"]
     assert routes["standings"].called
+
+
+# -- Typer l'echec d'un contexte --------------------------------------------
+
+
+@respx.mock
+async def test_une_competition_non_rattachee_nomme_sa_cause(
+    api_client: APIFootballClient, migrated: Settings
+) -> None:
+    """**Quatre causes se repliaient sur une densite a zero.**
+
+    Elle se lit « pas de donnees » alors qu'elle veut dire « on n'a pas pose la
+    bonne question ». Les trois matchs saoudiens du 14/08 en sont l'exemple :
+    leur competition n'etait rattachee a aucune ligue, donc rien n'a jamais ete
+    demande, et le bloc ressemblait trait pour trait a celui d'une competition
+    mal couverte.
+    """
+    _seed_event(migrated)
+    db.execute(
+        "UPDATE competitions SET apifootball_league_id = NULL WHERE apifootball_league_id = 113",
+        settings=migrated,
+    )
+
+    report = await fetch_context(api_client, dict(EVENT, apifootball_league_id=None), migrated)
+
+    assert report.cause == CAUSE_UNMAPPED
+    assert failure_causes([1], migrated) == {1: CAUSE_UNMAPPED}
+    # Le journal garde la tentative : sans elle, aucun denominateur.
+    journal = db.query("SELECT cause FROM context_outcomes", settings=migrated)
+    assert [row["cause"] for row in journal] == [CAUSE_UNMAPPED]
+
+
+@respx.mock
+async def test_une_fixture_non_resolue_nomme_sa_cause(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """La ligue est connue, la rencontre non : c'est un defaut de collecte, et
+    il se resout a la main plutot qu'en cherchant sur le web."""
+    _seed_event(migrated)
+    routes = _mock_all(load_fixture)
+    # **Apres les routes generiques, et non avant.** respx retrouve une route
+    # par son motif : re-mocker le meme motif remplace la reponse au lieu d'en
+    # ajouter une seconde, donc l'enregistrer en tete la ferait ecraser.
+    routes["fixtures_date"].mock(
+        return_value=httpx.Response(200, json={"errors": [], "response": []}, headers=RATE_HEADERS)
+    )
+
+    report = await fetch_context(api_client, dict(EVENT), migrated)
+
+    assert report.mapping_pending
+    assert report.cause == CAUSE_UNRESOLVED
+    assert failure_causes([1], migrated) == {1: CAUSE_UNRESOLVED}
+
+
+@respx.mock
+async def test_une_source_injoignable_ne_se_relit_que_dans_le_journal(
+    api_client: APIFootballClient, migrated: Settings
+) -> None:
+    """**C'est la cause qui a impose le journal.**
+
+    Une competition non rattachee et une fixture non resolue sont des etats de
+    la base et se relisent a tout moment. « Source injoignable », lui, n'existe
+    qu'a l'instant de l'appel : resolu a la lecture seulement, il disparaitrait
+    au releve suivant et son taux serait immesurable — or c'est le seul des
+    quatre qui dise quelque chose du fournisseur plutot que de notre saisie.
+    """
+    _seed_event(migrated)
+    respx.get(f"{BASE_URL}/leagues").mock(return_value=httpx.Response(500))
+
+    report = await fetch_context(api_client, dict(EVENT), migrated)
+
+    assert report.cause == CAUSE_UNREACHABLE
+    # Rien dans `events` ni dans `competitions` ne porte cet etat : il ne se
+    # relit que parce qu'on l'a ecrit.
+    assert failure_causes([1], migrated) == {1: CAUSE_UNREACHABLE}
+
+
+@respx.mock
+async def test_un_contexte_servi_se_journalise_aussi(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Le denominateur du taux. Sans les reussites, on compterait des pannes
+    sans savoir sur combien d'essais."""
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    report = await fetch_context(api_client, dict(EVENT), migrated)
+
+    assert report.cause == CAUSE_SERVED
+    assert failure_causes([1], migrated) == {}, "un contexte servi n'a pas de cause a nommer"
+
+
+def test_les_deux_formulations_ne_se_recopient_pas() -> None:
+    """**Deux lecteurs, deux redactions, un seul lexique.**
+
+    Le bloc parle a une analyse qui va chercher : ce qui compte pour elle est
+    de savoir si ce qui manque est une absence de fait ou une absence de
+    collecte. L'ecran parle a qui va reparer : ce qui compte est le geste. Le
+    **nom** de la cause, lui, est ecrit une seule fois — et les deux causes
+    deja nommees sur la ligne `Absents` gardent leur mot exact.
+    """
+    assert CAUSE_LABELS[CAUSE_NOT_COVERED] == "non interrogés"
+    assert CAUSE_LABELS[CAUSE_UNREACHABLE] == "source injoignable"
+    for cause, nom in CAUSE_LABELS.items():
+        assert nom in CAUSE_UI_NOTES[cause], "l'ecran nomme la cause puis le geste"
+        assert CAUSE_UI_NOTES[cause] != CAUSE_BLOCK_NOTES[cause]
+    # Les deux causes qui se reparent d'un geste, et elles seules.
+    assert {CAUSE_UNMAPPED, CAUSE_UNRESOLVED} == COLLECTION_FAULTS

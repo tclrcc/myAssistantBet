@@ -96,6 +96,16 @@
                   title="Lignes du bloc CONTEXTE peuplées sur celles attendues en {{ event.sport_label|lower }}">
               {{ event.density.label }}
             </span>
+            {# **Le motif, dans les mots de qui va réparer.** Le bloc en porte un
+               autre : il parle à une analyse qui va chercher, et lui dit si ce
+               qui manque est une absence de fait ou une absence de collecte.
+               Ici la question est différente — y a-t-il un geste à faire, et
+               lequel. Une compétition non couverte n'en appelle aucun. #}
+            {% if event.cause_label %}
+            <span class="muted small {% if event.repairable %}is-flag{% endif %}">
+              {{ event.cause_label }}
+            </span>
+            {% endif %}
           </td>
           <td>
             <textarea name="note" rows="1" placeholder="injectée telle quelle dans le prompt"
