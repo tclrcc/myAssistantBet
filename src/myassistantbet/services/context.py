@@ -163,11 +163,22 @@ KIND_REFEREE = "referee"
 #: partielle. Un seul nom quelque part prouve donc que la competition designe ;
 #: c'est l'absence qui demande un echantillon.
 #:
-#: Le seuil est le plus petit entier au-dessus du plus gros releve tout-vide de
-#: la base (7). Rien de ce qu'elle porte aujourd'hui ne bascule donc sur des
-#: donnees qui ne le portent pas, et une competition qui ne designe vraiment pas
-#: y arrive en une journee de coupe. Trois releves — le lot saoudien d'un soir —
-#: ne suffisent pas, et c'est exactement le faux positif a eviter.
+#: **Derivation, et elle est datee du 14/08/2026** : le seuil est le plus petit
+#: entier strictement au-dessus du plus gros releve tout-vide que la base
+#: portait ce jour-la — la Leagues Cup, a 0 sur 7. Rien de ce qu'elle contenait
+#: alors ne basculait donc sur des donnees qui ne le portaient pas, et trois
+#: releves — le lot saoudien d'un soir — ne suffisaient pas, ce qui est
+#: exactement le faux positif a eviter.
+#:
+#: **Il ne se recalcule pas.** La Leagues Cup en portera trente dans six mois et
+#: le 8 paraitra arbitraire : il l'est devenu, et ce n'est pas grave. Ce que la
+#: constante fixe est le **moment ou l'on accepte d'affirmer**, pas une
+#: propriete de la base ; le refaire sur un etat plus fourni ne ferait que
+#: retarder l'affirmation sans la rendre plus sure.
+#:
+#: **Le sens de l'erreur est choisi** : sur-appeler « non servi » coute une
+#: recherche inutile, sous-appeler coute un angle arbitre. C'est le bon cote, et
+#: c'est lui qui autorise un seuil bas plutot qu'un seuil prudent.
 REFEREE_MIN_SAMPLE = 8
 
 #: Les trois etats d'une liste d'absents, et c'est le motif de toute la serie :
@@ -2421,6 +2432,24 @@ def _standing_played(entry: dict[str, Any] | None) -> bool:
     return (entry or {}).get("played") != 0
 
 
+def _provisional(entry: dict[str, Any] | None) -> str:
+    """`(après 1j — indicatif)`, ou rien quand le classement a fait ses preuves.
+
+    **Une seule ecriture pour les deux lignes qu'elle qualifie.** `Enjeu` la
+    portait, `Classement` non — alors que les deux sortent du **meme**
+    classement, a la meme journee. Le lot du 14/08 le montrait a deux lignes
+    d'ecart : « Eintracht Braunschweig 1er (3pts, 1j, +5) » sans reserve, et
+    juste dessous « Promotion (après 1j — indicatif) ». Un rang de 1re journee
+    ne classe pas plus qu'un enjeu de 1re journee : deux cinquiemes separes par
+    une division sortent a egalite apparente.
+
+    Le seuil est celui d'`Enjeu` (`enjeu_min_journees`), et il n'y en a pas
+    d'autre : le rendu, lui, se garde des deux cotes par `_standing_played`.
+    """
+    played = (entry or {}).get("played") or 0
+    return f"(après {played}j — indicatif)" if played < value_of("enjeu_min_journees") else ""
+
+
 def _division_fragment(team: str, entry: dict[str, Any] | None) -> str:
     """« Bayern München (Bundesliga) — 0j jouée » : la division, sans le rang.
 
@@ -2446,18 +2475,23 @@ def _rank_fragment(team: str, entry: dict[str, Any] | None) -> str:
         return ""
     rank = entry["rank"]
     suffix = "er" if rank == 1 else "e"
+    # La reserve porte deja le compte de journees. L'ecrire aussi dans le detail
+    # le ferait paraitre deux fois de suite entre deux parentheses voisines —
+    # et c'est dans la reserve qu'il decide de quelque chose.
+    reserve = _provisional(entry)
     detail = ", ".join(
         part
         for part in (
             f"{entry['points']}pts" if entry.get("points") is not None else "",
-            f"{entry['played']}j" if entry.get("played") is not None else "",
+            f"{entry['played']}j" if entry.get("played") is not None and not reserve else "",
             # La difference de buts separe deux equipes a egalite de points,
             # ce que le rang seul ne dit pas. Signee, pour qu'un negatif se voie.
             f"{entry['diff']:+d}" if isinstance(entry.get("diff"), int) else "",
         )
         if part
     )
-    return f"{team} {rank}{suffix} ({detail})" if detail else f"{team} {rank}{suffix}"
+    rendu = f"{team} {rank}{suffix} ({detail})" if detail else f"{team} {rank}{suffix}"
+    return f"{rendu} {reserve}" if reserve else rendu
 
 
 def _stake_fragment(team: str, entry: dict[str, Any] | None) -> str:
@@ -2484,10 +2518,8 @@ def _stake_fragment(team: str, entry: dict[str, Any] | None) -> str:
     # reste, sa portee est dite. Le nombre de journees jouees suffit : le total
     # de la saison ne se deduit pas du nombre d'equipes, une Superliga danoise
     # jouant 32 journees a douze equipes.
-    played = (entry or {}).get("played") or 0
-    if played < value_of("enjeu_min_journees"):
-        return f"{team} {stake} (après {played}j — indicatif)"
-    return f"{team} {stake}"
+    reserve = _provisional(entry)
+    return f"{team} {stake} {reserve}" if reserve else f"{team} {stake}"
 
 
 #: Surfaces telles que le fournisseur les nomme. Une pelouse naturelle ne

@@ -1313,7 +1313,11 @@ def test_le_glossaire_explique_les_deux_fenetres_de_forme_5(migrated: Settings) 
 
     assert "chaque moitié porte son propre dénominateur" in gabarit
     assert "n'est pas seize buts en deux matchs" in gabarit
-    assert "(après Nj — indicatif) »**, elle sort d'un classement de début de saison" in gabarit
+    # La reserve de debut de saison porte desormais sur **les deux** lignes qui
+    # sortent du meme classement : un rang de 1re journee ne classe pas plus
+    # qu'un enjeu de 1re journee.
+    assert "marque **« Classement » comme « Enjeu »**" in gabarit
+    assert "deux 5es séparés par une division y sortent à égalité apparente" in gabarit
 
 
 def test_le_chapitre_de_lecture_a_maigri_sans_perdre_ses_conventions(migrated: Settings) -> None:

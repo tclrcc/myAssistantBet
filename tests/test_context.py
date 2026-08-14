@@ -2051,9 +2051,14 @@ def test_un_classement_a_zero_match_joue_ne_classe_rien(migrated: Settings) -> N
 
 
 def test_des_la_premiere_journee_le_classement_est_rendu(migrated: Settings) -> None:
-    """Le seuil est un match et non cinq : des la premiere journee le rang
-    decrit un resultat reel, et la ligne porte deja son compte — au lecteur de
-    juger de ce que vaut un classement de debut de saison."""
+    """Le seuil de **rendu** est un match et non cinq : des la premiere journee
+    le rang decrit un resultat reel.
+
+    Mais il ne **classe** pas pour autant, et c'est la reserve qui le dit — la
+    meme que celle d'`Enjeu`, sous le meme seuil, les deux lignes sortant du
+    meme classement a la meme journee. Sans elle, deux 5es separes par une
+    division sortaient a egalite apparente.
+    """
     _seed_event(migrated)
     store(
         1,
@@ -2064,10 +2069,30 @@ def test_des_la_premiere_journee_le_classement_est_rendu(migrated: Settings) -> 
 
     lignes = _lines(migrated)
 
-    assert "1j" in lignes["Classement"]
-    # A la premiere journee, l'enjeu est date et marque indicatif : « Relegation
-    # Group » y decrit l'ordre alphabetique autant que le niveau.
+    assert lignes["Classement"].startswith("BK Hacken 9e")
+    assert "(après 1j — indicatif)" in lignes["Classement"]
+    # Le compte de journees vit **dans la reserve** : l'ecrire aussi dans le
+    # detail le ferait paraitre deux fois entre deux parentheses voisines.
+    assert "1j," not in lignes["Classement"]
     assert lignes["Enjeu"].endswith("Premiership (Relegation Group) (après 1j — indicatif)")
+
+
+def test_un_classement_etabli_ne_porte_aucune_reserve(migrated: Settings) -> None:
+    """Au-dela du seuil, le rang classe : la reserve disparait des deux lignes,
+    et le compte de journees reprend sa place dans le detail."""
+    _seed_event(migrated)
+    store(
+        1,
+        KIND_STANDINGS,
+        {"home": _standing(9, 20, "Relegation Round"), "away": _standing(4, 20)},
+        migrated,
+    )
+
+    lignes = _lines(migrated)
+
+    assert "indicatif" not in lignes["Classement"]
+    assert "20j" in lignes["Classement"]
+    assert "indicatif" not in lignes["Enjeu"]
 
 
 def test_la_forme_dit_sur_combien_de_matchs_portent_ses_buts(migrated: Settings) -> None:

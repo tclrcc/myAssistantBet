@@ -118,15 +118,17 @@ THRESHOLDS: dict[str, Threshold] = {
     ),
     "enjeu_min_journees": Threshold(
         key="enjeu_min_journees",
-        label="Journées avant qu'un enjeu de classement compte",
+        label="Journées avant qu'un classement compte",
         default=8,
         low=1,
         high=20,
         note=(
-            "En dessous, la ligne « Enjeu » est datée et marquée « indicatif ». À la 3e "
-            "journée sur 32, « Relegation Playoffs » décrit l'ordre alphabetique autant "
-            "que le niveau — et le prompt ordonne de la recopier comme l'enjeu réel, sans "
-            "recherche. Environ un quart d'une saison ordinaire."
+            "En dessous, les lignes « Classement » et « Enjeu » sont datées et marquées "
+            "« indicatif ». À la 3e journée sur 32, « Relegation Playoffs » décrit l'ordre "
+            "alphabetique autant que le niveau — et le prompt ordonne de la recopier comme "
+            "l'enjeu réel, sans recherche. Un rang n'en dit pas plus : deux 5es séparés par "
+            "une division sortent à égalité apparente. Environ un quart d'une saison "
+            "ordinaire."
         ),
     ),
     "recherche_dossiers": Threshold(

@@ -2452,11 +2452,25 @@ exactement le fait de format et de calendrier que ces fiches ont pour role de po
   ordinaire : ne les ecrire qu'en cas d'ecart rendrait une ligne sans annotation ambigue —
   coincidence, ou verification jamais faite ? La longueur des lettres **est** la fenetre,
   `_form_letters` gardant les `FORM_LENGTH` dernieres.
-- **`Enjeu` est date et marque « indicatif » en debut de saison.** A la 3e journee sur 32,
-  « Relegation Playoffs » decrit l'ordre alphabetique autant que le niveau — et le prompt
-  ordonne de recopier cette ligne comme l'enjeu reel, sans recherche. Elle est **datee
-  plutot que supprimee** : l'information reste, c'est bien ce que la competition declare,
-  et sa portee est dite.
+- **`Classement` et `Enjeu` sont dates et marques « indicatif » en debut de saison.** A la
+  3e journee sur 32, « Relegation Playoffs » decrit l'ordre alphabetique autant que le
+  niveau — et le prompt ordonne de recopier cette ligne comme l'enjeu reel, sans recherche.
+  Elles sont **datees plutot que supprimees** : l'information reste, c'est bien ce que la
+  competition declare, et sa portee est dite.
+  - **La reserve valait pour `Enjeu` seul, et c'etait un oubli, pas un arbitrage.** Les deux
+    lignes sortent du **meme** classement, a la meme journee : un rang de 1re journee ne
+    classe pas plus qu'un enjeu de 1re journee. Le lot du 14/08 le montrait a deux lignes
+    d'ecart — « Eintracht Braunschweig 1er (3pts, 1j, +5) » sans reserve, « Promotion
+    (après 1j — indicatif) » juste dessous. Sur un tour de coupe le degat est pire :
+    « Preußen Münster (3. Liga) 5e » contre « Karlsruher SC (2. Bundesliga) 5e » sortaient a
+    egalite apparente, le rang travaillant contre la division que la ligne venait de nommer.
+  - `_provisional()` est **ecrite une fois** et sert les deux : deux ecritures de la meme
+    reserve auraient diverge, comme le seuil qu'elles partagent.
+  - **Le seuil ne divergeait pas** : les deux lignes se gardent deja au rendu par
+    `_standing_played` (un match joue), et `enjeu_min_journees` ne portait que la reserve.
+  - Le compte de journees vit **dans la reserve** et sort alors du detail du rang : entre
+    deux parentheses voisines il paraissait deux fois, et c'est dans la reserve qu'il decide
+    de quelque chose.
   - **Le nombre de journees jouees suffit, le total de la saison n'est pas calculable** :
     il ne se deduit pas du nombre d'equipes — la Superliga danoise joue 32 journees a
     douze equipes, quand un double round-robin en donnerait 22. Ecrire « 2j/32 » aurait
