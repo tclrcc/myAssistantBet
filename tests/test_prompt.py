@@ -1961,3 +1961,27 @@ def test_le_prompt_annonce_le_budget_plutot_que_de_le_faire_deduire(
     assert "tiennent déjà compte du budget de recherche" in corps
     assert "cette session en ouvre 4" in corps, "le lot borne le budget, pas le réglage"
     assert "Le calcul est fait" in corps
+
+
+def test_le_preambule_ne_presente_pas_un_constat_comme_une_absence_de_marche(
+    migrated: Settings,
+) -> None:
+    """**Le constat porte sur les books interrogés, pas sur le marché.**
+
+    « fait acquis, pas oubli de collecte » se lisait « ce marché n'existe pas
+    ici ». Mesure du 14/08/2026 : `btts` sur la Ligue 2 est servi par 1xBet,
+    William Hill et Matchbook — il existe, mais pas chez les trois books que
+    nous interrogeons. La ligne générée porte désormais son périmètre, et le
+    préambule ne doit plus affirmer plus qu'elle.
+
+    Les deux comportements, eux, ne changent pas : aucune sélection dessus, et
+    pas de report en section F.
+    """
+    corps = " ".join(build_prompt(_lot_de(migrated, 2), settings=migrated, now=NOW).body.split())
+
+    assert "C'est un fait sur notre collecte, pas sur l'existence du marché" in corps
+    assert "fait acquis, pas oubli de collecte" not in corps
+    # Et surtout : rien qui invite à aller chercher un prix ailleurs — ce serait
+    # la comparaison de cotes entre bookmakers que SPEC.md interdit.
+    assert "ça ne change rien ici puisqu'il n'y a aucun prix à recopier" in corps
+    assert "N'imagine donc aucune sélection dessus" in corps

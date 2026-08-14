@@ -22,7 +22,9 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from .labels import affiche, bookmaker_label
+from ..config import Settings
+from .coverage import query_books
+from .labels import REFERENCE_SUFFIX, affiche, bookmaker_label
 
 INDENT = "  "
 LABEL_WIDTH = 12
@@ -49,10 +51,27 @@ UNAVAILABLE = "donnees non disponibles pour cette competition"
 
 #: Libelle de la ligne qui enumere les marches demandes et jamais obtenus.
 UNSERVED_LABEL = "Non servis"
-UNSERVED_NOTE = "aucun book interroge ne les sert sur cette competition"
+
+#: La note de cette ligne, **avec son perimetre**.
+#:
+#: « aucun book interroge ne les sert » etait exact au mot pres et trompeur a la
+#: lecture : trois books sont interroges, et le lecteur — humain ou modele —
+#: comprenait « ce marche n'existe pas sur cette competition ». Mesure du
+#: 14/08/2026 : `btts` sur la Ligue 2 est servi par 1xBet, William Hill et
+#: Matchbook, donc bien present chez The Odds API ; il ne l'est simplement pas
+#: chez les trois books que nous interrogeons.
+#:
+#: Le nombre et les noms se **derivent** de `query_books()`, jamais ecrits en
+#: dur : ajouter un book de reference met la phrase a jour sans qu'on y touche,
+#: et c'est la meme source que celle qui decide des appels — deux ecritures
+#: auraient fini par decrire un perimetre qui n'est pas celui qu'on interroge.
+UNSERVED_NOTE = "aucun des {count} books interroges ({books}) ne les sert sur cette competition"
 #: Meme ligne, autre cause : le match n'existe pas chez le fournisseur de
 #: cotes, et le book de substitution ne sert pas tout. Le distinguer evite de
 #: chercher un reglage la ou il n'y a qu'une offre plus etroite.
+#:
+#: Elle porte deja son perimetre — « le book de substitution » **est** l'ensemble
+#: interroge, et il n'y en a qu'un — donc rien a enumerer ici.
 UNSERVED_NOTE_SUBSTITUTE = "non servis par le book de substitution sur ce match"
 
 #: Troisieme etat, distinct des deux precedents : le marche **est la**, mais
@@ -655,6 +674,27 @@ def _with_source(event: RenderableEvent, rows: list[str], outcomes: list[Outcome
     return rows
 
 
+def unserved_note(settings: Settings | None = None) -> str:
+    """La note de « Non servis », **son perimetre enumere**.
+
+    Un constat d'absence ne vaut que pour ce qui a ete interroge, et la phrase
+    doit donc le porter : « aucun des 3 books interroges (Betclic, Pinnacle,
+    Unibet NL) ne les sert ». Sans cela, elle se lit comme « ce marche n'existe
+    pas ici », ce qui est faux — mesure du 14/08/2026, `btts` sur la Ligue 2 est
+    servi par trois books europeens que nous n'interrogeons pas.
+
+    Les noms viennent de `query_books()`, la **meme** source que celle qui
+    decide des appels : une seconde liste aurait fini par decrire un perimetre
+    different de celui qu'on interroge vraiment. Le suffixe « (ref.) » est
+    retire — il qualifie un prix affiche, pas un book interroge, et il ferait
+    ici une parenthese dans une parenthese.
+    """
+    noms = [
+        bookmaker_label(key).removesuffix(REFERENCE_SUFFIX).strip() for key in query_books(settings)
+    ]
+    return UNSERVED_NOTE.format(count=len(noms), books=", ".join(noms))
+
+
 def _unserved_line(event: RenderableEvent) -> list[str]:
     """Marches demandes et jamais servis : un fait acquis, pas un oubli.
 
@@ -668,7 +708,7 @@ def _unserved_line(event: RenderableEvent) -> list[str]:
     served = set(event.markets) | {MERGED_MARKETS.get(key, key) for key in event.markets}
     absent = (key for key in event.unserved if MERGED_MARKETS.get(key, key) not in served)
     labels = ordered_labels(event.sport_key, absent)
-    note = UNSERVED_NOTE_SUBSTITUTE if event.substitute else UNSERVED_NOTE
+    note = UNSERVED_NOTE_SUBSTITUTE if event.substitute else unserved_note()
     return [line(UNSERVED_LABEL, f"{', '.join(labels)} — {note}")] if labels else []
 
 

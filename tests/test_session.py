@@ -20,6 +20,7 @@ from myassistantbet.services import coverage, labels
 from myassistantbet.services import session as session_service
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import build_prompt
+from myassistantbet.services.render import unserved_note
 from myassistantbet.services.session import render_blocks
 
 from .helpers import NOW
@@ -205,7 +206,7 @@ def test_le_bloc_enumere_les_marches_que_l_api_ne_sert_pas(
 
     block = session_service.render_blocks(session_id, isolated_settings, NOW)[0]
 
-    assert "  Non servis  Hand. jeux, Set 1 — aucun book interroge" in block
+    assert f"  Non servis  Hand. jeux, Set 1 — {unserved_note()}" in block
 
 
 def test_un_marche_abandonne_ailleurs_ne_deteint_pas_sur_ce_match(

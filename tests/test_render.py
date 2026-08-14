@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from myassistantbet.config import get_settings
 from myassistantbet.services.render import (
     Outcome,
     RenderableEvent,
@@ -12,6 +13,7 @@ from myassistantbet.services.render import (
     estimate_tokens,
     ordered_labels,
     render_event,
+    unserved_note,
 )
 
 PARIS = ZoneInfo("Europe/Paris")
@@ -797,9 +799,7 @@ def test_les_marches_jamais_servis_deviennent_une_ligne() -> None:
         unserved=["totals_s1", "h2h_s1", "spreads"],
     )
 
-    assert _lines(event)["Non servis"] == (
-        "Hand. jeux, Set 1, Jeux S1 — aucun book interroge ne les sert sur cette competition"
-    )
+    assert _lines(event)["Non servis"] == ("Hand. jeux, Set 1, Jeux S1 — " + unserved_note())
 
 
 def test_un_marche_present_n_est_jamais_dit_non_servi() -> None:
@@ -812,9 +812,7 @@ def test_un_marche_present_n_est_jamais_dit_non_servi() -> None:
         unserved=["spreads", "h2h_s1"],
     )
 
-    assert _lines(event)["Non servis"] == (
-        "Set 1 — aucun book interroge ne les sert sur cette competition"
-    )
+    assert _lines(event)["Non servis"] == ("Set 1 — " + unserved_note())
 
 
 def test_sans_marche_abandonne_aucune_ligne_n_apparait() -> None:
@@ -829,7 +827,7 @@ def test_un_evenement_sans_cote_dit_quand_meme_ce_qui_manque() -> None:
     rendered = render_event(event)
 
     assert "MARCHES" in rendered
-    assert "Hand. jeux — aucun book interroge" in rendered
+    assert f"Hand. jeux — {unserved_note()}" in rendered
 
 
 def test_le_handicap_jeux_est_signe_du_point_de_vue_du_premier_joueur() -> None:
@@ -1052,3 +1050,73 @@ def test_un_bloc_qui_fait_exception_garde_sa_ligne() -> None:
 
     assert "A relever" in rendu
     assert "1N2" in rendu.split("A relever")[1]
+
+
+# -- Un constat d'absence porte son perimetre -------------------------------
+
+
+def _books(monkeypatch: pytest.MonkeyPatch, valeur: str) -> None:
+    """Change les books interroges, comme le ferait `.env`."""
+    monkeypatch.setenv("REFERENCE_BOOKMAKERS", valeur)
+    get_settings.cache_clear()
+
+
+def test_le_constat_d_absence_enumere_les_books_interroges(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**Exact au mot pres, et trompeur a la lecture.**
+
+    « aucun book interroge ne les sert » se comprenait « ce marche n'existe pas
+    sur cette competition ». Mesure du 14/08/2026 : `btts` sur la Ligue 2 est
+    servi par 1xBet, William Hill et Matchbook — il existe, mais pas chez les
+    trois books que nous interrogeons. Le constat doit donc porter son
+    perimetre, nombre et noms.
+    """
+    _books(monkeypatch, "pinnacle,unibet_nl")
+
+    note = unserved_note()
+
+    assert "aucun des 3 books interroges" in note
+    assert "Betclic" in note and "Pinnacle" in note and "Unibet NL" in note
+    # Le suffixe « (ref.) » qualifie un prix affiche, pas un book interroge, et
+    # il ferait ici une parenthese dans une parenthese.
+    assert "(ref.)" not in note
+
+
+def test_le_perimetre_suit_la_constante(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Ajouter un book met la phrase a jour **sans edition** : le nombre et les
+    noms se derivent de la meme source que celle qui decide des appels."""
+    _books(monkeypatch, "")
+    seul = unserved_note()
+
+    _books(monkeypatch, "pinnacle,unibet_nl,onexbet")
+    elargi = unserved_note()
+
+    assert "aucun des 1 books interroges (Betclic)" in seul
+    assert "aucun des 4 books interroges" in elargi
+    assert "1xBet" in elargi, "un book ajoute apparait sans qu'on touche a la phrase"
+
+
+def test_la_ligne_du_bloc_porte_le_perimetre(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Le generateur alimente la ligne rendue, et non une chaine isolee."""
+    _books(monkeypatch, "pinnacle")
+    event = _event(sport_key="tennis", markets={}, unserved=["spreads"])
+
+    ligne = _lines(event)["Non servis"]
+
+    assert ligne.endswith(unserved_note())
+    assert "aucun des 2 books interroges (Betclic, Pinnacle)" in ligne
+
+
+def test_le_constat_du_book_de_substitution_porte_deja_le_sien(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """L'autre cause de la meme ligne n'a rien a enumerer : « le book de
+    substitution » **est** l'ensemble interroge, et il n'y en a qu'un."""
+    _books(monkeypatch, "pinnacle")
+    event = _event(sport_key="tennis", markets={}, unserved=["spreads"], substitute=True)
+
+    ligne = _lines(event)["Non servis"]
+
+    assert "book de substitution" in ligne
+    assert "books interroges" not in ligne
