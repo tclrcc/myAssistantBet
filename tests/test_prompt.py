@@ -1316,8 +1316,13 @@ def test_le_glossaire_explique_les_deux_fenetres_de_forme_5(migrated: Settings) 
     # La reserve de debut de saison porte desormais sur **les deux** lignes qui
     # sortent du meme classement : un rang de 1re journee ne classe pas plus
     # qu'un enjeu de 1re journee.
-    assert "marque **« Classement » comme « Enjeu »**" in gabarit
+    assert "est une **réserve, pas une ligne**" in gabarit
     assert "deux 5es séparés par une division y sortent à égalité apparente" in gabarit
+    # **Son entree propre, et non un alinea du paragraphe « Enjeu ».** Un lecteur
+    # qui la cherche depuis une ligne de classement tombait sinon sur une glose
+    # qui traite d'autre chose — le defaut du libelle d'arbitre sans entree.
+    reserve = gabarit.index("**« (après Nj — indicatif) »**")
+    assert reserve < gabarit.index("**« Enjeu »** recopie")
 
 
 def test_le_chapitre_de_lecture_a_maigri_sans_perdre_ses_conventions(migrated: Settings) -> None:
