@@ -4,6 +4,79 @@
 commandes, conventions, et surtout la liste des interdits. En cas de contradiction,
 `SPEC.md` gagne.
 
+## Trois lecons de methode, qui valent plus que n'importe quel chantier
+
+Ecrites apres deux jours de travail (13-14/08/2026) parce qu'elles se sont verifiees a
+chaque fois, et qu'elles se redecouvriraient autrement au meme prix.
+
+### 1. Mesurer avant de coder, meme — surtout — quand le decideur affirme
+
+**Six premisses de l'utilisateur ont ete dementies par la mesure en deux jours, dont trois
+qui ont change une decision.** Aucune n'etait de la negligence : ce sont des affirmations
+plausibles, ecrites de memoire par quelqu'un qui connait son projet mieux que quiconque.
+
+| Ce qui etait affirme | Ce que la mesure a dit |
+| --- | --- |
+| le combine extreme consomme les places hautes | il se batit dans les deux bandes sures, sans en toucher une |
+| un combine de 20 jambes exige de rouvrir les quotas | il tient au niveau session, le plafond etant par **prompt** |
+| les quotas sont calibres sur un lot de 28 | sur 10, et ils saturent des 10 — 140 n'en donne pas un de plus |
+| on ne demande pas assez de marches profonds | on demande tout ; **Betclic ne sert qu'un marche sur 364 matchs** |
+| `cout = nb_marches x nb_regions` | la facturation porte sur les marches **servis** — surestimation de 4 a 7 |
+| un match tres vu est une grosse affiche | c'est un match dont la competition a ete fractionnee |
+
+Les trois qui ont change une decision sont les trois dernieres : sans elles, on aurait
+achete des marches inexistants, garde un plancher de credits regle sur un chiffre fantome,
+et cherche un biais de selection la ou il n'y a qu'un artefact de decoupage.
+
+**La regle qui en sort** : une premisse enoncee par le decideur se mesure comme une autre,
+et le dire ne coute rien quand elle tient. Le corollaire tient en une question — *cette
+affirmation, sur quelle mesure repose-t-elle ?* — et il vaut aussi pour ses propres
+conclusions : deux d'entre elles ont ete reprises en cours de route, un test fragile et un
+« servi par personne » qui ne valait que pour un match.
+
+### 2. Le defaut caracteristique de ce projet : une sortie identique pour l'echec et pour
+le cas ordinaire
+
+**Rencontre cinq fois en deux jours, dans cinq couches differentes.** Ce n'est plus une
+serie d'accidents, c'est la forme que prennent les defauts ici.
+
+| Ou | Le succes et l'echec rendaient |
+| --- | --- |
+| bloc CONTEXTE | `0/26` — « rien a dire » et « on n'a pas pose la question » |
+| `picks.facts_json` | `NULL` — bloc absent et bloc vide, qui est la reponse normale |
+| bloc « paris poses » de `/stats` | masque — aucun pari pose et « cette page ne mesure pas ca » |
+| import des blocs `conf` | silence — zero bloc n'avertissait pas, un bloc pour trois si |
+| assertions de test | vert — la propriete tenait, ou la sortie du jour n'avait pas bouge |
+
+**Le symptome commun : rien ne casse.** L'interface a l'air normale, les tests passent, et
+le defaut se decouvre des semaines plus tard en cherchant autre chose. C'est la forme la
+plus couteuse qu'un defaut puisse prendre dans un outil dont tout le travail consiste a
+distinguer une absence de donnee d'une absence de mesure.
+
+**La question a se poser sur toute sortie** : *si ceci echouait, la sortie serait-elle
+differente ?* Si non, l'echec est invisible et il faut le nommer — un motif, une note, un
+compteur, une ligne de journal. Et le meme raisonnement vaut pour les garde-fous : deux
+d'entre eux ne disaient pas quand ils se declenchaient, les causes de contexte avant la
+migration 044 et le plancher de credits apres.
+
+### 3. Une recommandation d'inaction est un livrable
+
+Deux mesures se sont conclues par « ne code rien », et ce sont des resultats au meme titre
+que les chantiers livres :
+
+- **le sondage `regions=eu`** (14/08) : aucun book francais ne sert la profondeur de
+  marche. Elargir le perimetre interroge n'ajouterait aucun prix jouable — ce n'est pas un
+  arbitrage de cout, c'est une absence d'offre, et la question est close ;
+- **le biais d'exposition** (14/08) : la lecture ne le tranchera **jamais**, l'exposition
+  etant presque collineaire a la competition. Ce n'est pas « pas assez de donnees », c'est
+  un plan d'observation inadapte.
+
+Une porte fermee par la mesure vaut mieux qu'une porte laissee entrouverte : elle
+s'accompagne de sa date et de son chiffre, et personne ne la rouvre par acquit de
+conscience. **Un resultat negatif non ecrit sera refait** — et il faut l'ecrire sous la
+forme qui empeche de le refaire, jamais sous la forme « pas d'effet mesure », qui invite a
+reessayer avec plus de donnees.
+
 ## Commandes
 
 ```bash
@@ -3656,6 +3729,13 @@ etablie, exposition reconstituee pour les 103.
     d'exposition **a competition fixee**, c'est-a-dire un decoupage volontairement varie :
     une **intervention**, pas une lecture. Refaire cette mesure avec plus de donnees ne
     changera rien tant que le decoupage reste subi.
+  - **Et tracer le decoupage ne suffit pas.** Un lot nomme, un registre de ce qui a deja
+    ete soumis, une trace des prompts : rien de tout cela ne debloque la mesure. Un
+    decoupage **trace** reste un decoupage **subi** tant qu'il n'est pas fait varier
+    exprès. La collinearite est une propriete du plan d'observation, pas de son
+    instrumentation — l'outillage n'en est que la condition prealable, jamais
+    l'intervention. Quiconque implementerait le lot nomme en croyant rouvrir cette
+    question trouverait la collinearite intacte.
   - Le palier, lui, ne confond rien : 3,0 rendus moyens en SAFE, 2,4 en FUN, 3,2 en ULTRA.
 - **Reserve** : les sept premieres sessions n'ont pas de `prompt_events`, et leur
   exposition a ete reconstruite depuis les en-tetes de prompts archives, **par affiche**.
