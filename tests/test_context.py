@@ -22,6 +22,8 @@ from myassistantbet.services.context import (
     CAUSE_UNREACHABLE,
     CAUSE_UNRESOLVED,
     COLLECTION_FAULTS,
+    DOMESTIC_RESOLVED,
+    KIND_DOMESTIC,
     KIND_FORM,
     KIND_H2H,
     KIND_INJURIES,
@@ -31,6 +33,7 @@ from myassistantbet.services.context import (
     KIND_REFEREE,
     KIND_STANDINGS,
     KIND_TEAMS,
+    REFEREE_MIN_SAMPLE,
     SHEETS_LAST,
     context_lines,
     failure_causes,
@@ -2949,30 +2952,93 @@ def test_les_deux_formulations_ne_se_recopient_pas() -> None:
 # -- L'arbitre : trois etats, et le troisieme se mesure ----------------------
 
 
-@respx.mock
-async def test_une_competition_qui_ne_sert_aucun_arbitre_le_dit(
-    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+def _releves_d_arbitre(migrated: Settings, noms: list[str]) -> int:
+    """Autant de releves d'arbitre que de noms, sur la competition de l'evenement.
+
+    Un nom vide est une rencontre pour laquelle le fournisseur n'a servi aucun
+    arbitre. C'est l'echantillon sur lequel le constat « cette competition n'en
+    sert aucun » se prend — jamais un match seul, jamais une journee.
+    """
+    competition = db.query_one(
+        "SELECT id, sport_id FROM competitions WHERE apifootball_league_id = 113",
+        settings=migrated,
+    )
+    for index, nom in enumerate(noms, start=100):
+        db.execute(
+            "INSERT INTO events (id, sport_id, competition_id, home, away, commence_time, "
+            "source, created_at) VALUES (?, ?, ?, ?, ?, '2026-08-03T15:30:00Z', 'api', ?)",
+            (
+                index,
+                competition["sport_id"],
+                competition["id"],
+                f"A{index}",
+                f"B{index}",
+                db.utcnow(),
+            ),
+            settings=migrated,
+        )
+        store(index, KIND_REFEREE, {"name": nom}, migrated)
+    return int(competition["id"])
+
+
+def test_un_echantillon_court_ne_bascule_pas_une_competition_qui_designe(
+    migrated: Settings,
 ) -> None:
+    """**Le faux positif a eviter, et il se produirait des ce soir.**
+
+    Trois matchs sans arbitre — un lot de Saudi Pro League — ne disent rien : la
+    designation peut n'etre pas tombee. Sous l'echantillon, la ligne garde le
+    libelle qui n'affirme rien.
+    """
+    _seed_event(migrated)
+    competition_id = _releves_d_arbitre(migrated, ["", "", ""])
+    store(1, KIND_REFEREE, {"name": ""}, migrated)
+
+    lignes = dict(
+        context_lines(
+            1, EVENT["home"], EVENT["away"], EVENT["commence_time"], migrated, competition_id
+        )
+    )
+
+    assert lignes["Arbitre"] == "non encore designe"
+
+
+def test_une_competition_qui_ne_sert_aucun_arbitre_le_dit(migrated: Settings) -> None:
     """**« Non encore designe » et « non servi ici » appellent des comportements
     opposes** : le premier dit d'attendre, le second dit d'aller chercher.
 
-    Mesure du 14/08/2026 : les 32 fixtures d'un tour de DFB-Pokal portent toutes
-    un arbitre nul, quand une saison de Conference League en sert 209 sur 210.
-    Ecrire « non encore designe » partout faisait renoncer a une recherche qui
-    aboutit — la DFB publie ses designations.
+    Mesure du 14/08/2026 sur les 66 releves de la base : une competition sert un
+    arbitre sur **toutes** ses rencontres ou sur aucune — 22/22 en Conference
+    League, 0/7 en Leagues Cup — jamais partiellement. C'est l'absence qui
+    demande un echantillon, et `REFEREE_MIN_SAMPLE` le fixe.
     """
     _seed_event(migrated)
-    routes = _mock_all(load_fixture)
-    payload = load_fixture("apifootball_fixtures_date.json")
-    for item in payload["response"]:
-        item["fixture"]["referee"] = None
-    routes["fixtures_date"].mock(
-        return_value=httpx.Response(200, json=payload, headers=RATE_HEADERS)
+    competition_id = _releves_d_arbitre(migrated, [""] * REFEREE_MIN_SAMPLE)
+    store(1, KIND_REFEREE, {"name": ""}, migrated)
+
+    lignes = dict(
+        context_lines(
+            1, EVENT["home"], EVENT["away"], EVENT["commence_time"], migrated, competition_id
+        )
     )
 
-    await fetch_context(api_client, dict(EVENT), migrated)
+    assert lignes["Arbitre"] == "non servi sur cette competition"
 
-    assert _lines(migrated)["Arbitre"] == "non servi sur cette competition"
+
+def test_un_seul_arbitre_nomme_prouve_que_la_competition_designe(migrated: Settings) -> None:
+    """La distribution est binaire : un nom quelque part suffit, et l'echantillon
+    ne sert plus a rien. Ce qui reste est une designation qui n'est pas tombee."""
+    _seed_event(migrated)
+    competition_id = _releves_d_arbitre(migrated, ["M. Oliver"] + [""] * REFEREE_MIN_SAMPLE)
+    store(1, KIND_REFEREE, {"name": ""}, migrated)
+
+    lignes = dict(
+        context_lines(
+            1, EVENT["home"], EVENT["away"], EVENT["commence_time"], migrated, competition_id
+        )
+    )
+
+    assert lignes["Arbitre"] == "non encore designe"
 
 
 def test_un_releve_anterieur_a_la_mesure_garde_le_comportement_d_avant(
@@ -2984,3 +3050,65 @@ def test_un_releve_anterieur_a_la_mesure_garde_le_comportement_d_avant(
     store(1, KIND_REFEREE, {"name": ""}, migrated)
 
     assert _lines(migrated)["Arbitre"] == "non encore designe"
+
+
+def test_une_division_qui_n_a_pas_commence_est_quand_meme_nommee(migrated: Settings) -> None:
+    """**A la reprise, la regle du rang inversait ce que la ligne doit montrer.**
+
+    Un tour de coupe oppose une division qui a joue et une qui n'a pas commence :
+    le club de D3 sortait classe, celui de Bundesliga — 0 journee — ne sortait
+    pas du tout, et le bloc opposait un rang a un silence. Le rang reste tu, il
+    ne classe rien a zero match ; la division, elle, est un fait a toute date, et
+    c'est elle qui porte l'ecart de niveau.
+
+    Verifie en simulation sur le lot reel des 22-23/08.
+    """
+    _seed_event(migrated)
+    store(
+        1,
+        KIND_DOMESTIC,
+        {
+            "home": {
+                "state": DOMESTIC_RESOLVED,
+                "league_id": 80,
+                "label": "3. Liga",
+                "season": 2026,
+                "standings": True,
+            },
+            "away": {
+                "state": DOMESTIC_RESOLVED,
+                "league_id": 78,
+                "label": "Bundesliga",
+                "season": 2026,
+                "standings": True,
+            },
+        },
+        migrated,
+    )
+    store(
+        1,
+        KIND_STANDINGS,
+        {
+            "home": {"rank": 7, "points": 3, "played": 1, "diff": 1},
+            "away": {"rank": 2, "points": 0, "played": 0, "diff": 0},
+        },
+        migrated,
+    )
+
+    ligne = dict(_lines(migrated))["Classement"]
+
+    assert "BK Hacken (3. Liga) 7e" in ligne
+    assert "Djurgardens IF (Bundesliga) — 0j jouée" in ligne
+    assert "2e" not in ligne, "a zero match, le rang ne classe rien et reste tu"
+
+
+def test_hors_coupe_une_division_sans_journee_ne_produit_rien(migrated: Settings) -> None:
+    """La regle ne vaut que la ou les deux equipes viennent de deux competitions.
+
+    Sur un championnat, les deux tables sont la meme : nommer la division a
+    chaque ligne serait du bruit, et un classement a zero journee reste tu.
+    """
+    _seed_event(migrated)
+    store(1, KIND_STANDINGS, {"home": {"rank": 7, "points": 0, "played": 0, "diff": 0}}, migrated)
+
+    assert "Classement" not in dict(_lines(migrated))

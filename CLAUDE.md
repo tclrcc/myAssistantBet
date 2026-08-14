@@ -1172,14 +1172,25 @@ pas supposee.
   des comportements opposes : attendre, ou aller chercher. Ecrire le premier partout faisait
   renoncer a une recherche qui aboutit — la DFB publie ses designations, c'est notre source
   qui ne les remonte pas.
-  - Le fournisseur n'a **aucun drapeau** pour ca, et le manque ne se lit pas sur un match
-    seul. Il se lit sur la **journee**, deja recuperee au rapprochement : les 32 fixtures
-    d'un tour de DFB-Pokal portent toutes un arbitre nul, quand une saison de Conference
-    League en sert 209 sur 210. Aucun appel de plus (`FixtureMapping.referee_served`).
-  - Limite assumee : une journee entiere non encore designee se lirait « non servi ». Elle
-    envoie alors chercher au lieu de faire attendre — l'erreur dans le sens le moins couteux.
-  - Un releve anterieur a la mesure n'a pas le drapeau et vaut « servi », donc le
-    comportement d'avant : une affirmation qu'on ne peut pas gager ne s'ecrit pas.
+  - **Le constat porte sur la competition, jamais sur un match ni sur une journee**
+    (`referee_served`). Un match seul ne dit rien, et trois matchs d'un soir non plus : ils
+    feraient basculer une competition qui designe. Il s'accumule sur nos propres releves,
+    deja persistes, donc sans un appel de plus.
+  - **La distribution est binaire, et c'est mesure** : sur les 66 releves de la base, une
+    competition sert un arbitre sur **toutes** ses rencontres ou sur aucune — 22/22 en
+    Conference League, 12/12 en Europa League, 9/9 en Ligue 2, et a l'oppose 0/7 en Leagues
+    Cup, 0/3 en Super League chinoise. Aucune n'est partielle. Un seul nom quelque part
+    prouve donc que la competition designe ; c'est l'absence qui demande un echantillon.
+  - `REFEREE_MIN_SAMPLE` vaut **8**, le plus petit entier au-dessus du plus gros releve
+    tout-vide de la base (7) : rien de ce qu'elle porte aujourd'hui ne bascule sur des
+    donnees qui ne le portent pas, et une competition qui ne designe vraiment pas y arrive en
+    une journee de coupe. Verifie en simulation sur le lot du 22/08 — a trois matchs
+    enrichis, la DFB-Pokal dit encore « non encore designe ».
+  - Un identifiant de competition inconnu laisse la ligne dire « non encore designe », qui
+    n'affirme rien : une affirmation qu'on ne peut pas gager ne s'ecrit pas.
+  - Le chapitre COMMENT LIRE LES BLOCS definit **les trois** libelles et le comportement de
+    chacun : un libelle sans definition dans le chapitre est le defaut que ce prompt evite
+    partout.
 
 ## Un contexte absent a une cause, et elle se nomme
 
@@ -1261,6 +1272,19 @@ pousse jusqu'aux agregats du bloc.
   Sans elle, « 1er » contre « 8e » se lit comme un match equilibre alors que l'ecart de
   division **est** le fait de la rencontre. Le preambule le dit une fois pour le lot, garde
   par `domestic_aggregates`.
+- **La division se nomme meme quand la table est vide** (`_division_fragment`), et sans elle
+  la regle s'inversait a la reprise : deux divisions n'entrent pas dans leur saison le meme
+  jour, si bien qu'au 22/08 la 3. Liga a joue une journee et la Bundesliga zero — le club de
+  D3 sortait classe et celui de Bundesliga pas du tout. Le bloc opposait un rang a un
+  silence, exactement l'inverse de ce que la ligne doit montrer. Le rang reste tu, il ne
+  classe rien a zero match ; la division est un fait a toute date.
+  - Simulation sur le lot reel des 22-23/08, trois affiches :
+    `Hansa Rostock (3. Liga) 7e (3pts, 1j, +1) | VfB Stuttgart (Bundesliga) — 0j jouée`, et
+    `SC St. Tönis (Oberliga - Niederrhein) — 0j jouée | Eintracht Frankfurt (Bundesliga) —
+    0j jouée`. La seconde ligne n'existait pas du tout avant, et c'est la plus decisive du
+    bloc — un club d'Oberliga contre Francfort.
+  - **Reservee aux equipes dont le championnat est etabli** : ailleurs un nom d'equipe seul
+    serait du bruit, et la ligne `Agregats` dit deja pourquoi il manque.
 - **`Enjeu` ne suit pas.** Un championnat declare « Relegation » ou « Play-offs » : ce n'est
   pas l'enjeu d'un tour de coupe, et le prompt batit des scenarios de motivation sur cette
   ligne. Le format — elimination directe, tour unique — releve de la fiche de competition.

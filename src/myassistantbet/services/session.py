@@ -455,7 +455,7 @@ def context_block(
     Aucun appel reseau : tout est relu en base, quelle que soit la source.
     """
     settings = settings or get_settings()
-    lines = context_lines(event_id, home, away, commence_time, settings)
+    lines = context_lines(event_id, home, away, commence_time, settings, competition_id)
     if sport_key == "football":
         # Un match que le fournisseur ne donne pas jouable se dit **avant** tout
         # le reste : tout ce qui suit decrit alors une rencontre qui n'aura pas

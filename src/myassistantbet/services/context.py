@@ -153,6 +153,23 @@ KIND_PROFILE = "profile"
 KIND_VENUE = "venue"
 KIND_REFEREE = "referee"
 
+#: Releves d'arbitre d'une meme competition sous lesquels on **ne conclut pas**
+#: qu'elle n'en sert aucun.
+#:
+#: **La distribution est binaire, et c'est mesure** : sur les 66 releves de la
+#: base, une competition sert un arbitre sur **toutes** ses rencontres ou sur
+#: aucune — 22/22 en Conference League, 12/12 en Europa League, 9/9 en Ligue 2,
+#: et a l'oppose 0/7 en Leagues Cup, 0/3 en Super League chinoise. Aucune n'est
+#: partielle. Un seul nom quelque part prouve donc que la competition designe ;
+#: c'est l'absence qui demande un echantillon.
+#:
+#: Le seuil est le plus petit entier au-dessus du plus gros releve tout-vide de
+#: la base (7). Rien de ce qu'elle porte aujourd'hui ne bascule donc sur des
+#: donnees qui ne le portent pas, et une competition qui ne designe vraiment pas
+#: y arrive en une journee de coupe. Trois releves — le lot saoudien d'un soir —
+#: ne suffisent pas, et c'est exactement le faux positif a eviter.
+REFEREE_MIN_SAMPLE = 8
+
 #: Les trois etats d'une liste d'absents, et c'est le motif de toute la serie :
 #: « on a regarde, il n'y a rien », « personne n'a regarde », « la source n'a pas
 #: repondu ». `donnees non disponibles` les melangeait, si bien qu'une
@@ -460,16 +477,6 @@ class FixtureMapping:
     #: est une chaine libre, sans identifiant et sans pays — « M. Oliver ». Vide
     #: quand la designation n'est pas tombee.
     referee: str = ""
-    #: La competition sert-elle des arbitres du tout, mesure sur **les matchs du
-    #: jour deja recuperes** : aucun appel de plus. Verifie le 14/08/2026, les
-    #: 32 fixtures d'un tour de DFB-Pokal portent toutes un arbitre nul, quand
-    #: une saison de Conference League en sert 209 sur 210.
-    #:
-    #: Le fournisseur n'a pas de drapeau pour ca, et le manque ne se lit pas sur
-    #: un match seul : « non encore designe » et « jamais servi ici » sont le
-    #: meme vide. Ce que la journee entiere permet de distinguer, elle, decide
-    #: d'un comportement oppose — attendre, ou aller chercher.
-    referee_served: bool = True
 
 
 async def _memoized(cache: dict[str, Any], key: str, coroutine_factory: Any) -> Any:
@@ -540,12 +547,6 @@ async def resolve_fixture(
         coverage=coverage,
         venue=(fixture.get("fixture") or {}).get("venue") or {},
         referee=str((fixture.get("fixture") or {}).get("referee") or "").strip(),
-        # Mesure sur la journee, pas sur ce match : c'est la seule facon de
-        # separer une designation qui n'est pas tombee d'une competition qui
-        # n'en publie jamais chez ce fournisseur.
-        referee_served=any(
-            str((item.get("fixture") or {}).get("referee") or "").strip() for item in fixtures
-        ),
     )
     # Memorise pour tout ce qui se recupere par equipe. Volontairement absent de
     # `report.kinds` : ce n'est pas un contexte recupere, c'est le moyen d'en
@@ -1221,12 +1222,7 @@ async def fetch_context(
     # des blocs sans que rien ne permette de le lire — et parce que chercher
     # « qui arbitre X - Y » coutait une requete avant meme de chercher son
     # historique.
-    store(
-        report.event_id,
-        KIND_REFEREE,
-        {"name": mapping.referee, "served": mapping.referee_served},
-        settings,
-    )
+    store(report.event_id, KIND_REFEREE, {"name": mapping.referee}, settings)
     report.kinds.append(KIND_REFEREE)
 
     # Profil corners et cartons, sur les memes matchs recents. Le prompt
@@ -2079,6 +2075,11 @@ def _domestic_names(home: str, away: str, domestic: dict[str, Any]) -> tuple[str
     return rendered[0], rendered[1]
 
 
+def _domestic_resolved(domestic: dict[str, Any], side: str) -> bool:
+    """Le championnat de cette equipe a-t-il ete etabli ?"""
+    return (domestic.get(side) or {}).get("state") == DOMESTIC_RESOLVED
+
+
 def _domestic_note(home: str, away: str, domestic: dict[str, Any]) -> str:
     """Le motif, quand un championnat domestique n'a pas ete etabli.
 
@@ -2103,17 +2104,50 @@ def _domestic_note(home: str, away: str, domestic: dict[str, Any]) -> str:
     )
 
 
+def referee_served(competition_id: int | None, settings: Settings | None = None) -> bool:
+    """Cette competition designe-t-elle des arbitres chez le fournisseur ?
+
+    **Le constat porte sur la competition, jamais sur un match ni sur une
+    journee.** Trois matchs sans arbitre — un soir de Saudi Pro League — ne
+    disent rien ; 0 sur 7 en Leagues Cup, si. Il s'accumule sur nos propres
+    releves, deja persistes, donc sans un appel de plus.
+
+    Vrai tant que l'echantillon ne porte pas l'affirmation inverse : un
+    identifiant de competition inconnu, une base neuve ou un lot trop court
+    laissent la ligne dire « non encore designe », qui n'affirme rien.
+    """
+    if competition_id is None:
+        return True
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS releves, "
+            "       SUM(CASE WHEN json_extract(x.payload_json, '$.name') <> '' THEN 1 ELSE 0 END) "
+            "         AS nommes "
+            "FROM context x JOIN events e ON e.id = x.event_id "
+            "WHERE x.kind = ? AND e.competition_id = ?",
+            (KIND_REFEREE, competition_id),
+        ).fetchone()
+    if row is None or (row["nommes"] or 0) > 0:
+        return True
+    return int(row["releves"] or 0) < REFEREE_MIN_SAMPLE
+
+
 def context_lines(
     event_id: int,
     home: str,
     away: str,
     commence_time: str,
     settings: Settings | None = None,
+    competition_id: int | None = None,
 ) -> list[tuple[str, str]]:
     """Lignes du bloc CONTEXTE, pretes pour `render_event`.
 
     Une donnee absente produit une ligne omise ; une donnee dont on sait qu'elle
     n'est pas couverte produit une ligne explicite.
+
+    `competition_id` ne sert qu'a la ligne `Arbitre` : le constat « cette
+    competition n'en sert aucun » ne se lit ni sur un match ni sur une journee,
+    il s'accumule sur la competition. Absent, la ligne n'affirme rien.
     """
     settings = settings or get_settings()
     data = load(event_id, settings)
@@ -2154,10 +2188,25 @@ def context_lines(
     if standings and not standings.get("available", True):
         lines.append(("Classement", UNAVAILABLE))
         standings = {}
-    ranked = _pair(
-        _rank_fragment(home_agg, standings.get("home")),
-        _rank_fragment(away_agg, standings.get("away")),
-    )
+
+    # **Sur un match de coupe, la division se nomme meme sans rang.** Deux
+    # equipes de deux divisions n'entrent pas dans leur saison au meme moment :
+    # au 22/08 la 3. Liga a joue trois journees et la Bundesliga une seule, si
+    # bien que la regle du rang faisait sortir le club de D3 classe et celui de
+    # Bundesliga pas du tout — le bloc opposait un rang a un silence, quand le
+    # fait de la rencontre est justement l'ecart de division.
+    def _ranked(team: str, side: str) -> str:
+        entry = standings.get(side)
+        rendu = _rank_fragment(team, entry)
+        if rendu or not _domestic_resolved(domestic, side):
+            return rendu
+        # Le nom porte deja sa division ; ne reste a dire que depuis combien de
+        # journees elle a commence. Reserve aux equipes dont le championnat est
+        # etabli : ailleurs, un nom d'equipe seul serait du bruit, et la ligne
+        # `Agregats` dit deja pourquoi il manque.
+        return _division_fragment(team, entry)
+
+    ranked = _pair(_ranked(home_agg, "home"), _ranked(away_agg, "away"))
     if ranked:
         lines.append(("Classement", ranked))
 
@@ -2225,7 +2274,7 @@ def context_lines(
 
     arbitre = data.get(KIND_REFEREE)
     if arbitre is not None:
-        lines.append(("Arbitre", _referee_line(arbitre)))
+        lines.append(("Arbitre", _referee_line(arbitre, referee_served(competition_id, settings))))
 
     profile = data.get(KIND_PROFILE) or {}
     if profile and not profile.get("available", True):
@@ -2370,6 +2419,26 @@ def _standing_played(entry: dict[str, Any] | None) -> bool:
     Absente, la donnee ne prouve rien : on ne retient que le zero constate.
     """
     return (entry or {}).get("played") != 0
+
+
+def _division_fragment(team: str, entry: dict[str, Any] | None) -> str:
+    """« Bayern München (Bundesliga) — 0j jouée » : la division, sans le rang.
+
+    **A la reprise, un tour de coupe oppose une division qui a joue et une qui
+    n'a pas commence**, et la regle du rang inversait alors ce que la ligne doit
+    montrer : le club de D3, a sa 3e journee, sortait classe, et celui de
+    Bundesliga — 0 journee — ne sortait pas du tout. Le bloc opposait donc un
+    rang a un silence, quand le fait de la rencontre est l'ecart de division.
+
+    Le rang reste tu, parce qu'a zero match il ne classe rien
+    (`_standing_played`). La **division**, elle, est un fait a toute date, et
+    c'est elle qui porte l'ecart de niveau. Le compte de journees l'accompagne :
+    sans lui, l'absence de rang se lirait comme une donnee manquante.
+    """
+    joues = entry.get("played") if entry else None
+    if not isinstance(joues, int):
+        return team
+    return f"{team} — {joues}j jouée" + ("s" if joues > 1 else "")
 
 
 def _rank_fragment(team: str, entry: dict[str, Any] | None) -> str:
@@ -2715,7 +2784,7 @@ def _venue_line(venue: dict[str, Any], home: str) -> str:
     )
 
 
-def _referee_line(payload: dict[str, Any]) -> str:
+def _referee_line(payload: dict[str, Any], served: bool = True) -> str:
     """`M. Oliver`, ou `non encore designe`. Deux etats, et pas trois.
 
     **Le nom seul, parce que c'est tout ce que le fournisseur sert.** Verifie le
@@ -2742,19 +2811,19 @@ def _referee_line(payload: dict[str, Any]) -> str:
     appellent des comportements opposes** : le premier dit d'attendre, le second
     dit d'aller chercher. Ecrire le premier partout faisait renoncer a une
     recherche qui aboutit — la DFB publie ses designations, quand le fournisseur
-    n'en sert aucune sur cette competition. La distinction se mesure sur les
-    matchs du jour deja recuperes, sans un appel de plus.
+    n'en sert aucune sur cette competition.
 
-    Un releve anterieur a cette mesure n'a pas le drapeau : il vaut « servi »,
-    donc le comportement d'avant, plutot qu'une affirmation qu'on ne peut pas
-    gager.
+    **La distinction se mesure sur la competition, jamais sur un match ni sur
+    une journee.** Un match seul ne dit rien, et une journee non plus : trois
+    matchs sans arbitre feraient basculer une competition qui designe. Le
+    constat s'accumule sur nos propres releves (`REFEREE_MIN_SAMPLE`), sans un
+    appel de plus — le nom est deja persiste — et il vaut « servi » tant que
+    l'echantillon ne porte pas l'affirmation inverse.
     """
     nom = (payload.get("name") or "").strip()
     if nom:
         return nom
-    return (
-        "non encore designe" if payload.get("served", True) else "non servi sur cette competition"
-    )
+    return "non encore designe" if served else "non servi sur cette competition"
 
 
 def _profile_suffix(profile: dict[str, Any]) -> str:
