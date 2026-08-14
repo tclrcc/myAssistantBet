@@ -329,6 +329,10 @@ The Odds API.
   (180) pour l'anglaise (40), la Bundesliga (78) pour la 2. Bundesliga (79) et la Coupe de
   Malaisie (499) pour la MLS (253), le tout avec un score maximal. Trois tests gardent ces
   trois pieges.
+  - **Une cle absente ne se voit nulle part tant qu'un match n'est pas parti muet a
+    l'analyse**, et c'est ce que repare le controle au scan — voir « Un contexte absent a une
+    cause ». Le fournisseur ne nomme pas toujours la competition comme The Odds API : l'EFL
+    Cup s'y appelle « League Cup », un rapprochement par libelle aurait donc echoue la aussi.
 - **Statistiques de saison** (`KIND_FORM`, cinq lignes) : `/teams/statistics` est appele
   pour la forme, et sa charge utile est persistee **entiere**. Longtemps seuls `form` et
   `Dom/Ext` en etaient tires ; le reste dormait en base alors que les marches
@@ -1163,6 +1167,119 @@ pas supposee.
   **resultat de recherche**, et le preambule dit que c'en est un valable, a ecrire en
   section A comme une caracteristique du match et non en section F comme un manque. Cas
   reel : l'arbitre somalien d'une Supercoupe d'Europe dirigeait son premier match en Europe.
+- **« Non servi sur cette competition » est le troisieme etat rendu, et il dit l'inverse du
+  deuxieme.** « Non encore designe » et « jamais servi ici » sont deux vides qui appellent
+  des comportements opposes : attendre, ou aller chercher. Ecrire le premier partout faisait
+  renoncer a une recherche qui aboutit — la DFB publie ses designations, c'est notre source
+  qui ne les remonte pas.
+  - Le fournisseur n'a **aucun drapeau** pour ca, et le manque ne se lit pas sur un match
+    seul. Il se lit sur la **journee**, deja recuperee au rapprochement : les 32 fixtures
+    d'un tour de DFB-Pokal portent toutes un arbitre nul, quand une saison de Conference
+    League en sert 209 sur 210. Aucun appel de plus (`FixtureMapping.referee_served`).
+  - Limite assumee : une journee entiere non encore designee se lirait « non servi ». Elle
+    envoie alors chercher au lieu de faire attendre — l'erreur dans le sens le moins couteux.
+  - Un releve anterieur a la mesure n'a pas le drapeau et vaut « servi », donc le
+    comportement d'avant : une affirmation qu'on ne peut pas gager ne s'ecrit pas.
+
+## Un contexte absent a une cause, et elle se nomme
+
+**Quatre causes se repliaient sur `0/26`**, qui se lit « pas de donnees » alors qu'elle veut
+dire « on n'a pas pose la bonne question ». Mesure du 14/08/2026 : trois matchs de Saudi Pro
+League sortis a zero ligne le jour de la reprise du championnat — leur competition n'etait
+rattachee a aucune ligue, donc rien n'a jamais ete demande, et le bloc ressemblait trait pour
+trait a celui d'une competition mal couverte. L'EFL Cup portait deja **34 evenements** dans le
+meme etat, dont un parti a l'analyse avec une selection prise dessus.
+
+- **Le vocabulaire est celui de la ligne `Absents`**, et il n'y en a pas de second :
+  « non interroges » (le fournisseur ne couvre pas) et « source injoignable » (il n'a pas
+  repondu) decrivent ici les memes faits. S'y ajoutent deux **defauts de collecte** qui
+  n'avaient aucun mot — `competition non rattachee`, `fixture non resolue` — et qui se
+  reparent d'un geste au lieu de se chercher (`COLLECTION_FAULTS`).
+- **Un lexique, deux redactions.** `CAUSE_LABELS` nomme la cause une seule fois ;
+  `CAUSE_BLOCK_NOTES` parle a une analyse qui va chercher — ce qui compte pour elle est de
+  savoir si ce qui manque est une absence de fait ou une absence de collecte, parce que la
+  reponse decide si la recherche web peut combler le trou — et `CAUSE_UI_NOTES` parle a qui
+  va reparer, en nommant le geste. Le motif **prolonge la ligne `Densite`** plutot que d'en
+  occuper une seconde : il qualifie la densite, il n'ajoute pas un fait sur le match.
+- **La fiche de priorite s'en sert, et c'est la que le typage change une decision** : un bloc
+  vide faute de rattachement ne vaut **aucun** budget de recherche — il vaut une saisie, et
+  le dossier couterait une place a un match ou chercher sert — quand un bloc vide faute de
+  couverture est le **meilleur dossier du lot**, la recherche y etant le seul chemin.
+- **La cause se lit sur ce qui est revenu, jamais sur les drapeaux de couverture.** Une coupe
+  qui annonce tout a faux porte quand meme ses agregats depuis le championnat domestique de
+  ses equipes : la declarer « non couverte » serait faux.
+- **Migration 044 : une ligne par tentative, reussites comprises.** Trois des quatre causes se
+  relisent a tout moment dans `competitions` et `events` ; « source injoignable » n'existe
+  qu'a l'instant de l'appel — resolu a la lecture seulement, il disparaitrait au releve
+  suivant et son taux serait immesurable, alors que c'est le seul des quatre qui dise quelque
+  chose du fournisseur plutot que de notre saisie. Sans les reussites, on compterait des
+  pannes sans savoir sur combien d'essais.
+- **Le seul chemin ou la cause n'atteint pas `fetch_context`** est le saut de `run_enrich` sur
+  un match sans ligue : c'est precisement le cas a compter, donc il journalise lui-meme.
+- **Rien n'est retro-rempli.** Les causes d'hier ne se reconstituent pas, et une table vide
+  dit la verite — la mesure commence a la mise en service.
+
+**Le controle passe en amont, au scan** (`ScanReport.unmapped`). Le symptome arrive une
+journee plus tard sous la forme d'un bloc a zero ligne, qui se lit comme un match sans
+histoire plutot que comme une question jamais posee ; le scan, lui, sait au moment ou les
+matchs entrent en base que rien ne pourra leur etre demande. Le cas se reproduit **a chaque
+reprise de championnat**, donc plusieurs fois par an.
+
+- Le bandeau les garde sous les yeux jusqu'au rattachement, **nommees et jamais comptees** :
+  un compte se lit comme une file d'attente qui se resorbe, alors qu'ici rien ne bouge tant
+  qu'une ligne n'a pas ete saisie, et c'est le nom qui dit laquelle.
+- Seules celles qui portent des **matchs a venir** y figurent : au 14/08/2026, 33 des 67 cles
+  football n'ont aucune entree dans `APIFOOTBALL_LEAGUES`, et les lister toutes noierait
+  celle qui joue ce soir.
+
+**Date du correctif : 14/08/2026.** La composition de la population `lecture` des statistiques
+change a partir de la — avant, une selection pouvait etre en lecture parce qu'aucun fait
+n'etait **disponible** ; apres, un bloc muet a une cause nommee et un ordre de passage. La
+selection d'EFL Cup deja tranchee n'est pas reprise : elle etait bien une lecture, aucun fait
+n'etait disponible ce jour-la.
+
+## Les agregats de saison d'un match de coupe
+
+`/teams/statistics` et `/standings` sont **scopes a une competition**. Sur un tour de coupe
+cela ne decrit rien : les participants y ont joue un ou deux matchs — donc sous
+`SEASON_MIN_MATCHES` — et une coupe n'a pas de classement. Mesure du 14/08/2026 : la
+DFB-Pokal annonce `standings`, `injuries`, `lineups` et `statistics_fixtures` **tous a faux**.
+Rattachee seule, elle n'aurait ramene que l'affiche, le lieu et les confrontations.
+
+C'est le meme angle mort que celui repare par l'historique de saison du dossier d'equipe —
+Motherwell compte 2 matchs de Conference League quand sa saison domestique en porte 47 —
+pousse jusqu'aux agregats du bloc.
+
+- **Le championnat de chaque equipe se lit chez le fournisseur** (`/leagues?team=`), jamais
+  deduit d'un libelle, et sa couverture vient de la meme reponse — celle de la coupe ne dit
+  rien de lui. **Un seul `type=League` en cours, sinon rien** : mesure sur neuf equipes, huit
+  en portent exactement un — Bayern a six competitions et une seule ligue — la neuvieme deux,
+  le fournisseur classant une supercoupe en `League`. Trancher a sa place attribuerait a une
+  equipe les statistiques d'une autre competition.
+- **Chaque agregat porte sa competition d'origine**, portee par le **nom de l'equipe** plutot
+  que par dix fragments — dix endroits a modifier auraient fait dix occasions de diverger.
+  Sans elle, « 1er » contre « 8e » se lit comme un match equilibre alors que l'ecart de
+  division **est** le fait de la rencontre. Le preambule le dit une fois pour le lot, garde
+  par `domestic_aggregates`.
+- **`Enjeu` ne suit pas.** Un championnat declare « Relegation » ou « Play-offs » : ce n'est
+  pas l'enjeu d'un tour de coupe, et le prompt batit des scenarios de motivation sur cette
+  ligne. Le format — elimination directe, tour unique — releve de la fiche de competition.
+- **Le cas non tranche produit un motif nomme** (`Agregats`) et non un silence : dix lignes
+  disparaissent du bloc, et sans lui elles se liraient comme une equipe sans passe. Une seule
+  ligne pour les dix, comme `Stats match` pour ses trois.
+- **La regle se declare par competition** (`DOMESTIC_AGGREGATES`), elle ne se deduit pas de
+  `coverage.standings` : ce drapeau decrit ce que le fournisseur **sert**, pas la nature de la
+  competition, et s'en servir laisserait la couverture decider de la methode. Il embarquerait
+  au passage la Conference League, qui l'annonce a faux et dont les blocs fonctionnent.
+  L'extension reste une decision d'une ligne, auditable.
+- Cout : un appel par equipe, memorise le temps d'un enrichissement, plus un `/standings` de
+  plus quand les deux equipes ne partagent pas de ligue. `Enjeu` etant retire, la densite
+  d'un bloc de coupe plafonne a 24/25 — sans effet sur le seuil de « bloc pauvre », qui est
+  la moitie.
+- Limite a connaitre : au 14/08/2026 aucun championnat n'avait joue cinq journees, donc les
+  neuf lignes de `/teams/statistics` restaient muettes de toute facon. Ce que la regle apporte
+  a cette date est le **classement**, c'est-a-dire l'ecart de division ; le reste arrive en
+  octobre.
 
 ## Le report d'un horaire, et ce qu'il dit avec l'alerte meteo
 
@@ -4409,3 +4526,30 @@ detail chiffre arrivait apres un ecran entier de prose.
   `<details>` y reste ; une prose reecrite, non. Les phrases n'ont donc pas bouge d'un mot
   la ou un test les nomme — et la ou l'une a du changer, c'est qu'elle disait deux fois le
   meme nombre que la tuile posee au-dessus d'elle.
+
+### L'export de la page (`services/stats_export.py`)
+
+La page n'etait consultable qu'a l'ecran : la faire relire ailleurs demandait d'enchainer
+les captures. `GET /api/stats/export?format=md|json` rend le meme etat des lieux en un
+fichier autoportant — Markdown pour un lecteur humain ou un modele, JSON pour une machine.
+
+- **Une seule source de calcul, et c'est tout l'enjeu.** `report()` assemble ce que la page
+  consomme, et la route HTML lit desormais son `context`. Rien n'est recalcule cote export :
+  un chiffre qui differerait entre l'ecran et le fichier serait pire que pas de fichier du
+  tout, puisque l'export existe justement pour faire relire ces chiffres-la. Effet de bord
+  du regroupement : le releve des scores en sets n'est plus fait deux fois par rendu de page.
+- **Chaque taux porte son denominateur et son intervalle.** A l'ecran l'effectif est a cote
+  de la barre et l'intervalle est dessine dessus ; le fichier n'a ni l'un ni l'autre, il les
+  ecrit. Un pourcentage seul, hors de la page, est exactement ce que cet export corrige.
+- **Les reserves voyagent avec les chiffres** (`StatsReport.warnings`) : sous-effectif,
+  population ecartee faute d'anteriorite, absence de cran calcule retroactif, recouvrement de
+  deux regroupements. Assemblees **une fois** et portees par les deux ecritures — deux
+  redactions cote a cote auraient fini par ne plus dire la meme chose.
+- **La parite se verifie sur les deux rendus reels**, jamais sur une table de correspondance
+  qui aurait vieilli de son cote : le test extrait les titres de la page servie et exige,
+  pour chacun, la section correspondante dans le fichier, **sous le meme bloc** — deux blocs
+  portent une carte « Par palier », et seul le couple les distingue. Il a attrape deux
+  manques a sa premiere execution : la carte « Coupons », et « Par type d'angle » dont
+  l'apostrophe echappee par Jinja ne s'appariait pas.
+- Le registre `SECTIONS` est le contrat, et `StatsReport.sections` dit ce que **ce** releve
+  rend : le fichier ne peut donc pas porter une section que la page tait, ni l'inverse.
