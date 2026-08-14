@@ -254,11 +254,16 @@ def test_un_bloc_quasi_vide_sans_source_est_ecarte(migrated: Settings) -> None:
 
 
 def test_un_bloc_pauvre_mais_rattache_est_une_piste(migrated: Settings) -> None:
+    """**Pauvre, et non vide** : la fixture d'origine montait un bloc a zero
+    ligne, qui releve du cinquieme cas — vide sans cause typee — et non du bloc
+    pauvre que ce test decrit. Elle disait l'etat du jour au lieu de la regle.
+    """
     _en_base(migrated, 502, 1)
     _aller(migrated, 502, buts_adversaire=1)
+    partiel = _dense()[: len(_dense()) // 4]
 
     fiche = research.sheet(
-        [_event(1, 502, context=[])] + [_event(i) for i in range(2, 22)], migrated
+        [_event(1, 502, context=partiel)] + [_event(i) for i in range(2, 22)], migrated
     )
 
     assert [item.index for item in fiche.dossiers] == [1]
@@ -566,3 +571,57 @@ def test_un_bloc_vide_faute_de_couverture_est_le_meilleur_dossier(migrated: Sett
     assert "non interrogés" in fiche.dossiers[0].motifs
     question = next(q for q in fiche.dossiers[0].questions if "non couverte" in q)
     assert "compte rendu" in question
+
+
+def test_une_source_injoignable_garde_un_budget_ordinaire(migrated: Settings) -> None:
+    """**Le motif dit pourquoi c'est vide, pas que ce sera rempli a temps.**
+
+    Mesure du 14/08/2026 : rien ne rejoue le contexte tout seul. Le
+    planificateur porte le scan, les sources gratuites et un balayage de
+    compositions — lequel exige un `apifootball_fixture_id`, donc ne peut meme
+    pas reparer le cas ou le rapprochement a echoue. Le coup d'envoi, lui, ne
+    recule pas.
+    """
+    _en_base(migrated, 703, 1)
+    context_service.record_outcome(703, context_service.CAUSE_UNREACHABLE, migrated)
+
+    fiche = research.sheet(
+        [_event(1, 703, context=[])] + [_event(i) for i in range(2, 22)], migrated
+    )
+
+    assert [item.index for item in fiche.dossiers] == [1]
+    assert "source injoignable" in fiche.dossiers[0].motifs
+    # Le meme poids qu'un bloc pauvre ordinaire : ni promu, ni ecarte.
+    assert fiche.dossiers[0].score == research.MEDIUM
+
+
+def test_un_bloc_vide_sans_cause_typee_est_un_dossier_fort(migrated: Settings) -> None:
+    """**Apres le typage, il ne devrait plus en exister.**
+
+    Les quatre causes couvrent le football entier ; s'il en reste un, c'est un
+    cinquieme cas que personne n'a nomme. Le ranger par defaut dans l'une des
+    quatre lui donnerait un budget decide au hasard — on ne sait pas pourquoi il
+    est vide, donc on ne peut pas affirmer qu'une recherche n'y servirait a rien.
+    """
+    _en_base(migrated, 704, 1)
+
+    fiche = research.sheet(
+        [_event(1, 704, context=[])] + [_event(i) for i in range(2, 22)], migrated
+    )
+
+    assert [item.index for item in fiche.dossiers] == [1]
+    assert "cause inconnue" in fiche.dossiers[0].motifs
+    assert fiche.dossiers[0].score == research.STRONG
+
+
+def test_un_bloc_de_tennis_vide_n_est_pas_un_cinquieme_cas(migrated: Settings) -> None:
+    """Le typage ne couvre que le football : le contexte sportif n'existe pas
+    ailleurs, et un bloc de tennis pauvre a d'autres sources. L'y ranger ferait
+    journaliser un defaut sur un comportement normal."""
+    fiche = research.sheet(
+        [_event(1, sport="tennis", context=[])] + [_event(i) for i in range(2, 22)],
+        migrated,
+    )
+
+    motifs = " ".join(item.motifs for item in fiche.dossiers)
+    assert "cause inconnue" not in motifs

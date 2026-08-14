@@ -242,6 +242,22 @@ Elle ne regarde aucune cote : trier sur le prix ne ferait jamais chercher là o�
 marché est confiant, donc ne ferait jamais trouver ce qui le contredit. Traite-les
 dans cet ordre, et dis en section F ceux que tu n'as pas ouverts.
 
+Un motif de bloc vide dit **ce que la recherche peut espérer**, et les quatre ne
+disent pas la même chose :
+
+  · **« non interrogés »** — le fournisseur ne couvre pas cette compétition, et
+    ne la couvrira pas. La recherche est le seul chemin : ces dossiers passent
+    devant.
+  · **« source injoignable »** — elle n'a pas répondu au dernier relevé. Rien ne
+    rejoue le contexte tout seul, et le coup d'envoi ne recule pas : traite ce
+    bloc comme un bloc pauvre ordinaire, sans attendre qu'il se remplisse.
+  · **« compétition non rattachée »**, **« fixture non résolue »** — personne n'a
+    posé la question, et ça se répare d'un geste hors analyse. Chercher n'y
+    remplace pas la collecte : ces dossiers passent en dernier.
+  · **« cause inconnue »** — le bloc est vide et l'application ne sait pas
+    pourquoi. Traite-le comme un dossier fort : on ne peut pas affirmer qu'une
+    recherche n'y servirait à rien.
+
 À CHERCHER EN PRIORITÉ
 {% for dossier in research.dossiers %}
 {{ loop.index }}. M{{ dossier.index }} {{ dossier.label }}  [{{ dossier.motifs }}]

@@ -354,6 +354,31 @@ def _density_reasons(event: RenderableEvent, labels: list[str], settings: Settin
                 "composition probable — rien d'autre ne les servira.",
             )
         ]
+    if part == 0 and event.sport_key == "football" and not cause:
+        # **Apres le typage, un bloc vide sans motif ne devrait plus exister.**
+        # Les quatre causes couvrent le football entier : s'il en reste un, c'est
+        # un cinquieme cas que personne n'a nomme, et le ranger par defaut dans
+        # l'une des quatre cases lui donnerait un budget decide au hasard.
+        #
+        # Traite en dossier fort — on ne sait pas pourquoi il est vide, donc on
+        # ne peut pas affirmer qu'une recherche n'y servirait a rien — et
+        # journalise, parce que c'est le typage qu'il faut reprendre, pas la
+        # fiche.
+        logger.warning(
+            "Bloc a 0 %% sans cause typee sur l'evenement %s (%s) : cinquieme cas, "
+            "le typage du contexte ne le couvre pas",
+            event.event_id,
+            event.home,
+        )
+        return [
+            Reason(
+                STRONG,
+                "bloc vide, cause inconnue",
+                "Bloc entierement vide et l'application ne sait pas pourquoi : "
+                "chercher un compte rendu du dernier match des deux equipes, et "
+                "verifier a la main que la rencontre a bien lieu.",
+            )
+        ]
     if part < BARREN_DENSITY and sterile:
         return [Reason(PENALTY, f"bloc quasi vide ({part} %) et aucune source", "")]
     if part < THIN_DENSITY:
@@ -362,11 +387,22 @@ def _density_reasons(event: RenderableEvent, labels: list[str], settings: Settin
         # la question precedente et ne disait pas ou aller ; deux questions
         # precises valent mieux que trois dont une est du remplissage — la meme
         # regle que « ne remplis jamais un palier avec du vide ».
+        #
+        # **« Source injoignable » passe ici, au budget ordinaire**, et c'est
+        # mesure : rien ne rejoue le contexte tout seul. Le planificateur ne
+        # porte que le scan, les sources gratuites et un balayage de
+        # compositions — lequel exige un `apifootball_fixture_id`, donc ne peut
+        # pas reparer le cas ou le rapprochement a echoue. Le motif dit pourquoi
+        # le bloc est vide, pas qu'il sera rempli a temps : le coup d'envoi ne
+        # recule pas parce qu'un enrichissement rejouera demain.
         manquantes = _missing(labels, event.sport_key)
+        motif = f"bloc pauvre ({part} %)"
+        if cause:
+            motif += f", {CAUSE_LABELS[cause]}"
         return [
             Reason(
                 MEDIUM,
-                f"bloc pauvre ({part} %)",
+                motif,
                 f"Bloc a {part} % : ni {', ni '.join(manquantes)}. "
                 "Chercher un compte rendu du dernier match des deux equipes.",
             )

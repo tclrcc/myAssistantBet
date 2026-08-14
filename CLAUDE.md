@@ -1727,6 +1727,27 @@ juge, sur les matchs qui paraissaient les plus lisibles, pas les plus rentables.
     designe **5 blocs, soit 1 %** — exactement les cinq de cette soiree. Voisins mesures
     avec : 2 a moins de deux, 9 a moins de quatre, 15 a moins de cinq. Un critere qui se
     declencherait partout ne classerait plus rien.
+- **Le motif d'un bloc vide classe, pas sa densite.** Depuis le typage du contexte, un
+  `0/26` dit **pourquoi** il est vide, et les quatre causes n'appellent pas le meme budget :
+  - `non interroges` — le fournisseur ne couvre pas la competition et ne la couvrira pas :
+    la recherche est le seul chemin, donc **dossier fort** ;
+  - `source injoignable` — **budget ordinaire**, comme un bloc pauvre. Le motif dit
+    pourquoi le bloc est vide, pas qu'il sera rempli a temps. Mesure du 14/08/2026 : rien
+    ne rejoue le contexte tout seul — le planificateur porte le scan, les sources
+    gratuites et un balayage de compositions, lequel exige un `apifootball_fixture_id` et
+    ne peut donc pas reparer le cas ou le rapprochement a echoue. Le coup d'envoi, lui, ne
+    recule pas parce qu'un enrichissement rejouera demain ;
+  - `competition non rattachee` et `fixture non resolue` — **aucun budget** : ca se repare
+    d'un geste hors analyse, et un dossier depense la est perdu.
+- **Le cinquieme cas se traite et se journalise.** Apres le typage, un bloc de football a
+  0 % sans cause ne devrait plus exister : les quatre causes couvrent le sport entier. S'il
+  en reste un, le ranger par defaut dans l'une des quatre lui donnerait un budget decide au
+  hasard — il devient donc **dossier fort** (on ne sait pas pourquoi il est vide, donc on ne
+  peut pas affirmer qu'une recherche n'y servirait a rien) et un avertissement nomme
+  l'evenement. C'est le typage qu'il faut reprendre, pas la fiche.
+  - **Scope au football**, et c'est indispensable : le contexte sportif n'existe pas
+    ailleurs, et un bloc de tennis pauvre a d'autres sources. L'y ranger ferait journaliser
+    un defaut sur un comportement normal.
 - **Ce que la fiche ne sait pas encore classer**, faute des chantiers qui fournissent la
   donnee : terrain neutre (P1-4), alerte meteo (P1-5), entraineur en poste depuis moins de
   trois mois — celui-la demanderait de relire une anciennete ecrite en prose, et un
