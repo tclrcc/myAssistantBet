@@ -25,12 +25,16 @@ from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import picks_import
 from myassistantbet.services.confidence import (
+    OPEN_ABSENT,
+    OPEN_MALFORMED,
+    OPEN_READ,
     Claim,
     ClaimError,
     Fact,
     parse,
     publisher_of,
     read_blocks,
+    read_opened,
 )
 from myassistantbet.services.history import (
     add_pick,
@@ -837,14 +841,18 @@ def test_l_ecrasement_arrive_en_base(migrated: Settings) -> None:
 
     ligne = db.query_one(
         "SELECT confidence, confidence_computed, confidence_claimed, research_overridden, "
-        "       source_level, facts_json FROM picks",
+        "       source_level, source_level_effective, facts_json FROM picks",
         settings=migrated,
     )
     assert ligne["confidence"] == 4, "l'annonce reste ecrite telle quelle"
     assert ligne["confidence_computed"] == 1, "le verdict final"
     assert ligne["confidence_claimed"] == 5, "ce que la declaration aurait donne"
     assert ligne["research_overridden"] == 1
-    assert ligne["source_level"] == "lecture"
+    # **Les deux declarations sont les entrees de la mesure, et rien ne les
+    # ecrase.** L'ecraser ferait mesurer a la page sa propre correction : un
+    # accord parfait entre ce que l'application a ecrit et ce qu'elle relit.
+    assert ligne["source_level"] == "1", "l'annonce de niveau reste ecrite telle quelle"
+    assert ligne["source_level_effective"] == "lecture", "l'effectif vit a cote"
     assert "motherwellfc.co.uk" in ligne["facts_json"], (
         "les faits restent en base : c'est la trace de la fabrication"
     )
@@ -1011,3 +1019,164 @@ def test_un_dossier_hors_ordre_propose_est_compte_sans_etre_juge(
     assert ligne.opened == 2
     assert ligne.on_priority == 1
     assert "dont 1 hors ordre proposé" in ligne.priority_line
+
+
+# -- La declaration reste l'entree de la mesure -----------------------------
+
+
+def test_un_dossier_ouvert_sans_fait_reste_une_lecture(migrated: Settings) -> None:
+    """**La regle est a sens unique : la presence n'accorde rien.**
+
+    Un dossier ouvert dont l'analyse ne tire aucun fait date **est** une lecture
+    des blocs — c'est le resultat de la recherche, pas son absence, et il se
+    note pareil. Sans cette moitie, ouvrir un dossier suffirait a se noter au
+    dessus de la lecture sans avoir rien trouve.
+    """
+    session_id = _session(migrated)
+    add_pick(
+        session_id,
+        "safe",
+        "1N2",
+        "Lyon",
+        confidence="3",
+        source_level="2",
+        claim=_bloc(source_level=2, faits=[], manque_touche_facteur=False),
+        opened=True,
+        settings=migrated,
+    )
+
+    ligne = db.query_one(
+        "SELECT source_level, source_level_effective, confidence, confidence_computed, "
+        "       research_overridden FROM picks",
+        settings=migrated,
+    )
+    assert ligne["source_level"] == "2", "l'annonce reste intacte"
+    assert ligne["source_level_effective"] == "lecture"
+    assert ligne["confidence"] == 3
+    assert ligne["confidence_computed"] == 1
+    assert not ligne["research_overridden"], "le dossier a bien ete ouvert : rien n'est ecrase"
+
+
+def test_un_dossier_ouvert_avec_un_fait_garde_son_niveau(migrated: Settings) -> None:
+    """L'autre moitie de la regle : la presence n'accorde rien, mais elle
+    n'enleve rien non plus a une declaration qui porte un fait date."""
+    session_id = _session(migrated)
+    add_pick(
+        session_id,
+        "safe",
+        "1N2",
+        "Lyon",
+        confidence="3",
+        source_level="2",
+        claim=_bloc(
+            source_level=2,
+            faits=[_fait("motherwellfc.co.uk")],
+            manque_touche_facteur=False,
+        ),
+        opened=True,
+        settings=migrated,
+    )
+
+    ligne = db.query_one(
+        "SELECT source_level, source_level_effective, confidence_computed FROM picks",
+        settings=migrated,
+    )
+    assert ligne["source_level"] == ligne["source_level_effective"] == "2"
+    # Un fait dominant sans manque qui touche le facteur : la table donne 4.
+    assert ligne["confidence_computed"] == 4
+
+
+def test_une_saisie_a_la_main_n_est_jamais_ecrasee(migrated: Settings) -> None:
+    """`opened` a trois etats, et `None` veut dire « on ne sait pas ».
+
+    L'override juge une declaration de modele, pas un geste humain : un
+    formulaire sans la question ne doit pas ramener la ligne en lecture.
+    """
+    session_id = _session(migrated)
+    add_pick(session_id, "safe", "1N2", "Lyon", confidence="3", source_level="2", settings=migrated)
+
+    ligne = db.query_one(
+        "SELECT source_level, source_level_effective, research_overridden FROM picks",
+        settings=migrated,
+    )
+    assert ligne["source_level"] == ligne["source_level_effective"] == "2"
+    assert ligne["research_overridden"] is None
+
+
+def test_une_ligne_illisible_ne_se_confond_pas_avec_une_ligne_absente() -> None:
+    """**Deux defauts differents que le meme repli confondait.**
+
+    Le modele qui omet la ligne et le lecteur qui echoue a la relire envoient
+    tous deux le lot en lecture, mais l'un se reprend dans le gabarit et l'autre
+    dans le lecteur — et leur somme se lirait comme un seul taux.
+    """
+    assert read_opened("dossiers_ouverts: [M1, M4]").state == OPEN_READ
+    assert read_opened("dossiers_ouverts: []").state == OPEN_READ
+    # La cle est la, sa valeur ne se relit pas : defaut de lecteur.
+    assert read_opened("dossiers_ouverts: M1, M4").state == OPEN_MALFORMED
+    assert read_opened("Rien de structure ici.").state == OPEN_ABSENT
+    # Les trois envoient le lot en lecture, et deux d'entre elles le disent
+    # differemment : le message nomme le defaut, pas seulement son effet.
+    assert not read_opened("dossiers_ouverts: M1").declared
+    assert "ne se relit pas" in read_opened("dossiers_ouverts: M1").note
+    assert "Aucune ligne" in read_opened("rien").note
+
+
+def test_l_etat_de_la_ligne_est_journalise(migrated: Settings) -> None:
+    """Sans lui, les deux defauts se comptent ensemble et rien ne les separe."""
+    session_id = _session(migrated)
+    set_open_dossiers(session_id, set(), migrated, state=OPEN_MALFORMED)
+
+    ligne = db.query_one(
+        "SELECT open_dossiers, open_dossiers_state FROM sessions WHERE id = ?",
+        (session_id,),
+        settings=migrated,
+    )
+    assert ligne["open_dossiers"] is None
+    assert ligne["open_dossiers_state"] == OPEN_MALFORMED
+
+
+def test_un_etat_hors_vocabulaire_vaut_non_renseigne(migrated: Settings) -> None:
+    """Meme regle que l'angle et le niveau de source : une valeur inattendue
+    vaut « on ne sait pas », jamais un refus ni un quatrieme etat en base."""
+    session_id = _session(migrated)
+    set_open_dossiers(session_id, set(), migrated, state="n'importe quoi")
+
+    ligne = db.query_one(
+        "SELECT open_dossiers_state FROM sessions WHERE id = ?", (session_id,), settings=migrated
+    )
+    assert ligne["open_dossiers_state"] is None
+
+
+def test_une_recherche_qui_n_a_pas_eu_lieu_se_compte(migrated: Settings) -> None:
+    """**Ce n'est pas un cran mal note, c'est une recherche qui n'a pas eu lieu.**
+
+    Un fait cite avec son editeur suppose une page ouverte ; sur un dossier que
+    l'analyse declare n'avoir pas ouvert, c'est cette page-la qui n'existe pas.
+    Le compte se lit donc sur les faits declares et non sur le cran revendique —
+    un cran 2 adosse a un fait invente compte ici et pas dans `fabricated`.
+    """
+    session_id = _session(migrated)
+    # La premiere cite un editeur mais reste un cran 3 — un manque touche son
+    # facteur porteur. La seconde ne cite rien. Aucune des deux n'est un cran
+    # haut : c'est ce qui separe les deux compteurs.
+    for faits in ([_fait("motherwellfc.co.uk")], []):
+        pick_id = add_pick(
+            session_id,
+            "safe",
+            "1N2",
+            f"Lyon {len(faits)}",
+            confidence="2",
+            claim=_bloc(source_level=2, faits=faits, manque_touche_facteur=True),
+            opened=False,
+            independence_note="angles indépendants (fixture)",
+            settings=migrated,
+        )
+        set_result(pick_id, "win", migrated)
+
+    report = analysis(migrated)
+
+    assert report.override.total == 2
+    assert report.override.researched == 1, "seule celle qui cite un editeur"
+    assert report.override.fabricated == 0, "aucun cran haut : les deux comptes different"
+    assert "1 citent un éditeur sans que le dossier ait été ouvert" in report.override.line

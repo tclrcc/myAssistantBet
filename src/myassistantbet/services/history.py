@@ -21,7 +21,7 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from .competitions import category_label, category_rank
-from .confidence import Claim, ClaimError
+from .confidence import OPEN_ABSENT, OPEN_MALFORMED, OPEN_READ, Claim, ClaimError
 from .confidence import parse as parse_claim
 from .inference import (
     ALPHA,
@@ -45,6 +45,13 @@ from .market_families import market_key as _market_key
 from .thresholds import value_of as threshold_value
 
 logger = logging.getLogger(__name__)
+
+#: Les trois issues de la ligne `dossiers_ouverts`, telles que la session les
+#: garde. Une valeur hors de cet ensemble vaut « on ne sait pas » : le vocabulaire
+#: est celui du lecteur, ecrit une fois, et la base ne doit pas porter un
+#: quatrieme etat qu'aucun code ne sait produire.
+OPEN_STATES = (OPEN_READ, OPEN_ABSENT, OPEN_MALFORMED)
+
 
 RESULTS = ("pending", "win", "loss", "void")
 RESULT_LABELS = {
@@ -817,9 +824,13 @@ _NUMBERED_HEADER = re.compile(r"^### (M\d+) · (.+)$", re.MULTILINE)
 
 
 def set_open_dossiers(
-    session_id: int, marks: frozenset[str] | set[str], settings: Settings | None = None
+    session_id: int,
+    marks: frozenset[str] | set[str],
+    settings: Settings | None = None,
+    state: str = "",
 ) -> None:
-    """Memorise les dossiers que le rendu declare avoir ouverts.
+    """Memorise les dossiers que le rendu declare avoir ouverts, et ce qui est
+    arrive a la ligne.
 
     **La liste entiere, et pas seulement son effet ligne par ligne.** Un dossier
     ouvert qui n'a produit aucune selection ne laisse aucune trace dans `picks`,
@@ -827,12 +838,22 @@ def set_open_dossiers(
     que l'application avait propose : un ecart systematique entre les deux dirait
     que le tri par « ce qu'une recherche peut y changer » ne sert a rien.
 
+    `state` separe **deux defauts qu'un meme repli confondait** : une ligne omise
+    et une ligne qu'on ne sait pas relire envoient toutes deux le lot en lecture,
+    mais l'un se reprend dans le gabarit et l'autre dans le lecteur. Une valeur
+    hors vocabulaire vaut « on ne sait pas » plutot qu'un refus — meme regle que
+    l'angle et le niveau de source.
+
     Ecrase a chaque lecture : le dernier rendu colle decrit l'analyse en cours.
     """
     with connect(settings) as conn:
         conn.execute(
-            "UPDATE sessions SET open_dossiers = ? WHERE id = ?",
-            (" ".join(sorted(marks, key=lambda mark: int(mark[1:]))) or None, session_id),
+            "UPDATE sessions SET open_dossiers = ?, open_dossiers_state = ? WHERE id = ?",
+            (
+                " ".join(sorted(marks, key=lambda mark: int(mark[1:]))) or None,
+                state if state in OPEN_STATES else None,
+                session_id,
+            ),
         )
 
 
@@ -1535,11 +1556,23 @@ def add_pick(
     #
     # `None` veut dire « on ne sait pas » et n'ecrase rien : c'est le cas de la
     # saisie a la main, qui est un geste humain et non une declaration de modele.
+    #
+    # **La declaration reste intacte.** `source_level` et `confidence` sont les
+    # **entrees** de la mesure ; l'effectif et le cran calcule vivent a cote. Les
+    # ecraser ferait mesurer a la page sa propre correction — un accord parfait
+    # entre ce que l'application a ecrit et ce qu'elle relit.
     claimed = declaration.rung if declaration is not None else None
     computed = claimed
     overridden = opened is False
+    effective = source_value
     if overridden:
-        source_value, computed = READING_LEVEL, FORCED_RUNG
+        effective, computed = READING_LEVEL, FORCED_RUNG
+    elif opened and declaration is not None and not declaration.facts:
+        # **La regle est a sens unique.** L'absence de dossier force la lecture ;
+        # la presence n'accorde rien. Un dossier ouvert dont l'analyse ne tire
+        # aucun fait date **est** une lecture des blocs — c'est le resultat de la
+        # recherche, pas son absence, et il se note pareil.
+        effective, computed = READING_LEVEL, FORCED_RUNG
     # D'ou vient la cote recopiee. Facultative comme les deux precedentes : une
     # valeur inconnue vaut « on ne sait pas », jamais un refus.
     price_origin = _vocabulary(price_source, PRICE_SOURCES)
@@ -1618,11 +1651,12 @@ def add_pick(
         cursor = conn.execute(
             "INSERT INTO picks (session_id, event_id, tier, market, selection, price, "
             "                   confidence, played, stake, result, angle, source_level, "
+            "                   source_level_effective, "
             "                   price_source, independence_note, market_key, "
             "                   late_reason, confidence_computed, facts_json, "
             "                   gap_touches_factor, distinct_publishers, "
             "                   confidence_claimed, research_overridden, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 attached,
@@ -1636,6 +1670,7 @@ def add_pick(
                 result,
                 angle_value,
                 source_value,
+                effective,
                 price_origin,
                 note or None,
                 resolved,
@@ -3107,6 +3142,17 @@ class Override:
     total: int = 0
     #: `(cran revendique, compte)`, du plus frequent au moins.
     claimed: list[tuple[int, int]] = field(default_factory=list)
+    #: Selections hors dossiers ouverts qui declarent quand meme **un fait date
+    #: avec son editeur**. Ce n'est pas un cran mal note : c'est une recherche
+    #: qui n'a pas eu lieu. Le compte se lit sur les faits declares plutot que
+    #: sur le cran revendique — un 3 peut venir d'un seul fait, un fait cite
+    #: avec son editeur suppose une page ouverte, et c'est cette page-la qui
+    #: n'existe pas.
+    #:
+    #: Distinct de `fabricated`, qui compte les crans hauts : les deux
+    #: recouvrent souvent les memes lignes, mais l'un decrit une note et l'autre
+    #: un geste. Un cran 2 adosse a un fait invente compte ici et pas la-bas.
+    researched: int = 0
     #: Seuil a partir duquel un cran revendique suppose des faits produits. Un
     #: 4 demande un fait date verifie, un 5 en demande deux d'editeurs
     #: distincts : au-dela de 3, l'analyse n'a pas seulement gonfle son niveau,
@@ -3127,7 +3173,12 @@ class Override:
             if self.fabricated
             else ""
         )
-        return f"{self.total} sélection(s) ramenée(s) en lecture — {detail}{fabrique}"
+        cherche = (
+            f" · {self.researched} citent un éditeur sans que le dossier ait été ouvert"
+            if self.researched
+            else ""
+        )
+        return f"{self.total} sélection(s) ramenée(s) en lecture — {detail}{fabrique}{cherche}"
 
 
 def _override(rows: list[Any], results: list[str]) -> Override:
@@ -3144,6 +3195,8 @@ def _override(rows: list[Any], results: list[str]) -> Override:
         rung = _column(row, "confidence_claimed") or _column(row, "confidence")
         if rung is not None:
             tally[int(rung)] = tally.get(int(rung), 0) + 1
+        if (_column(row, "distinct_publishers") or 0) > 0:
+            found.researched += 1
     found.claimed = sorted(tally.items(), key=lambda item: (-item[1], -item[0]))
     return found
 
@@ -3200,11 +3253,21 @@ def analysis(settings: Settings | None = None) -> Analysis:
         }
         rows = conn.execute(
             "SELECT k.id, k.session_id, k.tier, k.result, k.market, k.confidence, k.played, "
-            "       k.event_id, k.created_at, k.price, k.angle, k.source_level, "
+            "       k.event_id, k.created_at, k.price, k.angle, "
+            # **La carte lit l'effectif, jamais la declaration.** Un niveau
+            # annonce sur un dossier que l'analyse declare n'avoir pas ouvert
+            # decrit ce qu'elle croyait avoir ; la question de la page est ce
+            # sur quoi la selection reposait vraiment. La declaration reste en
+            # base a cote, c'est elle l'entree de la mesure d'ecart.
+            "       COALESCE(k.source_level_effective, k.source_level) AS source_level, "
             "       k.price_source, k.price_real, k.tier_real, "
             # Le cran calcule, a cote du cran annonce. Les deux sont lus dans la
             # meme passe : leur ecart est une mesure, pas un sous-produit.
             "       k.confidence_computed, k.confidence_claimed, k.research_overridden, "
+            # Les faits **declares**, pour compter les recherches qui n'ont pas
+            # eu lieu : un editeur cite suppose une page ouverte, et sur un
+            # dossier non ouvert c'est cette page-la qui n'existe pas.
+            "       k.distinct_publishers, "
             # L'heure du coup d'envoi : c'est elle qui decide si le prix
             # enregistre est un prix d'avant-match. Voir `_antecedence`.
             "       e.commence_time, "

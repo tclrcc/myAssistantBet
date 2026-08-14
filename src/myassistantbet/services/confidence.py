@@ -304,8 +304,23 @@ class Reading:
 #: expliquent pourquoi. La prose garde son travail a cote.
 OPEN_LINE = re.compile(r"dossiers_ouverts\"?\s*:\s*\[([^\]]*)\]", re.IGNORECASE)
 
+#: La **cle** seule, sans sa valeur. Elle separe deux defauts que le repli
+#: confondait : le modele qui omet la ligne, et la ligne presente dont la valeur
+#: ne se relit pas. Les deux produisent le meme repli — tout le lot en lecture —
+#: mais ni la meme cause ni le meme correctif : l'un se reprend dans le gabarit,
+#: l'autre dans le lecteur. Leur somme se lirait comme un seul taux.
+OPEN_KEY = re.compile(r"dossiers_ouverts", re.IGNORECASE)
+
 #: Un repere de bloc, tel que le prompt les numerote.
 MARK = re.compile(r"M\d+")
+
+#: La ligne a ete lue. Ses reperes peuvent etre vides — c'est une declaration.
+OPEN_READ = "lue"
+#: Aucune trace de la cle dans le rendu : le gabarit ne l'a pas fait ecrire, ou
+#: le modele l'a omise.
+OPEN_ABSENT = "absente"
+#: La cle est la, sa valeur ne se relit pas. Defaut de lecteur, pas de modele.
+OPEN_MALFORMED = "illisible"
 
 
 @dataclass(frozen=True)
@@ -321,13 +336,31 @@ class Opened:
     """
 
     marks: frozenset[str] = frozenset()
-    #: La ligne etait presente et lisible. **Faux n'est pas « aucun dossier »** :
-    #: une liste vide est une declaration, une ligne absente est un manque, et
-    #: les deux appellent le meme traitement mais pas le meme message.
-    declared: bool = False
+    #: Ce qui est arrive a la ligne : `lue`, `absente` ou `illisible`.
+    #:
+    #: **Trois etats et non deux.** Une ligne omise et une ligne qu'on ne sait
+    #: pas relire produisent le meme repli — tout le lot en lecture — mais ni la
+    #: meme cause ni le meme correctif, et leur somme se lirait comme un seul
+    #: taux. C'est la meme regle que les trois etats de la ligne `Absents`.
+    state: str = OPEN_ABSENT
+
+    @property
+    def declared(self) -> bool:
+        """La ligne etait presente **et** lisible.
+
+        **Vrai n'est pas « des dossiers »** : une liste vide est une
+        declaration, et elle se traite comme une ligne absente sans porter le
+        meme message.
+        """
+        return self.state == OPEN_READ
 
     @property
     def note(self) -> str:
+        if self.state == OPEN_MALFORMED:
+            return (
+                "La ligne « dossiers_ouverts » est présente mais sa liste ne se relit "
+                "pas : toutes les sélections sont enregistrées en lecture, cran 1."
+            )
         if not self.declared:
             return (
                 "Aucune ligne « dossiers_ouverts: [M1, M4, …] » dans le rendu : toutes "
@@ -342,11 +375,19 @@ class Opened:
 
 
 def read_opened(raw: str) -> Opened:
-    """Lit la ligne des dossiers ouverts. Absente, elle ne se devine pas."""
+    """Lit la ligne des dossiers ouverts. Absente, elle ne se devine pas.
+
+    **Trois issues, parce que deux defauts differents s'y confondaient.** La cle
+    seule dit que le modele a repondu ; sa valeur dit que nous savons la lire. Un
+    rendu qui ecrit `dossiers_ouverts: M1, M4` sans crochets passait pour une
+    ligne omise, et le gabarit se faisait accuser d'un defaut de lecteur.
+    """
     found = OPEN_LINE.search(raw or "")
-    if found is None:
-        return Opened()
-    return Opened(marks=frozenset(MARK.findall(found.group(1).upper())), declared=True)
+    if found is not None:
+        return Opened(marks=frozenset(MARK.findall(found.group(1).upper())), state=OPEN_READ)
+    if OPEN_KEY.search(raw or ""):
+        return Opened(state=OPEN_MALFORMED)
+    return Opened(state=OPEN_ABSENT)
 
 
 def read_blocks(raw: str) -> Reading:

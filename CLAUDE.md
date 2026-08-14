@@ -3996,6 +3996,54 @@ calcul. Une colonne libre etait inoffensive parce qu'on la savait molle.
   **legitime**, la section F demande justement de le dire ; c'est un ecart systematique qui
   dirait que le tri par « ce qu'une recherche peut y changer » ne sert a rien.
 
+### La declaration reste l'entree de la mesure (migration 045)
+
+**`source_level` etait ecrase** par l'override : la valeur declaree disparaissait au profit
+de `lecture`, et la colonne cessait d'etre une declaration de modele pour devenir une sortie
+de l'application. La carte « par niveau de source » mesurait alors sa propre correction.
+
+- `source_level` et `confidence` sont les **entrees** ; `source_level_effective` et
+  `confidence_computed` vivent a cote. L'ecart entre les deux ne se stocke pas : les deux
+  colonnes sont la, leur difference est une soustraction, et la recopier l'aurait fait
+  diverger — meme regle que la famille d'un marche ou le niveau d'une competition.
+- **La carte lit l'effectif, la mesure d'ecart lit les deux.** Un niveau annonce sur un
+  dossier non ouvert decrit ce que l'analyse croyait avoir ; la question de la page est ce
+  sur quoi la selection reposait vraiment.
+- **Retro-remplissage sur, et c'est mesure** : `research_overridden` etait NULL sur les 149
+  selections, donc l'ecrasement n'avait **jamais** tourne et aucune valeur declaree n'a ete
+  perdue. L'effectif vaut le declare partout.
+
+**La regle est a sens unique.** L'absence de dossier force la lecture ; la presence
+n'accorde rien. Un dossier ouvert dont l'analyse ne tire **aucun fait date** est une lecture
+des blocs — c'est le resultat de la recherche, pas son absence, et il se note pareil. Sans
+cette moitie, ouvrir un dossier suffirait a se noter au-dessus de la lecture sans avoir rien
+trouve.
+
+**`Override.researched` compte les recherches qui n'ont pas eu lieu** : une selection hors
+dossiers ouverts qui cite quand meme un fait date **avec son editeur**. Ce n'est pas un cran
+mal note — un editeur cite suppose une page ouverte, et c'est cette page-la qui n'existe pas.
+Distinct de `fabricated`, qui compte les crans hauts : les deux recouvrent souvent les memes
+lignes, mais l'un decrit une note et l'autre un geste, et un cran 3 adosse a un fait invente
+compte ici et pas la-bas.
+
+**Trois etats pour la ligne `dossiers_ouverts`**, la ou un NULL en confondait deux : `lue`,
+`absente`, `illisible`. Le modele qui omet la ligne et le lecteur qui echoue a la relire
+produisent le meme repli — tout le lot en lecture — mais ni la meme cause ni le meme
+correctif, l'un se reprenant dans le gabarit et l'autre dans le lecteur ; leur somme se
+lirait comme un seul taux. Un rendu qui ecrit `dossiers_ouverts: M1, M4` sans crochets
+passait pour une ligne omise, et le gabarit se faisait accuser d'un defaut de lecteur.
+
+**Date de bascule : 14/08/2026, et aucun recalcul retroactif n'est possible.** Les neuf
+sessions de la base portent `open_dossiers` a NULL — la colonne date de la veille et aucune
+session n'a ete importee depuis. `confidence_computed`, `confidence_claimed` et
+`research_overridden` sont a **0 sur 149** : toute cette machinerie n'a jamais recu une seule
+entree. La population « confiance annoncee » change donc de composition a partir de cette
+date, comme celle de `lecture` l'a fait pour l'EFL Cup.
+
+**Attendu, et ce n'est pas une regression** : `lecture` est le cas ordinaire selon le
+preambule, et la confiance 1 — absente des 149 premieres selections — deviendra
+probablement majoritaire. C'est la mesure qui commence, pas la notation qui se degrade.
+
 **Defaut trouve par un test existant, et il valait pour tout le chantier precedent** :
 `ImportPreview.ignored` **garde le rendu du tableau entier**. Y verser une remarque —
 un bloc de confiance rejete, un appariement refuse, un dossier non ouvert — faisait

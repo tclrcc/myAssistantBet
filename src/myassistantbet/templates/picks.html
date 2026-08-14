@@ -48,6 +48,10 @@
        n'écrit rien, c'est l'import qui la mémorise. #}
     <input type="hidden" name="open_dossiers"
            value="{{ preview.opened.marks | sort | join(' ') }}">
+    {# Ce qui est arrivé à la ligne voyage avec elle : une ligne omise et une
+       ligne qu'on ne sait pas relire produisent le même repli, et leur somme se
+       lirait comme un seul taux. #}
+    <input type="hidden" name="open_dossiers_state" value="{{ preview.opened.state }}">
     <table class="board import-table">
       <thead>
         <tr>

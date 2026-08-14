@@ -1123,7 +1123,10 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
     # rien : elle inclut les dossiers ouverts qui n'ont produit aucune
     # selection, et c'est elle qui se compare a l'ordre de passage propose.
     history_service.set_open_dossiers(
-        session_id, set(form.get("open_dossiers", "").split()), settings
+        session_id,
+        set(form.get("open_dossiers", "").split()),
+        settings,
+        state=form.get("open_dossiers_state", ""),
     )
     created, failures = 0, []
     for index in sorted({key.split("_")[-1] for key in form if key.startswith("keep_")}):
