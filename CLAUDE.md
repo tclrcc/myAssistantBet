@@ -3617,6 +3617,55 @@ qui font la regle :
 - **C'est ce qui rend `as_of` honnete plutot que decoratif.** Une lecture faite
   sur une copie datee porte vraiment la date qu'elle affiche.
 
+## Le biais d'exposition : resultat negatif, et la lecture ne le tranchera jamais
+
+**Question posee le 14/08/2026** : un match rendu plusieurs fois dans la meme session
+traverse plusieurs lots analyses par des instances qui s'ignorent. La selection retenue
+dessus est-elle le **maximum de N tirages** — donc un biais — ou une **convergence** —
+donc un signal ? Mesure du 14/08/2026 sur les 103 selections tranchees a anteriorite
+etablie, exposition reconstituee pour les 103.
+
+- **Resultat : rien.** Tendance du residu au prix avec le nombre de rendus,
+  `z = +0,435`, `p = 0,664` **bilateral**. Le signe est positif — les matchs tres vus
+  feraient plutot mieux, donc convergence — mais un signe a `p = 0,66` ne se lit pas.
+  Le residu par valeur exacte de rendus n'est d'ailleurs pas monotone : `-3,8` a un
+  rendu, `-5,2` a deux, `+1,5` a quatre, `-1,8` a huit.
+  - Bilateral, et c'est une condition : le sens n'etait predit ni dans un sens ni dans
+    l'autre. Prendre l'unilateral apres avoir vu le signe reviendrait a diviser le seuil.
+  - Une **tendance** et non des tranches comparees : le nombre de rendus est une variable
+    ordonnee, donc une seule statistique et aucune multiplicite. Un seuil « vu une fois
+    contre vu N fois » choisi apres avoir regarde aurait ete le `p = 0,0148` une seconde
+    fois.
+- **Les deux chiffres de puissance, et c'est eux qui concluent** : cet echantillon ne
+  detecte qu'une pente `|b| >= 0,267` par rendu — environ **6,7 points de probabilite par
+  rendu supplementaire**, soit 47 points entre un match vu une fois et un match vu huit
+  fois. Aucune hypothese plausible ne predit un effet pareil. Et pour etablir l'effet
+  **de la taille observee**, il faudrait **~2 100 selections**, vingt fois la base.
+  - Les deux disent la meme chose dans deux directions : **l'echantillon ne peut voir
+    qu'un effet enorme, et l'effet observe est minuscule.** Ce n'est donc pas « pas assez
+    de donnees », c'est un **plan d'observation inadapte**.
+- **La raison de fond, et elle est definitive : l'exposition est presque collineaire a la
+  competition.** Elle ne mesure pas la taille de l'affiche mais **le decoupage** — un
+  match vu huit fois est un match dont la competition a ete fractionnee en huit prompts ce
+  jour-la. Conference League 5,8 rendus en moyenne, Europa League 4,2, tournois de tennis
+  2,2 a 2,3, tout le reste 1,0 a 2,0 ; au-dessus de la mediane, 32 % des selections
+  tiennent sur la seule Europa League. Deux des cinq competitions fournies n'ont **aucune
+  variation d'exposition** — la Champions League Qualification est a 2 partout — donc
+  elles n'apportent rien a l'estimation de la pente.
+  - **Aucun volume de lecture ne separera les deux.** Ce qui trancherait est une variation
+    d'exposition **a competition fixee**, c'est-a-dire un decoupage volontairement varie :
+    une **intervention**, pas une lecture. Refaire cette mesure avec plus de donnees ne
+    changera rien tant que le decoupage reste subi.
+  - Le palier, lui, ne confond rien : 3,0 rendus moyens en SAFE, 2,4 en FUN, 3,2 en ULTRA.
+- **Reserve** : les sept premieres sessions n'ont pas de `prompt_events`, et leur
+  exposition a ete reconstruite depuis les en-tetes de prompts archives, **par affiche**.
+  Deux rencontres homonymes le meme jour n'en feraient qu'une. Aucune n'a ete detectee,
+  mais le rattachement y est moins sur que sur les sessions 8 a 11.
+- **Ce que ca implique pour le reste de la page** : la mesure n'exclut pas un biais, mais
+  elle montre que s'il existe, il est trop petit pour expliquer quoi que ce soit de ce qui
+  est mesure ailleurs. Le deficit de `conf 3` vaut `-11,1` sur 53 ; un biais d'exposition
+  de la taille observee ne le deplacerait pas de facon perceptible.
+
 ## Un rythme de saisie n'est pas un resultat
 
 Une question du genre « dans combien de sessions saurai-je » repond a une
