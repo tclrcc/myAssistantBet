@@ -1136,3 +1136,43 @@ def test_un_fuseau_vide_efface_la_saisie(migrated: Settings) -> None:
         "SELECT timezone FROM competitions WHERE id = ?", (competition_id,), settings=migrated
     )
     assert row["timezone"] is None
+
+
+def test_les_trois_competitions_de_la_passe_sont_rattachees() -> None:
+    """Trois compétitions muettes, et **aucune ligne ne le disait**.
+
+    La Saudi Pro League reprenait le 13/08/2026 apres la treve : ses trois matchs
+    du 14/08 sont sortis a `0/26` ligne de contexte. L'EFL Cup portait deja
+    34 evenements en base, dont un parti a l'analyse avec une selection prise
+    dessus. Verifie le 14/08/2026, une ligue a la fois, contre `/leagues` filtre
+    par pays — jamais devine d'un libelle.
+    """
+    assert APIFOOTBALL_LEAGUES["soccer_saudi_arabia_pro_league"] == 307
+    assert APIFOOTBALL_LEAGUES["soccer_germany_dfb_pokal"] == 81
+    # Le fournisseur ne la nomme pas « EFL Cup » mais « League Cup ». Le
+    # rapprochement par libelle aurait donc echoue ici aussi.
+    assert APIFOOTBALL_LEAGUES["soccer_england_efl_cup"] == 48
+
+
+def test_les_agregats_domestiques_supposent_un_rattachement() -> None:
+    """Lire les agregats ailleurs suppose d'avoir rapproche le match d'abord.
+
+    Une cle declaree dans `DOMESTIC_AGGREGATES` mais absente de la table des
+    ligues ne produirait aucun bloc du tout : la regle porterait sur une
+    competition qui n'arrive jamais jusqu'a elle.
+    """
+    orphelines = competitions_module.DOMESTIC_AGGREGATES - set(APIFOOTBALL_LEAGUES)
+    assert orphelines == set()
+
+
+def test_les_agregats_domestiques_se_declarent_et_ne_se_deduisent_pas() -> None:
+    """La regle se lit sur une table, jamais sur un drapeau du fournisseur.
+
+    `coverage.standings` decrit ce que le fournisseur sert, pas la nature de la
+    competition : s'en servir laisserait la couverture decider de la methode, et
+    embarquerait la Conference League — qui l'annonce a faux — sans mesure.
+    """
+    assert competitions_module.reads_domestic_aggregates("soccer_germany_dfb_pokal")
+    assert not competitions_module.reads_domestic_aggregates("soccer_saudi_arabia_pro_league")
+    assert not competitions_module.reads_domestic_aggregates("soccer_uefa_europa_conference_league")
+    assert not competitions_module.reads_domestic_aggregates(None)

@@ -775,7 +775,61 @@ APIFOOTBALL_LEAGUES: dict[str, int] = {
     # portera donc la forme, les confrontations et le lieu, et dira lui-meme ce
     # qu'il n'a pas.
     "soccer_concacaf_leagues_cup": 772,
+    # Verifie le 14/08/2026 : `/leagues?country=Saudi-Arabia` rend sept lignes,
+    # dont « Pro League » (307), type League, saison courante 2026 du 13/08/2026
+    # au 28/05/2027. Couverture annoncee : `standings`, `lineups` et
+    # `statistics_fixtures` vrais, `injuries` et `top_scorers` faux.
+    #
+    # Son absence d'ici est ce qui a rendu **trois matchs du 14/08 muets a 0/26**
+    # sans qu'aucune ligne ne le signale : sans identifiant de ligue,
+    # `context_possible` est faux et aucun appel n'est jamais emis. La reprise du
+    # championnat, le 13/08, etait sa premiere apparition depuis la treve.
+    "soccer_saudi_arabia_pro_league": 307,
+    # Verifie le 14/08/2026 : `/leagues?country=Germany&type=cup` rend « DFB
+    # Pokal » (81), saison 2026. Le fournisseur y annonce **tout a faux** —
+    # `standings`, `injuries`, `lineups`, `statistics_fixtures` — et les
+    # 32 fixtures du tour relevees ce jour-la portent toutes un arbitre nul.
+    # C'est ce qui a decide `DOMESTIC_AGGREGATES` : rattachee seule, la
+    # competition ne ramenerait que l'affiche, le lieu et les confrontations.
+    "soccer_germany_dfb_pokal": 81,
+    # Verifie le 14/08/2026 : `/leagues?country=England&type=cup` rend « League
+    # Cup » (48) — le fournisseur ne la nomme pas « EFL Cup » —, saison 2026,
+    # `lineups` et `statistics_fixtures` vrais, `standings` et `injuries` faux.
+    # Elle portait deja 34 evenements en base, dont un parti a l'analyse et une
+    # selection prise dessus, tous sans contexte et sans que rien ne le dise.
+    "soccer_england_efl_cup": 48,
 }
+
+
+#: Competitions dont les **agregats de saison** se lisent dans le championnat
+#: domestique de chaque equipe, et non dans la competition du match.
+#:
+#: `/teams/statistics` et `/standings` sont scopes a une competition. Sur une
+#: coupe, cela ne decrit rien : les participants y ont joue un ou deux matchs,
+#: donc sous `SEASON_MIN_MATCHES`, et une coupe n'a pas de classement. Le bloc
+#: perdait ses dix lignes les plus decisives exactement la ou l'ecart de niveau
+#: **est** le fait de la rencontre.
+#:
+#: C'est le meme angle mort que celui repare par l'historique de saison du
+#: dossier d'equipe — Motherwell compte 2 matchs de Conference League quand sa
+#: saison domestique en porte 47 — pousse jusqu'aux agregats du bloc.
+#:
+#: **Declaree par competition, jamais deduite d'un drapeau.** Piloter la source
+#: des agregats sur `coverage.standings` reviendrait a laisser la couverture du
+#: fournisseur decider de la methode, et embarquerait au passage la Conference
+#: League, dont les blocs fonctionnent. L'extension reste une decision d'une
+#: ligne, auditable, qui ne surprend jamais un bloc qui marche.
+DOMESTIC_AGGREGATES: frozenset[str] = frozenset(
+    {
+        "soccer_germany_dfb_pokal",
+        "soccer_england_efl_cup",
+    }
+)
+
+
+def reads_domestic_aggregates(oddsapi_key: str | None) -> bool:
+    """Les agregats de saison de cette competition viennent-ils d'ailleurs ?"""
+    return bool(oddsapi_key) and oddsapi_key in DOMESTIC_AGGREGATES
 
 
 #: Nom de chaque tournoi de tennis dans le jeu de donnees de resultats

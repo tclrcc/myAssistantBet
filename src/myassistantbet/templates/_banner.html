@@ -51,6 +51,18 @@
   </div>
   {% endif %}
 
+  {# **Nommées, jamais comptées.** Un compte se lit comme une file d'attente qui
+     se résorbe ; ici rien ne bouge tant qu'une ligne n'a pas été saisie, et
+     c'est le nom qui dit laquelle. Ces compétitions servent des matchs qui
+     partiront à l'analyse sans une ligne de contexte. #}
+  {% if banner.unmapped_competitions %}
+  <div class="banner-item">
+    <span class="label">Sans contexte</span>
+    <a class="value alert" href="/competitions">
+      {{ banner.unmapped_competitions | join(', ') }} →</a>
+  </div>
+  {% endif %}
+
   {# Les deux actions dans un seul groupe : separees, la seconde se retrouvait
      seule sur une ligne des que le bandeau debordait, alors qu'elles se lisent
      ensemble. #}

@@ -36,6 +36,10 @@ class CompetitionScan:
     odds_rows: int = 0
     cost: int = 0
     error: str | None = None
+    #: La competition sert des matchs de football et n'est rattachee a aucune
+    #: ligue du fournisseur de contexte. Constate **ici**, au moment ou les
+    #: matchs entrent en base, et non plus tard sous la forme d'un bloc vide.
+    unmapped: bool = False
 
     @property
     def ok(self) -> bool:
@@ -66,6 +70,19 @@ class ScanReport:
     def failures(self) -> list[CompetitionScan]:
         return [item for item in self.competitions if not item.ok]
 
+    @property
+    def unmapped(self) -> list[CompetitionScan]:
+        """Competitions qui viennent de servir des matchs sans etre rattachees.
+
+        **Le controle est en amont a dessein.** Le symptome, lui, arrive une
+        journee plus tard sous la forme d'un bloc a zero ligne, qui se lit comme
+        un match sans histoire plutot que comme une question jamais posee — et
+        c'est ainsi que trois matchs saoudiens et trente-quatre matchs d'EFL Cup
+        sont partis a l'analyse muets. Le cas se reproduit a chaque reprise de
+        championnat, donc plusieurs fois par an.
+        """
+        return [item for item in self.competitions if item.unmapped and item.events]
+
 
 def scan_window(settings: Settings, now: datetime | None = None) -> tuple[datetime, datetime]:
     """Fenetre glissante du scan, en UTC.
@@ -85,7 +102,8 @@ def active_competitions(settings: Settings | None = None) -> list[dict[str, Any]
     """Competitions actives interrogeables via The Odds API, par priorite decroissante."""
     with connect(settings) as conn:
         rows = conn.execute(
-            "SELECT c.id, c.label, c.oddsapi_key, c.sport_id, s.key AS sport_key "
+            "SELECT c.id, c.label, c.oddsapi_key, c.sport_id, c.apifootball_league_id, "
+            "       s.key AS sport_key "
             "FROM competitions c JOIN sports s ON s.id = c.sport_id "
             "WHERE c.active = 1 AND c.oddsapi_key IS NOT NULL "
             "ORDER BY c.priority DESC, c.label"
@@ -258,7 +276,14 @@ async def run_scan(
     report = ScanReport(started_at=started_at, finished_at=started_at)
 
     for competition in active_competitions(settings):
-        result = CompetitionScan(label=competition["label"], oddsapi_key=competition["oddsapi_key"])
+        result = CompetitionScan(
+            label=competition["label"],
+            oddsapi_key=competition["oddsapi_key"],
+            # Le rattachement se lit sur la competition, pas sur ses matchs :
+            # la question se pose avant que le premier evenement arrive.
+            unmapped=competition["sport_key"] == "football"
+            and competition["apifootball_league_id"] is None,
+        )
         try:
             events, cost = await client.get_odds(
                 competition["oddsapi_key"],
@@ -280,4 +305,16 @@ async def run_scan(
         report.total_cost,
         len(report.failures),
     )
+    # **Dit a l'instant ou le fait se produit.** Une competition qui vient de
+    # servir des matchs sans rattachement les enverra tous a l'analyse sans une
+    # ligne de contexte ; l'apprendre au moment du scan laisse une journee pour
+    # la rattacher, l'apprendre en lisant un bloc vide ne laisse rien.
+    for item in report.unmapped:
+        logger.warning(
+            "Competition non rattachee a une ligue API-Football : %s (%s) — %d match(s) "
+            "entres en base, ils n'auront aucun contexte. Rattachement depuis /competitions.",
+            item.label,
+            item.oddsapi_key,
+            item.events,
+        )
     return report

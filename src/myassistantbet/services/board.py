@@ -96,6 +96,14 @@ class Banner:
     #: qu'une journee chargee le vide sans que rien ne l'annonce.
     context_calls_remaining: int | None = None
     context_call_floor: int = 500
+    #: Competitions de football qui portent des matchs a venir sans etre
+    #: rattachees a une ligue du fournisseur de contexte. **Nommees, jamais
+    #: comptees** : un compte se lit comme une file d'attente qui se resorbe,
+    #: alors qu'ici rien ne bougera tant qu'une ligne n'aura pas ete saisie — et
+    #: c'est le nom qui dit laquelle. Le scan les journalise au moment ou elles
+    #: servent leurs premiers matchs ; cette ligne les garde sous les yeux
+    #: jusqu'a ce que ce soit fait.
+    unmapped_competitions: list[str] = field(default_factory=list)
 
     @property
     def below_floor(self) -> bool:
@@ -487,7 +495,33 @@ def banner(settings: Settings | None = None, now: datetime | None = None) -> Ban
     state.session_id = current_session(settings)
     state.selected_count, state.started_count = selection_counts(settings, now)
     state.mapping_pending = pending_count(settings)
+    state.unmapped_competitions = unmapped_competitions(settings, now)
     return state
+
+
+def unmapped_competitions(
+    settings: Settings | None = None, now: datetime | None = None
+) -> list[str]:
+    """Competitions de football a venir sans ligue de contexte, par nom.
+
+    Le filtre porte sur les matchs **a venir** : une competition sans
+    rattachement mais sans match ne coute rien et n'a rien d'urgent, et la
+    lister ferait un bandeau de trente-trois lignes ou plus personne ne verrait
+    celle qui joue ce soir.
+    """
+    settings = settings or get_settings()
+    moment = _iso(now or datetime.now(UTC))
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT c.label FROM competitions c "
+            "JOIN sports s ON s.id = c.sport_id "
+            "JOIN events e ON e.competition_id = c.id "
+            "WHERE s.key = 'football' AND c.apifootball_league_id IS NULL "
+            "  AND e.commence_time >= ? "
+            "GROUP BY c.id ORDER BY c.label",
+            (moment,),
+        ).fetchall()
+    return [str(row["label"]) for row in rows]
 
 
 def _iso(moment: datetime) -> str:

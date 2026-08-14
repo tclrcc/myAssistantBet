@@ -467,3 +467,35 @@ def test_une_journee_sortie_de_la_fenetre_est_oubliee(migrated: Settings) -> Non
 
     assert view.filters.date == ""
     assert len(view.rows) == 3
+
+
+@respx.mock
+async def test_le_bandeau_nomme_les_competitions_sans_contexte(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """**Nommees, jamais comptees.**
+
+    Un compte se lit comme une file d'attente qui se resorbe ; ici rien ne
+    bouge tant qu'une ligne n'a pas ete saisie, et c'est le nom qui dit
+    laquelle. Le scan les journalise au moment ou elles servent leurs premiers
+    matchs ; cette ligne les garde sous les yeux jusqu'a ce que ce soit fait.
+    """
+    db.execute(
+        "UPDATE competitions SET apifootball_league_id = NULL WHERE oddsapi_key = ?",
+        ("soccer_sweden_allsvenskan",),
+        settings=migrated,
+    )
+    await _seed_board(odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json"))
+
+    state = board_service.banner(migrated, NOW)
+
+    assert state.unmapped_competitions == ["Allsvenskan"]
+
+
+@respx.mock
+async def test_une_competition_rattachee_ne_figure_pas_au_bandeau(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    await _seed_board(odds_client, migrated, load_fixture("oddsapi_allsvenskan_scan.json"))
+
+    assert board_service.banner(migrated, NOW).unmapped_competitions == []

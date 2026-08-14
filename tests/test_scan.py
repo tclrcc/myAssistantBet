@@ -245,3 +245,66 @@ async def test_un_horaire_stable_n_ecrit_rien(
         settings=migrated,
     )
     assert lignes == []
+
+
+@respx.mock
+async def test_une_competition_non_rattachee_est_signalee_au_scan(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """**Le controle est en amont, et c'est tout son interet.**
+
+    Le symptome arrive une journee plus tard, sous la forme d'un bloc a zero
+    ligne qui se lit comme un match sans histoire plutot que comme une question
+    jamais posee. Le scan, lui, sait au moment ou les matchs entrent en base
+    que rien ne pourra leur etre demande.
+    """
+    db.execute(
+        "UPDATE competitions SET apifootball_league_id = NULL WHERE oddsapi_key = ?",
+        ("soccer_sweden_allsvenskan",),
+        settings=migrated,
+    )
+    _mock_all_competitions(
+        {"soccer_sweden_allsvenskan": load_fixture("oddsapi_allsvenskan_scan.json")}
+    )
+
+    report = await run_scan(odds_client, migrated, now=NOW)
+
+    signalees = [item.oddsapi_key for item in report.unmapped]
+    assert signalees == ["soccer_sweden_allsvenskan"]
+    assert report.unmapped[0].events == 2
+
+
+@respx.mock
+async def test_une_competition_non_rattachee_sans_match_ne_dit_rien(
+    odds_client: OddsAPIClient, migrated: Settings
+) -> None:
+    """Une competition qui ne sert rien ne coute rien et n'a rien d'urgent.
+
+    Les lister toutes ferait un signal de trente-trois lignes ou plus personne
+    ne verrait celle qui joue ce soir — exactement le defaut du compte de
+    mapping, qui se lit comme une file d'attente.
+    """
+    db.execute(
+        "UPDATE competitions SET apifootball_league_id = NULL WHERE oddsapi_key = ?",
+        ("soccer_sweden_allsvenskan",),
+        settings=migrated,
+    )
+    _mock_all_competitions({})
+
+    report = await run_scan(odds_client, migrated, now=NOW)
+
+    assert report.unmapped == []
+
+
+@respx.mock
+async def test_une_competition_rattachee_ne_declenche_rien(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    _mock_all_competitions(
+        {"soccer_sweden_allsvenskan": load_fixture("oddsapi_allsvenskan_scan.json")}
+    )
+
+    report = await run_scan(odds_client, migrated, now=NOW)
+
+    assert report.total_events == 2
+    assert report.unmapped == []
