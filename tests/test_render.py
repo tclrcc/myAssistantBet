@@ -8,6 +8,7 @@ import pytest
 from myassistantbet.services.render import (
     Outcome,
     RenderableEvent,
+    common_unplayable,
     estimate_tokens,
     ordered_labels,
     render_event,
@@ -986,3 +987,68 @@ def test_un_horaire_deplace_se_lit_sous_l_heure() -> None:
 def test_un_horaire_stable_n_ajoute_aucune_ligne() -> None:
     """La mention est un signal, pas un decor : sans mouvement, rien."""
     assert "horaire deplace" not in _bloc_deplace()
+
+
+# -- Le releve « A relever » commun au lot ----------------------------------
+
+
+def _relevable(index: int, marches: dict[str, str]) -> RenderableEvent:
+    """Un bloc dont chaque marche est servi par le seul book indique."""
+    return RenderableEvent(
+        index=index,
+        sport_key="football",
+        competition="Ligue 2",
+        home=f"Club {index}",
+        away=f"Adv {index}",
+        commence_local=datetime(2026, 8, 14, 20, 45, tzinfo=PARIS),
+        primary_book="betclic_fr",
+        markets={
+            key: [Outcome(name="Over", price=1.9, bookmaker=book)] for key, book in marches.items()
+        },
+    )
+
+
+def test_le_releve_commun_se_derive_du_lot() -> None:
+    """**Jamais code en dur.** « Handicap et O/U en référence » est vrai un jour
+    parce que le book principal ne sert que le 1N2 sur ces compétitions-là ; ce
+    n'est pas une propriété de l'application."""
+    lot = [_relevable(i, {"h2h": "betclic_fr", "totals": "pinnacle"}) for i in range(1, 6)]
+
+    assert common_unplayable(lot) == ["O/U"]
+
+
+def test_sans_majorite_nette_la_liste_reste_plate() -> None:
+    """Mesure du 14/08/2026 : sur un prompt, deux blocs sur six portaient la
+    ligne. Une phrase de portée générale s'y lirait comme valant pour les six."""
+    lot = [_relevable(i, {"h2h": "betclic_fr", "totals": "pinnacle"}) for i in range(1, 3)]
+    lot += [_relevable(i, {"h2h": "betclic_fr", "totals": "betclic_fr"}) for i in range(3, 7)]
+
+    assert common_unplayable(lot) == []
+
+
+def test_sous_le_seuil_la_condensation_ne_paie_pas() -> None:
+    """Remplacer n lignes identiques par une phrase en coûte deux : en dessous
+    de quatre, la condensation coûte plus en lecture qu'elle ne gagne."""
+    lot = [_relevable(i, {"h2h": "betclic_fr", "totals": "pinnacle"}) for i in range(1, 4)]
+
+    assert common_unplayable(lot) == []
+    assert common_unplayable(lot, minimum=3) == ["O/U"], "le seuil est un paramètre, pas une loi"
+
+
+def test_un_bloc_qui_redit_le_releve_commun_se_tait() -> None:
+    """Sur 28 blocs du 14/08, 24 portaient mot pour mot « Handicap, O/U »."""
+    event = _relevable(1, {"h2h": "betclic_fr", "totals": "pinnacle"})
+
+    assert "A relever" in render_event(event)
+    assert "A relever" not in render_event(event, ["O/U"])
+
+
+def test_un_bloc_qui_fait_exception_garde_sa_ligne() -> None:
+    """C'est l'exception qu'il faut lire, et elle ne se voyait plus au milieu de
+    vingt-quatre lignes identiques."""
+    event = _relevable(1, {"h2h": "pinnacle", "totals": "pinnacle"})
+
+    rendu = render_event(event, ["O/U"])
+
+    assert "A relever" in rendu
+    assert "1N2" in rendu.split("A relever")[1]

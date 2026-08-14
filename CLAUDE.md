@@ -193,6 +193,23 @@ non negociables, toutes couvertes par des tests :
   - La regle ne peut pas se poser sur `A relever` : un evenement servi par un book
     de substitution n'en produit aucune et porte pourtant les memes lignes
     (`Kilmarnock +1.25` chez Pinnacle). Elle se lit sur la **valeur de la ligne**.
+- **Le releve commun au lot se dit une fois, pas vingt-quatre.** Sur le lot du 14/08,
+  24 blocs sur 28 portaient mot pour mot `A relever  Handicap, O/U` : la ligne cessait
+  d'informer, et les quatre exceptions — celles qu'il fallait lire — se noyaient dedans.
+  Une phrase de portee generale les remplace, et **seules les exceptions gardent leur
+  ligne** (`render.common_unplayable`).
+  - **Derive du lot, jamais code en dur.** « Handicap et O/U en reference » est vrai un
+    jour parce que le book principal ne sert que le 1N2 sur ces competitions-la ; l'ecrire
+    dans le gabarit ferait mentir le prompt le jour ou la collecte change.
+  - **La majorite se compte sur tous les blocs**, pas sur ceux qui portent une ligne : une
+    phrase generale sur un lot dont deux blocs sur six sont concernes se lirait comme
+    valant pour les six. Mesure : un prompt du 13/08 est exactement dans ce cas (2 sur 6),
+    et garde sa liste plate.
+  - **Seuil mesure sur les vingt derniers prompts** : douze ne portent aucune ligne, et
+    parmi les huit qui en portent, le motif dominant couvre 85 %, 100 %, 100 %, 66 % et
+    33 % des blocs. Remplacer n lignes par une phrase en coute deux, donc la condensation
+    gagne a partir de quatre (`COMMON_UNPLAYABLE_MIN`) — trois prompts sur vingt
+    condensent, dont celui de 28 blocs.
 - **`A relever` est un troisieme etat** : le marche est affiche, mais aucun de ses prix ne
   vient du book principal. Sur 127 matchs de tennis a venir, `betclic_fr` ne sert **que**
   le `h2h` via The Odds API — tout le handicap jeux et tout le total de jeux viennent de

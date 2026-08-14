@@ -17,6 +17,7 @@ Regles absolues :
 
 from __future__ import annotations
 
+from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -765,14 +766,59 @@ def _alert_line(event: RenderableEvent) -> list[str]:
     return [line(ALERT_LABEL, message)] if message else []
 
 
-def _unplayable_line(event: RenderableEvent) -> list[str]:
+#: Blocs partageant le meme releve « A relever » sous lesquels la condensation
+#: ne paie pas.
+#:
+#: **Mesure du 14/08/2026 sur les vingt derniers prompts** : douze ne portent
+#: aucune ligne, et parmi les huit qui en portent, le motif dominant couvre
+#: 85 %, 100 %, 100 %, 66 % et 33 % des blocs. Remplacer n lignes identiques par
+#: une phrase de portee generale en coute deux : la condensation gagne a partir
+#: de quatre, et en dessous elle coute plus en lecture qu'elle ne gagne en
+#: lignes. A ce seuil, trois des vingt prompts condensent — dont celui de 28
+#: blocs, ou 24 lignes identiques se lisaient a la suite.
+COMMON_UNPLAYABLE_MIN = 4
+
+
+def common_unplayable(
+    events: Sequence[RenderableEvent], minimum: int = COMMON_UNPLAYABLE_MIN
+) -> list[str]:
+    """Le releve « A relever » que **la majorite du lot** partage, s'il y en a un.
+
+    **Derive du lot, jamais code en dur.** « Handicap et O/U en reference » est
+    vrai un jour parce que le book principal ne sert que le 1N2 sur ces
+    competitions-la ; ce n'est pas une propriete de l'application, et l'ecrire
+    dans le gabarit ferait mentir le prompt le jour ou la collecte change.
+
+    La majorite se compte sur **tous les blocs du lot**, pas sur ceux qui
+    portent une ligne : une phrase de portee generale sur un lot dont deux blocs
+    sur six sont concernes se lirait comme valant pour les six.
+    """
+    if not events:
+        return []
+    releves = [tuple(unplayable_markets(event)) for event in events]
+    porteurs = [item for item in releves if item]
+    if not porteurs:
+        return []
+    dominant, compte = Counter(porteurs).most_common(1)[0]
+    if compte < minimum or compte * 2 <= len(releves):
+        return []
+    return list(dominant)
+
+
+def _unplayable_line(event: RenderableEvent, common: Sequence[str] = ()) -> list[str]:
     """La ligne est **seche, sans note**, contrairement a « Non servis ».
 
     Celle-la porte la sienne parce qu'elle a trois causes qu'il faut distinguer.
     Ici il n'y en a qu'une, le preambule l'explique une fois pour tout le lot, et
     la repeter huit fois coutait cent tokens pour redire le libelle.
+
+    **Omise quand elle redit ce que le lot dit deja** : sur un lot de 28 blocs,
+    24 portaient mot pour mot « Handicap, O/U ». La phrase generale les remplace
+    et seules les exceptions restent, qui sont justement ce qu'il fallait voir.
     """
     labels = unplayable_markets(event)
+    if labels and list(common) == labels:
+        return []
     return [line(UNPLAYABLE_LABEL, ", ".join(labels))] if labels else []
 
 
@@ -847,11 +893,11 @@ def _tiers_line(event: RenderableEvent) -> list[str]:
     return [line(TIERS_LABEL, event.tiers_line)] if event.tiers_line else []
 
 
-def _markets_block(event: RenderableEvent) -> list[str]:
+def _markets_block(event: RenderableEvent, common: Sequence[str] = ()) -> list[str]:
     rows = (
         _render_markets(event)
         + _alert_line(event)
-        + _unplayable_line(event)
+        + _unplayable_line(event, common)
         + _unserved_line(event)
         + _tiers_line(event)
     )
@@ -892,9 +938,18 @@ def _lead_time(event: RenderableEvent) -> str:
     return detail
 
 
-def render_event(event: RenderableEvent) -> str:
-    """Bloc texte compact d'un evenement, pret a etre injecte dans le prompt."""
-    parts = [*_header(event), *_context_block(event), *_markets_block(event)]
+def render_event(event: RenderableEvent, common_unplayable: Sequence[str] = ()) -> str:
+    """Bloc texte compact d'un evenement, pret a etre injecte dans le prompt.
+
+    `common_unplayable` est le releve « A relever » que la majorite du lot
+    partage : le bloc qui le redirait mot pour mot se tait, la phrase generale
+    du prompt le porte une seule fois.
+    """
+    parts = [
+        *_header(event),
+        *_context_block(event),
+        *_markets_block(event, common_unplayable),
+    ]
     return "\n".join(parts)
 
 

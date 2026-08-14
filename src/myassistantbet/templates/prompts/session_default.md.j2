@@ -60,6 +60,12 @@ Une ligne **« A relever »** est tout autre chose, et ne se lit pas comme un
 refus : ces marchés sont affichés au-dessus, mais aucun de leurs prix ne vient du
 bookmaker principal. Le prix affiché situe le marché ; celui qu'on obtiendra se
 lit chez le bookmaker au moment de miser. Pas sa place en section F non plus.
+{% if common_unplayable %}
+**Sur ce lot, {{ common_unplayable | join(' et ') }} sont à relever dans la
+majorité des blocs** : la ligne n'y est donc pas répétée. Un bloc qui en porte
+une l'écrit parce qu'il **fait exception** — d'autres marchés, ou pas les
+mêmes — et c'est cette exception qu'il faut lire.
+{% endif %}
 {% if 'tennis' in sports %}
 Donc, au tennis : **appuie-toi dessus quand l'angle l'appelle.** Le bookmaker
 propose bien ces marchés sur son site — c'est notre collecte qui ne les remonte

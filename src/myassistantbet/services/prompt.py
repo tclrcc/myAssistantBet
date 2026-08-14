@@ -34,6 +34,7 @@ from .render import (
     MERGED_MARKETS,
     Outcome,
     RenderableEvent,
+    common_unplayable,
     estimate_tokens,
     handicap_alert,
     market_label,
@@ -751,7 +752,11 @@ def build_prompt(
     for event in events:
         event.tiers_line = block_tiers_line(tiers, event, scope)
 
-    blocks = [render_event(event) for event in events]
+    # **Derive du lot, jamais code en dur.** Sur 28 blocs du 14/08, 24 portaient
+    # mot pour mot « Handicap, O/U » : la phrase generale les remplace et seules
+    # les exceptions restent, qui sont justement ce qu'il fallait voir.
+    commun = common_unplayable(events)
+    blocks = [render_event(event, commun) for event in events]
 
     # Retenu plutot que passe en ligne au rendu : c'est lui qui dit si le prompt
     # a transmis des taux, donc si les selections qui vont en sortir ont ete
@@ -810,6 +815,10 @@ def build_prompt(
             # La section F est plafonnee a trois lignes : deux selections de
             # reference la remplissaient avant qu'elle ait dit quoi que ce soit.
             reference_notes=reference_notes(events),
+            # Le releve « A relever » que la majorite du lot partage. Vide des
+            # qu'aucune majorite ne se degage : la liste plate reprend alors sa
+            # place, et la phrase generale disparait avec elle.
+            common_unplayable=commun,
             competition_notes=competition_notes(session_id, settings, moment),
             # Les consignes permanentes et le retour d'experience ne coutent
             # aucun appel : ils sortent de la base, donc ils sont toujours la.
