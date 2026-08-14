@@ -613,12 +613,17 @@ second palier, laisse-les vides et écris-le, en nommant ce qu'il aurait fallu
 trouver — « aucun retour de blessure daté, aucun enjeu asymétrique, aucune
 charge anormale sur ce lot ». Un palier vide est un résultat ; un palier vide
 non commenté est un oubli.
-{% if reference_notes %}
+{% if reference_notes or common_reference %}
 **Prix à relever avant de miser.** Ces marchés n'ont aucun prix du bookmaker
 principal : leur cote situe le marché, elle n'est pas celle qu'on obtiendra. La
 liste est calculée, tu n'as pas à la reconstituer — recopie simplement « (ref.) »
 en colonne Cote sur les sélections concernées, et **ne les reporte pas en
 section F**, qui est réservée aux échecs de recherche.
+{% if common_reference %}
+Sur **{{ common_reference.count }} des {{ event_blocks | length }} blocs de ce lot**,
+c'est le même relevé : {{ common_reference.line }}. Prends-le comme la règle du
+lot ; seules les exceptions sont listées ci-dessous.
+{%- endif %}
 {% for note in reference_notes %}
   · {{ note.line }}
 {%- endfor %}

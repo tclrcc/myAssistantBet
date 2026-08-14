@@ -447,6 +447,44 @@ def test_page_de_stats_vide(client: TestClient) -> None:
     assert "Rien à mesurer" in response.text
 
 
+def test_le_bloc_des_paris_poses_se_dit_vide_au_lieu_de_se_masquer(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """**Deux phrases distinctes, et leur confusion etait le defaut.**
+
+    Le bloc etait masque quand aucun coupon n'existait : une meme sortie pour
+    « aucun pari pose » et pour « cette page ne mesure pas les paris poses ».
+    Impossible alors de distinguer un compte nul d'une mesure absente — dernier
+    defaut de cette forme apres `0/26`, `facts_json`, l'arbitre, la fiche de
+    priorite et le bloc de confiance absent.
+
+    Le lot porte une selection tranchee mais **aucun coupon** : `played` ne passe
+    a vrai qu'au rattachement, donc `stats()` est vide alors que `analysis()` ne
+    l'est pas. C'est exactement l'etat de la base servie.
+    """
+    session_id, event_id = _session_avec_match(isolated_settings, "football")
+    pick_id = add_pick(
+        session_id,
+        tier="safe",
+        market="1N2",
+        selection="Lyon",
+        event_id=str(event_id),
+        price="1.45",
+        settings=isolated_settings,
+    )
+    set_result(pick_id, "win", settings=isolated_settings)
+
+    page = client.get("/stats").text
+
+    assert "Ce que valent tes paris" in page, "le bloc se rend, il ne se masque plus"
+    assert "Aucun coupon saisi" in page
+    assert "un geste qui n'a pas eu lieu" in page
+    # La seconde phrase, qui ne dit pas la meme chose que la premiere : ce bloc
+    # vide n'affaiblit pas les autres, qui repondent a une autre question.
+    assert "le reste de cette page ne mesure pas les paris posés" in page.lower()
+    assert "elles répondent" in page or "ils répondent" in page
+
+
 # -- Selecteur de match : sport et competition ------------------------------
 
 

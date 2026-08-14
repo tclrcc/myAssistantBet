@@ -199,7 +199,10 @@ class StatsReport:
             (Section("", SETS_BLOCK), not self.set_scores.empty),
             (Section("", LABELLING_BLOCK), bool(self.labelling)),
             *((Section(LABELLING_BLOCK, f"Par {block.label}"), True) for block in self.labelling),
-            (Section("", BETS_BLOCK), not self.stats.empty),
+            # **Le bloc est rendu meme vide**, et ses cartes ne le sont pas :
+            # l'absence de pari pose est une information, l'absence d'une carte
+            # a l'interieur n'en est pas une.
+            (Section("", BETS_BLOCK), True),
             (Section(BETS_BLOCK, "Par palier"), not self.stats.empty),
             (Section(BETS_BLOCK, "Par sport"), not self.stats.empty),
             (Section(BETS_BLOCK, "Coupons"), bool(self.coupon_rates)),
@@ -982,12 +985,25 @@ def as_markdown(found: StatsReport) -> str:
                 )
             out += ["", note]
 
-    if not found.stats.empty:
+    out += ["", f"## {BETS_BLOCK}", "", "Uniquement ce qui a été posé chez le bookmaker."]
+    if found.stats.empty:
+        # **Deux phrases, jamais une, et jamais un silence.** Le bloc etait
+        # masque des deux cotes : une meme sortie pour « aucun pari pose » et
+        # pour « cette page ne mesure pas les paris poses ». Le fichier existe
+        # justement pour faire relire ces chiffres ailleurs, ou un bloc absent
+        # ne se distingue pas d'un bloc qui n'a jamais existe.
         out += [
             "",
-            f"## {BETS_BLOCK}",
+            "**Aucun coupon saisi.** Rien n'a été enregistré comme posé chez le "
+            "bookmaker : ce n'est pas une collecte qui manque, c'est un geste qui n'a "
+            "pas eu lieu.",
             "",
-            "Uniquement ce qui a été posé chez le bookmaker.",
+            "**Et le reste de ce relevé ne mesure pas les paris posés.** Les sélections "
+            "comptées ailleurs valent qu'elles aient été jouées ou non — elles répondent "
+            "à « ce que vaut l'analyse », pas à « ce que valent mes paris ».",
+        ]
+    else:
+        out += [
             "",
             f"**Taux des paris posés** : {found.stats.overall.won} gagné(s), "
             f"{found.stats.overall.lost} perdu(s) — {found.stats.overall.settled} tranché(s), "

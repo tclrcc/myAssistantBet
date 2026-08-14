@@ -37,13 +37,17 @@
 {# Cinq blocs qui repondent a cinq questions differentes, sur une page qu'on
    parcourt de haut en bas sans jamais savoir ce qui vient. Le sommaire est
    ecrit une fois et suit les blocs reellement rendus : annoncer une ancre vers
-   une section absente serait pire que pas de sommaire du tout. #}
+   une section absente serait pire que pas de sommaire du tout.
+
+   « Ce que valent tes paris » y figure **toujours**, vide ou non : masquer le
+   bloc rendait une même sortie pour « aucun pari posé » et pour « cette page ne
+   mesure pas les paris posés », qui ne sont pas la même information. #}
 {% set sections = [
      ('analyse', 'Ce que ces sélections ont produit', not analysis.empty),
      ('tri', 'Ce que tu écartes', analysis.by_session | length > 0),
      ('sets', 'Le score en sets', not set_scores.empty),
      ('etiquettes', 'Comment tu étiquettes', labelling | length > 0),
-     ('paris', 'Ce que valent tes paris', not stats.empty),
+     ('paris', 'Ce que valent tes paris', true),
    ] %}
 {% if sections | selectattr(2) | list | length > 1 %}
 <nav class="section-nav" aria-label="Sommaire">
@@ -1116,13 +1120,30 @@
 </section>
 {% endif %}
 
-{% if not stats.empty %}
 <section class="stats-block" id="paris">
   <div class="block-head">
     <h2>Ce que valent tes paris</h2>
     <span class="muted small">uniquement ce qui a été posé chez le bookmaker</span>
   </div>
 
+{% if stats.empty %}
+  {# **Deux phrases, et leur confusion est le défaut qu'on ferme.** Le bloc était
+     masqué : une même sortie pour « aucun pari posé » et pour « cette page ne
+     mesure pas les paris posés », donc impossible de distinguer un compte nul
+     d'une mesure absente. Dernier défaut de cette forme après 0/26, facts_json,
+     l'arbitre, la fiche de priorité et le bloc de confiance absent. #}
+  <p class="notice">
+    <strong>Aucun coupon saisi.</strong> Rien n'a été enregistré comme posé chez le
+    bookmaker, donc ce bloc n'a rien à compter — ce n'est pas une collecte qui manque,
+    c'est un geste qui n'a pas eu lieu.
+  </p>
+  <p class="notice">
+    <strong>Et le reste de cette page ne mesure pas les paris posés.</strong> Les
+    sélections et les combinés comptés ailleurs valent qu'ils aient été joués ou non :
+    ils répondent à « ce que vaut l'analyse », pas à « ce que valent mes paris ». Leur
+    présence ne comble pas ce bloc, et ce bloc vide ne les affaiblit pas.
+  </p>
+{% else %}
   <div class="kpi">
     {{ hero(stats.overall, "Taux des paris posés") }}
     {% for row in coupon_rates %}
@@ -1184,8 +1205,8 @@
     </p>
     {% endif %}
   </details>
-</section>
 {% endif %}
+</section>
 
 <p class="page-foot">
   Taux = gagnés / (gagnés + perdus). Les paris annulés et ceux en attente sont exclus

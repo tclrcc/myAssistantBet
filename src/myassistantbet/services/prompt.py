@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -31,6 +32,7 @@ from .enrich import markets_for
 from .history import SCALE_VERSION, feedback
 from .labels import affiche, bookmaker_label, is_reference
 from .render import (
+    COMMON_UNPLAYABLE_MIN,
     MERGED_MARKETS,
     Outcome,
     RenderableEvent,
@@ -412,6 +414,67 @@ class ReferenceNote:
         return f"M{self.block} {self.label} — {quoi} [{' + '.join(self.books)}]"
 
 
+@dataclass(frozen=True)
+class CommonReference:
+    """Le rappel « (ref.) » que la majorite du lot partage.
+
+    **Meme regle que `render.common_unplayable`, un cran plus loin.** Mesure du
+    14/08/2026 sur les 30 prompts archives qui portent au moins une ligne : 271
+    lignes au total, dont **234 redisent le motif dominant de leur lot**, et 24
+    lots sur 30 condensent. Le lot de 28 blocs du 14/08 ecrivait 28 fois
+    « Handicap, O/U [Pinnacle (ref.)] » ; une ligne qui parait sur tout le lot
+    cesse d'informer, et les exceptions — celles qu'il faut lire — s'y noient.
+
+    Le motif est la paire **marches + books** : deux blocs auxquels manquent les
+    memes marches chez deux books differents ne partagent pas un constat.
+    """
+
+    markets: tuple[str, ...]
+    books: tuple[str, ...]
+    count: int
+
+    @property
+    def line(self) -> str:
+        quoi = ", ".join(self.markets) if self.markets else "tout le bloc"
+        return f"{quoi} [{' + '.join(self.books)}]"
+
+
+def common_reference(
+    notes: Sequence[ReferenceNote], blocks: int, minimum: int = COMMON_UNPLAYABLE_MIN
+) -> CommonReference | None:
+    """Le motif « (ref.) » dominant du lot, s'il vaut d'etre dit une seule fois.
+
+    **Derive du lot, jamais code en dur** : « Handicap et O/U en reference » est
+    vrai un jour parce que le book principal ne sert que le 1N2 sur ces
+    competitions-la, et l'ecrire dans le gabarit ferait mentir le prompt le jour
+    ou la collecte change.
+
+    **La majorite se compte sur tous les blocs du lot**, jamais sur ceux qui
+    portent une note : une phrase de portee generale sur un lot dont deux blocs
+    sur six sont concernes se lirait comme valant pour les six.
+
+    Le seuil est celui de `common_unplayable` et pour la meme arithmetique :
+    remplacer n lignes par une phrase en coute deux, donc la condensation ne
+    gagne qu'a partir de quatre.
+    """
+    if not notes or blocks <= 0:
+        return None
+    motifs = Counter((tuple(note.markets), tuple(note.books)) for note in notes)
+    (markets, books), compte = motifs.most_common(1)[0]
+    if compte < minimum or compte * 2 <= blocks:
+        return None
+    return CommonReference(markets=markets, books=books, count=compte)
+
+
+def _exception(note: ReferenceNote, commun: CommonReference) -> bool:
+    """Ce bloc s'ecarte-t-il du motif general du lot.
+
+    Seules les exceptions gardent leur ligne : ce sont elles qu'il fallait lire,
+    et elles se noyaient dans vingt-quatre repetitions du meme constat.
+    """
+    return (tuple(note.markets), tuple(note.books)) != (commun.markets, commun.books)
+
+
 def reference_notes(events: Sequence[RenderableEvent]) -> list[ReferenceNote]:
     """Les rappels « (ref.) » du lot, calcules au lieu d'etre reclames.
 
@@ -783,6 +846,11 @@ def build_prompt(
     commun = common_unplayable(events)
     blocks = [render_event(event, commun) for event in events]
 
+    # Meme regle un cran plus loin, sur la liste « Prix a relever » : le motif
+    # dominant se dit une fois, et **seules les exceptions gardent leur ligne**.
+    rappels = reference_notes(events)
+    commun_ref = common_reference(rappels, len(events))
+
     # Retenu plutot que passe en ligne au rendu : c'est lui qui dit si le prompt
     # a transmis des taux, donc si les selections qui vont en sortir ont ete
     # prises en lisant leur propre tableau de bord. La reponse s'archive avec le
@@ -839,7 +907,15 @@ def build_prompt(
             # Les rappels « (ref.) », calcules plutot que reclames a l'analyse.
             # La section F est plafonnee a trois lignes : deux selections de
             # reference la remplissaient avant qu'elle ait dit quoi que ce soit.
-            reference_notes=reference_notes(events),
+            reference_notes=[
+                note for note in rappels if (commun_ref is None or _exception(note, commun_ref))
+            ],
+            # Le motif « (ref.) » que la majorite du lot partage, dit **une
+            # fois**. Mesure du 14/08/2026 sur les 30 prompts archives qui en
+            # portent : 271 lignes, dont 234 redisent le motif dominant de leur
+            # lot, et 24 lots sur 30 condensent. Sur le lot de 28 blocs du
+            # 14/08, la meme ligne paraissait 28 fois.
+            common_reference=commun_ref,
             # Le releve « A relever » que la majorite du lot partage. Vide des
             # qu'aucune majorite ne se degage : la liste plate reprend alors sa
             # place, et la phrase generale disparait avec elle.

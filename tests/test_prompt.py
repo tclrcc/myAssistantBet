@@ -24,8 +24,11 @@ from myassistantbet.services.prompt import (
     QUOTA_FLOOR_TIERS,
     QUOTA_REFERENCE_LOT,
     TEMPLATES_DIR,
+    ReferenceNote,
     Tier,
+    _exception,
     build_prompt,
+    common_reference,
     date_fr,
     list_templates,
     load_tiers,
@@ -1687,6 +1690,62 @@ def test_la_pression_du_combine_long_est_nommee(migrated: Settings) -> None:
     assert "ce n'est plus une jambe chère ajoutée à la fin, c'est une jambe courte" in plat
     assert "un 1.30 qui ne coûte presque rien à écrire et fait franchir la cible" in plat
     assert "Elle est exactement aussi fausse." in plat
+
+
+# -- « Prix a relever » : le motif du lot se dit une fois -------------------
+#
+# Mesure du 14/08/2026 sur les 30 prompts archives qui portent au moins une
+# ligne : 271 lignes au total, dont **234 redisent le motif dominant de leur
+# lot**, et 24 lots sur 30 condensent. Le lot de 28 blocs du 14/08 ecrivait 28
+# fois « Handicap, O/U [Pinnacle (ref.)] ».
+
+
+def _note(bloc: int, marches: list[str], books: list[str]) -> ReferenceNote:
+    return ReferenceNote(block=bloc, label=f"M{bloc}", markets=marches, books=books)
+
+
+def test_le_motif_dominant_des_prix_a_relever_se_condense() -> None:
+    notes = [_note(index, ["Handicap", "O/U"], ["Pinnacle (ref.)"]) for index in range(1, 25)]
+    notes.append(_note(25, ["Corners"], ["Superbet (ref.)"]))
+
+    commun = common_reference(notes, blocks=28)
+
+    assert commun is not None
+    assert commun.count == 24
+    assert commun.line == "Handicap, O/U [Pinnacle (ref.)]"
+    # Seules les exceptions gardent leur ligne : ce sont elles qu'il fallait
+    # lire, et elles se noyaient dans vingt-quatre repetitions du meme constat.
+    restants = [note for note in notes if _exception(note, commun)]
+    assert [note.block for note in restants] == [25]
+
+
+def test_la_majorite_se_compte_sur_tous_les_blocs_du_lot() -> None:
+    """Une phrase de portee generale sur un lot dont 24 blocs sur 140 sont
+    concernes se lirait comme valant pour les 140. Mesure : c'est exactement
+    l'etat de la shortlist du 14/08 — 140 blocs, 35 notes, motif dominant a 24.
+    """
+    notes = [_note(index, ["Handicap", "O/U"], ["Pinnacle (ref.)"]) for index in range(1, 25)]
+
+    assert common_reference(notes, blocks=28) is not None, "24 sur 28 : la regle du lot"
+    assert common_reference(notes, blocks=140) is None, "24 sur 140 : rien de general"
+
+
+def test_un_motif_rare_ne_condense_pas() -> None:
+    """Remplacer n lignes par une phrase en coute deux : la condensation ne
+    gagne qu'a partir de quatre, meme arithmetique que `common_unplayable`."""
+    notes = [_note(index, ["Handicap"], ["Pinnacle (ref.)"]) for index in (1, 2, 3)]
+
+    assert common_reference(notes, blocks=4) is None, "trois lignes ne se condensent pas"
+    assert common_reference([], blocks=10) is None
+
+
+def test_les_books_font_partie_du_motif() -> None:
+    """Deux blocs auxquels manquent les memes marches chez deux books differents
+    ne partagent pas un constat : le rappel dit ou lire le prix."""
+    notes = [_note(index, ["Handicap"], ["Pinnacle (ref.)"]) for index in range(1, 4)]
+    notes += [_note(index, ["Handicap"], ["Superbet (ref.)"]) for index in range(4, 7)]
+
+    assert common_reference(notes, blocks=6) is None, "aucun motif n'atteint le seuil"
 
 
 def test_le_score_en_sets_survit_a_toutes_les_tailles(migrated: Settings) -> None:
