@@ -623,9 +623,20 @@ section F**, qui est réservée aux échecs de recherche.
 {%- endfor %}
 {% endif %}
 ### D. Combinés
-{% if event_blocks | length >= combo_min_lot %}- Un combiné « solide » : 3-4 sélections des deux paliers les plus sûrs,
-  cote cible 6-12
-- Un combiné « frisson » : 4-5 sélections, cote cible 25-80
+{% if event_blocks | length >= combo_min_lot %}- Un combiné « solide » : **{{ combo_court_jambes }} jambes**, cote cible **{{ combo_court_cote }}** — court et concentré
+- Un combiné « frisson » : **{{ combo_long_jambes }} jambes**, cote cible **{{ combo_long_cote }}** — long et dilué
+
+Les deux se puisent dans les **deux paliers les plus sûrs**, et le nombre de
+jambes est une consigne à part entière : une même cote cible s'atteint par peu
+de jambes chères ou par beaucoup de courtes, et ce sont deux objets différents.
+Ce lot autorise **{{ combo_legs_max }} jambes** au plus dans ces deux paliers,
+une seule sélection par match.
+{% if combo_long_jambes > combo_legs_max %}
+**Le combiné long n'est pas constructible ici** : il en demande
+{{ combo_long_jambes }} et le lot n'en porte que {{ combo_legs_max }}. Rends-le à
+{{ combo_legs_max }} jambes, donne sa cote réelle, et dis-le en une ligne — n'emprunte
+pas une jambe à un palier haut pour faire le compte.
+{% endif %}
 {% elif event_blocks | length >= combo_solo_min_lot %}**Un seul combiné**, et seulement si trois sélections reposant sur des causes
 indépendantes existent. Ce lot porte {{ event_blocks | length }} match(s) : une
 seule sélection par match, et une partie du lot passera. Si les trois n'y sont
@@ -652,19 +663,35 @@ et ne le mets dans aucun combiné — c'est une proposition à tarifer sur place
 {% endif %}
 
 {% if event_blocks | length >= combo_solo_min_lot %}
-Les cotes cibles sont indicatives et cèdent devant la confiance. **N'ajoute
-jamais une jambe sous confiance 3 pour atteindre une fourchette** : rends le
-combiné plus court, donne sa cote réelle, et écris en une ligne pourquoi la
-cible n'était pas atteignable aujourd'hui. Un combiné honnête à 5.30 vaut mieux
-qu'un combiné à 8.50 dont une jambe n'existe que pour faire le compte.
+Les cotes cibles sont des **cibles et jamais des planchers**, et elles cèdent
+devant la confiance. **N'ajoute jamais une jambe sous confiance 3 pour atteindre
+une cible** : rends le combiné plus court, donne sa cote réelle, et écris en une
+ligne pourquoi la cible n'était pas atteignable aujourd'hui. Un combiné honnête à
+5.30 vaut mieux qu'un combiné à 8.50 dont une jambe n'existe que pour faire le
+compte.
+
+Sur un combiné long la faute change de forme et devient moins visible : ce n'est
+plus une jambe chère ajoutée à la fin, c'est une jambe courte de plus — un 1.30
+qui ne coûte presque rien à écrire et fait franchir la cible. Elle est
+exactement aussi fausse.
 
 {% if event_blocks | length >= combo_min_lot %}Les deux combinés doivent être **réellement différents**. Si le second n'est que
 le premier plus une jambe, ce n'est pas un second combiné : n'en propose qu'un,
 et dis que le lot ne portait pas de quoi en construire deux.
 
-{% endif %}Pour chaque combiné : nomme le maillon le plus fragile, et dis si deux
-jambes reposent sur la même cause — **au sens strict défini en section C**, pas
-au sens du tournoi partagé. Deux maillons qui tombent ensemble n'en font qu'un.
+{% endif %}Pour chaque combiné, dis si deux jambes reposent sur la même cause —
+**au sens strict défini en section C**, pas au sens du tournoi partagé. Deux
+maillons qui tombent ensemble n'en font qu'un.
+
+**Un combiné de moins de {{ combo_maillon_jambes }} jambes** : nomme le maillon le plus fragile.
+
+**À partir de {{ combo_maillon_jambes }} jambes**, ne le nomme pas — à ce nombre toutes les
+jambes sont décisives et désigner la plus faible ne veut plus rien dire. Nomme à
+la place **les jambes du palier le plus haut du combiné**, et dis-le ainsi : la
+cote vient de ces jambes-là. Ce n'est pas un jugement sur leur solidité, et rien
+dans l'historique ne permettrait d'en porter un. C'est l'endroit où s'exerce la
+pression : une cible longue s'atteint en gonflant par le haut de la bande, et
+c'est le groupe que le lecteur doit pouvoir regarder.
 {% endif %}
 
 ### E. Le match que tu ne jouerais pas

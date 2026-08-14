@@ -74,6 +74,72 @@ THRESHOLDS: dict[str, Threshold] = {
             "qu'elle était insatisfiable."
         ),
     ),
+    "combo_court_jambes": Threshold(
+        key="combo_court_jambes",
+        label="Jambes visées — combiné solide",
+        default=4,
+        low=2,
+        high=20,
+        note=(
+            "Le nombre de jambes est un paramètre et non une conséquence : « cote ≥ 100 » "
+            "se satisfait par 5 jambes à 2.50 comme par 10 à 1.55, et ce sont deux objets "
+            "sans rapport. Ce combiné-ci est le court et concentré."
+        ),
+    ),
+    "combo_court_cote": Threshold(
+        key="combo_court_cote",
+        label="Cote cible — combiné solide",
+        default=9,
+        low=2,
+        high=10_000,
+        note=(
+            "Une cible, jamais un plancher : le prompt interdit déjà d'ajouter une jambe "
+            "pour atteindre une fourchette, et demande alors un combiné plus court avec sa "
+            "cote réelle."
+        ),
+    ),
+    "combo_long_jambes": Threshold(
+        key="combo_long_jambes",
+        label="Jambes visées — combiné frisson",
+        default=5,
+        low=2,
+        high=20,
+        note=(
+            "Le long et dilué. Mesure du 14/08/2026 à ne pas oublier en le relevant : les "
+            "quotas des deux paliers sûrs plafonnent à 6 + 5 = 11 jambes par prompt dès un "
+            "lot de 10 matchs, et ne bougent plus — un lot de 140 ne donne pas une jambe de "
+            "plus qu'un lot de 28. Au-delà de 11, le combiné doit puiser dans plusieurs "
+            "prompts de la même session."
+        ),
+    ),
+    "combo_long_cote": Threshold(
+        key="combo_long_cote",
+        label="Cote cible — combiné frisson",
+        default=50,
+        low=2,
+        high=10_000,
+        note=(
+            "Mesuré sur les 6 sessions offrant 10 jambes sûres ou plus : les dix meilleures "
+            "cotes donnent de 302 à 1396, médiane 565. « ≥ 100 » est donc confortable — ce "
+            "qui contraint n'est pas la cote mais le nombre de sélections produites, 4 "
+            "sessions sur 10 n'atteignant pas dix jambes."
+        ),
+    ),
+    "combo_maillon_jambes": Threshold(
+        key="combo_maillon_jambes",
+        label="Jambes à partir desquelles un combiné est « long »",
+        default=6,
+        low=3,
+        high=20,
+        note=(
+            "En dessous, la section D demande le maillon le plus fragile. À partir de ce "
+            "nombre elle ne le demande plus — sur dix jambes toutes décisives la question ne "
+            "veut plus rien dire — et fait nommer les jambes du palier haut, celles par "
+            "lesquelles la cote a été achetée. Le défaut vaut 6 parce que tous les combinés "
+            "que le gabarit a demandés jusqu'ici tiennent en 3 à 5 jambes : c'est le premier "
+            "compte qui sorte de son propre vocabulaire."
+        ),
+    ),
     "feedback_min_total": Threshold(
         key="feedback_min_total",
         label="Sélections tranchées avant transmission des taux",

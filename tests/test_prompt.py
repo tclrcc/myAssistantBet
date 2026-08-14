@@ -30,6 +30,7 @@ from myassistantbet.services.prompt import (
     list_templates,
     load_tiers,
     research_capped,
+    safe_legs_available,
     save_prompt,
 )
 from myassistantbet.services.scan import active_competitions, run_scan
@@ -672,7 +673,11 @@ async def test_le_prompt_refuse_de_gonfler_un_combine(
 
     body = build_prompt(session_id, settings=migrated, now=NOW).body
 
-    assert "N'ajoute\njamais une jambe sous confiance 3" in body.replace("**", "")
+    # Insensible au retour a la ligne : la consigne est une phrase, pas une
+    # largeur de colonne. La version d'avant echouait des qu'un mot du
+    # paragraphe changeait de ligne, ce qui n'est pas ce qu'elle verifie.
+    plat = " ".join(body.replace("**", "").split())
+    assert "N'ajoute jamais une jambe sous confiance 3 pour atteindre une cible" in plat
 
 
 # -- Ce que le prompt annonce du lot ----------------------------------------
@@ -1535,17 +1540,132 @@ def test_la_section_des_combines_se_rend_proprement(
         assert "la question n'est pas posée" in plat
         # Les trois paragraphes qui n'ont plus d'objet tombent avec la demande.
         assert "une seule sélection par match dans un combiné" not in plat
-        assert "cotes cibles sont indicatives" not in plat
+        assert "cotes cibles sont des" not in plat
         assert "maillon le plus fragile" not in plat
     elif attendu == "un":
         assert "**Un seul combiné**" in plat
         assert "Contrainte : une seule sélection par match dans un combiné." in plat
-        assert "Les cotes cibles sont indicatives" in plat
+        assert "Les cotes cibles sont des **cibles et jamais des planchers**" in plat
         assert "maillon le plus fragile" in plat
         assert "Les deux combinés doivent être" not in plat
     else:
         assert "combiné « solide »" in plat and "combiné « frisson »" in plat
         assert "Les deux combinés doivent être **réellement différents**" in plat
+
+
+# -- Le nombre de jambes est un parametre -----------------------------------
+#
+# « cote >= 100 » se satisfait par 5 jambes a 2.50 comme par 10 a 1.55, et ce
+# sont deux objets sans rapport. Chaque combine se regle donc par deux valeurs,
+# jambes et cible, et le gabarit n'en code plus aucune en dur.
+
+
+def _section_d(migrated: Settings, matchs: int) -> str:
+    corps = build_prompt(_lot_de(migrated, matchs), settings=migrated, now=NOW).body
+    return " ".join(corps.split("### D. Combinés")[1].split("### E.")[0].split())
+
+
+def test_le_plafond_de_jambes_sures_sature_a_dix_matchs(migrated: Settings) -> None:
+    """Mesure du 14/08/2026 : `quota_for` plafonne a `quota_max`, regle pour un
+    lot de dix. Un lot de 140 n'autorise donc pas une jambe de plus qu'un lot de
+    28 — c'est ce qui donne son sens au plafond annonce dans la section D.
+
+    Le test porte sur la **propriete** et jamais sur la valeur du jour : les
+    quotas se reglent, et 6 + 5 est l'etat de la base servie, pas une constante.
+    """
+    tiers = load_tiers(migrated)
+    plafond = sum(tier.quota_for(QUOTA_REFERENCE_LOT, safest=True)[1] for tier in tiers[:2])
+
+    for lot in (QUOTA_REFERENCE_LOT, 28, 140):
+        assert safe_legs_available(tiers, lot) == plafond, "sature des le lot de reference"
+
+    # Le lot borne quand meme : une seule selection par match dans un combine.
+    assert safe_legs_available(tiers, 3) == 3
+    assert safe_legs_available(tiers, 0) == 0
+
+
+def test_la_section_des_combines_annonce_ses_deux_valeurs(migrated: Settings) -> None:
+    """Jambes **et** cote cible, pour chacun des deux combines. Une consigne qui
+    ne donne que la cote laisse le nombre de jambes se deduire d'elle, alors
+    qu'il decide d'un tout autre objet."""
+    save_threshold("combo_court_jambes", "4", migrated)
+    save_threshold("combo_court_cote", "9", migrated)
+    save_threshold("combo_long_jambes", "10", migrated)
+    save_threshold("combo_long_cote", "135", migrated)
+
+    plat = _section_d(migrated, 12)
+
+    assert "**4 jambes**, cote cible **9**" in plat
+    assert "**10 jambes**, cote cible **135**" in plat
+    # Le plafond se **calcule** : les quotas du seed ne sont pas ceux de la base
+    # servie, et ecrire le nombre du jour ferait passer le test sur une
+    # configuration que personne n'a choisie.
+    plafond = safe_legs_available(load_tiers(migrated), 12)
+    assert f"Ce lot autorise **{plafond} jambes** au plus" in plat
+
+
+def test_un_combine_long_plus_grand_que_le_lot_est_annonce_comme_tel(
+    migrated: Settings,
+) -> None:
+    """Reclamer dix jambes a un lot qui n'en porte que quatre ferait ecrire que
+    la demande etait insatisfiable — le defaut deja corrige par
+    `combo_solo_min_lot`, un cran plus loin. Le plafond se calcule, donc il se
+    dit."""
+    tiers = load_tiers(migrated)
+    #: Le plafond des quotas, celui qu'aucune taille de lot ne depasse.
+    maximum = safe_legs_available(tiers, 40)
+
+    # Premiere cause : le lot est trop court, les quotas se reduisent avec lui.
+    save_threshold("combo_long_jambes", str(maximum), migrated)
+    court = safe_legs_available(tiers, 6)
+    assert court < maximum, "sinon la reduction proportionnelle ne joue pas"
+    plat = _section_d(migrated, 6)
+    assert "n'est pas constructible ici" in plat
+    assert f"il en demande {maximum} et le lot n'en porte que {court}" in plat
+    assert f"Rends-le à {court} jambes" in plat
+
+    # Seconde cause, et c'est celle qui surprend : le lot est grand, mais les
+    # quotas plafonnent. Un lot de 140 n'autorise pas une jambe de plus qu'un
+    # lot de 28, donc la demande reste insatisfiable si elle depasse le plafond.
+    save_threshold("combo_long_jambes", str(maximum + 1), migrated)
+    assert "n'est pas constructible ici" in _section_d(migrated, 40)
+
+    # Et il se tait des que la demande tient dans le plafond.
+    save_threshold("combo_long_jambes", str(maximum), migrated)
+    assert "n'est pas constructible ici" not in _section_d(migrated, 40)
+
+
+def test_le_maillon_le_plus_fragile_ne_se_demande_qu_aux_combines_courts(
+    migrated: Settings,
+) -> None:
+    """Sur dix jambes toutes decisives, designer la plus faible ne veut plus rien
+    dire. La section nomme alors les jambes du palier le plus haut — et le
+    libelle ne dit **pas** « fragile » : il dit d'ou vient la cote.
+
+    La raison ecrite dans le gabarit est **structurelle** — c'est la que la cible
+    exerce sa pression — et jamais statistique. Le Fisher a p = 0,0148 entre
+    SAFE et FUN existe, il ne fonde pas cette regle, et rien ne doit le laisser
+    croire.
+    """
+    save_threshold("combo_maillon_jambes", "6", migrated)
+    plat = _section_d(migrated, 12)
+
+    assert "Un combiné de moins de 6 jambes** : nomme le maillon le plus fragile" in plat
+    assert "À partir de 6 jambes**, ne le nomme pas" in plat
+    assert "les jambes du palier le plus haut du combiné**, et dis-le ainsi : la cote" in plat
+    assert "Ce n'est pas un jugement sur leur solidité" in plat
+    assert "l'endroit où s'exerce la pression" in plat
+
+
+def test_la_pression_du_combine_long_est_nommee(migrated: Settings) -> None:
+    """Sur un combine court la tentation est une jambe chere ; sur un long, une
+    jambe a 1.30 — moins visible, moins couteuse a ecrire, tout aussi fausse. Le
+    garde-fou d'origine ne couvrait que la premiere."""
+    plat = _section_d(migrated, 12)
+
+    assert "ce n'est plus une jambe chère ajoutée à la fin, c'est une jambe courte" in plat
+    assert "un 1.30 qui ne coûte presque rien à écrire et fait franchir la cible" in plat
+    assert "Elle est exactement aussi fausse." in plat
 
 
 def test_le_score_en_sets_survit_a_toutes_les_tailles(migrated: Settings) -> None:

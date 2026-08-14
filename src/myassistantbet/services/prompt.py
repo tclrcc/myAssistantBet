@@ -199,6 +199,31 @@ def research_capped(tiers: Sequence[Tier], lot: int, budget: int) -> list[tuple[
     return rendus
 
 
+def safe_legs_available(tiers: Sequence[Tier], lot: int) -> int:
+    """Jambes que les deux paliers surs autorisent sur ce lot.
+
+    Un combine long se batit dans les deux bandes les plus sures — six SAFE a
+    1.45 et quatre FUN a 1.95 donnent 135 sans consommer une seule place haute —
+    donc son plafond est la somme de leurs deux quotas, et jamais le total des
+    cinq paliers.
+
+    **Le plafond ne depend plus du lot au-dela de dix matchs**, et c'est mesure :
+    `quota_for` plafonne a `quota_max`, regle pour `QUOTA_REFERENCE_LOT`. Au
+    reglage servi le 14/08/2026 il vaut 6 + 5 = 11 des dix matchs, et un lot de
+    140 n'en donne pas un de plus qu'un lot de 28 — la shortlist de 140
+    evenements de ce jour-la a d'ailleurs rendu un prompt de dix blocs, donc
+    exactement le point de saturation.
+
+    Le lot le borne quand meme : une seule selection par match dans un combine,
+    donc cinq matchs ne portent pas six jambes.
+
+    Le budget de recherche ne s'y applique pas — `research_capped` ne touche
+    jamais les deux paliers les plus surs, aucun d'eux ne reclamant de dossier.
+    """
+    quotas = sum(tier.quota_for(lot, safest=True)[1] for tier in tiers[:QUOTA_FLOOR_TIERS])
+    return max(0, min(quotas, lot))
+
+
 @dataclass(frozen=True)
 class Price:
     """Une cote du lot, avec de quoi la retrouver dans son bloc."""
@@ -837,6 +862,23 @@ def build_prompt(
             # selection quand la section D en reclame trois independantes —
             # reclamer puis faire ecrire que c'etait impossible coute deux fois.
             combo_solo_min_lot=threshold("combo_solo_min_lot", settings),
+            # Le nombre de jambes est un **parametre**, pas une consequence de la
+            # cote visee : « >= 100 » se satisfait par 5 jambes a 2.50 comme par
+            # 10 a 1.55, et ce sont deux objets sans rapport. Chaque combine se
+            # regle donc par deux valeurs, et la cote reste une cible.
+            combo_court_jambes=threshold("combo_court_jambes", settings),
+            combo_court_cote=threshold("combo_court_cote", settings),
+            combo_long_jambes=threshold("combo_long_jambes", settings),
+            combo_long_cote=threshold("combo_long_cote", settings),
+            # Le seuil qui fait basculer « court » en « long » se calcule et
+            # s'annonce : une regle qu'il faut appliquer de tete ne contraint
+            # rien, meme raison que les bornes de palier.
+            combo_maillon_jambes=threshold("combo_maillon_jambes", settings),
+            # Ce que les quotas des deux paliers surs autorisent sur ce lot.
+            # Reclamer dix jambes a un lot qui n'en porte que quatre ferait
+            # ecrire que la demande etait insatisfiable — le defaut deja corrige
+            # par `combo_solo_min_lot`, un cran plus loin.
+            combo_legs_max=safe_legs_available(tiers, len(blocks)),
             # Les bornes **de ce lot**, calculees ici. Le prompt annoncait
             # celles d'un lot de dix et expliquait qu'elles se reduisaient : une
             # borne qu'il faut recalculer soi-meme ne contraint rien.

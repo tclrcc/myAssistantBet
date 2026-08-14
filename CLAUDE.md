@@ -3798,6 +3798,83 @@ dans aucune bande**.
 - **Une borne haute vide veut toujours dire « pas de limite »** : 999.00 reste accepte sur
   `GIGA+`, et un test de non-regression le garde.
 
+## Un combine long se batit dans les bandes sures
+
+**Le combine extreme ne se construit pas dans les paliers hauts**, et l'hypothese inverse
+avait fait ecrire une consigne de places hautes a reserver. Six SAFE a 1.45 et quatre FUN
+a 1.95 donnent 135 : dix jambes, aucune place haute consommee.
+
+D'ou la regle qui commande tout le reste : **le nombre de jambes est un parametre, pas une
+consequence**. « Cote >= 100 » se satisfait par 5 jambes a 2.50 comme par 10 a 1.55, et ce
+sont deux objets sans rapport. Chaque combine se regle donc par **deux** valeurs — jambes
+visees et cote cible — et la cible reste une cible, jamais un plancher.
+
+- **Le plafond de jambes ne depend plus du lot au-dela de dix matchs.** `quota_for`
+  plafonne a `quota_max`, regle pour `QUOTA_REFERENCE_LOT` (10) : au reglage servi le
+  14/08/2026, 6 SAFE + 5 FUN = **11 jambes des dix matchs**, et un lot de 140 n'en donne
+  pas une de plus qu'un lot de 28. La shortlist de 140 evenements de ce jour-la a d'ailleurs
+  rendu un prompt de **dix blocs**, donc exactement le point de saturation. `lot` est le
+  nombre de **blocs du prompt**, jamais la taille de la shortlist.
+  - **Le plafond vaut par prompt, jamais par session**, et l'oublier fait croire qu'un
+    combine de vingt jambes exige de rouvrir les quotas. Une session genere 3 a 17 prompts,
+    chacun avec son quota plein : celle du 09/08 porte **28 selections en bande sure sur 28
+    matchs distincts**, celle du 06/08 22, celle du 13/08 19. Vingt jambes tiennent sans
+    toucher a un seul reglage.
+  - `safe_legs_available()` rend ce plafond et la section D l'annonce. Une demande qui le
+    depasse se dit — meme defaut que `combo_solo_min_lot` un cran plus loin : reclamer ce
+    que le lot ne porte pas fait ecrire que la demande etait insatisfiable.
+- **« >= 100 » est confortable, et ce n'est pas la cote qui contraint.** Sur les six
+  sessions offrant dix jambes sures ou plus, le produit des dix meilleures cotes va de 302
+  a 1396, mediane 565. Les quatre autres echouent faute de **selections produites** — 5 a 9
+  jambes — pas faute de prix. Il faut 1.585 de moyenne geometrique sur dix jambes, quand
+  les deux bandes couvrent 1.25 a 2.30.
+- **Le recouvrement entre un combine court et un long est impose par le vivier.** Sur **la
+  moitie des sessions**, un 4-jambes et un 10-jambes disjoints sont structurellement
+  impossibles : il faudrait 14 matchs distincts et le vivier n'en offre que 5 a 11. Et si
+  les deux se batissent par tri decroissant de surete a partir du meme vivier, le court est
+  **inclus** dans le long par construction — J = 4/10 = 0,40, valeur a attendre par defaut
+  et non accident. Il se calcule et s'affiche ; une regle de disjonction rendrait le second
+  combine impossible un jour sur deux, en silence.
+- **Le maillon le plus fragile ne se demande plus au-dela de `combo_maillon_jambes`** (6) :
+  a dix jambes toutes decisives, designer la plus faible ne veut plus rien dire. La section
+  D fait nommer **les jambes du palier le plus haut du combine**, et le libelle ne dit pas
+  « fragile » — il dit que la cote vient de la.
+  - **La raison est structurelle, et elle doit le rester.** Une cible longue s'atteint en
+    gonflant par le haut de la bande : c'est la que s'exerce la pression, donc c'est ce
+    groupe qu'on expose. Il n'est pas expose parce que les donnees le designeraient.
+  - **La mesure existe, elle a ete calculee, et elle ne fonde pas la decision.** Sur les
+    selections a anteriorite etablie, les jambes SAFE gagnent 33/50 (66 %) contre 19/47
+    (40 %) pour les FUN, Fisher **p = 0,0148**. Elle ne vaut pas son p nominal — le critere
+    « palier » a ete retenu **apres** avoir regarde, parmi plusieurs candidats testes sur le
+    meme echantillon — et elle compare deux **bandes de cote** sur des taux bruts,
+    c'est-a-dire la metrique retiree de la tete de `/stats` : un taux sans son prix ne
+    mesure rien, et les cotes courtes gagnent plus souvent par construction. Elle est
+    ecrite ici pour qu'une relecture ne la prenne pas pour une validation.
+  - **Le critere ecarte l'a ete par la mesure, lui.** Nommer les deux ou trois confiances
+    les plus basses designerait des jambes qui ne sont pas plus fragiles : 54 % contre
+    58 %, et l'omnibus exact sur les confiances 2/3/4 des bandes sures donne p = 0,19.
+    Coherent avec ce qui etait deja etabli — la confiance n'ordonne pas.
+  - **Le critere « jambes en lecture » attend**, meme regle que partout : 93 des 137 lignes
+    n'ont aucun niveau de source et le chantier de la migration 043 n'a recu aucune entree.
+    Un critere qui ne se declenche jamais est pire qu'absent, il donne l'apparence d'un
+    filtre actif. Il se rouvre quand la colonne se sera remplie sur quelques sessions.
+- **La pression change de forme avec la longueur**, et le garde-fou d'origine ne couvrait
+  que la premiere moitie. Sur un combine court, la tentation est une jambe chere ajoutee a
+  la fin ; sur un long, c'est une jambe a 1.30 — moins visible, moins couteuse a ecrire,
+  tout aussi fausse. Le plancher de bande (1.25) l'autorise, donc rien ne l'arrete que la
+  consigne.
+- **Le taux de jambe se mesure, le taux de combine non.** Les selections en bande sure
+  gagnent 78/137 (57 %), 54 % sur la seule anteriorite etablie : un combine de dix jambes
+  passe de l'ordre d'**une fois sur 280**, pas une fois sur cent. Son taux ne sera jamais
+  mesurable, quel que soit le temps qu'on lui laisse — le combine est un **regroupement**,
+  pas une unite de mesure, et ses jambes restent des selections ordinaires comptees
+  individuellement. Le produit des taux n'est qu'un ordre de grandeur : les jambes d'une
+  meme session ne sont pas independantes, ce que `clustered_p_value` sait deja ailleurs.
+- **Aucun combine n'existe en base au 14/08/2026** — `coupons` vide, `coupon_id` nul sur
+  les 149 selections, `played` faux partout. Le recouvrement historique n'etait donc pas
+  mesurable : tout ce qui precede porte sur ce que le vivier **autorise**, jamais sur ce
+  qui a ete pose.
+
 ## Les seuils reglables (`services/thresholds.py`)
 
 Des nombres qui decident d'une regle sans etre ni une constante du projet ni une donnee :
