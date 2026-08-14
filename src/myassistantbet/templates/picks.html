@@ -52,7 +52,34 @@
   <p class="notice notice-warn">{{ preview.notes | join(' ') }}</p>
   {% endif %}
 
+  {% if preview.combos %}
+  {# Le recouvrement se dit, il ne s'interdit pas : sur la moitié des sessions
+     mesurées, un court et un long disjoints sont structurellement impossibles.
+     Ce qui est interdit, c'est qu'il passe inaperçu. #}
+  <p class="notice">
+    {% for attached in preview.combos %}
+      Combiné {{ attached.combo.kind }} — {{ attached.rows | length }} jambe(s),
+      cote recalculée
+      {% if attached.computed_price %}{{ '%.2f' | format(attached.computed_price) }}{% else %}incalculable (une jambe sans prix){% endif %}{% if attached.combo.target_price %},
+      cible {{ '%.0f' | format(attached.combo.target_price) }}{% endif %}{% if attached.combo.stop_reason %},
+      arrêt : {{ attached.combo.stop_reason }}{% endif %}.
+    {% endfor %}
+    {%- if preview.overlap %} Recouvrement : {{ preview.overlap }}.{% endif %}
+  </p>
+  {% endif %}
+
   <form method="post" action="/history/{{ session_id }}/picks/import">
+    {# Les combinés voyagent avec le formulaire, comme la liste des dossiers :
+       l'aperçu n'écrit rien. `rows` porte les numéros de ligne, traduits en
+       identifiants de sélection une fois les picks créés. #}
+    {% for attached in preview.combos %}
+    <input type="hidden" name="combo_{{ loop.index }}"
+           value='{{ {"kind": attached.combo.kind, "rows": attached.rows,
+                      "prompt_id": attached.prompt_id,
+                      "declared": attached.combo.declared_price,
+                      "target": attached.combo.target_price,
+                      "stop": attached.combo.stop_reason} | tojson }}'>
+    {% endfor %}
     {# La liste des dossiers ouverts voyage avec le formulaire : l'aperçu
        n'écrit rien, c'est l'import qui la mémorise. #}
     <input type="hidden" name="open_dossiers"

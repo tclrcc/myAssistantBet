@@ -11,12 +11,14 @@ proposition que l'utilisateur valide, corrige ou rejette ligne par ligne.
 
 from __future__ import annotations
 
+import math
 import re
 import unicodedata
 from dataclasses import dataclass, field
 from typing import Any
 
 from ..config import Settings, get_settings
+from .combos import PRICE_GAP, ParsedCombo, read_combos
 from .confidence import (
     OPEN_MALFORMED,
     OPEN_READ,
@@ -26,7 +28,14 @@ from .confidence import (
     read_opened,
 )
 from .grid import GridRow, anchor, build_view
-from .history import ANGLES, PickableEvent, list_picks, pickable_events, prompt_headers
+from .history import (
+    ANGLES,
+    PickableEvent,
+    PromptBlocks,
+    list_picks,
+    pickable_events,
+    prompt_headers,
+)
 from .history import tiers as load_tiers
 
 #: Une ligne de tableau Markdown : `| a | b | c |`.
@@ -150,11 +159,47 @@ class ParsedPick:
         return issues
 
 
+@dataclass(frozen=True)
+class AttachedCombo:
+    """Un combine lu, ses jambes rapprochees des lignes du tableau.
+
+    `rows` porte les **indices de lignes** et non des identifiants de selection :
+    rien n'est encore ecrit a l'apercu, donc les picks n'existent pas. C'est
+    l'import qui les traduira en identifiants une fois les lignes creees.
+    """
+
+    combo: ParsedCombo
+    rows: list[int]
+    prompt_id: int
+    #: La cote **recalculee depuis les lignes du tableau**, jamais celle que le
+    #: modele a ecrite : le produit d'une reponse est une affirmation, celui-ci
+    #: est une consequence des prix recopies. `None` des qu'une jambe n'a pas de
+    #: prix lisible — un produit partiel serait plus bas que le vrai sans que
+    #: rien ne le dise.
+    computed_price: float | None = None
+
+    @property
+    def price_gap(self) -> float | None:
+        declared = self.combo.declared_price
+        if declared is None or not self.computed_price:
+            return None
+        return (declared - self.computed_price) / self.computed_price
+
+    @property
+    def price_mismatch(self) -> bool:
+        gap = self.price_gap
+        return gap is not None and abs(gap) > PRICE_GAP
+
+
 @dataclass
 class ImportPreview:
     """Proposition d'import. Rien n'est ecrit avant validation."""
 
     picks: list[ParsedPick] = field(default_factory=list)
+    #: Les combines lus et rattaches. Vides, ils ne coutent rien ; rejetes, ils
+    #: passent par `notes` et jamais par `ignored` — un combine illisible ne doit
+    #: pas couter la possibilite d'importer le tableau.
+    combos: list[AttachedCombo] = field(default_factory=list)
     #: Ce qui empeche de lire le collage. **Non vide, le tableau ne s'affiche
     #: pas du tout** : c'est la porte du gabarit, et y verser une remarque ferait
     #: disparaitre l'import entier pour un detail.
@@ -217,8 +262,31 @@ class ImportPreview:
         return (
             f"{self.count} sélection(s) détectée(s) · "
             f"{self.claims_attached} bloc(s) de confiance apparié(s) · "
+            f"{len(self.combos)} combiné(s) rattaché(s) · "
             + etats.get(self.opened.state, "ligne dossiers_ouverts absente")
         )
+
+    @property
+    def overlap(self) -> str:
+        """Le recouvrement entre les combines rattaches, nomme et jamais tu.
+
+        **Il est impose par le vivier et non par la redaction** : sur la moitie
+        des sessions mesurees, un court et un long disjoints sont
+        structurellement impossibles. Ce qui est interdit n'est pas qu'ils se
+        recouvrent, c'est que le recouvrement passe inapercu.
+        """
+        paires = []
+        for index, gauche in enumerate(self.combos):
+            for droite in self.combos[index + 1 :]:
+                a, b = set(gauche.rows), set(droite.rows)
+                union = a | b
+                part = len(a & b) / len(union) if union else 0.0
+                if part:
+                    paires.append(
+                        f"{gauche.combo.kind} et {droite.combo.kind} partagent "
+                        f"{len(a & b)} jambe(s), J = {part:.2f}"
+                    )
+        return " · ".join(paires)
 
     @property
     def complete(self) -> bool:
@@ -466,14 +534,87 @@ def parse_table(
         )
     valide = _attach_claims(preview, raw, headers)
     _apply_research(preview, raw, headers or [], valide)
+    _attach_combos(preview, raw, valide)
     return preview
+
+
+def _attach_combos(preview: ImportPreview, raw: str, valide: PromptBlocks | None) -> None:
+    """Rattache les blocs ```combo aux lignes du tableau, par leur repere.
+
+    **Le prompt est celui qui a valide l'appariement des blocs de confiance**, et
+    pas un second choisi ici : deux resolutions paralleles finiraient par
+    designer deux matchs sous le meme repere. Sans lui, les combines sont lus et
+    dits, mais aucun n'est rattache — un combine porte l'identifiant de son
+    prompt, et l'inventer serait pire que ne pas l'enregistrer.
+
+    La resolution passe par la ligne du tableau et non par l'evenement : c'est la
+    selection qui est une jambe, et un match peut en porter deux. Un repere qui
+    designe deux lignes est donc **refuse** plutot que tranche au hasard.
+    """
+    reading = read_combos(raw)
+    preview.notes.extend(reading.rejected)
+    if not reading.combos:
+        return
+    if valide is None:
+        preview.notes.append(
+            f"{len(reading.combos)} combiné(s) lu(s), aucun rattaché : le prompt d'origine "
+            "n'a pas pu être identifié, et un combiné porte l'identifiant de son prompt."
+        )
+        return
+
+    # Le repere de chaque ligne vient de son bloc de confiance, deja apparie.
+    # `rows` porte le **numero de ligne du formulaire** (`ParsedPick.index`), le
+    # seul identifiant qui traverse le POST : c'est lui qui permettra de
+    # retrouver la selection creee.
+    par_repere: dict[str, list[ParsedPick]] = {}
+    for pick in preview.picks:
+        if pick.claim and pick.claim.match:
+            par_repere.setdefault(pick.claim.match.upper(), []).append(pick)
+
+    for combo in reading.combos:
+        jambes: list[ParsedPick] = []
+        manquants: list[str] = []
+        for mark in combo.marks:
+            trouve = par_repere.get(mark, [])
+            if len(trouve) == 1:
+                jambes.append(trouve[0])
+            else:
+                manquants.append(mark)
+        if manquants:
+            cause = "introuvable(s) ou ambigu(s) dans le tableau"
+            preview.notes.append(f"{combo.label} non rattaché : {', '.join(manquants)} {cause}.")
+            continue
+        attache = AttachedCombo(
+            combo=combo,
+            rows=[pick.index for pick in jambes],
+            prompt_id=valide.prompt_id,
+            computed_price=_product([pick.price for pick in jambes]),
+        )
+        preview.combos.append(attache)
+        if attache.price_mismatch:
+            preview.notes.append(
+                f"{combo.label} : cote écrite {combo.declared_price:.2f}, recalculée depuis "
+                f"les jambes {attache.computed_price:.2f}. C'est la recalculée qui est "
+                "enregistrée."
+            )
+
+
+def _product(prices: list[str]) -> float | None:
+    """Le produit de cotes recopiees, ou rien si l'une manque."""
+    valeurs = []
+    for raw in prices:
+        try:
+            valeurs.append(float(str(raw).replace(",", ".")))
+        except ValueError:
+            return None
+    return math.prod(valeurs) if valeurs else None
 
 
 def _apply_research(
     preview: ImportPreview,
     raw: str,
-    headers: list[dict[str, str]],
-    valide: dict[str, str] | None,
+    headers: list[PromptBlocks],
+    valide: PromptBlocks | None,
 ) -> None:
     """Marque les selections portant sur un dossier que l'analyse n'a pas ouvert.
 
@@ -493,13 +634,13 @@ def _apply_research(
     # premier qui porte **tous** les reperes declares : deux resolutions
     # paralleles finiraient par designer deux matchs sous le meme numero.
     mapping = valide or next(
-        (candidate for candidate in headers if opened.marks <= set(candidate)), None
+        (candidate for candidate in headers if opened.marks <= set(candidate.marks)), None
     )
-    if mapping is not None and not opened.marks <= set(mapping):
+    if mapping is not None and not opened.marks <= set(mapping.marks):
         mapping = None
     affiches: set[str] = set()
     if mapping is not None:
-        affiches = {_fold(_affiche_of(mapping[mark])) for mark in opened.marks}
+        affiches = {_fold(_affiche_of(mapping.marks[mark])) for mark in opened.marks}
     if opened.note:
         preview.notes.append(opened.note)
     elif mapping is None:
@@ -512,8 +653,8 @@ def _apply_research(
 
 
 def _attach_claims(
-    preview: ImportPreview, raw: str, headers: list[dict[str, str]] | None = None
-) -> dict[str, str] | None:
+    preview: ImportPreview, raw: str, headers: list[PromptBlocks] | None = None
+) -> PromptBlocks | None:
     """Rattache les blocs de confiance aux lignes du tableau, **par l'ordre**.
 
     Rend le prompt qui a valide, pour que la liste des dossiers ouverts se
@@ -584,7 +725,7 @@ def _attach_claims(
     return valide
 
 
-def _mismatch(picks: list[ParsedPick], claims: list[Claim], headers: list[dict[str, str]]) -> str:
+def _mismatch(picks: list[ParsedPick], claims: list[Claim], headers: list[PromptBlocks]) -> str:
     """La premiere paire qui bloque, nommee — sinon l'echec est **terminal**.
 
     « Ça se rattrape en recollant » n'est un chemin de reprise que si le message
@@ -607,7 +748,7 @@ def _mismatch(picks: list[ParsedPick], claims: list[Claim], headers: list[dict[s
     )
     for index, (pick, claim) in enumerate(zip(picks, claims, strict=True), start=1):
         if not _pairs(pick, claim, proche):
-            attendu = _fold(_affiche_of(proche.get(claim.match, ""))) or "—"
+            attendu = _fold(_affiche_of(proche.marks.get(claim.match, ""))) or "—"
             recu = _fold(pick.match_text) or "—"
             return (
                 f"Première paire en cause : ligne {index}, bloc {claim.match or '?'} — "
@@ -617,8 +758,8 @@ def _mismatch(picks: list[ParsedPick], claims: list[Claim], headers: list[dict[s
 
 
 def _select(
-    picks: list[ParsedPick], claims: list[Claim], headers: list[dict[str, str]]
-) -> dict[str, str] | None:
+    picks: list[ParsedPick], claims: list[Claim], headers: list[PromptBlocks]
+) -> PromptBlocks | None:
     """Le prompt de la session qui valide toutes les paires a la fois, ou rien.
 
     **Une paire qui ne passe pas fait tomber le lot entier**, jamais elle seule :
@@ -662,7 +803,7 @@ def _affiche_of(header: str) -> str:
     return parts[HEADER_AFFICHE] if len(parts) >= HEADER_FIELDS else ""
 
 
-def _pairs(pick: ParsedPick, claim: Claim, mapping: dict[str, str]) -> bool:
+def _pairs(pick: ParsedPick, claim: Claim, blocks: PromptBlocks) -> bool:
     """Ce bloc designe-t-il bien la ligne avec laquelle il a ete apparie.
 
     **Normalisation deterministe, puis egalite stricte.** C'est le seul reglage
@@ -688,7 +829,7 @@ def _pairs(pick: ParsedPick, claim: Claim, mapping: dict[str, str]) -> bool:
     verifie, ce qui est exactement le silence qu'il existe pour supprimer.
     """
     cell = _fold(pick.match_text)
-    header = _fold(_affiche_of(mapping.get(claim.match, "")))
+    header = _fold(_affiche_of(blocks.marks.get(claim.match, "")))
     return bool(cell) and bool(header) and cell == header
 
 

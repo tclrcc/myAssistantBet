@@ -864,11 +864,16 @@ def build_prompt(
             combo_solo_min_lot=threshold("combo_solo_min_lot", settings),
             # Le nombre de jambes est un **parametre**, pas une consequence de la
             # cote visee : « >= 100 » se satisfait par 5 jambes a 2.50 comme par
-            # 10 a 1.55, et ce sont deux objets sans rapport. Chaque combine se
-            # regle donc par deux valeurs, et la cote reste une cible.
+            # 10 a 1.55, et ce sont deux objets sans rapport.
+            #
+            # Sur le long il est un **plafond et jamais une cible** : la mesure
+            # dit que la cote n'est pas la contrainte — les six sessions offrant
+            # dix jambes sures depassent toutes 100 — et que c'est le compte qui
+            # l'est. Viser un compte fabriquerait donc la pression que la section
+            # interdit. Il prend ce que le lot autorise et s'arrete au premier
+            # des trois motifs, dont il rend le nom.
             combo_court_jambes=threshold("combo_court_jambes", settings),
             combo_court_cote=threshold("combo_court_cote", settings),
-            combo_long_jambes=threshold("combo_long_jambes", settings),
             combo_long_cote=threshold("combo_long_cote", settings),
             # Le seuil qui fait basculer « court » en « long » se calcule et
             # s'annonce : une regle qu'il faut appliquer de tete ne contraint

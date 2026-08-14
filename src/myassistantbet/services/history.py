@@ -880,7 +880,21 @@ def prompt_priorities(settings: Settings | None = None) -> dict[int, set[str]]:
     return found
 
 
-def prompt_headers(session_id: int, settings: Settings | None = None) -> list[dict[str, str]]:
+@dataclass(frozen=True)
+class PromptBlocks:
+    """Les reperes de blocs d'un prompt, **et son identifiant**.
+
+    L'identifiant voyage avec les reperes plutot que d'etre relu a cote : c'est
+    le prompt qui valide l'appariement des blocs de confiance qui donne aussi
+    son `prompt_id` a un combine, et deux lectures paralleles de la meme chose
+    auraient fini par designer deux prompts differents.
+    """
+
+    prompt_id: int
+    marks: dict[str, str]
+
+
+def prompt_headers(session_id: int, settings: Settings | None = None) -> list[PromptBlocks]:
     """Les en-tetes de blocs de chaque prompt de la session, du plus recent.
 
     Une liste **par prompt** et non un dictionnaire fusionne : `M8` designe deux
@@ -890,9 +904,12 @@ def prompt_headers(session_id: int, settings: Settings | None = None) -> list[di
     settings = settings or get_settings()
     with connect(settings) as conn:
         bodies = conn.execute(
-            "SELECT body FROM prompts WHERE session_id = ? ORDER BY id DESC", (session_id,)
+            "SELECT id, body FROM prompts WHERE session_id = ? ORDER BY id DESC", (session_id,)
         ).fetchall()
-    return [dict(_NUMBERED_HEADER.findall(row["body"] or "")) for row in bodies]
+    return [
+        PromptBlocks(int(row["id"]), dict(_NUMBERED_HEADER.findall(row["body"] or "")))
+        for row in bodies
+    ]
 
 
 @dataclass

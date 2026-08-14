@@ -397,6 +397,14 @@ def test_le_prompt_ouvre_la_fiche_au_dela_du_budget(migrated: Settings) -> None:
     corps = " ".join(rendu.split())
 
     assert "Ce lot comporte 21 matchs" in corps
+    # **Le budget se compte par prompt, et l'annoncer « par session » etait
+    # faux.** Mesure du 14/08/2026 : une session genere 3 a 20 prompts, et le
+    # meme nombre etait ecrit dans chacun — vingt instances lisant « une session
+    # couvre 7 dossiers » sans qu'aucune sache que dix-neuf autres lisaient la
+    # meme phrase. Le nombre est vrai par prompt et faux par session.
+    assert "**Ce prompt** ouvre" in corps
+    assert "le budget se compte par prompt, et une journée en produit plusieurs" in corps
+    assert "Une session couvre environ" not in corps
     # « non recherches » et non « non couverts » : le second designait aussi un
     # match dont la **collecte** n'a pas eu lieu, ou `lecture` est vide de sens.
     assert "les matchs **non recherchés** se rendent en `lecture`" in corps

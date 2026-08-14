@@ -3872,6 +3872,11 @@ visees et cote cible — et la cible reste une cible, jamais un plancher.
   - **La raison est structurelle, et elle doit le rester.** Une cible longue s'atteint en
     gonflant par le haut de la bande : c'est la que s'exerce la pression, donc c'est ce
     groupe qu'on expose. Il n'est pas expose parce que les donnees le designeraient.
+  - **Le nombre de jambes du long est un plafond, jamais une cible**, et c'est la meme
+    raison retournee : la mesure dit que la cote n'est pas la contrainte — les six sessions
+    offrant dix jambes sures depassent toutes 100 — et que c'est le compte qui l'est. Viser
+    un compte fabriquerait donc exactement la pression que la section interdit. Il prend ce
+    que `safe_legs_available()` autorise et s'arrete au premier des trois motifs.
   - **La mesure existe, elle a ete calculee, et elle ne fonde pas la decision.** Sur les
     selections a anteriorite etablie, les jambes SAFE gagnent 33/50 (66 %) contre 19/47
     (40 %) pour les FUN, Fisher **p = 0,0148**. Elle ne vaut pas son p nominal — le critere
@@ -3904,6 +3909,65 @@ visees et cote cible — et la cible reste une cible, jamais un plancher.
   les 149 selections, `played` faux partout. Le recouvrement historique n'etait donc pas
   mesurable : tout ce qui precede porte sur ce que le vivier **autorise**, jamais sur ce
   qui a ete pose.
+
+## Le combine est un objet d'analyse (`services/combos.py`, migration 047)
+
+**Il ne passe pas par `coupons`, et la collision etait reelle.** `coupons.attach()` est le
+**seul** ecrivain de `picks.played`, et il ecrit aussi `picks.coupon_id` : faire passer les
+combines par la aurait fait apparaitre comme paris poses des combines que personne n'a
+joues. La page pose deux questions distinctes — ce que valent les selections, ce que valent
+les paris — et un combine produit par le modele appartient sans ambiguite a la premiere.
+S'il devient un pari, c'est un geste fait apres, et qui ne le change pas. **Le mot « joue »
+n'apparait nulle part sur ces cartes.**
+
+- **Un combine reste rattache a un prompt** (`prompt_id NOT NULL`), et une jambe venue d'un
+  autre prompt est refusee. Les selections de deux prompts n'ont jamais ete comparees entre
+  elles : chaque instance a choisi dans son lot, avec son quota et son budget propres. Et
+  les colonnes qui mesureraient si un cran signifie la meme chose d'un prompt a l'autre
+  (migrations 042 et 043) n'ont recu leur premiere entree que le 14/08/2026.
+  - **Deux mesures le justifient**, et la seconde est la vraie : sur dix sessions, deux
+    seulement portent de quoi batir un combine de vingt jambes ; et un match est rendu
+    **2,23 fois** en moyenne dans sa session, jusqu'a 13 fois — deux jambes venues de deux
+    prompts sur le meme match seraient deux tirages du meme match presentes comme deux
+    selections.
+  - La contrainte est **ecrite dans le schema** plutot que laissee implicite, et un test
+    garde le refus.
+- **La cote se recalcule depuis les jambes, jamais depuis le produit ecrit.** Le nombre
+  qu'un rendu affiche est une affirmation du modele ; celui-ci est une consequence des prix
+  enregistres. Les deux se gardent (`declared_price`, et le calcul a la lecture), et
+  **l'ecart se signale a l'apercu** — le seul moment ou l'information est encore
+  recuperable, meme regle que le releve des blocs de confiance. Une jambe sans prix rend le
+  produit **incalculable** et non partiel : un produit ampute serait plus bas que le vrai
+  sans que rien ne le dise.
+- **Le motif d'arret est la donnee du bloc qui ne se deduit de rien** : `cible`, `plafond`,
+  `confiance`. Aucun n'est un echec, et c'est leur repartition qui dira si la cible est
+  bien reglee — toujours `cible` et elle peut monter, toujours `confiance` et le lot est la
+  contrainte, la cible n'y pouvant rien.
+- **Aucune carte « taux de reussite par combine », et c'est definitif.** Au taux de jambe
+  constate (78/137, 57 %), un combine de dix jambes se tranche favorablement une fois sur
+  280 : son taux ne sera jamais mesurable, quel que soit le temps qu'on lui laisse. Le
+  combine est un **regroupement** ; les jambes restent les unites de mesure, comptees
+  individuellement dans les statistiques existantes. Ce qui garde un sens est **combien de
+  jambes tombent** et **a quel rang la premiere tombe** — d'ou `combo_legs.position`, qui
+  porte l'ordre d'ajout.
+  - Le produit des taux n'est qu'un ordre de grandeur : les jambes d'une meme session ne
+    sont pas independantes, ce que `clustered_p_value` sait deja ailleurs.
+- **Le recouvrement s'affiche, il ne s'interdit pas.** Mesure : sur **la moitie** des
+  sessions, un 4-jambes et un 10-jambes disjoints sont structurellement impossibles — il
+  faudrait 14 matchs distincts et le vivier n'en offre que 5 a 11. Et si les deux se
+  batissent par tri decroissant de surete a partir du meme vivier, le court est **inclus**
+  dans le long par construction, J = 4/10 = 0,40. Une regle de disjonction rendrait le
+  second combine impossible un jour sur deux, en silence. Le compte partage accompagne
+  l'indice : un J de 0,40 ne dit pas s'il porte sur deux jambes ou sur huit.
+- **La repartition par palier remplace la designation d'un maillon fragile**, et son
+  libelle ne dit pas « fragile » : il dit **ou la cote a ete achetee**. Voir plus bas la
+  raison, qui est structurelle et non statistique.
+- Un combine dont une jambe n'a pas ete importee — ligne decochee, ligne en echec — n'est
+  **pas enregistre ampute** : il porterait une cote que rien ne justifie. Il est dit.
+- `PromptBlocks` porte l'identifiant du prompt **avec** ses reperes de blocs : c'est le
+  prompt qui valide l'appariement des blocs de confiance qui donne aussi son `prompt_id` a
+  un combine, et deux lectures paralleles de la meme chose auraient fini par designer deux
+  prompts differents.
 
 ## Les seuils reglables (`services/thresholds.py`)
 

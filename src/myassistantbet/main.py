@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
@@ -18,7 +19,7 @@ from fastapi.templating import Jinja2Templates
 from jinja2 import TemplateNotFound
 
 from . import __version__, db
-from .config import PACKAGE_DIR, get_settings
+from .config import PACKAGE_DIR, Settings, get_settings
 from .providers.apifootball import APIFootballClient
 from .providers.base import ProviderError
 from .providers.oddsapi import OddsAPIClient
@@ -27,6 +28,7 @@ from .providers.tennisdata import TennisDataClient
 from .providers.weather import WeatherClient
 from .scheduler import build_scheduler
 from .services import board as board_service
+from .services import combos as combos_service
 from .services import competitions as competitions_service
 from .services import context as context_service
 from .services import coupons as coupons_service
@@ -994,6 +996,10 @@ def stats_export(fmt: str = Query("md", alias="format")) -> Response:
 def _picks_context(session_id: int, error: str | None = None, **extra: object) -> dict[str, object]:
     settings = get_settings()
     now = datetime.now(ZoneInfo(settings.tz))
+    # Lu une seule fois : le recouvrement se calcule sur les memes combines que
+    # ceux qui s'affichent, et deux lectures auraient fini par ne plus decrire
+    # le meme lot.
+    combos = combos_service.list_for_session(session_id, settings)
     return {
         "session_id": session_id,
         "session_label": session_service.session_label(session_id, settings),
@@ -1019,6 +1025,11 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         "worksheet": history_service.worksheet(session_id, settings),
         "result_labels": list(history_service.RESULT_LABELS.items()),
         "coupons": coupons_service.list_for_session(session_id, settings),
+        # Les combines d'**analyse**, distincts des coupons : ils ne disent pas
+        # ce qui a ete pose chez le bookmaker, et le mot « joue » n'apparait pas
+        # sur eux. Leur recouvrement se rend a cote, jamais tu.
+        "combos": combos,
+        "combo_overlaps": combos_service.overlaps(combos),
         # Le score exact en sets : la seule mesure de la lecture de la maniere
         # qui soit independante de tout prix. Menus fermes, jamais un champ
         # libre — une faute de frappe ferait disparaitre la ligne du comptage.
@@ -1129,9 +1140,13 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
         state=form.get("open_dossiers_state", ""),
     )
     created, failures = 0, []
+    #: Les selections creees, par leur numero de ligne : c'est ce qui permet de
+    #: retrouver les jambes d'un combine une fois les picks ecrits. Une ligne
+    #: decochee ou en echec n'y figure pas, et son combine le dira.
+    par_ligne: dict[str, int] = {}
     for index in sorted({key.split("_")[-1] for key in form if key.startswith("keep_")}):
         try:
-            history_service.add_pick(
+            pick_id = history_service.add_pick(
                 session_id,
                 tier=form.get(f"tier_{index}", ""),
                 market=form.get(f"market_{index}", ""),
@@ -1152,14 +1167,61 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
                 settings=settings,
             )
             created += 1
+            par_ligne[index] = pick_id
         except history_service.HistoryError as exc:
             failures.append(f"ligne {index} : {exc}")
+
+    failures.extend(_record_combos(session_id, form, par_ligne, settings))
 
     return templates.TemplateResponse(
         request,
         "picks.html",
         _picks_context(session_id, imported=created, import_failures=failures),
     )
+
+
+def _record_combos(
+    session_id: int,
+    form: dict[str, str],
+    par_ligne: dict[str, int],
+    settings: Settings,
+) -> list[str]:
+    """Enregistre les combines de l'import. Rend ce qui n'a pas pu l'etre.
+
+    Un combine n'est enregistre que si **toutes** ses jambes ont ete creees :
+    une ligne decochee ou en echec en retire une, et un combine ampute
+    porterait une cote que rien ne justifie. Il est alors dit, jamais tronque
+    en silence.
+    """
+    problemes: list[str] = []
+    for key in sorted(key for key in form if key.startswith("combo_")):
+        try:
+            payload = json.loads(form[key])
+        except json.JSONDecodeError:
+            problemes.append(f"{key} : bloc de combiné illisible au moment de l'import.")
+            continue
+        lignes = [str(row) for row in payload.get("rows", [])]
+        manquantes = [row for row in lignes if row not in par_ligne]
+        if manquantes:
+            problemes.append(
+                f"Combiné {payload.get('kind', '?')} non enregistré : "
+                f"{len(manquantes)} de ses {len(lignes)} jambes n'ont pas été importées."
+            )
+            continue
+        try:
+            combos_service.record(
+                session_id,
+                int(payload["prompt_id"]),
+                kind=str(payload.get("kind", "")),
+                pick_ids=[par_ligne[row] for row in lignes],
+                declared_price=payload.get("declared"),
+                target_price=payload.get("target"),
+                stop_reason=payload.get("stop") or None,
+                settings=settings,
+            )
+        except (combos_service.ComboError, KeyError, ValueError) as exc:
+            problemes.append(f"Combiné {payload.get('kind', '?')} non enregistré : {exc}")
+    return problemes
 
 
 # --- Coupons joues ---------------------------------------------------------

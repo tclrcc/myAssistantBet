@@ -98,31 +98,19 @@ THRESHOLDS: dict[str, Threshold] = {
             "cote réelle."
         ),
     ),
-    "combo_long_jambes": Threshold(
-        key="combo_long_jambes",
-        label="Jambes visées — combiné frisson",
-        default=5,
-        low=2,
-        high=20,
-        note=(
-            "Le long et dilué. Mesure du 14/08/2026 à ne pas oublier en le relevant : les "
-            "quotas des deux paliers sûrs plafonnent à 6 + 5 = 11 jambes par prompt dès un "
-            "lot de 10 matchs, et ne bougent plus — un lot de 140 ne donne pas une jambe de "
-            "plus qu'un lot de 28. Au-delà de 11, le combiné doit puiser dans plusieurs "
-            "prompts de la même session."
-        ),
-    ),
     "combo_long_cote": Threshold(
         key="combo_long_cote",
         label="Cote cible — combiné frisson",
-        default=50,
+        default=100,
         low=2,
         high=10_000,
         note=(
             "Mesuré sur les 6 sessions offrant 10 jambes sûres ou plus : les dix meilleures "
             "cotes donnent de 302 à 1396, médiane 565. « ≥ 100 » est donc confortable — ce "
             "qui contraint n'est pas la cote mais le nombre de sélections produites, 4 "
-            "sessions sur 10 n'atteignant pas dix jambes."
+            "sessions sur 10 n'atteignant pas dix jambes. Le combiné long n'a pas de nombre "
+            "de jambes visé : il prend ce que le lot autorise et s'arrête au premier des "
+            "trois motifs, cible atteinte, plafond du lot, ou plus de jambe à confiance 3."
         ),
     ),
     "combo_maillon_jambes": Threshold(

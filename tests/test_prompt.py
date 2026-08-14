@@ -1584,55 +1584,76 @@ def test_le_plafond_de_jambes_sures_sature_a_dix_matchs(migrated: Settings) -> N
     assert safe_legs_available(tiers, 0) == 0
 
 
-def test_la_section_des_combines_annonce_ses_deux_valeurs(migrated: Settings) -> None:
-    """Jambes **et** cote cible, pour chacun des deux combines. Une consigne qui
-    ne donne que la cote laisse le nombre de jambes se deduire d'elle, alors
-    qu'il decide d'un tout autre objet."""
+def test_le_combine_court_vise_un_compte_et_le_long_un_plafond(
+    migrated: Settings,
+) -> None:
+    """Le court est defini par sa forme — quatre jambes, concentre. Le long ne
+    vise **aucun** compte : la mesure dit que la cote n'est jamais la contrainte,
+    donc viser un nombre de jambes fabriquerait la pression que la section
+    interdit. Il prend ce que le lot autorise."""
     save_threshold("combo_court_jambes", "4", migrated)
     save_threshold("combo_court_cote", "9", migrated)
-    save_threshold("combo_long_jambes", "10", migrated)
-    save_threshold("combo_long_cote", "135", migrated)
+    save_threshold("combo_long_cote", "100", migrated)
 
     plat = _section_d(migrated, 12)
-
-    assert "**4 jambes**, cote cible **9**" in plat
-    assert "**10 jambes**, cote cible **135**" in plat
     # Le plafond se **calcule** : les quotas du seed ne sont pas ceux de la base
     # servie, et ecrire le nombre du jour ferait passer le test sur une
     # configuration que personne n'a choisie.
     plafond = safe_legs_available(load_tiers(migrated), 12)
-    assert f"Ce lot autorise **{plafond} jambes** au plus" in plat
+
+    assert "**4 jambes**, cote cible **9**" in plat
+    assert f"**jusqu'à {plafond} jambes**, cote cible **100**" in plat
+    assert "plafond, jamais une cible" in plat
 
 
-def test_un_combine_long_plus_grand_que_le_lot_est_annonce_comme_tel(
+def test_le_combine_long_dit_son_motif_d_arret(migrated: Settings) -> None:
+    """Trois motifs, et le premier atteint arrete le combine. Aucun n'est un
+    echec : c'est leur repartition qui dira si la cible est bien reglee — toujours
+    « cible » et elle peut monter, toujours « confiance » et le lot est la
+    contrainte."""
+    plafond = safe_legs_available(load_tiers(migrated), 12)
+    plat = _section_d(migrated, 12)
+
+    assert "s'arrête au **premier** des trois motifs" in plat
+    assert "`cible` — la cote cible est atteinte" in plat
+    assert f"`plafond` — les {plafond} jambes que ce lot autorise sont prises" in plat
+    assert "`confiance` — il ne reste plus de jambe à confiance 3 ou plus" in plat
+    assert "Aucun des trois n'est un échec" in plat
+
+
+def test_un_combine_court_plus_grand_que_le_lot_est_annonce_comme_tel(
     migrated: Settings,
 ) -> None:
-    """Reclamer dix jambes a un lot qui n'en porte que quatre ferait ecrire que
-    la demande etait insatisfiable — le defaut deja corrige par
-    `combo_solo_min_lot`, un cran plus loin. Le plafond se calcule, donc il se
-    dit."""
+    """Le long ne peut plus depasser le lot, son plafond **est** celui du lot.
+    Le court, lui, vise un compte fixe : reclamer quatre jambes a un lot qui n'en
+    porte que trois ferait ecrire que la demande etait insatisfiable — le defaut
+    deja corrige par `combo_solo_min_lot`, un cran plus loin."""
     tiers = load_tiers(migrated)
-    #: Le plafond des quotas, celui qu'aucune taille de lot ne depasse.
-    maximum = safe_legs_available(tiers, 40)
+    save_threshold("combo_min_lot", "2", migrated)
+    save_threshold("combo_solo_min_lot", "2", migrated)
 
-    # Premiere cause : le lot est trop court, les quotas se reduisent avec lui.
-    save_threshold("combo_long_jambes", str(maximum), migrated)
-    court = safe_legs_available(tiers, 6)
-    assert court < maximum, "sinon la reduction proportionnelle ne joue pas"
-    plat = _section_d(migrated, 6)
-    assert "n'est pas constructible ici" in plat
-    assert f"il en demande {maximum} et le lot n'en porte que {court}" in plat
-    assert f"Rends-le à {court} jambes" in plat
+    plafond = safe_legs_available(tiers, 3)
+    save_threshold("combo_court_jambes", str(plafond + 1), migrated)
 
-    # Seconde cause, et c'est celle qui surprend : le lot est grand, mais les
-    # quotas plafonnent. Un lot de 140 n'autorise pas une jambe de plus qu'un
-    # lot de 28, donc la demande reste insatisfiable si elle depasse le plafond.
-    save_threshold("combo_long_jambes", str(maximum + 1), migrated)
-    assert "n'est pas constructible ici" in _section_d(migrated, 40)
+    plat = _section_d(migrated, 3)
+    assert "Le combiné solide n'est pas constructible ici" in plat
+    assert f"demande {plafond + 1} jambes et ce lot n'en autorise que {plafond}" in plat
 
     # Et il se tait des que la demande tient dans le plafond.
-    save_threshold("combo_long_jambes", str(maximum), migrated)
-    assert "n'est pas constructible ici" not in _section_d(migrated, 40)
+    save_threshold("combo_court_jambes", str(plafond), migrated)
+    assert "n'est pas constructible ici" not in _section_d(migrated, 3)
+
+
+def test_le_bloc_combine_est_specifie(migrated: Settings) -> None:
+    """La cote se recalcule depuis les jambes : le bloc doit donc porter les
+    reperes, dans l'ordre d'ajout — c'est cet ordre qui dit a quel rang la
+    premiere jambe tombe — et le gabarit doit interdire d'ajuster la cote."""
+    plat = _section_d(migrated, 12)
+
+    assert "```combo" in plat
+    assert '"jambes": ["M3", "M7", "M12"]' in plat
+    assert "L'application recalcule la cote depuis les jambes" in plat
+    assert "ne l'ajuste pas pour qu'elles tombent juste" in plat
 
 
 def test_le_maillon_le_plus_fragile_ne_se_demande_qu_aux_combines_courts(
@@ -2079,8 +2100,14 @@ def test_le_prompt_annonce_le_budget_plutot_que_de_le_faire_deduire(
     corps = " ".join(build_prompt(_lot_de(migrated, 4), settings=migrated, now=NOW).body.split())
 
     assert "tiennent déjà compte du budget de recherche" in corps
-    assert "cette session en ouvre 4" in corps, "le lot borne le budget, pas le réglage"
+    assert "**ce prompt** en ouvre 4" in corps, "le lot borne le budget, pas le réglage"
     assert "Le calcul est fait" in corps
+    # **Le budget se compte par prompt, et le dire « par session » etait faux.**
+    # Mesure du 14/08/2026 : une session genere 3 a 20 prompts, et le meme
+    # nombre etait annonce dans chacun — vingt instances lisant « cette session
+    # ouvre 7 dossiers » sans qu'aucune sache que dix-neuf autres lisaient la
+    # meme phrase. Le nombre est vrai par prompt et faux par session.
+    assert "cette session en ouvre" not in corps
 
 
 def test_le_preambule_ne_presente_pas_un_constat_comme_une_absence_de_marche(

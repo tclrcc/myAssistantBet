@@ -238,8 +238,9 @@ pas des angles : dis ce qu'ils changent sur un match précis, ou ne les cite pas
 {% if research.crowded %}
 ### BUDGET DE RECHERCHE
 
-Ce lot comporte {{ research.lot }} matchs. Une session couvre environ
-**{{ research.budget }} dossiers** en recherche approfondie. Au-delà, la recherche se
+Ce lot comporte {{ research.lot }} matchs. **Ce prompt** ouvre
+**{{ research.budget }} dossiers** en recherche approfondie — le budget se compte par
+prompt, et une journée en produit plusieurs. Au-delà, la recherche se
 priorise : les matchs **non recherchés** se rendent en `lecture`, et **c'est un
 résultat attendu, pas un manquement** — la consigne « si la section A laisse trop de
 trous, c'est un PASSE » vise un dossier travaillé et resté creux, pas un dossier
@@ -592,7 +593,7 @@ vides.
 
 Les bornes des paliers **au-delà des deux plus sûrs** tiennent déjà compte du
 budget de recherche : chacun de ces paliers réclame un fait nommé et daté de la
-section A, donc un dossier ouvert, et cette session en ouvre
+section A, donc un dossier ouvert, et **ce prompt** en ouvre
 {{ research_budget }}. Le calcul est fait — il ne te reste rien à en déduire.
 
 Une sélection par match. Deux sélections sur un même match ne se justifient que
@@ -624,18 +625,27 @@ section F**, qui est réservée aux échecs de recherche.
 {% endif %}
 ### D. Combinés
 {% if event_blocks | length >= combo_min_lot %}- Un combiné « solide » : **{{ combo_court_jambes }} jambes**, cote cible **{{ combo_court_cote }}** — court et concentré
-- Un combiné « frisson » : **{{ combo_long_jambes }} jambes**, cote cible **{{ combo_long_cote }}** — long et dilué
+- Un combiné « frisson » : **jusqu'à {{ combo_legs_max }} jambes**, cote cible **{{ combo_long_cote }}** — long et dilué
 
-Les deux se puisent dans les **deux paliers les plus sûrs**, et le nombre de
-jambes est une consigne à part entière : une même cote cible s'atteint par peu
-de jambes chères ou par beaucoup de courtes, et ce sont deux objets différents.
-Ce lot autorise **{{ combo_legs_max }} jambes** au plus dans ces deux paliers,
-une seule sélection par match.
-{% if combo_long_jambes > combo_legs_max %}
-**Le combiné long n'est pas constructible ici** : il en demande
-{{ combo_long_jambes }} et le lot n'en porte que {{ combo_legs_max }}. Rends-le à
-{{ combo_legs_max }} jambes, donne sa cote réelle, et dis-le en une ligne — n'emprunte
-pas une jambe à un palier haut pour faire le compte.
+Les deux se puisent dans les **deux paliers les plus sûrs**, une seule sélection
+par match. Une même cote s'atteint par peu de jambes chères ou par beaucoup de
+courtes, et ce sont deux objets différents : c'est le nombre de jambes qui les
+sépare, pas la cote.
+
+**Le nombre de jambes du long est un plafond, jamais une cible.** Viser un compte
+fabriquerait exactement la pression qu'on interdit. Il s'arrête au **premier** des
+trois motifs atteints, et tu écris lequel :
+
+  · `cible` — la cote cible est atteinte
+  · `plafond` — les {{ combo_legs_max }} jambes que ce lot autorise sont prises
+  · `confiance` — il ne reste plus de jambe à confiance 3 ou plus
+
+Aucun des trois n'est un échec, et le motif compte autant que la cote : c'est lui
+qui dira si la cible est bien réglée.
+{% if combo_legs_max < combo_court_jambes %}
+**Le combiné solide n'est pas constructible ici** : il demande
+{{ combo_court_jambes }} jambes et ce lot n'en autorise que {{ combo_legs_max }}.
+Rends-le à {{ combo_legs_max }} jambes et dis-le en une ligne.
 {% endif %}
 {% elif event_blocks | length >= combo_solo_min_lot %}**Un seul combiné**, et seulement si trois sélections reposant sur des causes
 indépendantes existent. Ce lot porte {{ event_blocks | length }} match(s) : une
@@ -682,6 +692,20 @@ et dis que le lot ne portait pas de quoi en construire deux.
 {% endif %}Pour chaque combiné, dis si deux jambes reposent sur la même cause —
 **au sens strict défini en section C**, pas au sens du tournoi partagé. Deux
 maillons qui tombent ensemble n'en font qu'un.
+
+**Redonne chaque combiné sous cette forme**, après ta prose, un bloc par combiné.
+L'application recalcule la cote depuis les jambes : ne l'ajuste pas pour qu'elles
+tombent juste, l'écart est ce qui se lit.
+
+```combo
+{"type": "long", "jambes": ["M3", "M7", "M12"], "cote": 118.40,
+ "cible": {{ combo_long_cote }}, "arret": "cible"}
+```
+
+`type` vaut `court` ou `long`. `jambes` porte les repères de bloc, dans l'ordre où
+tu les as ajoutées — c'est cet ordre qui dit à quel rang la première jambe tombe.
+`arret` vaut `cible`, `plafond` ou `confiance` sur le long, et se laisse vide sur
+le court, dont le nombre de jambes est fixé d'avance.
 
 **Un combiné de moins de {{ combo_maillon_jambes }} jambes** : nomme le maillon le plus fragile.
 

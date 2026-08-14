@@ -195,6 +195,78 @@
 
   {% endif %}
 
+  {% if combos %}
+  <div class="section-head">
+    <h2>Combinés proposés</h2>
+    <span class="muted small">
+      Ce que l'analyse a assemblé, pas ce qui a été posé chez le bookmaker.
+    </span>
+  </div>
+  <table class="board">
+    <thead>
+      <tr>
+        <th>Combiné</th>
+        <th>Jambes</th>
+        <th class="num">Cote</th>
+        <th>Cible</th>
+        <th>Arrêt</th>
+        <th>Confiance</th>
+        <th>Répartition</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for combo in combos %}
+      <tr>
+        <td>{{ combo.kind }}</td>
+        <td class="num">{{ combo.legs | length }}</td>
+        {# La cote **recalculée depuis les jambes**, jamais celle qu'on a lue.
+           L'écart avec la déclarée est signalé, pas corrigé en silence. #}
+        <td class="num">
+          {% if combo.computed_price %}{{ '%.2f' | format(combo.computed_price) }}{% else %}—{% endif %}
+          {%- if combo.price_mismatch %}
+          <span class="muted small">(écrite {{ '%.2f' | format(combo.declared_price) }})</span>
+          {%- endif %}
+        </td>
+        <td>
+          {% if combo.target_price %}
+            {{ '%.0f' | format(combo.target_price) }}
+            {%- if combo.target_reached is not none %}
+            — {{ 'atteinte' if combo.target_reached else 'non atteinte' }}
+            {%- endif %}
+          {% else %}—{% endif %}
+        </td>
+        <td>{{ combo.stop_label }}</td>
+        {# Une confiance minimale qui chute quand la cible est atteinte de
+           justesse est le signal à surveiller : c'est une jambe ajoutée pour
+           franchir la cible. #}
+        <td>
+          {% if combo.confidence_min is not none %}
+            min {{ combo.confidence_min }} · méd. {{ '%g' | format(combo.confidence_median) }}
+          {% else %}—{% endif %}
+        </td>
+        {# Où la cote a été achetée. Ça ne désigne pas un maillon fragile — rien
+           dans l'historique ne permettrait d'en désigner un — ça montre la
+           structure et laisse juger. #}
+        <td class="small">
+          {% for _key, label, count, apport in combo.by_tier() %}
+            {{ label }} ×{{ count }}{% if apport %} ({{ '%.2f' | format(apport) }}){% endif %}{% if not loop.last %} · {% endif %}
+          {% endfor %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if combo_overlaps %}
+  <p class="notice">
+    {% for overlap in combo_overlaps %}{{ overlap.line }}.
+    {% endfor %}
+    Un recouvrement est attendu : les deux combinés puisent dans le même vivier,
+    et sur la moitié des sessions mesurées deux combinés disjoints sont
+    impossibles. Il est affiché, pas corrigé.
+  </p>
+  {% endif %}
+  {% endif %}
+
   <div class="section-head">
     <h2>Coupons joués</h2>
     <span class="muted small">
