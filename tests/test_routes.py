@@ -396,6 +396,36 @@ def test_chaque_pictogramme_vise_un_symbole_existant(client: TestClient) -> None
     assert not manquants, f"symboles absents du sprite : {sorted(manquants)}"
 
 
+def test_chaque_sport_porte_sa_bande_et_son_filet() -> None:
+    """Meme famille que le test du sprite, et meme raison : un sport ajoute sans
+    sa teinte ne casse rien.
+
+    `_board.html` ecrit `sportrow-{{ sport_key }}` : sans la regle en face, la
+    ligne sort **sans bande et sans filet**, donc exactement comme une ligne de
+    football sur un theme ou le vert ne se voit pas. La colonne « Sport » se
+    videra de son sens sans qu'aucune page ne tombe.
+
+    Les deux themes sont verifies parce qu'un token declare dans le seul `:root`
+    ne manque pas : il retombe sur la valeur sombre, et le fond clair recoit une
+    teinte pensee pour du noir. Le degat est une bande illisible, pas une
+    erreur.
+    """
+    from myassistantbet.services.labels import SPORT_ICONS
+
+    css = _stylesheet()
+    debut = css.index("@media (prefers-color-scheme: light)")
+
+    for sport in sorted(SPORT_ICONS):
+        for token in (f"--sport-{sport}:", f"--sport-{sport}-soft:"):
+            assert css.count(token) >= 2, f"{token} n'est pas declare dans les deux themes"
+            assert token in css[debut:], f"{token} manque au theme clair"
+        # La bande se reconnait a l'accolade qui suit la classe : `in css` sur
+        # le seul nom de classe etait satisfait par la regle de filet, donc
+        # l'assertion passait sans que la bande existe.
+        assert re.search(rf"tr\.sportrow-{sport}\s*\{{", css), f"aucune bande de fond pour {sport}"
+        assert f"tr.sportrow-{sport} td:first-child" in css, f"aucun filet pour {sport}"
+
+
 # -- Shortlist : densite de contexte ----------------------------------------
 
 

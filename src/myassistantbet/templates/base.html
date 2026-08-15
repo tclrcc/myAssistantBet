@@ -24,10 +24,23 @@
       <path d="M12 7.6l3.9 2.8-1.5 4.6H9.6L8.1 10.4z"/>
       <path d="M12 3v4.6M20.6 9.2l-4.7 1.2M18.3 19.4L15 15M5.7 19.4L9 15M3.4 9.2l4.7 1.2"/>
     </symbol>
+    {# Une raquette et non une balle : au corps ou le board les rend — 1.15rem,
+       soit 18 pixels — un ballon et une balle sont deux ronds de meme diametre,
+       et leurs coutures se confondent en un gribouillis. Il ne restait que la
+       couleur pour separer les deux sports, sur une colonne large de seize
+       pixels. Une raquette a une silhouette : elle se lit a la taille ou un
+       rond ne dit plus rien. #}
     <symbol id="i-tennis" viewBox="0 0 24 24">
-      <circle cx="12" cy="12" r="9"/>
-      <path d="M5.2 6.1A7 7 0 0 1 5.2 17.9"/>
-      <path d="M18.8 6.1A7 7 0 0 0 18.8 17.9"/>
+      {# Cordes et manche long, mesures a 18, 36 et 72 pixels : une raquette au
+         tamis nu est une **loupe**, et la page en porte deja une dans sa barre
+         de filtres. Ce sont les deux cordes qui l'en separent, et le talon qui
+         donne au manche sa longueur de manche. #}
+      <g transform="rotate(-40 12 12)">
+        <ellipse cx="12" cy="7.4" rx="5.2" ry="6.2"/>
+        <path d="M7 7.4h10M12 1.5v11.8"/>
+        <path d="M12 13.6v6.9"/>
+        <path d="M9.9 20.5h4.2"/>
+      </g>
     </symbol>
     <symbol id="i-cycling" viewBox="0 0 24 24">
       <circle cx="5.5" cy="17" r="3.6"/>

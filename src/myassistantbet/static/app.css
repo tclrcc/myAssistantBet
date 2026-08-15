@@ -71,6 +71,16 @@
   --sport-football: #6fd3a4;
   --sport-tennis: #e6bb63;
   --sport-cycling: #bda3f5;
+  /* Le fond d'une ligne de board. Precalcule comme `--accent-soft` plutot que
+     melange a l'usage : la teinte lisible n'est pas la meme d'un theme a
+     l'autre, et l'opacite qui la rend perceptible non plus.
+     **Les trois opacites different, et c'est ce qui les egalise.** A valeur
+     egale, l'ambre saute au visage quand le vert reste invisible : le board se
+     lisait alors « le tennis est surligne » et non « deux sports ». Ce sont les
+     bandes rendues qui doivent se valoir, pas les nombres qui les ecrivent. */
+  --sport-football-soft: rgba(111, 211, 164, 0.09);
+  --sport-tennis-soft: rgba(230, 187, 99, 0.06);
+  --sport-cycling-soft: rgba(189, 163, 245, 0.08);
 
   /* Rythme : une echelle, pas des valeurs au hasard. */
   --s1: 0.25rem;
@@ -176,6 +186,9 @@
     --sport-football: #157a51;
     --sport-tennis: #8d6410;
     --sport-cycling: #6741b8;
+    --sport-football-soft: rgba(21, 122, 81, 0.09);
+    --sport-tennis-soft: rgba(141, 100, 16, 0.06);
+    --sport-cycling-soft: rgba(103, 65, 184, 0.07);
 
     --edge: inset 0 1px 0 rgba(15, 19, 27, 0.04);
     --surface: linear-gradient(180deg, rgba(255, 255, 255, 0), rgba(15, 19, 27, 0.018));
@@ -562,6 +575,18 @@ table.board tr.started .affiche a { color: var(--muted); }
 
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 .line { color: var(--muted); }
+/* Debut d'un groupe de colonnes (1N2, puis O/U). Les six prix se suivaient sans
+   rien qui marque la frontiere : sur une ligne ou les six sont servis, il fallait
+   compter pour savoir si le quatrieme nombre etait un prix ou une ligne de total.
+   L'en-tete a colspan dit deja le groupe, le filet le prolonge sur toute la
+   hauteur du tableau. */
+table.board th.group,
+table.board td.group { border-left: 1px solid var(--line-soft); }
+/* L'heure porte, la date accompagne : sur un board qui tient sur deux journees,
+   « 15/08 » se repete a l'identique sur cent-cinquante lignes et concurrence le
+   seul nombre qu'on y cherche. */
+.when-day { color: var(--muted); }
+.when-hour { font-weight: 550; }
 .affiche { font-weight: 500; }
 .affiche a { color: var(--text); }
 .affiche a:hover { color: var(--accent); text-decoration: none; }
@@ -1177,16 +1202,30 @@ kbd {
 
 /* Filet de couleur en bord de ligne : le sport se lit sans lire la colonne. */
 table.board tbody tr.sportrow-football td:first-child {
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--sport-football) 70%, transparent);
+  box-shadow: inset 3px 0 0 var(--sport-football);
 }
 table.board tbody tr.sportrow-tennis td:first-child {
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--sport-tennis) 70%, transparent);
+  box-shadow: inset 3px 0 0 var(--sport-tennis);
 }
 table.board tbody tr.sportrow-cycling td:first-child {
-  box-shadow: inset 3px 0 0 color-mix(in srgb, var(--sport-cycling) 70%, transparent);
+  box-shadow: inset 3px 0 0 var(--sport-cycling);
 }
 /* La selection reprend la main : c'est l'information la plus utile. */
 table.board tbody tr.is-selected td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+
+/* Et une bande de fond, parce que le filet seul ne suffisait pas : sur un board
+   de 171 lignes ou les deux sports s'entrelacent, trois pixels en bord de
+   tableau demandent de viser une colonne pour repondre a une question — « ou
+   commence le tennis » — a laquelle un coup d'oeil doit repondre. La bande
+   groupe les lignes voisines du meme sport ; le filet et le pictogramme
+   tranchent la ligne isolee.
+   Selectivite volontairement basse (`tr.sportrow-x`, pas
+   `table.board tbody tr.sportrow-x`) : le survol et la selection portent tous
+   deux un fond, et ils doivent continuer de gagner. Une bande de sport qui
+   masquerait la ligne cochee inverserait la regle du filet juste au-dessus. */
+tr.sportrow-football { background: var(--sport-football-soft); }
+tr.sportrow-tennis   { background: var(--sport-tennis-soft); }
+tr.sportrow-cycling  { background: var(--sport-cycling-soft); }
 
 /* --- Page statistiques ----------------------------------------------------- */
 
@@ -1790,12 +1829,14 @@ table.board.compact th, table.board.compact td { padding: 0.3rem var(--s2); }
   white-space: nowrap;
 }
 
-/* La pastille de sport du tableau ne porte plus que le pictogramme. */
-td .sport { padding: 0.15rem 0.4rem; font-size: 1rem; line-height: 1.2; }
 .badge.warn { border-color: var(--warn); color: var(--warn); background: var(--warn-soft); }
 
-/* Un pictogramme n'a pas besoin de la pastille coloree qui habillait le
-   libelle : le cadre autour d'un seul caractere fait tache plus qu'il n'aide. */
+/* La pastille de sport du tableau ne porte plus que le pictogramme, et un
+   pictogramme n'a pas besoin de la pastille coloree qui habillait le libelle :
+   le cadre autour d'un seul caractere fait tache plus qu'il n'aide.
+   Une seule regle : la premiere ecriture etait recouverte en entier par la
+   seconde, donc elle ne decidait plus rien tout en donnant a lire deux
+   rembourrages contradictoires. */
 td .sport {
   border: 0;
   background: none;

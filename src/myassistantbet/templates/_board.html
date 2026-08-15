@@ -120,8 +120,8 @@
         <th>Sport</th>
         <th>Compétition</th>
         <th>Affiche</th>
-        <th colspan="3">1N2</th>
-        <th colspan="3">O/U</th>
+        <th colspan="3" class="group">1N2</th>
+        <th colspan="3" class="group">O/U</th>
       </tr>
     </thead>
     <tbody>
@@ -135,7 +135,13 @@
                  hx-swap="outerHTML"
                  {% if row.selected %}checked{% endif %}>
         </td>
-        <td class="num">{{ row.local_time.strftime('%d/%m %H:%M') }}</td>
+        {# La date en sourdine, l'heure en evidence : sur une fenetre de deux
+           journees, le jour ne distingue que deux paquets quand l'heure
+           distingue chaque ligne. #}
+        <td class="num">
+          <span class="when-day">{{ row.local_time.strftime('%d/%m') }}</span>
+          <span class="when-hour">{{ row.local_time.strftime('%H:%M') }}</span>
+        </td>
         <td class="tight">
           <span class="sport sport-{{ row.sport_key }}" title="{{ row.sport_label }}">
             <svg class="icon" aria-hidden="true"><use href="#i-{{ row.sport_key }}"></use></svg>
@@ -152,10 +158,10 @@
         <td class="affiche">
           <a href="/events/{{ row.event_id }}">{{ row.affiche }}</a>
         </td>
-        <td class="num">{{ '%.2f'|format(row.home_price) if row.home_price else '·' }}</td>
+        <td class="num group">{{ '%.2f'|format(row.home_price) if row.home_price else '·' }}</td>
         <td class="num">{{ '%.2f'|format(row.draw_price) if row.draw_price else '·' }}</td>
         <td class="num">{{ '%.2f'|format(row.away_price) if row.away_price else '·' }}</td>
-        <td class="num line">{{ '%.1f'|format(row.total_point) if row.total_point is not none else '·' }}</td>
+        <td class="num line group">{{ '%.1f'|format(row.total_point) if row.total_point is not none else '·' }}</td>
         <td class="num">{{ '%.2f'|format(row.over_price) if row.over_price else '·' }}</td>
         <td class="num">{{ '%.2f'|format(row.under_price) if row.under_price else '·' }}</td>
       </tr>
