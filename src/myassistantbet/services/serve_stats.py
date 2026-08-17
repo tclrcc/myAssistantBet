@@ -39,7 +39,7 @@ from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.base import last_known_quota
 from ..providers.tennisapi import PROVIDER, TennisAPIClient
-from .ingestion import MATCH_REF_UNRESOLVED, SOURCE, Reject
+from .ingestion import MATCH_REF_UNRESOLVED, SCHEMA_INVALID, SOURCE, SOURCE_VIDE, Reject
 from .labels import sort_key
 
 logger = logging.getLogger(__name__)
@@ -336,8 +336,30 @@ def parse_matches_played(
 EXACT = "exact"
 CASSE = "casse"
 ACCENTS = "accents"
+#: Le nom de famille seul, **et seulement quand il ne rend qu'un candidat**.
+#: C'est le niveau que le brief appelait « recherche via les endpoints Players »,
+#: et il existe pour un cas mesure : « Coco Gauff » rend une liste **vide**, la
+#: source l'ecrivant « Cori Gauff ». Aucun repli de casse ou d'accent ne
+#: rattrape un prenom different ; « Gauff » seul rend exactement un candidat.
+#: La condition d'unicite est ce qui le rend sur — « Fernandez » en rend 94.
+#: Tous les mots de notre nom figurent dans le candidat, et **un seul** candidat
+#: restant le satisfait. C'est le niveau qui rattrape « Leylah Fernandez » contre
+#: « Leylah Annie Fernandez » — le fournisseur porte les deux, et c'est le second
+#: qui sert les 452 matchs.
+#:
+#: Le precedent est dans le depot : le nom d'un entraineur se compare **en
+#: suffixe**, « J. Machado Sacramento » contre « João Pedro Machado Sacramento »,
+#: parce qu'exiger la meme longueur y inventerait une divergence.
+MOTS = "mots"
+#: Le nom de famille seul, **et seulement quand il ne rend qu'un candidat**.
+#: C'est le niveau que le brief appelait « recherche via les endpoints Players »,
+#: et il existe pour un cas mesure : « Coco Gauff » rend une liste **vide**, la
+#: source l'ecrivant « Cori Gauff ». Aucun repli de casse ou d'accent ne
+#: rattrape un prenom different ; « Gauff » seul rend exactement un candidat.
+#: La condition d'unicite est ce qui le rend sur — « Fernandez » en rend 94.
+NOM = "nom"
 INTROUVABLE = "introuvable"
-FALLBACKS = (EXACT, CASSE, ACCENTS, INTROUVABLE)
+FALLBACKS = (EXACT, CASSE, ACCENTS, MOTS, NOM, INTROUVABLE)
 
 
 @dataclass(frozen=True)
@@ -366,31 +388,68 @@ def _fold_accents(text: str) -> str:
     return sort_key(str(text or "").strip())
 
 
-def pick_candidate(name: str, candidates: list[str]) -> tuple[str, str]:
-    """Le candidat qui correspond au nom, et le niveau de repli qui a tranche.
+def rank_candidates(name: str, candidates: list[str]) -> list[tuple[str, str]]:
+    """Les candidats plausibles, du plus sur au moins sur, avec leur niveau.
 
-    Rend `("", INTROUVABLE)` quand rien ne correspond **ou quand plusieurs
-    candidats correspondent au meme niveau**. C'est la regle du projet, et elle
-    est plus severe ici qu'ailleurs : il n'existe aucune resolution manuelle pour
-    rattraper, et attribuer a un joueur les statistiques d'un autre serait pire
-    qu'une ligne absente — meme arbitrage que l'Elo tennis.
+    **Rend une liste et non un choix, et c'est une correction mesuree.** Le
+    premier jet tranchait ici meme, en prenant la correspondance exacte : sur
+    « Leylah Fernandez » il choisissait `Leylah Fernandez`, qui existe chez le
+    fournisseur et dont le profil porte **zero match**. Le vrai profil s'appelle
+    `Leylah Annie Fernandez` et en porte 452, et la recherche rend **les deux**.
 
-    Le cas est reel : « Alexander Zverev » rend `['Alexander Zverev',
-    'Alexander Zverev Sr']`, et c'est le niveau **exact** qui les departage. Sans
-    la progression par niveau, un repli tolerant les aurait pris tous les deux.
+    Un nom n'est donc pas une resolution : ce qui tranche est le profil qui sert
+    des donnees, et cette fonction ne fait qu'ordonner les essais. Meme regle que
+    partout ici — quand un identifiant existe, c'est lui, et un libelle qui ne
+    designe rien n'en est pas un.
+
+    Un niveau qui rend **plusieurs** candidats indiscernables n'en propose aucun :
+    il n'existe ici aucune resolution manuelle pour departager, et attribuer a un
+    joueur les statistiques d'un autre serait pire qu'une ligne absente.
     """
     propres = [str(c).strip() for c in candidates if str(c).strip()]
+    ordonnes: list[tuple[str, str]] = []
+    vus: set[str] = set()
     for niveau, fold in ((EXACT, str.strip), (CASSE, _fold_case), (ACCENTS, _fold_accents)):
         cible = fold(str(name))
         trouves = [candidat for candidat in propres if fold(candidat) == cible]
-        if len(trouves) == 1:
-            return trouves[0], niveau
-        if len(trouves) > 1:
-            # Deux candidats indiscernables a ce niveau : on ne devine pas, et
-            # descendre d'un cran n'aiderait pas — les niveaux suivants sont
-            # **plus** tolerants, donc ils en trouveraient au moins autant.
-            return "", INTROUVABLE
-    return "", INTROUVABLE
+        if len(trouves) != 1:
+            # Zero : ce niveau ne dit rien. Plusieurs : il ne departage pas, et
+            # les niveaux suivants sont **plus** tolerants — ils en trouveraient
+            # au moins autant. Dans les deux cas on passe au suivant.
+            continue
+        if trouves[0] not in vus:
+            ordonnes.append((trouves[0], niveau))
+            vus.add(trouves[0])
+
+    # **Dernier niveau, et il ne se declenche que sur ce qui reste.** Tous les
+    # mots de notre nom figurent dans le candidat, et un seul candidat non
+    # encore propose le satisfait.
+    #
+    # Limite connue et nommee plutot que tue : sur « Alexander Zverev », le
+    # candidat restant serait « Alexander Zverev Sr », c'est-a-dire le pere. Le
+    # niveau ne s'atteint que si le profil exact s'est revele **vide**, ce qui
+    # n'arrive pas la — 975 matchs — mais la parade n'est pas dans la regle de
+    # nom : elle est dans la validation par le contenu, qui est le seul juge.
+    mots = {_fold_accents(mot) for mot in str(name).split() if mot}
+    restants = [
+        candidat
+        for candidat in propres
+        if candidat not in vus and mots <= {_fold_accents(mot) for mot in candidat.split() if mot}
+    ]
+    if len(restants) == 1:
+        ordonnes.append((restants[0], MOTS))
+    return ordonnes
+
+
+def surname(name: str) -> str:
+    """Le dernier mot d'un nom. Vide s'il n'y en a qu'un.
+
+    Sert au seul repli `NOM`, et rend vide sur un nom d'un seul mot : chercher
+    « Gauff » quand on cherchait deja « Gauff » ne serait qu'un appel de plus
+    pour la meme reponse.
+    """
+    mots = str(name or "").split()
+    return mots[-1] if len(mots) > 1 else ""
 
 
 def load_identity(local_name: str, tour: str, settings: Settings | None = None) -> Identity | None:
@@ -478,68 +537,140 @@ def fallback_tally(settings: Settings | None = None) -> dict[str, int]:
     return {str(row["fallback"]): int(row["n"]) for row in rows}
 
 
+async def _candidates(
+    client: TennisAPIClient, local_name: str, tour: str
+) -> tuple[list[tuple[str, str]], list[str], int | None]:
+    """Les candidats ordonnes, la liste brute rendue, et l'archive du dernier appel.
+
+    **Trois appels au plus, et chacun est mesure plutot que suppose.**
+
+    1. Le nom tel quel. La casse est prise en charge par le **serveur** —
+       `mccartney kessler` trouve `Mccartney Kessler`.
+    2. Si la liste est **vide** et que le nom porte des accents : le nom replie.
+       `Karolína Muchová` rend `[]` la ou `Karolina Muchova` repond. Un nom sans
+       accent ne declenche jamais cet appel.
+    3. Si la liste est toujours vide : le **nom de famille seul**, accepte
+       uniquement s'il rend exactement un candidat. « Coco Gauff » rend `[]`, la
+       source l'ecrivant « Cori Gauff » ; « Gauff » seul rend un candidat unique.
+       La condition d'unicite est ce qui rend le niveau sur — « Fernandez » en
+       rend quatre-vingt-quatorze, et aucun n'est propose.
+    """
+    response = await client.search_raw(local_name, tour)
+    bruts = [str(item) for item in response.data] if isinstance(response.data, list) else []
+    ordonnes = rank_candidates(local_name, bruts)
+
+    if not bruts and _fold_accents(local_name) != _fold_case(local_name):
+        replie = _sans_accents(local_name)
+        response = await client.search_raw(replie, tour)
+        bruts = [str(item) for item in response.data] if isinstance(response.data, list) else []
+        ordonnes = [(nom, ACCENTS) for nom, _ in rank_candidates(replie, bruts)]
+
+    if not bruts and (nom_seul := surname(local_name)):
+        response = await client.search_raw(nom_seul, tour)
+        bruts = [str(item) for item in response.data] if isinstance(response.data, list) else []
+        ordonnes = [(bruts[0], NOM)] if len(bruts) == 1 else []
+
+    return ordonnes, bruts, response.archive_id or None
+
+
 async def resolve(
     client: TennisAPIClient,
     local_name: str,
     tour: str,
     settings: Settings | None = None,
-) -> tuple[Identity, Reject | None]:
-    """Resout la graphie d'un joueur chez le fournisseur. **Une fois, puis cache.**
+) -> tuple[Identity, Any, Reject | None]:
+    """Resout la graphie d'un joueur, **et la valide sur le contenu**.
 
-    Rend l'identite et, quand rien n'a ete trouve, le rejet a journaliser.
+    Rend l'identite, la charge utile `matches-played` qui l'a validee, et le
+    rejet a journaliser quand rien n'aboutit.
 
-    **Deux appels au plus, et le second est mesure, pas suppose.** Le premier
-    part avec le nom tel quel — la casse est prise en charge par le serveur. S'il
-    rend une liste **vide** et que le nom porte des accents, le second part avec
-    les accents replies : `Karolína Muchová` rend `[]` la ou `Karolina Muchova`
-    repond. Un nom sans accent ne declenche jamais ce second appel, donc il ne
-    coute rien au cas ordinaire.
+    **Un nom n'est pas une resolution, et c'est mesure.** Le premier jet
+    s'arretait a la correspondance exacte : sur « Leylah Fernandez » il retenait
+    `Leylah Fernandez`, qui existe bien chez le fournisseur et dont le profil
+    porte **zero match**. Le vrai profil est `Leylah Annie Fernandez`, 452
+    matchs, et la recherche rend **les deux**. Une correspondance exacte qui ne
+    sert rien n'est pas une resolution — regle de revue du projet : l'identifiant
+    est celui qui designe quelque chose.
 
-    **Jamais de troisieme essai sur un nom tronque.** Chercher « Kessler » rend
-    trois joueuses, et il n'existe ici aucune resolution manuelle pour
-    departager : c'est exactement le cas ou l'Elo tennis refuse de deviner.
+    **La validation ne coute aucun appel de plus** dans le cas ordinaire : la
+    reponse `matches-played` est celle qu'on allait demander de toute facon, et
+    elle est rendue a l'appelant pour qu'il ne la repaie pas.
     """
     settings = settings or get_settings()
     connue = load_identity(local_name, tour, settings)
     if connue is not None:
-        return connue, None
+        # **« Cherche, pas trouve » et « jamais cherche » sont deux etats**, et
+        # les confondre ferait redemander tous les jours un nom que la source ne
+        # connait pas. La charge utile n'est pas rendue : elle n'a pas ete
+        # relue, et l'appelant la demandera s'il en a besoin.
+        return connue, None, None
 
-    response = await client.search_raw(local_name, tour)
-    candidats = [str(item) for item in response.data] if isinstance(response.data, list) else []
-    canonical, niveau = pick_candidate(local_name, candidats)
+    ordonnes, bruts, archive_id = await _candidates(client, local_name, tour)
 
-    if not canonical and not candidats and _fold_accents(local_name) != _fold_case(local_name):
-        # La source ne replie pas les accents en entree : c'est mesure, et c'est
-        # le seul cas ou un second appel apprend quelque chose.
-        replie = _sans_accents(local_name)
-        response = await client.search_raw(replie, tour)
-        candidats = [str(item) for item in response.data] if isinstance(response.data, list) else []
-        canonical, _ = pick_candidate(replie, candidats)
-        if canonical:
-            niveau = ACCENTS
+    for candidat, niveau in ordonnes:
+        reponse = await client.matches_played(candidat)
+        charge = reponse.data if isinstance(reponse.data, dict) else {}
+        if not (charge.get("singles") or []):
+            # Un profil qui ne sert rien n'est pas le bon profil. On essaie le
+            # candidat suivant plutot que de conclure a une absence de donnees.
+            logger.info(
+                "tennisapi : %r resolu en %r, profil vide — candidat suivant",
+                local_name,
+                candidat,
+            )
+            continue
+        identity = Identity(
+            local_name=local_name,
+            tour=tour,
+            canonical=candidat,
+            provider_id=_provider_id(charge, candidat),
+            fallback=niveau,
+            response_id=archive_id,
+        )
+        store_identity(identity, settings)
+        return identity, reponse, None
 
     identity = Identity(
-        local_name=local_name,
-        tour=tour,
-        canonical=canonical,
-        fallback=niveau if canonical else INTROUVABLE,
-        response_id=response.archive_id or None,
+        local_name=local_name, tour=tour, fallback=INTROUVABLE, response_id=archive_id
     )
     store_identity(identity, settings)
-    if identity.resolved:
-        return identity, None
-
-    return identity, Reject(
-        block_type=SOURCE,
-        reason=MATCH_REF_UNRESOLVED,
-        detail=(
-            f"{local_name} ({tour}) : aucune graphie de tennis-api.com ne correspond. "
-            f"Candidats rendus : {', '.join(candidats) if candidats else 'aucun'}. "
-            "Rien n'est devine — les statistiques d'un autre joueur seraient pires "
-            "qu'une ligne absente."
+    essayes = ", ".join(nom for nom, _ in ordonnes)
+    return (
+        identity,
+        None,
+        Reject(
+            block_type=SOURCE,
+            reason=MATCH_REF_UNRESOLVED,
+            detail=(
+                f"{local_name} ({tour}) : aucun profil tennis-api.com ne sert de matchs. "
+                f"Candidats rendus : {', '.join(bruts) if bruts else 'aucun'}"
+                + (f" ; essayes sans resultat : {essayes}" if essayes else "")
+                + ". Rien n'est devine — les statistiques d'un autre joueur seraient "
+                "pires qu'une ligne absente."
+            ),
+            payload=f"{local_name}/{tour} -> {bruts!r}"[:400],
         ),
-        payload=f"{local_name}/{tour} -> {candidats!r}"[:400],
     )
+
+
+def _provider_id(charge: dict[str, Any], canonical: str) -> int | None:
+    """L'identifiant numerique du joueur, lu dans le premier match qui le nomme.
+
+    **C'est le vrai identifiant** : la recherche ne rend que des noms, et il
+    n'apparait que dans une reponse `matches-played`. On l'ecrit des qu'il est
+    servi — regle de revue du projet, avant d'ecrire une comparaison de chaines,
+    chercher l'identifiant.
+    """
+    cible = _fold_accents(canonical)
+    for match in charge.get("singles") or []:
+        for cle in ("player1", "player2"):
+            joueur = (match or {}).get(cle) or {}
+            if _fold_accents(str(joueur.get("name") or "")) == cible:
+                try:
+                    return int(joueur.get("id"))
+                except (TypeError, ValueError):
+                    return None
+    return None
 
 
 def _sans_accents(text: str) -> str:
@@ -553,3 +684,239 @@ def _sans_accents(text: str) -> str:
     """
     decompose = unicodedata.normalize("NFKD", str(text or ""))
     return "".join(char for char in decompose if not unicodedata.combining(char))
+
+
+# -- La timeline, et les trois formes du silence -----------------------------
+#
+# **`"success": true` sur un `result` vide.** C'est le defaut caracteristique du
+# projet, dans la source candidate cette fois : le vide y a la meme sortie que la
+# donnee. Aucun appelant ne doit le lire comme une absence de fait.
+#
+# Trois choses ont ete mesurees le 17/08/2026, et chacune impose un essai :
+#
+# - **l'endpoint est positionnel** — `event/get/{j1}/{j2}/{date}` — et l'ordre ne
+#   correspond pas toujours a celui de la base ;
+# - **la date du fournisseur peut differer d'un jour** : le Fernandez – Wang
+#   programme chez nous le 16/08 a 19h10 UTC est date du **17** par la source.
+#   D'ou la fenetre de +/-1 jour, et non une date exacte ;
+# - **la couverture reste partielle malgre tout** : sur huit rencontres de la
+#   veille, graphies canoniques resolues et fenetre epuisee, **cinq repondent et
+#   trois restent vides**. C'est un fait sur la source, pas un defaut de notre
+#   collecte, et c'est `SOURCE_VIDE` qui le dit.
+
+#: Les decalages tentes, dans l'ordre. Le jour annonce d'abord — cinq des huit
+#: rencontres mesurees repondent des le premier essai, donc l'ordinaire ne paie
+#: qu'un appel.
+DAY_SHIFTS = (0, 1, -1)
+
+#: Les jeux d'une timeline se lisent sur ces deux mots. Ils sont **du
+#: fournisseur** et recopies tels quels : « Game 3 - Taylor Fritz - holds to 15 ».
+HOLD = "holds"
+BREAK = "breaks"
+
+
+@dataclass(frozen=True)
+class GameLine:
+    """Les jeux d'un match, vus du cote d'un joueur."""
+
+    played_on: str
+    served: int = 0
+    held: int = 0
+    returned: int = 0
+    broke: int = 0
+    archive_id: int = 0
+
+    @property
+    def consistent(self) -> bool:
+        return self.held <= self.served and self.broke <= self.returned
+
+
+def parse_timeline(payload: Any, name: str) -> tuple[GameLine | None, str]:
+    """Les jeux tenus et les breaks d'un joueur, depuis la timeline d'un match.
+
+    Rend `(None, motif)` quand rien n'est exploitable, et le motif dit **quoi** :
+    `vide` pour un `result` absent — le `"success": true` sur contenu vide de la
+    source — et `alternance` pour une timeline a trous.
+
+    **Le serveur se deduit, il n'est pas ecrit.** Une ligne nomme l'acteur du
+    jeu : « Game 3 - Taylor Fritz - holds to 15 » dit que Fritz servait, « Game 1
+    - Alex Michelsen - breaks to 40 » dit que Fritz servait aussi — on ne breake
+    que le service adverse. Les deux camps viennent de `participant1` et
+    `participant2`, servis dans la meme reponse.
+
+    **L'invariant d'alternance est le controle, et il est plus fort qu'une
+    coherence de facade.** Les jeux de service alternent par construction : si la
+    suite deduite ne le fait pas, c'est que la timeline saute un jeu, et une
+    moyenne calculee dessus serait fausse **sans que rien ne le montre**. Verifie
+    sur les trois fixtures du lot 4 et sur le Fritz – Michelsen du 16/08 : 19
+    jeux, alternance parfaite, et 6-3 6-4 fait bien 19.
+    """
+    result = (payload or {}).get("result") if isinstance(payload, dict) else None
+    if not isinstance(result, dict) or not result:
+        return None, "vide"
+    timeline = result.get("timeline") or []
+    if not timeline:
+        return None, "vide"
+
+    camps = [str(result.get("participant1") or ""), str(result.get("participant2") or "")]
+    if not all(camps):
+        return None, "vide"
+    replies = [_fold_accents(camp) for camp in camps]
+    cible = _fold_accents(name)
+    if cible not in replies:
+        return None, "vide"
+
+    serveurs: list[str] = []
+    served = held = returned = broke = 0
+    for entree in timeline:
+        acteur, action = _read_game(str((entree or {}).get("text") or ""))
+        if not acteur:
+            continue
+        acteur = _fold_accents(acteur)
+        if acteur not in replies:
+            continue
+        # Celui qui tient servait ; celui qui breake **recevait**.
+        serveur = acteur if action == HOLD else _autre(acteur, replies)
+        serveurs.append(serveur)
+        if serveur == cible:
+            served += 1
+            held += action == HOLD
+        else:
+            returned += 1
+            broke += action == BREAK and acteur == cible
+
+    if not served and not returned:
+        return None, "vide"
+    if any(a == b for a, b in zip(serveurs, serveurs[1:], strict=False)):
+        return None, "alternance"
+    return (
+        GameLine(
+            played_on=str(result.get("startTimestamp") or "")[:10],
+            served=served,
+            held=held,
+            returned=returned,
+            broke=broke,
+        ),
+        "",
+    )
+
+
+def _read_game(texte: str) -> tuple[str, str]:
+    """`Game 3 - Taylor Fritz - holds to 15` devient `("Taylor Fritz", "holds")`.
+
+    Rend `("", "")` sur une ligne dont le vocabulaire n'est pas reconnu — ce qui
+    se saute plutot que de se deviner. Zero ligne non reconnue sur les trois
+    fixtures du lot 4 et sur celle du 16/08.
+    """
+    morceaux = [morceau.strip() for morceau in texte.split(" - ")]
+    if len(morceaux) < 3 or not morceaux[0].lower().startswith("game"):
+        return "", ""
+    mots = morceaux[2].split()
+    action = mots[0].lower() if mots else ""
+    if action not in (HOLD, BREAK):
+        return "", ""
+    return morceaux[1], action
+
+
+def _autre(replie: str, camps: list[str]) -> str:
+    """L'autre camp du match. La timeline ne nomme que l'acteur du jeu."""
+    for camp in camps:
+        if camp != replie:
+            return camp
+    return ""
+
+
+@dataclass(frozen=True)
+class TimelineHit:
+    """Une timeline trouvee, et **ce qu'il a fallu pour la trouver**.
+
+    `shift` et `swapped` ne sont pas du decor : le brief demande de journaliser
+    les cas trouves au jour decale, parce que si c'est **systematique** c'est un
+    decalage de fuseau a corriger en amont plutot qu'a absorber a chaque appel.
+    """
+
+    line: GameLine
+    shift: int
+    swapped: bool
+    archive_id: int = 0
+
+
+async def fetch_timeline(
+    client: TennisAPIClient,
+    first: str,
+    second: str,
+    day: str,
+    subject: str,
+) -> tuple[TimelineHit | None, Reject | None]:
+    """La timeline d'une rencontre, en epuisant les essais avant de conclure.
+
+    **Trois faits mesures, et chacun impose un essai** :
+
+    - l'endpoint est **positionnel**, et l'ordre des joueurs ne correspond pas
+      toujours a celui de la base ;
+    - la date du fournisseur peut differer d'un jour — le Fernandez – Wang
+      programme chez nous le 16/08 a 19h10 UTC est date du **17** par la source.
+      D'ou `DAY_SHIFTS` et non une date exacte ;
+    - la couverture reste **partielle** apres tout cela : sur huit rencontres de
+      la veille, cinq repondent et trois restent vides. C'est un fait sur la
+      source, et `SOURCE_VIDE` le dit au lieu de le taire.
+
+    Le jour annonce est essaye **en premier** : cinq des huit rencontres
+    mesurees repondent des le premier appel, donc le cas ordinaire ne paie qu'un
+    appel sur les six possibles.
+    """
+    from datetime import date, timedelta
+
+    try:
+        depart = date.fromisoformat(str(day)[:10])
+    except ValueError:
+        depart = None
+
+    dernier = 0
+    for shift in DAY_SHIFTS:
+        if depart is None and shift:
+            break
+        jour = str(day)[:10] if depart is None else (depart + timedelta(days=shift)).isoformat()
+        for swapped, (a, b) in enumerate(((first, second), (second, first))):
+            reponse = await client.event(a, b, jour)
+            dernier = reponse.archive_id or dernier
+            ligne, motif = parse_timeline(reponse.data, subject)
+            if ligne is not None:
+                if shift:
+                    # Journalise, parce que c'est la frequence qui decide : un cas
+                    # isole s'absorbe, un cas systematique est un decalage de
+                    # fuseau a corriger en amont.
+                    logger.info(
+                        "tennisapi timeline : %s vs %s trouvee a J%+d (base %s)",
+                        first,
+                        second,
+                        shift,
+                        jour,
+                    )
+                return TimelineHit(
+                    line=ligne, shift=shift, swapped=bool(swapped), archive_id=dernier
+                ), None
+            if motif == "alternance":
+                # **Une timeline a trous n'est pas un silence**, et retenter les
+                # autres ordres ne la reparerait pas : c'est la meme reponse.
+                return None, Reject(
+                    block_type=SOURCE,
+                    reason=SCHEMA_INVALID,
+                    detail=(
+                        f"{first} vs {second} le {jour} : les jeux de service n'alternent "
+                        "pas, la timeline saute un jeu. Une moyenne calculee dessus serait "
+                        "fausse sans que rien ne le montre."
+                    ),
+                    payload=f"{first}/{second}/{jour}",
+                )
+
+    return None, Reject(
+        block_type=SOURCE,
+        reason=SOURCE_VIDE,
+        detail=(
+            f"{first} vs {second} le {day} : la source repond et ne sert aucune timeline, "
+            f"les deux ordres et {len(DAY_SHIFTS)} dates essayes. Ce n'est pas une absence "
+            "de match — c'est une couverture partielle, mesuree a trois sur huit."
+        ),
+        payload=f"{first}/{second}/{day}",
+    )

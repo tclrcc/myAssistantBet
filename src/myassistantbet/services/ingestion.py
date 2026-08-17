@@ -66,6 +66,17 @@ DUPLICATE = "duplicate"
 #: autres motifs** : ceux-la decrivent un bloc qui a echoue, celui-ci une source
 #: qui n'echoue pas — elle rend 200, le meme fichier, indefiniment.
 SOURCE_FIGEE = "source_figee"
+#: La source repond `200` avec `"success": true` et un contenu **vide**, sur une
+#: rencontre qu'elle connait par ailleurs. **Distinct de `source_figee`** : la
+#: source n'est pas morte, elle est muette sur ce point-la.
+#:
+#: C'est le defaut caracteristique du projet **dans la source candidate**, et il
+#: se traite exactement comme on traite le notre : un vide n'est pas une reponse.
+#: Mesure du 17/08/2026 sur huit rencontres de la veille, graphies canoniques et
+#: fenetre de +/-1 jour epuisees — cinq repondent, **trois restent vides**. La
+#: couverture de la timeline est donc reellement partielle, et le taire ferait
+#: passer une absence de collecte pour une absence de fait.
+SOURCE_VIDE = "source_vide"
 OTHER = "other"
 REASONS = (
     FENCE_NOT_FOUND,
@@ -74,6 +85,7 @@ REASONS = (
     MATCH_REF_UNRESOLVED,
     DUPLICATE,
     SOURCE_FIGEE,
+    SOURCE_VIDE,
     OTHER,
 )
 
@@ -87,6 +99,7 @@ REASON_LABELS: dict[str, str] = {
     MATCH_REF_UNRESOLVED: "repère de match non résolu",
     DUPLICATE: "déjà présente, ou seconde sélection non justifiée",
     SOURCE_FIGEE: "source figée — elle répond encore et n'avance plus",
+    SOURCE_VIDE: "source muette — elle répond, et ne sert rien sur ce point",
     OTHER: "refusée à l'écriture",
 }
 

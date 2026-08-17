@@ -1,0 +1,123 @@
+{
+ "success": true,
+ "result": {
+  "id": "3831244",
+  "name": "Taylor Fritz vs Alex Michelsen",
+  "participant1": "Taylor Fritz",
+  "participant2": "Alex Michelsen",
+  "league": "Cincinnati Open - Cincinnati",
+  "score": "6-3,6-4",
+  "status": "Ended",
+  "points": "0-0",
+  "indicator": "1,0",
+  "stats": {
+   "aces": [
+    "7",
+    "4"
+   ],
+   "double_faults": [
+    "6",
+    "8"
+   ],
+   "win_1st_serve": [
+    "82",
+    "68"
+   ],
+   "break_point_conversions": [
+    "50",
+    "50"
+   ]
+  },
+  "timeline": [
+   {
+    "id": "312688715",
+    "text": "Game 1 - Alex Michelsen - breaks to 40"
+   },
+   {
+    "id": "312689191",
+    "text": "Game 2 - Taylor Fritz - breaks to love"
+   },
+   {
+    "id": "312689443",
+    "text": "Game 3 - Taylor Fritz - holds to 15"
+   },
+   {
+    "id": "312690207",
+    "text": "Game 4 - Taylor Fritz - breaks to 15"
+   },
+   {
+    "id": "312691079",
+    "text": "Game 5 - Taylor Fritz - holds to 40"
+   },
+   {
+    "id": "312692451",
+    "text": "Game 6 - Alex Michelsen - holds to 40"
+   },
+   {
+    "id": "312692774",
+    "text": "Game 7 - Taylor Fritz - holds to 30"
+   },
+   {
+    "id": "312693363",
+    "text": "Game 8 - Alex Michelsen - holds to 30"
+   },
+   {
+    "id": "312693764",
+    "text": "Game 9 - Taylor Fritz - holds to 30"
+   },
+   {
+    "id": "312694952",
+    "text": "Game 10 - Taylor Fritz - breaks to 40"
+   },
+   {
+    "id": "312695876",
+    "text": "Game 11 - Taylor Fritz - holds to 40"
+   },
+   {
+    "id": "312696273",
+    "text": "Game 12 - Alex Michelsen - holds to 30"
+   },
+   {
+    "id": "312696715",
+    "text": "Game 13 - Taylor Fritz - holds to 15"
+   },
+   {
+    "id": "312696993",
+    "text": "Game 14 - Alex Michelsen - holds to 15"
+   },
+   {
+    "id": "312697618",
+    "text": "Game 15 - Taylor Fritz - holds to 30"
+   },
+   {
+    "id": "312697910",
+    "text": "Game 16 - Alex Michelsen - holds to 15"
+   },
+   {
+    "id": "312698620",
+    "text": "Game 17 - Taylor Fritz - holds to 40"
+   },
+   {
+    "id": "312698933",
+    "text": "Game 18 - Alex Michelsen - holds to 15"
+   },
+   {
+    "id": "312699602",
+    "text": "Game 19 - Taylor Fritz - holds to 15"
+   }
+  ],
+  "player1": {
+   "name": "Taylor Fritz"
+  },
+  "player2": {
+   "name": "Alex Michelsen"
+  },
+  "tournament": {
+   "name": "Cincinnati Open - Cincinnati"
+  },
+  "tourType": "atp",
+  "startTimestamp": 1786892400,
+  "matchId": "29932-92985-21347-5"
+ },
+ "message": "Success"
+}

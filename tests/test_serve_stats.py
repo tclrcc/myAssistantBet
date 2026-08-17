@@ -17,9 +17,9 @@ import respx
 
 from myassistantbet.config import Settings
 from myassistantbet.providers.tennisapi import BASE_URL, TennisAPIClient
-from myassistantbet.services import serve_stats
-from myassistantbet.services.ingestion import MATCH_REF_UNRESOLVED
-from myassistantbet.services.serve_stats import ACCENTS, CASSE, EXACT, INTROUVABLE
+from myassistantbet.services import api_archive, serve_stats
+from myassistantbet.services.ingestion import MATCH_REF_UNRESOLVED, SOURCE_VIDE
+from myassistantbet.services.serve_stats import ACCENTS, CASSE, EXACT, NOM
 
 QUOTA_HEADERS = {"x-ratelimit-requests-remaining": "149000"}
 
@@ -34,20 +34,82 @@ def payload(load_fixture: Callable[[str], Any]) -> Any:
     return load_fixture("tennisapi_matches_played.json")
 
 
-def _search_par_nom(reponses: dict[str, list[str]]) -> None:
-    """Aiguille la recherche sur le nom **decode** de l'URL.
+def _un_match(joueur: str, adversaire: str = "Quelqu'un") -> dict[str, Any]:
+    """Un match minimal mais **coherent** : l'invariant des points totaux ferme.
+
+    Ecrire des nombres au hasard ferait echouer le controle et rendrait le
+    profil vide, donc chaque test de resolution echouerait pour une raison qui
+    n'est pas la sienne.
+    """
+    return {
+        "date": "2026-08-16T00:00:00.000Z",
+        "tournament": {"name": "Test", "court": {"name": "Hard"}},
+        "player1": {
+            "id": 1,
+            "name": joueur,
+            "stats": {
+                "firstServe": 40,
+                "firstServeOf": 70,
+                "aces": 5,
+                "doubleFaults": 2,
+                "winningOnFirstServe": 30,
+                "winningOnFirstServeOf": 40,
+                "winningOnSecondServe": 15,
+                "winningOnSecondServeOf": 30,
+                "breakPointsConverted": 2,
+                "breakPointsConvertedOf": 6,
+                "totalPointsWon": 65,
+            },
+        },
+        "player2": {
+            "id": 2,
+            "name": adversaire,
+            "stats": {
+                "firstServe": 30,
+                "firstServeOf": 60,
+                "aces": 3,
+                "doubleFaults": 4,
+                "winningOnFirstServe": 20,
+                "winningOnFirstServeOf": 30,
+                "winningOnSecondServe": 20,
+                "winningOnSecondServeOf": 30,
+                "breakPointsConverted": 1,
+                "breakPointsConvertedOf": 4,
+                "totalPointsWon": 65,
+            },
+        },
+    }
+
+
+def _source(
+    recherches: dict[str, list[str]], profils: dict[str, list[dict[str, Any]]] | None = None
+) -> None:
+    """Simule les deux endpoints, aiguilles sur le nom **decode** de l'URL.
 
     Un nom accentue part encode (`Anna%20Bond%C3%A1r`), donc un prefixe d'URL
     ecrit en clair ne l'attrape pas. Aiguiller sur la requete decodee dit ce que
     le test veut dire — « quand on demande ce nom-la » — au lieu de decrire un
     encodage.
+
+    `profils` porte les matchs par graphie canonique. **Un nom absent rend un
+    profil vide**, ce qui est le cas reel a reproduire : `Leylah Fernandez`
+    existe chez le fournisseur et ne sert aucun match.
     """
+    profils = profils or {}
 
     def _repondre(request: httpx.Request) -> httpx.Response:
         from urllib.parse import unquote
 
-        demande = unquote(request.url.path).rsplit("/", 2)[-2]
-        return httpx.Response(200, json=reponses.get(demande, []), headers=QUOTA_HEADERS)
+        chemin = unquote(request.url.path)
+        if "/matches-played" in chemin:
+            nom = chemin.rsplit("/", 2)[-2]
+            return httpx.Response(
+                200,
+                json={"singles": profils.get(nom, []), "singlesCount": len(profils.get(nom, []))},
+                headers=QUOTA_HEADERS,
+            )
+        nom = chemin.rsplit("/", 2)[-2]
+        return httpx.Response(200, json=recherches.get(nom, []), headers=QUOTA_HEADERS)
 
     respx.get(url__startswith=BASE_URL).mock(side_effect=_repondre)
 
@@ -60,13 +122,13 @@ def test_le_niveau_exact_departage_deux_homonymes() -> None:
 
     « Alexander Zverev » rend `['Alexander Zverev', 'Alexander Zverev Sr']`.
     Un repli tolerant les aurait pris tous les deux ; c'est le niveau exact qui
-    les separe.
+    les place en tete.
     """
-    canonical, niveau = serve_stats.pick_candidate(
+    ordre = serve_stats.rank_candidates(
         "Alexander Zverev", ["Alexander Zverev", "Alexander Zverev Sr"]
     )
 
-    assert (canonical, niveau) == ("Alexander Zverev", EXACT)
+    assert ordre[0] == ("Alexander Zverev", EXACT)
 
 
 def test_le_repli_de_casse_rattrape_le_cas_mesure_au_lot_4() -> None:
@@ -75,45 +137,127 @@ def test_le_repli_de_casse_rattrape_le_cas_mesure_au_lot_4() -> None:
     C'est ce qui avait rendu « 0 point de service » : un faux negatif de notre
     rapprochement, que le lot 4 a explicitement demande de ne pas reproduire.
     """
-    canonical, niveau = serve_stats.pick_candidate("McCartney Kessler", ["Mccartney Kessler"])
-
-    assert (canonical, niveau) == ("Mccartney Kessler", CASSE)
+    assert serve_stats.rank_candidates("McCartney Kessler", ["Mccartney Kessler"]) == [
+        ("Mccartney Kessler", CASSE)
+    ]
 
 
 def test_le_repli_d_accents_est_un_niveau_a_part() -> None:
     """Il se compte separement : si `accents` devient majoritaire, la
     normalisation en amont est mauvaise, et il faut le savoir."""
-    canonical, niveau = serve_stats.pick_candidate("Anna Bondár", ["Anna Bondar"])
-
-    assert (canonical, niveau) == ("Anna Bondar", ACCENTS)
+    assert serve_stats.rank_candidates("Anna Bondár", ["Anna Bondar"]) == [("Anna Bondar", ACCENTS)]
 
 
-def test_deux_candidats_indiscernables_ne_sont_pas_departages() -> None:
+def test_deux_candidats_indiscernables_ne_sont_pas_proposes() -> None:
     """**On ne devine pas, et ici c'est plus severe qu'ailleurs.**
 
     Il n'existe aucune resolution manuelle pour rattraper : attribuer a un
     joueur les statistiques d'un autre serait pire qu'une ligne absente. Meme
     arbitrage que l'Elo tennis.
     """
-    canonical, niveau = serve_stats.pick_candidate("anna bondar", ["Anna Bondar", "ANNA BONDAR"])
-
-    assert (canonical, niveau) == ("", INTROUVABLE)
+    assert serve_stats.rank_candidates("anna bondar", ["Anna Bondar", "ANNA BONDAR"]) == []
 
 
-def test_un_nom_tronque_qui_rend_plusieurs_joueurs_est_refuse() -> None:
+def test_un_nom_tronque_qui_rend_plusieurs_joueurs_ne_propose_rien() -> None:
     """« Kessler » rend trois joueuses. Aucune n'est la bonne par defaut."""
-    canonical, _ = serve_stats.pick_candidate(
-        "Kessler", ["F Kessler", "J Kessler", "Mccartney Kessler"]
-    )
-
-    assert canonical == ""
+    assert serve_stats.rank_candidates("Kessler", ["F Kessler", "J Kessler", "M Kessler"]) == []
 
 
-def test_une_liste_vide_ne_resout_rien() -> None:
-    assert serve_stats.pick_candidate("Jean-Personne", []) == ("", INTROUVABLE)
+def test_une_liste_vide_ne_propose_rien() -> None:
+    assert serve_stats.rank_candidates("Jean-Personne", []) == []
+
+
+def test_le_nom_de_famille_n_est_pris_que_sur_un_nom_compose() -> None:
+    """Rechercher « Gauff » quand on cherchait deja « Gauff » serait un appel de
+    plus pour la meme reponse."""
+    assert serve_stats.surname("Coco Gauff") == "Gauff"
+    assert serve_stats.surname("Gauff") == ""
 
 
 # -- La resolution complete --------------------------------------------------
+
+
+@respx.mock
+async def test_un_profil_vide_fait_essayer_le_candidat_suivant(
+    tennis_client: TennisAPIClient, migrated: Settings
+) -> None:
+    """**Le defaut que la mesure a trouve, et qui a change le dessin.**
+
+    Le premier jet tranchait sur le nom : « Leylah Fernandez » a une
+    correspondance **exacte** chez le fournisseur, et ce profil-la porte **zero
+    match**. Le vrai est « Leylah Annie Fernandez », 452 matchs, et la recherche
+    rend **les deux**.
+
+    Un nom n'est donc pas une resolution : ce qui tranche est le profil qui sert
+    des donnees. Meme regle de revue que partout — l'identifiant est celui qui
+    designe quelque chose.
+    """
+    _source(
+        {"Leylah Fernandez": ["Leylah Annie Fernandez", "Leylah Fernandez"]},
+        {"Leylah Annie Fernandez": [_un_match("Leylah Annie Fernandez")]},
+    )
+
+    identity, charge, rejet = await serve_stats.resolve(
+        tennis_client, "Leylah Fernandez", "wta", migrated
+    )
+
+    assert rejet is None
+    assert identity.canonical == "Leylah Annie Fernandez"
+    assert charge is not None, "la charge utile est rendue pour ne pas etre repayee"
+
+
+@respx.mock
+async def test_la_validation_ne_coute_aucun_appel_de_plus(
+    tennis_client: TennisAPIClient, migrated: Settings
+) -> None:
+    """La reponse `matches-played` est celle qu'on allait demander de toute
+    facon : elle valide **et** sert, donc la validation est gratuite."""
+    _source(
+        {"Alexander Zverev": ["Alexander Zverev"]},
+        {"Alexander Zverev": [_un_match("Alexander Zverev")]},
+    )
+
+    _, charge, _ = await serve_stats.resolve(tennis_client, "Alexander Zverev", "atp", migrated)
+
+    assert len(respx.calls) == 2, "une recherche, un profil — et rien de plus"
+    assert charge is not None
+
+
+@respx.mock
+async def test_le_nom_de_famille_rattrape_un_prenom_different(
+    tennis_client: TennisAPIClient, migrated: Settings
+) -> None:
+    """**Cas mesure : la source ecrit « Cori Gauff ».**
+
+    « Coco Gauff » rend une liste vide, et aucun repli de casse ou d'accent ne
+    rattrape un prenom different. « Gauff » seul rend exactement un candidat, et
+    c'est l'unicite qui rend le niveau sur — « Fernandez » en rend 94.
+    """
+    _source(
+        {"Coco Gauff": [], "Gauff": ["Cori Gauff"]},
+        {"Cori Gauff": [_un_match("Cori Gauff")]},
+    )
+
+    identity, _, rejet = await serve_stats.resolve(tennis_client, "Coco Gauff", "wta", migrated)
+
+    assert rejet is None
+    assert identity.canonical == "Cori Gauff"
+    assert identity.fallback == NOM
+
+
+@respx.mock
+async def test_un_nom_de_famille_ambigu_ne_resout_rien(
+    tennis_client: TennisAPIClient, migrated: Settings
+) -> None:
+    """« Fernandez » rend quatre-vingt-quatorze candidats : aucun n'est propose."""
+    _source({"Machin Fernandez": [], "Fernandez": ["Maria Fernandez", "Gigi Fernandez"]})
+
+    identity, _, rejet = await serve_stats.resolve(
+        tennis_client, "Machin Fernandez", "wta", migrated
+    )
+
+    assert not identity.resolved
+    assert rejet is not None
 
 
 @respx.mock
@@ -121,18 +265,22 @@ async def test_la_resolution_memorise_et_ne_rappelle_pas(
     tennis_client: TennisAPIClient, migrated: Settings
 ) -> None:
     """**Une fois par joueur, puis cache.** Un nom ne se re-resout pas."""
-    route = respx.get(url__startswith=BASE_URL).mock(
-        return_value=httpx.Response(200, json=["Mccartney Kessler"], headers=QUOTA_HEADERS)
+    _source(
+        {"McCartney Kessler": ["Mccartney Kessler"]},
+        {"Mccartney Kessler": [_un_match("Mccartney Kessler")]},
     )
 
-    premiere, rejet = await serve_stats.resolve(tennis_client, "McCartney Kessler", "wta", migrated)
-    seconde, _ = await serve_stats.resolve(tennis_client, "McCartney Kessler", "wta", migrated)
+    premiere, _, rejet = await serve_stats.resolve(
+        tennis_client, "McCartney Kessler", "wta", migrated
+    )
+    appels = len(respx.calls)
+    seconde, _, _ = await serve_stats.resolve(tennis_client, "McCartney Kessler", "wta", migrated)
 
     assert rejet is None
     assert premiere.canonical == "Mccartney Kessler"
     assert premiere.fallback == CASSE
     assert seconde.canonical == premiere.canonical
-    assert len(route.calls) == 1, "la seconde resolution sort du cache"
+    assert len(respx.calls) == appels, "la seconde resolution sort du cache"
 
 
 @respx.mock
@@ -142,33 +290,37 @@ async def test_les_accents_declenchent_un_second_appel_et_le_resolvent(
     """**Mesure du 17/08 qui contredit l'ordre de repli du brief.**
 
     L'endpoint est insensible a la casse en entree — le serveur s'en charge —
-    mais **pas** aux accents : `Karolína Muchová` rend une liste vide quand
-    `Karolina Muchova` repond. Le repli se fait donc sur l'**entree**, avant
-    l'appel, et pas seulement sur les candidats rendus.
+    mais **pas** aux accents : `Iva Jović` rend une liste vide quand `Iva Jovic`
+    repond. Le repli se fait donc sur l'**entree**, avant l'appel, et pas
+    seulement sur les candidats rendus.
     """
-    _search_par_nom(
-        {"Anna Bondár": [], "Anna Bondar": ["Anna Bondar"]},
+    _source(
+        {"Iva Jović": [], "Iva Jovic": ["Iva Jovic"]},
+        {"Iva Jovic": [_un_match("Iva Jovic")]},
     )
 
-    identity, rejet = await serve_stats.resolve(tennis_client, "Anna Bondár", "wta", migrated)
+    identity, _, rejet = await serve_stats.resolve(tennis_client, "Iva Jović", "wta", migrated)
 
     assert rejet is None
-    assert identity.canonical == "Anna Bondar"
+    assert identity.canonical == "Iva Jovic"
     assert identity.fallback == ACCENTS
 
 
 @respx.mock
-async def test_un_nom_sans_accent_ne_declenche_aucun_second_appel(
+async def test_un_nom_sans_accent_ne_declenche_aucun_repli_d_accent(
     tennis_client: TennisAPIClient, migrated: Settings
 ) -> None:
-    """Le second appel ne coute rien au cas ordinaire, et le test le garde."""
-    route = respx.get(url__startswith=BASE_URL).mock(
-        return_value=httpx.Response(200, json=[], headers=QUOTA_HEADERS)
-    )
+    """Le second appel ne coute rien au cas ordinaire, et le test le garde.
+
+    « Jean Personne » ne portant pas d'accent, seuls deux appels partent : le
+    nom complet, puis le nom de famille.
+    """
+    _source({})
 
     await serve_stats.resolve(tennis_client, "Jean Personne", "atp", migrated)
 
-    assert len(route.calls) == 1
+    demandes = [str(appel.request.url) for appel in respx.calls]
+    assert len(demandes) == 2, "nom complet puis nom de famille, pas de repli d'accent"
 
 
 @respx.mock
@@ -180,11 +332,9 @@ async def test_une_non_resolution_part_en_rejet_et_jamais_en_silence(
     Une sortie identique pour « pas trouve » et « rien a chercher » est le
     defaut caracteristique du projet.
     """
-    respx.get(url__startswith=BASE_URL).mock(
-        return_value=httpx.Response(200, json=[], headers=QUOTA_HEADERS)
-    )
+    _source({})
 
-    identity, rejet = await serve_stats.resolve(tennis_client, "Jean Personne", "atp", migrated)
+    identity, _, rejet = await serve_stats.resolve(tennis_client, "Jean Personne", "atp", migrated)
 
     assert not identity.resolved
     assert rejet is not None
@@ -199,18 +349,16 @@ async def test_une_non_resolution_se_memorise_pour_ne_pas_repayer(
     """**« Cherche, pas trouve » n'est pas « jamais cherche ».**
 
     Les confondre ferait redemander tous les jours un nom que la source ne
-    connait pas — un appel par joueur et par passe, pour un constat qui ne
-    bougera pas.
+    connait pas — plusieurs appels par joueur et par passe, pour un constat qui
+    ne bougera pas.
     """
-    route = respx.get(url__startswith=BASE_URL).mock(
-        return_value=httpx.Response(200, json=[], headers=QUOTA_HEADERS)
-    )
+    _source({})
 
     await serve_stats.resolve(tennis_client, "Jean Personne", "atp", migrated)
-    appels = len(route.calls)
+    appels = len(respx.calls)
     await serve_stats.resolve(tennis_client, "Jean Personne", "atp", migrated)
 
-    assert len(route.calls) == appels
+    assert len(respx.calls) == appels
     assert serve_stats.load_identity("Jean Personne", "atp", migrated) is not None
 
 
@@ -223,11 +371,15 @@ async def test_le_niveau_de_repli_se_compte(
     Si `accents` devient majoritaire, la normalisation en amont est mauvaise.
     Un compte le dit ; un mois de logs que personne ne relit, jamais.
     """
-    _search_par_nom(
+    _source(
         {
             "Alexander Zverev": ["Alexander Zverev"],
             "McCartney Kessler": ["Mccartney Kessler"],
-        }
+        },
+        {
+            "Alexander Zverev": [_un_match("Alexander Zverev")],
+            "Mccartney Kessler": [_un_match("Mccartney Kessler")],
+        },
     )
 
     await serve_stats.resolve(tennis_client, "Alexander Zverev", "atp", migrated)
@@ -237,41 +389,41 @@ async def test_le_niveau_de_repli_se_compte(
 
 
 @respx.mock
+async def test_l_identifiant_numerique_est_capture_a_la_resolution(
+    tennis_client: TennisAPIClient, migrated: Settings
+) -> None:
+    """**C'est le vrai identifiant, et il n'arrive qu'avec le profil.**
+
+    La recherche ne rend que des noms. Regle de revue du projet : avant
+    d'ecrire une comparaison de chaines, chercher l'identifiant — et quand il
+    arrive, l'ecrire.
+    """
+    _source(
+        {"Alexander Zverev": ["Alexander Zverev"]},
+        {"Alexander Zverev": [_un_match("Alexander Zverev")]},
+    )
+
+    await serve_stats.resolve(tennis_client, "Alexander Zverev", "atp", migrated)
+
+    identity = serve_stats.load_identity("Alexander Zverev", "atp", migrated)
+    assert identity is not None
+    assert identity.provider_id == 1
+
+
+@respx.mock
 async def test_la_resolution_garde_la_reponse_dont_elle_sort(
     tennis_client: TennisAPIClient, migrated: Settings
 ) -> None:
     """Sans elle, on saurait qu'un nom a ete resolu et jamais sur quoi."""
-    respx.get(url__startswith=BASE_URL).mock(
-        return_value=httpx.Response(200, json=["Alexander Zverev"], headers=QUOTA_HEADERS)
+    _source(
+        {"Alexander Zverev": ["Alexander Zverev"]},
+        {"Alexander Zverev": [_un_match("Alexander Zverev")]},
     )
 
-    identity, _ = await serve_stats.resolve(tennis_client, "Alexander Zverev", "atp", migrated)
+    identity, _, _ = await serve_stats.resolve(tennis_client, "Alexander Zverev", "atp", migrated)
 
     assert identity.response_id
-    from myassistantbet.services import api_archive
-
     assert api_archive.load(identity.response_id, migrated) is not None
-
-
-def test_l_identifiant_numerique_se_note_quand_il_arrive(migrated: Settings) -> None:
-    """**C'est le vrai identifiant, et il n'arrive qu'apres.**
-
-    La recherche ne rend que des noms ; l'identifiant apparait dans la premiere
-    reponse `matches-played`. Regle de revue du projet : quand un identifiant
-    existe, c'est lui.
-    """
-    serve_stats.store_identity(
-        serve_stats.Identity(
-            local_name="Alexander Zverev", tour="atp", canonical="Alexander Zverev", fallback=EXACT
-        ),
-        migrated,
-    )
-
-    serve_stats.note_provider_id("Alexander Zverev", "atp", 24008, migrated)
-
-    identity = serve_stats.load_identity("Alexander Zverev", "atp", migrated)
-    assert identity is not None
-    assert identity.provider_id == 24008
 
 
 # -- La lecture d'une reponse ------------------------------------------------
@@ -378,3 +530,155 @@ def test_la_surface_vient_de_la_meme_reponse(payload: Any) -> None:
     lignes, _ = serve_stats.parse_matches_played(payload, "Alexander Zverev")
 
     assert {ligne.surface for ligne in lignes} == {"Hard", "Grass"}
+
+
+# -- La timeline, et les trois formes du silence -----------------------------
+
+
+def test_l_alternance_tient_sur_la_timeline_reelle(load_fixture: Callable[[str], Any]) -> None:
+    """**L'invariant de controle, sur le Fritz – Michelsen du 16/08.**
+
+    19 jeux, et 6-3 6-4 en fait bien 19. Le serveur se deduit — on ne breake que
+    le service adverse — et la suite deduite doit alterner.
+    """
+    ligne, motif = serve_stats.parse_timeline(load_fixture("tennisapi_event.json"), "Taylor Fritz")
+
+    assert motif == ""
+    assert ligne is not None
+    assert ligne.served + ligne.returned == 19
+    assert (ligne.served, ligne.held) == (10, 9)
+    assert (ligne.returned, ligne.broke) == (9, 3)
+
+
+def test_la_timeline_se_lit_des_deux_cotes(load_fixture: Callable[[str], Any]) -> None:
+    """Les deux camps sortent de la meme reponse, et leurs comptes se completent."""
+    payload = load_fixture("tennisapi_event.json")
+    fritz, _ = serve_stats.parse_timeline(payload, "Taylor Fritz")
+    michelsen, _ = serve_stats.parse_timeline(payload, "Alex Michelsen")
+
+    assert fritz is not None and michelsen is not None
+    assert fritz.served == michelsen.returned
+    assert michelsen.served == fritz.returned
+    assert fritz.served - fritz.held == michelsen.broke
+
+
+def test_une_timeline_a_trous_est_refusee_et_non_moyennee() -> None:
+    """**Sa rupture signale une timeline incomplete**, et une moyenne calculee
+    dessus serait fausse sans que rien ne le montre."""
+    troue = {
+        "result": {
+            "participant1": "A",
+            "participant2": "B",
+            "timeline": [
+                {"text": "Game 1 - A - holds to 15"},
+                {"text": "Game 2 - A - holds to 15"},
+            ],
+        }
+    }
+
+    ligne, motif = serve_stats.parse_timeline(troue, "A")
+
+    assert ligne is None
+    assert motif == "alternance"
+
+
+def test_un_result_vide_n_est_pas_une_absence_de_donnees() -> None:
+    """**`"success": true` sur un `result` vide** : le defaut caracteristique du
+    projet, dans la source candidate cette fois."""
+    ligne, motif = serve_stats.parse_timeline({"success": True, "result": []}, "A")
+
+    assert (ligne, motif) == (None, "vide")
+
+
+@respx.mock
+async def test_le_jour_annonce_est_essaye_en_premier(
+    tennis_client: TennisAPIClient, load_fixture: Callable[[str], Any]
+) -> None:
+    """Cinq des huit rencontres mesurees repondent au premier appel : le cas
+    ordinaire ne paie pas les six essais possibles."""
+    respx.get(url__startswith=BASE_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("tennisapi_event.json"), headers=QUOTA_HEADERS
+        )
+    )
+
+    trouve, rejet = await serve_stats.fetch_timeline(
+        tennis_client, "Taylor Fritz", "Alex Michelsen", "2026-08-16", "Taylor Fritz"
+    )
+
+    assert rejet is None
+    assert trouve is not None
+    assert (trouve.shift, trouve.swapped) == (0, False)
+    assert len(respx.calls) == 1
+
+
+@respx.mock
+async def test_la_fenetre_d_un_jour_rattrape_un_decalage_de_date(
+    tennis_client: TennisAPIClient, load_fixture: Callable[[str], Any]
+) -> None:
+    """**Cas mesure** : le Fernandez – Wang programme chez nous le 16/08 a 19h10
+    UTC est date du **17** par la source. Une date exacte le manquerait."""
+    evenement = load_fixture("tennisapi_event.json")
+
+    def _repondre(request: httpx.Request) -> httpx.Response:
+        corps = evenement if request.url.path.endswith("2026-08-17") else {"result": []}
+        return httpx.Response(200, json=corps, headers=QUOTA_HEADERS)
+
+    respx.get(url__startswith=BASE_URL).mock(side_effect=_repondre)
+
+    trouve, _ = await serve_stats.fetch_timeline(
+        tennis_client, "Taylor Fritz", "Alex Michelsen", "2026-08-16", "Taylor Fritz"
+    )
+
+    assert trouve is not None
+    assert trouve.shift == 1
+
+
+@respx.mock
+async def test_les_deux_ordres_sont_essayes(
+    tennis_client: TennisAPIClient, load_fixture: Callable[[str], Any]
+) -> None:
+    """**L'endpoint est positionnel**, et l'ordre ne correspond pas toujours a
+    celui de la base."""
+    evenement = load_fixture("tennisapi_event.json")
+
+    def _repondre(request: httpx.Request) -> httpx.Response:
+        from urllib.parse import unquote
+
+        inverse = "/Alex Michelsen/Taylor Fritz/" in unquote(request.url.path)
+        return httpx.Response(
+            200, json=evenement if inverse else {"result": []}, headers=QUOTA_HEADERS
+        )
+
+    respx.get(url__startswith=BASE_URL).mock(side_effect=_repondre)
+
+    trouve, _ = await serve_stats.fetch_timeline(
+        tennis_client, "Taylor Fritz", "Alex Michelsen", "2026-08-16", "Taylor Fritz"
+    )
+
+    assert trouve is not None
+    assert trouve.swapped is True
+
+
+@respx.mock
+async def test_une_source_muette_part_en_rejet_nomme(
+    tennis_client: TennisAPIClient, migrated: Settings
+) -> None:
+    """**Trois rencontres sur huit restent vides**, graphies canoniques et
+    fenetre epuisees. C'est un fait sur la source, pas un defaut de collecte, et
+    le taire ferait passer une absence de collecte pour une absence de fait.
+    """
+    respx.get(url__startswith=BASE_URL).mock(
+        return_value=httpx.Response(
+            200, json={"success": True, "result": []}, headers=QUOTA_HEADERS
+        )
+    )
+
+    trouve, rejet = await serve_stats.fetch_timeline(
+        tennis_client, "Coco Gauff", "Liudmila Samsonova", "2026-08-16", "Coco Gauff"
+    )
+
+    assert trouve is None
+    assert rejet is not None
+    assert rejet.reason == SOURCE_VIDE
+    assert len(respx.calls) == 6, "les deux ordres sur les trois dates"
