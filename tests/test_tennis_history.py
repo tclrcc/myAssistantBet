@@ -1211,8 +1211,13 @@ def test_un_joueur_qui_entre_en_lice_ne_se_dit_pas_a_jour(migrated: Settings) ->
         )
     )
 
-    assert lignes["Fraicheur"].endswith(
+    # `in` et non `endswith` : la ligne porte desormais l'escalade de fraicheur
+    # en queue quand la source est vieille, et la fixture est datee du 05/07.
+    # C'est le comportement voulu — un bloc dont les donnees ont six semaines
+    # doit le dire — et la position n'a jamais ete ce que ce test verifiait.
+    assert (
         "les deux joueurs entrent en lice — aucun match vu dans ce tournoi"
+        in lignes["Fraicheur"]
     )
 
 

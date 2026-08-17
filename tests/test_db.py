@@ -40,6 +40,7 @@ EXPECTED_TABLES = {
     "prompts",
     "schema_migrations",
     "session_events",
+    "source_freshness",
     "sessions",
     "set_scores",
     "sports",

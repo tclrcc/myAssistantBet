@@ -917,3 +917,124 @@ et le §10 n'y touchait déjà pas.
 Et une septième, sur la forme : le brief demandait le §6 « sans écrire une ligne
 de production ». C'est ce qui a été fait — et la mesure a coûté deux heures pour
 arrêter un chantier de cinq sections. C'est le meilleur rapport du lot.
+
+
+---
+---
+
+# DIAGNOSTIC — lot 4 : la source tennis n'a pas disparu, et rien ne l'aurait dit
+
+Relevé du **17/08/2026**, sur une copie de la base servie et par sondage direct
+des URL amont. **La prémisse du brief est contredite** : aucune ligne tennis ne
+passait par les dépôts Sackmann supprimés.
+
+---
+
+## §0.1 — D'où vient chaque ligne tennis (établi en 8 minutes)
+
+**Aucune occurrence de `github` dans tout `src/`.** Le tableau est donc
+entièrement en **cas A**.
+
+| Ligne | Module | Source concrète | État sondé | Dernier succès |
+| --- | --- | --- | --- | --- |
+| `Elo` | `providers/tennisabstract.py` | `https://www.tennisabstract.com/reports/atp_elo_ratings.html` | **200** · 286 174 o | 17/08 08:29 |
+| `Elo` (WTA) | idem | `…/wta_elo_ratings.html` | **200** · 284 080 o | 17/08 08:29 |
+| `Niveau adv.` | `services/tennis_history.py` | dérivée de `tennis_elo` | table, 1105 lignes | 17/08 08:29 |
+| `Forme` | `providers/tennisdata.py` | `http://www.tennis-data.co.uk/2026/2026.xlsx` | **200** · 301 307 o | 17/08 05:15 |
+| `Usure` | idem | idem | **200** | 17/08 05:15 |
+| `Profil` | idem | idem | **200** | 17/08 05:15 |
+| `Marge` | idem | idem | **200** | 17/08 05:15 |
+| `Surface` | idem | idem | **200** | 17/08 05:15 |
+| `Abandons` | idem | idem | **200** | 17/08 05:15 |
+| `H2H` | idem | idem | **200** | 17/08 05:15 |
+| `Palmarès` | idem | idem (+ `competitions.tennisdata_tournaments`) | **200** | 17/08 05:15 |
+| `Précédent` | idem | idem | **200** | 17/08 05:15 |
+| `Parcours` | `services/tennis_load.py` | **nos propres scans** (`events`) | table | permanent |
+
+Les six URL amont ont été **appelées**, pas déduites d'une constante. Les
+fichiers WTA correspondants (`/2026w/2026.xlsx`, `/2025w/…`) répondent également
+200.
+
+| Grandeur | ATP | WTA |
+| --- | --- | --- |
+| dernier match dans `tennis_matches` | **2026-08-14** | 2026-08-13 |
+| dernier téléchargement (`tennis_history_state`) | 17/08 05:15 | 17/08 05:15 |
+| lignes dans le fichier amont | 1 881 | 1 826 |
+
+**Verdict : cas A partout, rien n'est cassé.** Le retard de trois jours est le
+régime normal — le fichier est hebdomadaire et publié après coup, ce que
+`HISTORY_LATE_DAYS` traduit déjà.
+
+**Ce que la mesure corrige dans la prémisse du brief.** Le gabarit attribue ces
+lignes à « Tennis Abstract », ce qui est vrai pour l'Elo seul : les onze autres
+viennent de **tennis-data.co.uk**, un site sans rapport avec Sackmann ni avec
+GitHub. La confusion venait du dossier de projet, qui cite les trois sources dans
+la même phrase.
+
+---
+
+## §0.2 — La garde de péremption : la panne n'a pas eu lieu, le mécanisme manquait quand même
+
+**Cause racine : l'instrumentation datait la tentative, jamais le contenu.**
+`tennis_history_state.fetched_at` avance à chaque passage du planificateur, y
+compris sur un fichier figé. Une source morte **répond encore** : un dépôt
+supprimé rend 404 et se voit, un fichier hebdomadaire qui cesse d'être publié
+rend 200, le même classeur, indéfiniment. Septième occurrence du défaut
+caractéristique du projet — une sortie identique pour l'échec et pour le cas
+ordinaire.
+
+**Migration 056**, table `source_freshness` : `source_as_of` (le dernier fait
+obtenu), `checked_at` (la tentative), `moved_at` (la dernière fois que le
+contenu a avancé).
+
+- **La stagnation se mesure entre `moved_at` et `checked_at`, jamais entre deux
+  exécutions consécutives.** C'est le point qui décide : le planificateur tourne
+  tous les jours, donc trois relances rapprochées feraient trois comparaisons de
+  moins de 48 h et la source ne stagnerait **jamais**, quel que soit son âge
+  réel. Le mécanisme aurait été entièrement inopérant. Un test le garde.
+- **Un recul ne compte pas comme un mouvement.** Un fichier republié amputé —
+  Sackmann le pratiquait — ferait sinon repartir le compteur en perdant des
+  données.
+- **Le premier relevé ne conclut rien** : on ne dit pas qu'une source ne bouge
+  plus quand on ne l'a vue qu'une fois.
+- **Les deux circuits vivent leur vie**, et le bloc rend le **pire** des deux :
+  l'un peut geler quand l'autre vit, et rendre le meilleur tairait le cas qu'on
+  veut voir.
+
+**L'escalade dans le bloc** est une fonction pure de la date collectée —
+`collected` **est** déjà `source_as_of`, et relire la table ici ferait perdre la
+mention sur une base neuve, pour une raison sans rapport avec la fraîcheur.
+
+| Âge | Rendu |
+| --- | --- |
+| ≤ 7 j | inchangé |
+| 8 à 21 j | `source non rafraichie depuis le JJ/MM` |
+| > 21 j | `SOURCE FIGEE depuis le JJ/MM — Forme, Usure, Profil, Marge et Niveau adv. decrivent un etat perime…` |
+
+Les seuils ne sont pas arbitraires : sous huit jours, deux publications
+hebdomadaires n'ont pas encore été manquées, et une ligne qui crierait chaque
+jour cesserait d'informer au bout d'un lot — le défaut de `A relever` sur
+vingt-quatre blocs.
+
+**`ingestion_rejects.session_id` devient facultatif**, seul changement imposé
+ailleurs : une source figée ne se perd pendant aucune session, elle se constate
+à la collecte. Rattacher le rejet à la dernière session en ferait un défaut de
+cette session-là ; créer une seconde table de pertes aurait divergé de celle-ci.
+
+**Trouvé en câblant, et absent du brief** : la ligne `Fraicheur` devient
+dépendante de l'horloge, ce qui rend fragiles les fixtures datées. Un test de
+`tennis_history` l'a montré immédiatement — sa fixture est datée du 05/07, donc
+l'escalade s'y déclenche. C'est le comportement voulu, et l'assertion portait
+sur une position et non sur un fait.
+
+---
+
+## §0.3 — Point de contrôle
+
+Prompt réel généré sur une copie de la base servie, six matchs de tennis du
+17/08 (Cincinnati) : **6 blocs, ~14 604 tokens**, les douze lignes tennis
+présentes, `Historique` à « dernier match connu le 14/08, soit 3j avant
+celui-ci », `Fraicheur` sans mention d'escalade — ce qui est correct à trois
+jours.
+
+`ruff` vert, **1979 tests**, `selfcheck-ingestion` **10/10**.

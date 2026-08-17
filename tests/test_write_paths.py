@@ -20,7 +20,7 @@ from pathlib import Path
 import pytest
 
 from myassistantbet.services import write_paths
-from myassistantbet.services.ingestion import BLOCK_TYPES
+from myassistantbet.services.ingestion import BLOCK_TYPES, SOURCE
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "myassistantbet"
 
@@ -148,9 +148,14 @@ def test_le_denominateur_du_controle_se_derive_du_registre() -> None:
     """
     write_paths.load()
     types = write_paths.declared_block_types()
-    assert set(types) == set(BLOCK_TYPES), (
-        "Le registre ne couvre pas toutes les familles de blocs : "
-        f"{sorted(set(BLOCK_TYPES) - set(types))} n'ont aucun chemin d'écriture déclaré."
+    # `SOURCE` n'est pas une famille de blocs du rendu : c'est une source amont
+    # qui se fige, constatee a la collecte et non a l'import. Elle n'a donc aucun
+    # chemin d'ecriture de **prediction**, et l'exiger ferait reclamer un
+    # exemplaire malforme a `selfcheck` pour un format qui n'existe pas.
+    attendues = set(BLOCK_TYPES) - {SOURCE}
+    assert set(types) == attendues, (
+        "Le registre ne couvre pas toutes les familles de blocs du rendu : "
+        f"{sorted(attendues - set(types))} n'ont aucun chemin d'écriture déclaré."
     )
     # L'ordre suit `BLOCK_TYPES` : le compte-rendu du controle se lit deux fois
     # de suite, et deux ordres differents feraient chercher une difference.

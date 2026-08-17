@@ -35,6 +35,7 @@ from .providers.tennisabstract import TennisAbstractClient
 from .providers.tennisdata import TennisDataClient
 from .services import competitions as competitions_service
 from .services import elo as elo_service
+from .services import ingestion as ingestion_service
 from .services import tennis_history as tennis_history_service
 from .services.context import refresh_due_lineups
 from .services.scan import run_scan
@@ -99,6 +100,18 @@ def build_scheduler(client: httpx.AsyncClient, settings: Settings) -> AsyncIOSch
                 history.matches,
                 len(history.seasons),
             )
+            # **Une source figee se journalise la ou tout ce qui se perd se
+            # journalise.** Le planificateur est le seul endroit qui voie la
+            # collecte tourner sans qu'un humain regarde : sans cette ligne, une
+            # source qui repond 200 et ne bouge plus resterait invisible jusqu'a
+            # ce qu'un bloc paraisse etrange, des semaines plus tard.
+            #
+            # `session_id` vaut NULL : ce n'est pas une session qui a perdu
+            # quelque chose, c'est la collecte. Le rattacher a la derniere
+            # session en date en ferait un defaut de cette session-la, ce qu'il
+            # n'est pas.
+            if history.frozen:
+                ingestion_service.record(None, history.frozen, settings)
         except Exception:
             logger.exception("Historique tennis planifie : echec")
         try:

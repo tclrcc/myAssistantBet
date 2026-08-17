@@ -32,7 +32,8 @@ from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.base import ProviderError
 from ..providers.tennisdata import TOURS, RawMatch, TennisDataClient
-from . import tennis_load, tennis_round
+from . import freshness, tennis_load, tennis_round
+from .ingestion import Reject
 
 logger = logging.getLogger(__name__)
 
@@ -155,6 +156,10 @@ class HistoryReport:
     #: qui s'est trompee sur quelques lignes. Les taire ferait passer une coquille
     #: pour une absence.
     rejected: int = 0
+    #: Les circuits dont la source **repond encore et n'avance plus**. Comptes a
+    #: part des erreurs, et c'est tout le point : une erreur se voit, une source
+    #: figee rend 200 et le meme fichier indefiniment.
+    frozen: list[Reject] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -425,6 +430,18 @@ async def refresh(
             report.matches += stored
             report.rejected += len(matches) - stored
             report.seasons.append(label)
+        # **Le contenu se date, pas la tentative.** `tennis_history_state` avance
+        # son `fetched_at` a chaque passage du planificateur, y compris sur un
+        # fichier fige : c'est ce qui rendait une source morte indiscernable
+        # d'une source vivante. Le dernier match obtenu, lui, cesse d'avancer.
+        #
+        # Le releve se fait **par circuit** et apres toutes ses saisons : l'ATP
+        # et la WTA sont deux fichiers, et l'un peut geler quand l'autre vit.
+        fige = freshness.record(
+            freshness.TENNISDATA, tour, horizon({tour}, settings) or "", settings
+        )
+        if fige is not None:
+            report.frozen.append(fige)
     return report
 
 
@@ -885,6 +902,15 @@ def _freshness_line(
 
     detail = " | ".join(fragments) if fragments else "toutes les lignes a jour"
     rows = [f"{STALE_LINES} arretees au {_short(collected.isoformat())}", detail]
+    # **L'escalade, et c'est l'application qui la decide.** La ligne disait
+    # jusqu'ou va le jeu de donnees et restait neutre a tout age : trois jours de
+    # retard sont le regime normal d'un fichier hebdomadaire, trois semaines
+    # veulent dire que la source ne repond plus — et les deux se rendaient
+    # pareil. Le modele ne peut pas trancher, il n'a pas la date d'aujourd'hui
+    # dans le bloc ; l'application, si.
+    note = freshness.note_for(collected)
+    if note:
+        rows.append(note)
     if tennis_round.truncated(competition_id, commence_time, settings):
         # Le **nombre** de tours manquants n'est pas derivable : il demanderait
         # la taille du tableau, que rien ne donne. Le fait, lui, l'est — et la

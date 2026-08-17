@@ -47,7 +47,12 @@ COMBO = "combo"
 SCORE_SETS = "score_sets"
 SELECTION = "selection"
 EXPLORATOIRE = "exploratoire"
-BLOCK_TYPES = (CONF, COMBO, SCORE_SETS, SELECTION, EXPLORATOIRE)
+#: **Pas un bloc du rendu, et c'est assume.** Une source amont qui repond encore
+#: et n'avance plus n'est pas un bloc recu et refuse : c'est une collecte qui
+#: meurt en silence. Elle se journalise ici parce que c'est la table de ce qui se
+#: perd, et parce qu'une seconde table de pertes aurait divergé de celle-ci.
+SOURCE = "source"
+BLOCK_TYPES = (CONF, COMBO, SCORE_SETS, SELECTION, EXPLORATOIRE, SOURCE)
 
 #: Pourquoi le bloc n'est pas entre. **Une enumeration et non du texte libre** :
 #: c'est elle qui se compte, et deux orthographes du meme motif feraient deux
@@ -57,6 +62,10 @@ JSON_INVALID = "json_invalid"
 SCHEMA_INVALID = "schema_invalid"
 MATCH_REF_UNRESOLVED = "match_ref_unresolved"
 DUPLICATE = "duplicate"
+#: La source repond encore et son contenu ne bouge plus. **Distinct de tous les
+#: autres motifs** : ceux-la decrivent un bloc qui a echoue, celui-ci une source
+#: qui n'echoue pas — elle rend 200, le meme fichier, indefiniment.
+SOURCE_FIGEE = "source_figee"
 OTHER = "other"
 REASONS = (
     FENCE_NOT_FOUND,
@@ -64,6 +73,7 @@ REASONS = (
     SCHEMA_INVALID,
     MATCH_REF_UNRESOLVED,
     DUPLICATE,
+    SOURCE_FIGEE,
     OTHER,
 )
 
@@ -76,6 +86,7 @@ REASON_LABELS: dict[str, str] = {
     SCHEMA_INVALID: "champ manquant ou hors vocabulaire",
     MATCH_REF_UNRESOLVED: "repère de match non résolu",
     DUPLICATE: "déjà présente, ou seconde sélection non justifiée",
+    SOURCE_FIGEE: "source figée — elle répond encore et n'avance plus",
     OTHER: "refusée à l'écriture",
 }
 
@@ -85,6 +96,7 @@ BLOCK_LABELS: dict[str, str] = {
     SCORE_SETS: "score en sets",
     SELECTION: "sélection",
     EXPLORATOIRE: "sélection exploratoire",
+    SOURCE: "source amont",
 }
 
 #: Longueur au-dela de laquelle un brut est tronque a l'ecriture. Un bloc de
@@ -394,7 +406,7 @@ def to_payload(rejects: list[Reject]) -> str:
 
 
 def record(
-    session_id: int,
+    session_id: int | None,
     rejects: list[Reject],
     settings: Settings | None = None,
     import_id: int | None = None,
@@ -430,7 +442,10 @@ def record(
             ],
         )
     for reject in rejects:
-        logger.warning("Rejet d'ingestion — session %d : %s", session_id, reject.label)
+        # `session_id` peut etre NULL : une source amont figee ne se perd pendant
+        # aucune session, elle se constate a la collecte.
+        ou = f"session {session_id}" if session_id is not None else "collecte"
+        logger.warning("Rejet d'ingestion — %s : %s", ou, reject.label)
     return len(rejects)
 
 
