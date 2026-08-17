@@ -1477,3 +1477,92 @@ plus d'un an d'entretien au régime mesuré.
 C'est aussi ce qui autorise la mesure de couverture du §6 sans arbitrage : elle
 coûte l'équivalent d'une reprise d'identité et de table, ~360 appels, et il n'y
 avait donc aucune raison de l'échantillonner.
+
+---
+
+## §6 — La couverture réelle : les deux circuits passent, et de loin
+
+Mesure du **17/08/2026 sur les 176 joueurs des cinq derniers lots tennis**,
+pagination complète, par le **vrai chemin de code** — `resolve`,
+`parse_matches_played`, `aggregate` — donc elle mesure ce que l'application
+produira, pas ce qu'une sonde ad hoc produirait. Base temporaire : rien n'a été
+écrit en production.
+
+**Coût : 355 appels**, soit deux par joueur (une recherche, un profil) plus trois
+replis. Le dimensionnement du §0.2 tombe exactement juste.
+
+### Résolution d'identité : 174 sur 176
+
+| Niveau de repli | Joueurs |
+| --- | ---: |
+| `exact` | 168 |
+| `casse` | 3 |
+| `accents` (typographie, tirets compris) | 3 |
+| **non résolus** | **2** |
+
+`accents` reste très minoritaire, ce qui est le signal recherché : le brief
+demandait de journaliser les niveaux parce que *« si le repli accents devient
+majoritaire, la normalisation en amont est mauvaise »*. Il ne l'est pas.
+
+**Les deux non résolus sont nommés, et leurs causes diffèrent** :
+
+- **JJ Wolf** — la source le connaît sous `J J Wolf`, et **ce profil porte zéro
+  match**. Aucune graphie servie n'existe : c'est une absence réelle, pas un
+  défaut de rapprochement ;
+- **Leylah Fernandez** — cas ambigu et assumé. La recherche sur le nom complet
+  rend le seul `Leylah Fernandez`, profil vide ; la recherche sur `Fernandez`
+  rend **94** candidats, dont **deux** portent tous nos mots (`Leylah Fernandez`
+  et `Leylah Annie Fernandez`, 452 matchs). Départager sans mesure serait
+  deviner, et il n'existe ici aucune résolution manuelle. Elle part en
+  `ingestion_rejects` sous `match_ref_unresolved` — un manque nommé et visible
+  vaut mieux qu'une attribution silencieuse.
+
+### Points de service, ATP et WTA séparés
+
+| Circuit | Fenêtre | Médiane | **Q1** | ≥ 400 pts |
+| --- | --- | ---: | ---: | --- |
+| ATP (88) | 52 sem., toutes surfaces | 4 648 | **3 744** | **88 / 88** (100 %) |
+| ATP | 52 sem., dur | 1 870 | **1 373** | 87 / 88 (99 %) |
+| WTA (86) | 52 sem., toutes surfaces | 4 056 | **3 346** | **86 / 86** (100 %) |
+| WTA | 52 sem., dur | 2 305 | **1 699** | 85 / 86 (99 %) |
+
+### Ventilation par tranche de classement
+
+C'est le tableau qui tranche, parce que **c'est exactement là que le Match
+Charting Project s'était effondré** — le lot 3 avait mesuré une médiane de 709
+points dans le top 20 et de 21 au-delà du 101ᵉ rang.
+
+| Rang | ATP n | ATP médiane | ATP Q1 | WTA n | WTA médiane | WTA Q1 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 – 20 | 13 | 4 926 | 4 315 | 13 | 4 214 | 3 756 |
+| 21 – 50 | 25 | 4 613 | 3 724 | 20 | 3 662 | 3 310 |
+| 51 – 100 | 37 | 4 934 | 3 744 | 38 | 4 200 | 3 552 |
+| 101 et au-delà | 13 | 3 768 | 1 451 | 15 | 3 980 | 2 745 |
+
+**Toutes les tranches sont à 100 % au-dessus du seuil**, y compris au-delà du
+101ᵉ rang. La couverture ne décroît pas avec le classement — c'est la propriété
+exacte qui manquait au substitut précédent, et elle est ici mesurée sur
+l'intégralité de la population, pas sur un échantillon.
+
+### La branche retenue
+
+> « Si le premier quartile est sous 400 sur un circuit, les blocs de ce circuit
+> écrivent `données de service non disponibles`. »
+
+**Elle ne se déclenche sur aucun des deux circuits.** Le Q1 le plus bas mesuré
+est **1 373** (ATP, sur dur), soit **3,4 fois le seuil** ; sur la fenêtre 52
+semaines toutes surfaces il vaut 3 744 et 3 346. Les lignes de service sont donc
+servies sur les deux circuits.
+
+Le seuil garde son rôle **par joueur** : il n'est pas devenu décoratif, il ne
+mord simplement pas au niveau du circuit. C'est le repli surface → toutes
+surfaces qui travaillera en pratique, l'écart entre les deux colonnes du tableau
+ci-dessus étant d'un facteur 2 à 3.
+
+### Deux mesures qui confirment le §0.2
+
+- **Aucun joueur n'atteint 95 matchs sur la page 1** : une page de 100 couvre
+  bien les 52 semaines pour l'intégralité des 174, et la seconde page ne sert
+  jamais. La prémisse « des centaines d'appels » du brief est fausse d'un facteur
+  dix, et la mesure complète le confirme après le sondage.
+- **355 appels** pour la population entière, soit **0,24 %** du quota mensuel.

@@ -383,9 +383,22 @@ def _fold_case(text: str) -> str:
 
 
 def _fold_accents(text: str) -> str:
-    """Casse **et** accents replies. C'est `labels.sort_key`, nomme ici pour que
-    le niveau de repli se lise dans le code qui le decide."""
-    return sort_key(str(text or "").strip())
+    """Casse, accents **et typographie** replies : le niveau le plus tolerant.
+
+    Le tiret en fait partie, et c'est **mesure** : la source ecrit
+    `Pablo Carreno-Busta` quand la base ecrit `Pablo Carreno Busta`, et
+    `Felix Auger Aliassime` quand la base ecrit `Felix Auger-Aliassime` — dans
+    les deux sens, donc aucune convention ne se devine. Le profil de Carreno
+    porte 1 028 matchs : sans ce repli il restait introuvable.
+
+    C'est exactement ce que fait deja `picks_import._fold` pour apparier une
+    affiche a un en-tete — « absorbe la typographie : casse, accents, tirets,
+    espaces, et rien d'autre » — et la raison est la meme des deux cotes.
+    """
+    replie = sort_key(str(text or "").strip())
+    for signe in "-–—'’.":
+        replie = replie.replace(signe, " ")
+    return " ".join(replie.split())
 
 
 def rank_candidates(name: str, candidates: list[str]) -> list[tuple[str, str]]:
@@ -537,23 +550,18 @@ def fallback_tally(settings: Settings | None = None) -> dict[str, int]:
     return {str(row["fallback"]): int(row["n"]) for row in rows}
 
 
-async def _candidates(
+async def _search(
     client: TennisAPIClient, local_name: str, tour: str
 ) -> tuple[list[tuple[str, str]], list[str], int | None]:
-    """Les candidats ordonnes, la liste brute rendue, et l'archive du dernier appel.
+    """Les candidats ordonnes par la **recherche sur le nom**, et le brut rendu.
 
-    **Trois appels au plus, et chacun est mesure plutot que suppose.**
+    Deux appels au plus, et le second est mesure plutot que suppose :
 
-    1. Le nom tel quel. La casse est prise en charge par le **serveur** —
-       `mccartney kessler` trouve `Mccartney Kessler`.
-    2. Si la liste est **vide** et que le nom porte des accents : le nom replie.
-       `Karolína Muchová` rend `[]` la ou `Karolina Muchova` repond. Un nom sans
-       accent ne declenche jamais cet appel.
-    3. Si la liste est toujours vide : le **nom de famille seul**, accepte
-       uniquement s'il rend exactement un candidat. « Coco Gauff » rend `[]`, la
-       source l'ecrivant « Cori Gauff » ; « Gauff » seul rend un candidat unique.
-       La condition d'unicite est ce qui rend le niveau sur — « Fernandez » en
-       rend quatre-vingt-quatorze, et aucun n'est propose.
+    1. le nom tel quel — la casse est prise en charge par le **serveur**,
+       `mccartney kessler` trouve `Mccartney Kessler` ;
+    2. si la liste est **vide** et que le nom porte des accents, le nom replie :
+       `Iva Jović` rend `[]` la ou `Iva Jovic` repond. Un nom sans accent ne
+       declenche jamais cet appel.
     """
     response = await client.search_raw(local_name, tour)
     bruts = [str(item) for item in response.data] if isinstance(response.data, list) else []
@@ -565,12 +573,75 @@ async def _candidates(
         bruts = [str(item) for item in response.data] if isinstance(response.data, list) else []
         ordonnes = [(nom, ACCENTS) for nom, _ in rank_candidates(replie, bruts)]
 
-    if not bruts and (nom_seul := surname(local_name)):
-        response = await client.search_raw(nom_seul, tour)
-        bruts = [str(item) for item in response.data] if isinstance(response.data, list) else []
-        ordonnes = [(bruts[0], NOM)] if len(bruts) == 1 else []
-
     return ordonnes, bruts, response.archive_id or None
+
+
+async def _by_surname(
+    client: TennisAPIClient, local_name: str, tour: str
+) -> tuple[list[tuple[str, str]], list[str], int | None]:
+    """Le dernier recours : le **nom de famille seul**.
+
+    Il existe pour deux cas mesures, et il ne part qu'apres que tous les
+    candidats du nom complet ont echoue **a la validation** :
+
+    - « Coco Gauff » rend une liste vide, la source l'ecrivant « Cori Gauff » :
+      aucun repli de typographie ne rattrape un prenom different ;
+    - « Leylah Fernandez » rend exactement un candidat, `Leylah Fernandez`, dont
+      le profil porte **zero match**. La recherche n'etait donc pas vide, et une
+      garde posee sur « recherche vide » ne partait jamais — ce qu'on cherche
+      est un profil qui **sert**, pas une reponse non vide.
+
+    Deux conditions d'acceptation, dans cet ordre : un candidat unique tranche ;
+    sinon le seul candidat qui **contient tous nos mots**. « Fernandez » en rend
+    quatre-vingt-quatorze, dont un seul porte aussi « Leylah ».
+    """
+    nom_seul = surname(local_name)
+    if not nom_seul:
+        return [], [], None
+    response = await client.search_raw(nom_seul, tour)
+    larges = [str(item) for item in response.data] if isinstance(response.data, list) else []
+    if len(larges) == 1:
+        return [(larges[0], NOM)], larges, response.archive_id or None
+    mots = {mot for mot in _fold_accents(local_name).split() if mot}
+    tenus = [
+        candidat
+        for candidat in larges
+        if mots <= {mot for mot in _fold_accents(candidat).split() if mot}
+    ]
+    ordonnes = [(tenus[0], NOM)] if len(tenus) == 1 else []
+    return ordonnes, larges, response.archive_id or None
+
+
+async def _validate(
+    client: TennisAPIClient,
+    local_name: str,
+    tour: str,
+    ordonnes: list[tuple[str, str]],
+    archive_id: int | None,
+    settings: Settings,
+) -> tuple[Identity, Any] | None:
+    """Essaie les candidats dans l'ordre, et retient **le premier qui sert**."""
+    for candidat, niveau in ordonnes:
+        reponse = await client.matches_played(candidat)
+        charge = reponse.data if isinstance(reponse.data, dict) else {}
+        if not (charge.get("singles") or []):
+            logger.info(
+                "tennisapi : %r resolu en %r, profil vide — candidat suivant",
+                local_name,
+                candidat,
+            )
+            continue
+        identity = Identity(
+            local_name=local_name,
+            tour=tour,
+            canonical=candidat,
+            provider_id=_provider_id(charge, candidat),
+            fallback=niveau,
+            response_id=archive_id,
+        )
+        store_identity(identity, settings)
+        return identity, reponse
+    return None
 
 
 async def resolve(
@@ -605,29 +676,21 @@ async def resolve(
         # relue, et l'appelant la demandera s'il en a besoin.
         return connue, None, None
 
-    ordonnes, bruts, archive_id = await _candidates(client, local_name, tour)
+    ordonnes, bruts, archive_id = await _search(client, local_name, tour)
+    trouve = await _validate(client, local_name, tour, ordonnes, archive_id, settings)
 
-    for candidat, niveau in ordonnes:
-        reponse = await client.matches_played(candidat)
-        charge = reponse.data if isinstance(reponse.data, dict) else {}
-        if not (charge.get("singles") or []):
-            # Un profil qui ne sert rien n'est pas le bon profil. On essaie le
-            # candidat suivant plutot que de conclure a une absence de donnees.
-            logger.info(
-                "tennisapi : %r resolu en %r, profil vide — candidat suivant",
-                local_name,
-                candidat,
-            )
-            continue
-        identity = Identity(
-            local_name=local_name,
-            tour=tour,
-            canonical=candidat,
-            provider_id=_provider_id(charge, candidat),
-            fallback=niveau,
-            response_id=archive_id,
+    if trouve is None:
+        # **Le repli par nom de famille ne part qu'ici**, quand tous les
+        # candidats du nom complet ont echoue *a la validation* et non a la
+        # recherche. C'est la correction que « Leylah Fernandez » a imposee.
+        larges, bruts_nom, archive_nom = await _by_surname(client, local_name, tour)
+        bruts = bruts or bruts_nom
+        trouve = await _validate(
+            client, local_name, tour, larges, archive_nom or archive_id, settings
         )
-        store_identity(identity, settings)
+
+    if trouve is not None:
+        identity, reponse = trouve
         return identity, reponse, None
 
     identity = Identity(
