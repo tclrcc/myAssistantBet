@@ -29,7 +29,10 @@ from myassistantbet.services.history import (
     _overlaps,
     add_pick,
     analysis,
+    late,
     overlap_matrix,
+    populations,
+    refresh_late,
     set_result,
     worksheet,
 )
@@ -93,6 +96,11 @@ def _pick(
             (event_id,),
             settings=settings,
         )
+        # **Et le retard se recalcule**, comme le scan le fait des qu'un coup
+        # d'envoi bouge. Sans cet appel la fixture testerait un etat que la
+        # production ne produit pas : une colonne `tardive` desynchronisee de
+        # l'horaire du match.
+        refresh_late(event_id, settings)
     return pick_id
 
 
@@ -576,18 +584,35 @@ def _match_commence(settings: Settings) -> tuple[int, int]:
 # 37 des 110 selections tranchees ont ete posees apres le coup d'envoi.
 
 
-def test_une_selection_sur_un_match_commence_est_refusee(migrated: Settings) -> None:
+def test_une_selection_sur_un_match_commence_entre_en_population_tardive(
+    migrated: Settings,
+) -> None:
+    """**La garde ne refuse plus, et c'est une décision datée du 17/08/2026.**
+
+    Elle réclamait un motif et se laissait contourner : 37 sélections tardives
+    sur 52 n'ont jamais rien déclaré. Surtout, refuser ferait **disparaître la
+    population qui porte la mesure du biais** — les tardives sont au-dessus de
+    leur prix là où les antérieures sont en dessous, et l'écart entre les deux
+    est la meilleure estimation disponible de ce que coûte une sélection écrite
+    en connaissant le début du match.
+    """
     session_id, event_id = _match_commence(migrated)
 
-    with pytest.raises(HistoryError, match="déjà commencé"):
-        add_pick(session_id, "safe", "1N2", "Domicile", event_id=str(event_id), settings=migrated)
+    pick_id = add_pick(
+        session_id, "safe", "1N2", "Domicile", event_id=str(event_id), settings=migrated
+    )
+
+    ligne = db.query_one("SELECT tardive FROM picks WHERE id = ?", (pick_id,), settings=migrated)
+    assert ligne["tardive"] == 1
+    assert late(migrated).undeclared == 0, "en attente, donc pas encore tranchée"
 
 
-def test_le_motif_leve_le_refus_et_reste_en_base(migrated: Settings) -> None:
-    """**Le refus n'est pas absolu : il reclame un motif.** Sans lui, la garde
-    dirait combien de selections sont tardives et jamais pourquoi — or les deux
-    cas legitimes ne se ressemblent pas, et c'est leur melange qui a rendu les
-    37 inexploitables."""
+def test_le_motif_reste_en_base_comme_information(migrated: Settings) -> None:
+    """**Le motif n'est plus une autorisation, c'est une information.** Sans lui
+    on saurait combien de selections sont tardives et jamais pourquoi — or les
+    deux cas ne se ressemblent pas : une decision anterieure mal saisie porte une
+    etiquette valide et un prix douteux, un pari pris en direct n'a ni l'une ni
+    l'autre."""
     session_id, event_id = _match_commence(migrated)
 
     add_pick(
@@ -612,21 +637,28 @@ def test_les_deux_motifs_sont_acceptes(migrated: Settings, motif: str) -> None:
     assert motif in LATE_REASONS
 
 
-def test_un_motif_inconnu_ne_leve_pas_le_refus(migrated: Settings) -> None:
+def test_un_motif_inconnu_ne_s_ecrit_pas(migrated: Settings) -> None:
     """Un troisieme choix, ou un champ libre, ferait retomber dans le melange
-    que cette colonne existe pour defaire."""
+    que cette colonne existe pour defaire. Il ne bloque plus l'ecriture — plus
+    rien ne la bloque — mais il n'entre pas en base : la ligne compte alors parmi
+    les tardives **sans motif declare**, ce qu'elle est."""
     session_id, event_id = _match_commence(migrated)
 
-    with pytest.raises(HistoryError, match="déjà commencé"):
-        add_pick(
-            session_id,
-            "safe",
-            "1N2",
-            "Domicile",
-            event_id=str(event_id),
-            late_reason="parce que",
-            settings=migrated,
-        )
+    pick_id = add_pick(
+        session_id,
+        "safe",
+        "1N2",
+        "Domicile",
+        event_id=str(event_id),
+        late_reason="parce que",
+        settings=migrated,
+    )
+
+    ligne = db.query_one(
+        "SELECT late_reason, tardive FROM picks WHERE id = ?", (pick_id,), settings=migrated
+    )
+    assert ligne["late_reason"] is None
+    assert ligne["tardive"] == 1
 
 
 def test_une_selection_a_venir_n_a_rien_a_justifier(migrated: Settings) -> None:
@@ -969,3 +1001,105 @@ def test_une_seconde_selection_sans_justification_est_refusee(migrated: Settings
             price="1.90",
             settings=migrated,
         )
+
+
+# -- La troisième population -------------------------------------------------
+#
+# **Le diagnostic d'origine etait faux, et sa correction change la conclusion.**
+# On tenait les 52 selections ecartees pour un defaut de collecte ; la mesure du
+# 17/08/2026 dit 0 sur 230 sans horodatage. Elles ont reellement ete ecrites
+# apres le coup d'envoi — ce n'est plus un bug a reparer, c'est un choix d'usage.
+#
+# Et ce qu'elles mesurent n'existe nulle part ailleurs : elles sont au-dessus de
+# leur prix la ou la population principale est en dessous, et l'ecart entre les
+# deux est la meilleure estimation disponible du biais que produit une selection
+# ecrite en connaissant le debut du match.
+
+
+def test_les_trois_populations_somment_au_total(migrated: Settings) -> None:
+    """**Le critère d'acceptation du §C.** Aucun indicateur ne les mélange ; ce
+    compte-ci existe pour vérifier qu'aucune sélection ne s'est perdue entre
+    elles — même rôle que `Analysis.recorded`, qui ne peut pas baisser."""
+    session_id = _lot(migrated, [("2.00", "win", False), ("2.00", "loss", True)])
+    event_id = _match(migrated, "Exploratoire")
+    board_service.toggle_selection(event_id, True, migrated)
+    add_pick(
+        session_id,
+        "giga_fun",
+        "1N2",
+        "Domicile",
+        event_id=str(event_id),
+        price="7.50",
+        exploratory=True,
+        settings=migrated,
+    )
+
+    compte = populations(migrated)
+
+    assert (compte.main, compte.exploratory, compte.late) == (1, 1, 1)
+    assert compte.consistent
+
+
+def test_une_selection_tardive_ne_touche_aucun_indicateur_principal(
+    migrated: Settings,
+) -> None:
+    session_id = _lot(migrated, [("2.00", "win", False), ("2.00", "loss", True)])
+    assert session_id
+
+    principale, tardive = analysis(migrated), late(migrated)
+
+    assert principale.settled == 1
+    assert tardive.settled == 1
+    assert principale.consistent
+
+
+def test_le_bloc_tardif_separe_declarees_et_non_declarees(migrated: Settings) -> None:
+    """Une décision antérieure mal saisie porte une étiquette valide et un prix
+    douteux ; un pari pris en direct n'a ni l'une ni l'autre. Les additionner
+    détruisait la distinction."""
+    session_id = _lot(migrated, [("2.00", "win", True)])
+    event_id = _match(migrated, "Déclarée")
+    board_service.toggle_selection(event_id, True, migrated)
+    db.execute(
+        "UPDATE events SET commence_time = '2000-01-01T00:00:00Z' WHERE id = ?",
+        (event_id,),
+        settings=migrated,
+    )
+    pick_id = add_pick(
+        session_id,
+        "safe",
+        "1N2",
+        "Domicile",
+        event_id=str(event_id),
+        price="2.00",
+        late_reason="differee",
+        settings=migrated,
+    )
+    set_result(pick_id, "win", migrated)
+
+    report = late(migrated)
+
+    assert report.declared == {"differee": 1}
+    assert report.undeclared == 1
+    assert [libelle for libelle, _ in report.reasons][-1] == "Aucun motif déclaré"
+
+
+def test_un_report_de_match_leve_le_retard(migrated: Settings) -> None:
+    """**Un match reporte n'a pas commence.** Une selection ecrite « apres »
+    l'ancien horaire n'a rien vu, et la laisser en population tardive la ferait
+    sortir des indicateurs principaux pour rien. C'est le seul cas où un report
+    change une mesure déjà écrite — le projet en garde la trace depuis la
+    migration 040."""
+    session_id = _lot(migrated, [("2.00", "win", True)])
+    pick = worksheet(session_id, migrated).picks[0]
+    assert not pick.antecedence
+
+    db.execute(
+        "UPDATE events SET commence_time = '2099-06-01T20:45:00Z' WHERE id = ?",
+        (pick.event_id,),
+        settings=migrated,
+    )
+    refresh_late(int(pick.event_id or 0), migrated)
+
+    assert late(migrated).settled == 0, "le report rend la sélection antérieure"
+    assert analysis(migrated).settled == 1

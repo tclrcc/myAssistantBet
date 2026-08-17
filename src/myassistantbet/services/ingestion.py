@@ -372,6 +372,10 @@ class Report:
     claims_read: int = 0
     combos_recorded: int = 0
     set_scores_read: int = 0
+    #: Les matchs dont le coup d'envoi etait passe, nommes avec leur ecart.
+    #: **Rien ne le signalait au moment ou ca se produit**, et c'est le seul
+    #: instant ou l'information arrive assez tot pour changer quelque chose.
+    late: list[str] = field(default_factory=list)
     rejects: list[Reject] = field(default_factory=list)
 
     @property
@@ -389,6 +393,8 @@ class Report:
             parts.append(f"{self.combos_recorded} combiné(s)")
         if self.set_scores_read:
             parts.append(f"{self.set_scores_read} score(s) en sets")
+        if self.late:
+            parts.append(f"{len(self.late)} après le coup d'envoi")
         parts.append(f"{self.rejected} rejet(s)")
         return " · ".join(parts)
 

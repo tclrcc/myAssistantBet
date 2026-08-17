@@ -252,6 +252,9 @@ qu'il autorise.
 ## MATCHS
 
 Toutes les heures sont en {{ tz }}, horaire de début comme heure de relevé.
+Un bloc dont le coup d'envoi est déjà passé au moment où tu rends ton analyse
+reste analysable, mais sa sélection est enregistrée à part et n'entre dans aucune
+mesure principale. Traite-le normalement : c'est l'application qui date, pas toi.
 Ce lot comporte **{{ event_blocks | length }} match(s)**.
 {% if schedule_notice %}
 {{ schedule_notice }}

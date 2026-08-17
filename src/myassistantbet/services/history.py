@@ -1829,32 +1829,29 @@ def add_pick(
         # vocabulaire du bloc — « Double chance » la ou il ecrit « DC » — et se
         # resout alors a la lecture, sans jamais etre devinee.
         #
-        # LA GARDE D'ANTERIORITE. Second controle bloquant du module, et le
-        # second seulement — ailleurs une valeur manquante vaut « non
-        # renseigne ».
+        # L'ANTERIORITE. **Elle ne refuse plus rien, et c'est une decision datee
+        # du 17/08/2026.**
         #
-        # **Le compteur informait, la garde empeche**, et l'information seule
-        # n'a pas suffi : le couple horaire etait deja sous les yeux au moment
-        # de la saisie, et 37 des 110 selections tranchees ont ete posees apres
-        # le coup d'envoi. Sur cette strate le residu au prix est nul et
-        # l'echelle d'etiquetage **s'inverse** : elle decrit au lieu de predire.
+        # La garde d'origine (migration 034) reclamait un motif — `differee` ou
+        # `live` — et refusait sans. Elle se laissait contourner : 37 selections
+        # tardives sur 52 n'ont jamais rien declare. Et surtout, **refuser ferait
+        # disparaitre la population qui porte la mesure du biais** : les 52
+        # tardives sont au-dessus de leur prix (32 pour 28,8 payees), les 178
+        # anterieures en dessous (89 pour 103,8), et l'ecart entre les deux est
+        # la meilleure estimation disponible de ce que coute une selection ecrite
+        # en connaissant le debut du match.
         #
-        # Le refus n'est pas absolu — il reclame un **motif**, sur un chemin
-        # qu'on veut rare. Sans motif, la garde dirait combien de selections
-        # sont tardives et jamais pourquoi ; or les deux cas legitimes ne se
-        # ressemblent pas, et c'est leur melange qui a rendu les 37
-        # inexploitables.
+        # Une selection dont le coup d'envoi est passe est donc enregistree en
+        # **population tardive d'office**, declaration ou non. Le motif reste une
+        # information — il separe une decision anterieure mal saisie d'un pari
+        # pris en direct — mais ce n'est plus une autorisation.
         late = _vocabulary(late_reason, LATE_REASONS)
-        if attached is not None and late is None:
+        tardive = False
+        if attached is not None:
             debut = conn.execute(
                 "SELECT commence_time FROM events WHERE id = ?", (attached,)
             ).fetchone()
-            if debut is not None and utcnow() >= str(debut["commence_time"]):
-                raise HistoryError(
-                    "Ce match a déjà commencé. Une sélection posée après le coup "
-                    "d'envoi ne dit rien de ce qui la précède : indique si la "
-                    "décision est antérieure (saisie différée) ou non (live assumé)."
-                )
+            tardive = debut is not None and utcnow() >= str(debut["commence_time"])
 
         # Sans match rattache, aucun sport, donc aucun vocabulaire : rien.
         resolved = None
@@ -1875,11 +1872,11 @@ def add_pick(
             "                   late_reason, confidence_computed, claim_raw_json, "
             "                   gap_touches_factor, distinct_publishers, "
             "                   confidence_claimed, research_overridden, "
-            "                   research_override_cause, exploratoire, import_id, "
+            "                   research_override_cause, exploratoire, tardive, import_id, "
             "                   offset_start, offset_end, claim_offset_start, "
             "                   claim_offset_end, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-            "        ?, ?, ?, ?, ?, ?, ?)",
+            "        ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 attached,
@@ -1906,6 +1903,7 @@ def add_pick(
                 _flag(None if opened is None else not opened),
                 cause,
                 1 if exploratory else 0,
+                1 if tardive else 0,
                 int(import_id) if str(import_id).strip().isdigit() else None,
                 *_span(offsets),
                 *_span(claim_offsets),
@@ -1985,8 +1983,12 @@ def set_event(pick_id: int, event_id: str = "", settings: Settings | None = None
             # Le marche perd sa cle avec son match : sans sport, le meme libelle
             # designe deux marches differents. La laisser en place ferait
             # survivre la lecture d'un vocabulaire qui ne s'applique plus.
+            # `tardive` part avec le match, pour la meme raison : le retard se
+            # demontre contre un coup d'envoi, et sans match il n'y en a plus.
+            # La regle du projet est a sens unique — on ne prouve pas l'absence.
             conn.execute(
-                "UPDATE picks SET event_id = NULL, market_key = NULL WHERE id = ?", (pick_id,)
+                "UPDATE picks SET event_id = NULL, market_key = NULL, tardive = 0 WHERE id = ?",
+                (pick_id,),
             )
             return
         if not identifier.isdigit():
@@ -2004,10 +2006,55 @@ def set_event(pick_id: int, event_id: str = "", settings: Settings | None = None
         # fausse, pas perimee.
         label = conn.execute("SELECT market FROM picks WHERE id = ?", (pick_id,)).fetchone()
         resolved = market_key_for(known["sport_key"], label["market"]) if label else None
-        conn.execute(
-            "UPDATE picks SET event_id = ?, market_key = ? WHERE id = ?",
-            (int(identifier), resolved, pick_id),
+        # **`tardive` se recalcule aussi**, et pour la meme raison exactement :
+        # le retard se demontre contre le coup d'envoi du match rattache, donc un
+        # rattachement corrige peut le creer comme le lever. Elle etait fausse,
+        # pas perimee.
+        moment = conn.execute(
+            "SELECT k.created_at, e.commence_time FROM picks k "
+            "JOIN events e ON e.id = ? WHERE k.id = ?",
+            (int(identifier), pick_id),
+        ).fetchone()
+        tardive = bool(
+            moment is not None
+            and moment["commence_time"]
+            and str(moment["created_at"]) >= str(moment["commence_time"])
         )
+        conn.execute(
+            "UPDATE picks SET event_id = ?, market_key = ?, tardive = ? WHERE id = ?",
+            (int(identifier), resolved, 1 if tardive else 0, pick_id),
+        )
+
+
+#: La regle du retard, ecrite **une seule fois** et en SQL parce que ses trois
+#: appelants sont des ecritures : `add_pick` a la creation, `set_event` a la
+#: correction d'un rattachement, et le scan quand un coup d'envoi bouge.
+#:
+#: **Sens unique, comme l'anteriorite** : les deux heures doivent etre connues.
+#: Une selection sans match n'est pas tardive — son retard n'est pas plus
+#: demontre que son anteriorite.
+_LATE_RULE = (
+    "UPDATE picks SET tardive = ("
+    "  SELECT e.commence_time IS NOT NULL AND picks.created_at >= e.commence_time "
+    "  FROM events e WHERE e.id = picks.event_id"
+    ") WHERE event_id = ?"
+)
+
+
+def refresh_late(event_id: int, settings: Settings | None = None) -> int:
+    """Recalcule le retard des selections d'un match. Rend le nombre touche.
+
+    **Appele des que le coup d'envoi bouge**, et c'est indispensable : un match
+    reporte n'a pas commence, donc une selection ecrite « apres » l'ancien
+    horaire n'a rien vu du tout. La colonne serait fausse, et une population
+    fausse est pire qu'une population derivee — elle affirme.
+
+    C'est le seul cas ou un report change une mesure deja ecrite ; le projet en
+    garde d'ailleurs la trace depuis la migration 040.
+    """
+    with connect(settings) as conn:
+        cursor = conn.execute(_LATE_RULE, (event_id,))
+        return int(cursor.rowcount or 0)
 
 
 def delete_pick(pick_id: int, settings: Settings | None = None) -> None:
@@ -3440,6 +3487,127 @@ def exploratory(settings: Settings | None = None) -> Exploratory:
     return report
 
 
+@dataclass
+class Late:
+    """Les selections **ecrites apres le coup d'envoi**, mesurees a part.
+
+    **Ce n'est pas un manque, et la page les presentait comme tel.** Le
+    diagnostic d'origine tenait les 52 ecartees pour un defaut de collecte ; la
+    mesure dit 0 sur 230 sans horodatage. Elles ont reellement ete ecrites apres
+    le coup d'envoi, et c'est un choix d'usage — donc une population, pas une
+    reserve de lecture.
+
+    **Ce qu'elles mesurent n'existe nulle part ailleurs** : elles sont au-dessus
+    de leur prix la ou la population principale est en dessous, et l'ecart entre
+    les deux est la meilleure estimation disponible du biais que produit une
+    selection ecrite en connaissant le debut du match.
+    """
+
+    settled: int = 0
+    won: int = 0
+    pending: int = 0
+    #: Combien portent un motif declare (`differee`, `live`) et combien n'en
+    #: portent aucun. **Les additionner detruisait la distinction** : une
+    #: decision anterieure mal saisie et un pari pris en direct n'ont ni la meme
+    #: etiquette ni le meme prix.
+    declared: dict[str, int] = field(default_factory=dict)
+    undeclared: int = 0
+    residual: Residual = field(default_factory=lambda: Residual(observed=0, implied=[]))
+    minimum_rows: int = ANALYSIS_MIN_ROWS
+
+    @property
+    def empty(self) -> bool:
+        return self.settled == 0 and self.pending == 0
+
+    @property
+    def interval(self) -> tuple[float, float] | None:
+        return wilson(self.won, self.settled)
+
+    @property
+    def reasons(self) -> list[tuple[str, int]]:
+        """Les motifs declares, libelles et ranges du plus frequent.
+
+        Le libelle se resout depuis `LATE_REASONS` et jamais cote gabarit : deux
+        ecritures du meme vocabulaire divergent au premier ajustement.
+        """
+        rendus = [
+            (LATE_REASONS.get(cle, cle), compte)
+            for cle, compte in sorted(self.declared.items(), key=lambda item: -item[1])
+        ]
+        if self.undeclared:
+            rendus.append(("Aucun motif déclaré", self.undeclared))
+        return rendus
+
+
+def late(settings: Settings | None = None) -> Late:
+    """Les selections tardives, mesurees a part.
+
+    Le champ `tardive` est **stocke** et non recalcule a l'affichage : c'est une
+    population au meme titre que l'exploratoire, et une population qui se
+    deduirait a chaque lecture finirait par ne plus designer les memes lignes que
+    le compte affiche a cote.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT result, price, late_reason FROM picks WHERE tardive = 1 AND exploratoire = 0"
+        ).fetchall()
+
+    report = Late(minimum_rows=threshold_value("feedback_min_rows", settings))
+    tranchees = [row for row in rows if str(row["result"]) in ("win", "loss")]
+    report.pending = len(rows) - len(tranchees)
+    report.settled = len(tranchees)
+    report.won = sum(1 for row in tranchees if str(row["result"]) == "win")
+    for row in tranchees:
+        motif = _column(row, "late_reason") or ""
+        if motif:
+            report.declared[motif] = report.declared.get(motif, 0) + 1
+        else:
+            report.undeclared += 1
+    prix = [row for row in tranchees if row["price"] and float(row["price"]) > 1.0]
+    report.residual = Residual(
+        observed=sum(1 for row in prix if str(row["result"]) == "win"),
+        implied=[1.0 / float(row["price"]) for row in prix],
+    )
+    return report
+
+
+@dataclass(frozen=True)
+class Populations:
+    """Les trois populations et leur somme. **Un temoin, pas un regroupement.**
+
+    Aucun indicateur ne les melange ; ce compte-ci existe pour verifier qu'aucune
+    selection ne s'est perdue entre elles — meme role que `Analysis.recorded`,
+    qui ne peut pas baisser.
+    """
+
+    main: int
+    exploratory: int
+    late: int
+    total: int
+
+    @property
+    def consistent(self) -> bool:
+        return self.main + self.exploratory + self.late == self.total
+
+
+def populations(settings: Settings | None = None) -> Populations:
+    """Le compte des trois populations, sur toutes les selections enregistrees."""
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS total, "
+            "  SUM(exploratoire = 1) AS exploratoire, "
+            "  SUM(exploratoire = 0 AND tardive = 1) AS tardive, "
+            "  SUM(exploratoire = 0 AND tardive = 0) AS principale FROM picks"
+        ).fetchone()
+    return Populations(
+        main=int(row["principale"] or 0),
+        exploratory=int(row["exploratoire"] or 0),
+        late=int(row["tardive"] or 0),
+        total=int(row["total"] or 0),
+    )
+
+
 def compare_populations(
     principale: list[RateRow],
     exploratoire: list[RateRow],
@@ -4007,7 +4175,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
             # se fondent en un seul compte : une decision anterieure saisie en
             # retard, un pari pris en direct, et une ligne anterieure a la garde
             # d'ecriture n'appellent ni la meme lecture ni le meme geste.
-            "       k.late_reason, "
+            "       k.late_reason, k.tardive, "
             # L'affiche, pour **nommer** les rencontres qui portent plus d'une
             # selection. Le compte seul disait qu'il faut elargir les
             # intervalles, jamais ou aller regarder.
@@ -4076,8 +4244,12 @@ def analysis(settings: Settings | None = None) -> Analysis:
     # on a etabli qu'elles ne predisent pas. Et le melange **detruit du
     # signal** : sur 110 selections, la correction entre axes n'en retient
     # qu'un ; sur les 73 filtrees, elle en retenait trois.
-    tardifs = [row for row in rows if _late(row)]
-    rows = [row for row in rows if not _late(row)]
+    # **Le champ, jamais la derivation.** Il est stocke depuis la migration 053
+    # et retro-rempli sur le meme critere : une population qui se recalculerait a
+    # chaque lecture finirait par ne plus designer les memes lignes que le compte
+    # affiche a cote — le piege deja paye par l'assembleur de contexte.
+    tardifs = [row for row in rows if row["tardive"]]
+    rows = [row for row in rows if not row["tardive"]]
     tranches = [row for row in tardifs if str(row["result"]) in ("win", "loss")]
     report.without_antecedence = len(tranches)
     # **Le motif se compte, il ne se fond pas.** « La decision etait anterieure,

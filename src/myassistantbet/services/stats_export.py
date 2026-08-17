@@ -82,6 +82,11 @@ COMBOS_BLOCK = "Les combinés proposés"
 #: en bout** : melanger les deux populations detruirait la comparaison que la
 #: section existe pour rendre possible.
 EXPLORATORY_BLOCK = "Sélections exploratoires"
+#: La troisieme population : ecrite apres le coup d'envoi. **Un choix d'usage,
+#: pas un manque** — et l'ecart de son residu a celui de la population
+#: principale est la meilleure estimation disponible du biais que produit une
+#: selection ecrite en connaissant le debut du match.
+LATE_BLOCK = "Sélections écrites après le coup d'envoi"
 LABELLING_BLOCK = "Comment tu étiquettes"
 BETS_BLOCK = "Ce que valent tes paris"
 
@@ -110,6 +115,7 @@ SECTIONS: tuple[Section, ...] = (
     Section("", SETS_BLOCK),
     Section("", EXPLORATORY_BLOCK),
     Section(EXPLORATORY_BLOCK, "Par palier"),
+    Section("", LATE_BLOCK),
     Section("", COMBOS_BLOCK),
     Section("", LABELLING_BLOCK),
     Section(LABELLING_BLOCK, "Par confiance annoncée"),
@@ -153,6 +159,10 @@ class StatsReport:
     #: Le second circuit — les selections produites **sans fait date**, par la
     #: section C-bis. Un taux faible y est le resultat attendu.
     exploratory: history_service.Exploratory = field(default_factory=history_service.Exploratory)
+    #: Les selections ecrites apres le coup d'envoi. **Une population, pas une
+    #: reserve de lecture** : la page les presentait comme un manque, et le
+    #: diagnostic qui le justifiait etait faux — 0 sur 230 sans horodatage.
+    late: history_service.Late = field(default_factory=history_service.Late)
     set_score_options: list[str] = field(default_factory=list)
     set_score_matrix: list[tuple[str, list[int], int]] = field(default_factory=list)
     #: Point de comparaison du residu, pas une estimation de l'overround reel.
@@ -188,6 +198,8 @@ class StatsReport:
             "tier_usage": self.tier_usage,
             "exploratory": self.exploratory,
             "coupon_tracking": self.coupon_tracking,
+            "late": self.late,
+            "late_gap": self.late_gap,
         }
 
     @property
@@ -200,7 +212,26 @@ class StatsReport:
             and self.set_scores.empty
             and self.combos.empty
             and self.exploratory.empty
+            and self.late.empty
         )
+
+    @property
+    def late_gap(self) -> float | None:
+        """L'ecart de residu au prix entre population principale et tardive.
+
+        **C'est l'indicateur le plus interessant de la page, et il n'existait
+        pas.** Il ne compare pas deux taux — ce serait opposer deux populations
+        qui ne jouent pas aux memes prix, la faute que la page a mis huit lots a
+        cesser de commettre — mais deux **residus**, chacun mesure contre ses
+        propres cotes. Ce qui reste est ce que le retard ajoute.
+
+        `None` tant que l'une des deux ne porte rien : un ecart calcule sur zero
+        selection ne decrirait que sa propre absence.
+        """
+        principal, tardif = self.analysis.residual, self.late.residual
+        if not principal.settled or not tardif.settled:
+            return None
+        return tardif.gap / tardif.settled - principal.gap / principal.settled
 
     @property
     def generated_label(self) -> str:
@@ -265,6 +296,7 @@ class StatsReport:
                 Section(EXPLORATORY_BLOCK, "Par palier"),
                 bool(self.exploratory.by_tier),
             ),
+            (Section("", LATE_BLOCK), not self.late.empty),
             (Section("", COMBOS_BLOCK), not self.combos.empty),
             (Section("", LABELLING_BLOCK), bool(self.labelling)),
             *((Section(LABELLING_BLOCK, f"Par {block.label}"), True) for block in self.labelling),
@@ -462,6 +494,7 @@ def report(settings: Settings | None = None) -> StatsReport:
         combos=combos_service.summary(settings),
         tier_usage=history_service.tier_usage(settings),
         exploratory=exploratoire,
+        late=history_service.late(settings),
         coupon_tracking=toggle_of(COUPON_TRACKING, settings),
         generated_at=datetime.now(ZoneInfo(settings.tz)),
     )
@@ -1255,6 +1288,40 @@ def as_markdown(found: StatsReport) -> str:
                 f"**{libelle} — fait daté contre lecture** : "
                 f"{principale.won}/{principale.settled} contre "
                 f"{exploratoire.won}/{exploratoire.settled}.",
+            ]
+
+    if not found.late.empty:
+        lot = found.late
+        out += [
+            "",
+            f"## {LATE_BLOCK}",
+            "",
+            "**Un choix d'usage, pas un manque.** Ces sélections ont été écrites après le "
+            "coup d'envoi : leur prix n'est plus un prix d'avant-match, donc leur étiquette "
+            "ne dit rien de ce qui la précède. Elles n'entrent dans **aucun** indicateur "
+            "principal — et elles ne sont pas jetées pour autant : l'écart entre leur résidu "
+            "et celui de la population principale est la meilleure estimation disponible du "
+            "biais que produit une sélection écrite en connaissant le début du match.",
+            "",
+            f"- **Tranchées** : {lot.won} sur {lot.settled}"
+            + (f" · {lot.pending} en attente" if lot.pending else "")
+            + (
+                f" · intervalle [{lot.interval[0] * 100:.0f} – {lot.interval[1] * 100:.0f}]"
+                if lot.interval
+                else ""
+            ),
+            f"- **Résidu au prix** : {_decimal(lot.residual.gap)} pour "
+            f"{_decimal(lot.residual.expected)} payée(s)",
+        ]
+        for libelle, compte in lot.reasons:
+            out.append(f"- {libelle} : {compte}")
+        if found.late_gap is not None:
+            out += [
+                "",
+                f"**Écart de résidu par sélection** : {_decimal(found.late_gap, 3)} entre la "
+                "population tardive et la population principale. Deux résidus, chacun mesuré "
+                "contre ses propres cotes — jamais deux taux, qui opposeraient des "
+                "populations ne jouant pas aux mêmes prix.",
             ]
 
     if not found.combos.empty:

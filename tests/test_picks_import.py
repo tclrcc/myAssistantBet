@@ -652,29 +652,38 @@ def _session_finie(settings: Settings) -> int:
     return board_service.toggle_selection(event_id, True, settings)
 
 
-def test_une_ligne_sur_un_match_commence_est_decochee_avec_son_motif(
+def test_une_ligne_sur_un_match_commence_reste_cochee_et_se_dit(
     migrated: Settings,
 ) -> None:
-    """Elle reste **proposee** : la decision est peut-etre anterieure, seule la
-    saisie est tardive. Decochee, parce qu'une ligne qui echoue au milieu de
-    vingt se remarque moins qu'une case qu'on doit cocher."""
+    """**Elle ne se décoche plus, et c'est une décision datée du 17/08/2026.**
+
+    La décocher revenait à refuser : 37 sélections tardives sur 52 n'ont jamais
+    déclaré de motif, et refuser ferait disparaître la population qui porte la
+    mesure du biais. La ligne s'enregistre donc en population tardive d'office,
+    et le motif devient une information plutôt qu'une autorisation.
+
+    Ce qui la remplace est un **avertissement nommé** : rien ne signalait le cas
+    au moment où il se produit.
+    """
     session_id = _session_finie(migrated)
 
     preview = picks_import.build_preview(session_id, TABLEAU_COMMENCE, migrated)
 
     assert preview.picks[0].started
-    assert not preview.picks[0].keep
-    assert "match déjà commencé" in " ".join(preview.picks[0].problems)
+    assert preview.picks[0].keep, "plus rien ne la décoche"
+    assert "population tardive" in " ".join(preview.picks[0].problems)
+    assert "après le coup d'envoi" in preview.late_line
 
 
-def test_le_motif_saisi_recoche_la_ligne(migrated: Settings) -> None:
+def test_le_compte_rendu_nomme_le_match_et_son_ecart(migrated: Settings) -> None:
+    """Une minute et trois heures n'appellent pas la même relecture, et la garde
+    d'origine disait qu'une sélection était tardive sans jamais dire de combien."""
     session_id = _session_finie(migrated)
+
     preview = picks_import.build_preview(session_id, TABLEAU_COMMENCE, migrated)
 
-    preview.picks[0].late_reason = "differee"
-
-    assert preview.picks[0].keep
-    assert "match déjà commencé" not in " ".join(preview.picks[0].problems)
+    assert preview.picks[0].late_minutes > 0
+    assert "min)" in preview.late_line
 
 
 def test_l_apercu_offre_le_menu_des_deux_motifs(
@@ -731,10 +740,12 @@ def test_le_motif_arrive_en_base_par_l_import(
     assert ligne["price_source"] == "reference"
 
 
-def test_sans_motif_l_import_refuse_toujours_la_ligne(
+def test_sans_motif_l_import_enregistre_en_population_tardive(
     client: TestClient, isolated_settings: Settings
 ) -> None:
-    """La garde reste une garde : le menu l'ouvre, il ne la leve pas."""
+    """**Le critère d'acceptation du §C2.** Une ligne sur un match commencé
+    entre en population tardive, un avertissement la nomme, et elle ne touche
+    aucun indicateur principal."""
     session_id = _session_finie(isolated_settings)
     preview = picks_import.build_preview(session_id, TABLEAU_COMMENCE, isolated_settings)
     pick = preview.picks[0]
@@ -747,11 +758,15 @@ def test_sans_motif_l_import_refuse_toujours_la_ligne(
             f"market_{pick.index}": pick.market,
             f"selection_{pick.index}": pick.selection,
             f"tier_{pick.index}": pick.tier,
+            f"late_minutes_{pick.index}": str(pick.late_minutes),
+            f"match_{pick.index}": pick.match_text,
         },
     ).text
 
-    assert "déjà commencé" in page
-    assert db.query_one("SELECT COUNT(*) AS n FROM picks", settings=isolated_settings)["n"] == 0
+    ligne = db.query_one("SELECT tardive FROM picks", settings=isolated_settings)
+    assert ligne["tardive"] == 1
+    assert "population tardive" in page, "l'avertissement nomme le cas au bon moment"
+    assert pick.match_text.split(" ")[0] in page
 
 
 def test_la_saisie_a_la_main_offre_le_meme_menu(

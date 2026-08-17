@@ -28,7 +28,7 @@
    sets y entre pour la meme raison : il ne lit aucun pick, seulement des scores
    annonces et constates. #}
 {% if analysis.empty and stats.empty and not labelling and set_scores.empty
-      and exploratory.empty and combos.empty %}
+      and exploratory.empty and combos.empty and late.empty %}
   <p class="empty">
     Rien à mesurer pour l'instant. Saisis le résultat de quelques sélections —
     y compris de celles que tu n'as pas jouées, elles disent si l'analyse voyait juste.
@@ -48,6 +48,7 @@
      ('tri', 'Ce que tu écartes', analysis.by_session | length > 0),
      ('sets', 'Le score en sets', not set_scores.empty),
      ('exploratoires', 'Sélections exploratoires', not exploratory.empty),
+     ('tardives', 'Écrites après le coup d\'envoi', not late.empty),
      ('combines', 'Les combinés proposés', not combos.empty),
      ('etiquettes', 'Comment tu étiquettes', labelling | length > 0),
      ('paris', 'Ce que valent tes paris', coupon_tracking),
@@ -1295,6 +1296,56 @@
     <strong>{{ libelle }}</strong> — {{ principale.won }}/{{ principale.settled }}
     contre {{ exploratoire.won }}/{{ exploratoire.settled }}{% if not loop.last %} · {% endif %}
     {%- endfor %}.
+  </p>
+  {% endif %}
+</section>
+{% endif %}
+
+{# **La troisième population, nommée comme un choix.** La page présentait ces
+   sélections comme une réserve de lecture, c'est-à-dire comme un manque — et le
+   diagnostic qui le justifiait était faux : 0 sur 230 sans horodatage. Elles ont
+   réellement été écrites après le coup d'envoi.
+
+   Elles ne sont pas jetées pour autant, et c'est le point : leur résidu est
+   au-dessus de leur prix là où celui de la population principale est en dessous,
+   et l'écart entre les deux est la meilleure estimation disponible du biais que
+   produit une sélection écrite en connaissant le début du match. #}
+{% if not late.empty %}
+<section class="stats-block" id="tardives">
+  <div class="block-head">
+    <h2>Sélections écrites après le coup d'envoi</h2>
+    <span class="muted small">
+      un choix d'usage — comptées à part de tout le reste
+    </span>
+  </div>
+
+  <p class="block-note is-flag">
+    <strong>Leur prix n'est plus un prix d'avant-match</strong>, donc leur étiquette ne
+    dit rien de ce qui la précède. Elles n'entrent dans <strong>aucun</strong> indicateur
+    principal.
+  </p>
+
+  <p class="block-note">
+    <strong>{{ late.won }} sur {{ late.settled }}</strong> tranchée(s)
+    {%- if late.interval %} · intervalle
+    [{{ '%.0f' | format(late.interval[0] * 100) }} –
+    {{ '%.0f' | format(late.interval[1] * 100) }}]{% endif %}
+    {%- if late.pending %} · {{ late.pending }} en attente{% endif %}.
+    Résidu au prix : {{ '%.1f' | format(late.residual.gap) }} pour
+    {{ '%.1f' | format(late.residual.expected) }} payée(s).
+    {% for libelle, compte in late.reasons %}
+    <br>{{ compte }} — {{ libelle }}
+    {%- endfor %}
+  </p>
+
+  {# **L'indicateur le plus intéressant de la page, et il n'existait pas.** Deux
+     résidus, chacun mesuré contre ses propres cotes — jamais deux taux, qui
+     opposeraient des populations ne jouant pas aux mêmes prix. #}
+  {% if late_gap is not none %}
+  <p class="block-note">
+    <strong>Écart de résidu par sélection : {{ '%.3f' | format(late_gap) }}</strong>
+    entre la population tardive et la population principale. C'est ce que le retard
+    ajoute, une fois chaque population comparée à ses propres prix.
   </p>
   {% endif %}
 </section>

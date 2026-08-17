@@ -21,6 +21,7 @@ from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.base import ProviderError
 from ..providers.oddsapi import SCAN_MARKETS, OddsAPIClient
+from .history import _LATE_RULE
 from .render import LEAD_TIME_MIN_MINUTES
 
 logger = logging.getLogger(__name__)
@@ -185,6 +186,14 @@ def _upsert_event(
     row = conn.execute(
         "SELECT id FROM events WHERE oddsapi_event_id = ?", (payload["id"],)
     ).fetchone()
+    if moved:
+        # **Un report change une population deja ecrite**, et c'est le seul cas
+        # ou ca arrive. Un match reporte n'a pas commence : une selection ecrite
+        # « apres » l'ancien horaire n'a rien vu, et la laisser en population
+        # tardive la ferait sortir des indicateurs principaux pour rien. La regle
+        # vit dans `history`, ecrite une fois — la recopier ici l'aurait fait
+        # diverger au premier ajustement.
+        conn.execute(_LATE_RULE, (int(row["id"]),))
     return int(row["id"])
 
 

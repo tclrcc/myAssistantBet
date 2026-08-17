@@ -316,24 +316,41 @@ def test_la_commande_liste_les_collages(
 # -- Non-régression des populations ------------------------------------------
 
 
-def test_la_migration_ne_deplace_aucun_indicateur(isolated_settings: Settings) -> None:
-    """**Règle de travail du lot** : les indicateurs historiques de la page sont
-    identiques avant et après chaque migration, hors changement explicitement
-    demandé — et ça se vérifie par un test, pas à l'œil.
+def test_les_migrations_ne_deplacent_aucune_ligne_historique(
+    isolated_settings: Settings,
+) -> None:
+    """**Règle de travail du lot** : les indicateurs historiques sont identiques
+    avant et après chaque migration, hors changement explicitement demandé — et
+    ça se vérifie par un test, pas à l'œil.
 
-    Le lot est monté sous le schéma d'avant (051), mesuré, puis la migration 052
-    est appliquée et le lot remesuré. Une colonne ajoutée ne doit rien déplacer.
+    Le lot est écrit **en SQL sous le schéma d'avant**, comme la base servie l'a
+    été : `add_pick` est le code *courant*, et l'employer testerait la fixture au
+    lieu de la migration.
+
+    L'assertion ne compare pas deux appels d'`analysis()` : le lecteur est
+    toujours le code courant, et il ne tourne pas sur un schéma antérieur. Elle
+    compare les indicateurs à ce que les **lignes** impliquent, lues en SQL —
+    c'est la seule forme qui ne se déplace pas avec le code.
     """
-    from myassistantbet.services.history import analysis
+    from myassistantbet.services.history import analysis, populations
 
     from .helpers import migre_jusqu_a
 
     migre_jusqu_a(isolated_settings, 51)
     session_id, events = _lot(isolated_settings, ["Lyon", "Nice", "Reims"])
-    # **Écrites en SQL, et c'est le point** : `add_pick` est le code *courant* et
-    # remplit les colonnes de 052. Ce qu'on veut mesurer est le sort des lignes
-    # **historiques**, écrites sous l'ancien schéma — celles de la base servie.
-    for event_id, resultat in zip(events, ("win", "loss", "win"), strict=True):
+    # Deux à venir, une écrite après le coup d'envoi : c'est exactement la forme
+    # de la base servie, 178 antérieures pour 52 tardives.
+    for event_id, resultat, debut in zip(
+        events,
+        ("win", "loss", "win"),
+        ("2099-01-01T20:45:00Z", "2099-01-01T20:45:00Z", "2000-01-01T00:00:00Z"),
+        strict=True,
+    ):
+        db.execute(
+            "UPDATE events SET commence_time = ? WHERE id = ?",
+            (debut, event_id),
+            settings=isolated_settings,
+        )
         db.execute(
             "INSERT INTO picks (session_id, event_id, tier, market, selection, price, "
             "                   confidence, played, result, created_at) "
@@ -342,22 +359,21 @@ def test_la_migration_ne_deplace_aucun_indicateur(isolated_settings: Settings) -
             settings=isolated_settings,
         )
 
-    avant = analysis(isolated_settings)
-    empreinte_avant = (
-        avant.recorded,
-        avant.settled,
-        avant.without_antecedence,
-        avant.consistent,
-        [(row.key, row.won, row.settled) for row in avant.by_tier],
-    )
-
     db.run_migrations(isolated_settings)
-    apres = analysis(isolated_settings)
+    report, compte = analysis(isolated_settings), populations(isolated_settings)
 
-    assert (
-        apres.recorded,
-        apres.settled,
-        apres.without_antecedence,
-        apres.consistent,
-        [(row.key, row.won, row.settled) for row in apres.by_tier],
-    ) == empreinte_avant
+    # **La somme des trois populations vaut le total** : aucune ligne ne s'est
+    # perdue entre elles, et c'est le seul témoin qui ne peut pas baisser.
+    assert compte.consistent
+    assert (compte.total, compte.main, compte.exploratory, compte.late) == (3, 2, 0, 1)
+    # Et le rétro-remplissage suit **exactement** la dérivation d'origine.
+    lignes = db.query(
+        "SELECT k.tardive, k.created_at, e.commence_time FROM picks k "
+        "JOIN events e ON e.id = k.event_id",
+        settings=isolated_settings,
+    )
+    for ligne in lignes:
+        attendu = str(ligne["created_at"]) >= str(ligne["commence_time"])
+        assert bool(ligne["tardive"]) is attendu
+    assert report.recorded == 3, "le témoin compte toutes les tranchées non exploratoires"
+    assert report.consistent

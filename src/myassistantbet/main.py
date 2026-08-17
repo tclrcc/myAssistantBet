@@ -1200,6 +1200,14 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
             )
             created += 1
             par_ligne[index] = pick_id
+            # **Le match tardif se nomme, avec son ecart.** La garde d'origine
+            # refusait la ligne, ce qui la rendait visible ; la lever sans le
+            # dire ferait grossir une population sans que personne le voie.
+            if form.get(f"late_minutes_{index}"):
+                report.late.append(
+                    f"{form.get(f'match_{index}', '') or form.get(f'selection_{index}', '')} "
+                    f"(+{form[f'late_minutes_{index}']} min)"
+                )
         except history_service.HistoryError as exc:
             failures.append(f"ligne {index} : {exc}")
             # Une ligne refusee a l'ecriture est une perte comme une autre. Le

@@ -38,6 +38,10 @@
 {% if import_report %}
   <p class="notice {% if import_report.rejected %}notice-warn{% else %}notice-ok{% endif %}">
     {{ import_report.line }}
+    {% if import_report.late %}
+    <br>Après le coup d'envoi, enregistrée(s) en population tardive :
+    {{ import_report.late | join(' · ') }}
+    {% endif %}
     {% if import_report.rejects %}
     <br><span class="rejected">
       {%- for reject in import_report.rejects %}{{ reject.label }}{% if not loop.last %} · {% endif %}{% endfor -%}
@@ -63,6 +67,7 @@
   <p class="notice {% if preview.complete %}notice-ok{% else %}notice-warn{% endif %}">
     {{ preview.readout }}
     {%- if preview.scores_line %}<br>{{ preview.scores_line }}{% endif %}
+    {%- if preview.late_line %}<br>{{ preview.late_line }}{% endif %}
   </p>
 
   {% if preview.notes %}
@@ -196,6 +201,14 @@
             {% if pick.claim and pick.claim.start is not none %}
             <input type="hidden" name="claim_offsets_{{ pick.index }}"
                    value="{{ pick.claim.start }}:{{ pick.claim.end }}">
+            {% endif %}
+            {# L'écart au coup d'envoi voyage avec la ligne : le compte-rendu
+               d'import le nomme, et c'est le seul moment où l'information
+               arrive assez tôt pour changer quelque chose. #}
+            {% if pick.started %}
+            <input type="hidden" name="late_minutes_{{ pick.index }}"
+                   value="{{ pick.late_minutes }}">
+            <input type="hidden" name="match_{{ pick.index }}" value="{{ pick.match_text }}">
             {% endif %}
             {% if pick.exploratory %}
             <input type="hidden" name="exploratory_{{ pick.index }}" value="1">

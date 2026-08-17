@@ -16,6 +16,7 @@ import math
 import re
 import unicodedata
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 from ..config import Settings, get_settings
@@ -127,6 +128,10 @@ class ParsedPick:
     #: qu'une case qu'on doit cocher. Meme traitement que l'independance.
     started: bool = False
     late_reason: str = ""
+    #: Minutes ecoulees entre le coup d'envoi et l'instant de l'import. **Le
+    #: compte-rendu le nomme**, et c'est le seul moment ou l'information arrive
+    #: assez tot pour changer quelque chose : rien ne le signalait jusqu'ici.
+    late_minutes: int = 0
     #: Le bloc structure qui porte les faits declares. Lu dans le **meme**
     #: copier-coller que le tableau : demander un second geste ferait perdre la
     #: colonne le jour ou on l'oublie, et c'est la seule qui rende le cran
@@ -185,12 +190,11 @@ class ParsedPick:
         sa justification manque : `add_pick` la refuserait, et une ligne qui
         echoue a l'import se remarque moins qu'une case qu'on doit cocher.
         """
-        return (
-            self.ready
-            and not self.duplicate
-            and not (self.same_event and not self.independence)
-            and not (self.started and not self.late_reason)
-        )
+        # **Un match commence ne se decoche plus.** La ligne s'enregistre en
+        # population tardive d'office : la refuser ferait disparaitre la
+        # population qui porte la mesure du biais, et le motif n'est plus une
+        # autorisation mais une information.
+        return self.ready and not self.duplicate and not (self.same_event and not self.independence)
 
     @property
     def problems(self) -> list[str]:
@@ -207,8 +211,9 @@ class ParsedPick:
             issues.append("déjà présente")
         if self.same_event and not self.independence:
             issues.append("2e sélection sur ce match : dire l'angle indépendant")
-        if self.started and not self.late_reason:
-            issues.append("match déjà commencé : saisie différée, ou live assumé ?")
+        if self.started:
+            retard = f" (+{self.late_minutes} min)" if self.late_minutes else ""
+            issues.append(f"écrite après le coup d'envoi{retard} : population tardive")
         # Ni un refus ni une case a cocher : la ligne s'importe telle quelle,
         # ecrasee. Le dire ici evite qu'un `lecture` en base passe pour une
         # declaration franche du modele.
@@ -361,6 +366,30 @@ class ImportPreview:
         return " · ".join(parts)
 
     @property
+    def late_line(self) -> str:
+        """« 2 écrite(s) après le coup d'envoi : Lens – PSG (+37 min) ».
+
+        **Rien ne le signalait au moment où ça se produit.** La garde d'origine
+        refusait la ligne, ce qui la rendait visible mais faisait disparaitre la
+        population qui porte la mesure du biais ; la lever sans nommer les matchs
+        aurait fait l'inverse — une population qui grossit sans que personne le
+        voie. Le compte-rendu nomme donc, avec l'ecart : une minute et trois
+        heures n'appellent pas la meme relecture.
+        """
+        tardives = [pick for pick in self.picks if pick.started]
+        if not tardives:
+            return ""
+        detail = " · ".join(
+            f"{pick.match_text or pick.selection}"
+            + (f" (+{pick.late_minutes} min)" if pick.late_minutes else "")
+            for pick in tardives
+        )
+        return (
+            f"{len(tardives)} sélection(s) écrite(s) après le coup d'envoi, "
+            f"enregistrée(s) en population tardive : {detail}"
+        )
+
+    @property
     def rejects_payload(self) -> str:
         """Les rejets, prets a voyager dans un champ cache du formulaire."""
         return to_payload(self.rejects)
@@ -510,6 +539,24 @@ def _at(cells: list[str], position: int | None) -> str:
     if position is None or position >= len(cells):
         return ""
     return cells[position]
+
+
+def _elapsed(debut: datetime | None) -> int:
+    """Minutes ecoulees depuis le coup d'envoi. Zero avant, ou sans heure.
+
+    **Le compte-rendu le nomme**, et rien ne le signalait jusqu'ici : la garde
+    disait qu'une selection etait tardive, jamais **de combien**. Une minute et
+    trois heures n'appellent pas la meme relecture.
+
+    L'heure vient de `local_time`, deja portee par les deux types de match
+    rapproches : la relire ailleurs ferait deux lectures de la meme donnee, et
+    c'est le piege paye deux fois par l'assembleur de contexte.
+    """
+    if debut is None:
+        return 0
+    reference = datetime.now(debut.tzinfo or UTC)
+    ecart = (reference - debut).total_seconds() / 60
+    return int(ecart) if ecart > 0 else 0
 
 
 def _price(text: str) -> str:
@@ -718,6 +765,7 @@ def parse_table(
                 # Les deux types de match rapproches portent ce drapeau : la
                 # ligne se decoche quelle que soit l'origine du rapprochement.
                 started=bool(found and found.started),
+                late_minutes=_elapsed(found.local_time) if found else 0,
                 start=offset,
                 end=offset + len(line),
             )
