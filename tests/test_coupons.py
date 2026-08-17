@@ -27,6 +27,7 @@ from myassistantbet.services.history import (
     stats,
 )
 from myassistantbet.services.manual import build, save
+from myassistantbet.services.thresholds import COUPON_TRACKING, save_toggle
 
 #: Un PNG de 1x1 pixel, valide de bout en bout (en-tete, IHDR, IDAT, IEND).
 PNG = bytes.fromhex(
@@ -576,6 +577,7 @@ def test_les_taux_de_coupons_apparaissent_dans_l_historique(
     pick_id = _pick(isolated_settings, session_id, event_id)
     set_result(pick_id, "win", isolated_settings)
     coupons_service.create(session_id, [pick_id], settings=isolated_settings)
+    save_toggle(COUPON_TRACKING, "1", isolated_settings)
 
     response = client.get("/stats")
 
@@ -595,6 +597,7 @@ def test_la_date_et_l_heure_sont_pre_remplies(
 
     session_id, event_id = _session(isolated_settings)
     _pick(isolated_settings, session_id, event_id)
+    save_toggle(COUPON_TRACKING, "1", isolated_settings)
     maintenant = datetime.now(ZoneInfo(isolated_settings.tz))
 
     page = client.get(f"/history/{session_id}").text
@@ -608,6 +611,7 @@ def test_une_case_tout_selectionner_est_offerte(
 ) -> None:
     session_id, event_id = _session(isolated_settings)
     _pick(isolated_settings, session_id, event_id)
+    save_toggle(COUPON_TRACKING, "1", isolated_settings)
 
     page = client.get(f"/history/{session_id}").text
 

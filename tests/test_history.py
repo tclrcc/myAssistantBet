@@ -52,6 +52,7 @@ from myassistantbet.services.history import (
 )
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import RenderedPrompt, build_prompt, save_prompt
+from myassistantbet.services.thresholds import COUPON_TRACKING, save_toggle
 
 from .helpers import NOW, lot_avec_recul
 
@@ -432,6 +433,7 @@ def test_pick_inconnu_renvoie_404(client: TestClient) -> None:
 def test_taux_affiches_apres_saisie(client: TestClient, isolated_settings: Settings) -> None:
     session_id, event_id = _session_avec_match(isolated_settings)
     _joue(isolated_settings, session_id, event_id, "safe", "win")
+    save_toggle(COUPON_TRACKING, "1", isolated_settings)
 
     response = client.get("/stats")
 
@@ -448,20 +450,55 @@ def test_page_de_stats_vide(client: TestClient) -> None:
     assert "Rien à mesurer" in response.text
 
 
-def test_le_bloc_des_paris_poses_se_dit_vide_au_lieu_de_se_masquer(
+def test_le_bloc_des_paris_poses_se_dit_vide_quand_le_suivi_est_ouvert(
     client: TestClient, isolated_settings: Settings
 ) -> None:
     """**Deux phrases distinctes, et leur confusion etait le defaut.**
 
     Le bloc etait masque quand aucun coupon n'existait : une meme sortie pour
     « aucun pari pose » et pour « cette page ne mesure pas les paris poses ».
-    Impossible alors de distinguer un compte nul d'une mesure absente — dernier
-    defaut de cette forme apres `0/26`, `facts_json`, l'arbitre, la fiche de
-    priorite et le bloc de confiance absent.
+    Impossible alors de distinguer un compte nul d'une mesure absente.
 
-    Le lot porte une selection tranchee mais **aucun coupon** : `played` ne passe
-    a vrai qu'au rattachement, donc `stats()` est vide alors que `analysis()` ne
-    l'est pas. C'est exactement l'etat de la base servie.
+    Le suivi **ouvert**, cette distinction vaut toujours et le bloc se rend vide
+    plutot que de disparaitre. C'est le suivi **ferme** qui la rend sans objet —
+    voir le test suivant.
+    """
+    session_id, event_id = _session_avec_match(isolated_settings, "football")
+    pick_id = add_pick(
+        session_id,
+        tier="safe",
+        market="1N2",
+        selection="Lyon",
+        event_id=str(event_id),
+        price="1.45",
+        settings=isolated_settings,
+    )
+    set_result(pick_id, "win", settings=isolated_settings)
+    save_toggle(COUPON_TRACKING, "1", isolated_settings)
+
+    page = client.get("/stats").text
+
+    assert "Ce que valent tes paris" in page, "le bloc se rend, il ne se masque plus"
+    assert "Aucun coupon saisi" in page
+    # La seconde phrase, qui ne dit pas la meme chose que la premiere : ce bloc
+    # vide n'affaiblit pas les autres, qui repondent a une autre question.
+    assert "le reste de cette page ne mesure pas les paris posés" in page.lower()
+    assert "elles répondent" in page or "ils répondent" in page
+
+
+def test_le_suivi_des_paris_est_ferme_par_defaut(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """**Un constat plutot qu'une preference** : aucun pari n'est pose — zero
+    coupon sur douze sessions. L'application n'est pas un carnet de mises, c'est
+    un banc de mesure de predictions.
+
+    Le bloc annoncait cette absence comme un manque — « ce n'est pas une collecte
+    qui manque, c'est un geste qui n'a pas eu lieu » — ce qui est vrai et se lit
+    comme un reproche. Un usage assume n'a pas a s'excuser.
+
+    **Rien n'est supprime** : le reglage rallume l'ensemble, et c'est lui qui
+    distingue maintenant les deux etats que le bloc vide distinguait.
     """
     session_id, event_id = _session_avec_match(isolated_settings, "football")
     pick_id = add_pick(
@@ -476,14 +513,11 @@ def test_le_bloc_des_paris_poses_se_dit_vide_au_lieu_de_se_masquer(
     set_result(pick_id, "win", settings=isolated_settings)
 
     page = client.get("/stats").text
+    reglages = client.get("/settings").text
 
-    assert "Ce que valent tes paris" in page, "le bloc se rend, il ne se masque plus"
-    assert "Aucun coupon saisi" in page
-    assert "un geste qui n'a pas eu lieu" in page
-    # La seconde phrase, qui ne dit pas la meme chose que la premiere : ce bloc
-    # vide n'affaiblit pas les autres, qui repondent a une autre question.
-    assert "le reste de cette page ne mesure pas les paris posés" in page.lower()
-    assert "elles répondent" in page or "ils répondent" in page
+    assert "Ce que valent tes paris" not in page
+    assert "un geste qui n'a pas eu lieu" not in page
+    assert "Suivi des paris posés" in reglages, "le réglage dit où le rouvrir"
 
 
 # -- Selecteur de match : sport et competition ------------------------------
@@ -2751,6 +2785,11 @@ def test_la_feuille_reclame_la_cote_obtenue_sur_une_cote_de_reference(
         price_source="reference",
         settings=migrated,
     )
+    # **Seulement si le suivi des paris est ouvert** : cette cote ne peut venir
+    # que d'une mise, et sans mise la case demanderait une valeur qui n'existera
+    # jamais.
+    assert 'placeholder="obtenue"' not in client.get(f"/history/{session_id}").text
+    save_toggle(COUPON_TRACKING, "1", migrated)
 
     page = client.get(f"/history/{session_id}").text
 

@@ -50,7 +50,7 @@
      ('exploratoires', 'Sélections exploratoires', not exploratory.empty),
      ('combines', 'Les combinés proposés', not combos.empty),
      ('etiquettes', 'Comment tu étiquettes', labelling | length > 0),
-     ('paris', 'Ce que valent tes paris', true),
+     ('paris', 'Ce que valent tes paris', coupon_tracking),
    ] %}
 {% if sections | selectattr(2) | list | length > 1 %}
 <nav class="section-nav" aria-label="Sommaire">
@@ -1428,6 +1428,16 @@
 </section>
 {% endif %}
 
+{# **Le suivi des paris posés est désactivé par défaut, et c'est un constat
+   plutôt qu'une préférence** : aucun pari n'est posé — zéro coupon sur douze
+   sessions. L'application n'est pas un carnet de mises, c'est un banc de mesure
+   de prédictions.
+
+   Le bloc annonçait cette absence comme un manque — « ce n'est pas une collecte
+   qui manque, c'est un geste qui n'a pas eu lieu » — ce qui est vrai et se lit
+   comme un reproche. Un usage assumé n'a pas à s'excuser. Rien n'est supprimé :
+   le réglage rallume l'ensemble, tables et calculs compris. #}
+{% if coupon_tracking %}
 <section class="stats-block" id="paris">
   <div class="block-head">
     <h2>Ce que valent tes paris</h2>
@@ -1435,15 +1445,9 @@
   </div>
 
 {% if stats.empty %}
-  {# **Deux phrases, et leur confusion est le défaut qu'on ferme.** Le bloc était
-     masqué : une même sortie pour « aucun pari posé » et pour « cette page ne
-     mesure pas les paris posés », donc impossible de distinguer un compte nul
-     d'une mesure absente. Dernier défaut de cette forme après 0/26, facts_json,
-     l'arbitre, la fiche de priorité et le bloc de confiance absent. #}
   <p class="notice">
     <strong>Aucun coupon saisi.</strong> Rien n'a été enregistré comme posé chez le
-    bookmaker, donc ce bloc n'a rien à compter — ce n'est pas une collecte qui manque,
-    c'est un geste qui n'a pas eu lieu.
+    bookmaker, donc ce bloc n'a rien à compter.
   </p>
   <p class="notice">
     <strong>Et le reste de cette page ne mesure pas les paris posés.</strong> Les
@@ -1515,6 +1519,7 @@
   </details>
 {% endif %}
 </section>
+{% endif %}
 
 <p class="page-foot">
   Taux = gagnés / (gagnés + perdus). Les paris annulés et ceux en attente sont exclus

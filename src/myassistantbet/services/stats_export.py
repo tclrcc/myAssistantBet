@@ -41,6 +41,7 @@ from . import history as history_service
 from . import ingestion as ingestion_service
 from . import set_scores as set_scores_service
 from .inference import EQUIVALENCE_MARGIN, MARGIN_REFERENCE
+from .thresholds import COUPON_TRACKING, toggle_of
 
 #: Formats servis. `md` s'adresse a un lecteur — humain ou modele — hors de
 #: l'application ; `json` rend le meme releve a une machine.
@@ -162,6 +163,11 @@ class StatsReport:
     #: `analysis.as_of`, qui date la **lecture des donnees** : les deux
     #: coincident sur un export immediat et divergent sur un fichier relu plus
     #: tard, ou c'est l'arrete qui fait foi.
+    #: Le suivi des paris poses est-il ouvert. **Desactive par defaut, et c'est
+    #: un constat plutot qu'une preference** : aucun pari n'est pose depuis douze
+    #: sessions. La page presentait cette absence comme un manque, ce qui est
+    #: vrai et se lit comme un reproche — un usage assume n'a pas a s'excuser.
+    coupon_tracking: bool = False
     generated_at: datetime | None = None
 
     @property
@@ -181,6 +187,7 @@ class StatsReport:
             "combos": self.combos,
             "tier_usage": self.tier_usage,
             "exploratory": self.exploratory,
+            "coupon_tracking": self.coupon_tracking,
         }
 
     @property
@@ -264,10 +271,18 @@ class StatsReport:
             # **Le bloc est rendu meme vide**, et ses cartes ne le sont pas :
             # l'absence de pari pose est une information, l'absence d'une carte
             # a l'interieur n'en est pas une.
-            (Section("", BETS_BLOCK), True),
-            (Section(BETS_BLOCK, "Par palier"), not self.stats.empty),
-            (Section(BETS_BLOCK, "Par sport"), not self.stats.empty),
-            (Section(BETS_BLOCK, "Coupons"), bool(self.coupon_rates)),
+            # **Le bloc n'est plus rendu quand le suivi est ferme.** Il l'etait
+            # toujours, vide ou non, pour distinguer « aucun pari pose » de
+            # « cette page ne mesure pas les paris poses » — vraie distinction
+            # tant que le suivi etait cense servir. Ferme, la question ne se pose
+            # plus : l'ecran des reglages dit ou le rouvrir.
+            (Section("", BETS_BLOCK), self.coupon_tracking),
+            (Section(BETS_BLOCK, "Par palier"), self.coupon_tracking and not self.stats.empty),
+            (Section(BETS_BLOCK, "Par sport"), self.coupon_tracking and not self.stats.empty),
+            (
+                Section(BETS_BLOCK, "Coupons"),
+                self.coupon_tracking and bool(self.coupon_rates),
+            ),
         ]
         return [section for section, shown in rendered if shown]
 
@@ -447,6 +462,7 @@ def report(settings: Settings | None = None) -> StatsReport:
         combos=combos_service.summary(settings),
         tier_usage=history_service.tier_usage(settings),
         exploratory=exploratoire,
+        coupon_tracking=toggle_of(COUPON_TRACKING, settings),
         generated_at=datetime.now(ZoneInfo(settings.tz)),
     )
 
@@ -1312,7 +1328,23 @@ def as_markdown(found: StatsReport) -> str:
                 )
             out += ["", note]
 
-    out += ["", f"## {BETS_BLOCK}", "", "Uniquement ce qui a été posé chez le bookmaker."]
+    # **Le bloc n'est plus rendu quand le suivi est ferme**, et le pied de page
+    # reste : il decrit la definition du taux, qui vaut pour tout le fichier.
+    if found.coupon_tracking:
+        out += _bets(found)
+    out += [
+        "",
+        "---",
+        "",
+        "Taux = gagnés / (gagnés + perdus). Les paris annulés et ceux en attente sont "
+        "exclus du dénominateur.",
+    ]
+    return "\n".join(out).rstrip() + "\n"
+
+
+def _bets(found: StatsReport) -> list[str]:
+    """« Ce que valent tes paris » — le seul bloc que le suivi des coupons ouvre."""
+    out = ["", f"## {BETS_BLOCK}", "", "Uniquement ce qui a été posé chez le bookmaker."]
     if found.stats.empty:
         # **Deux phrases, jamais une, et jamais un silence.** Le bloc etait
         # masque des deux cotes : une meme sortie pour « aucun pari pose » et
@@ -1347,12 +1379,4 @@ def as_markdown(found: StatsReport) -> str:
                 "cède, il ne se compare pas à un pari simple. Aucune cote d'ensemble "
                 "n'est calculée.",
             ]
-
-    out += [
-        "",
-        "---",
-        "",
-        "Taux = gagnés / (gagnés + perdus). Les paris annulés et ceux en attente sont "
-        "exclus du dénominateur.",
-    ]
-    return "\n".join(out).rstrip() + "\n"
+    return out

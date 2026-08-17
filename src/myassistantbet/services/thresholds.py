@@ -254,3 +254,96 @@ def save(key: str, raw: str, settings: Settings | None = None) -> None:
             (PREFIX + key, str(value), utcnow()),
         )
     logger.info("Seuil %s : %d", key, value)
+
+
+# -- Les interrupteurs -------------------------------------------------------
+#
+# **Un seuil regle un nombre, un interrupteur ouvre ou ferme une surface.** Les
+# forcer dans le meme registre aurait demande d'inventer des bornes a un
+# booleen ; ils vivent donc a cote, dans la meme table et sous le meme prefixe.
+
+
+@dataclass(frozen=True)
+class Toggle:
+    """Un reglage a deux etats, et ce qu'il decide."""
+
+    key: str
+    label: str
+    default: bool
+    #: Ce que l'interrupteur change, en une phrase. Meme regle qu'un seuil : un
+    #: reglage sans son effet ne se regle pas, il se subit.
+    note: str
+
+
+#: Le suivi des paris poses. **Desactive par defaut, et c'est un constat plutot
+#: qu'une preference** : aucun pari n'est pose — `coupons` vide, `played` faux
+#: sur les 235 selections, douze sessions. L'application n'est pas un carnet de
+#: mises, c'est un banc de mesure de predictions.
+#:
+#: La page presentait cette absence comme un manque — « ce n'est pas une collecte
+#: qui manque, c'est un geste qui n'a pas eu lieu » — ce qui est vrai et se lit
+#: comme un reproche. Un usage assume n'a pas a s'excuser.
+#:
+#: **Rien n'est supprime** : l'interrupteur reactive l'ensemble si l'usage change,
+#: et les tables, les routes et les calculs restent en place.
+COUPON_TRACKING = "suivi_coupons"
+
+TOGGLES: dict[str, Toggle] = {
+    COUPON_TRACKING: Toggle(
+        key=COUPON_TRACKING,
+        label="Suivi des paris posés",
+        default=False,
+        note=(
+            "Ouvre le bloc « Ce que valent tes paris » de la page de statistiques, la "
+            "colonne « cote obtenue » et le bouton « jouer » de la feuille de session. "
+            "Désactivé, l'application ne mesure que les prédictions — ce qu'elle fait "
+            "depuis douze sessions, aucun coupon n'ayant jamais été saisi. Rien n'est "
+            "supprimé : le rallumer restitue l'ensemble."
+        ),
+    ),
+}
+
+
+def toggle_of(key: str, settings: Settings | None = None) -> bool:
+    """Etat d'un interrupteur, ou son defaut.
+
+    Une valeur illisible vaut le defaut, jamais une erreur — meme regle que les
+    seuils : un reglage mal saisi degrade vers un comportement connu.
+    """
+    toggle = TOGGLES[key]
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT value FROM preferences WHERE key = ?", (PREFIX + key,)
+        ).fetchone()
+    if row is None:
+        return toggle.default
+    valeur = str(row["value"]).strip().lower()
+    if valeur in ("1", "true", "oui"):
+        return True
+    if valeur in ("0", "false", "non"):
+        return False
+    logger.warning("Interrupteur %s illisible (%r) : valeur par defaut", key, row["value"])
+    return toggle.default
+
+
+def toggles(settings: Settings | None = None) -> list[tuple[Toggle, bool]]:
+    """Tous les interrupteurs et leur etat, pour l'ecran des reglages."""
+    settings = settings or get_settings()
+    return [(entry, toggle_of(key, settings)) for key, entry in TOGGLES.items()]
+
+
+def save_toggle(key: str, raw: str, settings: Settings | None = None) -> None:
+    """Enregistre un interrupteur. Une case non cochee n'est pas postee du tout,
+    donc l'absence vaut faux — c'est la convention des formulaires HTML, et la
+    contourner demanderait un champ cache que rien ne justifie."""
+    if key not in TOGGLES:
+        return
+    etat = "1" if str(raw or "").strip().lower() in ("1", "true", "on", "oui") else "0"
+    with connect(settings) as conn:
+        conn.execute(
+            "INSERT INTO preferences (key, value, updated_at) VALUES (?, ?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value, "
+            "                               updated_at = excluded.updated_at",
+            (PREFIX + key, etat, utcnow()),
+        )
+    logger.info("Interrupteur %s : %s", key, etat)

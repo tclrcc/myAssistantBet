@@ -36,6 +36,7 @@ from myassistantbet.services.history import (
 from myassistantbet.services.inference import MARGIN_REFERENCE, Residual
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import build_prompt, save_prompt
+from myassistantbet.services.thresholds import COUPON_TRACKING, save_toggle
 
 LOIN = "2099-01-01"
 
@@ -304,6 +305,11 @@ def test_le_compteur_annonce_les_deux_couvertures(migrated: Settings) -> None:
     quelque chose.
     """
     session_id = _lot(migrated, [("2.00", "win", True)] + [("2.00", "win", False)] * 2)
+    # **La cote obtenue n'est reclamee que si le suivi des paris est ouvert** :
+    # elle ne peut venir que d'une mise, et sans mise l'annoncer comme un manque
+    # reclamerait une valeur qui n'existera jamais.
+    assert "cote obtenue" not in worksheet(session_id, migrated).coverage_line
+    save_toggle(COUPON_TRACKING, "1", migrated)
 
     ligne = worksheet(session_id, migrated).coverage_line
 
@@ -317,6 +323,7 @@ def test_le_compteur_se_tait_quand_tout_est_couvert(migrated: Settings) -> None:
     session_id = _lot(migrated, [("2.00", "win", False)])
     pick_id = worksheet(session_id, migrated).picks[0].pick_id
     db.execute("UPDATE picks SET price_real = 1.95 WHERE id = ?", (pick_id,), settings=migrated)
+    save_toggle(COUPON_TRACKING, "1", migrated)
 
     assert worksheet(session_id, migrated).coverage_line == ""
 

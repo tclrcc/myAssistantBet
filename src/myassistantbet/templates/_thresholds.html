@@ -36,4 +36,38 @@
       {% endfor %}
     </tbody>
   </table>
+
+  {# **Un seuil règle un nombre, un interrupteur ouvre ou ferme une surface.**
+     Les forcer dans le même registre aurait demandé d'inventer des bornes à un
+     booléen. Même table, même préfixe, même règle de dégradation. #}
+  <p class="muted small">
+    Des surfaces qu'on ouvre ou qu'on ferme selon l'usage. Rien n'est supprimé :
+    rallumer un interrupteur restitue l'ensemble.
+  </p>
+
+  <table class="board">
+    <thead>
+      <tr><th>Réglage</th><th class="num">État</th><th>Ce qu'il décide</th></tr>
+    </thead>
+    <tbody>
+      {% for toggle, actif in toggles %}
+      <tr>
+        <td class="affiche">{{ toggle.label }}</td>
+        <td class="num">
+          <form class="tiers-form" hx-post="/settings/toggles"
+                hx-target="#thresholds" hx-swap="outerHTML">
+            <input type="hidden" name="key" value="{{ toggle.key }}">
+            <input type="checkbox" name="value" value="1"
+                   aria-label="{{ toggle.label }}" {% if actif %}checked{% endif %}>
+            <button type="submit" class="link-action">ok</button>
+          </form>
+        </td>
+        <td class="small muted">
+          {{ toggle.note }}
+          <br>Défaut : {{ "activé" if toggle.default else "désactivé" }}.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
 </div>

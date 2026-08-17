@@ -1041,6 +1041,11 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         "available_picks": coupons_service.available_picks(session_id, settings),
         # Un pari se saisit apres l'avoir pose : l'instant present est le bon
         # defaut, et le corriger reste possible.
+        # Le suivi des paris poses, desactive par defaut : c'est lui qui ouvre
+        # la colonne « cote obtenue » et le bouton « jouer ».
+        "coupon_tracking": thresholds_service.toggle_of(
+            thresholds_service.COUPON_TRACKING, settings
+        ),
         "today": now.strftime("%Y-%m-%d"),
         "now_hm": now.strftime("%H:%M"),
         "error": error,
@@ -1622,6 +1627,7 @@ def _settings_context(**overrides: object) -> dict[str, object]:
         # Les seuils numeriques : le registre les declare, l'ecran les rend
         # sans les connaitre un par un.
         "thresholds": thresholds_service.current(settings),
+        "toggles": thresholds_service.toggles(settings),
         "thresholds_saved": False,
     }
     context.update(overrides)
@@ -1687,6 +1693,19 @@ async def save_threshold(request: Request) -> HTMLResponse:
     """Enregistre un seuil numerique. Hors bornes, il revient a son defaut."""
     form = await request.form()
     thresholds_service.save(str(form.get("key", "")), str(form.get("value", "")), get_settings())
+    return templates.TemplateResponse(
+        request, "_thresholds.html", _settings_context(thresholds_saved=True)
+    )
+
+
+@app.post("/settings/toggles", response_class=HTMLResponse)
+async def save_toggle(request: Request) -> HTMLResponse:
+    """Ouvre ou ferme une surface. Une case non cochee n'est pas postee du tout,
+    donc l'absence vaut faux — c'est la convention des formulaires HTML."""
+    form = await request.form()
+    thresholds_service.save_toggle(
+        str(form.get("key", "")), str(form.get("value", "")), get_settings()
+    )
     return templates.TemplateResponse(
         request, "_thresholds.html", _settings_context(thresholds_saved=True)
     )

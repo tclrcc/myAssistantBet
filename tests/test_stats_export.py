@@ -27,9 +27,11 @@ from fastapi.testclient import TestClient
 from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
+from myassistantbet.services import combos as combos_service
 from myassistantbet.services import history as history_service
 from myassistantbet.services import set_scores as set_scores_service
 from myassistantbet.services import stats_export
+from myassistantbet.services import thresholds as thresholds_service
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import build_prompt, save_prompt
 
@@ -88,8 +90,44 @@ def _lot_complet(settings: Settings) -> int:
         settings,
     )
     tennis_id = board_service.toggle_selection(event_id, True, settings)
-    save_prompt(tennis_id, build_prompt(tennis_id, settings=settings), settings)
+    prompt_id = save_prompt(tennis_id, build_prompt(tennis_id, settings=settings), settings)
     set_scores_service.save(tennis_id, event_id, "2-0", actual="2-1", settings=settings)
+
+    # Le second circuit : une selection produite **sans fait date**, comptee a
+    # part de tout le reste. Sans elle, le bloc exploratoire est absent des deux
+    # cotes et la parite ne compare rien.
+    exploratoire = history_service.add_pick(
+        tennis_id,
+        tier="giga_fun",
+        market="Vainqueur",
+        selection="Bergs",
+        event_id=str(event_id),
+        price="7.50",
+        confidence="1",
+        exploratory=True,
+        settings=settings,
+    )
+    history_service.set_result(exploratoire, "loss", settings)
+
+    # Un combine, pour que son bloc se rende lui aussi.
+    jambe = history_service.add_pick(
+        tennis_id,
+        tier="safe",
+        market="Vainqueur",
+        selection="Moutet",
+        event_id=str(event_id),
+        price="1.85",
+        confidence="4",
+        independence_note="angle distinct du précédent",
+        settings=settings,
+    )
+    combos_service.record(
+        tennis_id, prompt_id, kind="court", pick_ids=[jambe], declared_price=1.85, settings=settings
+    )
+
+    # Le suivi des paris poses : **desactive par defaut**, donc son bloc est
+    # absent d'une page ordinaire. La parite doit pouvoir le comparer.
+    thresholds_service.save_toggle(thresholds_service.COUPON_TRACKING, "1", settings)
     return session_id
 
 
@@ -154,8 +192,8 @@ def test_chaque_section_de_la_page_a_son_equivalent_dans_le_fichier(
     sections = _page_sections(page.text)
     blocs = _markdown_blocks(fichier.text)
     # Une page qui ne rendrait qu'un titre ferait passer la parite sans rien
-    # comparer : le lot doit allumer les cinq blocs.
-    assert len([section for section in sections if not section.block]) == 5
+    # comparer : le lot doit allumer les sept blocs.
+    assert len([section for section in sections if not section.block]) == 7
 
     manquantes = []
     for section in sections:
