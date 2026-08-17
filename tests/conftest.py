@@ -30,6 +30,13 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     monkeypatch.setenv("ODDS_API_KEY", "cle-odds-de-test")
     monkeypatch.setenv("APIFOOTBALL_KEY", "")
     monkeypatch.setenv("ODDS_API_CREDIT_FLOOR", "500")
+    # La cle RapidAPI du `.env` de developpement ne doit pas entrer dans les
+    # tests, meme pour n'etre que presente : un test qui passe parce qu'une cle
+    # existe sur cette machine-ci echouerait ailleurs. Meme regle que les books
+    # de reference ci-dessous.
+    monkeypatch.setenv("RAPIDAPI_KEY", "cle-rapidapi-de-test")
+    monkeypatch.setenv("RAPIDAPI_CALL_FLOOR", "20000")
+    monkeypatch.setenv("RAPIDAPI_INTERVAL", "0")
     # Sans cette ligne, les books de reference du `.env` de developpement
     # entreraient dans les appels de test : une machine sans `.env` et la
     # machine du developpeur ne verraient pas les memes requetes.

@@ -56,6 +56,29 @@ class Settings(BaseSettings):
     #: reouvre de lui-meme le lendemain.
     apifootball_call_floor: int = 500
 
+    #: Plancher d'appels `tennis-api.com` sous lequel **toute** collecte de
+    #: statistiques de service s'arrete.
+    #:
+    #: Le quota est **mensuel** (150 000 sur le plan PRO, remis a zero tous les
+    #: 31 jours), et c'est ce qui le rend different des deux autres : un plancher
+    #: franchi ne se rouvre pas le lendemain, il se rouvre le mois prochain. Une
+    #: reprise d'historique qui epuiserait le quota le 8 du mois laisserait
+    #: l'application sans donnees courantes pendant trois semaines.
+    #:
+    #: 20 000, soit **13 % du quota mensuel** : de quoi tenir l'entretien
+    #: quotidien pendant plus d'un an au regime mesure (~180 appels/jour), donc
+    #: largement de quoi voir venir et corriger. Il se regle sans toucher au code.
+    rapidapi_call_floor: int = 20_000
+
+    #: Delai entre deux appels a `tennis-api.com`, en secondes.
+    #:
+    #: **Aucun en-tete de debit n'est servi par ce fournisseur** — ni
+    #: `x-ratelimit-rate-limit`, ni `retry-after` — et dix appels consecutifs
+    #: passent a 4,4 req/s sans un seul 429. Ce delai est donc une politesse de
+    #: notre cote sur une reprise longue, et **pas une limite relevee** : ne pas
+    #: le documenter comme si le fournisseur l'imposait.
+    rapidapi_interval: float = Field(default=0.2, ge=0)
+
     # --- Etage B -----------------------------------------------------------
     #: Competitions (cles The Odds API) pour lesquelles demander les props buteurs.
     #: Ailleurs, ces marches ne sont servis par aucun bookmaker : ne pas depenser
@@ -163,6 +186,7 @@ class Settings(BaseSettings):
             "tz": self.tz,
             "odds_api_credit_floor": self.odds_api_credit_floor,
             "apifootball_call_floor": self.apifootball_call_floor,
+            "rapidapi_call_floor": self.rapidapi_call_floor,
             "scan_window_days": self.scan_window_days,
             "scheduler_enabled": self.scheduler_enabled,
             "scan_at": f"{self.scan_hour:02d}:{self.scan_minute:02d}",
