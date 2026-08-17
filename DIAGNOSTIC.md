@@ -1625,3 +1625,79 @@ l'aberration qu'on veut voir apparaître comme un point et non comme une pente.
 blocs et se comptent donc avec eux. La corriger demanderait de repérer une
 seconde frontière qui bougerait avec le gabarit ; ce qu'on mesure est la
 **dérive**, et elle se lit aussi bien sur un découpage stable qu'exact.
+
+---
+
+## §15 — Cas décrits par le gabarit et jamais rencontrés
+
+Relevé sur les **1 405 blocs** des 149 prompts archivés — ce que les sessions ont
+réellement vu, et non un rendu recalculé aujourd'hui. **Aucune suppression** :
+c'est un constat pour arbitrage.
+
+| Cas décrit | Blocs | Part | Prompts | Sessions | Poids |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Non servis | 1 042 | 74,2 % | 115 | 13 | moyen |
+| Absents — non interrogés | 292 | 20,8 % | 29 | 5 | fort |
+| A relever | 253 | 18,0 % | 47 | 9 | fort |
+| Lieu — terrain neutre non vérifiable | 188 | 13,4 % | 29 | 5 | moyen |
+| Tour — phase non renseignée | 159 | 11,3 % | 24 | 6 | moyen |
+| Absents — aucun signalé | 153 | 10,9 % | 19 | 6 | faible |
+| Effectif — absents reconstruits | 132 | 9,4 % | 29 | 7 | fort |
+| Entraîneur — divergence | 67 | 4,8 % | 19 | 4 | fort |
+| Entraîneur — apparié sur l'initiale | 42 | 3,0 % | 18 | 3 | moyen |
+| Compos — onze publié | 9 | 0,6 % | 3 | 3 | fort |
+| Météo — alerte officielle | 4 | 0,3 % | 1 | 1 | **décisif** |
+| Statut — reporté, annulé, forfait | 1 | 0,1 % | 1 | 1 | **décisif** |
+| **Absents — source injoignable** | **0** | 0 % | 0 | 0 | moyen |
+| **Lieu — TERRAIN NEUTRE** | **0** | 0 % | 0 | 0 | **décisif** |
+| **Alerte — handicap suspect** | **0** | 0 % | 0 | 0 | **décisif** |
+
+### Les trois jamais rencontrés, et ce qu'ils valent
+
+**Aucun ne doit être supprimé sur la foi de ce tableau**, et deux d'entre eux
+sont même une confirmation :
+
+- **`Alerte` — handicap suspect, 0 sur 1 405.** Le dossier de projet l'annonçait
+  en toutes lettres : *« elle ne coûte rien quand tout va bien… cette ligne est
+  faite pour ne jamais servir »*. Le mode d'emploi ne se paie déjà que sur les
+  lots qui en portent une (`handicap_alerts`), donc son coût fixe est **nul**.
+  Rien à arbitrer ;
+- **`Lieu` — TERRAIN NEUTRE, 0 sur 1 405.** Ce n'est pas un cas rare, c'est un
+  cas **structurellement hors de portée**, et la cause est déjà mesurée :
+  `fixture.venue.id` est nul sur 210 matchs sur 210 d'une saison de Conference
+  League. Le drapeau ne peut donc pas se calculer là où les délocalisations
+  arrivent, et c'est la mention « non vérifiable » qui prend le relais — **188
+  blocs, 13,4 %**. Les deux lignes forment un seul mécanisme dont une moitié
+  porte tout le trafic ;
+- **`Absents` — source injoignable, 0 sur 1 405.** Le seul des trois qui soit un
+  vrai résultat sur le fournisseur : sur cinq sessions de football, API-Football
+  n'a **jamais** été injoignable au moment d'un relevé d'absents. L'état reste
+  utile — il distingue une panne d'une absence de couverture, et les confondre
+  reproduirait le défaut que les trois états existent pour supprimer.
+
+### Deux cas décisifs à un chiffre, et c'est le vrai enseignement
+
+`Statut` (1 bloc) et `Météo — alerte` (4 blocs) sont les deux plus rares du
+tableau **et** les deux que le dossier de projet cite comme ayant changé une
+analyse : le Rakow – Zaglebie reporté depuis neuf jours, et les deux sessions où
+l'alerte disait que la rencontre pouvait ne pas se jouer.
+
+**Un cas à 0,1 % qui retourne une lecture ne se compare pas à un cas à 0,1 % qui
+n'apprend rien**, et c'est pourquoi le relevé porte une colonne « poids » que le
+compte ne produit pas. Sans elle, ce tableau se lirait comme une liste de
+coupes.
+
+### Deux erreurs de mesure, trouvées et corrigées avant d'écrire
+
+Elles valent d'être notées, parce que toutes deux **produisaient un compte
+plausible** :
+
+1. **Le découpage sans borne haute.** Les sections de sortie et le chapitre
+   « COMMENT LIRE LES BLOCS » viennent *après* les blocs et tombaient donc dans
+   le dernier. Trois cas sortaient à exactement 29 blocs sur 29 prompts — la
+   signature d'un marqueur capté une fois par prompt, donc hors bloc ;
+2. **Les marqueurs pris dans le mode d'emploi.** Le bloc écrit « aucun signale »
+   **sans accent** — règle du module, *« ni apostrophe ni accent dans une valeur
+   rendue »* — quand le chapitre écrit « aucun absent signalé ». Le marqueur
+   accentué ne trouvait que le manuel, donc **zéro** une fois le préambule
+   exclu, sur un cas qui arrive **153 fois**.
