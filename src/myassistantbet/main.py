@@ -1180,6 +1180,8 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
                 # une ligne jamais collee avec un match hors de la liste : deux
                 # observations differentes, deux gestes differents.
                 override_cause=form.get(f"override_cause_{index}", ""),
+                # La section C-bis : comptee a part de bout en bout.
+                exploratory=form.get(f"exploratory_{index}") == "1",
                 settings=settings,
             )
             created += 1

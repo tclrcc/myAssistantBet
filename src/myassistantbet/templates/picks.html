@@ -176,6 +176,17 @@
                main dedans — soit il a été lu, soit il ne l'a pas été et le cran
                reste inconnu. Le pictogramme dit lequel des deux, et le cran
                calculé se lit dessus avant l'écriture. #}
+            {# La ligne vient de la section C-bis, où l'exigence d'un fait daté
+               tombe. Comptée à part de bout en bout : ce drapeau est ce qui
+               empêche les deux populations de se mélanger, et sans lui la
+               comparaison que la section existe pour rendre possible n'aurait
+               plus de sujet. #}
+            {% if pick.exploratory %}
+            <input type="hidden" name="exploratory_{{ pick.index }}" value="1">
+            <span class="badge" title="Section C-bis : produite sans fait daté, comptée à part">
+              exploratoire
+            </span>
+            {% endif %}
             <input type="hidden" name="opened_{{ pick.index }}"
                    value="{{ '1' if pick.opened else '0' }}">
             {% if not pick.opened %}

@@ -44,14 +44,25 @@ from .history import tiers as load_tiers
 from .ingestion import (
     COMBO,
     CONF,
+    DUPLICATE,
+    EXPLORATOIRE,
     FENCE_NOT_FOUND,
     MATCH_REF_UNRESOLVED,
+    SCHEMA_INVALID,
     SCORE_SETS,
     Reject,
     to_payload,
 )
+from .prompt import QUOTA_FLOOR_TIERS
 from .set_scores import ParsedScore
 from .set_scores import read as read_scores
+
+#: La section **C-bis**, ou l'exigence de fait date tombe. Reconnue sur son
+#: repere ou sur son titre : le gabarit ecrit « C-bis. Sélections
+#: exploratoires », et un rendu qui n'en garde qu'une moitie doit passer quand
+#: meme — perdre la section entiere pour un tiret serait la reproduction exacte
+#: du defaut que ce chantier corrige.
+EXPLORATORY_HEAD = re.compile(r"\bc\s*bis\b|selections? exploratoires?")
 
 #: Une ligne de tableau Markdown : `| a | b | c |`.
 TABLE_ROW = re.compile(r"^\s*\|(.+)\|\s*$")
@@ -132,6 +143,12 @@ class ParsedPick:
     #: sont pas la meme observation. Sans la cause, les deux alimentent le meme
     #: taux et une panne de transmission se lit comme un resultat.
     override_cause: str = ""
+    #: La ligne vient de la section **C-bis**, ou l'exigence d'un fait date
+    #: tombe. **Comptee a part de bout en bout** : les indicateurs de la page
+    #: portent sur la population principale, et melanger les deux detruirait la
+    #: comparaison que cette section existe pour rendre possible — une selection
+    #: adossee a un fait date tient-elle mieux qu'une lecture.
+    exploratory: bool = False
     #: Une selection identique existe deja dans la session, ou plus haut dans
     #: le meme tableau. Elle reste proposee — c'est peut-etre voulu — mais
     #: decochee : coller deux fois le meme rendu ne doit pas doubler l'historique.
@@ -592,8 +609,24 @@ def parse_table(
     # lignes du meme rendu sur une meme affiche sont le cas que le prompt
     # encadre, et le second des deux doit se justifier.
     events = set(taken or ())
+    # Les paliers **hauts** : ceux qui sortent des deux bandes les plus sures,
+    # les seuls que la section C-bis puisse porter. La frontiere est celle du
+    # gabarit, lue une fois — la recopier ici l'aurait fait diverger au premier
+    # reglage de bande.
+    hauts = {tier["key"] for tier in tiers[QUOTA_FLOOR_TIERS:]}
+    # Les matchs deja retenus **en section C** : une ligne exploratoire sur l'un
+    # d'eux est refusee. « Une seule selection par match, tous tableaux
+    # confondus » est une contrainte qui ne tombe pas.
+    principaux: set[int] = set()
+    exploratoire = False
 
     for line in (raw or "").splitlines():
+        # Le titre de la section fait basculer la lecture, et **remet l'entete a
+        # zero** : le second tableau porte le sien, et le manquer ferait lire sa
+        # ligne d'en-tete comme une selection.
+        if EXPLORATORY_HEAD.search(_fold(line)):
+            exploratoire, columns = True, None
+            continue
         cells = _cells(line)
         if cells is None:
             continue
@@ -608,11 +641,39 @@ def parse_table(
         if not values["market"] and not values["selection"]:
             continue
 
-        index += 1
         found = None
         if values["match"]:
             found = anchor(values["match"], rows) or anchor(values["match"], nearby or [])
         event_id = found.event_id if found else None
+        tier = _resolve_tier(values["tier"], tiers)
+
+        # **Deux refus propres a la section C-bis**, et ils ne se rattrapent pas
+        # a la main : une ligne en palier sur n'y a rien a faire, et un match
+        # deja retenu en section C ne peut pas reparaitre. Elles ne sont pas
+        # proposees du tout — les corriger sur place reviendrait a inventer une
+        # decision que le rendu n'a pas prise — mais elles sont **journalisees**.
+        if exploratoire and tier and tier not in hauts:
+            _lost(
+                preview,
+                EXPLORATOIRE,
+                SCHEMA_INVALID,
+                f"Ligne exploratoire en palier sûr ({values['tier'] or tier}) : ce tableau "
+                "est réservé aux paliers hauts, elle n'est pas importée.",
+                payload=line.strip(),
+            )
+            continue
+        if exploratoire and event_id is not None and event_id in principaux:
+            _lost(
+                preview,
+                EXPLORATOIRE,
+                DUPLICATE,
+                f"Ligne exploratoire sur « {values['match']} », déjà retenu en section C : "
+                "une seule sélection par match, tous tableaux confondus.",
+                payload=line.strip(),
+            )
+            continue
+
+        index += 1
         signature = _signature(event_id, values["market"], values["selection"])
         preview.picks.append(
             ParsedPick(
@@ -624,8 +685,9 @@ def parse_table(
                 selection=values["selection"],
                 price=_price(values["price"]),
                 price_source=_price_source(values["price"]),
-                tier=_resolve_tier(values["tier"], tiers),
+                tier=tier,
                 tier_text=values["tier"],
+                exploratory=exploratoire,
                 confidence=_confidence(values["confidence"]),
                 angle=_angle(values["angle"]),
                 source=_source(values["source"]),
@@ -639,6 +701,8 @@ def parse_table(
         seen.add(signature)
         if event_id is not None:
             events.add(event_id)
+            if not exploratoire:
+                principaux.add(event_id)
 
     if columns is None:
         preview.ignored.append(

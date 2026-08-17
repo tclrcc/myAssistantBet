@@ -1530,10 +1530,15 @@ def tier_offers(settings: Settings | None = None) -> list[TierOffer]:
         produits = conn.execute(
             "SELECT session_id, tier, COUNT(*) AS n FROM picks GROUP BY session_id, tier"
         ).fetchall()
+        # **Seules les sessions dont le marche a ete fige**, et c'est
+        # indispensable : `prompt_odds` date de la migration 033, et les sessions
+        # anterieures n'ont aucun releve. Les compter ferait lire « bande jamais
+        # atteinte » sur neuf sessions dont on ne sait simplement rien — le
+        # defaut exact que ce releve existe pour supprimer.
         sessions = [
             int(row["id"])
             for row in conn.execute(
-                "SELECT DISTINCT session_id AS id FROM prompts ORDER BY session_id"
+                "SELECT DISTINCT session_id AS id FROM prompt_odds ORDER BY session_id"
             )
         ]
 
@@ -1654,6 +1659,10 @@ def add_pick(
     claim: str = "",
     opened: bool | None = None,
     override_cause: str = "",
+    #: La ligne vient de la section **C-bis**, ou l'exigence d'un fait date
+    #: tombe. **Comptee a part de bout en bout** : melanger les deux populations
+    #: detruirait la comparaison que cette section existe pour rendre possible.
+    exploratory: bool = False,
     played: bool = False,
     result: str = "pending",
     settings: Settings | None = None,
@@ -1847,8 +1856,9 @@ def add_pick(
             "                   late_reason, confidence_computed, claim_raw_json, "
             "                   gap_touches_factor, distinct_publishers, "
             "                   confidence_claimed, research_overridden, "
-            "                   research_override_cause, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "                   research_override_cause, exploratoire, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+            "        ?, ?)",
             (
                 session_id,
                 attached,
@@ -1874,6 +1884,7 @@ def add_pick(
                 claimed if overridden else None,
                 _flag(None if opened is None else not opened),
                 cause,
+                1 if exploratory else 0,
                 utcnow(),
             ),
         )
@@ -2118,7 +2129,7 @@ def stats(settings: Settings | None = None) -> Stats:
             "       k.price_source, k.price_real, k.tier_real, s.key AS sport_key FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
-            "WHERE k.played = 1"
+            "WHERE k.played = 1 AND k.exploratoire = 0"
         ).fetchall()
 
     # **Plus aucune mise a l'ecart**, et c'est la decision du 17/08/2026 : le
@@ -3300,6 +3311,120 @@ def _count_vacancy(block: Mix, rows: list[Any], column: str) -> None:
         entry.absent_sessions = block.sessions - len(sessions.get(entry.key, set()))
 
 
+@dataclass
+class Exploratory:
+    """Ce que valent les selections **produites sans fait date**.
+
+    **Un taux faible y est le resultat attendu, pas un defaut de la methode.**
+    Cette population existe pour mesurer ce que vaut une lecture seule sur les
+    cotes hautes, pas pour etre bonne — et c'est ecrit sur la page, pas seulement
+    ici.
+
+    Elle est **entierement separee** de la population principale, et c'est tout
+    l'objet du chantier : la comparaison qui donne son sens a la page — une
+    selection adossee a un fait date tient-elle mieux qu'une lecture — devient
+    definitivement sans reponse si les deux se melangent dans les bandes hautes.
+    """
+
+    settled: int = 0
+    won: int = 0
+    pending: int = 0
+    by_tier: list[RateRow] = field(default_factory=list)
+    residual: Residual = field(default_factory=lambda: Residual(observed=0, implied=[]))
+    minimum_rows: int = ANALYSIS_MIN_ROWS
+    #: `(palier, libelle, principale, exploratoire)` la ou les **deux**
+    #: populations comptent assez pour etre comparees. Vide autrement, et c'est
+    #: le cas ordinaire au depart — la comparaison est la mesure que toute cette
+    #: construction existe pour rendre possible, pas une decoration.
+    comparisons: list[tuple[str, str, RateRow, RateRow]] = field(default_factory=list)
+
+    @property
+    def empty(self) -> bool:
+        return self.settled == 0 and self.pending == 0
+
+    @property
+    def interval(self) -> tuple[float, float] | None:
+        return wilson(self.won, self.settled)
+
+
+#: Effectif qu'il faut **dans chacune des deux populations, sur une meme bande**,
+#: pour que leur comparaison se rende. En dessous, elle opposerait deux nombres
+#: dont aucun ne veut rien dire — exactement ce que la page a mis huit lots a
+#: cesser de faire.
+COMPARISON_MIN = 20
+
+
+def exploratory(settings: Settings | None = None) -> Exploratory:
+    """Les selections de la section C-bis, mesurees a part.
+
+    Le filtre d'anteriorite s'y applique comme ailleurs : une selection saisie
+    apres le coup d'envoi porte un prix saisi apres le coup d'envoi, et le
+    residu n'aurait plus de sens. C'est la **seule** regle que les deux
+    populations partagent.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        tier_labels = _tier_labels(conn)
+        tier_order = [row["key"] for row in conn.execute("SELECT key FROM tiers ORDER BY position")]
+        rows = conn.execute(
+            "SELECT k.id, k.tier, k.tier_real, k.result, k.price, k.event_id, k.created_at, "
+            "       e.commence_time FROM picks k "
+            "LEFT JOIN events e ON e.id = k.event_id "
+            "WHERE k.exploratoire = 1"
+        ).fetchall()
+
+    report = Exploratory(minimum_rows=threshold_value("feedback_min_rows", settings))
+    lignes = [row for row in rows if not _late(row)]
+    report.pending = sum(1 for row in lignes if str(row["result"]) not in ("win", "loss"))
+    tranchees = [row for row in lignes if str(row["result"]) in ("win", "loss")]
+    report.settled = len(tranchees)
+    report.won = sum(1 for row in tranchees if str(row["result"]) == "win")
+    report.by_tier = _rate_tally(
+        [
+            (_tier_of(row), tier_labels.get(_tier_of(row), _tier_of(row)), str(row["result"]), row)
+            for row in lignes
+        ],
+        readable=report.minimum_rows,
+    )
+    report.by_tier.sort(
+        key=lambda item: tier_order.index(item.key) if item.key in tier_order else 99
+    )
+    implicites = [
+        1.0 / float(row["price"]) for row in tranchees if row["price"] and float(row["price"]) > 1.0
+    ]
+    report.residual = Residual(
+        observed=sum(
+            1
+            for row in tranchees
+            if str(row["result"]) == "win" and row["price"] and float(row["price"]) > 1.0
+        ),
+        implied=implicites,
+    )
+    return report
+
+
+def compare_populations(
+    principale: list[RateRow],
+    exploratoire: list[RateRow],
+    minimum: int = COMPARISON_MIN,
+) -> list[tuple[str, str, RateRow, RateRow]]:
+    """Fait date contre lecture, **a palier fixe**.
+
+    C'est la mesure que toute la section C-bis existe pour rendre possible, et
+    elle ne se rend qu'a **partir de vingt selections tranchees de chaque cote,
+    dans une meme bande** : en dessous elle opposerait deux nombres dont aucun ne
+    veut rien dire. Le palier est fixe parce que sans lui la comparaison opposerait
+    des populations qui ne jouent pas aux memes prix — la faute exacte que la
+    page a mis huit lots a cesser de commettre.
+    """
+    droite = {row.key: row for row in exploratoire}
+    return [
+        (row.key, row.label, row, droite[row.key])
+        for row in principale
+        if row.key in droite and row.settled >= minimum and droite[row.key].settled >= minimum
+    ]
+
+
 def labelling(settings: Settings | None = None) -> list[Mix]:
     """Comment les selections sont etiquetees, sans regarder ce qu'elles valent.
 
@@ -3312,7 +3437,12 @@ def labelling(settings: Settings | None = None) -> list[Mix]:
     with connect(settings) as conn:
         tier_labels = _tier_labels(conn)
         tier_order = [row["key"] for row in conn.execute("SELECT key FROM tiers ORDER BY position")]
-        rows = conn.execute("SELECT session_id, tier, confidence FROM picks").fetchall()
+        # Population principale seule, comme partout : une selection
+        # exploratoire est produite sans fait date et par un autre circuit, donc
+        # elle ne decrit pas la meme facon d'etiqueter.
+        rows = conn.execute(
+            "SELECT session_id, tier, confidence FROM picks WHERE exploratoire = 0"
+        ).fetchall()
 
     # Aucune selection : aucune echelle a decrire. Rendre deux echelles a zero
     # ferait lire « je n'emploie aucun niveau » la ou il n'y a rien du tout.
@@ -3848,13 +3978,20 @@ def analysis(settings: Settings | None = None) -> Analysis:
             "       s.key AS sport_key, c.category FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
-            "LEFT JOIN competitions c ON c.id = e.competition_id"
+            "LEFT JOIN competitions c ON c.id = e.competition_id "
+            # **La population principale, et elle seule.** Les selections
+            # exploratoires sont produites sans fait date, par construction : les
+            # melanger detruirait la comparaison que cette section existe pour
+            # rendre possible — une selection adossee a un fait date tient-elle
+            # mieux qu'une lecture. Elles ont leur propre bloc.
+            "WHERE k.exploratoire = 0"
         ).fetchall()
-        # Le temoin : compte direct, sans jointure ni filtre. C'est lui qui
-        # rend le denominateur verifiable — une regression de jointure le
-        # laisserait intact et ferait bouger tout le reste.
+        # Le temoin : compte direct, sans jointure. C'est lui qui rend le
+        # denominateur verifiable — une regression de jointure le laisserait
+        # intact et ferait bouger tout le reste. Il porte le meme filtre de
+        # population que les lignes, sans quoi l'addition ne fermerait plus.
         recorded = conn.execute(
-            "SELECT COUNT(*) AS n FROM picks WHERE result IN ('win', 'loss')"
+            "SELECT COUNT(*) AS n FROM picks WHERE result IN ('win', 'loss') AND exploratoire = 0"
         ).fetchone()["n"]
         sessions = conn.execute(
             "SELECT s.id, s.label, s.created_at, "
@@ -4767,7 +4904,7 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
             "LEFT JOIN competitions c ON c.id = e.competition_id "
-            "WHERE k.result IN ('win', 'loss') "
+            "WHERE k.result IN ('win', 'loss') AND k.exploratoire = 0 "
             + ("AND k.played = 1 " if played_only else "")
             + "ORDER BY k.created_at DESC, k.id DESC LIMIT ?",
             (FEEDBACK_WINDOW,),
@@ -4778,8 +4915,8 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
     # seule seance de travail.
     with connect(settings) as conn:
         recorded = conn.execute(
-            "SELECT COUNT(*) AS n FROM picks WHERE result IN ('win', 'loss')"
-            + (" AND played = 1" if played_only else "")
+            "SELECT COUNT(*) AS n FROM picks WHERE result IN ('win', 'loss') "
+            "AND exploratoire = 0" + (" AND played = 1" if played_only else "")
         ).fetchone()["n"]
 
     minimum, minimum_days = reach(settings)

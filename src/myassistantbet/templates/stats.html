@@ -27,7 +27,8 @@
    alors que la repartition des confiances, elle, etait complete. Le score en
    sets y entre pour la meme raison : il ne lit aucun pick, seulement des scores
    annonces et constates. #}
-{% if analysis.empty and stats.empty and not labelling and set_scores.empty %}
+{% if analysis.empty and stats.empty and not labelling and set_scores.empty
+      and exploratory.empty and combos.empty %}
   <p class="empty">
     Rien à mesurer pour l'instant. Saisis le résultat de quelques sélections —
     y compris de celles que tu n'as pas jouées, elles disent si l'analyse voyait juste.
@@ -46,6 +47,7 @@
      ('analyse', 'Ce que ces sélections ont produit', not analysis.empty),
      ('tri', 'Ce que tu écartes', analysis.by_session | length > 0),
      ('sets', 'Le score en sets', not set_scores.empty),
+     ('exploratoires', 'Sélections exploratoires', not exploratory.empty),
      ('combines', 'Les combinés proposés', not combos.empty),
      ('etiquettes', 'Comment tu étiquettes', labelling | length > 0),
      ('paris', 'Ce que valent tes paris', true),
@@ -1236,6 +1238,63 @@
     premier joueur nommé.
     {{ set_scores.pending }} score(s) annoncé(s), aucun résultat saisi pour l'instant.
     Ils se renseignent sur la feuille de session, au même endroit que les paris.
+  </p>
+  {% endif %}
+</section>
+{% endif %}
+
+{# **Le second circuit.** Les paliers hauts sont soumis, en section C, à
+   l'exigence d'un fait nommé et daté ; la section C-bis est le seul endroit où
+   cette exigence tombe. L'exigence n'est **pas** supprimée pour autant : la
+   retirer perdrait la comparaison qui donne son sens à la page — une sélection
+   adossée à un fait daté tient-elle mieux qu'une lecture — et si les deux
+   populations se mélangent dans les bandes hautes, cette question devient
+   définitivement sans réponse.
+
+   Ce bloc ne partage donc **aucun** chiffre avec les précédents. #}
+{% if not exploratory.empty %}
+<section class="stats-block" id="exploratoires">
+  <div class="block-head">
+    <h2>Sélections exploratoires</h2>
+    <span class="muted small">
+      produites sans fait daté — comptées à part de tout le reste
+    </span>
+  </div>
+
+  <p class="block-note is-flag">
+    <strong>Ces sélections sont produites sans fait daté, par construction.</strong>
+    Un taux faible y est le résultat attendu, pas un défaut de la méthode : cette
+    population existe pour mesurer ce que vaut une lecture seule sur les cotes
+    hautes, pas pour être bonne.
+  </p>
+
+  <p class="block-note">
+    <strong>{{ exploratory.won }} sur {{ exploratory.settled }}</strong> tranchée(s)
+    {%- if exploratory.interval %} · intervalle
+    [{{ '%.0f' | format(exploratory.interval[0] * 100) }} –
+    {{ '%.0f' | format(exploratory.interval[1] * 100) }}]{% endif %}
+    {%- if exploratory.pending %} · {{ exploratory.pending }} en attente{% endif %}.
+    Résidu au prix : {{ '%.1f' | format(exploratory.residual.gap) }} pour
+    {{ '%.1f' | format(exploratory.residual.expected) }} payée(s).
+  </p>
+
+  {% if exploratory.by_tier %}
+  <div class="charts is-single">
+    {{ card("Par palier", exploratory.by_tier) }}
+  </div>
+  {% endif %}
+
+  {# **La mesure que toute cette construction existe pour rendre possible.**
+     Elle ne se rend qu'à partir de vingt sélections tranchées de chaque côté
+     dans une même bande : en dessous elle opposerait deux nombres dont aucun ne
+     veut rien dire. #}
+  {% if exploratory.comparisons %}
+  <p class="block-note">
+    Fait daté contre lecture, à palier fixé :
+    {% for _, libelle, principale, exploratoire in exploratory.comparisons %}
+    <strong>{{ libelle }}</strong> — {{ principale.won }}/{{ principale.settled }}
+    contre {{ exploratoire.won }}/{{ exploratoire.settled }}{% if not loop.last %} · {% endif %}
+    {%- endfor %}.
   </p>
   {% endif %}
 </section>

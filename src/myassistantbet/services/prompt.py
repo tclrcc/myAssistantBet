@@ -319,6 +319,12 @@ class TierScope:
     highest: Price | None = None
     present: list[Tier] = field(default_factory=list)
     absent: list[Tier] = field(default_factory=list)
+    #: Les paliers **hauts** que ce lot propose : ceux qui sortent des deux
+    #: bandes les plus sures, donc ceux que la section C soumet a l'exigence d'un
+    #: fait date. La frontiere est celle du gabarit et elle est ecrite **une
+    #: fois** (`QUOTA_FLOOR_TIERS`) — la recopier cote gabarit l'aurait fait
+    #: diverger au premier reglage de bande.
+    high: list[Tier] = field(default_factory=list)
 
     @property
     def known(self) -> bool:
@@ -379,11 +385,16 @@ def tier_scope(tiers: list[Tier], events: Sequence[RenderableEvent]) -> TierScop
         return TierScope()
     present = reachable(tiers, prices)
     keys = {tier.key for tier in present}
+    # Les deux plus surs se comptent sur l'ordre des **bandes reglees**, jamais
+    # sur les seuls paliers presents : un lot sans favori ferait sinon passer
+    # ULTRA FUN pour un palier sur.
+    surs = {tier.key for tier in tiers[:QUOTA_FLOOR_TIERS]}
     return TierScope(
         lowest=prices[0],
         highest=prices[-1],
         present=present,
         absent=[tier for tier in tiers if tier.quota_max > 0 and tier.key not in keys],
+        high=[tier for tier in present if tier.key not in surs],
     )
 
 

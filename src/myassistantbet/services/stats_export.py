@@ -77,6 +77,10 @@ SETS_BLOCK = "Le score en sets annoncé"
 #: aucune section, si bien qu'un combine se lisait sur la feuille de sa session et
 #: nulle part ailleurs.
 COMBOS_BLOCK = "Les combinés proposés"
+#: Le second circuit, ou l'exigence de fait date tombe. **Compte a part de bout
+#: en bout** : melanger les deux populations detruirait la comparaison que la
+#: section existe pour rendre possible.
+EXPLORATORY_BLOCK = "Sélections exploratoires"
 LABELLING_BLOCK = "Comment tu étiquettes"
 BETS_BLOCK = "Ce que valent tes paris"
 
@@ -103,6 +107,8 @@ SECTIONS: tuple[Section, ...] = (
     Section("", SELECTION_BLOCK),
     Section(SELECTION_BLOCK, "Par session"),
     Section("", SETS_BLOCK),
+    Section("", EXPLORATORY_BLOCK),
+    Section(EXPLORATORY_BLOCK, "Par palier"),
     Section("", COMBOS_BLOCK),
     Section("", LABELLING_BLOCK),
     Section(LABELLING_BLOCK, "Par confiance annoncée"),
@@ -143,6 +149,9 @@ class StatsReport:
     #: bande atteinte et jamais employee, selection ecartee par le quota — et
     #: elles n'appellent pas la meme conclusion.
     tier_usage: list[history_service.TierUsage] = field(default_factory=list)
+    #: Le second circuit — les selections produites **sans fait date**, par la
+    #: section C-bis. Un taux faible y est le resultat attendu.
+    exploratory: history_service.Exploratory = field(default_factory=history_service.Exploratory)
     set_score_options: list[str] = field(default_factory=list)
     set_score_matrix: list[tuple[str, list[int], int]] = field(default_factory=list)
     #: Point de comparaison du residu, pas une estimation de l'overround reel.
@@ -171,6 +180,7 @@ class StatsReport:
             "ingestion": self.ingestion,
             "combos": self.combos,
             "tier_usage": self.tier_usage,
+            "exploratory": self.exploratory,
         }
 
     @property
@@ -182,6 +192,7 @@ class StatsReport:
             and not self.labelling
             and self.set_scores.empty
             and self.combos.empty
+            and self.exploratory.empty
         )
 
     @property
@@ -242,6 +253,11 @@ class StatsReport:
             (Section("", SELECTION_BLOCK), bool(analysis.by_session)),
             (Section(SELECTION_BLOCK, "Par session"), bool(analysis.by_session)),
             (Section("", SETS_BLOCK), not self.set_scores.empty),
+            (Section("", EXPLORATORY_BLOCK), not self.exploratory.empty),
+            (
+                Section(EXPLORATORY_BLOCK, "Par palier"),
+                bool(self.exploratory.by_tier),
+            ),
             (Section("", COMBOS_BLOCK), not self.combos.empty),
             (Section("", LABELLING_BLOCK), bool(self.labelling)),
             *((Section(LABELLING_BLOCK, f"Par {block.label}"), True) for block in self.labelling),
@@ -410,8 +426,17 @@ def report(settings: Settings | None = None) -> StatsReport:
     # `report()` du module des scores en sets etait appele deux fois par la
     # route : la matrice se derive du meme releve, elle ne se releve pas a part.
     sets = set_scores_service.report(settings)
+    principale = history_service.analysis(settings)
+    # **La comparaison se cable ici**, seul endroit qui voit les deux
+    # populations : « fait date contre lecture, a palier fixe » est la mesure que
+    # toute la section C-bis existe pour rendre possible, et la calculer dans
+    # l'un des deux agregats l'aurait fait dependre de sa propre population.
+    exploratoire = history_service.exploratory(settings)
+    exploratoire.comparisons = history_service.compare_populations(
+        principale.by_tier, exploratoire.by_tier
+    )
     return StatsReport(
-        analysis=history_service.analysis(settings),
+        analysis=principale,
         labelling=history_service.labelling(settings),
         stats=history_service.stats(settings),
         coupon_rates=coupons_service.rates(settings),
@@ -421,6 +446,7 @@ def report(settings: Settings | None = None) -> StatsReport:
         ingestion=ingestion_service.summary(settings),
         combos=combos_service.summary(settings),
         tier_usage=history_service.tier_usage(settings),
+        exploratory=exploratoire,
         generated_at=datetime.now(ZoneInfo(settings.tz)),
     )
 
@@ -579,6 +605,14 @@ def as_json(found: StatsReport) -> dict[str, Any]:
         },
         # Les combines proposes. **Aucun taux** : au taux de jambe constate, un
         # combine de dix jambes passe une fois sur 280.
+        "exploratory": {
+            "settled": found.exploratory.settled,
+            "won": found.exploratory.won,
+            "pending": found.exploratory.pending,
+            "interval": (list(found.exploratory.interval) if found.exploratory.interval else None),
+            "residual": _residual(found.exploratory.residual),
+            "by_tier": [_rate(row) for row in found.exploratory.by_tier],
+        },
         "combos": [
             {
                 "id": combo.id,
@@ -1175,6 +1209,37 @@ def as_markdown(found: StatsReport) -> str:
                 out.append(f"| {annonce} | {cases} | {total} |")
         else:
             out.append(f"{sets.pending} score(s) annoncé(s), aucun résultat saisi pour l'instant.")
+
+    if not found.exploratory.empty:
+        lot = found.exploratory
+        out += [
+            "",
+            f"## {EXPLORATORY_BLOCK}",
+            "",
+            "**Ces sélections sont produites sans fait daté, par construction.** Un taux "
+            "faible y est le résultat attendu, pas un défaut de la méthode : cette "
+            "population existe pour mesurer ce que vaut une lecture seule sur les cotes "
+            "hautes, pas pour être bonne. Elle n'entre dans aucun autre chiffre de ce "
+            "fichier.",
+            "",
+            f"- **Tranchées** : {lot.won} sur {lot.settled}"
+            + (f" · {lot.pending} en attente" if lot.pending else "")
+            + (
+                f" · intervalle [{lot.interval[0] * 100:.0f} – {lot.interval[1] * 100:.0f}]"
+                if lot.interval
+                else ""
+            ),
+            f"- **Résidu au prix** : {_decimal(lot.residual.gap)} pour "
+            f"{_decimal(lot.residual.expected)} payée(s)",
+        ]
+        out += _card(found, EXPLORATORY_BLOCK, "Par palier", lot.by_tier)
+        for _, libelle, principale, exploratoire in lot.comparisons:
+            out += [
+                "",
+                f"**{libelle} — fait daté contre lecture** : "
+                f"{principale.won}/{principale.settled} contre "
+                f"{exploratoire.won}/{exploratoire.settled}.",
+            ]
 
     if not found.combos.empty:
         out += [

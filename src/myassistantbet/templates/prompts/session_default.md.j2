@@ -648,7 +648,9 @@ et daté de la section A ne porte de sélection au-dessus de la borne haute du
 second palier, laisse-les vides et écris-le, en nommant ce qu'il aurait fallu
 trouver — « aucun retour de blessure daté, aucun enjeu asymétrique, aucune
 charge anormale sur ce lot ». Un palier vide est un résultat ; un palier vide
-non commenté est un oubli.
+non commenté est un oubli. Un palier haut vide en section C se commente comme
+d'habitude ; le fait qu'il soit rempli en section C-bis ne dispense pas de ce
+commentaire.
 {% if reference_notes or common_reference %}
 **Prix à relever avant de miser.** Ces marchés n'ont aucun prix du bookmaker
 principal : leur cote situe le marché, elle n'est pas celle qu'on obtiendra. La
@@ -663,6 +665,31 @@ lot ; seules les exceptions sont listées ci-dessous.
 {% for note in reference_notes %}
   · {{ note.line }}
 {%- endfor %}
+{% endif %}
+{% if tier_scope.high %}### C-bis. Sélections exploratoires
+
+Les paliers {% for tier in tier_scope.high %}{{ tier.label }}{% if not loop.last %}, {% endif %}{% endfor %} restent soumis, en section C, à
+l'exigence d'un fait nommé et daté. Cette section-ci est le seul endroit où
+cette exigence tombe.
+
+Produis ici **au plus une sélection par palier haut** — au plus une {% for tier in tier_scope.high %}{{ tier.label }}{% if not loop.last %}, une {% endif %}{% endfor %} —
+uniquement parmi les paliers que ce lot propose, sur les matchs que tu n'as pas
+retenus en section C. Une lecture des blocs seuls suffit : c'est l'objet de
+cette section. Si aucune cote du lot n'atteint une bande, ne la remplis pas et
+ne la commente pas.
+
+Même tableau que la section C, mêmes colonnes, mêmes règles de recopie de la
+cote et de l'affiche. `Source` y vaudra le plus souvent `lecture` et `Conf/5`
+vaudra 1 ou 2 : c'est attendu, et le déclarer franchement est tout l'intérêt de
+la section.
+
+Contraintes qui ne tombent pas : **une seule sélection par match, tous tableaux
+confondus** — un match retenu en section C ne peut pas reparaître ici. Les
+lignes en quart restent non sélectionnables. Aucune sélection de cette section
+n'entre dans un combiné.
+
+Ces sélections ne remplacent aucune ligne de la section C et ne comblent aucun
+palier vide de la section C : les deux tableaux sont comptés séparément.
 {% endif %}
 ### D. Combinés
 {% if event_blocks | length >= combo_min_lot %}- Un combiné « solide » : **{{ combo_court_jambes }} jambes**, cote cible **{{ combo_court_cote }}** — court et concentré
