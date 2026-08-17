@@ -26,11 +26,20 @@ from myassistantbet.main import app
 from myassistantbet.services import picks_import
 from myassistantbet.services.confidence import (
     OPEN_ABSENT,
+    OPEN_EMPTY,
     OPEN_MALFORMED,
     OPEN_READ,
+    OVERRIDE_AUCUN_DOSSIER,
+    OVERRIDE_HORS_DOSSIERS,
+    OVERRIDE_LIGNE_ABSENTE,
+    OVERRIDE_LIGNE_ILLISIBLE,
+    OVERRIDE_REPERES,
+    OVERRIDE_SANS_FAIT,
     Claim,
     ClaimError,
     Fact,
+    Opened,
+    is_collection_fault,
     parse,
     publisher_of,
     read_blocks,
@@ -783,6 +792,78 @@ def test_sans_ligne_de_dossiers_tout_part_en_lecture(migrated: Settings) -> None
 
     assert [pick.opened for pick in preview.picks] == [False, False]
     assert any("dossiers_ouverts" in note for note in preview.notes)
+    # Et **pourquoi** : le drapeau seul confond une ligne jamais collee avec un
+    # match hors de la liste, qui n'appellent pas le meme geste.
+    assert [pick.override_cause for pick in preview.picks] == [
+        OVERRIDE_LIGNE_ABSENTE,
+        OVERRIDE_LIGNE_ABSENTE,
+    ]
+
+
+def test_la_cause_distingue_le_hors_liste_de_la_ligne_absente(migrated: Settings) -> None:
+    """Les deux ecrasent, et une seule dit quelque chose du modele.
+
+    C'est le defaut mesure le 14/08/2026 : les 16 selections ecrasees de la base
+    se lisaient comme « aucune ne portait sur un dossier ouvert » alors que la
+    ligne n'avait jamais ete collee.
+    """
+    session_id, _ = _lot_de_deux(migrated)
+
+    lue = picks_import.build_preview(
+        session_id, _avec_dossiers(_avec_blocs("M1", "M2"), "dossiers_ouverts: [M1]"), migrated
+    )
+    assert [pick.override_cause for pick in lue.picks] == ["", OVERRIDE_HORS_DOSSIERS]
+    assert not is_collection_fault(lue.picks[1].override_cause), "observation sur le modele"
+
+    vide = picks_import.build_preview(
+        session_id, _avec_dossiers(_avec_blocs("M1", "M2"), "dossiers_ouverts: []"), migrated
+    )
+    assert [pick.override_cause for pick in vide.picks] == [OVERRIDE_AUCUN_DOSSIER] * 2
+    assert vide.opened.state == OPEN_EMPTY
+    assert "aucun dossier déclaré" in vide.readout
+
+
+def test_la_cause_traverse_le_formulaire_et_arrive_en_base(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """**Le service et sa surface se livrent ensemble.**
+
+    Un test qui appelle `add_pick` directement passerait alors meme que le
+    formulaire ne transmet pas le champ — c'est exactement ainsi que le motif de
+    saisie tardive est reste sans surface pendant deux jours, et que les blocs
+    ```conf ont ete produits neuf lots sans jamais etre colles. Celui-ci poste le
+    formulaire et relit la base.
+    """
+    session_id, _ = _lot_de_deux(isolated_settings)
+
+    # L'apercu doit **emettre** le champ cache : sans lui la cause n'a aucun
+    # chemin pour revenir, et l'ecrasement redevient muet.
+    apercu = client.post(
+        f"/history/{session_id}/picks/preview", data={"table": _avec_blocs("M1", "M2")}
+    )
+    # A plat : le retour a la ligne entre deux attributs est une largeur de
+    # colonne, pas une regle, et un test qui casse dessus n'apprend rien.
+    rendu = " ".join(apercu.text.split())
+    assert f'name="override_cause_1" value="{OVERRIDE_LIGNE_ABSENTE}"' in rendu
+
+    client.post(
+        f"/history/{session_id}/picks/import",
+        data={
+            "keep_1": "1",
+            "market_1": "1N2",
+            "selection_1": "Lyon",
+            "tier_1": "safe",
+            "opened_1": "0",
+            "override_cause_1": OVERRIDE_LIGNE_ABSENTE,
+        },
+    )
+
+    ligne = db.query_one(
+        "SELECT research_overridden, research_override_cause FROM picks",
+        settings=isolated_settings,
+    )
+    assert ligne["research_overridden"] == 1
+    assert ligne["research_override_cause"] == OVERRIDE_LIGNE_ABSENTE
 
 
 def test_une_liste_vide_est_une_declaration_et_non_un_manque(migrated: Settings) -> None:
@@ -819,6 +900,99 @@ def test_la_ligne_de_dossiers_ne_casse_pas_le_compte_des_blocs(migrated: Setting
 
     assert [pick.claim is not None for pick in preview.picks] == [True, True]
     assert [pick.opened for pick in preview.picks] == [True, False]
+
+
+def test_l_ecrasement_enregistre_sa_cause(migrated: Settings) -> None:
+    """**Un cran 1 sans sa cause ne mesure rien.**
+
+    Mesure du 14/08/2026 : les 16 selections ecrasees de la base viennent toutes
+    d'une ligne `dossiers_ouverts` jamais collee, et se lisaient comme « aucune
+    selection ne portait sur un dossier ouvert » — une observation sur le modele.
+    Les deux situations donnent le meme `research_overridden = 1` et n'appellent
+    pas le meme geste : l'une se repare en recollant, l'autre se constate.
+    """
+    session_id = _session(migrated)
+    for cause in (OVERRIDE_LIGNE_ABSENTE, OVERRIDE_HORS_DOSSIERS):
+        add_pick(
+            session_id,
+            "safe",
+            "1N2",
+            f"Lyon {cause}",
+            confidence="4",
+            source_level="1",
+            claim=_bloc(source_level=1, faits=[_fait("bbc.co.uk")], manque_touche_facteur=False),
+            opened=False,
+            override_cause=cause,
+            settings=migrated,
+        )
+
+    lignes = db.query(
+        "SELECT research_overridden, research_override_cause, confidence_computed "
+        "FROM picks ORDER BY id",
+        settings=migrated,
+    )
+    # Le drapeau ne les separe pas — c'est tout le probleme — et la cause si.
+    assert [ligne["research_overridden"] for ligne in lignes] == [1, 1]
+    assert [ligne["confidence_computed"] for ligne in lignes] == [1, 1]
+    assert [ligne["research_override_cause"] for ligne in lignes] == [
+        OVERRIDE_LIGNE_ABSENTE,
+        OVERRIDE_HORS_DOSSIERS,
+    ]
+    # Et elles ne se comptent pas ensemble : la premiere est une panne de
+    # transmission, la seconde une observation sur ce que l'analyse a fait.
+    assert is_collection_fault(OVERRIDE_LIGNE_ABSENTE)
+    assert not is_collection_fault(OVERRIDE_HORS_DOSSIERS)
+
+
+def test_la_cause_se_deduit_de_l_etat_de_la_ligne(migrated: Settings) -> None:
+    """Chaque etat de la ligne donne sa cause, et `hors_dossiers` est la seule
+    qui se decide selection par selection — c'est le seul cas ou la liste a
+    vraiment servi."""
+    assert Opened(state=OPEN_ABSENT).cause(resolved=False) == OVERRIDE_LIGNE_ABSENTE
+    assert Opened(state=OPEN_MALFORMED).cause(resolved=False) == OVERRIDE_LIGNE_ILLISIBLE
+    assert Opened(state=OPEN_EMPTY).cause(resolved=False) == OVERRIDE_AUCUN_DOSSIER
+    # Renseignee mais rattachee a aucun prompt : le collage a bien porte la
+    # ligne, c'est le rapprochement qui a echoue. Defaut de collecte, pas
+    # observation — sans quoi un appariement rate se lirait comme un modele qui
+    # n'a rien ouvert.
+    marks = frozenset({"M1"})
+    assert Opened(marks=marks, state=OPEN_READ).cause(resolved=False) == OVERRIDE_REPERES
+    assert Opened(marks=marks, state=OPEN_READ).cause(resolved=True) == OVERRIDE_HORS_DOSSIERS
+
+    faute = {Opened(state=etat).cause(resolved=False) for etat in (OPEN_ABSENT, OPEN_MALFORMED)}
+    assert all(is_collection_fault(cause) for cause in faute)
+    assert not is_collection_fault(OVERRIDE_AUCUN_DOSSIER), "le modele a repondu"
+
+
+def test_un_dossier_ouvert_sans_fait_porte_sa_propre_cause(migrated: Settings) -> None:
+    """La regle est a sens unique : la presence d'un dossier n'accorde rien.
+
+    Cette cause-la est la seule des six qui dise que la recherche **a eu lieu**
+    et n'a rien donne. Elle ne passe pas par `research_overridden`, qui ne compte
+    que les dossiers non ouverts — et sans elle ce cran 1 se confondrait avec
+    ceux qu'aucune recherche n'a jamais approches.
+    """
+    session_id = _session(migrated)
+    add_pick(
+        session_id,
+        "safe",
+        "1N2",
+        "Lyon",
+        confidence="4",
+        source_level="1",
+        claim=_bloc(source_level=1, faits=[], manque_touche_facteur=False),
+        opened=True,
+        settings=migrated,
+    )
+
+    ligne = db.query_one(
+        "SELECT research_overridden, research_override_cause, confidence_computed FROM picks",
+        settings=migrated,
+    )
+    assert ligne["confidence_computed"] == 1
+    assert not ligne["research_overridden"], "le dossier etait ouvert"
+    assert ligne["research_override_cause"] == OVERRIDE_SANS_FAIT
+    assert not is_collection_fault(OVERRIDE_SANS_FAIT)
 
 
 def test_l_ecrasement_arrive_en_base(migrated: Settings) -> None:
@@ -983,6 +1157,72 @@ def test_la_page_expose_les_overrides_par_session(
     assert "Dossiers non ouverts" in page
 
 
+def test_un_defaut_de_collecte_n_accuse_pas_le_modele(migrated: Settings) -> None:
+    """`Override` impute une **faute au modele** — « elle s'est notee comme si
+    elle avait cherche ». L'imputer sur une ligne `dossiers_ouverts` jamais
+    collee serait faux : on ignore alors si le dossier a ete ouvert, la question
+    n'a pas ete transmise.
+
+    Mesure du 14/08/2026 : 13 des 16 ecrasees de la base declaraient un niveau de
+    source reel, et auraient toutes ete comptees comme de l'inflation.
+    """
+    session_id = _session(migrated)
+    bloc = _bloc(source_level=1, faits=[_fait()], manque_touche_facteur=False)
+    for cause in (OVERRIDE_LIGNE_ABSENTE, OVERRIDE_HORS_DOSSIERS):
+        pick_id = add_pick(
+            session_id,
+            "safe",
+            "1N2",
+            "Lyon",
+            confidence="4",
+            claim=bloc,
+            opened=False,
+            override_cause=cause,
+            settings=migrated,
+        )
+        set_result(pick_id, "win", migrated)
+
+    override = analysis(settings=migrated).override
+
+    assert override.total == 1, "seule celle qui dit quelque chose du modele"
+    assert override.researched == 1, "et elle seule compte comme recherche absente"
+
+
+def test_les_ecrasees_non_transmises_se_comptent_a_part(migrated: Settings) -> None:
+    """**Sinon le compte dit l'inverse de ce qui s'est passe.**
+
+    Sur la session du 14/08/2026 il valait 16 sur 16 et se lisait « l'analyse
+    s'est notee seize fois comme si elle avait cherche » — alors que la ligne
+    `dossiers_ouverts` n'avait jamais ete collee et qu'aucune de ces selections
+    ne dit quoi que ce soit du modele. Un geste, pas un jugement.
+    """
+    session_id = _session(migrated)
+    bloc = _bloc(source_level=1, faits=[_fait()], manque_touche_facteur=False)
+    for cause in (OVERRIDE_LIGNE_ABSENTE, OVERRIDE_LIGNE_ABSENTE, OVERRIDE_HORS_DOSSIERS):
+        add_pick(
+            session_id,
+            "safe",
+            "1N2",
+            "Lyon",
+            confidence="4",
+            claim=bloc,
+            opened=False,
+            override_cause=cause,
+            settings=migrated,
+        )
+
+    ligne = next(
+        row for row in analysis(settings=migrated).by_session if row.session_id == session_id
+    )
+
+    assert ligne.overridden == 1, "seule celle qui dit quelque chose du modele"
+    assert ligne.override_faults == 2, "les deux autres mesurent une transmission"
+    # Leur somme reste le total ecrase : deux comptes qui ne se recouvrent pas
+    # et ne perdent personne.
+    assert ligne.overridden + ligne.override_faults == 3
+    assert ligne.override_line == "1 + 2 non transmise(s)"
+
+
 def test_l_ordre_de_passage_se_lit_dans_le_prompt_archive(migrated: Settings) -> None:
     """La fiche recalculee aujourd'hui ne donnerait plus le meme classement
     qu'au moment de l'analyse : c'est le corps archive qui fait foi."""
@@ -1111,15 +1351,37 @@ def test_une_ligne_illisible_ne_se_confond_pas_avec_une_ligne_absente() -> None:
     dans le lecteur — et leur somme se lirait comme un seul taux.
     """
     assert read_opened("dossiers_ouverts: [M1, M4]").state == OPEN_READ
-    assert read_opened("dossiers_ouverts: []").state == OPEN_READ
+    # **La liste vide porte son propre etat**, et c'etait la moitie du defaut :
+    # elle rendait `lue`, donc se lisait comme une liste renseignee alors qu'elle
+    # envoie tout le lot en lecture. C'est une declaration du modele — il n'a
+    # rien ouvert — et non un collage manquant.
+    assert read_opened("dossiers_ouverts: []").state == OPEN_EMPTY
     # La cle est la, sa valeur ne se relit pas : defaut de lecteur.
     assert read_opened("dossiers_ouverts: M1, M4").state == OPEN_MALFORMED
     assert read_opened("Rien de structure ici.").state == OPEN_ABSENT
-    # Les trois envoient le lot en lecture, et deux d'entre elles le disent
-    # differemment : le message nomme le defaut, pas seulement son effet.
+    # Les quatre etats sont distincts deux a deux : c'est la propriete, et elle
+    # ne tient pas si deux d'entre eux se rejoignent.
+    etats = {
+        read_opened(rendu).state
+        for rendu in (
+            "dossiers_ouverts: [M1, M4]",
+            "dossiers_ouverts: []",
+            "dossiers_ouverts: M1, M4",
+            "Rien de structure ici.",
+        )
+    }
+    assert len(etats) == 4
+
+    # Les trois qui envoient le lot en lecture le disent differemment : le
+    # message nomme le defaut, pas seulement son effet.
     assert not read_opened("dossiers_ouverts: M1").declared
     assert "ne se relit pas" in read_opened("dossiers_ouverts: M1").note
     assert "Aucune ligne" in read_opened("rien").note
+    # Et la ligne vide dit qu'elle **a** ete lue : sans quoi on irait chercher un
+    # collage rate qui n'existe pas.
+    vide = read_opened("dossiers_ouverts: []")
+    assert vide.declared, "la ligne etait bien la"
+    assert "déclaration du modèle" in vide.note
 
 
 def test_l_etat_de_la_ligne_est_journalise(migrated: Settings) -> None:

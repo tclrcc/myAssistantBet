@@ -4116,6 +4116,23 @@ visees et cote cible — et la cible reste une cible, jamais un plancher.
   - `safe_legs_available()` rend ce plafond et la section D l'annonce. Une demande qui le
     depasse se dit — meme defaut que `combo_solo_min_lot` un cran plus loin : reclamer ce
     que le lot ne porte pas fait ecrire que la demande etait insatisfiable.
+  - **Le budget de recherche en fait partie, et le docstring d'origine se trompait de
+    regle.** Il ecartait le budget au motif que `research_capped` ne touche pas les deux
+    paliers surs, « aucun d'eux ne reclamant de dossier » : vrai de la regle de **palier**,
+    et sans effet, parce que ce n'est pas elle qui contraint une jambe. La section D en
+    impose une seconde — aucune jambe sous confiance 3 — et celle-la passe par le dossier :
+    le cran 3 exige un fait date (`Claim.rung` rend 1 des que `reading_only`), et une
+    selection hors des dossiers ouverts est ramenee en lecture. Une jambe suppose donc un
+    dossier ouvert. Le plafond est `min(quotas, lot, budget)`.
+    - **Un docstring faux coute plus qu'un docstring absent** : il fait re-deriver la meme
+      conclusion fausse au lecteur suivant. C'est la raison du correctif, avant le `min()`.
+    - **Et le nombre est lu par le modele.** Un plafond trop haut dans le prompt invite a
+      chercher des jambes qui ne peuvent pas exister — exactement la pression que le reste
+      du gabarit travaille a supprimer. La section D dit donc d'ou il vient.
+    - Il ne mordait sur **aucun** lot au 14/08/2026 — le vivier s'epuise avant, 37 prompts
+      sur 39, maximum 6 jambes produites contre 7 de budget. Mais cette mesure vaut pour un
+      regime ou la ligne `dossiers_ouverts` n'etait jamais collee : porte fermee, pas defaut
+      repare, et elle ne dit rien de ce que le vivier vaudra ensuite.
 - **« >= 100 » est confortable, et ce n'est pas la cote qui contraint.** Sur les six
   sessions offrant dix jambes sures ou plus, le produit des dix meilleures cotes va de 302
   a 1396, mediane 565. Les quatre autres echouent faute de **selections produites** — 5 a 9
@@ -4668,12 +4685,22 @@ Distinct de `fabricated`, qui compte les crans hauts : les deux recouvrent souve
 lignes, mais l'un decrit une note et l'autre un geste, et un cran 3 adosse a un fait invente
 compte ici et pas la-bas.
 
-**Trois etats pour la ligne `dossiers_ouverts`**, la ou un NULL en confondait deux : `lue`,
-`absente`, `illisible`. Le modele qui omet la ligne et le lecteur qui echoue a la relire
-produisent le meme repli — tout le lot en lecture — mais ni la meme cause ni le meme
-correctif, l'un se reprenant dans le gabarit et l'autre dans le lecteur ; leur somme se
-lirait comme un seul taux. Un rendu qui ecrit `dossiers_ouverts: M1, M4` sans crochets
-passait pour une ligne omise, et le gabarit se faisait accuser d'un defaut de lecteur.
+**Quatre etats pour la ligne `dossiers_ouverts`**, la ou un NULL en confondait deux :
+`renseignee`, `vide`, `absente`, `illisible`. Le modele qui omet la ligne et le lecteur qui
+echoue a la relire produisent le meme repli — tout le lot en lecture — mais ni la meme cause
+ni le meme correctif, l'un se reprenant dans le gabarit et l'autre dans le lecteur ; leur
+somme se lirait comme un seul taux. Un rendu qui ecrit `dossiers_ouverts: M1, M4` sans
+crochets passait pour une ligne omise, et le gabarit se faisait accuser d'un defaut de
+lecteur.
+
+- **`vide` s'est ajoute a la migration 049, et son absence etait la moitie du defaut** :
+  `dossiers_ouverts: []` rendait `lue`, donc se lisait comme une liste renseignee. C'est
+  pourtant une **declaration legitime** — le modele n'a rien ouvert, le gabarit l'autorise —
+  quand une ligne absente est un collage rate. Les deux forcent tout le lot en lecture.
+- **Toute valeur produite par `read_opened` doit figurer dans `OPEN_STATES`**, sinon elle
+  s'ecrit NULL et l'etat disparait sans un mot. Le releve d'apercu nomme les quatre un par
+  un et dit « etat inconnu » pour le reste : un cinquieme etat qui retomberait dans
+  « absente » reproduirait exactement le defaut que ce releve existe pour rendre visible.
 
 **Date de bascule : 14/08/2026, et aucun recalcul retroactif n'est possible.** Les neuf
 sessions de la base portent `open_dossiers` a NULL — la colonne date de la veille et aucune
@@ -4685,6 +4712,53 @@ date, comme celle de `lecture` l'a fait pour l'EFL Cup.
 **Attendu, et ce n'est pas une regression** : `lecture` est le cas ordinaire selon le
 preambule, et la confiance 1 — absente des 149 premieres selections — deviendra
 probablement majoritaire. C'est la mesure qui commence, pas la notation qui se degrade.
+
+### Un cran 1 force porte sa cause (migration 049)
+
+**Quatrieme occurrence du defaut caracteristique du projet, et cette fois sur la mesure
+elle-meme.** La session 11 porte 16 selections a `research_overridden = 1`, donc toutes
+ecrasees en lecture. Lues telles quelles, elles disent « aucune selection ne portait sur un
+dossier ouvert » — une observation sur le modele, et c'est ainsi que la page les affichait.
+Elles disent en realite que la ligne `dossiers_ouverts` n'a **jamais ete collee** :
+`open_dossiers_state` vaut `absente`. Six causes distinctes produisaient le meme `1`.
+
+- **Trois sont des observations** — `hors_dossiers`, `aucun_dossier`, `sans_fait` : elles
+  decrivent ce que l'analyse a fait, et ont leur place dans une statistique sur le modele.
+- **Trois sont des defauts de collecte** — `ligne_absente`, `ligne_illisible`,
+  `reperes_non_resolus` : elles decrivent ce que le collage a perdu, se reparent en
+  recollant, et `is_collection_fault()` les tient a l'ecart. `SessionRate.overridden` les
+  deduit donc, et `override_faults` les compte a cote — leur somme reste le total ecrase.
+- **`sans_fait` ne passe pas par `research_overridden`**, qui ne compte que les dossiers non
+  ouverts : c'est la seule des six qui dise que la recherche **a eu lieu** et n'a rien donne.
+  Sans elle, ce cran 1 se confondrait avec ceux qu'aucune recherche n'a approches.
+- **Le retro-remplissage est sur, et c'est la base qui le prouve** — pas une reconstitution :
+  `open_dossiers_state` est persiste depuis la migration 045, et une session dont la ligne
+  etait `absente` ne pouvait ecraser ses selections pour aucune autre raison, l'ensemble des
+  reperes resolus y etant vide par construction. Rejoue sur une copie : 16 typees, zero
+  ecrasee sans cause, idempotent.
+- **Controle strict et non `_vocabulary`** : ce vocabulaire est produit par `Opened.cause` et
+  non ecrit par le modele, donc il n'y a aucune orthographe a rattraper. Une valeur inconnue
+  vaut « on ne sait pas », jamais un refus.
+
+**Ce qui n'a pas ete fait, et c'est une decision datee du 14/08/2026 : recalibrer les cibles
+de combine.** La mesure disait la cible longue hors d'atteinte — **0 prompt sur 39**, meilleur
+produit atteignable 19,9 contre une cible a 100 — et le vivier, non le budget, comme
+contrainte : mediane 2 jambes par prompt, maximum 6, quand le budget en autorise 7. Mais ce
+vivier a ete mesure en **regime casse** : sans la ligne `dossiers_ouverts`, aucune selection
+ne peut depasser le cran 1, donc aucune jambe n'existe. Poser une cible sur cette
+distribution-la, c'est refaire le meme travail dans six semaines. Les options — recalibrer,
+n'exiger qu'un seul combine, ouvrir le long aux jambes de cran 2 — se reevaluent sur deux ou
+trois sessions propres, et aucune ne se decide utilement avant.
+
+- Mesure a garder pour cette reevaluation : `m`, moyenne **geometrique** des cotes des deux
+  paliers surs, vaut **1,690** sur 155 selections. C'est la seule des trois entrees du calcul
+  propose qui soit mesurable aujourd'hui ; `r`, le rendement d'un dossier ouvert, a **zero
+  observation**.
+- **Le garde-fou `cote_max_atteignable` a ete envisage et mesure** : calcule sur les cotes du
+  lot, il declare la cible de 100 atteignable sur **24 prompts sur 31**. Il ne l'aurait donc
+  jamais signalee. L'ecart est entre les prix **offerts** et les selections **produites**, et
+  seule la seconde contraint — ce que le dossier notait deja : « les quatre autres echouent
+  faute de selections produites, pas faute de prix ».
 
 **Defaut trouve par un test existant, et il valait pour tout le chantier precedent** :
 `ImportPreview.ignored` **garde le rendu du tableau entier**. Y verser une remarque —

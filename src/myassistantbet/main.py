@@ -1164,6 +1164,10 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
                 # vaut « on ne sait pas » et n'ecrase rien : c'est le cas de la
                 # saisie a la main, qui est un geste humain.
                 opened=(form[f"opened_{index}"] == "1" if f"opened_{index}" in form else None),
+                # Et **pourquoi**, quand il vaut faux. Le drapeau seul confond
+                # une ligne jamais collee avec un match hors de la liste : deux
+                # observations differentes, deux gestes differents.
+                override_cause=form.get(f"override_cause_{index}", ""),
                 settings=settings,
             )
             created += 1

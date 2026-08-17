@@ -314,13 +314,54 @@ OPEN_KEY = re.compile(r"dossiers_ouverts", re.IGNORECASE)
 #: Un repere de bloc, tel que le prompt les numerote.
 MARK = re.compile(r"M\d+")
 
-#: La ligne a ete lue. Ses reperes peuvent etre vides — c'est une declaration.
-OPEN_READ = "lue"
+#: La ligne a ete lue et porte au moins un repere.
+OPEN_READ = "renseignee"
+#: La ligne a ete lue et sa liste est vide. **Etat a part entiere, et c'est la
+#: moitie du defaut** : `dossiers_ouverts: []` est une declaration legitime — le
+#: modele n'a rien ouvert, le gabarit l'autorise — quand une ligne absente est
+#: un collage rate. Les deux forcent tout le lot en lecture, donc les confondre
+#: melangeait une reponse du modele et une panne de transmission dans le meme
+#: taux. Meme regle que les trois etats de la ligne `Absents`.
+OPEN_EMPTY = "vide"
 #: Aucune trace de la cle dans le rendu : le gabarit ne l'a pas fait ecrire, ou
 #: le modele l'a omise.
 OPEN_ABSENT = "absente"
 #: La cle est la, sa valeur ne se relit pas. Defaut de lecteur, pas de modele.
 OPEN_MALFORMED = "illisible"
+
+#: Pourquoi une selection a ete ramenee en lecture, cran 1.
+#:
+#: **Les six ne se lisent pas ensemble.** Les trois premieres decrivent ce que
+#: l'analyse a fait — ce sont des observations, et elles ont leur place dans une
+#: statistique sur le modele. Les trois dernieres decrivent ce que le collage a
+#: perdu : elles se reparent en recollant, et les compter avec les autres ferait
+#: passer une panne de transmission pour un resultat.
+OVERRIDE_HORS_DOSSIERS = "hors_dossiers"
+OVERRIDE_AUCUN_DOSSIER = "aucun_dossier"
+OVERRIDE_SANS_FAIT = "sans_fait"
+OVERRIDE_LIGNE_ABSENTE = "ligne_absente"
+OVERRIDE_LIGNE_ILLISIBLE = "ligne_illisible"
+OVERRIDE_REPERES = "reperes_non_resolus"
+
+#: Ce que chaque cause dit, en une phrase, la ou elle se rend.
+OVERRIDE_CAUSES: dict[str, str] = {
+    OVERRIDE_HORS_DOSSIERS: "match hors des dossiers déclarés ouverts",
+    OVERRIDE_AUCUN_DOSSIER: "aucun dossier déclaré ouvert sur cette session",
+    OVERRIDE_SANS_FAIT: "dossier ouvert, aucun fait daté n'en est tiré",
+    OVERRIDE_LIGNE_ABSENTE: "ligne « dossiers_ouverts » absente du collage",
+    OVERRIDE_LIGNE_ILLISIBLE: "ligne « dossiers_ouverts » illisible",
+    OVERRIDE_REPERES: "repères de « dossiers_ouverts » non résolus",
+}
+
+#: Les causes qui ne disent **rien du modele**. Un cran 1 pose par l'une d'elles
+#: n'est pas une lecture constatee : c'est une mesure qui n'a pas eu lieu, et
+#: elle doit sortir de toute statistique sur la notation.
+COLLECTION_FAULTS = frozenset({OVERRIDE_LIGNE_ABSENTE, OVERRIDE_LIGNE_ILLISIBLE, OVERRIDE_REPERES})
+
+
+def is_collection_fault(cause: str | None) -> bool:
+    """La cause decrit-elle un collage perdu plutot qu'une analyse ?"""
+    return cause in COLLECTION_FAULTS
 
 
 @dataclass(frozen=True)
@@ -336,12 +377,18 @@ class Opened:
     """
 
     marks: frozenset[str] = frozenset()
-    #: Ce qui est arrive a la ligne : `lue`, `absente` ou `illisible`.
+    #: Ce qui est arrive a la ligne : `renseignee`, `vide`, `absente` ou
+    #: `illisible`.
     #:
-    #: **Trois etats et non deux.** Une ligne omise et une ligne qu'on ne sait
-    #: pas relire produisent le meme repli — tout le lot en lecture — mais ni la
-    #: meme cause ni le meme correctif, et leur somme se lirait comme un seul
-    #: taux. C'est la meme regle que les trois etats de la ligne `Absents`.
+    #: **Quatre etats et non deux.** Une ligne omise, une ligne qu'on ne sait
+    #: pas relire et une ligne vide produisent le meme repli — tout le lot en
+    #: lecture — mais ni la meme cause ni le meme correctif, et leur somme se
+    #: lirait comme un seul taux. C'est la meme regle que les trois etats de la
+    #: ligne `Absents`.
+    #:
+    #: L'etat est **persiste** et non deduit apres coup : une fois les
+    #: selections ecrites, plus rien dans la base ne dirait laquelle des quatre
+    #: situations a produit les crans 1.
     state: str = OPEN_ABSENT
 
     @property
@@ -349,10 +396,25 @@ class Opened:
         """La ligne etait presente **et** lisible.
 
         **Vrai n'est pas « des dossiers »** : une liste vide est une
-        declaration, et elle se traite comme une ligne absente sans porter le
-        meme message.
+        declaration, et elle porte son propre etat plutot que de se confondre
+        avec une ligne absente.
         """
-        return self.state == OPEN_READ
+        return self.state in (OPEN_READ, OPEN_EMPTY)
+
+    def cause(self, *, resolved: bool) -> str:
+        """La cause a enregistrer sur une selection ramenee en lecture.
+
+        `resolved` dit si les reperes se sont resolus contre un prompt : une
+        liste renseignee qui ne se rattache a rien est un defaut de collage, pas
+        une observation sur le modele.
+        """
+        if self.state == OPEN_ABSENT:
+            return OVERRIDE_LIGNE_ABSENTE
+        if self.state == OPEN_MALFORMED:
+            return OVERRIDE_LIGNE_ILLISIBLE
+        if self.state == OPEN_EMPTY:
+            return OVERRIDE_AUCUN_DOSSIER
+        return OVERRIDE_HORS_DOSSIERS if resolved else OVERRIDE_REPERES
 
     @property
     def note(self) -> str:
@@ -364,12 +426,18 @@ class Opened:
         if not self.declared:
             return (
                 "Aucune ligne « dossiers_ouverts: [M1, M4, …] » dans le rendu : toutes "
-                "les sélections sont enregistrées en lecture, cran 1."
+                "les sélections sont enregistrées en lecture, cran 1. Ce n'est pas une "
+                "mesure — c'est le collage qui l'a laissée derrière lui, et il se "
+                "reprend en recollant le rendu entier."
             )
         if not self.marks:
+            # Une declaration, pas un defaut : le gabarit autorise la liste vide,
+            # et le repli qui suit est alors une observation sur le modele. Le
+            # dire evite qu'on aille chercher un collage rate qui n'existe pas.
             return (
                 "Aucun dossier déclaré ouvert : toutes les sélections sont enregistrées "
-                "en lecture, cran 1."
+                "en lecture, cran 1. La ligne a bien été lue — c'est une déclaration du "
+                "modèle, pas un collage manquant."
             )
         return ""
 
@@ -384,7 +452,10 @@ def read_opened(raw: str) -> Opened:
     """
     found = OPEN_LINE.search(raw or "")
     if found is not None:
-        return Opened(marks=frozenset(MARK.findall(found.group(1).upper())), state=OPEN_READ)
+        marks = frozenset(MARK.findall(found.group(1).upper()))
+        # La liste vide porte son propre etat. Elle produit le meme repli qu'une
+        # ligne absente et n'a pas la meme cause : ici le modele a repondu.
+        return Opened(marks=marks, state=OPEN_READ if marks else OPEN_EMPTY)
     if OPEN_KEY.search(raw or ""):
         return Opened(state=OPEN_MALFORMED)
     return Opened(state=OPEN_ABSENT)

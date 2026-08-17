@@ -201,29 +201,51 @@ def research_capped(tiers: Sequence[Tier], lot: int, budget: int) -> list[tuple[
     return rendus
 
 
-def safe_legs_available(tiers: Sequence[Tier], lot: int) -> int:
-    """Jambes que les deux paliers surs autorisent sur ce lot.
+def safe_legs_available(tiers: Sequence[Tier], lot: int, dossiers: int) -> int:
+    """Jambes que ce lot autorise vraiment : quotas, lot **et budget de
+    recherche**.
 
     Un combine long se batit dans les deux bandes les plus sures — six SAFE a
     1.45 et quatre FUN a 1.95 donnent 135 sans consommer une seule place haute —
-    donc son plafond est la somme de leurs deux quotas, et jamais le total des
-    cinq paliers.
+    donc les quotas a sommer sont ceux de ces deux paliers, jamais le total des
+    cinq.
 
-    **Le plafond ne depend plus du lot au-dela de dix matchs**, et c'est mesure :
-    `quota_for` plafonne a `quota_max`, regle pour `QUOTA_REFERENCE_LOT`. Au
-    reglage servi le 14/08/2026 il vaut 6 + 5 = 11 des dix matchs, et un lot de
-    140 n'en donne pas un de plus qu'un lot de 28 — la shortlist de 140
-    evenements de ce jour-la a d'ailleurs rendu un prompt de dix blocs, donc
-    exactement le point de saturation.
+    **Le budget de recherche s'y applique, et le docstring d'origine se trompait
+    de regle.** Il ecartait le budget au motif que `research_capped` ne touche
+    pas les deux paliers surs, « aucun d'eux ne reclamant de dossier » : c'est
+    vrai de la regle de **palier**, et sans effet ici, parce que ce n'est pas
+    elle qui contraint une jambe. La section D en impose une seconde — aucune
+    jambe sous confiance 3 — et celle-la passe par le dossier :
 
-    Le lot le borne quand meme : une seule selection par match dans un combine,
-    donc cinq matchs ne portent pas six jambes.
+      · une jambe reclame confiance 3 (section D) ;
+      · le cran 3 exige au moins un fait date (`confidence.Claim.rung`, qui rend
+        1 des que `reading_only`) ;
+      · une selection hors des dossiers declares ouverts est ramenee en lecture,
+        donc au cran 1 (`history.add_pick`).
 
-    Le budget de recherche ne s'y applique pas — `research_capped` ne touche
-    jamais les deux paliers les plus surs, aucun d'eux ne reclamant de dossier.
+    Une jambe suppose donc un dossier ouvert, et une session n'en ouvre qu'un
+    nombre fini. Le plafond est le plus petit des trois.
+
+    **Le nombre est lu par le modele**, et c'est ce qui rend l'erreur couteuse :
+    un plafond trop haut dans le prompt invite a chercher des jambes qui ne
+    peuvent pas exister — exactement la pression que le reste du gabarit
+    travaille a supprimer.
+
+    Il ne mordait sur aucun lot de la base au 14/08/2026 — le vivier s'epuise
+    avant, 37 prompts sur 39, avec un maximum de 6 jambes produites contre 7 de
+    budget — mais cette mesure vaut pour un regime ou la ligne `dossiers_ouverts`
+    n'etait jamais collee, donc ou aucune selection ne pouvait depasser le cran
+    1. Elle ne dit rien de ce que le vivier vaudra une fois la ligne lue. Meme
+    forme que le rejet d'une cote hors bande : porte fermee, pas defaut repare.
+
+    Les deux autres bornes n'ont pas bouge. `quota_for` plafonne a `quota_max`,
+    regle pour `QUOTA_REFERENCE_LOT` : au reglage servi le 14/08/2026 les quotas
+    valent 6 + 5 = 11 des dix matchs, et un lot de 140 n'en donne pas un de plus
+    qu'un lot de 28. Le lot borne aussi — une seule selection par match dans un
+    combine, donc cinq matchs ne portent pas six jambes.
     """
     quotas = sum(tier.quota_for(lot, safest=True)[1] for tier in tiers[:QUOTA_FLOOR_TIERS])
-    return max(0, min(quotas, lot))
+    return max(0, min(quotas, lot, dossiers))
 
 
 @dataclass(frozen=True)
@@ -955,11 +977,15 @@ def build_prompt(
             # s'annonce : une regle qu'il faut appliquer de tete ne contraint
             # rien, meme raison que les bornes de palier.
             combo_maillon_jambes=threshold("combo_maillon_jambes", settings),
-            # Ce que les quotas des deux paliers surs autorisent sur ce lot.
-            # Reclamer dix jambes a un lot qui n'en porte que quatre ferait
-            # ecrire que la demande etait insatisfiable — le defaut deja corrige
-            # par `combo_solo_min_lot`, un cran plus loin.
-            combo_legs_max=safe_legs_available(tiers, len(blocks)),
+            # Ce que ce lot autorise vraiment : quotas des deux paliers surs,
+            # taille du lot, et budget de recherche — une jambe reclame la
+            # confiance 3, donc un fait date, donc un dossier ouvert. Reclamer
+            # dix jambes a un lot qui n'en porte que quatre ferait ecrire que la
+            # demande etait insatisfiable — le defaut deja corrige par
+            # `combo_solo_min_lot`, un cran plus loin.
+            combo_legs_max=safe_legs_available(
+                tiers, len(blocks), threshold("recherche_dossiers", settings)
+            ),
             # Les bornes **de ce lot**, calculees ici. Le prompt annoncait
             # celles d'un lot de dix et expliquait qu'elles se reduisaient : une
             # borne qu'il faut recalculer soi-meme ne contraint rien.

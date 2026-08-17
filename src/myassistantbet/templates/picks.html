@@ -152,7 +152,13 @@
             <input type="hidden" name="opened_{{ pick.index }}"
                    value="{{ '1' if pick.opened else '0' }}">
             {% if not pick.opened %}
-            <span class="badge warn" title="Dossier non ouvert : enregistrée en lecture, cran 1">
+            {# La cause voyage avec le drapeau : sans elle, une ligne jamais
+               collée et un match hors de la liste s'enregistrent à l'identique
+               et alimentent le même taux. #}
+            <input type="hidden" name="override_cause_{{ pick.index }}"
+                   value="{{ pick.override_cause }}">
+            <span class="badge warn"
+                  title="Enregistrée en lecture, cran 1{% if pick.override_label %} — {{ pick.override_label }}{% endif %}">
               lecture
             </span>
             {% endif %}

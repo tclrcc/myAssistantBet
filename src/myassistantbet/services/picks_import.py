@@ -20,8 +20,11 @@ from typing import Any
 from ..config import Settings, get_settings
 from .combos import PRICE_GAP, ParsedCombo, read_combos
 from .confidence import (
+    OPEN_ABSENT,
+    OPEN_EMPTY,
     OPEN_MALFORMED,
     OPEN_READ,
+    OVERRIDE_CAUSES,
     Claim,
     Opened,
     read_blocks,
@@ -109,10 +112,28 @@ class ParsedPick:
     #: defaut, et c'est tout le chantier : ce qui n'est pas demontre ouvert est
     #: une lecture des blocs, quel que soit le niveau de source annonce.
     opened: bool = False
+    #: **Pourquoi** cette ligne part en lecture, quand elle y part. Vide sur une
+    #: ligne dont le dossier est ouvert.
+    #:
+    #: Le drapeau seul ne suffit pas : « ce match n'est pas dans la liste » et
+    #: « la liste n'a pas ete collee » donnent tous deux `opened = False` et ne
+    #: sont pas la meme observation. Sans la cause, les deux alimentent le meme
+    #: taux et une panne de transmission se lit comme un resultat.
+    override_cause: str = ""
     #: Une selection identique existe deja dans la session, ou plus haut dans
     #: le meme tableau. Elle reste proposee — c'est peut-etre voulu — mais
     #: decochee : coller deux fois le meme rendu ne doit pas doubler l'historique.
     duplicate: bool = False
+
+    @property
+    def override_label(self) -> str:
+        """Le libelle de la cause, resolu ici et **jamais recopie cote gabarit**.
+
+        Meme regle que `Pick.late_label` : deux ecritures du meme vocabulaire
+        divergeraient au premier ajout, et un libelle recopie dans un template
+        ne casse rien le jour ou la cle change — il disparait.
+        """
+        return OVERRIDE_CAUSES.get(self.override_cause, "")
 
     @property
     def ready(self) -> bool:
@@ -155,7 +176,10 @@ class ParsedPick:
         # ecrasee. Le dire ici evite qu'un `lecture` en base passe pour une
         # declaration franche du modele.
         if not self.opened:
-            issues.append("dossier non ouvert : enregistrée en lecture, cran 1")
+            # La cause accompagne le motif : elle dit si la ligne se repare en
+            # recollant, ou si elle decrit vraiment ce que l'analyse a fait.
+            motif = self.override_label
+            issues.append("enregistrée en lecture, cran 1" + (f" — {motif}" if motif else ""))
         return issues
 
 
@@ -255,15 +279,20 @@ class ImportPreview:
         statistiques signale un defaut qui se reparait en dix secondes en
         recollant.
         """
+        # Les quatre etats sont nommes un par un, et l'inconnu se dit comme tel :
+        # un etat neuf qui retomberait dans « absente » reproduirait exactement
+        # le defaut que ce releve existe pour rendre visible.
         etats = {
             OPEN_READ: f"ligne dossiers_ouverts lue ({len(self.opened.marks)} dossier(s))",
+            OPEN_EMPTY: "ligne dossiers_ouverts lue, aucun dossier déclaré",
             OPEN_MALFORMED: "ligne dossiers_ouverts illisible",
+            OPEN_ABSENT: "ligne dossiers_ouverts absente",
         }
         return (
             f"{self.count} sélection(s) détectée(s) · "
             f"{self.claims_attached} bloc(s) de confiance apparié(s) · "
             f"{len(self.combos)} combiné(s) rattaché(s) · "
-            + etats.get(self.opened.state, "ligne dossiers_ouverts absente")
+            + etats.get(self.opened.state, f"état inconnu ({self.opened.state})")
         )
 
     @property
@@ -646,10 +675,17 @@ def _apply_research(
     elif mapping is None:
         preview.notes.append(
             "Les repères de « dossiers_ouverts » ne se résolvent contre aucun prompt de "
-            "cette session : toutes les sélections sont enregistrées en lecture, cran 1."
+            "cette session : toutes les sélections sont enregistrées en lecture, cran 1. "
+            "Le rendu porte bien la ligne — c'est le rattachement qui a échoué, et il se "
+            "reprend en recollant le prompt qui l'a produite."
         )
+    # La cause est calculee **une fois pour le lot** : elle depend de l'etat de
+    # la ligne et du rattachement, pas de la selection. Seul `hors_dossiers` se
+    # decide ligne par ligne, et c'est le seul cas ou la liste a vraiment servi.
+    cause = opened.cause(resolved=bool(affiches))
     for pick in preview.picks:
         pick.opened = bool(affiches) and _fold(pick.match_text) in affiches
+        pick.override_cause = "" if pick.opened else cause
 
 
 def _attach_claims(

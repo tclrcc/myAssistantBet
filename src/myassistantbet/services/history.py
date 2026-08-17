@@ -21,7 +21,17 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from .competitions import category_label, category_rank
-from .confidence import OPEN_ABSENT, OPEN_MALFORMED, OPEN_READ, Claim, ClaimError
+from .confidence import (
+    OPEN_ABSENT,
+    OPEN_EMPTY,
+    OPEN_MALFORMED,
+    OPEN_READ,
+    OVERRIDE_CAUSES,
+    OVERRIDE_SANS_FAIT,
+    Claim,
+    ClaimError,
+    is_collection_fault,
+)
 from .confidence import parse as parse_claim
 from .inference import (
     ALPHA,
@@ -47,11 +57,16 @@ from .thresholds import value_of as threshold_value
 
 logger = logging.getLogger(__name__)
 
-#: Les trois issues de la ligne `dossiers_ouverts`, telles que la session les
+#: Les quatre issues de la ligne `dossiers_ouverts`, telles que la session les
 #: garde. Une valeur hors de cet ensemble vaut « on ne sait pas » : le vocabulaire
 #: est celui du lecteur, ecrit une fois, et la base ne doit pas porter un
-#: quatrieme etat qu'aucun code ne sait produire.
-OPEN_STATES = (OPEN_READ, OPEN_ABSENT, OPEN_MALFORMED)
+#: cinquieme etat qu'aucun code ne sait produire.
+#:
+#: `vide` s'y est ajoute apres coup, et son absence etait le defaut : une ligne
+#: lue sans repere retombait sur `lue`, donc se lisait comme une liste
+#: renseignee. **Toute valeur produite par `read_opened` doit figurer ici** —
+#: sinon elle est ecrite NULL, et l'etat disparait sans que rien ne le dise.
+OPEN_STATES = (OPEN_READ, OPEN_EMPTY, OPEN_ABSENT, OPEN_MALFORMED)
 
 
 RESULTS = ("pending", "win", "loss", "void")
@@ -1500,6 +1515,7 @@ def add_pick(
     late_reason: str = "",
     claim: str = "",
     opened: bool | None = None,
+    override_cause: str = "",
     played: bool = False,
     result: str = "pending",
     settings: Settings | None = None,
@@ -1583,14 +1599,33 @@ def add_pick(
     computed = claimed
     overridden = opened is False
     effective = source_value
+    # **La cause accompagne l'ecrasement, et sans elle le compte ne mesure
+    # rien.** Un cran 1 pose parce que la ligne `dossiers_ouverts` n'a pas ete
+    # collee et un cran 1 pose parce que le match n'y figure pas sont deux
+    # observations differentes : la premiere se repare en recollant, la seconde
+    # decrit ce que l'analyse a fait. Mesure du 14/08/2026 — les 16 selections
+    # ecrasees de la base viennent **toutes** de la premiere, et se lisaient
+    # comme la seconde.
+    cause = None
     if overridden:
         effective, computed = READING_LEVEL, FORCED_RUNG
+        # Controle **strict**, la ou l'angle et le niveau de source passent par
+        # `_vocabulary` : ce vocabulaire-ci n'est pas ecrit par le modele mais
+        # par `Opened.cause`, donc il n'y a aucune orthographe a rattraper. Une
+        # valeur inconnue vaut « on ne sait pas » plutot qu'un refus — meme
+        # regle que partout, un import de vingt lignes ne tombe pas sur un mot.
+        cause = override_cause if override_cause in OVERRIDE_CAUSES else None
     elif opened and declaration is not None and not declaration.facts:
         # **La regle est a sens unique.** L'absence de dossier force la lecture ;
         # la presence n'accorde rien. Un dossier ouvert dont l'analyse ne tire
         # aucun fait date **est** une lecture des blocs — c'est le resultat de la
         # recherche, pas son absence, et il se note pareil.
+        #
+        # La cause est notee malgre tout : c'est la seule des six qui dise que la
+        # recherche a eu lieu et n'a rien donne, et elle ne passe pas par
+        # `research_overridden`, qui ne compte que les dossiers non ouverts.
         effective, computed = READING_LEVEL, FORCED_RUNG
+        cause = OVERRIDE_SANS_FAIT
     # D'ou vient la cote recopiee. Facultative comme les deux precedentes : une
     # valeur inconnue vaut « on ne sait pas », jamais un refus.
     price_origin = _vocabulary(price_source, PRICE_SOURCES)
@@ -1673,8 +1708,9 @@ def add_pick(
             "                   price_source, independence_note, market_key, "
             "                   late_reason, confidence_computed, claim_raw_json, "
             "                   gap_touches_factor, distinct_publishers, "
-            "                   confidence_claimed, research_overridden, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "                   confidence_claimed, research_overridden, "
+            "                   research_override_cause, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 attached,
@@ -1699,6 +1735,7 @@ def add_pick(
                 declaration.distinct_publishers if declaration is not None else None,
                 claimed if overridden else None,
                 _flag(None if opened is None else not opened),
+                cause,
                 utcnow(),
             ),
         )
@@ -1990,10 +2027,36 @@ class SessionRate:
     #: Le prompt le plus lourd de la session. Sert de garde-fou de poids, pas
     #: de mesure de qualite.
     tokens: int = 0
-    #: Selections ramenees en lecture faute de dossier ouvert. **Un taux eleve
-    #: est un signal sur le modele, pas sur les matchs** : il dit combien de
-    #: fois l'analyse s'est notee comme si elle avait cherche.
+    #: Selections ramenees en lecture faute de dossier ouvert, **defauts de
+    #: collecte deduits**. Un taux eleve est alors un signal sur le modele : il
+    #: dit combien de fois l'analyse s'est notee comme si elle avait cherche.
+    #:
+    #: La deduction n'est pas un detail de presentation. Sans elle, la session
+    #: du 14/08/2026 affichait 16 sur 16 et se lisait exactement ainsi — alors
+    #: que la ligne `dossiers_ouverts` n'avait jamais ete collee et qu'aucune de
+    #: ces selections ne dit quoi que ce soit du modele.
     overridden: int = 0
+    #: Les ecrasees dont la cause est un **collage perdu** — ligne absente,
+    #: illisible, ou reperes non resolus. Comptees a part et jamais avec les
+    #: autres : elles ne mesurent pas une analyse, elles mesurent une
+    #: transmission, et elles se reparent en recollant le rendu.
+    override_faults: int = 0
+
+    @property
+    def override_line(self) -> str:
+        """« 3 » ou « 3 + 16 non transmises ».
+
+        Le second nombre ne se tait pas : il est la seule chose qui distingue
+        une session dont le collage a echoue d'une session ou l'analyse ne
+        cherche jamais, et les deux appellent des gestes opposes.
+        """
+        if not self.overridden and not self.override_faults:
+            return ""
+        gauche = str(self.overridden)
+        return gauche + (
+            f" + {self.override_faults} non transmise(s)" if self.override_faults else ""
+        )
+
     #: Les dossiers que le rendu declarait avoir ouverts, et combien d'entre eux
     #: figuraient dans l'ordre de passage que l'application avait propose. Un
     #: dossier hors priorite est **legitime** — la section F demande justement de
@@ -3286,7 +3349,21 @@ def _by_session(
             tokens=int(row["tokens"] or 0),
             feedback_active=bool(_column(row, "feedback_active")),
             guarded=str(row["created_at"]) >= GUARD_IN_SERVICE,
-            overridden=sum(1 for pick in mine if _column(pick, "research_overridden")),
+            # Les deux comptes se font en un seul passage, sur la meme
+            # population : deux parcours auraient fini par ne plus porter sur le
+            # meme ensemble, et leur somme ne serait plus le total ecrase.
+            overridden=sum(
+                1
+                for pick in mine
+                if _column(pick, "research_overridden")
+                and not is_collection_fault(_column(pick, "research_override_cause"))
+            ),
+            override_faults=sum(
+                1
+                for pick in mine
+                if _column(pick, "research_overridden")
+                and is_collection_fault(_column(pick, "research_override_cause"))
+            ),
             opened=len(declared := str(_column(row, "open_dossiers") or "").split()),
             on_priority=len(set(declared) & set(priorities.get(session_id, ()))),
         )
@@ -3408,6 +3485,12 @@ class Override:
 
     Un compte, jamais un taux : il est juste a tout effectif, comme celui des
     non-classees. Aucun seuil ne le garde donc.
+
+    **Les defauts de collecte en sortent** (`is_collection_fault`). Ce compte
+    impute une faute au modele ; l'imputer sur une ligne `dossiers_ouverts`
+    jamais collee serait faux, puisqu'on ignore alors si le dossier a ete
+    ouvert — la question n'a pas ete transmise. Ils se comptent a cote, dans
+    `SessionRate.override_faults`.
     """
 
     total: int = 0
@@ -3458,6 +3541,14 @@ def _override(rows: list[Any], results: list[str]) -> Override:
     tally: dict[int, int] = {}
     for row, result in zip(rows, results, strict=True):
         if result not in ("win", "loss") or not _column(row, "research_overridden"):
+            continue
+        # **Un defaut de collecte n'accuse personne.** Ce compte impute au modele
+        # une inflation — « elle s'est notee comme si elle avait cherche » — et
+        # l'imputer sur une ligne `dossiers_ouverts` jamais collee serait faux :
+        # on ne sait pas si le dossier a ete ouvert, la question n'a pas ete
+        # transmise. Mesure du 14/08/2026 : 13 des 16 ecrasees de la base
+        # declaraient un niveau de source reel et auraient ete comptees ici.
+        if is_collection_fault(_column(row, "research_override_cause")):
             continue
         found.total += 1
         # Ce que la declaration aurait donne ; a defaut de bloc lisible, ce que
@@ -3535,6 +3626,10 @@ def analysis(settings: Settings | None = None) -> Analysis:
             # Le cran calcule, a cote du cran annonce. Les deux sont lus dans la
             # meme passe : leur ecart est une mesure, pas un sous-produit.
             "       k.confidence_computed, k.confidence_claimed, k.research_overridden, "
+            # **Et pourquoi.** Un ecrasement sans sa cause ne se lit pas : une
+            # ligne jamais collee et un match hors de la liste donnent le meme
+            # drapeau, et une seule des deux dit quelque chose du modele.
+            "       k.research_override_cause, "
             # Les faits **declares**, pour compter les recherches qui n'ont pas
             # eu lieu : un editeur cite suppose une page ouverte, et sur un
             # dossier non ouvert c'est cette page-la qui n'existe pas.

@@ -953,11 +953,14 @@
           </td>
           {# **Un taux d'override élevé est un signal sur le modèle, pas sur les
              matchs** : il dit combien de fois l'analyse s'est notée comme si elle
-             avait cherché. La ligne des dossiers ouverts l'accompagne — un
-             dossier hors de l'ordre proposé est légitime, un écart systématique
-             dirait que le tri ne sert à rien. #}
+             avait cherché — mais seulement une fois les défauts de collecte
+             déduits, sans quoi une ligne « dossiers_ouverts » jamais collée se
+             lit comme une analyse qui ne cherche jamais. Les non transmises sont
+             comptées à part : elles se réparent en recollant. La ligne des
+             dossiers ouverts accompagne — un dossier hors de l'ordre proposé est
+             légitime, un écart systématique dirait que le tri ne sert à rien. #}
           <td class="num">
-            {%- if row.overridden %}{{ row.overridden }}{% else %}—{% endif %}
+            {%- if row.override_line %}{{ row.override_line }}{% else %}—{% endif %}
             {%- if row.priority_line %}
             <span class="muted small">{{ row.priority_line }}</span>{% endif %}
           </td>

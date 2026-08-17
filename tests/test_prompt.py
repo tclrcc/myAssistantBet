@@ -1608,13 +1608,39 @@ def test_le_plafond_de_jambes_sures_sature_a_dix_matchs(migrated: Settings) -> N
     """
     tiers = load_tiers(migrated)
     plafond = sum(tier.quota_for(QUOTA_REFERENCE_LOT, safest=True)[1] for tier in tiers[:2])
+    # Un budget hors de portee isole la borne mesuree ici. Le budget a sa propre
+    # propriete, et deux contraintes dans une meme assertion ne diraient pas
+    # laquelle a mordu.
+    large = plafond + 100
 
     for lot in (QUOTA_REFERENCE_LOT, 28, 140):
-        assert safe_legs_available(tiers, lot) == plafond, "sature des le lot de reference"
+        assert safe_legs_available(tiers, lot, large) == plafond, "sature des le lot de reference"
 
     # Le lot borne quand meme : une seule selection par match dans un combine.
-    assert safe_legs_available(tiers, 3) == 3
-    assert safe_legs_available(tiers, 0) == 0
+    assert safe_legs_available(tiers, 3, large) == 3
+    assert safe_legs_available(tiers, 0, large) == 0
+
+
+def test_le_budget_de_recherche_borne_les_jambes(migrated: Settings) -> None:
+    """Une jambe reclame la confiance 3, donc un fait date, donc un dossier
+    ouvert — et une session n'en ouvre qu'un nombre fini.
+
+    Le docstring d'origine ecartait le budget au motif que `research_capped` ne
+    touche pas les deux paliers surs : vrai de la regle de **palier**, et sans
+    effet, parce que c'est la regle de **confiance** qui contraint une jambe.
+
+    Le test porte sur la propriete — le plafond est le plus petit des trois — et
+    jamais sur les valeurs du jour, quotas et budget etant tous deux reglables.
+    """
+    tiers = load_tiers(migrated)
+    quotas = sum(tier.quota_for(QUOTA_REFERENCE_LOT, safest=True)[1] for tier in tiers[:2])
+    lot = QUOTA_REFERENCE_LOT
+
+    for budget in range(0, quotas + 3):
+        assert safe_legs_available(tiers, lot, budget) == min(quotas, lot, budget)
+
+    # Et il mord vraiment : sous les quotas, c'est lui qui decide.
+    assert safe_legs_available(tiers, 140, quotas - 1) == quotas - 1
 
 
 def test_le_combine_court_vise_un_compte_et_le_long_un_plafond(
@@ -1632,7 +1658,9 @@ def test_le_combine_court_vise_un_compte_et_le_long_un_plafond(
     # Le plafond se **calcule** : les quotas du seed ne sont pas ceux de la base
     # servie, et ecrire le nombre du jour ferait passer le test sur une
     # configuration que personne n'a choisie.
-    plafond = safe_legs_available(load_tiers(migrated), 12)
+    plafond = safe_legs_available(
+        load_tiers(migrated), 12, threshold_value("recherche_dossiers", migrated)
+    )
 
     assert "**4 jambes**, cote cible **9**" in plat
     assert f"**jusqu'à {plafond} jambes**, cote cible **100**" in plat
@@ -1644,7 +1672,9 @@ def test_le_combine_long_dit_son_motif_d_arret(migrated: Settings) -> None:
     echec : c'est leur repartition qui dira si la cible est bien reglee — toujours
     « cible » et elle peut monter, toujours « confiance » et le lot est la
     contrainte."""
-    plafond = safe_legs_available(load_tiers(migrated), 12)
+    plafond = safe_legs_available(
+        load_tiers(migrated), 12, threshold_value("recherche_dossiers", migrated)
+    )
     plat = _section_d(migrated, 12)
 
     assert "s'arrête au **premier** des trois motifs" in plat
@@ -1652,6 +1682,25 @@ def test_le_combine_long_dit_son_motif_d_arret(migrated: Settings) -> None:
     assert f"`plafond` — les {plafond} jambes que ce lot autorise sont prises" in plat
     assert "`confiance` — il ne reste plus de jambe à confiance 3 ou plus" in plat
     assert "Aucun des trois n'est un échec" in plat
+
+
+def test_le_plafond_annonce_dit_d_ou_il_vient(migrated: Settings) -> None:
+    """**Le nombre est lu par le modele.** Un plafond qui ne dit pas d'ou il
+    vient invite a chercher des jambes qui ne peuvent pas exister — la pression
+    exacte que le reste du gabarit travaille a supprimer.
+
+    Le lien est celui qui contraint vraiment : une jambe reclame la confiance 3,
+    donc un fait date, donc un dossier ouvert, et ce prompt en ouvre un nombre
+    fini.
+    """
+    lot = 12
+    budget = threshold_value("recherche_dossiers", migrated)
+    plafond = safe_legs_available(load_tiers(migrated), lot, budget)
+    plat = _section_d(migrated, lot)
+
+    assert f"Ce plafond de {plafond} n'est pas un nombre arbitraire" in plat
+    assert "une confiance de 3, donc un fait daté, donc un dossier ouvert" in plat
+    assert f"ce prompt en ouvre {min(budget, lot)}" in plat
 
 
 def test_un_combine_court_plus_grand_que_le_lot_est_annonce_comme_tel(
@@ -1665,7 +1714,7 @@ def test_un_combine_court_plus_grand_que_le_lot_est_annonce_comme_tel(
     save_threshold("combo_min_lot", "2", migrated)
     save_threshold("combo_solo_min_lot", "2", migrated)
 
-    plafond = safe_legs_available(tiers, 3)
+    plafond = safe_legs_available(tiers, 3, threshold_value("recherche_dossiers", migrated))
     save_threshold("combo_court_jambes", str(plafond + 1), migrated)
 
     plat = _section_d(migrated, 3)
