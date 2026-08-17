@@ -853,6 +853,7 @@ def _freshness_line(
     commence_time: str,
     collected: date | None,
     settings: Settings,
+    now: datetime | None = None,
 ) -> tuple[str, str] | None:
     """Ligne « Fraicheur » : ce que l'historique ne compte pas encore.
 
@@ -908,7 +909,7 @@ def _freshness_line(
     # veulent dire que la source ne repond plus — et les deux se rendaient
     # pareil. Le modele ne peut pas trancher, il n'a pas la date d'aujourd'hui
     # dans le bloc ; l'application, si.
-    note = freshness.note_for(collected)
+    note = freshness.note_for(collected, now)
     if note:
         rows.append(note)
     if tennis_round.truncated(competition_id, commence_time, settings):
@@ -1058,6 +1059,7 @@ def lines(
     competition_id: int | None = None,
     cache: dict[str, Any] | None = None,
     oddsapi_key: str | None = None,
+    now: datetime | None = None,
 ) -> list[tuple[str, str]]:
     """Lignes d'historique tennis, pretes pour `render_event`.
 
@@ -1120,7 +1122,9 @@ def lines(
         # Ce que ce retard coute **en matchs**, joueur par joueur. Le compte
         # dormait dans nos propres scans : les tours precedents du tournoi ont
         # ete vus les jours d'avant. Aucun appel.
-        fraicheur = _freshness_line(home, away, competition_id, commence_time, collected, settings)
+        fraicheur = _freshness_line(
+            home, away, competition_id, commence_time, collected, settings, now
+        )
         if fraicheur:
             rendered.append(fraicheur)
 

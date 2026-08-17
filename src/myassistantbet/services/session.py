@@ -443,6 +443,7 @@ def context_block(
     competition_id: int | None = None,
     settings: Settings | None = None,
     cache: dict[str, Any] | None = None,
+    now: datetime | None = None,
 ) -> list[tuple[str, str]]:
     """Lignes du bloc CONTEXTE, toutes sources confondues.
 
@@ -493,13 +494,16 @@ def context_block(
         # L'historique des matchs joues : confrontations directes, palmares dans
         # ce tournoi, forme, bilan de surface et abandons.
         lines += tennis_history.lines(
-            home, away, surface, commence_time, settings, competition_id, cache, oddsapi_key
+            home, away, surface, commence_time, settings, competition_id, cache, oddsapi_key, now
         )
     return lines
 
 
 def _context_for(
-    row: Any, settings: Settings, cache: dict[str, Any] | None = None
+    row: Any,
+    settings: Settings,
+    cache: dict[str, Any] | None = None,
+    now: datetime | None = None,
 ) -> list[tuple[str, str]]:
     """Adaptateur pour une ligne de la requete de session.
 
@@ -521,6 +525,7 @@ def _context_for(
         competition_id=row["competition_id"],
         settings=settings,
         cache=cache,
+        now=now,
     )
     density = context_density([label for label, _ in lines], row["sport_key"], settings)
     if density.known and (density.empty or density.thin):
@@ -734,7 +739,7 @@ def renderable_events(
                     away=row["away"],
                     commence_local=_local(row["commence_time"], settings.tz),
                     markets=markets,
-                    context_lines=_context_for(row, settings, cache),
+                    context_lines=_context_for(row, settings, cache, now),
                     note=row["note"] or None,
                     # L'en-tete ne nomme que la source principale : les autres
                     # sont portees ligne par ligne. Un en-tete « Betclic +
