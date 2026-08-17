@@ -15,6 +15,7 @@ ALL_MIGRATIONS = [
 LATEST_VERSION = len(ALL_MIGRATIONS)
 
 EXPECTED_TABLES = {
+    "api_responses",
     "api_usage",
     "changelog_mesure",
     "combo_legs",

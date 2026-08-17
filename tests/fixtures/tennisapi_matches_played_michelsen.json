@@ -1,0 +1,413 @@
+{
+ "singles": [
+  {
+   "roundId": 5,
+   "result": "6-3 6-4",
+   "date": "2026-08-16T21:15:00.000Z",
+   "tournamentId": 21347,
+   "player1": {
+    "id": 29932,
+    "name": "Taylor Fritz",
+    "countryAcr": "USA",
+    "currentRank": 9,
+    "stats": {
+     "firstServe": 38,
+     "firstServeOf": 71,
+     "aces": 7,
+     "doubleFaults": 6,
+     "unforcedErrors": null,
+     "winningOnFirstServe": 31,
+     "winningOnFirstServeOf": 38,
+     "winningOnSecondServe": 14,
+     "winningOnSecondServeOf": 33,
+     "winners": null,
+     "breakPointsConverted": 3,
+     "breakPointsConvertedOf": 6,
+     "netApproaches": null,
+     "netApproachesOf": null,
+     "totalPointsWon": 72,
+     "fastestServe": null,
+     "averageFirstServeSpeed": null,
+     "averageSecondServeSpeed": null
+    }
+   },
+   "player2": {
+    "id": 92985,
+    "name": "Alex Michelsen",
+    "countryAcr": "USA",
+    "currentRank": 41,
+    "stats": {
+     "firstServe": 37,
+     "firstServeOf": 60,
+     "aces": 4,
+     "doubleFaults": 8,
+     "unforcedErrors": null,
+     "winningOnFirstServe": 25,
+     "winningOnFirstServeOf": 37,
+     "winningOnSecondServe": 8,
+     "winningOnSecondServeOf": 23,
+     "winners": null,
+     "breakPointsConverted": 1,
+     "breakPointsConvertedOf": 2,
+     "netApproaches": null,
+     "netApproachesOf": null,
+     "totalPointsWon": 59,
+     "fastestServe": null,
+     "averageFirstServeSpeed": null,
+     "averageSecondServeSpeed": null
+    }
+   },
+   "tournament": {
+    "id": 21347,
+    "name": "Cincinnati Open - Cincinnati",
+    "countryAcr": "USA",
+    "court": {
+     "id": 1,
+     "name": "Hard"
+    }
+   }
+  },
+  {
+   "roundId": 4,
+   "result": "6-4 6-4",
+   "date": "2026-08-14T21:45:00.000Z",
+   "tournamentId": 21347,
+   "player1": {
+    "id": 92985,
+    "name": "Alex Michelsen",
+    "countryAcr": "USA",
+    "currentRank": 41,
+    "stats": {
+     "firstServe": 36,
+     "firstServeOf": 57,
+     "aces": 7,
+     "doubleFaults": 1,
+     "unforcedErrors": null,
+     "winningOnFirstServe": 30,
+     "winningOnFirstServeOf": 36,
+     "winningOnSecondServe": 12,
+     "winningOnSecondServeOf": 21,
+     "winners": null,
+     "breakPointsConverted": 2,
+     "breakPointsConvertedOf": 4,
+     "netApproaches": null,
+     "netApproachesOf": null,
+     "totalPointsWon": 65,
+     "fastestServe": null,
+     "averageFirstServeSpeed": null,
+     "averageSecondServeSpeed": null
+    }
+   },
+   "player2": {
+    "id": 59166,
+    "name": "Jesper De Jong",
+    "countryAcr": "NED",
+    "currentRank": 106,
+    "stats": {
+     "firstServe": 29,
+     "firstServeOf": 58,
+     "aces": 3,
+     "doubleFaults": 4,
+     "unforcedErrors": null,
+     "winningOnFirstServe": 23,
+     "winningOnFirstServeOf": 29,
+     "winningOnSecondServe": 12,
+     "winningOnSecondServeOf": 29,
+     "winners": null,
+     "breakPointsConverted": 0,
+     "breakPointsConvertedOf": 2,
+     "netApproaches": null,
+     "netApproachesOf": null,
+     "totalPointsWon": 50,
+     "fastestServe": null,
+     "averageFirstServeSpeed": null,
+     "averageSecondServeSpeed": null
+    }
+   },
+   "tournament": {
+    "id": 21347,
+    "name": "Cincinnati Open - Cincinnati",
+    "countryAcr": "USA",
+    "court": {
+     "id": 1,
+     "name": "Hard"
+    }
+   }
+  },
+  {
+   "roundId": 6,
+   "result": "6-4 6-7(4) 6-1",
+   "date": "2026-08-07T19:35:00.000Z",
+   "tournamentId": 21346,
+   "player1": {
+    "id": 83223,
+    "name": "Daniel Merida Aguilar",
+    "countryAcr": "ESP",
+    "currentRank": 40,
+    "stats": {
+     "firstServe": 55,
+     "firstServeOf": 93,
+     "aces": 6,
+     "doubleFaults": 3,
+     "unforcedErrors": null,
+     "winningOnFirstServe": 44,
+     "winningOnFirstServeOf": 55,
+     "winningOnSecondServe": 16,
+     "winningOnSecondServeOf": 38,
+     "winners": null,
+     "breakPointsConverted": 5,
+     "breakPointsConvertedOf": 12,
+     "netApproaches": null,
+     "netApproachesOf": null,
+     "totalPointsWon": 102,
+     "fastestServe": null,
+     "averageFirstServeSpeed": null,
+     "averageSecondServeSpeed": null
+    }
+   },
+   "player2": {
+    "id": 92985,
+    "name": "Alex Michelsen",
+    "countryAcr": "USA",
+    "currentRank": 41,
+    "stats": {
+     "firstServe": 59,
+     "firstServeOf": 97,
+     "aces": 2,
+     "doubleFaults": 3,
+     "unforcedErrors": null,
+     "winningOnFirstServe": 42,
+     "winningOnFirstServeOf": 59,
+     "winningOnSecondServe": 13,
+     "winningOnSecondServeOf": 38,
+     "winners": null,
+     "breakPointsConverted": 2,
+     "breakPointsConvertedOf": 6,
+     "netApproaches": null,
+     "netApproachesOf": null,
+     "totalPointsWon": 88,
+     "fastestServe": null,
+     "averageFirstServeSpeed": null,
+     "averageSecondServeSpeed": null
+    }
+   },
+   "tournament": {
+    "id": 21346,
+    "name": "National Bank Open - Montreal",
+    "countryAcr": "CAN",
+    "court": {
+     "id": 1,
+     "name": "Hard"
+    }
+   }
+  },
+  {
+   "roundId": 5,
+   "result": "6-3 6-4",
+   "date": "2026-08-06T00:03:00.000Z",
+   "tournamentId": 21346,
+   "player1": {
+    "id": 92985,
+    "name": "Alex Michelsen",
+    "countryAcr": "USA",
+    "currentRank": 41,
+    "stats": {
+     "firstServe": 36,
+     "firstServeOf": 69,
+     "aces": 3,
+     "doubleFaults": 3,
+     "unforcedErrors": null,
+     "winningOnFirstServe": 24,
+     "winningOnFirstServeOf": 36,
+     "winningOnSecondServe": 23,
+     "winningOnSecondServeOf": 33,
+     "winners": null,
+     "breakPointsConverted": 2,
+     "breakPointsConvertedOf": 6,
+     "netApproaches": null,
+     "netApproachesOf": null,
+     "totalPointsWon": 68,
+     "fastestServe": null,
+     "averageFirstServeSpeed": null,
+     "averageSecondServeSpeed": null
+    }
+   },
+   "player2": {
+    "id": 52279,
+    "name": "Francisco Cerundolo",
+    "countryAcr": "ARG",
+    "currentRank": 25,
+    "stats": {
+     "firstServe": 31,
+     "firstServeOf": 54,
+     "aces": 6,
+     "doubleFaults": 1,
+     "unforcedErrors": null,
+     "winningOnFirstServe": 24,
+     "winningOnFirstServeOf": 31,
+     "winningOnSecondServe": 9,
+     "winningOnSecondServeOf": 23,
+     "winners": null,
+     "breakPointsConverted": 0,
+     "breakPointsConvertedOf": 9,
+     "netApproaches": null,
+     "netApproachesOf": null,
+     "totalPointsWon": 55,
+     "fastestServe": null,
+     "averageFirstServeSpeed": null,
+     "averageSecondServeSpeed": null
+    }
+   },
+   "tournament": {
+    "id": 21346,
+    "name": "National Bank Open - Montreal",
+    "countryAcr": "CAN",
+    "court": {
+     "id": 1,
+     "name": "Hard"
+    }
+   }
+  },
+  {
+   "roundId": 4,
+   "result": "6-1 3-6 6-1",
+   "date": "2026-08-04T04:05:00.000Z",
+   "tournamentId": 21346,
+   "player1": {
+    "id": 92985,
+    "name": "Alex Michelsen",
+    "countryAcr": "USA",
+    "currentRank": 41,
+    "stats": {
+     "firstServe": 43,
+     "firstServeOf": 68,
+     "aces": 4,
+     "doubleFaults": 3,
+     "unforcedErrors": null,
+     "winningOnFirstServe": 34,
+     "winningOnFirstServeOf": 43,
+     "winningOnSecondServe": 14,
+     "winningOnSecondServeOf": 25,
+     "winners": null,
+     "breakPointsConverted": 4,
+     "breakPointsConvertedOf": 6,
+     "netApproaches": null,
+     "netApproachesOf": null,
+     "totalPointsWon": 74,
+     "fastestServe": null,
+     "averageFirstServeSpeed": null,
+     "averageSecondServeSpeed": null
+    }
+   },
+   "player2": {
+    "id": 14177,
+    "name": "Jan-Lennard Struff",
+    "countryAcr": "GER",
+    "currentRank": 43,
+    "stats": {
+     "firstServe": 35,
+     "firstServeOf": 61,
+     "aces": 6,
+     "doubleFaults": 1,
+     "unforcedErrors": null,
+     "winningOnFirstServe": 23,
+     "winningOnFirstServeOf": 35,
+     "winningOnSecondServe": 12,
+     "winningOnSecondServeOf": 26,
+     "winners": null,
+     "breakPointsConverted": 1,
+     "breakPointsConvertedOf": 1,
+     "netApproaches": null,
+     "netApproachesOf": null,
+     "totalPointsWon": 55,
+     "fastestServe": null,
+     "averageFirstServeSpeed": null,
+     "averageSecondServeSpeed": null
+    }
+   },
+   "tournament": {
+    "id": 21346,
+    "name": "National Bank Open - Montreal",
+    "countryAcr": "CAN",
+    "court": {
+     "id": 1,
+     "name": "Hard"
+    }
+   }
+  },
+  {
+   "roundId": 9,
+   "result": "6-1 3-6 7-6(6)",
+   "date": "2026-07-31T00:00:00.000Z",
+   "tournamentId": 21344,
+   "player1": {
+    "id": 29932,
+    "name": "Taylor Fritz",
+    "countryAcr": "USA",
+    "currentRank": 9,
+    "stats": {
+     "firstServe": 51,
+     "firstServeOf": 85,
+     "aces": 15,
+     "doubleFaults": 3,
+     "unforcedErrors": null,
+     "winningOnFirstServe": 43,
+     "winningOnFirstServeOf": 51,
+     "winningOnSecondServe": 17,
+     "winningOnSecondServeOf": 34,
+     "winners": null,
+     "breakPointsConverted": 3,
+     "breakPointsConvertedOf": 6,
+     "netApproaches": null,
+     "netApproachesOf": null,
+     "totalPointsWon": 95,
+     "fastestServe": null,
+     "averageFirstServeSpeed": null,
+     "averageSecondServeSpeed": null
+    }
+   },
+   "player2": {
+    "id": 92985,
+    "name": "Alex Michelsen",
+    "countryAcr": "USA",
+    "currentRank": 41,
+    "stats": {
+     "firstServe": 56,
+     "firstServeOf": 91,
+     "aces": 5,
+     "doubleFaults": 7,
+     "unforcedErrors": null,
+     "winningOnFirstServe": 41,
+     "winningOnFirstServeOf": 56,
+     "winningOnSecondServe": 15,
+     "winningOnSecondServeOf": 35,
+     "winners": null,
+     "breakPointsConverted": 2,
+     "breakPointsConvertedOf": 10,
+     "netApproaches": null,
+     "netApproachesOf": null,
+     "totalPointsWon": 81,
+     "fastestServe": null,
+     "averageFirstServeSpeed": null,
+     "averageSecondServeSpeed": null
+    }
+   },
+   "tournament": {
+    "id": 21344,
+    "name": "Citi Open - Washington",
+    "countryAcr": "USA",
+    "court": {
+     "id": 1,
+     "name": "Hard"
+    }
+   }
+  }
+ ],
+ "doubles": [],
+ "qualifying": [],
+ "singlesCount": 311,
+ "page": 1,
+ "pageNo": 1,
+ "pageSize": 100,
+ "limit": 100
+}

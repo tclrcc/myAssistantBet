@@ -1341,3 +1341,139 @@ dont la taille de lot varie peu. Le 10/08 rend une pente négative (−127), ce 
 n'a pas de sens physique et dit seulement que ce jour-là les lots étaient trop
 homogènes pour identifier une pente. Le chiffre à retenir est l'ajustement
 global, pas la colonne jour par jour.
+
+---
+
+# DIAGNOSTIC — lot 5 : les statistiques de service, le budget, et les dettes
+
+Relevé du **17/08/2026**, sur une copie de la base servie et par sondage direct
+de `tennis-api.com`. Deux prémisses du brief sont contredites dès les préalables.
+
+---
+
+## §0.1 — La population exploratoire : la porte n'a pas eu l'occasion de s'ouvrir
+
+**Réponse en une ligne, avant tout le reste : elle est encore à zéro, et ce
+n'est pas un extracteur muet — aucune session n'a été importée depuis la mise en
+service de C-bis.**
+
+La condition posée par le brief — « si elle est encore à zéro *alors qu'une
+session a bien été importée* » — n'est pas remplie. Le point ne passe donc pas
+devant le reste, et la chronologie le dit sans ambiguïté :
+
+| Instant | Fait |
+| --- | --- |
+| 08:02–08:04 | 8 sélections importées, **session 14**, sous le code de la veille |
+| **13:45:20** | migrations 050 à 057 appliquées — l'application redémarre |
+| 13:47:49 | prompt de la session 15 généré, **il porte bien C-bis** (2 occurrences) |
+| — | **session 15 : 0 sélection**, la réponse n'a pas encore été collée |
+
+**Le témoin décisif est `imports_raw`, et il est vide.** Cette table s'écrit
+*avant* toute tentative de lecture — c'est tout son objet, livré au lot 2. Si un
+collage avait eu lieu et que l'extracteur avait été muet, il y aurait une ligne
+ici et zéro sélection exploratoire. Il n'y a ni l'un ni l'autre : rien n'a été
+collé.
+
+`ingestion_rejects` est vide pour la même raison. La mesure de C-bis commence au
+premier import postérieur à 13:45 aujourd'hui, et pas avant.
+
+---
+
+## §0.2 — Le quota PRO : mesuré dans les en-têtes, et le brief le surestime d'un ordre de grandeur
+
+**Les en-têtes font foi, et ils suffisent** — la page de tarification n'a pas été
+nécessaire, ce que le brief demandait de confronter est directement servi :
+
+```
+x-ratelimit-requests-limit:     150000
+x-ratelimit-requests-remaining: 149999
+x-ratelimit-requests-reset:     2677884   (= 30,99 jours)
+```
+
+Le quota est donc de **150 000 appels par mois**, et il est intact — le plan
+vient d'être souscrit.
+
+**Aucun en-tête de débit n'existe**, ni `x-ratelimit-rate-limit` ni
+`retry-after`. Dix appels consécutifs passent en **2,25 s (4,4 req/s)** sans un
+seul 429. Le débit n'est donc pas borné par le fournisseur : `RAPIDAPI_INTERVAL`
+est une politesse de notre côté sur une reprise longue, et le code le dit ainsi
+plutôt que de la présenter comme une limite relevée.
+
+**Une réponse servie par le cache de RapidAPI consomme quand même.** Les dix
+appels identiques portaient `x-cached: HIT` et ont fait descendre le compteur de
+dix. Il n'y a pas de repli gratuit à espérer d'une répétition, et `_account`
+compte donc **un crédit par appel, quoi qu'il rende** — c'est la différence avec
+The Odds API, qui facture au marché servi.
+
+### La prémisse du dimensionnement est fausse, et d'un facteur dix
+
+> « Une reprise complète de l'historique sur ~196 joueurs, à 52 semaines et
+> **10 matchs par page**, se compte en centaines d'appels. »
+
+`pageSize` est un paramètre accepté, et il monte à **200** :
+
+| `pageSize` demandé | Lignes rendues | Fenêtre couverte |
+| ---: | ---: | --- |
+| 10 (défaut) | 10 | 2026-06-20 → 2026-08-16 |
+| 100 | 100 | 2025-06-12 → 2026-08-16 |
+| 200 | 200 | 2024-04-30 → 2026-08-16 |
+| 500 | **200** | plafonné silencieusement |
+| 1000 | **200** | plafonné silencieusement |
+
+À `pageSize=100`, **une seule page couvre plus de 52 semaines pour tous les
+joueurs sondés** — un joueur joue 60 à 81 matchs par an, cent lignes remontent à
+quatorze à dix-neuf mois :
+
+| Joueur | Total historique | Matchs sur 52 sem. | Avec stats | Points de service | Page 1 remonte à |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Alexander Zverev | 975 | 81 | 78 | **6 129** | 2025-06-12 |
+| Aryna Sabalenka | 739 | 62 | 61 | **4 233** | 2025-03-24 |
+| Simona Waltert | 561 | 76 | 74 | **5 217** | 2025-04-19 |
+| Alex Michelsen | 311 | 60 | 60 | **4 609** | 2025-01-16 |
+
+`PAGE_SIZE` vaut donc 100 et non 200 : le double du volume transféré
+n'ajouterait pas une ligne à la fenêtre utile.
+
+**Michelsen est le cas qui tranche.** C'est lui qui avait fait échouer le Match
+Charting Project au lot 3 — **65** points de service, dans la même affiche qu'un
+Fritz à 744. Ici il en porte **4 609**. Le mode de défaillance qui a fermé le
+substitut précédent — la couverture qui s'effondre hors du top 20 — n'existe pas
+sur cette source.
+
+### Le plancher dur
+
+`RAPIDAPI_CALL_FLOOR`, **20 000**, soit 13 % du quota mensuel.
+
+**Ce plancher ne ressemble à aucun des deux autres, et le code le dit.**
+`ODDS_API_CREDIT_FLOOR` et `APIFOOTBALL_CALL_FLOOR` gardent des quotas
+*journaliers* : un plancher franchi se rouvre tout seul le lendemain, et le coût
+d'une erreur est une journée. Celui-ci garde un quota *mensuel*. Une reprise qui
+l'épuiserait le 8 laisserait l'application sans données de service jusqu'au
+renouvellement — d'où le message, qui écrit « le quota est mensuel : il se rouvre
+au renouvellement, pas demain », et un test qui le vérifie.
+
+Deuxième différence, voulue : **on s'arrête, on ne dégrade pas.** Le dossier
+d'équipe se suspend en laissant passer le contexte, parce que le contexte est la
+fonction première. Ici il n'y a rien à laisser passer : ces lignes sont un profil
+de fond, et un profil de fond incomplet est exactement ce que le lot 3 a refusé.
+
+### Le dimensionnement
+
+| Poste | Appels | Détail |
+| --- | ---: | --- |
+| Résolution d'identité, reprise | 176 | un `profile/search` par joueur, **puis cache définitif** |
+| Table de service, reprise | ~180 | un `matches-played` par joueur, +quelques 2ᵉ pages |
+| **Reprise, sous-total** | **~360** | |
+| Timelines 52 sem., reprise | ~6 200 | un `event/get` par match distinct (~70 matchs/joueur ÷ 2 camps) |
+| **Reprise complète** | **~6 600** | soit **4,4 %** du quota mensuel |
+| Entretien : joueurs d'un lot | ~35/jour | un lot tennis porte 35 joueurs en moyenne |
+| Entretien : timelines du jour | ~18/jour | les matchs joués depuis la passe précédente |
+| **Entretien quotidien** | **~55/jour** | soit **~1 700/mois** |
+
+**Marge restante après une reprise complète et un mois d'entretien : environ
+141 700 appels, soit 94 % du quota.** Le plancher de 20 000 laisse de quoi tenir
+plus d'un an d'entretien au régime mesuré.
+
+C'est aussi ce qui autorise la mesure de couverture du §6 sans arbitrage : elle
+coûte l'équivalent d'une reprise d'identité et de table, ~360 appels, et il n'y
+avait donc aucune raison de l'échantillonner.

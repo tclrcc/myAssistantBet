@@ -49,6 +49,13 @@ class ProviderResponse:
     headers: dict[str, str] = field(default_factory=dict)
     duration_ms: int = 0
     from_cache: bool = False
+    #: Identifiant de l'archive brute, quand le client en tient une. 0 = aucune.
+    #:
+    #: **C'est lui que chaque ligne derivee recopie**, pour qu'on puisse toujours
+    #: remonter d'un agregat a la reponse dont il sort. Il vaut 0 chez les
+    #: fournisseurs qui n'archivent pas — les sources gratuites se redemandent,
+    #: celle-ci non.
+    archive_id: int = 0
 
 
 def record_api_usage(
@@ -94,6 +101,78 @@ def record_quota_reading(
     pour 2 953 appels journalises.
     """
     record_api_usage(provider, endpoint, 0, remaining, settings, outcome=outcome)
+
+
+#: Cles de parametres a ne jamais ecrire dans l'archive. Meme liste d'esprit que
+#: `SECRET_PARAMS`, elargie aux en-tetes que certains fournisseurs passent en
+#: query : une archive est un troisieme endroit ou un secret ne doit pas atterrir,
+#: apres le cache disque et les logs.
+ARCHIVE_SECRETS = SECRET_PARAMS | {"x-rapidapi-key", "token"}
+
+
+def archive_params(params: dict[str, Any] | None) -> str:
+    """Parametres normalises : cles triees, secrets exclus, JSON compact.
+
+    **Tries**, sans quoi deux appels identiques produiraient deux archives que
+    rien ne rapproche.
+    """
+    propres = {
+        str(k): v for k, v in sorted((params or {}).items()) if str(k) not in ARCHIVE_SECRETS
+    }
+    return json.dumps(propres, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+
+def archive_response(
+    provider: str,
+    endpoint: str,
+    path: str,
+    payload: Any,
+    *,
+    params: dict[str, Any] | None = None,
+    http_status: int | None = None,
+    quota_remaining: int | None = None,
+    settings: Settings | None = None,
+) -> int:
+    """Ecrit une reponse **telle quelle**, avant que quiconque tente de la lire.
+
+    C'est la lecon directe de Sackmann : une source gratuite a disparu du jour
+    au lendemain, et rien n'en avait ete garde localement. `tennis-api.com` est
+    payante, proprietaire et unique — cette table est le seul endroit ou
+    l'historique deja constitue survivra a une fin d'abonnement.
+
+    **Elle vit ici et non dans un service**, a cote de `record_api_usage`, et
+    pour la meme raison que lui : c'est de l'instrumentation d'appel, pas du
+    metier, et l'appeler depuis le client est ce qui garantit **structurellement**
+    que rien n'est lu avant d'etre archive — l'appelant ne recoit la charge utile
+    qu'ensuite. Le cote lecture, lui, est un service : voir `services/api_archive.py`.
+
+    **Ne leve jamais.** Une archive qui ferait tomber la collecte transformerait
+    un temoin en point de panne, ce qui est l'inverse de son role.
+    """
+    brut = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
+    empreinte = hashlib.sha256(brut.encode("utf-8")).hexdigest()
+    try:
+        with connect(settings) as conn:
+            cursor = conn.execute(
+                "INSERT INTO api_responses (provider, endpoint, path, params, raw_json, "
+                "  sha256, http_status, fetched_at, quota_remaining) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    provider,
+                    endpoint,
+                    path,
+                    archive_params(params),
+                    brut,
+                    empreinte,
+                    http_status,
+                    utcnow(),
+                    quota_remaining,
+                ),
+            )
+            return int(cursor.lastrowid or 0)
+    except Exception:
+        logger.exception("archive de reponse impossible : %s %s", provider, path)
+        return 0
 
 
 def last_known_quota(provider: str, settings: Settings | None = None) -> dict[str, Any] | None:

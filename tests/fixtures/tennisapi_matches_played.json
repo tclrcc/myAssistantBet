@@ -1,0 +1,547 @@
+{
+ "singles": [
+  {
+   "roundId": 5,
+   "result": "3-6 6-3 6-3",
+   "date": "2026-08-16T06:30:00.000Z",
+   "tournamentId": 21347,
+   "player1": {
+    "id": 24008,
+    "name": "Alexander Zverev",
+    "countryAcr": "GER",
+    "currentRank": 3,
+    "stats": {
+     "firstServe": 39,
+     "firstServeOf": 74,
+     "aces": 16,
+     "doubleFaults": 5,
+     "unforcedErrors": null,
+     "winningOnFirstServe": 33,
+     "winningOnFirstServeOf": 39,
+     "winningOnSecondServe": 20,
+     "winningOnSecondServeOf": 35,
+     "winners": null,
+     "breakPointsConverted": 3,
+     "breakPointsConvertedOf": 15,
+     "netApproaches": null,
+     "netApproachesOf": null,
+     "totalPointsWon": 99,
+     "fastestServe": null,
+     "averageFirstServeSpeed": null,
+     "averageSecondServeSpeed": null
+    }
+   },
+   "player2": {
+    "id": 27851,
+    "name": "Cameron Norrie",
+    "countryAcr": "GBR",
+    "currentRank": 35,
+    "stats": {
+     "firstServe": 64,
+     "firstServeOf": 111,
+     "aces": 3,
+     "doubleFaults": 6,
+     "unforcedErrors": null,
+     "winningOnFirstServe": 42,
+     "winningOnFirstServeOf": 64,
+     "winningOnSecondServe": 23,
+     "winningOnSecondServeOf": 47,
+     "winners": null,
+     "breakPointsConverted": 1,
+     "breakPointsConvertedOf": 3,
+     "netApproaches": null,
+     "netApproachesOf": null,
+     "totalPointsWon": 86,
+     "fastestServe": null,
+     "averageFirstServeSpeed": null,
+     "averageSecondServeSpeed": null
+    }
+   },
+   "tournament": {
+    "id": 21347,
+    "name": "Cincinnati Open - Cincinnati",
+    "countryAcr": "USA",
+    "court": {
+     "id": 1,
+     "name": "Hard"
+    }
+   }
+  },
+  {
+   "roundId": 5,
+   "result": "6-7(3) 6-2 6-4",
+   "date": "2026-08-05T22:20:00.000Z",
+   "tournamentId": 21346,
+   "player1": {
+    "id": 33860,
+    "name": "Tallon Griekspoor",
+    "countryAcr": "NED",
+    "currentRank": 56,
+    "stats": {
+     "firstServe": 55,
+     "firstServeOf": 80,
+     "aces": 8,
+     "doubleFaults": 2,
+     "unforcedErrors": null,
+     "winningOnFirstServe": 45,
+     "winningOnFirstServeOf": 55,
+     "winningOnSecondServe": 15,
+     "winningOnSecondServeOf": 25,
+     "winners": null,
+     "breakPointsConverted": 4,
+     "breakPointsConvertedOf": 9,
+     "netApproaches": null,
+     "netApproachesOf": null,
+     "totalPointsWon": 96,
+     "fastestServe": null,
+     "averageFirstServeSpeed": null,
+     "averageSecondServeSpeed": null
+    }
+   },
+   "player2": {
+    "id": 24008,
+    "name": "Alexander Zverev",
+    "countryAcr": "GER",
+    "currentRank": 3,
+    "stats": {
+     "firstServe": 65,
+     "firstServeOf": 94,
+     "aces": 10,
+     "doubleFaults": 4,
+     "unforcedErrors": null,
+     "winningOnFirstServe": 46,
+     "winningOnFirstServeOf": 65,
+     "winningOnSecondServe": 12,
+     "winningOnSecondServeOf": 29,
+     "winners": null,
+     "breakPointsConverted": 1,
+     "breakPointsConvertedOf": 1,
+     "netApproaches": null,
+     "netApproachesOf": null,
+     "totalPointsWon": 78,
+     "fastestServe": null,
+     "averageFirstServeSpeed": null,
+     "averageSecondServeSpeed": null
+    }
+   },
+   "tournament": {
+    "id": 21346,
+    "name": "National Bank Open - Montreal",
+    "countryAcr": "CAN",
+    "court": {
+     "id": 1,
+     "name": "Hard"
+    }
+   }
+  },
+  {
+   "roundId": 12,
+   "result": "6-7(7) 7-6(2) 6-3 6-4",
+   "date": "2026-07-12T00:00:00.000Z",
+   "tournamentId": 21337,
+   "player1": {
+    "id": 47275,
+    "name": "Jannik Sinner",
+    "countryAcr": "ITA",
+    "currentRank": 1,
+    "stats": {
+     "firstServe": 87,
+     "firstServeOf": 136,
+     "aces": 15,
+     "doubleFaults": 2,
+     "unforcedErrors": 25,
+     "winningOnFirstServe": 70,
+     "winningOnFirstServeOf": 87,
+     "winningOnSecondServe": 32,
+     "winningOnSecondServeOf": 49,
+     "winners": 58,
+     "breakPointsConverted": 2,
+     "breakPointsConvertedOf": 5,
+     "netApproaches": 18,
+     "netApproachesOf": 23,
+     "totalPointsWon": 145,
+     "fastestServe": 215,
+     "averageFirstServeSpeed": 201,
+     "averageSecondServeSpeed": 156
+    }
+   },
+   "player2": {
+    "id": 24008,
+    "name": "Alexander Zverev",
+    "countryAcr": "GER",
+    "currentRank": 3,
+    "stats": {
+     "firstServe": 105,
+     "firstServeOf": 139,
+     "aces": 17,
+     "doubleFaults": 2,
+     "unforcedErrors": 45,
+     "winningOnFirstServe": 76,
+     "winningOnFirstServeOf": 105,
+     "winningOnSecondServe": 20,
+     "winningOnSecondServeOf": 34,
+     "winners": 49,
+     "breakPointsConverted": 0,
+     "breakPointsConvertedOf": 1,
+     "netApproaches": 20,
+     "netApproachesOf": 28,
+     "totalPointsWon": 130,
+     "fastestServe": 223,
+     "averageFirstServeSpeed": 212,
+     "averageSecondServeSpeed": 183
+    }
+   },
+   "tournament": {
+    "id": 21337,
+    "name": "Wimbledon - London",
+    "countryAcr": "GBR",
+    "court": {
+     "id": 5,
+     "name": "Grass"
+    }
+   }
+  },
+  {
+   "roundId": 10,
+   "result": "7-6(0) 6-2 6-4",
+   "date": "2026-07-10T00:00:00.000Z",
+   "tournamentId": 21337,
+   "player1": {
+    "id": 24008,
+    "name": "Alexander Zverev",
+    "countryAcr": "GER",
+    "currentRank": 3,
+    "stats": {
+     "firstServe": 57,
+     "firstServeOf": 79,
+     "aces": 9,
+     "doubleFaults": 2,
+     "unforcedErrors": 31,
+     "winningOnFirstServe": 44,
+     "winningOnFirstServeOf": 57,
+     "winningOnSecondServe": 18,
+     "winningOnSecondServeOf": 22,
+     "winners": 44,
+     "breakPointsConverted": 4,
+     "breakPointsConvertedOf": 8,
+     "netApproaches": 16,
+     "netApproachesOf": 24,
+     "totalPointsWon": 107,
+     "fastestServe": 223,
+     "averageFirstServeSpeed": 214,
+     "averageSecondServeSpeed": 187
+    }
+   },
+   "player2": {
+    "id": 79065,
+    "name": "Arthur Fery",
+    "countryAcr": "GBR",
+    "currentRank": 37,
+    "stats": {
+     "firstServe": 68,
+     "firstServeOf": 98,
+     "aces": 5,
+     "doubleFaults": 4,
+     "unforcedErrors": 25,
+     "winningOnFirstServe": 40,
+     "winningOnFirstServeOf": 68,
+     "winningOnSecondServe": 13,
+     "winningOnSecondServeOf": 30,
+     "winners": 16,
+     "breakPointsConverted": 1,
+     "breakPointsConvertedOf": 1,
+     "netApproaches": 16,
+     "netApproachesOf": 26,
+     "totalPointsWon": 70,
+     "fastestServe": 201,
+     "averageFirstServeSpeed": 190,
+     "averageSecondServeSpeed": 155
+    }
+   },
+   "tournament": {
+    "id": 21337,
+    "name": "Wimbledon - London",
+    "countryAcr": "GBR",
+    "court": {
+     "id": 5,
+     "name": "Grass"
+    }
+   }
+  },
+  {
+   "roundId": 9,
+   "result": "6-4 6-4 6-2",
+   "date": "2026-07-08T00:00:00.000Z",
+   "tournamentId": 21337,
+   "player1": {
+    "id": 24008,
+    "name": "Alexander Zverev",
+    "countryAcr": "GER",
+    "currentRank": 3,
+    "stats": {
+     "firstServe": 60,
+     "firstServeOf": 78,
+     "aces": 14,
+     "doubleFaults": 2,
+     "unforcedErrors": 15,
+     "winningOnFirstServe": 46,
+     "winningOnFirstServeOf": 60,
+     "winningOnSecondServe": 13,
+     "winningOnSecondServeOf": 18,
+     "winners": 29,
+     "breakPointsConverted": 4,
+     "breakPointsConvertedOf": 6,
+     "netApproaches": 9,
+     "netApproachesOf": 14,
+     "totalPointsWon": 93,
+     "fastestServe": 225,
+     "averageFirstServeSpeed": 212,
+     "averageSecondServeSpeed": 185
+    }
+   },
+   "player2": {
+    "id": 29932,
+    "name": "Taylor Fritz",
+    "countryAcr": "USA",
+    "currentRank": 9,
+    "stats": {
+     "firstServe": 55,
+     "firstServeOf": 88,
+     "aces": 17,
+     "doubleFaults": 2,
+     "unforcedErrors": 28,
+     "winningOnFirstServe": 43,
+     "winningOnFirstServeOf": 55,
+     "winningOnSecondServe": 11,
+     "winningOnSecondServeOf": 33,
+     "winners": 31,
+     "breakPointsConverted": 0,
+     "breakPointsConvertedOf": 4,
+     "netApproaches": 3,
+     "netApproachesOf": 6,
+     "totalPointsWon": 73,
+     "fastestServe": 222,
+     "averageFirstServeSpeed": 201,
+     "averageSecondServeSpeed": 172
+    }
+   },
+   "tournament": {
+    "id": 21337,
+    "name": "Wimbledon - London",
+    "countryAcr": "GBR",
+    "court": {
+     "id": 5,
+     "name": "Grass"
+    }
+   }
+  },
+  {
+   "roundId": 7,
+   "result": "6-4 7-5 3-6 7-6(6)",
+   "date": "2026-07-07T00:00:00.000Z",
+   "tournamentId": 21337,
+   "player1": {
+    "id": 24008,
+    "name": "Alexander Zverev",
+    "countryAcr": "GER",
+    "currentRank": 3,
+    "stats": {
+     "firstServe": 88,
+     "firstServeOf": 125,
+     "aces": 12,
+     "doubleFaults": 4,
+     "unforcedErrors": 40,
+     "winningOnFirstServe": 72,
+     "winningOnFirstServeOf": 88,
+     "winningOnSecondServe": 21,
+     "winningOnSecondServeOf": 37,
+     "winners": 39,
+     "breakPointsConverted": 2,
+     "breakPointsConvertedOf": 6,
+     "netApproaches": 21,
+     "netApproachesOf": 25,
+     "totalPointsWon": 132,
+     "fastestServe": 225,
+     "averageFirstServeSpeed": 212,
+     "averageSecondServeSpeed": 186
+    }
+   },
+   "player2": {
+    "id": 61838,
+    "name": "Jiri Lehecka",
+    "countryAcr": "CZE",
+    "currentRank": 14,
+    "stats": {
+     "firstServe": 87,
+     "firstServeOf": 134,
+     "aces": 14,
+     "doubleFaults": 3,
+     "unforcedErrors": 25,
+     "winningOnFirstServe": 66,
+     "winningOnFirstServeOf": 87,
+     "winningOnSecondServe": 29,
+     "winningOnSecondServeOf": 47,
+     "winners": 47,
+     "breakPointsConverted": 1,
+     "breakPointsConvertedOf": 8,
+     "netApproaches": 37,
+     "netApproachesOf": 52,
+     "totalPointsWon": 127,
+     "fastestServe": 225,
+     "averageFirstServeSpeed": 200,
+     "averageSecondServeSpeed": 165
+    }
+   },
+   "tournament": {
+    "id": 21337,
+    "name": "Wimbledon - London",
+    "countryAcr": "GBR",
+    "court": {
+     "id": 5,
+     "name": "Grass"
+    }
+   }
+  },
+  {
+   "roundId": 6,
+   "result": "6-2 7-6(4) 6-4",
+   "date": "2026-07-04T00:00:00.000Z",
+   "tournamentId": 21337,
+   "player1": {
+    "id": 24008,
+    "name": "Alexander Zverev",
+    "countryAcr": "GER",
+    "currentRank": 3,
+    "stats": {
+     "firstServe": 70,
+     "firstServeOf": 96,
+     "aces": 17,
+     "doubleFaults": 3,
+     "unforcedErrors": 39,
+     "winningOnFirstServe": 54,
+     "winningOnFirstServeOf": 70,
+     "winningOnSecondServe": 14,
+     "winningOnSecondServeOf": 26,
+     "winners": 39,
+     "breakPointsConverted": 4,
+     "breakPointsConvertedOf": 16,
+     "netApproaches": 17,
+     "netApproachesOf": 21,
+     "totalPointsWon": 118,
+     "fastestServe": 218,
+     "averageFirstServeSpeed": 210,
+     "averageSecondServeSpeed": 184
+    }
+   },
+   "player2": {
+    "id": 18736,
+    "name": "Marcos Giron",
+    "countryAcr": "USA",
+    "currentRank": 83,
+    "stats": {
+     "firstServe": 78,
+     "firstServeOf": 124,
+     "aces": 1,
+     "doubleFaults": 3,
+     "unforcedErrors": 27,
+     "winningOnFirstServe": 59,
+     "winningOnFirstServeOf": 78,
+     "winningOnSecondServe": 15,
+     "winningOnSecondServeOf": 46,
+     "winners": 22,
+     "breakPointsConverted": 1,
+     "breakPointsConvertedOf": 4,
+     "netApproaches": 14,
+     "netApproachesOf": 24,
+     "totalPointsWon": 102,
+     "fastestServe": 202,
+     "averageFirstServeSpeed": 185,
+     "averageSecondServeSpeed": 155
+    }
+   },
+   "tournament": {
+    "id": 21337,
+    "name": "Wimbledon - London",
+    "countryAcr": "GBR",
+    "court": {
+     "id": 5,
+     "name": "Grass"
+    }
+   }
+  },
+  {
+   "roundId": 5,
+   "result": "6-1 6-3 7-6(3)",
+   "date": "2026-07-02T00:00:00.000Z",
+   "tournamentId": 21337,
+   "player1": {
+    "id": 24008,
+    "name": "Alexander Zverev",
+    "countryAcr": "GER",
+    "currentRank": 3,
+    "stats": {
+     "firstServe": 54,
+     "firstServeOf": 76,
+     "aces": 14,
+     "doubleFaults": 2,
+     "unforcedErrors": 28,
+     "winningOnFirstServe": 46,
+     "winningOnFirstServeOf": 54,
+     "winningOnSecondServe": 13,
+     "winningOnSecondServeOf": 22,
+     "winners": 37,
+     "breakPointsConverted": 5,
+     "breakPointsConvertedOf": 8,
+     "netApproaches": 8,
+     "netApproachesOf": 9,
+     "totalPointsWon": 100,
+     "fastestServe": 225,
+     "averageFirstServeSpeed": 211,
+     "averageSecondServeSpeed": 189
+    }
+   },
+   "player2": {
+    "id": 61857,
+    "name": "Valentin Royer",
+    "countryAcr": "FRA",
+    "currentRank": 78,
+    "stats": {
+     "firstServe": 59,
+     "firstServeOf": 95,
+     "aces": 3,
+     "doubleFaults": 2,
+     "unforcedErrors": 22,
+     "winningOnFirstServe": 33,
+     "winningOnFirstServeOf": 59,
+     "winningOnSecondServe": 21,
+     "winningOnSecondServeOf": 36,
+     "winners": 15,
+     "breakPointsConverted": 1,
+     "breakPointsConvertedOf": 1,
+     "netApproaches": 13,
+     "netApproachesOf": 19,
+     "totalPointsWon": 71,
+     "fastestServe": 207,
+     "averageFirstServeSpeed": 186,
+     "averageSecondServeSpeed": 162
+    }
+   },
+   "tournament": {
+    "id": 21337,
+    "name": "Wimbledon - London",
+    "countryAcr": "GBR",
+    "court": {
+     "id": 5,
+     "name": "Grass"
+    }
+   }
+  }
+ ],
+ "doubles": [],
+ "qualifying": [],
+ "singlesCount": 975,
+ "page": 1,
+ "pageNo": 1,
+ "pageSize": 100,
+ "limit": 100
+}
