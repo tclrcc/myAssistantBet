@@ -156,6 +156,11 @@ class StatsReport:
     #: bande atteinte et jamais employee, selection ecartee par le quota — et
     #: elles n'appellent pas la meme conclusion.
     tier_usage: list[history_service.TierUsage] = field(default_factory=list)
+    #: `(sessions couvertes, sessions au total)` du releve des paliers. **Le
+    #: releve ne porte que sur la periode ou le marche est fige** — `prompt_odds`
+    #: date de la migration 033 — et le taire laisserait croire a une couverture
+    #: complete.
+    tier_scope: tuple[int, int] = (0, 0)
     #: Le second circuit — les selections produites **sans fait date**, par la
     #: section C-bis. Un taux faible y est le resultat attendu.
     exploratory: history_service.Exploratory = field(default_factory=history_service.Exploratory)
@@ -196,6 +201,7 @@ class StatsReport:
             "ingestion": self.ingestion,
             "combos": self.combos,
             "tier_usage": self.tier_usage,
+            "tier_scope": self.tier_scope,
             "exploratory": self.exploratory,
             "coupon_tracking": self.coupon_tracking,
             "late": self.late,
@@ -382,11 +388,14 @@ class StatsReport:
             detail = " · ".join(
                 f"{row.label} (proposé sur {row.offered} session(s))" for row in jamais
             )
+            couvertes, total = self.tier_scope
             notes.append(
                 f"{len(jamais)} palier(s) ont été proposés par un lot et n'ont jamais rien "
                 f"produit : {detail}. Un palier qu'aucune cote n'atteint ne compte pas ici — "
                 "c'est la distinction qui manquait, et sans elle une règle assouplie ne se "
-                "mesure pas."
+                f"mesure pas. Relevé sur {couvertes} session(s) sur {total} : le marché "
+                "n'est figé que depuis la migration 033, et les plus anciennes n'ont aucun "
+                "relevé — leurs bandes ne se reconstitueront pas."
             )
         if not self.ingestion.empty:
             detail = " · ".join(f"{row.label} ({row.count})" for row in self.ingestion.rows)
@@ -493,6 +502,7 @@ def report(settings: Settings | None = None) -> StatsReport:
         ingestion=ingestion_service.summary(settings),
         combos=combos_service.summary(settings),
         tier_usage=history_service.tier_usage(settings),
+        tier_scope=history_service.tier_scope(settings),
         exploratory=exploratoire,
         late=history_service.late(settings),
         coupon_tracking=toggle_of(COUPON_TRACKING, settings),

@@ -1604,8 +1604,31 @@ class TierUsage:
         return self.sessions - self.offered
 
 
+#: La migration qui a cree `prompt_odds`, donc **la borne du releve des
+#: paliers** : les sessions anterieures n'ont aucun marche fige, et rien ne dira
+#: jamais quelles bandes elles proposaient. La page le dit plutot que de laisser
+#: croire a une couverture complete — c'est le meme defaut que partout ici, une
+#: absence qui se lit comme une mesure.
+TIER_OFFER_MIGRATION = 33
+
+
+def tier_scope(settings: Settings | None = None) -> tuple[int, int]:
+    """`(sessions couvertes, sessions au total)` du releve des paliers.
+
+    L'ecart entre les deux est ce que la page doit annoncer : un releve sur six
+    sessions sur quatorze n'est pas un releve sur quatorze, et le taire ferait
+    lire « bande jamais atteinte » sur huit sessions dont on ne sait rien.
+    """
+    with connect(settings) as conn:
+        couvertes = conn.execute(
+            "SELECT COUNT(DISTINCT session_id) AS n FROM prompt_odds"
+        ).fetchone()["n"]
+        total = conn.execute("SELECT COUNT(DISTINCT session_id) AS n FROM prompts").fetchone()["n"]
+    return int(couvertes or 0), int(total or 0)
+
+
 def tier_usage(settings: Settings | None = None) -> list[TierUsage]:
-    """Le releve par palier, agrege sur toutes les sessions."""
+    """Le releve par palier, agrege sur toutes les sessions **couvertes**."""
     offres = tier_offers(settings)
     par_palier: dict[str, list[TierOffer]] = {}
     for offre in offres:

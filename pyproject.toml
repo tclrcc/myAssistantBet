@@ -27,6 +27,7 @@ dev = [
 [project.scripts]
 myassistantbet-backup = "myassistantbet.backup:main"
 myassistantbet-replay = "myassistantbet.replay:main"
+myassistantbet-selfcheck = "myassistantbet.selfcheck:main"
 
 [build-system]
 requires = ["hatchling"]

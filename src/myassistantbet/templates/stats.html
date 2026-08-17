@@ -729,6 +729,17 @@
         l'écart entre « bande atteinte » et « employé » qui dira si une règle
         assouplie a marché — il ne bouge pas quand le lot ne portait pas la cote.
       </p>
+      {# **Le périmètre se dit, plutôt que de laisser croire à une couverture
+         complète.** `prompt_odds` date de la migration 033 : les sessions
+         antérieures n'ont aucun marché figé, et rien ne dira jamais quelles
+         bandes elles proposaient. Les compter ferait lire « bande jamais
+         atteinte » sur des sessions dont on ne sait rien — le défaut exact que
+         ce relevé existe pour supprimer. #}
+      <p class="muted small">
+        Relevé sur <strong>{{ tier_scope[0] }} session(s) sur {{ tier_scope[1] }}</strong> :
+        le marché n'est figé qu'à partir de la migration 033, et les plus anciennes
+        n'en portent aucun. Leurs bandes ne se reconstitueront pas.
+      </p>
     </div>
   </details>
   {% endif %}

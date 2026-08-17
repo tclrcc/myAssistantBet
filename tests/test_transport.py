@@ -314,3 +314,34 @@ def test_les_rejets_du_banc_arrivent_bien_en_base(client: TestClient, migrated: 
         row["reason"] for row in db.query("SELECT reason FROM ingestion_rejects", settings=migrated)
     }
     assert ingestion.JSON_INVALID in motifs
+
+
+# -- Le contrôle de journalisation -------------------------------------------
+
+
+def test_le_selfcheck_passe_sur_tous_les_chemins() -> None:
+    """**Une table de rejets qui reste vide ne prouve rien.** Ce contrôle injecte
+    un exemplaire malformé de chaque format sur chaque chemin d'import et échoue
+    si l'un reste muet — il a attrapé le rejeu dès sa première exécution, qui
+    collectait ses échecs d'écriture sans jamais les journaliser."""
+    from myassistantbet import selfcheck
+
+    rapport = selfcheck.run()
+
+    assert rapport.failures == [], "\n".join(rapport.lines)
+    assert len(rapport.checks) == len(selfcheck.PATHS) * len(selfcheck.BROKEN)
+
+
+def test_le_selfcheck_echoue_si_un_chemin_devient_muet(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**Sans ce test, le contrôle pourrait passer sans rien contrôler.** Un
+    chemin muet doit le faire tomber, sinon il ne dit rien de plus qu'une table
+    vide — le défaut exact qu'il existe pour supprimer."""
+    from myassistantbet import selfcheck
+
+    monkeypatch.setitem(selfcheck.PATHS, "muet", lambda session_id, raw, settings: set())
+
+    rapport = selfcheck.run()
+
+    assert [check.path for check in rapport.failures] == ["muet"] * len(selfcheck.BROKEN)

@@ -259,6 +259,25 @@ class Reject:
         }
 
 
+#: Les gardes qui refusent une **seconde** ligne sur un match deja pris. Leur
+#: motif n'est pas « champ manquant » : il se repare en justifiant l'angle, pas
+#: en corrigeant une saisie.
+DUPLICATE_MARKS = ("porte déjà une sélection", "déjà présente")
+
+
+def reject_reason(message: str) -> str:
+    """Le motif d'une ligne refusee a l'ecriture, lu sur son message.
+
+    **Ecrit ici et non dans `main.py`** : deux chemins l'ecrivent — la route
+    d'import et le rejeu — et une seconde ecriture aurait diverge au premier
+    libelle de garde ajuste. C'est aussi la regle d'architecture du projet :
+    `main.py` ne porte aucune logique metier.
+    """
+    if any(mark in message for mark in DUPLICATE_MARKS):
+        return DUPLICATE
+    return OTHER
+
+
 def _clean(value: object, allowed: tuple[str, ...], fallback: str) -> str:
     """Une valeur du vocabulaire, ou le repli. Jamais un refus.
 

@@ -1608,3 +1608,85 @@ def test_un_bloc_cloture_n_est_jamais_compte_deux_fois() -> None:
     bloc = _bloc(source_level="lecture", faits=[])
 
     assert len(read_blocks(f"```conf\n{bloc}\n```").claims) == 1
+
+
+# -- Le recalcul applique-t-il vraiment la table ? ---------------------------
+#
+# **Le risque est qu'il recopie la valeur declaree par une voie detournee.**
+# L'ecart declare/recalcule serait alors nul partout, la page annoncerait un
+# accord parfait, et personne ne s'en apercevrait — exactement l'etat dans lequel
+# les blocs `conf` sont restes du 13 au 17/08.
+#
+# Ces trois cas sont donc **volontairement mal notes**, et le calcul doit les
+# corriger dans les trois sens : vers le bas de deux crans, de trois, et d'un.
+
+
+@pytest.mark.parametrize(
+    ("libelle", "champs", "annonce", "attendu"),
+    [
+        (
+            "deux faits d'un même éditeur ne font qu'un facteur",
+            {
+                "source_level": 1,
+                "faits": [_fait("lequipe.fr"), _fait("lequipe.fr", 2)],
+                "manque_touche_facteur": False,
+            },
+            5,
+            4,
+        ),
+        (
+            "aucun fait daté est une lecture, quoi qu'on annonce",
+            {"source_level": "lecture", "faits": []},
+            4,
+            1,
+        ),
+        (
+            "un manque qui touche le facteur porteur plafonne à 3",
+            {
+                "source_level": 1,
+                "faits": [_fait("lequipe.fr")],
+                "manque_touche_facteur": True,
+            },
+            4,
+            3,
+        ),
+    ],
+)
+def test_un_bloc_mal_note_est_corrige_par_la_table(
+    libelle: str, champs: dict[str, object], annonce: int, attendu: int
+) -> None:
+    claim = parse(_bloc(confiance=annonce, **champs))
+
+    assert claim.declared == annonce, "l'annonce est conservée telle quelle"
+    assert claim.rung == attendu, libelle
+    assert claim.disagrees, "et l'écart se déclare"
+
+
+def test_le_cran_calcule_ne_recopie_jamais_l_annonce(migrated: Settings) -> None:
+    """**Le parcours complet, jusqu'en base.** Un test sur l'objet seul
+    laisserait passer un `add_pick` qui écrirait la valeur annoncée dans la
+    colonne calculée — et c'est précisément la panne qu'on ne verrait pas."""
+    session_id = _session(migrated)
+
+    add_pick(
+        session_id,
+        "safe",
+        "1N2",
+        "Lyon",
+        confidence="5",
+        claim=_bloc(
+            source_level=1,
+            faits=[_fait("lequipe.fr"), _fait("lequipe.fr", 2)],
+            manque_touche_facteur=False,
+            confiance=5,
+        ),
+        settings=migrated,
+    )
+
+    ligne = db.query_one(
+        "SELECT confidence, confidence_computed, distinct_publishers FROM picks",
+        settings=migrated,
+    )
+    assert ligne["confidence"] == 5, "l'annonce reste écrite telle quelle"
+    assert ligne["confidence_computed"] == 4, "et le calcul la corrige"
+    assert ligne["distinct_publishers"] == 1

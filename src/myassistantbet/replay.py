@@ -32,6 +32,7 @@ from .config import Settings, get_settings
 from .services import history as history_service
 from .services import imports_raw, picks_import
 from .services import ingestion as ingestion_service
+from .services.ingestion import reject_reason
 
 logger = logging.getLogger(__name__)
 
@@ -144,6 +145,19 @@ def replay(
             report.written += 1
         except history_service.HistoryError as exc:
             report.failures.append(f"{pick.market} {pick.selection} : {exc}")
+            # **Une ligne refusee a l'ecriture est une perte comme une autre**, et
+            # le rejeu ne la journalisait pas — trouve par `selfcheck-ingestion`,
+            # qui existe precisement pour attraper un chemin muet.
+            report.rejects.append(
+                ingestion_service.Reject(
+                    block_type=ingestion_service.SELECTION,
+                    reason=reject_reason(str(exc)),
+                    detail=f"{pick.market} {pick.selection} : {exc}",
+                    payload=f"{pick.market} / {pick.selection}",
+                    start=pick.start,
+                    end=pick.end,
+                )
+            )
     ingestion_service.record(collage.session_id, report.rejects, settings, import_id=import_id)
     return report
 

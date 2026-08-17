@@ -35,6 +35,14 @@ jobs:
       - name: Tests
         run: uv run pytest -q
 
+      # **Une table de rejets qui reste vide ne prouve rien** : elle peut vouloir
+      # dire « rien ne s'est perdu » ou « le chemin qui devait ecrire ici n'y
+      # ecrit pas ». Ce controle injecte un exemplaire malforme de chaque format
+      # sur chaque chemin d'import, et echoue si l'un d'eux reste muet. Il a
+      # attrape le rejeu des sa premiere execution.
+      - name: Journalisation des rejets d'ingestion
+        run: uv run myassistantbet-selfcheck
+
   deploy-files:
     runs-on: ubuntu-latest
     steps:

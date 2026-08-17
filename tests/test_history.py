@@ -46,6 +46,7 @@ from myassistantbet.services.history import (
     set_result,
     stats,
     tier_for_price,
+    tier_scope,
     tier_usage,
     wilson,
     worksheet,
@@ -3229,3 +3230,55 @@ def test_le_releve_lit_le_marche_fige_et_non_celui_d_aujourd_hui(migrated: Setti
     assert any(row.offered for row in tier_usage(migrated)), (
         "le relevé figé survit à la disparition du marché courant"
     )
+
+
+def test_le_releve_des_paliers_se_remplit_sur_une_session_nouvelle(
+    migrated: Settings,
+) -> None:
+    """**Un relevé livré n'a pas prouvé qu'il relève.** Le §6 du lot précédent ne
+    couvrait que les 6 sessions dont le marché était figé ; il fallait vérifier
+    qu'une session **nouvelle** l'alimente bien, et pas seulement l'historique."""
+    session_id, event_id = _session_avec_match(migrated)
+    avant = tier_scope(migrated)
+
+    save_prompt(
+        session_id,
+        RenderedPrompt(template_name="t.md.j2", body="### M1 · x", blocks=1, event_ids=[event_id]),
+        migrated,
+    )
+
+    couvertes, total = tier_scope(migrated)
+    assert avant == (0, 0), "rien avant le premier prompt archivé"
+    assert (couvertes, total) == (1, 1), "la session nouvelle entre dans le relevé"
+    assert any(row.offered for row in tier_usage(migrated)), "et ses bandes sont relevées"
+
+
+def test_le_perimetre_du_releve_est_annonce(migrated: Settings) -> None:
+    """**Le taire laisserait croire à une couverture complète.** `prompt_odds`
+    date de la migration 033 : les sessions antérieures n'ont aucun marché figé,
+    et les compter ferait lire « bande jamais atteinte » sur des sessions dont on
+    ne sait rien — le défaut exact que ce relevé existe pour supprimer."""
+    session_id, event_id = _session_avec_match(migrated)
+    save_prompt(
+        session_id,
+        RenderedPrompt(template_name="t.md.j2", body="### M1 · x", blocks=1, event_ids=[event_id]),
+        migrated,
+    )
+    # Une session **antérieure à la migration 033** : elle a son prompt archivé
+    # et aucun marché figé, exactement comme les huit plus anciennes de la base.
+    db.execute(
+        "INSERT INTO sessions (label, created_at) VALUES ('ancienne', ?)",
+        (db.utcnow(),),
+        settings=migrated,
+    )
+    ancienne = db.query_one("SELECT MAX(id) AS id FROM sessions", settings=migrated)["id"]
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 't.md.j2', '### M1 · x', 0, ?)",
+        (ancienne, db.utcnow()),
+        settings=migrated,
+    )
+
+    couvertes, total = tier_scope(migrated)
+
+    assert couvertes < total, "l'écart entre les deux est ce que la page annonce"

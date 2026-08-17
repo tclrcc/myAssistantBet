@@ -1217,7 +1217,7 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
             report.rejects.append(
                 ingestion_service.Reject(
                     block_type=ingestion_service.SELECTION,
-                    reason=_reject_reason(str(exc)),
+                    reason=ingestion_service.reject_reason(str(exc)),
                     detail=f"ligne {index} : {exc}",
                     payload=(
                         f"{form.get(f'market_{index}', '')} / {form.get(f'selection_{index}', '')}"
@@ -1270,19 +1270,6 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
             import_report=report,
         ),
     )
-
-
-#: Les gardes qui refusent une **seconde** ligne sur un match deja pris. Leur
-#: motif n'est pas « champ manquant » : il se repare en justifiant l'angle, pas
-#: en corrigeant une saisie.
-_DUPLICATE_MARKS = ("porte déjà une sélection", "déjà présente")
-
-
-def _reject_reason(message: str) -> str:
-    """Le motif d'une ligne refusee a l'ecriture, lu sur son message."""
-    if any(mark in message for mark in _DUPLICATE_MARKS):
-        return ingestion_service.DUPLICATE
-    return ingestion_service.OTHER
 
 
 def _combo_count(form: dict[str, str]) -> int:
