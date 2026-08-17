@@ -39,6 +39,7 @@ from .services import enrich as enrich_service
 from .services import fixtures as fixtures_service
 from .services import grid as grid_service
 from .services import history as history_service
+from .services import ingestion as ingestion_service
 from .services import labels as labels_service
 from .services import manual as manual_service
 from .services import mapping_ui as mapping_service
@@ -1048,6 +1049,9 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         "preview": None,
         "imported": 0,
         "import_failures": [],
+        # Le compte-rendu d'ingestion : ce qui a ete lu, ce qui a ete perdu. Nul
+        # hors d'un import, ou il n'y a rien a rendre compte.
+        "import_report": None,
         **extra,
     }
 
@@ -1139,6 +1143,14 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
         settings,
         state=form.get("open_dossiers_state", ""),
     )
+    # Ce que le collage a perdu voyage avec le formulaire : l'apercu n'ecrit
+    # rien, c'est l'import qui journalise. Sans ce transport, un bloc refuse a
+    # la lecture se serait affiche une fois puis referme avec l'onglet.
+    report = ingestion_service.Report(
+        rejects=ingestion_service.from_payload(form.get("rejects", "")),
+        claims_read=int(form.get("claims_read", "0") or 0),
+        picks_read=len({key.split("_")[-1] for key in form if key.startswith("market_")}),
+    )
     created, failures = 0, []
     #: Les selections creees, par leur numero de ligne : c'est ce qui permet de
     #: retrouver les jambes d'un combine une fois les picks ecrits. Une ligne
@@ -1174,14 +1186,63 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
             par_ligne[index] = pick_id
         except history_service.HistoryError as exc:
             failures.append(f"ligne {index} : {exc}")
+            # Une ligne refusee a l'ecriture est une perte comme une autre. Le
+            # motif se lit sur le message : la garde d'independance et celle des
+            # doublons sont les seules a nommer une seconde selection, et elles
+            # ne se reparent pas comme un champ manquant.
+            report.rejects.append(
+                ingestion_service.Reject(
+                    block_type=ingestion_service.SELECTION,
+                    reason=_reject_reason(str(exc)),
+                    detail=f"ligne {index} : {exc}",
+                    payload=(
+                        f"{form.get(f'market_{index}', '')} / {form.get(f'selection_{index}', '')}"
+                    ),
+                )
+            )
 
-    failures.extend(_record_combos(session_id, form, par_ligne, settings))
+    combo_failures = _record_combos(session_id, form, par_ligne, settings)
+    failures.extend(combo_failures)
+    report.rejects.extend(
+        ingestion_service.Reject(
+            block_type=ingestion_service.COMBO,
+            reason=ingestion_service.OTHER,
+            detail=message,
+        )
+        for message in combo_failures
+    )
+    report.picks_created = created
+    report.combos_recorded = _combo_count(form) - len(combo_failures)
+    ingestion_service.record(session_id, report.rejects, settings)
 
     return templates.TemplateResponse(
         request,
         "picks.html",
-        _picks_context(session_id, imported=created, import_failures=failures),
+        _picks_context(
+            session_id,
+            imported=created,
+            import_failures=failures,
+            import_report=report,
+        ),
     )
+
+
+#: Les gardes qui refusent une **seconde** ligne sur un match deja pris. Leur
+#: motif n'est pas « champ manquant » : il se repare en justifiant l'angle, pas
+#: en corrigeant une saisie.
+_DUPLICATE_MARKS = ("porte déjà une sélection", "déjà présente")
+
+
+def _reject_reason(message: str) -> str:
+    """Le motif d'une ligne refusee a l'ecriture, lu sur son message."""
+    if any(mark in message for mark in _DUPLICATE_MARKS):
+        return ingestion_service.DUPLICATE
+    return ingestion_service.OTHER
+
+
+def _combo_count(form: dict[str, str]) -> int:
+    """Combien de combines le formulaire portait, rattaches ou non."""
+    return sum(1 for key in form if key.startswith("combo_"))
 
 
 def _record_combos(

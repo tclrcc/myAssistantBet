@@ -38,6 +38,7 @@ from dataclasses import dataclass, field
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from .history import HistoryError
+from .ingestion import COMBO, JSON_INVALID, SCHEMA_INVALID, Reject
 
 logger = logging.getLogger(__name__)
 
@@ -70,7 +71,15 @@ PRICE_GAP = 0.01
 
 
 class ComboError(HistoryError):
-    """Un bloc de combine illisible, ou une jambe qui ne peut pas en etre une."""
+    """Un bloc de combine illisible, ou une jambe qui ne peut pas en etre une.
+
+    Le motif accompagne le message, comme pour `ClaimError` : « le JSON ne se
+    relit pas » et « un champ manque » ne se reparent pas au meme endroit.
+    """
+
+    def __init__(self, message: str, reason: str = SCHEMA_INVALID) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 @dataclass(frozen=True)
@@ -96,9 +105,16 @@ class ComboReading:
     """Ce qu'un rendu portait comme combines."""
 
     combos: list[ParsedCombo] = field(default_factory=list)
-    #: Les blocs qu'on n'a pas su lire, nommes un par un. Ils ne coutent que
-    #: leur combine — jamais l'import du tableau, qui passe par un autre canal.
-    rejected: list[str] = field(default_factory=list)
+    #: Les blocs qu'on n'a pas su lire, nommes un par un et **avec leur brut**.
+    #: Ils ne coutent que leur combine — jamais l'import du tableau, qui passe
+    #: par un autre canal.
+    rejects: list[Reject] = field(default_factory=list)
+
+    @property
+    def rejected(self) -> list[str]:
+        """Les motifs seuls. Derive, jamais tenu a cote — deux listes portant la
+        meme information auraient diverge au premier motif ajoute d'un cote."""
+        return [reject.detail for reject in self.rejects]
 
 
 def _price(raw: object, champ: str) -> float | None:
@@ -118,7 +134,7 @@ def parse(body: str) -> ParsedCombo:
     try:
         payload = json.loads(body)
     except json.JSONDecodeError as exc:
-        raise ComboError(f"bloc illisible : {exc}") from exc
+        raise ComboError(f"bloc illisible : {exc}", JSON_INVALID) from exc
     if not isinstance(payload, dict):
         raise ComboError("un bloc de combine doit etre un objet")
 
@@ -156,7 +172,14 @@ def read_combos(raw: str) -> ComboReading:
         try:
             reading.combos.append(parse(body))
         except ComboError as exc:
-            reading.rejected.append(f"bloc combiné {index} : {exc}")
+            reading.rejects.append(
+                Reject(
+                    block_type=COMBO,
+                    reason=exc.reason,
+                    detail=f"bloc combiné {index} : {exc}",
+                    payload=body,
+                )
+            )
     return reading
 
 

@@ -30,6 +30,22 @@
   </p>
 {% endif %}
 
+{# **Le compte-rendu d'ingestion, rendu à la fin de chaque import.** Il dit ce
+   qui est entré et ce qui a été perdu, au moment où l'information est encore
+   récupérable : un bloc manquant se rattrape en recollant, il ne se rattrape
+   plus une semaine après sur la page de statistiques. Chaque rejet est aussi
+   parti en base — l'écran se referme, la ligne reste. #}
+{% if import_report %}
+  <p class="notice {% if import_report.rejected %}notice-warn{% else %}notice-ok{% endif %}">
+    {{ import_report.line }}
+    {% if import_report.rejects %}
+    <br><span class="rejected">
+      {%- for reject in import_report.rejects %}{{ reject.label }}{% if not loop.last %} · {% endif %}{% endfor -%}
+    </span>
+    {% endif %}
+  </p>
+{% endif %}
+
 {% if preview and not preview.ignored %}
   <p class="notice {% if preview.ready_count == preview.count %}notice-ok{% else %}notice-warn{% endif %}">
     {{ preview.count }} ligne(s) lue(s), {{ preview.ready_count }} prête(s).
@@ -88,6 +104,12 @@
        ligne qu'on ne sait pas relire produisent le même repli, et leur somme se
        lirait comme un seul taux. #}
     <input type="hidden" name="open_dossiers_state" value="{{ preview.opened.state }}">
+    {# Ce que la lecture a perdu voyage avec le formulaire, comme le reste :
+       l'aperçu n'écrit rien, c'est l'import qui journalise. Sans ce transport,
+       un bloc refusé s'afficherait une fois puis se refermerait avec l'onglet —
+       exactement le silence que ce chantier supprime. #}
+    <input type="hidden" name="rejects" value="{{ preview.rejects_payload }}">
+    <input type="hidden" name="claims_read" value="{{ preview.claims_attached }}">
     <table class="board import-table">
       <thead>
         <tr>

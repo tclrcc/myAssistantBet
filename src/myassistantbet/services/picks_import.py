@@ -40,6 +40,14 @@ from .history import (
     prompt_headers,
 )
 from .history import tiers as load_tiers
+from .ingestion import (
+    COMBO,
+    CONF,
+    FENCE_NOT_FOUND,
+    MATCH_REF_UNRESOLVED,
+    Reject,
+    to_payload,
+)
 
 #: Une ligne de tableau Markdown : `| a | b | c |`.
 TABLE_ROW = re.compile(r"^\s*\|(.+)\|\s*$")
@@ -233,6 +241,12 @@ class ImportPreview:
     #: bloc de confiance illisible ne doit pas couter la possibilite d'importer
     #: le tableau, il ne coute que les crans.
     notes: list[str] = field(default_factory=list)
+    #: Ce que l'ingestion a **perdu** : un bloc malforme, un repere qui ne se
+    #: resout pas, un bloc cherche et introuvable. Distinct de `notes`, qui est
+    #: du texte a lire : ceci se compte, se journalise et se relit des semaines
+    #: apres. Rien n'est ecrit ici — l'apercu n'ecrit rien — les rejets voyagent
+    #: avec le formulaire et c'est l'import qui les enregistre.
+    rejects: list[Reject] = field(default_factory=list)
     #: Les dossiers que le rendu declare avoir ouverts. Conserve entier — et pas
     #: seulement applique ligne par ligne — parce que c'est la **liste** qui se
     #: compare a l'ordre de passage propose par l'application, y compris pour
@@ -242,6 +256,11 @@ class ImportPreview:
     @property
     def count(self) -> int:
         return len(self.picks)
+
+    @property
+    def rejects_payload(self) -> str:
+        """Les rejets, prets a voyager dans un champ cache du formulaire."""
+        return to_payload(self.rejects)
 
     @property
     def ready_count(self) -> int:
@@ -567,6 +586,18 @@ def parse_table(
     return preview
 
 
+def _lost(preview: ImportPreview, kind: str, reason: str, detail: str, payload: str = "") -> None:
+    """Un bloc perdu se **dit** et se **compte**, et ce sont deux gestes.
+
+    `notes` s'affiche a l'ecran et se referme avec l'onglet ; `rejects` part en
+    base et se relit des semaines apres. Ecrire l'un sans l'autre a ete le
+    defaut d'origine : le message existait deja pour la plupart de ces cas, et
+    rien n'en gardait la trace.
+    """
+    preview.notes.append(detail)
+    preview.rejects.append(Reject(block_type=kind, reason=reason, detail=detail, payload=payload))
+
+
 def _attach_combos(preview: ImportPreview, raw: str, valide: PromptBlocks | None) -> None:
     """Rattache les blocs ```combo aux lignes du tableau, par leur repere.
 
@@ -582,12 +613,16 @@ def _attach_combos(preview: ImportPreview, raw: str, valide: PromptBlocks | None
     """
     reading = read_combos(raw)
     preview.notes.extend(reading.rejected)
+    preview.rejects.extend(reading.rejects)
     if not reading.combos:
         return
     if valide is None:
-        preview.notes.append(
+        _lost(
+            preview,
+            COMBO,
+            MATCH_REF_UNRESOLVED,
             f"{len(reading.combos)} combiné(s) lu(s), aucun rattaché : le prompt d'origine "
-            "n'a pas pu être identifié, et un combiné porte l'identifiant de son prompt."
+            "n'a pas pu être identifié, et un combiné porte l'identifiant de son prompt.",
         )
         return
 
@@ -611,7 +646,12 @@ def _attach_combos(preview: ImportPreview, raw: str, valide: PromptBlocks | None
                 manquants.append(mark)
         if manquants:
             cause = "introuvable(s) ou ambigu(s) dans le tableau"
-            preview.notes.append(f"{combo.label} non rattaché : {', '.join(manquants)} {cause}.")
+            _lost(
+                preview,
+                COMBO,
+                MATCH_REF_UNRESOLVED,
+                f"{combo.label} non rattaché : {', '.join(manquants)} {cause}.",
+            )
             continue
         attache = AttachedCombo(
             combo=combo,
@@ -671,13 +711,29 @@ def _apply_research(
     if mapping is not None:
         affiches = {_fold(_affiche_of(mapping.marks[mark])) for mark in opened.marks}
     if opened.note:
+        # Une ligne absente ou illisible est une **perte**, pas une declaration :
+        # elle coute le cran de tout le lot et se repare en recollant. Une liste
+        # vide, elle, est une reponse du modele et n'a rien a compter ici.
+        if opened.state in (OPEN_ABSENT, OPEN_MALFORMED):
+            preview.rejects.append(
+                Reject(
+                    block_type=CONF,
+                    reason=FENCE_NOT_FOUND,
+                    detail=opened.note,
+                    payload="dossiers_ouverts",
+                )
+            )
         preview.notes.append(opened.note)
     elif mapping is None:
-        preview.notes.append(
+        _lost(
+            preview,
+            CONF,
+            MATCH_REF_UNRESOLVED,
             "Les repères de « dossiers_ouverts » ne se résolvent contre aucun prompt de "
             "cette session : toutes les sélections sont enregistrées en lecture, cran 1. "
             "Le rendu porte bien la ligne — c'est le rattachement qui a échoué, et il se "
-            "reprend en recollant le prompt qui l'a produite."
+            "reprend en recollant le prompt qui l'a produite.",
+            payload=str(sorted(opened.marks)),
         )
     # La cause est calculee **une fois pour le lot** : elle depend de l'etat de
     # la ligne et du rattachement, pas de la selection. Seul `hors_dossiers` se
@@ -715,6 +771,7 @@ def _attach_claims(
     """
     reading = read_blocks(raw)
     preview.notes.extend(reading.rejected)
+    preview.rejects.extend(reading.rejects)
     if not reading.claims:
         # **La seule branche muette du module, et c'est celle qui a servi.** Un
         # bloc pour trois lignes avertissait ; zero bloc ne disait rien, si bien
@@ -726,28 +783,37 @@ def _attach_claims(
         # n'est pas le rendu qui manque de blocs, c'est le collage qui les a
         # laisses derriere lui.
         if preview.picks:
-            preview.notes.append(
+            _lost(
+                preview,
+                CONF,
+                FENCE_NOT_FOUND,
                 f"Aucun bloc de confiance dans ce collage, pour {len(preview.picks)} "
                 "ligne(s) : le cran ne sera pas calculé. Ils suivent le tableau dans le "
-                "rendu — recolle la réponse entière plutôt que les seules lignes."
+                "rendu — recolle la réponse entière plutôt que les seules lignes.",
             )
         return None
     if len(reading.claims) != len(preview.picks):
-        preview.notes.append(
+        _lost(
+            preview,
+            CONF,
+            MATCH_REF_UNRESOLVED,
             f"{len(reading.claims)} bloc(s) de confiance pour {len(preview.picks)} "
             "ligne(s) : aucun n'est rattaché, le cran resterait faux sans qu'on le voie. "
-            "Complète les blocs manquants et recolle."
+            "Complète les blocs manquants et recolle.",
         )
         return
     valide = _select(preview.picks, reading.claims, headers or [])
     if valide is None:
-        preview.notes.append(
+        _lost(
+            preview,
+            CONF,
+            MATCH_REF_UNRESOLVED,
             "Les repères de match des blocs (M1, M2…) ne correspondent à aucun prompt de "
             "cette session, ligne par ligne. Rien n'est rattaché — un cran décalé serait "
             "faux sans se voir. "
             + (_mismatch(preview.picks, reading.claims, headers or []) or "")
             + "Corrige l'affiche dans le tableau, telle qu'elle est écrite en tête du "
-            "bloc, et recolle."
+            "bloc, et recolle.",
         )
         return None
     for pick, claim in zip(preview.picks, reading.claims, strict=True):

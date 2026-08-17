@@ -24,6 +24,7 @@ EXPECTED_TABLES = {
     "context_outcomes",
     "coupons",
     "events",
+    "ingestion_rejects",
     "league_context",
     "market_coverage",
     "market_families",

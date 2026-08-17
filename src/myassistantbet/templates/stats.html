@@ -644,6 +644,42 @@
      portent d'actionnable est un compte, et un compte tient sur une ligne. Rien
      n'est retiré — la règle de cette page reste que ce qui manque se dit — mais
      le raisonnement attend qu'on le demande. #}
+  {# **Blocs rejetés à l'import.** Un rejet décrit le chemin d'ingestion et
+     jamais le modèle : c'est un bloc qui a existé et qui n'est pas entré, donc
+     quelque chose que cette page ne mesure pas et ne mesurera jamais si
+     personne ne le dit. Un compte, jamais un taux — il est juste à tout
+     effectif, comme celui des sélections non classées. Rien n'est
+     rétro-rempli : une table vide dit qu'aucun bloc n'a été perdu **depuis la
+     mise en service**, pas qu'il n'en a jamais été perdu. #}
+  {% if not ingestion.empty %}
+  <details class="readout">
+    <summary>
+      <span class="readout-facts">
+        <b>{{ ingestion.total }}</b> bloc(s) rejeté(s) à l'import sur
+        <b>{{ ingestion.sessions }}</b> session(s)
+      </span>
+      <span class="readout-hint">par type et par raison</span>
+    </summary>
+    <div class="why-body">
+      <table class="board">
+        <thead><tr><th>Type · raison</th><th class="num">Blocs</th></tr></thead>
+        <tbody>
+          {% for row in ingestion.rows %}
+          <tr><td>{{ row.label }}</td><td class="num">{{ row.count }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p>
+        Un bloc rejeté n'est <strong>pas</strong> un bloc que le rendu n'a pas produit :
+        c'est un bloc reçu et non entré. Il se répare en recollant la réponse entière,
+        et le texte brut de chacun est conservé pour qu'on sache lequel.
+        {% if ingestion.since %}Relevé depuis le {{ ingestion.since[:10] }} — rien n'est
+        rétro-rempli, et une table vide avant cette date ne prouve rien.{% endif %}
+      </p>
+    </div>
+  </details>
+  {% endif %}
+
   <details class="readout">
     <summary>
       <span class="readout-facts">

@@ -37,6 +37,7 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from . import coupons as coupons_service
 from . import history as history_service
+from . import ingestion as ingestion_service
 from . import set_scores as set_scores_service
 from .inference import EQUIVALENCE_MARGIN, MARGIN_REFERENCE
 
@@ -121,6 +122,11 @@ class StatsReport:
     stats: history_service.Stats = field(default_factory=history_service.Stats)
     coupon_rates: list[history_service.RateRow] = field(default_factory=list)
     set_scores: set_scores_service.Report = field(default_factory=set_scores_service.Report)
+    #: Ce que l'ingestion a perdu, par type et par motif. **Un compte, jamais un
+    #: taux** : il est juste a tout effectif, et il dit ce qu'aucun autre chiffre
+    #: de la page ne dit — que le probleme n'est pas dans les donnees mais dans
+    #: le chemin qui les amene.
+    ingestion: ingestion_service.Summary = field(default_factory=ingestion_service.Summary)
     set_score_options: list[str] = field(default_factory=list)
     set_score_matrix: list[tuple[str, list[int], int]] = field(default_factory=list)
     #: Point de comparaison du residu, pas une estimation de l'overround reel.
@@ -146,6 +152,7 @@ class StatsReport:
             "set_scores": self.set_scores,
             "set_score_options": self.set_score_options,
             "set_score_matrix": self.set_score_matrix,
+            "ingestion": self.ingestion,
         }
 
     @property
@@ -270,6 +277,14 @@ class StatsReport:
                 f"{analysis.settled} comptée(s) ici.{detail} C'est un défaut de "
                 "l'outil, pas de la saisie."
             )
+        if not self.ingestion.empty:
+            detail = " · ".join(f"{row.label} ({row.count})" for row in self.ingestion.rows)
+            notes.append(
+                f"{self.ingestion.total} bloc(s) rejeté(s) à l'import sur "
+                f"{self.ingestion.sessions} session(s) : {detail}. Un rejet décrit le "
+                "chemin d'ingestion, jamais le modèle — c'est un bloc qui a existé et "
+                "qui n'est pas entré, donc quelque chose que la page ne mesure pas."
+            )
         if analysis.clustered_selections:
             notes.append(
                 f"{analysis.clustered_selections} sélection(s) partagent un match avec "
@@ -348,6 +363,7 @@ def report(settings: Settings | None = None) -> StatsReport:
         set_scores=sets,
         set_score_options=list(set_scores_service.SCORES),
         set_score_matrix=set_scores_service.matrix_rows(sets),
+        ingestion=ingestion_service.summary(settings),
         generated_at=datetime.now(ZoneInfo(settings.tz)),
     )
 
@@ -492,6 +508,18 @@ def as_json(found: StatsReport) -> dict[str, Any]:
             "equivalence_margin": found.equivalence_margin,
         },
         "warnings": found.warnings,
+        # Ce que l'ingestion a perdu. **Hors des regroupements** : ce n'est pas
+        # une mesure sur les selections, c'est une mesure sur le chemin qui les
+        # amene, et l'y ranger ferait croire a un axe de plus.
+        "ingestion": {
+            "total": found.ingestion.total,
+            "sessions": found.ingestion.sessions,
+            "since": found.ingestion.since,
+            "rows": [
+                {"block_type": row.block_type, "reason": row.reason, "count": row.count}
+                for row in found.ingestion.rows
+            ],
+        },
         "sections": [
             {"block": section.block, "title": section.title} for section in found.sections
         ],

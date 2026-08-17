@@ -33,6 +33,8 @@ import re
 from dataclasses import dataclass, field
 from datetime import date
 
+from .ingestion import CONF, JSON_INVALID, SCHEMA_INVALID, Reject
+
 #: Niveaux de l'echelle de sources du preambule. `lecture` n'est pas une absence
 #: de valeur mais une valeur : l'analyse declare qu'aucun fait date ne porte la
 #: selection. La distinguer de « non renseigne » est tout l'objet de la mesure.
@@ -53,7 +55,17 @@ DOMAIN = re.compile(r"^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}$")
 
 
 class ClaimError(ValueError):
-    """Le bloc structure est illisible. Le cran reste inconnu, jamais devine."""
+    """Le bloc structure est illisible. Le cran reste inconnu, jamais devine.
+
+    Le motif accompagne le message, et il n'est pas decoratif : « le JSON ne se
+    relit pas » et « un champ manque » se reparent aux deux bouts opposes du
+    parcours — l'un dans le collage, l'autre dans le gabarit. Les compter
+    ensemble ferait chercher au mauvais endroit.
+    """
+
+    def __init__(self, message: str, reason: str = SCHEMA_INVALID) -> None:
+        super().__init__(message)
+        self.reason = reason
 
 
 def publisher_of(raw: str) -> str:
@@ -253,7 +265,7 @@ def parse(payload: str | dict) -> Claim:
         try:
             payload = json.loads(payload)
         except json.JSONDecodeError as exc:
-            raise ClaimError(f"bloc illisible : {exc.msg}") from exc
+            raise ClaimError(f"bloc illisible : {exc.msg}", JSON_INVALID) from exc
     if not isinstance(payload, dict):
         raise ClaimError("le bloc doit etre un objet")
 
@@ -288,10 +300,21 @@ class Reading:
     """Ce qu'un copier-coller a rendu : les blocs lus, et ceux qui ont echoue."""
 
     claims: list[Claim] = field(default_factory=list)
-    #: Un bloc par motif d'echec. **Affiche, jamais tu** — meme regle que les
-    #: lignes rejetees de la saisie manuelle : un bloc qui ne passe pas doit se
-    #: voir, sans quoi la colonne reste vide sans que personne sache pourquoi.
-    rejected: list[str] = field(default_factory=list)
+    #: Un bloc par motif d'echec, **avec son texte brut**. Affiche, jamais tu —
+    #: meme regle que les lignes rejetees de la saisie manuelle : un bloc qui ne
+    #: passe pas doit se voir, sans quoi la colonne reste vide sans que personne
+    #: sache pourquoi. Le brut est ce qui rend le rejet reparable : sans lui on
+    #: saurait qu'un bloc a echoue et jamais lequel.
+    rejects: list[Reject] = field(default_factory=list)
+
+    @property
+    def rejected(self) -> list[str]:
+        """Les motifs seuls, pour les surfaces qui n'affichent que du texte.
+
+        **Derive, jamais tenu a cote** : deux listes portant la meme information
+        auraient diverge au premier motif ajoute d'un seul cote.
+        """
+        return [reject.detail for reject in self.rejects]
 
     def for_match(self, label: str) -> list[Claim]:
         return [claim for claim in self.claims if claim.match == label]
@@ -475,5 +498,12 @@ def read_blocks(raw: str) -> Reading:
         try:
             reading.claims.append(parse(body))
         except ClaimError as exc:
-            reading.rejected.append(f"bloc {index} : {exc}")
+            reading.rejects.append(
+                Reject(
+                    block_type=CONF,
+                    reason=exc.reason,
+                    detail=f"bloc {index} : {exc}",
+                    payload=body,
+                )
+            )
     return reading
