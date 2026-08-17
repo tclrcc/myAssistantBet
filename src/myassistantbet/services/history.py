@@ -49,12 +49,14 @@ from .inference import (
     two_proportions,
     wilson,
 )
+from .ingestion import CONF, EXPLORATOIRE, SELECTION
 from .labels import affiche, sort_key
 from .market_families import family_key, family_label, family_of, family_rank, market_key_for
 from .market_families import load as load_families
 from .market_families import market_key as _market_key
 from .thresholds import COUPON_TRACKING, toggle_of
 from .thresholds import value_of as threshold_value
+from .write_paths import writes
 
 logger = logging.getLogger(__name__)
 
@@ -1677,6 +1679,7 @@ def _vocabulary(raw: str, allowed: dict[str, str]) -> str | None:
     return value if value in allowed else None
 
 
+@writes(SELECTION, CONF, EXPLORATOIRE)
 def add_pick(
     session_id: int,
     tier: str,

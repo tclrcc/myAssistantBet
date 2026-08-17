@@ -31,7 +31,7 @@ from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services import combos as combos_service
-from myassistantbet.services import confidence, ingestion, picks_import, set_scores
+from myassistantbet.services import confidence, ingestion, picks_import, set_scores, write_paths
 from myassistantbet.services.manual import build, save
 
 LOIN = "2099-01-01"
@@ -329,7 +329,35 @@ def test_le_selfcheck_passe_sur_tous_les_chemins() -> None:
     rapport = selfcheck.run()
 
     assert rapport.failures == [], "\n".join(rapport.lines)
-    assert len(rapport.checks) == len(selfcheck.PATHS) * len(selfcheck.BROKEN)
+    # Le compte se compare a **ce que le registre attend**, jamais a la taille de
+    # `BROKEN` : comparer une liste a elle-meme rendait « 8 sur 8 » vrai par
+    # construction, et c'est ce que ce lot corrige.
+    assert len(rapport.checks) == rapport.expected
+    assert rapport.families == write_paths.declared_block_types()
+
+
+def test_le_selfcheck_echoue_si_une_famille_declaree_n_a_pas_d_exemplaire(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """**Le dénominateur doit pouvoir contredire le numérateur.**
+
+    Une famille de blocs déclarée au registre d'écriture et privée de son
+    exemplaire malformé n'est plus vérifiée nulle part. Avant ce lot elle
+    disparaissait simplement du compte, et « 8 sur 8 » restait vrai — la sortie
+    identique pour le succès et pour la lacune, une septième fois.
+    """
+    from myassistantbet import selfcheck
+
+    ampute = {nom: valeur for nom, valeur in selfcheck.BROKEN.items() if nom != ingestion.COMBO}
+    monkeypatch.setattr(selfcheck, "BROKEN", ampute)
+
+    rapport = selfcheck.run()
+
+    manquants = [check for check in rapport.failures if check.fmt == ingestion.COMBO]
+    assert len(manquants) == len(rapport.paths)
+    assert "aucun exemplaire malformé" in manquants[0].detail
+    # Le compte attendu, lui, n'a pas bougé : il vient du registre.
+    assert rapport.expected == len(rapport.paths) * len(write_paths.declared_block_types())
 
 
 def test_le_selfcheck_echoue_si_un_chemin_devient_muet(
@@ -344,4 +372,4 @@ def test_le_selfcheck_echoue_si_un_chemin_devient_muet(
 
     rapport = selfcheck.run()
 
-    assert [check.path for check in rapport.failures] == ["muet"] * len(selfcheck.BROKEN)
+    assert [check.path for check in rapport.failures] == ["muet"] * len(rapport.families)

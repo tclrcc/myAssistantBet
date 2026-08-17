@@ -46,6 +46,27 @@ n'ayant ete conserve nulle part, le rattrapage etait impossible.
    compteur est affiche a l'import. S'il sert encore dans un mois, c'est que la
    consigne n'est pas suivie — et il vaut mieux le savoir que de le deviner.
 
+## Tout chemin d'ecriture se declare au registre
+
+**Cette section-ci ne tient plus lieu de garde-fou, et c'est le progres.** La
+regle precedente disait que le controle « prouve que les chemins declares
+journalisent, jamais qu'ils sont tous declares », et confiait le reste a la
+bonne volonte. Mesure : `myassistantbet-replay` a ete ecrit le meme jour et par
+la meme main que cette phrase, et il a laisse tomber ses echecs d'ecriture sans
+les journaliser. Une regle de contribution ne se declenche pas.
+
+Une fonction qui insere dans `picks`, `combos`, `combo_legs` ou `set_scores`
+porte donc `@writes(...)` (`services/write_paths.py`), avec les familles de
+blocs dont elle repond. `tests/test_write_paths.py` **lit la source** et fait
+echouer la suite si une fonction insere sans etre declaree — le critere est un
+`INSERT INTO` vers une table gardee, donc il ne depend d'aucun nommage.
+
+Consequence a connaitre : declarer une famille sans donner a
+`selfcheck-ingestion` un exemplaire malforme du format correspondant fait
+tomber le controle. C'est voulu, et c'est ce qui a fait passer le compte de 8 a
+10 — la famille `exploratoire` etait declaree nulle part et verifiee nulle part,
+sans que « 8 sur 8 » puisse le dire.
+
 ## Toute lecture d'un collage passe par `imports_raw`
 
 Le texte recu est conserve **avant** toute tentative de lecture, y compris quand

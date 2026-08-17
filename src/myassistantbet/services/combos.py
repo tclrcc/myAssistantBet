@@ -39,6 +39,7 @@ from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from .history import HistoryError
 from .ingestion import COMBO, JSON_INVALID, SCHEMA_INVALID, Reject, read_bodies
+from .write_paths import writes
 
 logger = logging.getLogger(__name__)
 
@@ -363,6 +364,7 @@ def _lot_of(conn, prompt_id: int) -> set[int]:
     }
 
 
+@writes(COMBO)
 def record(
     session_id: int,
     prompt_id: int,

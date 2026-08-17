@@ -33,7 +33,7 @@ from pathlib import Path
 from . import db
 from .config import Settings, get_settings
 from .services import board as board_service
-from .services import imports_raw, picks_import
+from .services import imports_raw, picks_import, write_paths
 from .services import ingestion as ingestion_service
 from .services.manual import build, save
 
@@ -48,6 +48,13 @@ _HIDDEN = re.compile(r'name="([a-z_0-9]+)"\s+value="([^"]*)"')
 #: qu'il doit produire. Malforme et non absent : un format absent ne prouve rien
 #: sur la journalisation, c'est un format **recu et refuse** qu'il faut voir
 #: arriver en base.
+#:
+#: **Cette table est le numerateur, jamais le denominateur.** Ce qu'il faut
+#: couvrir se derive du registre des chemins d'ecriture
+#: (`write_paths.declared_block_types`) : une famille declaree sans exemplaire
+#: ici fait tomber le controle au lieu d'etre sautee en silence. C'est la
+#: correction du « 8 sur 8 » du lot 2, ou les deux nombres etaient ecrits a la
+#: main et ne pouvaient donc pas se contredire.
 BROKEN: dict[str, tuple[str, str]] = {
     "conf": (
         '```conf\n{"match": "M1", "confiance": 4, "faits": [],}\n```\n',
@@ -64,6 +71,17 @@ BROKEN: dict[str, tuple[str, str]] = {
     "selection": (
         "| 2 | Lyon – Adv Lyon | O/U 2.5 | Over 2.5 | 1.90 | 🟢 SAFE | 4 |\n",
         ingestion_service.SELECTION,
+    ),
+    # Une ligne de section C-bis **en palier sur** : ce tableau est reserve aux
+    # paliers hauts, donc elle est refusee. Malformee au sens de la section, et
+    # non du JSON — c'est la seule forme que cette famille puisse prendre, et
+    # c'est le registre qui a exige qu'elle soit couverte.
+    "exploratoire": (
+        "\n### C-bis. Sélections exploratoires\n\n"
+        "| # | Match | Marché | Sélection | Cote | Palier | Conf/5 |\n"
+        "|---|-------|--------|-----------|------|--------|--------|\n"
+        "| 1 | Nice – Adv Nice | 1N2 | Nice | 1.45 | 🟢 SAFE | 1 |\n",
+        ingestion_service.EXPLORATOIRE,
     ),
 }
 
@@ -95,14 +113,28 @@ class Check:
 @dataclass
 class Report:
     checks: list[Check] = field(default_factory=list)
+    #: Les familles de blocs que le **registre** declare, et les chemins
+    #: d'import recenses. Le produit des deux est le nombre de controles
+    #: attendus : sans lui, « 8 sur 8 » compare une liste a elle-meme.
+    families: tuple[str, ...] = ()
+    paths: tuple[str, ...] = ()
 
     @property
     def failures(self) -> list[Check]:
         return [check for check in self.checks if not check.seen]
 
     @property
+    def expected(self) -> int:
+        return len(self.families) * len(self.paths)
+
+    @property
     def lines(self) -> list[str]:
-        out = [f"{len(self.checks)} contrôle(s), {len(self.failures)} manque(s)"]
+        out = [
+            f"{len(self.checks)} contrôle(s) sur {self.expected} attendu(s) — "
+            f"{len(self.paths)} chemin(s) × {len(self.families)} famille(s) dérivée(s) du "
+            f"registre d'écriture ({', '.join(self.families) or 'aucune'}), "
+            f"{len(self.failures)} manque(s)"
+        ]
         out += [check.line for check in self.checks]
         if self.failures:
             out.append(
@@ -202,10 +234,16 @@ def _by_replay(session_id: int, raw: str, settings: Settings) -> set[str]:
     }
 
 
-#: Les chemins d'import recenses. **Un chemin ajoute sans entree ici passerait
-#: au travers**, et c'est le seul point faible connu de cette verification : elle
-#: prouve que les chemins declares journalisent, jamais qu'ils sont tous
-#: declares. La regle de `CONTRIBUTING.md` en tient lieu.
+#: Les chemins d'**entree** : par ou un collage atteint la base. Ils restent
+#: enumeres a la main, et c'est assume — ce sont des routes, pas des fonctions
+#: d'ecriture, et rien dans la source ne les distingue d'une route quelconque.
+#:
+#: Ce qui est desormais garanti est l'autre moitie, celle qui manquait : les
+#: **familles de blocs** couvertes ne s'ecrivent plus ici mais se derivent du
+#: registre des chemins d'ecriture, qu'un test tient complet
+#: (`tests/test_write_paths.py`). Un chemin d'ecriture ajoute sans declaration
+#: fait echouer la suite ; c'est ce que la regle de `CONTRIBUTING.md` ne faisait
+#: pas, et `replay` l'a prouve en la violant le jour meme de sa redaction.
 PATHS: dict[str, Callable[[int, str, Settings], set[str]]] = {
     "formulaire": _by_form,
     "rejeu": _by_replay,
@@ -213,10 +251,32 @@ PATHS: dict[str, Callable[[int, str, Settings], set[str]]] = {
 
 
 def run(settings: Settings | None = None) -> Report:
-    """Injecte chaque format malforme sur chaque chemin. Rend ce qui manque."""
-    report = Report()
+    """Injecte chaque format malforme sur chaque chemin. Rend ce qui manque.
+
+    **L'enumeration part du registre d'ecriture, jamais de `BROKEN`.** Une
+    famille declaree par un `@writes` et sans exemplaire malforme produit un
+    controle en echec, avec son motif : c'est le seul moyen qu'un chemin
+    d'ecriture ajoute demain ne passe pas au travers en silence.
+    """
+    write_paths.load()
+    familles = write_paths.declared_block_types()
+    report = Report(families=familles, paths=tuple(PATHS))
     for chemin, executer in PATHS.items():
-        for nom, (casse, attendu) in BROKEN.items():
+        for nom in familles:
+            if nom not in BROKEN:
+                report.checks.append(
+                    Check(
+                        path=chemin,
+                        fmt=nom,
+                        seen=False,
+                        detail=(
+                            "aucun exemplaire malformé : cette famille est déclarée au "
+                            "registre d'écriture et n'est donc vérifiée nulle part"
+                        ),
+                    )
+                )
+                continue
+            casse, attendu = BROKEN[nom]
             with _temporary() as temporaire:
                 session_id = _seed(temporaire)
                 vus = executer(session_id, TABLE + "\n" + casse, temporaire)

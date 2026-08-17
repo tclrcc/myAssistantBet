@@ -32,6 +32,7 @@ from ..db import connect, utcnow
 from .inference import wilson
 from .ingestion import SCHEMA_INVALID, SCORE_SETS, Reject
 from .labels import affiche
+from .write_paths import writes
 
 logger = logging.getLogger(__name__)
 
@@ -432,6 +433,7 @@ def lot(session_id: int, settings: Settings | None = None) -> list[Row]:
     ]
 
 
+@writes(SCORE_SETS)
 def save(
     session_id: int,
     event_id: int,
