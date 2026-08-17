@@ -55,6 +55,7 @@ def test_les_trois_lots_precedents_sont_dates(migrated: Settings) -> None:
     assert any("lot 1" in nom for nom in libelles)
     assert any("lot 2" in nom for nom in libelles)
     assert any("lot 3" in nom for nom in libelles)
+    assert any("lot 4" in nom for nom in libelles)
     # Toutes les portées du seed appartiennent au vocabulaire : une valeur
     # inconnue produirait une ligne qu'aucune coupe ne verrait jamais.
     assert {entry.scope for entry in carnet.entries} <= set(changelog.SCOPES)
