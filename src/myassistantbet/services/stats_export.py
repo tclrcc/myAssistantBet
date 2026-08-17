@@ -265,10 +265,23 @@ class StatsReport:
                 "comme une tendance."
             )
         if analysis.without_antecedence:
+            # **Trois cas sous un seul compte, et ils n'appellent pas la meme
+            # lecture.** Une saisie differee porte une etiquette valide et un
+            # prix douteux ; un pari en direct n'a ni l'une ni l'autre ; une
+            # ligne sans motif est anterieure a la garde d'ecriture et rien ne
+            # dira jamais laquelle des deux c'etait.
+            detail = " · ".join(
+                f"{count} {history_service.LATE_REASONS.get(reason, 'sans motif déclaré')}"
+                for reason, count in sorted(
+                    analysis.late_by_reason.items(), key=lambda item: -item[1]
+                )
+            )
             notes.append(
                 f"{analysis.without_antecedence} sélection(s) tranchée(s) sont écartées "
                 "de tout ce relevé : leur antériorité n'est pas établie, donc leur "
-                "étiquette non plus."
+                f"étiquette non plus. {detail}. Les lignes sans motif déclaré sont "
+                "antérieures à la garde d'écriture — cette population est close, elle "
+                "ne grandira plus et ne se répare pas."
             )
         for gap in analysis.column_gaps:
             # **Une reserve qui voyage.** Un fichier relu ailleurs doit dire

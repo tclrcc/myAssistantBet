@@ -802,3 +802,76 @@ def test_une_ligne_portee_se_marque_sur_sa_barre(migrated: Settings, client: Tes
     assert portees, "ce lot doit porter au moins une ligne"
     assert "is-carried" in page
     assert page.count("is-carried") >= len(portees)
+
+
+# -- Trois cas, et un seul compte les fondait --------------------------------
+#
+# **La cause racine n'etait ni un horodatage manquant ni un fuseau**, et la
+# mesure l'a etablie avant qu'une ligne soit ecrite : sur les 230 selections
+# tranchees de la base au 17/08/2026, **aucune** ne manque de `created_at` ni du
+# `commence_time` de son match. Les 52 ecartees sont reellement posterieures au
+# coup d'envoi — 15 declarees `differee`, 0 `live`, et 37 anterieures a la garde
+# d'ecriture de la migration 034.
+#
+# Ce qui manquait n'est donc pas une donnee, c'est la **distinction** : une
+# decision anterieure saisie en retard porte une etiquette valide et un prix
+# douteux ; un pari pris en direct n'a ni l'une ni l'autre ; une ligne sans
+# motif est d'une population **close**, qui ne grandira plus et ne se repare pas.
+
+
+def test_les_motifs_de_saisie_tardive_se_comptent_a_part(migrated: Settings) -> None:
+    session_id = _lot(migrated, [("2.00", "win", False)])
+    for index, motif in enumerate(("differee", "live"), start=1):
+        event_id = _match(migrated, f"Tardif {index}")
+        board_service.toggle_selection(event_id, True, migrated)
+        db.execute(
+            "UPDATE events SET commence_time = '2000-01-01T00:00:00Z' WHERE id = ?",
+            (event_id,),
+            settings=migrated,
+        )
+        pick_id = add_pick(
+            session_id,
+            "safe",
+            "1N2",
+            "Domicile",
+            event_id=str(event_id),
+            price="2.00",
+            late_reason=motif,
+            settings=migrated,
+        )
+        set_result(pick_id, "win", migrated)
+
+    report = analysis(migrated)
+
+    assert report.without_antecedence == 2
+    assert report.late_by_reason == {"differee": 1, "live": 1}
+    libelles = dict(report.late_reasons)
+    assert any("différée" in libelle for libelle in libelles)
+    assert any("Live" in libelle for libelle in libelles)
+
+
+def test_une_ligne_sans_motif_est_nommee_comme_telle(migrated: Settings) -> None:
+    """**Population close.** Ces lignes sont anterieures a la garde d'ecriture,
+    rien ne dira jamais laquelle des deux c'etait, et l'annoncer comme un manque
+    de collecte enverrait chercher un defaut qui n'existe pas."""
+    session_id = _lot(migrated, [("2.00", "win", True), ("2.00", "loss", False)])
+    assert session_id
+
+    report = analysis(migrated)
+
+    assert report.late_by_reason == {"": 1}
+    assert "population close" in dict(report.late_reasons).popitem()[0]
+
+
+def test_l_horodatage_d_ecriture_vient_du_serveur(migrated: Settings) -> None:
+    """**Ce que la garde suppose**, et qui n'avait aucun test : `created_at` est
+    ecrit par le service, en UTC, au moment de l'insertion. Une valeur fournie
+    par le formulaire ou par le rendu rendrait l'anteriorite declarable — donc
+    sans valeur."""
+    session_id = _lot(migrated, [("2.00", "win", False)])
+
+    ligne = db.query_one("SELECT created_at FROM picks", settings=migrated)
+
+    assert ligne["created_at"].endswith("Z"), "stockage en UTC, chaine ISO 8601"
+    assert ligne["created_at"] >= "2026-", "l'heure du serveur, jamais une saisie"
+    assert session_id

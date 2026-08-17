@@ -2511,6 +2511,40 @@ class Analysis:
     #: etablie. Comptees et annoncees : une page qui perd un tiers de son volume
     #: sans le dire est pire que celle qui le melangeait.
     without_antecedence: int = 0
+    #: Les memes, **par motif declare**. Un seul compte les melangeait, et les
+    #: trois cas n'appellent pas la meme lecture ni le meme geste :
+    #:
+    #: · `differee` — la decision est anterieure, seule la **saisie** est
+    #:   tardive. L'etiquette est valide, c'est le **prix** qui est douteux ;
+    #: · `live` — pari reellement pris en cours de match : les deux invalides ;
+    #: · aucun motif — la ligne est anterieure a la garde d'ecriture
+    #:   (migration 034, 11/08/2026), et **rien ne dira jamais laquelle des deux
+    #:   c'etait**. Ce n'est pas un defaut a reparer, c'est une population close.
+    #:
+    #: Mesure du 17/08/2026 sur les 230 selections tranchees : 52 tardives, dont
+    #: 15 `differee`, 0 `live` et 37 sans motif. **Aucune ne manque d'horodatage
+    #: — les 230 portent leur `created_at` et le `commence_time` de leur match**,
+    #: ce qui ecarte la piste d'un defaut de collecte ou de fuseau.
+    late_by_reason: dict[str, int] = field(default_factory=dict)
+
+    @property
+    def late_reasons(self) -> list[tuple[str, int]]:
+        """Les motifs de saisie tardive, libelles et ranges du plus frequent.
+
+        Le libelle se resout depuis `LATE_REASONS` et **jamais cote gabarit** :
+        deux ecritures du meme vocabulaire divergent au premier ajustement, et un
+        libelle recopie dans un template ne casse rien le jour ou la cle change —
+        il disparait. Meme regle que `Pick.late_label`.
+        """
+        return [
+            (
+                LATE_REASONS.get(reason)
+                or "Aucun motif déclaré — antérieure à la garde d'écriture, population close",
+                count,
+            )
+            for reason, count in sorted(self.late_by_reason.items(), key=lambda item: -item[1])
+        ]
+
     #: `(reussites, tranchees)` des deux paliers les plus employes **a l'interieur
     #: du niveau de confiance le plus fourni**. C'est l'ecart **residuel** entre
     #: les deux echelles, celui qui dit si la seconde ajoute quelque chose — bien
@@ -3637,6 +3671,11 @@ def analysis(settings: Settings | None = None) -> Analysis:
             # L'heure du coup d'envoi : c'est elle qui decide si le prix
             # enregistre est un prix d'avant-match. Voir `_antecedence`.
             "       e.commence_time, "
+            # **Et le motif quand la saisie est tardive.** Sans lui les trois cas
+            # se fondent en un seul compte : une decision anterieure saisie en
+            # retard, un pari pris en direct, et une ligne anterieure a la garde
+            # d'ecriture n'appellent ni la meme lecture ni le meme geste.
+            "       k.late_reason, "
             "       s.key AS sport_key, c.category FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
@@ -3696,7 +3735,17 @@ def analysis(settings: Settings | None = None) -> Analysis:
     # qu'un ; sur les 73 filtrees, elle en retenait trois.
     tardifs = [row for row in rows if _late(row)]
     rows = [row for row in rows if not _late(row)]
-    report.without_antecedence = sum(1 for row in tardifs if str(row["result"]) in ("win", "loss"))
+    tranches = [row for row in tardifs if str(row["result"]) in ("win", "loss")]
+    report.without_antecedence = len(tranches)
+    # **Le motif se compte, il ne se fond pas.** « La decision etait anterieure,
+    # la saisie non » et « on ne sait pas » se reparent aux deux bouts opposes :
+    # la premiere ne se repare pas du tout — l'etiquette est valide — la seconde
+    # ne se reparera jamais, sa population etant close depuis la garde
+    # d'ecriture. Les additionner faisait lire un manque de collecte la ou il n'y
+    # en a pas.
+    for row in tranches:
+        motif = _column(row, "late_reason") or ""
+        report.late_by_reason[motif] = report.late_by_reason.get(motif, 0) + 1
     if not rows:
         return report
 

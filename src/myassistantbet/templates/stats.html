@@ -252,6 +252,16 @@
       écartées de tout ce bloc</strong> : leur antériorité n'est pas établie, donc
       leur étiquette non plus. Les compter reviendrait à mesurer la valeur
       prédictive d'étiquettes dont rien ne dit qu'elles précèdent le résultat.
+      {#- **Trois cas, et un seul compte les fondait.** Une saisie différée porte
+          une étiquette valide et un prix douteux ; un pari en direct n'a ni
+          l'une ni l'autre ; une ligne sans motif est antérieure à la garde
+          d'écriture, et rien ne dira jamais laquelle des deux c'était. La
+          dernière population est **close** : elle ne grandira plus, et
+          l'annoncer comme un manque de collecte enverrait chercher un défaut
+          qui n'existe pas. -#}
+      {% for reason, count in analysis.late_reasons %}
+      <br>{{ count }} — {{ reason }}
+      {%- endfor %}
     </p>
     {% endif %}
 
