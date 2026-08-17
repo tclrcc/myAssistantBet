@@ -31,13 +31,15 @@ n'expose nulle part.
 from __future__ import annotations
 
 import logging
+import unicodedata
 from dataclasses import dataclass
 from typing import Any
 
 from ..config import Settings, get_settings
-from ..db import connect
+from ..db import connect, utcnow
 from ..providers.base import last_known_quota
-from ..providers.tennisapi import PROVIDER
+from ..providers.tennisapi import PROVIDER, TennisAPIClient
+from .ingestion import MATCH_REF_UNRESOLVED, SOURCE, Reject
 from .labels import sort_key
 
 logger = logging.getLogger(__name__)
@@ -309,3 +311,245 @@ def parse_matches_played(
             continue
         lignes.append(ligne)
     return tuple(lignes), ecartes
+
+
+# -- L'identite d'un joueur chez le fournisseur ------------------------------
+#
+# **Piege numero un de cette source**, paye deux fois au lot 4 : l'API ecrit
+# « Mccartney Kessler » quand la base ecrit « McCartney Kessler », et une
+# comparaison stricte a rendu « 0 point de service » — un faux negatif de notre
+# rapprochement, pas de la source.
+#
+# La sonde du 17/08/2026 ajoute ce qui change la regle, et qui contredit l'ordre
+# de repli du brief. L'endpoint de recherche est **insensible a la casse en
+# entree** — `mccartney kessler` trouve `Mccartney Kessler`, le serveur s'en
+# charge — mais il n'est **pas** tolerant aux accents : `Karolína Muchová` rend
+# une liste vide quand `Karolina Muchova` repond. Le repli d'accents se fait donc
+# **avant l'appel**, sur l'entree, et pas seulement sur les candidats rendus.
+#
+# Deux joueuses de la base sont concernees — « Anna Bondár » et « Iva Jović » —
+# et sans ce repli elles seraient restees introuvables sans qu'une ligne le dise.
+
+#: Les niveaux de repli, du plus sur au moins sur. **Une enumeration** : le
+#: compte se fait dessus, et deux orthographes du meme niveau feraient deux
+#: lignes qui ne se rapprochent plus. Meme regle que les motifs de rejet.
+EXACT = "exact"
+CASSE = "casse"
+ACCENTS = "accents"
+INTROUVABLE = "introuvable"
+FALLBACKS = (EXACT, CASSE, ACCENTS, INTROUVABLE)
+
+
+@dataclass(frozen=True)
+class Identity:
+    """Ce qu'on sait du nom d'un joueur chez le fournisseur."""
+
+    local_name: str
+    tour: str
+    canonical: str = ""
+    provider_id: int | None = None
+    fallback: str = INTROUVABLE
+    response_id: int | None = None
+
+    @property
+    def resolved(self) -> bool:
+        return bool(self.canonical)
+
+
+def _fold_case(text: str) -> str:
+    return str(text or "").strip().casefold()
+
+
+def _fold_accents(text: str) -> str:
+    """Casse **et** accents replies. C'est `labels.sort_key`, nomme ici pour que
+    le niveau de repli se lise dans le code qui le decide."""
+    return sort_key(str(text or "").strip())
+
+
+def pick_candidate(name: str, candidates: list[str]) -> tuple[str, str]:
+    """Le candidat qui correspond au nom, et le niveau de repli qui a tranche.
+
+    Rend `("", INTROUVABLE)` quand rien ne correspond **ou quand plusieurs
+    candidats correspondent au meme niveau**. C'est la regle du projet, et elle
+    est plus severe ici qu'ailleurs : il n'existe aucune resolution manuelle pour
+    rattraper, et attribuer a un joueur les statistiques d'un autre serait pire
+    qu'une ligne absente — meme arbitrage que l'Elo tennis.
+
+    Le cas est reel : « Alexander Zverev » rend `['Alexander Zverev',
+    'Alexander Zverev Sr']`, et c'est le niveau **exact** qui les departage. Sans
+    la progression par niveau, un repli tolerant les aurait pris tous les deux.
+    """
+    propres = [str(c).strip() for c in candidates if str(c).strip()]
+    for niveau, fold in ((EXACT, str.strip), (CASSE, _fold_case), (ACCENTS, _fold_accents)):
+        cible = fold(str(name))
+        trouves = [candidat for candidat in propres if fold(candidat) == cible]
+        if len(trouves) == 1:
+            return trouves[0], niveau
+        if len(trouves) > 1:
+            # Deux candidats indiscernables a ce niveau : on ne devine pas, et
+            # descendre d'un cran n'aiderait pas — les niveaux suivants sont
+            # **plus** tolerants, donc ils en trouveraient au moins autant.
+            return "", INTROUVABLE
+    return "", INTROUVABLE
+
+
+def load_identity(local_name: str, tour: str, settings: Settings | None = None) -> Identity | None:
+    """L'identite deja resolue, ou None si la question n'a jamais ete posee.
+
+    **`None` et « non resolue » sont deux etats distincts**, et les confondre
+    ferait redemander tous les jours un nom que la source ne connait pas — un
+    appel par joueur et par passe, pour un constat qui ne bougera pas. Une ligne
+    presente avec `canonical` vide dit « cherche, pas trouve ».
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT local_name, tour, canonical, provider_id, fallback, response_id "
+            "  FROM player_alias WHERE local_name = ? AND tour = ?",
+            (local_name, tour),
+        ).fetchone()
+    if row is None:
+        return None
+    return Identity(
+        local_name=str(row["local_name"]),
+        tour=str(row["tour"]),
+        canonical=str(row["canonical"] or ""),
+        provider_id=row["provider_id"],
+        fallback=str(row["fallback"]),
+        response_id=row["response_id"],
+    )
+
+
+def store_identity(identity: Identity, settings: Settings | None = None) -> None:
+    """Memorise une resolution. **Une fois par joueur, puis cache.**"""
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        conn.execute(
+            "INSERT INTO player_alias (local_name, tour, canonical, provider_id, "
+            "  fallback, response_id, resolved_at) VALUES (?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(local_name, tour) DO UPDATE SET "
+            "  canonical = excluded.canonical, provider_id = excluded.provider_id, "
+            "  fallback = excluded.fallback, response_id = excluded.response_id, "
+            "  resolved_at = excluded.resolved_at",
+            (
+                identity.local_name,
+                identity.tour,
+                identity.canonical or None,
+                identity.provider_id,
+                identity.fallback,
+                identity.response_id,
+                utcnow(),
+            ),
+        )
+
+
+def note_provider_id(
+    local_name: str, tour: str, provider_id: int, settings: Settings | None = None
+) -> None:
+    """Complete une resolution avec l'identifiant numerique du fournisseur.
+
+    **C'est le vrai identifiant, et il n'arrive qu'apres.** La recherche ne rend
+    que des noms ; l'identifiant apparait dans la premiere reponse
+    `matches-played`. On l'ecrit des qu'il est servi — regle de revue du projet :
+    quand un identifiant existe, c'est lui, et l'ecrire est ce qui permettra un
+    jour de ne plus dependre d'une chaine.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        conn.execute(
+            "UPDATE player_alias SET provider_id = ? WHERE local_name = ? AND tour = ?",
+            (int(provider_id), local_name, tour),
+        )
+
+
+def fallback_tally(settings: Settings | None = None) -> dict[str, int]:
+    """Combien de resolutions par niveau de repli.
+
+    **C'est ce que le brief demande de journaliser, et sous la forme qui sert** :
+    si `accents` devient majoritaire, la normalisation en amont est mauvaise. Un
+    compte le dit ; une ligne de journal par resolution ne le dirait jamais,
+    personne ne relisant un mois de logs.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT fallback, COUNT(*) AS n FROM player_alias GROUP BY fallback"
+        ).fetchall()
+    return {str(row["fallback"]): int(row["n"]) for row in rows}
+
+
+async def resolve(
+    client: TennisAPIClient,
+    local_name: str,
+    tour: str,
+    settings: Settings | None = None,
+) -> tuple[Identity, Reject | None]:
+    """Resout la graphie d'un joueur chez le fournisseur. **Une fois, puis cache.**
+
+    Rend l'identite et, quand rien n'a ete trouve, le rejet a journaliser.
+
+    **Deux appels au plus, et le second est mesure, pas suppose.** Le premier
+    part avec le nom tel quel — la casse est prise en charge par le serveur. S'il
+    rend une liste **vide** et que le nom porte des accents, le second part avec
+    les accents replies : `Karolína Muchová` rend `[]` la ou `Karolina Muchova`
+    repond. Un nom sans accent ne declenche jamais ce second appel, donc il ne
+    coute rien au cas ordinaire.
+
+    **Jamais de troisieme essai sur un nom tronque.** Chercher « Kessler » rend
+    trois joueuses, et il n'existe ici aucune resolution manuelle pour
+    departager : c'est exactement le cas ou l'Elo tennis refuse de deviner.
+    """
+    settings = settings or get_settings()
+    connue = load_identity(local_name, tour, settings)
+    if connue is not None:
+        return connue, None
+
+    response = await client.search_raw(local_name, tour)
+    candidats = [str(item) for item in response.data] if isinstance(response.data, list) else []
+    canonical, niveau = pick_candidate(local_name, candidats)
+
+    if not canonical and not candidats and _fold_accents(local_name) != _fold_case(local_name):
+        # La source ne replie pas les accents en entree : c'est mesure, et c'est
+        # le seul cas ou un second appel apprend quelque chose.
+        replie = _sans_accents(local_name)
+        response = await client.search_raw(replie, tour)
+        candidats = [str(item) for item in response.data] if isinstance(response.data, list) else []
+        canonical, _ = pick_candidate(replie, candidats)
+        if canonical:
+            niveau = ACCENTS
+
+    identity = Identity(
+        local_name=local_name,
+        tour=tour,
+        canonical=canonical,
+        fallback=niveau if canonical else INTROUVABLE,
+        response_id=response.archive_id or None,
+    )
+    store_identity(identity, settings)
+    if identity.resolved:
+        return identity, None
+
+    return identity, Reject(
+        block_type=SOURCE,
+        reason=MATCH_REF_UNRESOLVED,
+        detail=(
+            f"{local_name} ({tour}) : aucune graphie de tennis-api.com ne correspond. "
+            f"Candidats rendus : {', '.join(candidats) if candidats else 'aucun'}. "
+            "Rien n'est devine — les statistiques d'un autre joueur seraient pires "
+            "qu'une ligne absente."
+        ),
+        payload=f"{local_name}/{tour} -> {candidats!r}"[:400],
+    )
+
+
+def _sans_accents(text: str) -> str:
+    """Le nom sans ses accents, **casse conservee**.
+
+    `sort_key` replie les deux d'un coup, ce qui convient a une comparaison et
+    pas a une requete : on veut envoyer « Karolina Muchova » et non « karolina
+    muchova ». La casse n'est pourtant pas le probleme — le serveur s'en
+    charge — mais envoyer un nom deforme sans raison rendrait la sonde
+    irreproductible.
+    """
+    decompose = unicodedata.normalize("NFKD", str(text or ""))
+    return "".join(char for char in decompose if not unicodedata.combining(char))

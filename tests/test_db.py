@@ -34,6 +34,7 @@ EXPECTED_TABLES = {
     "odds",
     "odds_history",
     "picks",
+    "player_alias",
     "player_context",
     "preferences",
     "prompt_events",
