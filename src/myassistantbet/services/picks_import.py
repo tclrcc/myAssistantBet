@@ -56,7 +56,7 @@ from .ingestion import (
     to_payload,
 )
 from .prompt import QUOTA_FLOOR_TIERS
-from .set_scores import ParsedScore, _positioned
+from .set_scores import FROM_PROSE, ParsedScore, _positioned
 from .set_scores import read as read_scores
 
 #: La section **C-bis**, ou l'exigence de fait date tombe. Reconnue sur son
@@ -348,9 +348,16 @@ class ImportPreview:
             return ""
         passes = sum(1 for score in self.scores if score.parsed.passe)
         resolus = sum(1 for score in self.scores if score.resolved and not score.parsed.passe)
+        filet = sum(1 for score in self.scores if score.parsed.origin == FROM_PROSE)
         parts = [f"{len(self.scores)} score(s) en sets lu(s)", f"{resolus} rapproché(s)"]
         if passes:
             parts.append(f"{passes} PASSE")
+        # **Le compteur du filet, et c'est lui qu'on surveille.** La ligne
+        # structuree est ce que le gabarit demande ; si le filet sert encore dans
+        # un mois, c'est que la consigne n'est pas suivie, et il vaut mieux le
+        # savoir que de le deviner.
+        if filet:
+            parts.append(f"{filet} rattrapé(s) en prose, hors ligne « sets: »")
         return " · ".join(parts)
 
     @property
@@ -729,7 +736,7 @@ def parse_table(
     valide = _attach_claims(preview, raw, headers)
     _apply_research(preview, raw, headers or [], valide)
     _attach_combos(preview, raw, valide, headers)
-    _attach_scores(preview, raw, rows, nearby, valide)
+    _attach_scores(preview, raw, rows, nearby, valide, headers)
     return preview
 
 
@@ -739,28 +746,45 @@ def _attach_scores(
     rows: list[GridRow],
     nearby: list[PickableEvent] | None,
     valide: PromptBlocks | None,
+    headers: list[PromptBlocks] | None = None,
 ) -> None:
     """Rattache les scores en sets du rendu aux matchs du lot.
 
     **Deux cles, dans cet ordre** : le repere de bloc, qui ne depend d'aucune
-    orthographe, puis l'affiche recopiee. Le repere passe par le **meme** prompt
-    que les blocs de confiance — deux resolutions paralleles finiraient par
-    designer deux matchs sous le meme numero, le piege deja paye deux fois par
-    l'assembleur de contexte.
+    orthographe, puis l'affiche recopiee. Le prompt reste celui qui a valide les
+    blocs de confiance quand il y en a — deux resolutions paralleles finiraient
+    par designer deux matchs sous le meme numero — et, a defaut, le premier qui
+    porte tous les reperes de la ligne. Meme repli que les combines, et pour la
+    meme raison : un chemin d'ingestion qui tombe parce qu'un autre est tombe
+    cumule deux silences pour une seule cause.
 
     Un score qu'on ne sait pas rapprocher est **dit** et compte comme un rejet :
     il a ete produit, il n'entrera pas, et c'est exactement ce qu'il fallait
     cesser de taire.
     """
     lecture = read_scores(raw)
+    reperes = {parsed.mark for parsed in lecture.rows if parsed.mark}
+    mapping = valide or next(
+        (candidate for candidate in (headers or []) if reperes <= set(candidate.marks)),
+        None,
+    )
+    # **Le rapprochement decide de l'identite, donc c'est lui qui deduplique.**
+    # Un match peut arriver deux fois : une entree de la ligne structuree et une
+    # phrase de prose sur la meme affiche. La ligne prime — elle est lue en
+    # premier — et le filet ne doit pas la doubler.
+    vus: set[int] = set()
     for parsed in lecture.rows:
         found = None
-        if parsed.mark and valide is not None:
-            entete = _affiche_of(valide.marks.get(parsed.mark, ""))
+        if parsed.mark and mapping is not None:
+            entete = _affiche_of(mapping.marks.get(parsed.mark, ""))
             if entete:
                 found = anchor(entete, rows) or anchor(entete, nearby or [])
         if found is None and parsed.match_text:
             found = anchor(parsed.match_text, rows) or anchor(parsed.match_text, nearby or [])
+        if found is not None and found.event_id in vus:
+            continue
+        if found is not None:
+            vus.add(found.event_id)
         attache = AttachedScore(
             parsed=parsed,
             event_id=found.event_id if found else None,

@@ -87,6 +87,29 @@ def _fold(text: str) -> str:
     return " ".join(re.sub(r"[^a-z0-9]+", " ", stripped.lower()).split())
 
 
+#: La ligne structuree, sur le modele de `dossiers_ouverts` — la seule structure
+#: du gabarit qui n'ait **jamais** pose de probleme de transport. Elle vit hors de
+#: tout bloc de code, donc aucune cloture ne peut lui etre retiree : c'est
+#: exactement la lecon du chantier precedent, generalisee au lieu d'etre
+#: redecouverte format par format.
+#:
+#:     sets: M3=2-0/2-1 | M4=0-2 | M8=PASSE
+SETS_LINE = re.compile(r"sets\s*:(?P<corps>[^\n]*)", re.IGNORECASE)
+
+#: Une entree de cette ligne : `M4=0-2` ou `M4=2-0/2-1` ou `M8=PASSE`.
+SETS_ENTRY = re.compile(
+    r"(?P<mark>M\d+)\s*=\s*(?P<premier>[0-2]\s*[-–—−]\s*[0-2]|PASSE)"
+    r"(?:\s*/\s*(?P<second>[0-2]\s*[-–—−]\s*[0-2]))?",
+    re.IGNORECASE,
+)
+
+#: D'ou une ligne de score vient. **Comptes separement, et c'est le point** : si
+#: le filet sert encore dans un mois, c'est que la consigne n'est pas suivie, et
+#: il faut le savoir plutot que de le deviner.
+FROM_LINE = "ligne"
+FROM_PROSE = "prose"
+
+
 @dataclass(frozen=True)
 class ParsedScore:
     """Une ligne de score en sets lue dans un rendu, avant tout rapprochement."""
@@ -101,6 +124,8 @@ class ParsedScore:
     #: L'endroit du collage brut d'ou la ligne vient.
     start: int | None = None
     end: int | None = None
+    #: `ligne` pour la ligne structuree, `prose` pour le filet.
+    origin: str = FROM_LINE
 
     @property
     def passe(self) -> bool:
@@ -119,6 +144,18 @@ class ScoreReading:
     def predictions(self) -> int:
         """Les lignes qui portent vraiment un score. `PASSE` n'en est pas une."""
         return sum(1 for row in self.rows if not row.passe)
+
+    @property
+    def from_line(self) -> int:
+        """Lues par la ligne structuree, la forme que le gabarit demande."""
+        return sum(1 for row in self.rows if row.origin == FROM_LINE)
+
+    @property
+    def from_prose(self) -> int:
+        """Rattrapees par le filet. **Le chiffre a surveiller** : s'il sert encore
+        dans un mois, c'est que la consigne n'est pas suivie, et il vaut mieux le
+        savoir que de le deviner."""
+        return sum(1 for row in self.rows if row.origin == FROM_PROSE)
 
 
 def read(raw: str) -> ScoreReading:
@@ -142,6 +179,14 @@ def read(raw: str) -> ScoreReading:
     """
     found = ScoreReading()
     seen: set[str] = set()
+    # **La ligne structuree d'abord.** C'est elle que le gabarit demande depuis
+    # ce chantier, et elle ne peut pas perdre de cloture — elle n'en a pas. Le
+    # lecteur de prose reste **en filet** derriere, et son compteur dira si la
+    # consigne est suivie : un filet qui sert encore dans un mois est un
+    # gabarit qu'on ne lit pas.
+    for parsed in _structured(raw or ""):
+        seen.add(parsed.mark)
+        found.rows.append(parsed)
     # **Les lignes se parcourent avec leur position**, pas en `splitlines()` nu :
     # sans elle, une ligne lue ne sait plus d'ou elle vient et un rejeu cible est
     # impossible. `keepends` garde les fins de ligne pour que l'offset avance du
@@ -154,8 +199,60 @@ def read(raw: str) -> ScoreReading:
         if not cle or cle in seen:
             continue
         seen.add(cle)
-        found.rows.append(replace(parsed, start=start, end=start + len(line.rstrip("\r\n"))))
+        found.rows.append(
+            replace(
+                parsed,
+                start=start,
+                end=start + len(line.rstrip("\r\n")),
+                origin=FROM_PROSE,
+            )
+        )
     return found
+
+
+def _structured(raw: str) -> list[ParsedScore]:
+    """La ligne `sets:` du rendu, entree par entree.
+
+    **Elle prime sur la prose** : c'est la forme que le gabarit demande, la seule
+    qui ne puisse pas perdre son balisage, et la seule dont l'ordre soit celui des
+    blocs. Une entree illisible ne fait pas tomber les autres — une ligne de huit
+    matchs ne doit pas se perdre entiere sur un tiret de travers.
+
+    La ligne peut etre **vide** (`sets:`), et c'est une reponse : le gabarit
+    l'impose meme quand aucun scenario ne se dessine.
+    """
+    trouve = SETS_LINE.search(raw or "")
+    if trouve is None:
+        return []
+    debut = trouve.start("corps")
+    rendus, vus = [], set()
+    for entry in SETS_ENTRY.finditer(trouve.group("corps")):
+        mark = entry.group("mark").upper()
+        if mark in vus:
+            continue
+        vus.add(mark)
+        premier = entry.group("premier")
+        rendus.append(
+            ParsedScore(
+                mark=mark,
+                predicted="" if premier.upper() == PASS else _normalise(premier),
+                alternate=_normalise(entry.group("second") or ""),
+                start=debut + entry.start(),
+                end=debut + entry.end(),
+                origin=FROM_LINE,
+            )
+        )
+    return rendus
+
+
+def _normalise(score: str) -> str:
+    """« 2 – 1 » devient « 2-1 ». Le tiret peut etre long, court ou insecable.
+
+    Comparer le caractere brut ferait echouer la lecture pour une raison
+    typographique, c'est-a-dire pour la mauvaise — meme regle que partout.
+    """
+    found = SCORE.search(score or "")
+    return f"{found.group(1)}-{found.group(2)}" if found else ""
 
 
 def _positioned(raw: str) -> list[tuple[int, str]]:

@@ -742,7 +742,19 @@ l'écart de niveau.
 **Aucune cote n'existe pour ce marché** : The Odds API ne le sert pas au tennis,
 le bookmaker si. Ne l'invente donc pas, n'en fais pas une ligne de la section C
 et ne le mets dans aucun combiné — c'est une proposition à tarifer sur place.
-Écris le score, une phrase de justification, et rien d'autre.
+
+Après ta prose, une ligne unique pour tout le lot, hors de tout bloc de code,
+reprenant chaque match de tennis dans l'ordre des blocs :
+
+    sets: M3=2-0/2-1 | M4=0-2 | M8=PASSE | M9=2-0/2-1 | M10=2-0 | M11=1-2/2-1
+
+Le score est donné du point de vue du premier joueur nommé dans le titre du bloc.
+Le second scénario est optionnel et se sépare par une barre oblique. `PASSE` est
+une valeur normale et attendue sur une partie du lot. Écris la ligne même vide
+(`sets:`).
+
+La justification reste au-dessus, en prose, une phrase par match : c'est elle qui
+se lit, mais c'est cette ligne-ci que l'application enregistre.
 {% endif %}
 
 {% if event_blocks | length >= combo_solo_min_lot %}
