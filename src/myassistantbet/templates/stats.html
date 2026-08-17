@@ -745,6 +745,15 @@
         Les {{ analysis.clustered_rows }} ligne(s) concernées portent leur compte
         d'événements à côté du leur.
         {% endif %}
+        {#- **Les rencontres se nomment.** Le compte disait qu'il faut élargir les
+            intervalles ; il ne disait pas où aller regarder, alors que c'est la
+            seule chose actionnable — le prompt n'autorise une seconde ligne que
+            sur un angle réellement indépendant, et cette liste est ce qui permet
+            de le vérifier après coup. -#}
+        {% if analysis.clustered_events %}
+        <br>Les rencontres concernées :
+        {% for libelle, compte in analysis.clustered_events %}{{ libelle }} ({{ compte }}){% if not loop.last %} · {% endif %}{% endfor %}.
+        {% endif %}
         {% else %}
         Chaque sélection porte sur un match différent : sur ce lot, rien ne se compte
         deux fois, et les intervalles n'ont pas à être élargis pour ça.

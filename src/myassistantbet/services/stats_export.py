@@ -317,10 +317,15 @@ class StatsReport:
                 "qui n'est pas entré, donc quelque chose que la page ne mesure pas."
             )
         if analysis.clustered_selections:
+            # Les rencontres sont **nommees** : un fichier relu ailleurs doit
+            # pouvoir mener a la verification, pas seulement l'annoncer.
+            ou = " · ".join(
+                f"{libelle} ({compte})" for libelle, compte in analysis.clustered_events
+            )
             notes.append(
                 f"{analysis.clustered_selections} sélection(s) partagent un match avec "
                 "une autre : les intervalles supposent l'indépendance, ils sont donc "
-                "optimistes et les vrais sont plus larges."
+                f"optimistes et les vrais sont plus larges. Rencontres concernées : {ou}."
             )
         if not analysis.by_confidence_computed:
             notes.append(
@@ -582,6 +587,9 @@ def as_json(found: StatsReport) -> dict[str, Any]:
             "late": _residual(analysis.residual_late),
             "under_margin": _residual(analysis.residual.with_margin(found.margin_reference)),
             "clustered_selections": analysis.clustered_selections,
+            "clustered_events": [
+                {"label": libelle, "picks": compte} for libelle, compte in analysis.clustered_events
+            ],
             "clustered_p_value": analysis.clustered_p_value(found.margin_reference),
             "unpriced": analysis.unpriced,
         },

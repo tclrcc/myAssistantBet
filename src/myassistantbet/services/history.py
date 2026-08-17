@@ -2517,6 +2517,16 @@ class Analysis:
     #: conservatrice du residu : deux selections sur la meme rencontre ne sont
     #: pas deux observations, et la loi exacte suppose l'independance.
     residual_clusters: list[list[float]] = field(default_factory=list)
+    #: Les rencontres qui portent **plus d'une selection tranchee**, nommees.
+    #:
+    #: Le compte seul disait qu'il faut elargir les intervalles ; il ne disait
+    #: pas **ou aller regarder**. Or c'est la seule chose actionnable : deux
+    #: lectures d'un meme rapport de forces se relisent, et le prompt n'autorise
+    #: une seconde ligne que sur un angle reellement independant. Mesure du
+    #: 17/08/2026 — sur le lot du 16/08, `Lens – Paris Saint Germain` porte
+    #: `PSG O1.5 Eq. buts` et `Lens +0.5 Handicap`, deux lectures **opposees** du
+    #: meme rapport de forces, notees l'une gagnante et l'autre perdante.
+    clustered_events: list[tuple[str, int]] = field(default_factory=list)
     #: Selections tranchees **ecartees de toute la page** faute d'anteriorite
     #: etablie. Comptees et annoncees : une page qui perd un tiers de son volume
     #: sans le dire est pire que celle qui le melangeait.
@@ -3693,6 +3703,10 @@ def analysis(settings: Settings | None = None) -> Analysis:
             # retard, un pari pris en direct, et une ligne anterieure a la garde
             # d'ecriture n'appellent ni la meme lecture ni le meme geste.
             "       k.late_reason, "
+            # L'affiche, pour **nommer** les rencontres qui portent plus d'une
+            # selection. Le compte seul disait qu'il faut elargir les
+            # intervalles, jamais ou aller regarder.
+            "       e.home, e.away, "
             "       s.key AS sport_key, c.category FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
@@ -4083,6 +4097,26 @@ def analysis(settings: Settings | None = None) -> Analysis:
         if str(row["result"]) in ("win", "loss") and price and price > 1.0:
             par_match.setdefault(row["event_id"] or f"seule-{row['id']}", []).append(1.0 / price)
     report.residual_clusters = list(par_match.values())
+    # **Et les rencontres concernees, nommees.** Le compte disait qu'il faut
+    # elargir les intervalles ; il ne disait pas ou aller regarder, alors que
+    # c'est la seule chose actionnable — le prompt n'autorise une seconde ligne
+    # que sur un angle reellement independant, et cette liste est ce qui permet
+    # de le verifier. Elle sort du **meme** regroupement que la borne
+    # conservatrice : deux comptages paralleles auraient fini par ne plus
+    # designer les memes matchs.
+    libelles = {
+        row["event_id"]: affiche(_column(row, "home") or "", _column(row, "away") or "")
+        for row in rows
+        if row["event_id"] is not None
+    }
+    report.clustered_events = sorted(
+        (
+            (libelles.get(event_id) or f"match {event_id}", len(prix))
+            for event_id, prix in par_match.items()
+            if len(prix) > 1 and not str(event_id).startswith("seule-")
+        ),
+        key=lambda item: (-item[1], item[0]),
+    )
     gagnees, implicites = _releve(tardifs)
     report.residual_late = Residual(observed=gagnees, implied=implicites)
 

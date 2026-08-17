@@ -875,3 +875,90 @@ def test_l_horodatage_d_ecriture_vient_du_serveur(migrated: Settings) -> None:
     assert ligne["created_at"].endswith("Z"), "stockage en UTC, chaine ISO 8601"
     assert ligne["created_at"] >= "2026-", "l'heure du serveur, jamais une saisie"
     assert session_id
+
+
+# -- Deux selections sur un meme match ---------------------------------------
+#
+# **La garde existait, la trace non.** `add_pick` refuse depuis la migration 028
+# une seconde ligne sur une meme rencontre sans justification d'independance ;
+# le refus s'affichait et rien n'en gardait la memoire, si bien qu'une garde qui
+# mord souvent restait invisible. La journalisation est traitee avec le reste de
+# l'ingestion ; ce qui manquait ici est de dire **ou** aller relire.
+#
+# Fixture reelle du 16/08/2026 : `Lens – Paris Saint Germain` porte
+# « PSG O1.5 Eq. buts » et « Lens +0.5 Handicap » — deux lectures opposees du
+# meme rapport de forces, notees l'une gagnante et l'autre perdante.
+
+
+def test_les_rencontres_a_deux_selections_sont_nommees(migrated: Settings) -> None:
+    session_id = _lot(migrated, [("2.00", "win", False)])
+    event_id = _match(migrated, "Lens")
+    board_service.toggle_selection(event_id, True, migrated)
+    for market, selection, result in (
+        ("Eq. buts", "PSG O1.5", "loss"),
+        ("Handicap", "Lens +0.5", "win"),
+    ):
+        pick_id = add_pick(
+            session_id,
+            "safe",
+            market,
+            selection,
+            event_id=str(event_id),
+            price="1.90",
+            independence_note="angles opposés, assumés",
+            settings=migrated,
+        )
+        set_result(pick_id, result, migrated)
+
+    report = analysis(migrated)
+
+    assert report.clustered_selections == 1
+    assert report.clustered_events == [("Lens – Adv Lens", 2)]
+
+
+def test_le_compte_de_regroupement_vient_du_meme_calcul_que_la_borne(
+    migrated: Settings,
+) -> None:
+    """**Un champ, jamais un recomptage a l'affichage.** `clustered_selections`
+    et `clustered_events` sortent tous deux de `residual_clusters` : deux
+    comptages paralleles auraient fini par ne plus designer les memes matchs, et
+    la borne conservatrice du bloc de tete se serait mise a decrire un autre
+    lot que la reserve affichee juste a cote."""
+    session_id = _lot(migrated, [("2.00", "win", False), ("2.00", "loss", False)])
+    event_id = _match(migrated, "Reims")
+    board_service.toggle_selection(event_id, True, migrated)
+    for market, result in (("1N2", "win"), ("O/U 2.5", "loss")):
+        pick_id = add_pick(
+            session_id,
+            "safe",
+            market,
+            "Domicile",
+            event_id=str(event_id),
+            price="1.90",
+            independence_note="angles distincts",
+            settings=migrated,
+        )
+        set_result(pick_id, result, migrated)
+
+    report = analysis(migrated)
+
+    assert report.clustered_selections == sum(compte - 1 for _, compte in report.clustered_events)
+
+
+def test_une_seconde_selection_sans_justification_est_refusee(migrated: Settings) -> None:
+    """Seul controle bloquant du module avec la garde d'anteriorite : ailleurs
+    une valeur manquante vaut « non renseigne », ici elle vaudrait « je ne me
+    suis pas pose la question »."""
+    session_id = _lot(migrated, [("2.00", "win", False)])
+    event_id = db.query_one("SELECT MAX(id) AS id FROM events", settings=migrated)["id"]
+
+    with pytest.raises(HistoryError, match="déjà une sélection"):
+        add_pick(
+            session_id,
+            "safe",
+            "O/U 2.5",
+            "Over 2.5",
+            event_id=str(event_id),
+            price="1.90",
+            settings=migrated,
+        )
