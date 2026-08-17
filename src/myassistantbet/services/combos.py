@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from .history import HistoryError
-from .ingestion import COMBO, JSON_INVALID, SCHEMA_INVALID, Reject
+from .ingestion import COMBO, JSON_INVALID, SCHEMA_INVALID, Reject, read_bodies
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +62,17 @@ STOP_LABELS = {
 #: non `conf` ou `json` : `confidence.BLOCK` ne lit que ces deux-la, donc les
 #: deux familles de blocs ne peuvent pas se manger l'une l'autre.
 BLOCK = re.compile(r"```combo\s*\n(.*?)\n```", re.DOTALL | re.IGNORECASE)
+
+#: Les cles qui font qu'un objet **est** un combine, quand il arrive sans sa
+#: cloture — le cas d'un copier-coller depuis le rendu. `jambes` appartient en
+#: propre a cette famille ; `type`, que les deux portent, ne peut pas trancher.
+COMBO_KEYS = ("jambes", "legs")
+
+
+def is_combo(payload: dict) -> bool:
+    """Cet objet est-il un combine, lu sur sa seule forme ?"""
+    return any(key in payload for key in COMBO_KEYS)
+
 
 #: Ecart relatif au-dela duquel la cote ecrite et la cote recalculee ne
 #: decrivent plus le meme combine. Il ne s'agit pas d'une tolerance de calcul
@@ -166,9 +177,13 @@ def parse(body: str) -> ParsedCombo:
 
 
 def read_combos(raw: str) -> ComboReading:
-    """Tous les blocs ```combo d'un rendu, dans leur ordre d'apparition."""
+    """Tous les blocs ```combo d'un rendu, **cloture ou non**.
+
+    Meme reparation que pour les blocs de confiance : un copier-coller depuis le
+    rendu consomme la cloture, et le JSON arrive nu.
+    """
     reading = ComboReading()
-    for index, body in enumerate(BLOCK.findall(raw or ""), start=1):
+    for index, body in enumerate(read_bodies(raw or "", BLOCK, is_combo), start=1):
         try:
             reading.combos.append(parse(body))
         except ComboError as exc:

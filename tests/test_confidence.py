@@ -1497,3 +1497,114 @@ def test_un_appariement_refuse_ne_compte_aucun_bloc(migrated: Settings) -> None:
 
     assert preview.claims_attached == 0
     assert not preview.complete
+
+
+# -- Ou le bloc se trouve dans un collage -----------------------------------
+#
+# **Le rendu de Claude et ce qu'on en copie ne sont pas le meme texte.** Le
+# module d'import le savait deja pour les tableaux — `_cells` lit les barres
+# verticales *et* les tabulations — et ne l'appliquait pas aux blocs : la
+# lecture ne se posait que sur la cloture, c'est-a-dire sur la forme que le
+# copier-coller detruit. Mesure du 17/08/2026 : `claim_raw_json` NULL sur 235
+# selections sur 235, dont les 86 des trois sessions ou le gabarit demandait
+# pourtant un bloc par ligne.
+
+
+def test_un_bloc_sans_cloture_est_lu_comme_un_bloc_cloture() -> None:
+    """**La reparation du chantier.** Un bloc de code copie depuis le rendu
+    arrive sans ses trois accents graves, exactement comme un tableau y arrive
+    tabule plutot qu'a barres verticales."""
+    nu = _bloc(source_level=1, faits=[_fait()], manque_touche_facteur=False)
+
+    lecture = read_blocks(f"Voici mes sélections.\n\n{nu}\n\nEt la suite.")
+
+    assert len(lecture.claims) == 1
+    assert lecture.claims[0].rung == 4
+
+
+def test_un_bloc_multiligne_et_indente_passe() -> None:
+    """Le gabarit rend le JSON sur plusieurs lignes et l'indente. Un lecteur
+    ligne par ligne echouerait precisement sur la forme demandee."""
+    rendu = (
+        '{"match": "M15", "confiance": 3, "type": "issue", "source_level": 1,\n'
+        ' "faits": [{"enonce": "forfait d\'Osaka, Siniakova héritée d\'un bye",\n'
+        '            "date": "2026-08-13", "editeur": "wtatennis.com", "niveau": 1}],\n'
+        ' "manque_touche_facteur": true}'
+    )
+
+    lecture = read_blocks(rendu)
+
+    assert [claim.match for claim in lecture.claims] == ["M15"]
+    assert lecture.claims[0].rung == 3
+
+
+def test_le_niveau_lecture_passe_comme_un_entier() -> None:
+    """`source_level` vaut un entier **ou** la chaine `lecture`. Un schema type
+    `int` rejetterait exactement les blocs les plus nombreux."""
+    lecture = read_blocks(_bloc(source_level="lecture", faits=[]))
+
+    assert len(lecture.claims) == 1
+    assert lecture.claims[0].rung == 1
+
+
+def test_une_liste_de_faits_vide_est_une_reponse_normale() -> None:
+    assert not read_blocks(_bloc(source_level="lecture", faits=[])).rejects
+
+
+def test_l_editeur_d_origine_est_facultatif() -> None:
+    """Sa presence comme son absence doivent passer : le cas ordinaire est que
+    l'editeur et l'origine se confondent."""
+    sans = read_blocks(_bloc(source_level=1, faits=[_fait()], manque_touche_facteur=False))
+    avec_fait = {**_fait(), "editeur_origine": "wtatennis.com"}
+    avec = read_blocks(_bloc(source_level=1, faits=[avec_fait], manque_touche_facteur=False))
+
+    assert not sans.rejects and not avec.rejects
+    assert avec.claims[0].facts[0].source == "wtatennis.com"
+
+
+def test_les_accents_et_apostrophes_d_un_enonce_survivent() -> None:
+    enonce = "forfait d'Osaka, Siniakova héritée d'un bye — confirmé"
+    fait = {**_fait(), "enonce": enonce}
+
+    lecture = read_blocks(_bloc(source_level=1, faits=[fait], manque_touche_facteur=False))
+
+    assert lecture.claims[0].facts[0].statement == enonce
+
+
+def test_un_repere_a_deux_chiffres_ne_se_confond_pas_avec_son_prefixe() -> None:
+    """`M15` et `M1` : un rapprochement par prefixe attribuerait a l'un le bloc
+    de l'autre, et le cran serait faux sans se voir."""
+    rendu = _bloc(match="M1", source_level="lecture", faits=[])
+    rendu += "\n" + _bloc(match="M15", source_level="lecture", faits=[])
+
+    lecture = read_blocks(rendu)
+
+    assert [claim.match for claim in lecture.claims] == ["M1", "M15"]
+
+
+def test_un_combine_sans_cloture_n_est_pas_lu_comme_un_bloc_de_confiance() -> None:
+    """Les deux familles portent `type` : c'est `jambes` qui tranche, et sans ce
+    filtre un combine copie sans cloture se rendrait en bloc de confiance
+    refuse — donc en cran perdu pour tout le lot."""
+    combine = json.dumps({"type": "court", "jambes": ["M1", "M2"], "cote": 4.2})
+
+    lecture = read_blocks(combine)
+
+    assert not lecture.claims and not lecture.rejects
+
+
+def test_une_accolade_dans_un_enonce_ne_derange_pas_la_lecture() -> None:
+    """Le comptage se fait **hors chaines** : sans ce soin, un énoncé accidenté
+    ferait avaler la moitié du rendu."""
+    fait = {**_fait(), "enonce": "le retour de {le joueur} est acté"}
+    rendu = _bloc(source_level=1, faits=[fait], manque_touche_facteur=False)
+
+    lecture = read_blocks(rendu + "\n" + _bloc(match="M2", source_level="lecture", faits=[]))
+
+    assert len(lecture.claims) == 2
+
+
+def test_un_bloc_cloture_n_est_jamais_compte_deux_fois() -> None:
+    bloc = _bloc(source_level="lecture", faits=[])
+
+    assert len(read_blocks(f"```conf\n{bloc}\n```").claims) == 1

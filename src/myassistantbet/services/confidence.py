@@ -33,7 +33,7 @@ import re
 from dataclasses import dataclass, field
 from datetime import date
 
-from .ingestion import CONF, JSON_INVALID, SCHEMA_INVALID, Reject
+from .ingestion import CONF, JSON_INVALID, SCHEMA_INVALID, Reject, read_bodies
 
 #: Niveaux de l'echelle de sources du preambule. `lecture` n'est pas une absence
 #: de valeur mais une valeur : l'analyse declare qu'aucun fait date ne porte la
@@ -205,6 +205,24 @@ class Claim:
 #: le tableau — demander un second geste a l'utilisateur ferait perdre le champ
 #: le jour ou il l'oublie.
 BLOCK = re.compile(r"```(?:conf|json)\s*\n(.*?)\n```", re.DOTALL | re.IGNORECASE)
+
+#: Les cles qui font qu'un objet **est** un bloc de confiance, quand il arrive
+#: sans sa cloture. Un copier-coller depuis le rendu consomme les trois accents
+#: graves comme il consomme les barres d'un tableau ; la forme est alors tout ce
+#: qui reste pour reconnaitre le bloc.
+#:
+#: `faits` et `source_level` appartiennent en propre a cette famille — un
+#: combine n'en porte aucune — et `confiance` est gardee pour un rendu qui
+#: omettrait les deux autres. `type` n'y figure **pas** : les deux familles la
+#: portent, et s'en servir ferait lire un combine comme un bloc de confiance.
+CLAIM_KEYS = ("faits", "facts", "source_level", "confiance", "confidence")
+
+
+def is_claim(payload: dict) -> bool:
+    """Cet objet est-il un bloc de confiance, lu sur sa seule forme ?"""
+    return any(key in payload for key in CLAIM_KEYS) and not (
+        "jambes" in payload or "legs" in payload
+    )
 
 
 def _level(raw: object) -> int:
@@ -485,9 +503,16 @@ def read_opened(raw: str) -> Opened:
 
 
 def read_blocks(raw: str) -> Reading:
-    """Tous les blocs structures d'un rendu, dans leur ordre d'apparition."""
+    """Tous les blocs structures d'un rendu, dans leur ordre d'apparition.
+
+    **Clotures ou non**, et c'est la reparation du chantier : un bloc de code
+    copie depuis le rendu de Claude arrive sans ses trois accents graves,
+    exactement comme un tableau y arrive tabule plutot qu'a barres verticales.
+    Le module savait deja lire les deux formes d'un tableau et n'en lisait
+    qu'une pour les blocs — celle que le copier-coller detruit.
+    """
     reading = Reading()
-    for index, body in enumerate(BLOCK.findall(raw or ""), start=1):
+    for index, body in enumerate(read_bodies(raw or "", BLOCK, is_claim), start=1):
         # La ligne des dossiers ouverts se donne hors de tout bloc, mais un
         # rendu peut la cloturer quand meme. L'ecarter ici plutot que de la
         # rejeter : comptee comme un bloc de confiance en echec, elle ferait

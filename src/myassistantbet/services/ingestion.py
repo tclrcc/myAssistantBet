@@ -30,6 +30,8 @@ from __future__ import annotations
 
 import json
 import logging
+import re
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from ..config import Settings, get_settings
@@ -90,6 +92,122 @@ BLOCK_LABELS: dict[str, str] = {
 #: bloc mais un collage entier tombe dans la mauvaise branche, et le garder en
 #: entier ferait grossir la table sans rien apprendre de plus.
 PAYLOAD_MAX = 4000
+
+
+# -- Ou trouver un bloc dans un collage -------------------------------------
+#
+# **Le rendu de Claude et ce qu'on en copie ne sont pas le meme texte.** Le
+# module d'import le savait deja pour les tableaux — `_cells` lit les barres
+# verticales *et* les tabulations, « ce que l'on copie depuis son interface est
+# un tableau tabule, les barres ayant ete consommees par le rendu » — et
+# l'appliquait a une seule des deux formes. Un bloc de code copie depuis le rendu
+# arrive **sans sa cloture** : le JSON est intact, les trois accents graves ont
+# disparu avec le reste du balisage.
+#
+# La lecture ne se posait donc que sur la forme que le copier-coller detruit, et
+# la mesure du 17/08/2026 dit ce que ca a coute : `claim_raw_json` NULL sur 235
+# selections sur 235, dont les 86 des trois sessions ou le gabarit demandait
+# pourtant un bloc par ligne.
+
+
+def _balanced(text: str, start: int) -> int | None:
+    """Fin de l'objet JSON ouvert a `start`, ou rien s'il ne se referme pas.
+
+    Compte les accolades **hors chaines** : un `{` dans un enonce — « le retour
+    de {joueur} » — ne doit pas ouvrir un niveau, et une accolade echappee non
+    plus. Sans ce soin, un enonce accidente ferait avaler la moitie du rendu.
+    """
+    depth = 0
+    in_string = False
+    escaped = False
+    for index in range(start, len(text)):
+        char = text[index]
+        if in_string:
+            if escaped:
+                escaped = False
+            elif char == "\\":
+                escaped = True
+            elif char == '"':
+                in_string = False
+            continue
+        if char == '"':
+            in_string = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+    return None
+
+
+def read_bodies(
+    raw: str,
+    fence: re.Pattern[str],
+    belongs: Callable[[dict], bool],
+) -> list[str]:
+    """Les corps de blocs d'une famille, **clotures ou non**, dans l'ordre.
+
+    Deux chemins, et il faut les deux :
+
+    - la **cloture** fait foi quand elle est la. Elle nomme la famille, donc un
+      bloc casse y est reconnu comme un bloc casse et se signale — c'est le seul
+      chemin ou un JSON illisible peut etre rapporte ;
+    - sans cloture, seule la **forme** peut trancher. `belongs` lit les cles qui
+      appartiennent en propre a la famille : `faits` pour un bloc de confiance,
+      `jambes` pour un combine. Un objet qui ne se relit pas est alors
+      indiscernable de la prose et se perd — limite structurelle, notee ici
+      plutot que rattrapee par une heuristique qui avalerait des phrases.
+
+    Un objet deja couvert par une cloture n'est jamais compte deux fois, et un
+    bloc cloture qui appartient manifestement a **l'autre** famille est ecarte :
+    la cloture ```json est acceptee des deux cotes, et sans ce filtre un combine
+    ecrit ainsi se rendrait en bloc de confiance refuse.
+    """
+    spans: list[tuple[int, int]] = []
+    bodies: list[tuple[int, str]] = []
+    for found in fence.finditer(raw or ""):
+        spans.append((found.start(), found.end()))
+        body = found.group(1)
+        payload = _loads(body)
+        if payload is not None and not belongs(payload) and _shaped(payload):
+            continue
+        bodies.append((found.start(), body))
+
+    index, text = 0, raw or ""
+    while index < len(text):
+        if text[index] != "{" or any(low <= index < high for low, high in spans):
+            index += 1
+            continue
+        end = _balanced(text, index)
+        if end is None:
+            index += 1
+            continue
+        payload = _loads(text[index:end])
+        if payload is not None and belongs(payload):
+            bodies.append((index, text[index:end]))
+        index = end if payload is not None else index + 1
+
+    return [body for _, body in sorted(bodies, key=lambda pair: pair[0])]
+
+
+def _loads(body: str) -> dict | None:
+    try:
+        payload = json.loads(body)
+    except (json.JSONDecodeError, ValueError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+#: Les cles qui font qu'un objet est un bloc de l'application plutot qu'un objet
+#: quelconque. Sert **uniquement** a ecarter un bloc cloture de la mauvaise
+#: famille : un objet qui n'en porte aucune n'appartient a personne, et le
+#: refuser des deux cotes le ferait disparaitre sans un mot.
+_SHAPES = ("faits", "facts", "source_level", "confiance", "jambes", "legs")
+
+
+def _shaped(payload: dict) -> bool:
+    return any(key in payload for key in _SHAPES)
 
 
 @dataclass(frozen=True)
