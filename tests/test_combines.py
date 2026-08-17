@@ -21,6 +21,7 @@ from myassistantbet.db import connect
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services import combos as combos_service
+from myassistantbet.services import picks_import
 from myassistantbet.services.history import add_pick, list_picks, set_result
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import RenderedPrompt, save_prompt
@@ -482,3 +483,65 @@ def test_les_blocs_de_confiance_et_de_combine_ne_se_mangent_pas() -> None:
     assert len(read_blocks(rendu).claims) == 1
     assert not read_blocks(rendu).rejected
     assert len(combos_service.read_combos(rendu).combos) == 1
+
+
+# -- Le rattachement ne depend plus des blocs de confiance -------------------
+#
+# **Defaut en cascade.** Un repere de jambe se resolvait par `pick.claim.match`,
+# si bien qu'un collage sans blocs — le cas de **toutes** les sessions de la
+# base au 17/08/2026 — perdait aussi ses combines, alors que le prompt archive
+# porte deja la table `M3 → affiche` qu'il faut. Un chemin d'ingestion qui tombe
+# parce qu'un autre est tombe cumule deux silences pour une seule cause.
+
+
+def _prompt_nomme(settings: Settings, session_id: int, events: list[int], noms: list[str]) -> int:
+    """Un prompt archive dont les en-tetes nomment vraiment chaque match."""
+    corps = "\n".join(
+        f"### M{index} · football · Amical · {nom} – Adversaire {nom} · 01/01 20:45"
+        for index, nom in enumerate(noms, start=1)
+    )
+    return save_prompt(
+        session_id,
+        RenderedPrompt(
+            template_name="test.md.j2", body=corps, blocks=len(events), event_ids=events
+        ),
+        settings,
+    )
+
+
+def test_un_combine_se_rattache_sans_aucun_bloc_de_confiance(migrated: Settings) -> None:
+    noms = ["Lyon", "Nice"]
+    session_id, events = _lot(migrated, noms)
+    _prompt_nomme(migrated, session_id, events, noms)
+    rendu = (
+        "| # | Match | Marché | Sélection | Cote | Palier |\n"
+        "|---|---|---|---|---|---|\n"
+        "| 1 | Lyon – Adversaire Lyon | 1N2 | Lyon | 1.45 | 🟢 SAFE |\n"
+        "| 2 | Nice – Adversaire Nice | 1N2 | Nice | 1.60 | 🟢 SAFE |\n"
+        '\n```combo\n{"type": "court", "jambes": ["M1", "M2"], "cote": 2.32}\n```\n'
+    )
+
+    preview = picks_import.build_preview(session_id, rendu, migrated)
+
+    assert len(preview.combos) == 1, "le prompt archivé suffit à résoudre les repères"
+    assert preview.combos[0].rows == [1, 2]
+    assert preview.combos[0].computed_price == pytest.approx(2.32)
+
+
+def test_un_combine_sans_cloture_est_lu_lui_aussi(migrated: Settings) -> None:
+    """Meme reparation que pour les blocs de confiance : un copier-coller depuis
+    le rendu consomme la cloture, et le JSON arrive nu."""
+    reading = combos_service.read_combos(
+        'Voici le combiné.\n\n{"type": "long", "jambes": ["M3", "M7"], "cote": 2.8}\n\nEt la suite.'
+    )
+
+    assert [combo.marks for combo in reading.combos] == [("M3", "M7")]
+
+
+def test_un_bloc_de_confiance_n_est_pas_lu_comme_un_combine() -> None:
+    """Les deux familles portent `type` : c'est `jambes` qui tranche."""
+    bloc = (
+        '{"match": "M1", "confiance": 4, "type": "issue", "source_level": "lecture", "faits": []}'
+    )
+
+    assert not combos_service.read_combos(bloc).combos

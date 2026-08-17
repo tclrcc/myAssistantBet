@@ -260,3 +260,158 @@ def test_la_table_garde_sa_cle_naturelle(migrated: Settings) -> None:
     index = db.query("PRAGMA index_list(set_scores)", settings=migrated)
 
     assert any(row["unique"] for row in index)
+
+
+# -- La lecture du rendu ----------------------------------------------------
+#
+# **Il n'existait aucun lecteur.** `save()` n'etait appele que par la route de
+# saisie manuelle, une ligne a la fois : les cinq scores de la base ont ete
+# tapes a la main, quand une seule session de huit matchs de tennis en produit
+# huit. La section D en impose un par match a chaque session depuis toujours.
+
+
+def test_un_tableau_de_scores_est_lu_ligne_par_ligne() -> None:
+    rendu = """### D. Combinés et score exact
+
+| Repère | Match | Score | Second scénario |
+|---|---|---|---|
+| M3 | Learner Tien – Sebastian Baez | 2-1 | 2-0 |
+| M4 | Tamara Korpatsch – Iva Jović | 0-2 | |
+"""
+
+    lecture = set_scores.read(rendu)
+
+    assert [(row.mark, row.predicted, row.alternate) for row in lecture.rows] == [
+        ("M3", "2-1", "2-0"),
+        ("M4", "0-2", ""),
+    ]
+
+
+def test_passe_est_une_reponse_et_non_une_absence() -> None:
+    """**La compter est ce qui separe « huit fois PASSE » de « rien n'a ete
+    colle ».** Elle ne produit aucune prediction pour autant."""
+    lecture = set_scores.read("| M7 | Popyrin – Sinner | PASSE | |")
+
+    assert len(lecture.rows) == 1
+    assert lecture.rows[0].passe
+    assert lecture.predictions == 0
+
+
+def test_le_tiret_long_ne_fait_pas_echouer_la_lecture() -> None:
+    """Comparer le caractere brut ferait echouer la lecture pour une raison
+    typographique, c'est-a-dire pour la mauvaise."""
+    assert set_scores.read("| M1 | Tien – Baez | 2–1 | |").rows[0].predicted == "2-1"
+
+
+def test_un_tableau_tabule_passe_comme_un_tableau_a_barres() -> None:
+    """Ce que l'on copie depuis le rendu est tabule, les barres ayant ete
+    consommees — meme regle que `picks_import._cells`."""
+    lecture = set_scores.read("M2\tKorpatsch – Jović\t2-0\t")
+
+    assert (lecture.rows[0].mark, lecture.rows[0].predicted) == ("M2", "2-0")
+
+
+def test_une_ligne_sans_repere_ni_affiche_n_est_pas_lue() -> None:
+    """En cas de doute, rien : rattacher un score au hasard serait l'erreur la
+    plus couteuse que ce module puisse produire."""
+    assert set_scores.read("Le score le plus probable est 2-1.").rows == []
+
+
+def test_une_ligne_de_prose_avec_une_affiche_est_lue() -> None:
+    """Le gabarit demande ces scores **en prose** — « écris le score, une phrase
+    de justification, et rien d'autre » — et pas dans un tableau. Le lecteur
+    reconnait donc ce qu'une prose disciplinee porte quand meme."""
+    lecture = set_scores.read("- Learner Tien – Sebastian Baez : 2-1, le tie-break est probable.")
+
+    assert lecture.rows[0].predicted == "2-1"
+    assert "Tien" in lecture.rows[0].match_text
+
+
+def test_un_match_ne_compte_qu_une_fois() -> None:
+    """Le score se donne dans un tableau **et** se recommente en prose : le
+    compter deux fois gonflerait le denominateur."""
+    rendu = "| M3 | Tien – Baez | 2-1 | |\nSur M3, le 2-1 tient au service."
+
+    assert len(set_scores.read(rendu).rows) == 1
+
+
+def _deux_affiches(settings: Settings) -> tuple[int, list[int]]:
+    """Deux matchs de tennis **aux noms bien distincts**, et leur prompt archive.
+
+    `_lot` numerote ses joueurs — « Moutet 0 » contre « Moutet 1 » — et `anchor`
+    refuse alors de trancher, ce qui est son travail. Un test de rapprochement a
+    besoin d'affiches qu'on puisse vraiment distinguer.
+    """
+    paires = (("Corentin Moutet", "Zizou Bergs"), ("Arthur Rinderknech", "Quentin Halys"))
+    session_id, event_ids = 0, []
+    for home, away in paires:
+        event_id = save(
+            build(
+                "tennis",
+                "ATP 250 Gstaad",
+                home,
+                away,
+                "2099-08-04",
+                "20:45",
+                f"{home} 1.85\n{away} 1.95",
+                "",
+                "",
+                settings=settings,
+            ),
+            settings,
+        )
+        session_id = board_service.toggle_selection(event_id, True, settings)
+        event_ids.append(event_id)
+    save_prompt(session_id, build_prompt(session_id, settings=settings), settings)
+    return session_id, event_ids
+
+
+def test_les_scores_lus_arrivent_en_base(client: TestClient, migrated: Settings) -> None:
+    """**Le parcours complet.** C'est ce qui manquait : la lecture, le
+    rapprochement, et l'ecriture au moment de l'import."""
+    session_id, event_ids = _deux_affiches(migrated)
+    rendu = (
+        "| # | Match | Marché | Sélection | Cote | Palier | Conf/5 |\n"
+        "|---|---|---|---|---|---|---|\n"
+        "| 1 | Corentin Moutet – Zizou Bergs | Vainqueur | Moutet | 1.85 | 🟢 SAFE | 4 |\n"
+        "\n**Score exact en sets**\n\n"
+        "| Match | Score | Second |\n"
+        "|---|---|---|\n"
+        "| Corentin Moutet – Zizou Bergs | 2-1 | 2-0 |\n"
+        "| Arthur Rinderknech – Quentin Halys | 0-2 | |\n"
+    )
+
+    apercu = client.post(f"/history/{session_id}/picks/preview", data={"table": rendu})
+    assert "score(s) en sets lu(s)" in apercu.text
+    charge = apercu.text.split('name="set_scores" value="')[1].split('"')[0]
+
+    client.post(
+        f"/history/{session_id}/picks/import",
+        data={"set_scores": charge.replace("&#34;", '"'), "rejects": "[]"},
+    )
+
+    lignes = db.query(
+        "SELECT event_id, predicted, alternate FROM set_scores ORDER BY event_id",
+        settings=migrated,
+    )
+    assert [(row["event_id"], row["predicted"], row["alternate"]) for row in lignes] == [
+        (event_ids[0], "2-1", "2-0"),
+        (event_ids[1], "0-2", None),
+    ]
+
+
+def test_un_score_non_rattache_est_journalise(client: TestClient, migrated: Settings) -> None:
+    """Il a ete produit, il n'entrera pas : c'est exactement ce qu'il fallait
+    cesser de taire."""
+    session_id, _ = _deux_affiches(migrated)
+    rendu = (
+        "| # | Match | Marché | Sélection | Cote | Palier |\n"
+        "|---|---|---|---|---|---|\n"
+        "| 1 | Corentin Moutet – Zizou Bergs | Vainqueur | Moutet | 1.85 | 🟢 SAFE |\n"
+        "| Personne Inconnue – Autre Inconnu | 2-0 | |\n"
+    )
+
+    apercu = client.post(f"/history/{session_id}/picks/preview", data={"table": rendu})
+
+    assert "Score en sets" in apercu.text
+    assert "ne désigne aucun match" in apercu.text

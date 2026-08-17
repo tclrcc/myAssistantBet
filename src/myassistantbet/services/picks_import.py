@@ -11,6 +11,7 @@ proposition que l'utilisateur valide, corrige ou rejette ligne par ligne.
 
 from __future__ import annotations
 
+import json
 import math
 import re
 import unicodedata
@@ -45,9 +46,12 @@ from .ingestion import (
     CONF,
     FENCE_NOT_FOUND,
     MATCH_REF_UNRESOLVED,
+    SCORE_SETS,
     Reject,
     to_payload,
 )
+from .set_scores import ParsedScore
+from .set_scores import read as read_scores
 
 #: Une ligne de tableau Markdown : `| a | b | c |`.
 TABLE_ROW = re.compile(r"^\s*\|(.+)\|\s*$")
@@ -223,6 +227,24 @@ class AttachedCombo:
         return gap is not None and abs(gap) > PRICE_GAP
 
 
+@dataclass(frozen=True)
+class AttachedScore:
+    """Un score en sets lu, rapproche d'un match du lot.
+
+    `event_id` nul veut dire que la ligne a ete lue et que **personne n'a su
+    dire de quel match elle parle** — elle ne s'enregistre pas et se dit, comme
+    une jambe de combine dont le repere ne se resout pas.
+    """
+
+    parsed: ParsedScore
+    event_id: int | None = None
+    event_label: str = ""
+
+    @property
+    def resolved(self) -> bool:
+        return self.event_id is not None
+
+
 @dataclass
 class ImportPreview:
     """Proposition d'import. Rien n'est ecrit avant validation."""
@@ -241,6 +263,11 @@ class ImportPreview:
     #: bloc de confiance illisible ne doit pas couter la possibilite d'importer
     #: le tableau, il ne coute que les crans.
     notes: list[str] = field(default_factory=list)
+    #: Les scores en sets lus dans le meme collage. **Aucun lecteur n'existait**
+    #: avant ce chantier : `save()` n'etait appele que par la route de saisie
+    #: manuelle, une ligne a la fois, et les cinq scores de la base ont ete tapes
+    #: a la main quand une session de huit matchs de tennis en produit huit.
+    scores: list[AttachedScore] = field(default_factory=list)
     #: Ce que l'ingestion a **perdu** : un bloc malforme, un repere qui ne se
     #: resout pas, un bloc cherche et introuvable. Distinct de `notes`, qui est
     #: du texte a lire : ceci se compte, se journalise et se relit des semaines
@@ -256,6 +283,44 @@ class ImportPreview:
     @property
     def count(self) -> int:
         return len(self.picks)
+
+    @property
+    def scores_payload(self) -> str:
+        """Les scores rapproches, prets a voyager dans un champ cache.
+
+        Meme transport que les rejets et le bloc de confiance : l'apercu n'ecrit
+        rien, c'est l'import qui enregistre.
+        """
+        return json.dumps(
+            [
+                {
+                    "event_id": score.event_id,
+                    "predicted": score.parsed.predicted,
+                    "alternate": score.parsed.alternate,
+                }
+                for score in self.scores
+                if score.resolved and not score.parsed.passe
+            ],
+            ensure_ascii=False,
+        )
+
+    @property
+    def scores_line(self) -> str:
+        """« 8 score(s) en sets lu(s), 6 rapproche(s), 2 PASSE ». Vide sans rien.
+
+        **Le PASSE se compte a part et se compte quand meme** : c'est une reponse
+        attendue du gabarit, et la taire ferait confondre « l'analyse a passe sur
+        ce match » avec « rien n'a ete colle » — le defaut que tout ce chantier
+        supprime.
+        """
+        if not self.scores:
+            return ""
+        passes = sum(1 for score in self.scores if score.parsed.passe)
+        resolus = sum(1 for score in self.scores if score.resolved and not score.parsed.passe)
+        parts = [f"{len(self.scores)} score(s) en sets lu(s)", f"{resolus} rapproché(s)"]
+        if passes:
+            parts.append(f"{passes} PASSE")
+        return " · ".join(parts)
 
     @property
     def rejects_payload(self) -> str:
@@ -582,8 +647,55 @@ def parse_table(
         )
     valide = _attach_claims(preview, raw, headers)
     _apply_research(preview, raw, headers or [], valide)
-    _attach_combos(preview, raw, valide)
+    _attach_combos(preview, raw, valide, headers)
+    _attach_scores(preview, raw, rows, nearby, valide)
     return preview
+
+
+def _attach_scores(
+    preview: ImportPreview,
+    raw: str,
+    rows: list[GridRow],
+    nearby: list[PickableEvent] | None,
+    valide: PromptBlocks | None,
+) -> None:
+    """Rattache les scores en sets du rendu aux matchs du lot.
+
+    **Deux cles, dans cet ordre** : le repere de bloc, qui ne depend d'aucune
+    orthographe, puis l'affiche recopiee. Le repere passe par le **meme** prompt
+    que les blocs de confiance — deux resolutions paralleles finiraient par
+    designer deux matchs sous le meme numero, le piege deja paye deux fois par
+    l'assembleur de contexte.
+
+    Un score qu'on ne sait pas rapprocher est **dit** et compte comme un rejet :
+    il a ete produit, il n'entrera pas, et c'est exactement ce qu'il fallait
+    cesser de taire.
+    """
+    lecture = read_scores(raw)
+    for parsed in lecture.rows:
+        found = None
+        if parsed.mark and valide is not None:
+            entete = _affiche_of(valide.marks.get(parsed.mark, ""))
+            if entete:
+                found = anchor(entete, rows) or anchor(entete, nearby or [])
+        if found is None and parsed.match_text:
+            found = anchor(parsed.match_text, rows) or anchor(parsed.match_text, nearby or [])
+        attache = AttachedScore(
+            parsed=parsed,
+            event_id=found.event_id if found else None,
+            event_label=found.affiche if found else "",
+        )
+        preview.scores.append(attache)
+        if not attache.resolved and not parsed.passe:
+            _lost(
+                preview,
+                SCORE_SETS,
+                MATCH_REF_UNRESOLVED,
+                f"Score en sets « {parsed.predicted} » non rattaché : "
+                f"{parsed.mark or parsed.match_text or 'aucun repère'} ne désigne aucun match "
+                "du lot.",
+                payload=f"{parsed.mark} {parsed.match_text} {parsed.predicted}",
+            )
 
 
 def _lost(preview: ImportPreview, kind: str, reason: str, detail: str, payload: str = "") -> None:
@@ -598,14 +710,25 @@ def _lost(preview: ImportPreview, kind: str, reason: str, detail: str, payload: 
     preview.rejects.append(Reject(block_type=kind, reason=reason, detail=detail, payload=payload))
 
 
-def _attach_combos(preview: ImportPreview, raw: str, valide: PromptBlocks | None) -> None:
+def _attach_combos(
+    preview: ImportPreview,
+    raw: str,
+    valide: PromptBlocks | None,
+    headers: list[PromptBlocks] | None = None,
+) -> None:
     """Rattache les blocs ```combo aux lignes du tableau, par leur repere.
 
-    **Le prompt est celui qui a valide l'appariement des blocs de confiance**, et
-    pas un second choisi ici : deux resolutions paralleles finiraient par
-    designer deux matchs sous le meme repere. Sans lui, les combines sont lus et
-    dits, mais aucun n'est rattache — un combine porte l'identifiant de son
-    prompt, et l'inventer serait pire que ne pas l'enregistrer.
+    **Le rattachement ne depend plus des blocs de confiance**, et c'etait un
+    defaut en cascade : un repere se resolvait par `pick.claim.match`, si bien
+    qu'un collage sans blocs — le cas de **toutes** les sessions de la base —
+    perdait aussi ses combines, alors que le prompt archive porte deja la table
+    `M3 → affiche` qu'il faut. Un chemin d'ingestion qui tombe parce qu'un autre
+    est tombe cumule deux silences pour une seule cause.
+
+    Le prompt reste **celui qui a valide les blocs** quand il y en a — deux
+    resolutions paralleles finiraient par designer deux matchs sous le meme
+    repere — et, a defaut, le premier qui porte **tous** les reperes du combine.
+    Meme repli que `_apply_research` pour la ligne des dossiers ouverts.
 
     La resolution passe par la ligne du tableau et non par l'evenement : c'est la
     selection qui est une jambe, et un match peut en porter deux. Un repere qui
@@ -616,7 +739,16 @@ def _attach_combos(preview: ImportPreview, raw: str, valide: PromptBlocks | None
     preview.rejects.extend(reading.rejects)
     if not reading.combos:
         return
-    if valide is None:
+    reperes = {mark for combo in reading.combos for mark in combo.marks}
+    mapping = valide or next(
+        (
+            candidate
+            for candidate in (headers or [])
+            if reperes <= set(candidate.marks) and _resolves(preview, candidate, reperes)
+        ),
+        None,
+    )
+    if mapping is None:
         _lost(
             preview,
             COMBO,
@@ -626,14 +758,10 @@ def _attach_combos(preview: ImportPreview, raw: str, valide: PromptBlocks | None
         )
         return
 
-    # Le repere de chaque ligne vient de son bloc de confiance, deja apparie.
     # `rows` porte le **numero de ligne du formulaire** (`ParsedPick.index`), le
     # seul identifiant qui traverse le POST : c'est lui qui permettra de
     # retrouver la selection creee.
-    par_repere: dict[str, list[ParsedPick]] = {}
-    for pick in preview.picks:
-        if pick.claim and pick.claim.match:
-            par_repere.setdefault(pick.claim.match.upper(), []).append(pick)
+    par_repere = _rows_by_mark(preview, mapping)
 
     for combo in reading.combos:
         jambes: list[ParsedPick] = []
@@ -656,7 +784,7 @@ def _attach_combos(preview: ImportPreview, raw: str, valide: PromptBlocks | None
         attache = AttachedCombo(
             combo=combo,
             rows=[pick.index for pick in jambes],
-            prompt_id=valide.prompt_id,
+            prompt_id=mapping.prompt_id,
             computed_price=_product([pick.price for pick in jambes]),
         )
         preview.combos.append(attache)
@@ -666,6 +794,42 @@ def _attach_combos(preview: ImportPreview, raw: str, valide: PromptBlocks | None
                 f"les jambes {attache.computed_price:.2f}. C'est la recalculée qui est "
                 "enregistrée."
             )
+
+
+def _rows_by_mark(preview: ImportPreview, blocks: PromptBlocks) -> dict[str, list[ParsedPick]]:
+    """Les lignes du tableau, rangees sous le repere de bloc qui les designe.
+
+    **Deux cles, et la premiere est la meilleure** : le bloc de confiance porte
+    son repere en propre, donc il tranche des qu'il est la. Sinon on redescend
+    sur l'affiche du prompt archive, repliee comme partout (`_fold`) — c'est le
+    meme rapprochement que la somme de controle de l'appariement, et il ne coute
+    aucune donnee de plus.
+
+    Une affiche qui designe deux lignes les garde toutes les deux : c'est
+    l'appelant qui refuse un repere ambigu, en cas de doute rien.
+    """
+    par_repere: dict[str, list[ParsedPick]] = {}
+    affiches = {mark: _fold(_affiche_of(header)) for mark, header in blocks.marks.items()}
+    for pick in preview.picks:
+        if pick.claim and pick.claim.match:
+            par_repere.setdefault(pick.claim.match.upper(), []).append(pick)
+            continue
+        cell = _fold(pick.match_text)
+        for mark, affiche in affiches.items():
+            if affiche and cell == affiche:
+                par_repere.setdefault(mark.upper(), []).append(pick)
+    return par_repere
+
+
+def _resolves(preview: ImportPreview, blocks: PromptBlocks, marks: set[str]) -> bool:
+    """Ce prompt permet-il de designer une ligne unique pour chaque repere ?
+
+    Le controle porte sur **tous** les reperes a la fois : retenir le prompt qui
+    en resout le plus reviendrait a piocher la lecture qui arrange, ce qui ne
+    demontrerait plus rien. Meme regle que `_select`.
+    """
+    par_repere = _rows_by_mark(preview, blocks)
+    return all(len(par_repere.get(mark, [])) == 1 for mark in marks)
 
 
 def _product(prices: list[str]) -> float | None:

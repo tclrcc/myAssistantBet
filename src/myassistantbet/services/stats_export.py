@@ -35,6 +35,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
+from . import combos as combos_service
 from . import coupons as coupons_service
 from . import history as history_service
 from . import ingestion as ingestion_service
@@ -72,6 +73,10 @@ class Section:
 ANALYSIS_BLOCK = "Ce que ces sélections ont produit"
 SELECTION_BLOCK = "Ce que tu écartes"
 SETS_BLOCK = "Le score en sets annoncé"
+#: Les combines etaient enregistres et **jamais restitues** : la page n'en portait
+#: aucune section, si bien qu'un combine se lisait sur la feuille de sa session et
+#: nulle part ailleurs.
+COMBOS_BLOCK = "Les combinés proposés"
 LABELLING_BLOCK = "Comment tu étiquettes"
 BETS_BLOCK = "Ce que valent tes paris"
 
@@ -97,6 +102,7 @@ SECTIONS: tuple[Section, ...] = (
     Section("", SELECTION_BLOCK),
     Section(SELECTION_BLOCK, "Par session"),
     Section("", SETS_BLOCK),
+    Section("", COMBOS_BLOCK),
     Section("", LABELLING_BLOCK),
     Section(LABELLING_BLOCK, "Par confiance annoncée"),
     Section(LABELLING_BLOCK, "Par palier"),
@@ -127,6 +133,10 @@ class StatsReport:
     #: de la page ne dit — que le probleme n'est pas dans les donnees mais dans
     #: le chemin qui les amene.
     ingestion: ingestion_service.Summary = field(default_factory=ingestion_service.Summary)
+    #: Les combines proposes, sur toute la base. **Un compte et un ecart, jamais
+    #: un taux** : au taux de jambe constate, un combine de dix jambes passe une
+    #: fois sur 280, et son taux ne sera jamais mesurable.
+    combos: combos_service.Summary = field(default_factory=combos_service.Summary)
     set_score_options: list[str] = field(default_factory=list)
     set_score_matrix: list[tuple[str, list[int], int]] = field(default_factory=list)
     #: Point de comparaison du residu, pas une estimation de l'overround reel.
@@ -153,6 +163,7 @@ class StatsReport:
             "set_score_options": self.set_score_options,
             "set_score_matrix": self.set_score_matrix,
             "ingestion": self.ingestion,
+            "combos": self.combos,
         }
 
     @property
@@ -163,6 +174,7 @@ class StatsReport:
             and self.stats.empty
             and not self.labelling
             and self.set_scores.empty
+            and self.combos.empty
         )
 
     @property
@@ -219,6 +231,7 @@ class StatsReport:
             (Section("", SELECTION_BLOCK), bool(analysis.by_session)),
             (Section(SELECTION_BLOCK, "Par session"), bool(analysis.by_session)),
             (Section("", SETS_BLOCK), not self.set_scores.empty),
+            (Section("", COMBOS_BLOCK), not self.combos.empty),
             (Section("", LABELLING_BLOCK), bool(self.labelling)),
             *((Section(LABELLING_BLOCK, f"Par {block.label}"), True) for block in self.labelling),
             # **Le bloc est rendu meme vide**, et ses cartes ne le sont pas :
@@ -364,6 +377,7 @@ def report(settings: Settings | None = None) -> StatsReport:
         set_score_options=list(set_scores_service.SCORES),
         set_score_matrix=set_scores_service.matrix_rows(sets),
         ingestion=ingestion_service.summary(settings),
+        combos=combos_service.summary(settings),
         generated_at=datetime.now(ZoneInfo(settings.tz)),
     )
 
@@ -520,6 +534,26 @@ def as_json(found: StatsReport) -> dict[str, Any]:
                 for row in found.ingestion.rows
             ],
         },
+        # Les combines proposes. **Aucun taux** : au taux de jambe constate, un
+        # combine de dix jambes passe une fois sur 280.
+        "combos": [
+            {
+                "id": combo.id,
+                "session_id": combo.session_id,
+                "prompt_id": combo.prompt_id,
+                "kind": combo.kind,
+                "legs": len(combo.legs),
+                "declared_price": combo.declared_price,
+                "computed_price": combo.computed_price,
+                "price_gap": combo.price_gap,
+                "target_price": combo.target_price,
+                "stop_reason": combo.stop_reason,
+                "legs_won": combo.legs_won,
+                "legs_settled": combo.legs_settled,
+                "first_loss_rank": combo.first_loss_rank,
+            }
+            for combo in found.combos.combos
+        ],
         "sections": [
             {"block": section.block, "title": section.title} for section in found.sections
         ],
@@ -683,6 +717,15 @@ RATE_RULE = "| --- | ---: | ---: | ---: | :---: | ---: | ---: | ---: | --- |"
 def _decimal(value: float, digits: int = 1) -> str:
     """La virgule decimale, comme partout dans l'interface."""
     return f"{value:.{digits}f}".replace(".", ",")
+
+
+def _prix(value: float | None) -> str:
+    """Une cote, ou un tiret quand elle est incalculable.
+
+    Une cote de combine l'est des qu'une jambe n'a pas de prix : un produit
+    partiel serait plus bas que le vrai sans que rien ne le dise.
+    """
+    return "—" if value is None else _decimal(value, 2)
 
 
 def _rate_table(rows: list[history_service.RateRow]) -> list[str]:
@@ -1070,6 +1113,39 @@ def as_markdown(found: StatsReport) -> str:
                 out.append(f"| {annonce} | {cases} | {total} |")
         else:
             out.append(f"{sets.pending} score(s) annoncé(s), aucun résultat saisi pour l'instant.")
+
+    if not found.combos.empty:
+        out += [
+            "",
+            f"## {COMBOS_BLOCK}",
+            "",
+            f"{len(found.combos.combos)} combiné(s) sur {found.combos.sessions} session(s). "
+            "**Aucun taux de réussite par combiné, et ce n'est pas un oubli** : au taux de "
+            "jambe constaté, un combiné de dix jambes se tranche favorablement une fois sur "
+            "280. Le combiné est un regroupement ; les jambes restent les unités de mesure, "
+            "comptées individuellement plus haut. Aucune mise n'entre ici.",
+            "",
+            "| Session | Type | Jambes | Cote écrite | Cote recalculée | Écart | Arrêt "
+            "| Jambes gagnées | 1re perdue |",
+            "| --- | --- | ---: | ---: | ---: | ---: | --- | ---: | ---: |",
+        ]
+        for combo in found.combos.combos:
+            ecart = "—" if combo.price_gap is None else f"{combo.price_gap * 100:+.1f} %"
+            out.append(
+                f"| {combo.session_id} | {combo.kind} | {len(combo.legs)} "
+                f"| {_prix(combo.declared_price)} | {_prix(combo.computed_price)} "
+                f"| {ecart} | {combo.stop_label} "
+                f"| {combo.legs_won}/{combo.legs_settled} "
+                f"| {combo.first_loss_rank or '—'} |"
+            )
+        if found.combos.mismatched:
+            out += [
+                "",
+                f"{found.combos.mismatched} combiné(s) portent une cote écrite qui ne décrit "
+                "pas celle de leurs jambes. C'est le seul chiffre du bloc qui juge le rendu "
+                "plutôt que le lot : un écart répété dirait que le produit est ajusté pour "
+                "tomber sur la cible.",
+            ]
 
     if found.labelling:
         out += [

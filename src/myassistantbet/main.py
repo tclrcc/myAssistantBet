@@ -1201,6 +1201,20 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
                 )
             )
 
+    # Les scores en sets du meme collage. **Aucun lecteur n'existait** : la
+    # section D en impose un par match de tennis a chaque session, et les cinq
+    # scores de la base ont tous ete tapes a la main, une ligne a la fois.
+    report.set_scores_read, score_failures = _record_set_scores(session_id, form, settings)
+    failures.extend(score_failures)
+    report.rejects.extend(
+        ingestion_service.Reject(
+            block_type=ingestion_service.SCORE_SETS,
+            reason=ingestion_service.OTHER,
+            detail=message,
+        )
+        for message in score_failures
+    )
+
     combo_failures = _record_combos(session_id, form, par_ligne, settings)
     failures.extend(combo_failures)
     report.rejects.extend(
@@ -1243,6 +1257,41 @@ def _reject_reason(message: str) -> str:
 def _combo_count(form: dict[str, str]) -> int:
     """Combien de combines le formulaire portait, rattaches ou non."""
     return sum(1 for key in form if key.startswith("combo_"))
+
+
+def _record_set_scores(
+    session_id: int,
+    form: dict[str, str],
+    settings: Settings,
+) -> tuple[int, list[str]]:
+    """Enregistre les scores en sets lus dans le collage. Rend (ecrits, echecs).
+
+    Ils voyagent avec le formulaire comme le reste : l'apercu n'ecrit rien. Un
+    score refuse est **dit** plutot qu'ignore — meme regle que les lignes de la
+    saisie manuelle, et c'est justement ce que ce chantier corrige.
+    """
+    try:
+        lignes = json.loads(form.get("set_scores", "") or "[]")
+    except json.JSONDecodeError:
+        return 0, ["Scores en sets illisibles dans le formulaire, aucun enregistré."]
+    if not isinstance(lignes, list):
+        return 0, []
+    ecrits, echecs = 0, []
+    for ligne in lignes:
+        if not isinstance(ligne, dict) or not ligne.get("event_id"):
+            continue
+        try:
+            set_scores_service.save(
+                session_id,
+                int(ligne["event_id"]),
+                predicted=str(ligne.get("predicted") or ""),
+                alternate=str(ligne.get("alternate") or ""),
+                settings=settings,
+            )
+            ecrits += 1
+        except set_scores_service.SetScoreError as exc:
+            echecs.append(f"score en sets : {exc}")
+    return ecrits, echecs
 
 
 def _record_combos(

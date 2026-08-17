@@ -447,7 +447,31 @@ def record(
 
 def list_for_session(session_id: int, settings: Settings | None = None) -> list[Combo]:
     """Les combines d'une session, jambes comprises."""
+    return _load(session_id, settings)
+
+
+def list_all(settings: Settings | None = None) -> list[Combo]:
+    """Tous les combines de la base, du plus recent.
+
+    **Ils etaient enregistres et jamais restitues** : la page de statistiques
+    n'en portait aucune section, si bien qu'un combine se lisait sur la feuille
+    de sa session et nulle part ailleurs. Le releve reste un **compte et un
+    ecart**, jamais un taux de reussite — au taux de jambe constate, un combine
+    de dix jambes passe une fois sur 280, et son taux ne sera jamais mesurable.
+    """
+    return _load(None, settings)
+
+
+def _load(session_id: int | None, settings: Settings | None = None) -> list[Combo]:
+    """Les combines d'une session, ou de toute la base. **Une seule lecture.**
+
+    Ecrite une fois : deux requetes paralleles auraient fini par ne plus rendre
+    les memes jambes, et c'est le piege deja paye deux fois par l'assembleur de
+    contexte.
+    """
     settings = settings or get_settings()
+    where = "WHERE session_id = ?" if session_id is not None else ""
+    params: tuple[int, ...] = (session_id,) if session_id is not None else ()
     with connect(settings) as conn:
         tier_labels = {
             row["key"]: row["label"] for row in conn.execute("SELECT key, label FROM tiers")
@@ -462,9 +486,7 @@ def list_for_session(session_id: int, settings: Settings | None = None) -> list[
                 declared_price=row["declared_price"],
                 stop_reason=row["stop_reason"],
             )
-            for row in conn.execute(
-                "SELECT * FROM combos WHERE session_id = ? ORDER BY id", (session_id,)
-            )
+            for row in conn.execute(f"SELECT * FROM combos {where} ORDER BY id", params)
         }
         if not combos:
             return []
@@ -527,3 +549,61 @@ def overlaps(combos: list[Combo]) -> list[Overlap]:
                 }
                 paires.append(Overlap(gauche, droite, len(communes), part))
     return sorted(paires, key=lambda item: -item.index)
+
+
+@dataclass
+class Summary:
+    """Ce que les combines proposes ont donne, sur toute la base.
+
+    **Aucun taux de reussite par combine, et ce n'est pas un oubli** : au taux de
+    jambe constate (57 %), un combine de dix jambes se tranche favorablement une
+    fois sur 280. Son taux ne sera jamais mesurable, quel que soit le temps qu'on
+    lui laisse. Le combine est un **regroupement** ; les jambes restent les
+    unites de mesure, comptees individuellement ailleurs sur la page.
+
+    Ce qui garde un sens : combien de jambes tombent, a quel rang la premiere
+    tombe, et l'ecart entre la cote ecrite et la cote recalculee.
+    """
+
+    combos: list[Combo] = field(default_factory=list)
+
+    @property
+    def empty(self) -> bool:
+        return not self.combos
+
+    @property
+    def sessions(self) -> int:
+        return len({combo.session_id for combo in self.combos})
+
+    @property
+    def mismatched(self) -> int:
+        """Combines dont la cote ecrite ne decrit pas celle des jambes.
+
+        C'est le seul chiffre du bloc qui juge le rendu plutot que le lot : un
+        ecart repete dirait que le produit est ajuste pour tomber sur la cible.
+        """
+        return sum(1 for combo in self.combos if combo.price_mismatch)
+
+    @property
+    def by_stop(self) -> list[tuple[str, str, int]]:
+        """La repartition des motifs d'arret, avec leur libelle.
+
+        **Aucun n'est un echec**, et c'est leur repartition qui dit si la cible
+        est bien reglee : toujours `cible` et elle peut monter, toujours
+        `confiance` et le lot est la contrainte, la cible n'y pouvant rien.
+        """
+        comptes: dict[str, int] = {}
+        for combo in self.combos:
+            comptes[combo.stop_reason or ""] = comptes.get(combo.stop_reason or "", 0) + 1
+        return sorted(
+            (
+                (cle, STOP_LABELS.get(cle, "non renseigné"), compte)
+                for cle, compte in comptes.items()
+            ),
+            key=lambda item: -item[2],
+        )
+
+
+def summary(settings: Settings | None = None) -> Summary:
+    """Les combines de toute la base, prets a etre rendus."""
+    return Summary(combos=list_all(settings))

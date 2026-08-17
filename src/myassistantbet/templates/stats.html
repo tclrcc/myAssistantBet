@@ -46,6 +46,7 @@
      ('analyse', 'Ce que ces sélections ont produit', not analysis.empty),
      ('tri', 'Ce que tu écartes', analysis.by_session | length > 0),
      ('sets', 'Le score en sets', not set_scores.empty),
+     ('combines', 'Les combinés proposés', not combos.empty),
      ('etiquettes', 'Comment tu étiquettes', labelling | length > 0),
      ('paris', 'Ce que valent tes paris', true),
    ] %}
@@ -1129,6 +1130,67 @@
     Ils se renseignent sur la feuille de session, au même endroit que les paris.
   </p>
   {% endif %}
+</section>
+{% endif %}
+
+{# **Les combinés étaient enregistrés et jamais restitués.** Un combiné se
+   lisait sur la feuille de sa session et nulle part ailleurs, alors que ce que
+   la répartition des motifs d'arrêt dit — la cible est-elle bien réglée —
+   n'apparaît qu'en les regardant tous ensemble.
+
+   **Aucun taux de réussite par combiné, et ce n'est pas un oubli** : au taux de
+   jambe constaté, un combiné de dix jambes se tranche favorablement une fois sur
+   280. Le combiné est un regroupement ; les jambes restent les unités de mesure,
+   comptées individuellement plus haut. Aucune mise n'entre ici — un combiné est
+   un objet d'analyse, pas un pari posé. #}
+{% if not combos.empty %}
+<section class="stats-block" id="combines">
+  <div class="block-head">
+    <h2>Les combinés proposés</h2>
+    <span class="muted small">
+      {{ combos.combos | length }} combiné(s) sur {{ combos.sessions }} session(s) —
+      un compte et un écart, jamais un taux
+    </span>
+  </div>
+
+  <table class="board">
+    <thead>
+      <tr>
+        <th>Session</th><th>Type</th><th class="num">Jambes</th>
+        <th class="num">Cote écrite</th><th class="num">Recalculée</th>
+        <th class="num">Écart</th><th>Arrêt</th>
+        <th class="num">Jambes gagnées</th><th class="num">1<sup>re</sup> perdue</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for combo in combos.combos %}
+      <tr>
+        <td class="muted">{{ combo.session_id }}</td>
+        <td>{{ combo.kind }}</td>
+        <td class="num">{{ combo.legs | length }}</td>
+        <td class="num">{% if combo.declared_price %}{{ '%.2f' | format(combo.declared_price) }}{% else %}—{% endif %}</td>
+        <td class="num">{% if combo.computed_price %}{{ '%.2f' | format(combo.computed_price) }}{% else %}—{% endif %}</td>
+        <td class="num">{% if combo.price_gap is not none %}{{ '%+.1f' | format(combo.price_gap * 100) }} %{% else %}—{% endif %}</td>
+        <td class="muted">{{ combo.stop_label }}</td>
+        <td class="num">{{ combo.legs_won }}/{{ combo.legs_settled }}</td>
+        <td class="num">{{ combo.first_loss_rank or '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <p class="block-note">
+    {% if combos.mismatched %}
+    {{ combos.mismatched }} combiné(s) portent une cote écrite qui ne décrit pas celle
+    de leurs jambes. C'est le seul chiffre du bloc qui juge le rendu plutôt que le
+    lot : un écart répété dirait que le produit est ajusté pour tomber sur la cible.
+    {% endif %}
+    Motifs d'arrêt :
+    {% for _, libelle, compte in combos.by_stop %}{{ libelle }} ({{ compte }}){% if not loop.last %} · {% endif %}{% endfor %}.
+    <strong>Aucun n'est un échec</strong> — c'est leur répartition qui dira si la
+    cible est bien réglée : toujours « cible atteinte » et elle peut monter, toujours
+    « plus de jambe à confiance 3 » et c'est le lot qui contraint.
+  </p>
 </section>
 {% endif %}
 
