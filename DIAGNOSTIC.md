@@ -1,4 +1,4 @@
-# DIAGNOSTIC — l'ingestion, les paliers hauts, et ce qui se perdait en silence
+# DIAGNOSTIC — lot 1 : l'ingestion, les paliers hauts, et ce qui se perdait en silence
 
 Relevé du **17/08/2026**, sur une copie de la base servie (29 Mo, 235 sélections,
 15 sessions). Toute mesure citée ici a été refaite sur cette copie ; aucune n'est
@@ -318,3 +318,199 @@ envoyé chercher au mauvais endroit :
 Et une quatrième, plus discrète : les blocs `conf` ne sont pas « non alimentés »
 faute de production — le gabarit les demandait bien et le modèle les produisait
 probablement. C'est le **transport** qui les perdait, et rien ne le disait.
+
+
+---
+---
+
+# DIAGNOSTIC — lot 2 : rendre les erreurs de parsing rattrapables
+
+Relevé du **17/08/2026**, sur une copie de la base servie. Même règle que
+ci-dessus : aucune mesure n'est reprise du brief sans vérification, et deux
+d'entre elles le contredisent.
+
+---
+
+## §A — Persister le collage brut
+
+**Cause racine : il n'y a rien à corriger, et c'est le problème.** Le lot 1 avait
+établi que le texte collé n'est conservé nulle part — aucune colonne des 31
+tables, `data/uploads` ne portant que des captures de coupons. Rien n'empêchait
+que ça recommence.
+
+Et il faut être précis sur ce que la journalisation des rejets (migration 050)
+n'apporte pas : **elle attrape ce qui lève, pas ce qui passe et se trompe**. La
+panne d'origine ne levait rien — la lecture ne trouvait aucun bloc, faute de
+clôture, et se taisait. Une table de rejets serait restée vide.
+
+**Correctif** : migration 052, table `imports_raw`. Le collage intégral, **tel
+quel**, avant toute normalisation — un `strip()` rendrait fausses les bornes
+enregistrées à côté, et c'est justement le balisage abîmé qui intéresse au rejeu.
+
+Trois décisions à connaître :
+
+| Décision | Raison |
+| --- | --- |
+| écrit **à l'aperçu** | un collage dont le parsing échoue entièrement n'atteint jamais le formulaire d'import ; l'attendre le perdrait |
+| dédupliqué sur l'empreinte | contrairement aux rejets : le texte est le même, ce qu'on garde est de quoi rejouer, pas un compteur d'essais |
+| dégrade sans bruit sur session inconnue | garder le collage est un filet, jamais une condition |
+
+Le contrat « l'aperçu n'écrit rien » porte sur les **sélections** ; un test le
+garde désormais sous cette forme.
+
+`myassistantbet-replay` relit un collage avec le code courant, **en simulation par
+défaut**. Un test rejoue la panne d'origine : un bloc sans clôture, perdu hier,
+entre aujourd'hui.
+
+**Non-régression vérifiée sur une copie de la base servie** : `recorded` 230,
+`settled` 178, `without_antecedence` 52, `consistent` vrai, ventilation par
+palier identique au triplet près, avant et après.
+
+---
+
+## §B — Généraliser la tolérance au transport
+
+**Cause racine constatée** : le mode de destruction était **déjà connu du code**
+et n'avait pas été généralisé.
+
+- `picks_import._cells` lit les barres verticales **et** les tabulations depuis
+  toujours, avec ce commentaire : « ce que l'on copie depuis son interface est un
+  tableau tabulé, les barres ayant été consommées par le rendu » ;
+- le gabarit en avait tiré la même leçon : `dossiers_ouverts` s'écrit « hors de
+  tout bloc de code », et cette ligne-là n'a **jamais** posé de problème ;
+- les blocs `conf` et `combo` ont malgré tout été introduits dans des clôtures, et
+  le score en sets était demandé en prose libre.
+
+### B1 — la ligne `sets:`
+
+Le gabarit demande désormais `sets: M3=2-0/2-1 | M4=PASSE`, bâtie sur le modèle de
+`dossiers_ouverts` : **elle n'a pas de clôture à perdre**. Le lecteur de prose
+reste en filet, et son compteur s'affiche à l'import.
+
+Deux corrections trouvées en câblant la lecture, et aucune n'était dans le brief :
+
+- le rapprochement des repères de la ligne `sets:` **tombait avec les blocs de
+  confiance** — même cascade que les combinés avant elle. Il a le même repli ;
+- un match peut arriver **deux fois**, par la ligne et par la prose. La
+  déduplication se fait au rapprochement, là où l'identité devient connue.
+
+### B2 — le banc, et sa couverture mesurée
+
+`tests/test_transport.py` : **11 altérations × 4 formats**, un seul résultat
+acceptable — lecture correcte, ou ligne dans `ingestion_rejects`.
+
+**Compte : 38 lues, 6 rejetées, 0 muette.**
+
+| Altération | combo | conf | sets | tableau |
+| --- | --- | --- | --- | --- |
+| fence ouvrante retirée | lu | lu | lu | lu |
+| fence fermante retirée | lu | lu | lu | lu |
+| les deux fences retirées | lu | lu | lu | lu |
+| info string absente | lu | lu | lu | lu |
+| info string remplacée par `json` | lu | lu | lu | lu |
+| barres converties en tabulations | lu | lu | lu | lu |
+| tabulations converties en espaces | lu | lu | lu | lu |
+| guillemets typographiques | lu | **rejet** | lu | lu |
+| lignes rejointes | lu | lu | lu | lu |
+| espaces insécables | **rejet** | **rejet** | lu | lu |
+| préfixe de numérotation | **rejet** | **rejet** | lu | **rejet** |
+
+**Aucune combinaison non couverte.** Les six « rejet » ne sont pas des trous :
+l'altération détruit l'information pour de bon — un JSON dont les guillemets sont
+typographiques n'est plus du JSON — et prétendre la lire serait inventer. Ce que
+le banc exige est que l'échec **se voie**, et il se voit dans les six cas.
+
+`sets:` survit aux onze, ce qui est l'argument de B1.
+
+**Le banc a failli passer pour la mauvaise raison**, et c'est noté : sa fixture
+`conf` portait un bloc pour deux lignes du tableau, donc l'appariement échouait
+quoi qu'il arrive au transport. Deux blocs désormais. Et l'assertion exige un
+rejet **du format testé** : accepter n'importe quelle trace l'aurait fait passer
+partout, un collage sans `dossiers_ouverts` produisant toujours une note.
+
+---
+
+## §C — Trancher l'antériorité
+
+**Cause racine : le diagnostic d'origine était faux**, et le lot 1 l'avait déjà
+établi — 0 sur 230 sans horodatage. Les 52 écartées ont réellement été écrites
+après le coup d'envoi. Ce qui manquait n'était pas un correctif mais une
+**décision d'usage**, et la page les présentait comme un manque.
+
+Mesure refaite après migration 053, sur une copie de la base servie :
+
+| Population | Tranchées | Résidu | P |
+| --- | --- | --- | --- |
+| principale | 178 | −14,78 pour 103,78 payées | 0,014 |
+| tardive | 52 | **+3,24** pour 28,76 payées | 0,856 |
+
+**Écart de résidu par sélection : +0,145.** C'est la meilleure estimation
+disponible du biais que produit une sélection écrite en connaissant le début du
+match, et elle ne s'obtient qu'en gardant les deux populations séparées.
+
+Motifs des 52 : 15 `differee`, 0 `live`, 37 sans motif déclaré.
+
+Le rétro-remplissage est **sûr ici et ne l'était pas ailleurs** : cette valeur se
+*dérive* de `created_at` et `commence_time`, déjà en base, là où `price_source`
+(030) ou le cran calculé (042) auraient demandé de reconstituer une information
+jamais écrite. Dériver n'est pas inventer.
+
+**C2** — la garde ne refuse plus : elle se laissait contourner, et refuser ferait
+disparaître la population qui porte la mesure. Le compte-rendu d'import **nomme
+les matchs avec leur écart en minutes**.
+
+**Trouvé en câblant, et absent du brief : un report de match lève le retard.** Un
+match reporté n'a pas commencé, donc une sélection écrite « après » l'ancien
+horaire n'a rien vu. La règle vit dans `history._LATE_RULE`, écrite une fois, et
+le scan la rejoue dès qu'un coup d'envoi bouge. C'est le seul cas où un report
+change une mesure déjà écrite.
+
+**Non-régression** : 183 + 0 + 52 = 235, `consistent` vrai, ventilation par
+palier inchangée.
+
+---
+
+## §D — Vérifier que l'instrumentation instrumente
+
+**D1 — le recalcul du cran applique bien la table.** Vérifié par trois blocs
+volontairement mal notés, corrigés dans les trois sens (5 → 4, 4 → 1, 4 → 3), et
+un quatrième test qui suit le parcours **jusqu'en base** : un test sur l'objet
+seul laisserait passer un `add_pick` qui écrirait l'annonce dans la colonne
+calculée. **Rien à corriger.**
+
+**D2 — un chemin était muet, et le contrôle l'a trouvé dès sa première
+exécution.** `replay` collectait ses échecs d'écriture dans `failures` et ne les
+journalisait jamais : une ligne refusée par une garde y disparaissait exactement
+comme avant le lot 1. Corrigé.
+
+`selfcheck-ingestion` passe par les **deux vraies routes** — aperçu puis import :
+appeler `build_preview` seul ne vérifiait que la moitié du chemin, les rejets
+d'écriture ne naissant qu'à l'import, et c'est ce demi-contrôle qui laissait le
+rejeu muet. Résultat : **8 contrôles, 0 manque**. Un second test rend un chemin
+muet exprès et vérifie que le contrôle tombe.
+
+Limite connue et notée dans le code : le contrôle prouve que les chemins
+**déclarés** journalisent, jamais qu'ils sont tous déclarés. La règle de
+`CONTRIBUTING.md` en tient lieu.
+
+**D3 — le relevé des paliers ne portait que sur 6 sessions sur 14**, et rien ne
+le disait. `prompt_odds` date de la migration 033 : les huit plus anciennes n'ont
+aucun marché figé, et les compter ferait lire « bande jamais atteinte » sur des
+sessions dont on ne sait rien. La page l'annonce désormais. Un test vérifie
+qu'une session **nouvelle** alimente bien le relevé.
+
+---
+
+## Ce que la mesure a contredit — lot 2
+
+| Affirmé | Mesuré |
+| --- | --- |
+| « la journalisation des rejets attrape désormais les blocs qui échouent » — donc le risque serait couvert | elle attrape ce qui **lève** ; la panne d'origine ne levait rien, et une table de rejets serait restée vide. C'est la persistance du brut qui couvre, pas elle |
+| le banc doit couvrir « 4 formats × 10 altérations » | il en porte **11** : la numérotation de lignes est une onzième forme observée, et la retirer aurait fait passer le seul cas qui casse le tableau |
+| §C ne demandait qu'à isoler la population tardive | il fallait aussi **lever le retard sur un report** — sans quoi un match reporté sortirait des indicateurs principaux pour rien. Absent du brief, trouvé en câblant |
+
+Et une quatrième, sur la forme des tests plutôt que sur les données : la
+non-régression ne peut pas se vérifier en comparant deux appels d'`analysis()` de
+part et d'autre d'une migration — **le lecteur est toujours le code courant**, et
+il ne tourne pas sur un schéma antérieur. Elle compare donc les indicateurs à ce
+que les lignes impliquent, lues en SQL.
