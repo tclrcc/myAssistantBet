@@ -27,6 +27,7 @@ from jinja2 import (
 from ..config import PACKAGE_DIR, Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.oddsapi import SCAN_MARKETS
+from . import changelog
 from .competitions import is_knockout, reads_domestic_aggregates
 from .enrich import markets_for
 from .history import SCALE_VERSION, feedback
@@ -655,6 +656,17 @@ def _environment() -> Environment:
     )
 
 
+def template_fingerprint() -> str:
+    """L'empreinte des gabarits **presents sur le disque**, au moment de l'appel.
+
+    Sur tous, et pas seulement sur celui qui rend : le prompt en vigueur peut
+    changer d'une session a l'autre, et une empreinte qui ne couvrirait que le
+    gabarit utilise ne dirait pas qu'un autre a ete ajoute ou retire — ce qui est
+    aussi un changement de cadre, l'edition etant possible sans redeploiement.
+    """
+    return changelog.fingerprint(list(TEMPLATES_DIR.glob(f"*{TEMPLATE_SUFFIX}")))
+
+
 def list_templates() -> list[str]:
     """Templates disponibles, lus sur le disque a chaque appel.
 
@@ -1105,6 +1117,16 @@ def save_prompt(session_id: int, prompt: RenderedPrompt, settings: Settings | No
         conn.execute(
             "UPDATE sessions SET scale_version = COALESCE(scale_version, ?) WHERE id = ?",
             (SCALE_VERSION, session_id),
+        )
+        # Le cadre sous lequel la session a ete rendue, fige au premier prompt
+        # pour la meme raison. **Deux valeurs et deux questions** : l'empreinte
+        # dit *le gabarit a-t-il change*, le libelle dit *quel changement*. Une
+        # empreinte qui bouge sans que le libelle bouge est le signal qu'un
+        # changement de gabarit n'a pas ete journalise.
+        conn.execute(
+            "UPDATE sessions SET gabarit_version = COALESCE(gabarit_version, ?), "
+            "                    gabarit_sha = COALESCE(gabarit_sha, ?) WHERE id = ?",
+            (changelog.FRAME_VERSION, template_fingerprint(), session_id),
         )
     logger.info(
         "Marche fige pour la session %d : %d cotes sur %d matchs",

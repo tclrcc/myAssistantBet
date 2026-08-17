@@ -780,6 +780,75 @@
   </details>
   {% endif %}
 
+  {# **Le journal des changements de cadre.** Trois lots ont modifié ce qui est
+     produit et ce qui est mesuré en une seule journée. Sans dates, un mouvement
+     du résidu vient du gabarit, de l'ingestion, ou de rien — et rien ne permet
+     de trancher.
+
+     Le découpage est un **outil de lecture, jamais un test** : aucun `p` ne
+     l'accompagne. Deux moitiés d'une base de 235 sélections sont deux petits
+     échantillons, et un seuil posé dessus se lirait comme un verdict. #}
+  {% if not changelog.empty %}
+  <details class="readout">
+    <summary>
+      <span class="readout-facts">
+        <b>{{ changelog.entries | length }}</b> changement(s) de cadre sur
+        <b>{{ changelog.days | length }}</b> date(s)
+      </span>
+      <span class="readout-hint">avant / après chaque changement</span>
+    </summary>
+    <div class="why-body">
+      {% for split in splits %}
+      <table class="board">
+        <thead>
+          <tr>
+            <th>{{ split.day }}</th>
+            <th>Portée</th>
+            <th>Ce qui a changé</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for entry in split.entries %}
+          <tr>
+            <td>{% if loop.first %}{{ entry.label }}{% endif %}</td>
+            <td>{{ entry.scope_label }}</td>
+            <td>{{ entry.description }}</td>
+          </tr>
+          {% endfor %}
+          <tr>
+            <td colspan="3">
+              {{ split.before.line }}<br>
+              {{ split.after.line }}<br>
+              <strong>{{ split.line }}</strong>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      {% endfor %}
+      <p>
+        Le découpage porte sur la <strong>population principale seule</strong> : y mêler
+        l'exploratoire ou la tardive détruirait les comparaisons que ces populations
+        existent pour rendre possibles. La coupe se fait sur la date de la
+        <strong>décision</strong> et non sur celle du match — un changement de gabarit agit
+        sur ce qui est écrit ce jour-là, quel que soit le coup d'envoi.
+      </p>
+      <p>
+        <strong>Aucun de ces écarts n'est un résultat.</strong> La date est posée d'avance
+        par le journal, ce qui évite de choisir un point de coupe après avoir regardé —
+        mais deux moitiés d'une base de cette taille restent deux petits échantillons.
+        L'écart dit où regarder ; il ne dit pas que quelque chose s'est produit.
+      </p>
+      <p>
+        Deux lots livrés le même jour ne fournissent qu'un seul point de coupe, et c'est
+        un fait sur le rythme de livraison plutôt qu'un défaut : ils ne se sépareront
+        jamais par la date. Une portée <em>{{ 'restitution' }}</em> ne peut déplacer aucun
+        indicateur et se journalise quand même — c'est elle qui explique qu'un chiffre
+        ait <em>paru</em> changer un jour où aucune donnée n'a bougé.
+      </p>
+    </div>
+  </details>
+  {% endif %}
+
   {# **Sections attendues et non trouvées.** Le trou que la table des rejets ne
      couvre pas : elle attrape ce qui lève, pas ce qui n'arrive jamais. Une
      section demandée par le prompt et absente du collage ne produit aucun rejet

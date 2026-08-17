@@ -35,6 +35,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
+from . import changelog as changelog_service
 from . import combos as combos_service
 from . import coupons as coupons_service
 from . import history as history_service
@@ -153,6 +154,15 @@ class StatsReport:
     #: refuse, celui-ci decrit un bloc jamais arrive — l'etat exact dans lequel
     #: les blocs `conf` sont restes quatre jours sans que rien ne le dise.
     missing_sections: sections_service.Survey = field(default_factory=sections_service.Survey)
+    #: Les changements de cadre, dates. **Ils ne mesurent rien** : ils donnent
+    #: les points de coupe qui rendent un mouvement attribuable a un
+    #: changement plutot qu'au hasard. Trois lots ont bouge le cadre en une
+    #: journee, et sans eux plus rien ne se rapporte a rien.
+    changelog: changelog_service.Journal = field(default_factory=changelog_service.Journal)
+    #: Le decoupage de la population principale autour de chaque date du
+    #: journal. **Un outil de lecture, jamais un test** : aucun `p` ne
+    #: l'accompagne, et c'est delibere.
+    splits: list[changelog_service.Split] = field(default_factory=list)
     #: Les combines proposes, sur toute la base. **Un compte et un ecart, jamais
     #: un taux** : au taux de jambe constate, un combine de dix jambes passe une
     #: fois sur 280, et son taux ne sera jamais mesurable.
@@ -206,6 +216,8 @@ class StatsReport:
             "set_score_matrix": self.set_score_matrix,
             "ingestion": self.ingestion,
             "sections": self.missing_sections,
+            "changelog": self.changelog,
+            "splits": self.splits,
             "combos": self.combos,
             "tier_usage": self.tier_usage,
             "tier_scope": self.tier_scope,
@@ -412,6 +424,19 @@ class StatsReport:
                 "chemin d'ingestion, jamais le modèle — c'est un bloc qui a existé et "
                 "qui n'est pas entré, donc quelque chose que la page ne mesure pas."
             )
+        # Les changements de cadre : sans eux, un mouvement n'est attribuable a
+        # rien. C'est une **reserve de lecture** et non un resultat — la date est
+        # posee d'avance, mais deux moities restent deux petits echantillons.
+        if not self.changelog.empty:
+            lisibles = [split for split in self.splits if split.readable]
+            detail = " · ".join(split.line for split in lisibles) or "aucune date ne coupe la base"
+            notes.append(
+                f"{len(self.changelog.entries)} changement(s) de cadre journalisé(s) sur "
+                f"{len(self.changelog.days)} date(s) : {detail}. Ces écarts disent où "
+                "regarder, jamais que quelque chose s'est produit — la date est posée "
+                "d'avance par le journal, mais deux moitiés de cette base sont deux petits "
+                "échantillons et aucun test ne les accompagne."
+            )
         # **Une section absente n'est pas un rejet**, et c'est pour ça qu'elle a
         # sa propre réserve : un rejet dit qu'un bloc est arrivé cassé, celui-ci
         # dit qu'il n'est jamais arrivé. Les deux se réparent au même endroit —
@@ -507,6 +532,10 @@ def report(settings: Settings | None = None) -> StatsReport:
     # toute la section C-bis existe pour rendre possible, et la calculer dans
     # l'un des deux agregats l'aurait fait dependre de sa propre population.
     exploratoire = history_service.exploratory(settings)
+    # Le journal se lit **avant** les decoupages : ce sont ses dates qui les
+    # posent, et une coupe choisie apres avoir vu les donnees serait la faute
+    # que la page a mis huit lots a corriger.
+    carnet = changelog_service.journal(settings)
     exploratoire.comparisons = history_service.compare_populations(
         principale.by_tier, exploratoire.by_tier
     )
@@ -520,6 +549,8 @@ def report(settings: Settings | None = None) -> StatsReport:
         set_score_matrix=set_scores_service.matrix_rows(sets),
         ingestion=ingestion_service.summary(settings),
         missing_sections=sections_service.survey(settings),
+        changelog=carnet,
+        splits=[changelog_service.split(day, settings) for day in carnet.days],
         combos=combos_service.summary(settings),
         tier_usage=history_service.tier_usage(settings),
         tier_scope=history_service.tier_scope(settings),
@@ -686,6 +717,40 @@ def as_json(found: StatsReport) -> dict[str, Any]:
         # `asked` vide veut dire que ce lot n'a jamais demandé la section, ce qui
         # n'est pas un manque — c'est la distinction qui rendait un zéro
         # exploratoire illisible.
+        # Les changements de cadre et leurs decoupages. **Aucun `p`** : la date
+        # est posee d'avance, ce qui evite la multiplicite, mais deux moities de
+        # cette base restent deux petits echantillons.
+        "changelog": [
+            {
+                "day": entry.day,
+                "label": entry.label,
+                "description": entry.description,
+                "scope": entry.scope,
+            }
+            for entry in found.changelog.entries
+        ],
+        "splits": [
+            {
+                "day": split.day,
+                "readable": split.readable,
+                "shift": split.shift,
+                "before": {
+                    "settled": split.before.settled,
+                    "won": split.before.won,
+                    "expected": round(split.before.expected, 2),
+                    "gap": split.before.gap,
+                    "per_selection": split.before.per_selection,
+                },
+                "after": {
+                    "settled": split.after.settled,
+                    "won": split.after.won,
+                    "expected": round(split.after.expected, 2),
+                    "gap": split.after.gap,
+                    "per_selection": split.after.per_selection,
+                },
+            }
+            for split in found.splits
+        ],
         "missing_sections": [
             {
                 "session_id": row.session_id,
