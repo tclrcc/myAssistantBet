@@ -514,3 +514,406 @@ non-régression ne peut pas se vérifier en comparant deux appels d'`analysis()`
 part et d'autre d'une migration — **le lecteur est toujours le code courant**, et
 il ne tourne pas sur un schéma antérieur. Elle compare donc les indicateurs à ce
 que les lignes impliquent, lues en SQL.
+
+
+---
+---
+
+# DIAGNOSTIC — lot 3 : consolider la mesure, et un préalable qui ne tient pas
+
+Relevé du **17/08/2026**, sur une copie de la base servie. Même règle que
+ci-dessus : aucune mesure n'est reprise du brief sans vérification, et **cinq
+affirmations le contredisent** — dont une qui arrête toute la partie II.
+
+---
+
+# PARTIE I — consolider la mesure
+
+## §1 — Le contrôle prouvait ce qu'on lui avait déclaré, et rien d'autre
+
+**Cause racine : la règle du lot 2 n'en était pas une.** `selfcheck.py` portait
+la limite en toutes lettres — *« le contrôle prouve que les chemins **déclarés**
+journalisent, jamais qu'ils sont tous déclarés. La règle de `CONTRIBUTING.md` en
+tient lieu. »* Elle n'en tenait pas lieu, et c'est mesuré : `replay` a été écrit
+**le même jour et par la même main** que cette règle, et il a laissé tomber ses
+échecs d'écriture sans les journaliser. Une règle de contribution ne se
+déclenche pas.
+
+**Trois énumérations étaient possibles ; deux ont été essayées sur le dépôt et
+écartées avant d'écrire une ligne.**
+
+| Piste | Verdict |
+| --- | --- |
+| convention de nommage | les trois écrivains s'appellent `add_pick`, `record` et `save`. Il faudrait en inventer une — donc remplacer une règle qu'on oublie par une autre règle qu'on oublie |
+| inspection du module | ne voit que ce qui est importé, et ne distingue pas une fonction qui écrit d'une qui lit. Prouverait qu'un décorateur a été posé, jamais qu'il en manque un |
+| **analyse statique** | se pose sur la chose elle-même : une fonction qui porte un `INSERT INTO` vers une table gardée. Ne dépend d'aucune discipline, et reste vraie le jour où personne ne se souvient du fichier |
+
+**Correctif** : `services/write_paths.py` porte le registre et le décorateur
+`@writes`. `tests/test_write_paths.py` lit la **source** — pas les objets
+importés — et fait échouer la suite dès qu'une fonction insère dans `picks`,
+`combos`, `combo_legs` ou `set_scores` sans être déclarée.
+
+**Ce que le registre a trouvé dès sa première exécution.** Le dénominateur du
+contrôle se dérive désormais des familles déclarées, et il a immédiatement
+contredit le numérateur : la famille `exploratoire` n'avait **aucun exemplaire
+malformé**, donc n'était vérifiée nulle part. « 8 sur 8 » restait vrai parce que
+les deux nombres étaient écrits à la main et ne pouvaient pas se contredire. Le
+contrôle passe de **8 à 10**.
+
+**Trois gardes sur le garde-fou lui-même**, parce qu'il porte le même défaut que
+tout le reste ici : `test_toute_fonction_qui_insere_est_declaree` et sa
+réciproque **passent tous les deux si l'analyse ne rend rien** — deux ensembles
+vides sont égaux. Un test vérifie donc que les trois écrivains connus sont
+encore vus, un autre qu'un `INSERT` concaténé sur plusieurs lignes l'est aussi,
+un troisième qu'un type de bloc inconnu est refusé à la déclaration.
+
+**Critère d'acceptation vérifié** : l'analyse rejouée sur un faux paquet portant
+`enregistrer_quelque_chose` — un nom qu'aucune convention n'aurait prévu — le
+détecte.
+
+## §2 — La population exploratoire est vide pour la cause 1, et ce n'est pas la réponse utile
+
+**Les trois pistes ont été vérifiées dans l'ordre imposé, pas la première
+retenue.**
+
+| Piste | Verdict |
+| --- | --- |
+| 1. aucune session importée depuis C-bis | **c'est elle**. Dernier prompt de la base : 16/08 17:50. Dernier import de sélections : 15/08 22:21. Tous les commits des lots 1 et 2 sont datés du 17/08, et la base servie est **encore en migration 049** — l'application n'a pas redémarré |
+| 2. le gabarit rendu ne porte pas la section | **écartée par la mesure**. Un prompt réel rendu sur une copie porte bien `### C-bis` et la ligne `sets:`. La porte `tier_scope.high` se serait ouverte sur **6 sessions sur 6** parmi celles dont le marché est figé — ULTRA FUN atteignable 6/6, GIGA FUN et GIGA+ 5/6 |
+| 3. l'extracteur ne la reconnaît pas | **écartée**. Le lecteur la reconnaît des deux côtés, et un test paramétré le vérifie section par section |
+
+Le zéro est donc **attendu**. Mais — et c'est le vrai défaut — **cette réponse
+ne se distinguait d'un extracteur muet par rien**, et c'est exactement l'état
+dans lequel les blocs `conf` sont restés quatre jours.
+
+**Le trou que ni les rejets ni le collage brut ne couvrent** : une section
+absente **n'échoue pas, elle n'arrive pas**. Elle ne lève donc rien, ne produit
+aucun rejet, et le zéro de la population qu'elle alimente est illisible.
+
+**Correctif : `services/sections.py`, et aucune migration.** Les deux moitiés
+dorment déjà en base — ce que le prompt émis réclamait (`prompts.body`) et ce
+que le collage a rapporté (`imports_raw`). Une colonne aurait figé un constat que
+le code courant sait refaire, et aurait menti au premier lecteur corrigé : même
+arbitrage que la famille d'un marché et le palier calculé à la lecture.
+
+**Trois états et non deux**, et c'est le troisième qui manquait : « jamais
+demandée » n'est pas « demandée et perdue ». Un lot sans palier haut atteignable
+n'a pas de section C-bis, et le lui reprocher enverrait chercher un lecteur muet
+là où il n'y a qu'une porte de gabarit fermée.
+
+Deux règles tenues : chaque section se reconnaît par **le lecteur qui
+l'importe** — une seconde expression régulière posée à côté aurait fini par ne
+plus désigner la même chose ; et une ligne `dossiers_ouverts` **vide ou
+illisible** compte comme trouvée, la première étant une déclaration du modèle et
+la seconde un défaut de lecteur.
+
+La ligne se rend à **l'aperçu**, seul instant où elle change quelque chose, et
+sur la page pour ce qui est déjà passé.
+
+## §4 — Rien à corriger, et c'est le problème
+
+**Cause racine : il n'y en a pas.** Trois lots ont modifié ce qui est produit et
+ce qui est mesuré **en une seule journée**, un quatrième arrive, et rien ne date
+ces changements. Les sélections portent leur `created_at` ; le cadre sous lequel
+elles ont été produites n'existe nulle part.
+
+Migration 054, et **deux colonnes qui répondent à deux questions différentes** :
+`sessions.gabarit_sha` dit *le gabarit a-t-il changé* — elle se calcule et bouge
+sur une virgule ; `sessions.gabarit_version` dit *quel* changement — elle
+s'incrémente à la main, donc elle nomme une décision. Les fondre obligerait à
+reparser une colonne qu'on a soi-même écrite. Les deux sont figées au **premier
+prompt** par `COALESCE`, comme `scale_version`.
+
+Le **nom** des fichiers entre dans l'empreinte : deux gabarits dont on
+échangerait le contenu rendraient sinon la même somme, et ce n'est pas le même
+cadre.
+
+`changelog_mesure` porte trois portées fermées — `gabarit` déplace ce que le
+modèle reçoit, `ingestion` ce qui entre en base à production constante,
+`restitution` ne déplace **rien** et se journalise quand même, puisque c'est elle
+qui explique qu'un chiffre ait *paru* changer.
+
+**Le seed est rétroactif et sûr** : il se lit dans l'historique des commits, qui
+existe. C'est la différence avec `price_source` (030) ou le cran calculé (042).
+
+**Ce qu'il montre au passage, et qui n'est pas confortable** : les lots 1 et 2
+sont tous deux du 17/08 et ne fournissent donc **qu'un seul point de coupe**.
+C'est un fait sur le rythme de livraison, pas un défaut du journal — inventer une
+seconde date ferait croire à un découpage qui ne découpe rien.
+
+**Le découpage est un outil de lecture et jamais un test.** Aucun `p` ne
+l'accompagne : la date est posée d'avance, ce qui évite la multiplicité, mais
+deux moitiés d'une base de 235 sélections restent deux petits échantillons.
+
+Mesure sur la copie, coupe du 15/08 : **−0,098 par sélection avant, −0,042
+après, soit +0,056**. Elle ne conclut rien.
+
+## §3 — Le résidu croît avec le retard, et il croît monotonement
+
+Migration 055, `picks.late_minutes`. **Stockée et non dérivée**, contre l'usage
+du projet et pour la même raison que `tardive` : un retard dérivé à la lecture
+sortirait d'un `commence_time` **courant**, donc d'un horaire qui a pu bouger.
+La contrepartie est tenue — `_LATE_RULE` écrit les **deux** colonnes dans le même
+UPDATE, et `set_event` passe désormais par elle au lieu de recalculer à la main.
+Cette seconde écriture aurait divergé au premier ajustement, et le premier
+ajustement est arrivé ici même.
+
+**Mesure sur la copie de la base servie, 52 tardives tranchées :**
+
+| Bande | Tranchées | Gagnées | Intervalle | Écart au prix | Par sélection |
+| --- | ---: | ---: | --- | ---: | ---: |
+| moins de 15 min | 2 | 1 | [9 – 91] | −0,39 | **−0,193** |
+| 15 à 60 min | 15 | 7 | [25 – 70] | −0,78 | **−0,052** |
+| plus de 60 min | 35 | 24 | [52 – 81] | +4,40 | **+0,126** |
+
+**Les deux bandes courtes sont *sous* leurs prix, comme la population
+principale.** Tout l'excédent de la population tardive (+3,24) vient de la seule
+bande au-delà d'une heure. La direction est celle qu'un mécanisme de
+contamination prédit.
+
+**Deux mesures absentes du brief et qui changent la lecture :**
+
+- le retard **médian vaut 133 minutes**, le maximum **1557** (vingt-six heures),
+  et **2 lignes sur 52** sont sous le quart d'heure. L'hypothèse du brief — « la
+  première peut n'être qu'un simple retard d'import » — décrit donc un cas qui
+  n'existe presque pas dans cette base ;
+- aucune ligne n'a de retard inconnu : le rétro-remplissage couvre les 52.
+
+**« Démontrée » reste plus fort que ce que trois bandes peuvent porter**, et
+c'est la seule réserve à tenir. La méthode établie du projet — celle qui a fermé
+le biais d'exposition — dit qu'une variable ordonnée se teste par une
+**tendance** et non par des tranches comparées. Les bandes sont posées d'avance,
+ce qui évite la multiplicité ; le test qui conclurait reste à faire, et la règle
+de travail n°4 interdit de l'inventer ici. Ce qu'il faudrait : un test de score
+de la pente dans `logit(P) = logit(1/cote) + a + b·log(minutes)`, la machinerie
+existant déjà pour le gradient de cote.
+
+## §5a — La numérotation se récupère, et elle méritait de l'être
+
+Le banc la rapportait comme *« le seul cas qui casse le tableau »*, détectée et
+non rattrapée. Contrairement aux guillemets typographiques sur du JSON, elle **ne
+détruit aucune information** : un préfixe `  12  ` se retire sans perte.
+
+**Le banc passe de 38 lues / 6 rejets à 41 lues / 3 rejets / 0 muettes.**
+
+| Altération | combo | conf | sets | tableau |
+| --- | --- | --- | --- | --- |
+| fence ouvrante retirée | lu | lu | lu | lu |
+| fence fermante retirée | lu | lu | lu | lu |
+| les deux fences retirées | lu | lu | lu | lu |
+| info string absente | lu | lu | lu | lu |
+| info string remplacée par `json` | lu | lu | lu | lu |
+| barres converties en tabulations | lu | lu | lu | lu |
+| tabulations converties en espaces | lu | lu | lu | lu |
+| guillemets typographiques | lu | **rejet** | lu | lu |
+| lignes rejointes | lu | lu | lu | lu |
+| espaces insécables | **rejet** | **rejet** | lu | lu |
+| **préfixe de numérotation** | **lu** | **lu** | lu | **lu** |
+
+Deux contraintes tenues, et la seconde a décidé de la règle :
+
+- **le préfixe devient autant d'espaces, il n'est jamais supprimé.**
+  `imports_raw` garde le texte tel quel et chaque ligne lue garde son intervalle
+  de position dedans ; un retrait qui raccourcirait les lignes ferait cesser
+  toutes ces bornes de désigner quoi que ce soit. Le brut est gardé **avant** le
+  retrait ;
+- **la tabulation seule n'est pas un séparateur de numérotation**, et c'est une
+  exclusion mesurée. Le module d'import sait depuis toujours qu'un tableau copié
+  depuis le rendu arrive **tabulé** : accepter `12\t` ferait manger la première
+  colonne d'un tableau dont le numéro de ligne est une donnée. Une vue `cat -n`
+  n'est donc pas rattrapée — elle échoue visiblement, ce que le banc garantit
+  déjà, et c'est le sens dans lequel ce projet se trompe.
+
+Le retrait exige en plus une séquence **complète et consécutive** : une
+numérotation est une propriété du bloc, pas d'une ligne.
+
+## §5b — Le texte est bien conservé, l'information n'y est pas
+
+La question était : le texte des prompts antérieurs à la migration 033 est-il
+conservé ? **Oui** — `prompts.body` l'est depuis toujours. Mais la mesure dit que
+le rattrapage est impossible quand même :
+
+| Sessions | Lignes « Paliers » par bloc | Blocs | Verdict |
+| --- | ---: | ---: | --- |
+| 1 à 6, 12 | **0** | 742 | rien à re-parser |
+| 7 | 7 | 20 | partiel, et trompeur |
+| 8 à 14 | toutes | 634 | déjà couvertes par `prompt_odds` |
+
+**La ligne qui porte l'atteignabilité est née *avec* la migration 033.** Couvrir
+la session 7 au tiers de ses blocs dirait « bande jamais atteinte » de treize
+blocs jamais lus — le défaut exact que ce relevé existe pour supprimer.
+
+La mention de période reste donc en place, et elle **dit désormais la vraie
+cause** : elle imputait le trou au seul `prompt_odds`, ce qui invitait à tenter
+le re-parsing. Un résultat négatif non écrit sera refait.
+
+---
+
+# PARTIE II — statistiques de service : le préalable ne tient pas
+
+## §6 — Le dépôt Sackmann n'existe plus, et le seul substitut échoue à la règle de décision
+
+### 6.1 — Les fichiers demandés sont introuvables, et c'est vérifié avec témoins
+
+Les quatre fichiers du brief — `atp_matches_2025.csv`, `atp_matches_2026.csv`,
+`wta_matches_2025.csv`, `wta_matches_2026.csv` — rendent **404**, sur `raw` comme
+sur l'API. Et ce ne sont pas les fichiers qui manquent, ce sont les **dépôts** :
+
+| Sonde | Réponse |
+| --- | --- |
+| `api.github.com/repos/JeffSackmann/tennis_atp` | **404** |
+| `api.github.com/repos/JeffSackmann/tennis_wta` | **404** |
+| `api.github.com/users/JeffSackmann` | 200 — le compte existe |
+| `api.github.com/repos/python/cpython` (témoin) | 200 — le réseau répond |
+| dépôts publics du compte | **un seul**, `tennis_MatchChartingProject` |
+
+Ce n'est donc ni une panne de réseau, ni un chemin erroné, ni un compte
+supprimé : **les deux dépôts ont disparu**. Le dossier de projet le notait déjà
+au 07/08/2026 pour les CSV de statistiques de service ; la mesure du 17/08 étend
+le constat aux fichiers de matchs, qui étaient encore là.
+
+**Conséquence immédiate** : les colonnes sur lesquelles reposent les §7 et §8 —
+`w_svpt`, `1stIn`, `1stWon`, `2ndWon`, `SvGms`, `bpSaved`, `bpFaced` — n'ont
+aucune source. La correction que le brief apportait à un brief précédent (« la
+tenue de service et le taux de break sont dérivables ») est juste sur le fond et
+repose sur `SvGms`, une colonne du dépôt manquant.
+
+### 6.2 — Le seul substitut mesuré, et il échoue à la règle de décision du brief
+
+`tennis_MatchChartingProject` subsiste chez le même auteur, sous la même licence,
+et ses fichiers `charting-*-stats-Overview.csv` portent **exactement** les
+colonnes du §8 : `serve_pts`, `aces`, `dfs`, `first_in`, `first_won`,
+`second_won`, `bk_pts`, `bp_saved`, `return_pts`, `return_pts_won`. La règle de
+décision lui a donc été appliquée telle quelle, plutôt que de conclure d'après sa
+réputation.
+
+**Méthode** : les 196 joueurs des **cinq derniers lots tennis** en base
+(sessions 9, 10, 11, 13, 14 — Canadian Open et Cincinnati, tout sur dur),
+rapprochés par nom replié, sur 52 semaines glissantes au 17/08/2026.
+
+| | ATP | WTA |
+| --- | ---: | ---: |
+| joueurs du lot | 99 | 97 |
+| avec au moins un match charté | 74 | 78 |
+| matchs chartés / joueur — médiane | 2 | 2 |
+| **points de service sur dur — 1er quartile** | **0** | **19,5** |
+| points de service sur dur — médiane | 111 | 133 |
+| points de service toutes surfaces — 1er quartile | 0 | 53,5 |
+| joueurs ≥ 400 points de service sur dur | 17 / 99 | 19 / 97 |
+
+**Règle de décision du brief : premier quartile au-dessus de 400 points de
+service sur dur → construire. Il vaut 0 et 19,5. Nulle part.**
+
+### 6.3 — Le risque nommé par le brief est confirmé, et quantifié
+
+Le brief prévenait : *« les colonnes peuvent être vides sur la majorité des
+matchs qui comptent — les lots sont majoritairement WTA, entre le 40e et le 130e
+rang. »* La mesure lui donne raison, et le mécanisme n'est pas celui qu'il
+supposait.
+
+**Le remplissage des colonnes n'est pas le problème : il est de 100 % sur les
+748 lignes retenues.** Ce qui manque, ce sont les **matchs eux-mêmes** — le
+Match Charting Project est cartographié par des bénévoles, et ils cartographient
+le haut du tableau.
+
+| Rang officiel | Joueurs du lot | Médiane, points sur dur | ≥ 400 points |
+| --- | ---: | ---: | --- |
+| 1 – 20 | 27 | **709** | 19 / 27 |
+| 21 – 50 | 44 | 134 | 6 / 44 |
+| 51 – 100 | 81 | 126 | 10 / 81 |
+| 101 et au-delà | 36 | 21 | 1 / 36 |
+| non classés | 8 | 0 | 0 / 8 |
+
+**161 des 196 joueurs du lot sont au 21e rang ou au-delà.** La ligne serait
+servie sur les têtes de série et vide exactement là où les lots vivent.
+
+### 6.4 — Le cas concret, sur le lot du 16/08
+
+Six joueurs tirés des matchs réellement rendus le 16/08 :
+
+| Joueur | Matchs chartés | Points de service | Verdict au seuil |
+| --- | ---: | ---: | --- |
+| Taylor Fritz | 10 | 744 | **au-dessus** |
+| Alex Michelsen | **1** | **65** | en dessous |
+| Ekaterina Alexandrova | 9 | 709 | **au-dessus** |
+| Anna Blinkova | 3 | 171 | en dessous |
+| Marta Kostyuk | 13 | 1011 | **au-dessus** |
+| Sofia Kenin | 5 | 375 | en dessous |
+
+**Trois sur six.** Et les deux moitiés tombent *dans la même affiche* : le bloc
+Fritz – Michelsen rendrait `Service   Taylor Fritz 61.8% 1re · 77.6% s/1re ·
+14.5% aces` puis `Alex Michelsen non disponible`. Une demi-ligne, sur le match le
+plus en vue du lot.
+
+C'est mot pour mot ce contre quoi le brief prévient : *« Une ligne « Service » à
+moitié vide est pire que pas de ligne : elle sera lue comme un fait. »*
+
+### 6.5 — Décision
+
+**§6 s'arrête, et les §7 à §10 et §12 ne sont pas construits.** C'est la branche
+« nulle part » de la règle de décision, appliquée telle quelle.
+
+**Rien du gabarit n'est modifié.** La phrase que le §10 demandait de supprimer —
+*« Aces, première balle et balles de break ne sont dans aucune source »* — est
+**toujours vraie**, et plus vraie qu'avant : elle l'était par choix de collecte,
+elle l'est maintenant par disparition de la source. La remplacer par une phrase
+annonçant des lignes qui n'existent pas serait la faute la plus coûteuse que ce
+projet connaisse — une affirmation fausse à l'endroit exact où le lecteur va
+chercher.
+
+**Ce qui reste ouvert, et à quelles conditions.** Le Match Charting Project est
+utilisable *pour le haut du tableau* : 100 % de remplissage, colonnes exactement
+celles du §8, licence compatible. Si un lot devait un jour porter
+majoritairement des joueurs du top 20 — un Masters de fin d'année, un Grand
+Chelem en seconde semaine — le seuil serait franchi. Ce n'est pas le régime de
+ce projet, dont les cinq derniers lots sont des tableaux complets de Masters
+1000.
+
+Deux choses manqueraient en plus, et il faut les connaître avant de rouvrir :
+`SvGms` n'existe pas dans `Overview`, donc **le taux de tenue et le taux de
+break du §8 ne seraient pas dérivables** de cette source ; et l'`as_of` y est
+celui de la dernière contribution bénévole, pas d'une publication hebdomadaire.
+
+## §11 — Bloqué sur une clé, et sur une décision qui n'est pas la mienne
+
+Le test des trois fixtures WTA — Blinkova – Sawangkaew, Gibson – Tagger,
+Korpatsch – Joint — **n'a pas été mené**, et il ne pouvait pas l'être : aucune
+clé RapidAPI n'existe dans l'environnement ni dans `.env`, dont le vocabulaire
+complet est `ODDS_API_KEY` et `APIFOOTBALL_KEY`.
+
+Souscrire, même à un plan gratuit, engage un compte et sort de ce qu'un lot de
+code décide. C'est donc laissé à l'utilisateur, avec ce qu'il faut pour le faire :
+
+- la règle de décision reste celle du brief — souscrire **si et seulement si** la
+  `timeline` est complète et cohérente avec le score **sur les trois** fixtures ;
+- le bloc `stats` reste un bonus descriptif et jamais une source d'agrégat, son
+  taux de conversion de balles de break étant sans dénominateur ;
+- les endpoints de cotes, de prédictions, de *top matches* et de *value bets*
+  restent interdits d'ingestion quel que soit le plan.
+
+**Et la conséquence du §6 déplace l'enjeu du §11** : les profils de fond devaient
+rester « entièrement sur Sackmann ». Sackmann n'existe plus. Le §11 cesserait
+donc d'être une couche temps réel posée sur un socle, pour devenir la **seule**
+source de statistiques de service — ce que son bloc `stats` ne peut pas porter.
+La reconstruction par la `timeline` deviendrait le socle lui-même, et ce n'est
+pas ce qui a été évalué.
+
+**La consigne de recherche sur les tours du tournoi en cours reste donc entière**,
+et le §10 n'y touchait déjà pas.
+
+---
+
+## Ce que la mesure a contredit — lot 3
+
+| Affirmé | Mesuré |
+| --- | --- |
+| télécharger `atp_matches_*.csv` et `wta_matches_*.csv` depuis `JeffSackmann/tennis_atp` et `tennis_wta` | **les deux dépôts n'existent plus** : 404 sur `raw` et sur l'API, quand un dépôt témoin répond 200 et que le compte existe. Un seul dépôt public subsiste |
+| « la tenue de service et le taux de break sont dérivables, contrairement à ce qui a été dit » | juste sur le fond, et sans objet : la dérivation repose sur `SvGms`, une colonne du dépôt manquant. La seule source restante ne la sert pas non plus |
+| le risque est que les colonnes de statistiques soient vides | **elles sont remplies à 100 %**. Ce qui manque, ce sont les matchs : médiane de 2 matchs chartés par joueur, et une couverture qui suit le rang — 709 points au top 20, 21 au-delà du 100e |
+| une sélection tardive de moins de 15 min « peut être un simple retard d'import » | **2 lignes sur 52** sont sous le quart d'heure ; la médiane vaut 133 minutes et le maximum 1557. Ce cas n'existe presque pas dans cette base |
+| « si le résidu croît avec le retard, la contamination est **démontrée** » | il croît, monotonement, et la direction est celle qu'un mécanisme prédit — mais trois bandes de 2, 15 et 35 lignes ne démontrent pas. La méthode du projet exige une **tendance** sur une variable ordonnée, pas des tranches comparées |
+| §5b : « vérifier si le texte du prompt est conservé ; si oui, re-parser » | le texte **est** conservé, et l'information n'y est pas : 0 ligne « Paliers » par bloc sur les 742 blocs des sessions 1 à 6 et 12. La ligne est née avec la migration 033 |
+
+Et une septième, sur la forme : le brief demandait le §6 « sans écrire une ligne
+de production ». C'est ce qui a été fait — et la mesure a coûté deux heures pour
+arrêter un chantier de cinq sections. C'est le meilleur rapport du lot.

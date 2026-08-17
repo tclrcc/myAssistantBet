@@ -2121,6 +2121,50 @@ sans raison nouvelle :
   Les resultats arrivent apres la fin du tournoi. C'est pourquoi `Parcours` sort de nos
   propres scans et non de l'historique.
 
+### Les statistiques de service : source disparue, substitut mesure et refuse (17/08/2026)
+
+**Resultat negatif, ecrit sous la forme qui empeche de le refaire.** Le chantier a ete
+propose une seconde fois — reconstruire `Service`, `Retour`, `Jeux` et `Ecart` depuis
+`JeffSackmann/tennis_atp` et `tennis_wta` — et il s'arrete sur deux mesures.
+
+**1. Les deux depots n'existent plus, et ce n'est pas un chemin errone.** 404 sur `raw`
+comme sur l'API, quand `python/cpython` repond 200 et que le compte `JeffSackmann` existe.
+**Un seul depot public subsiste**, `tennis_MatchChartingProject`. Les colonnes sur
+lesquelles reposait tout le calcul — `w_svpt`, `1stIn`, `1stWon`, `2ndWon`, `SvGms`,
+`bpSaved`, `bpFaced` — n'ont donc aucune source. Corollaire a connaitre : la tenue de
+service et le taux de break **sont** derivables de `SvGms`, mais `SvGms` est dans le depot
+manquant, et la seule source restante ne le sert pas non plus.
+
+**2. Le seul substitut a ete mesure et il echoue.** Le Match Charting Project porte
+exactement les bonnes colonnes, remplies a **100 %** — le remplissage n'est pas le
+probleme. Ce qui manque, ce sont les **matchs** : il est cartographie par des benevoles, et
+les benevoles cartographient le haut du tableau. Sur les 196 joueurs des cinq derniers lots
+tennis, 52 semaines glissantes, surface dur :
+
+| Rang officiel | Joueurs | Mediane, points de service | >= 400 points |
+| --- | ---: | ---: | --- |
+| 1 – 20 | 27 | **709** | 19 / 27 |
+| 21 – 50 | 44 | 134 | 6 / 44 |
+| 51 – 100 | 81 | 126 | 10 / 81 |
+| 101 et au-dela | 36 | 21 | 1 / 36 |
+
+Premier quartile sur dur : **0 point cote ATP, 19,5 cote WTA**, pour un seuil de 400. La
+ligne serait servie sur les tetes de serie et vide exactement la ou les lots vivent —
+161 des 196 joueurs sont au 21e rang ou au-dela.
+
+**Le cas concret** : sur le lot du 16/08, Fritz porte 744 points de service et Michelsen
+**65**, dans la meme affiche. Le bloc rendrait une demi-ligne, et « une ligne Service a
+moitie vide est pire que pas de ligne : elle sera lue comme un fait ».
+
+**Ce qui rouvrirait la question**, et rien d'autre : un lot portant majoritairement des
+joueurs du top 20 — Masters de fin d'annee, seconde semaine de Grand Chelem. Ce n'est pas
+le regime de ce projet, dont les lots sont des tableaux complets de Masters 1000. Et meme
+alors, `SvGms` manquerait : `Overview` ne le sert pas, donc ni tenue ni taux de break.
+
+**Consequence tenue dans le gabarit** : la phrase « Aces, premiere balle et balles de break
+ne sont dans aucune source » **reste**, et elle est plus vraie qu'avant — elle l'etait par
+choix de collecte, elle l'est maintenant par disparition de la source.
+
 ## Journees de tournoi (`services/tournament_day.py`)
 
 Une journee civile ne decrit pas une journee de tournoi. A Montreal la session du soir
