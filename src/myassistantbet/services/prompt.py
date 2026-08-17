@@ -1402,7 +1402,18 @@ def save_tiers(rows: list[dict[str, Any]], settings: Settings | None = None) -> 
 #: L'en-tete qui ouvre le premier bloc de match. **Reutilise depuis
 #: `history`** : deux expressions pour un meme en-tete auraient diverge au
 #: premier changement de forme, et le decoupage serait devenu faux en silence.
-_FIRST_BLOCK = re.compile(r"^### M\d+ ", re.MULTILINE)
+BLOCK_HEADER = re.compile(r"^### M\d+ ", re.MULTILINE)
+
+#: Ce qui **ferme** la section des blocs. Les sections de sortie et le chapitre
+#: « COMMENT LIRE LES BLOCS » viennent apres, et ils se paient **une fois par
+#: prompt** : ils appartiennent donc au cadre, pas aux blocs.
+#:
+#: **Trouve en relisant le releve reel**, pas en ecrivant le code. Sans cette
+#: borne, le cout par bloc du 17/08 sortait a 2 238 tokens contre ~1 400 les
+#: jours precedents — l'inflation venant entierement du chapitre verse dans le
+#: dernier bloc, et d'autant plus forte que le lot est court. Une mesure de
+#: derive qui bouge avec la taille du lot ne mesure pas la derive.
+BLOCKS_END = re.compile(r"^## (CE QUE L'HISTORIQUE DIT|SORTIE ATTENDUE)", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -1424,24 +1435,31 @@ class PromptCost:
 def split_cost(body: str) -> PromptCost:
     """Decoupe un prompt entre son cadre et ses blocs. **Aucune estimation.**
 
-    Le cadre est tout ce qui precede le premier en-tete de bloc : preambule,
-    mode d'emploi, fiche de recherche. Les sections de sortie viennent **apres**
-    les blocs et se comptent donc avec eux — c'est une imprecision connue et
-    bornee, et la corriger demanderait de reperer une seconde frontiere qui
-    bougerait avec le gabarit. Ce qu'on veut mesurer est la **derive**, et elle
-    se lit aussi bien sur un decoupage stable qu'exact.
+    Le **cadre** est tout ce qui se paie une fois par prompt, quel que soit le
+    nombre de matchs : le preambule et le mode d'emploi avant le premier bloc,
+    **et** les sections de sortie et le chapitre « COMMENT LIRE LES BLOCS » qui
+    viennent apres. Les **blocs** sont ce qui reste, entre les deux.
+
+    **La borne haute a ete trouvee sur le releve reel et non en ecrivant le
+    code.** Sans elle, le cout par bloc du 17/08 sortait a 2 238 tokens contre
+    ~1 400 les jours precedents, l'inflation venant entierement du chapitre verse
+    dans le dernier bloc — et d'autant plus forte que le lot est court, puisque
+    ce chapitre se divise alors par moins de blocs. Une mesure de derive qui
+    bouge avec la taille du lot ne mesure pas la derive.
     """
     texte = body or ""
-    entetes = list(_FIRST_BLOCK.finditer(texte))
+    entetes = list(BLOCK_HEADER.finditer(texte))
     total = estimate_tokens(texte)
     if not entetes:
         return PromptCost(tokens=total, blocks=0, fixed=total, block_tokens=0)
-    cadre = estimate_tokens(texte[: entetes[0].start()])
+    fin = BLOCKS_END.search(texte, entetes[0].end())
+    borne = fin.start() if fin is not None else len(texte)
+    blocs = estimate_tokens(texte[entetes[0].start() : borne])
     return PromptCost(
         tokens=total,
         blocks=len(entetes),
-        fixed=cadre,
-        block_tokens=max(0, total - cadre),
+        fixed=max(0, total - blocs),
+        block_tokens=blocs,
     )
 
 

@@ -27,17 +27,18 @@ recalcule aujourd'hui, qui ne dirait plus ce que les sessions ont reellement vu.
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass
 
 from ..config import Settings, get_settings
 from ..db import connect
+from . import prompt as prompt_service
 
-#: L'en-tete qui ouvre un bloc. Meme forme que partout — `history._BLOCK_HEADER`
-#: et `prompt._FIRST_BLOCK` — et ce n'est pas une recopie de trop : celle-ci
-#: **decoupe** quand les deux autres reperent, et un `split` a besoin du motif
-#: entier. Un test compare les trois sur un meme corps.
-_BLOC = re.compile(r"^### M\d+ ", re.MULTILINE)
+#: **Importes de `prompt`, jamais recopies.** Les deux modules decoupent le meme
+#: corps aux memes frontieres : deux ecritures auraient diverge au premier
+#: changement d'en-tete, et l'une des deux serait devenue fausse **en silence**.
+#: C'est le piege deja paye par les niveaux de competition.
+_BLOC = prompt_service.BLOCK_HEADER
+_FIN_DES_BLOCS = prompt_service.BLOCKS_END
 
 
 @dataclass(frozen=True)
@@ -111,19 +112,6 @@ class Hit:
     @property
     def never(self) -> bool:
         return self.blocks == 0
-
-
-#: Ce qui **ferme** la section des blocs. Les sections de sortie et le chapitre
-#: « COMMENT LIRE LES BLOCS » viennent apres, et le second nomme chaque cas au
-#: moins une fois.
-#:
-#: **Trois cas sortaient a exactement 29 blocs sur 29 prompts** avant cette
-#: borne — la signature d'un marqueur capte une fois par prompt, donc hors bloc.
-#: Le decoupage sans borne haute versait tout le chapitre dans le **dernier**
-#: bloc, et « TERRAIN NEUTRE », « aucun absent » et « injoignable » y sont
-#: definis. Un compte faux qui a l'air plausible est exactement ce que ce
-#: chantier existe pour ne pas produire.
-_FIN_DES_BLOCS = re.compile(r"^## (CE QUE L'HISTORIQUE DIT|SORTIE ATTENDUE)", re.MULTILINE)
 
 
 def blocks_of(body: str) -> list[str]:

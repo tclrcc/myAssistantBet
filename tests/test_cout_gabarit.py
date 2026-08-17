@@ -152,3 +152,31 @@ def _session(settings: Settings) -> int:
     )
     event = db.query_one("SELECT MAX(id) AS id FROM events", settings=settings)
     return board_service.toggle_selection(int(event["id"]), True, settings)
+
+
+def test_les_sections_de_sortie_comptent_dans_le_cadre() -> None:
+    """**Elles se paient une fois par prompt**, donc elles appartiennent au
+    cadre — et le defaut a ete trouve sur le releve reel, pas en ecrivant le
+    code.
+
+    Sans borne haute, le chapitre « COMMENT LIRE LES BLOCS » tombait dans le
+    dernier bloc : le coût par bloc du 17/08 sortait a 2 238 tokens contre
+    ~1 400 les jours precedents, et d'autant plus gonfle que le lot est court —
+    ce chapitre se divisant alors par moins de blocs. **Une mesure de derive qui
+    bouge avec la taille du lot ne mesure pas la derive.**
+    """
+    court = "cadre\n\n### M1 · x\nbloc\n\n## SORTIE ATTENDUE\n" + "chapitre " * 200
+    long = (
+        "cadre\n\n"
+        + "".join(f"### M{n} · x\nbloc\n" for n in range(1, 11))
+        + "\n## SORTIE ATTENDUE\n"
+        + "chapitre " * 200
+    )
+
+    un = prompt_service.split_cost(court)
+    dix = prompt_service.split_cost(long)
+
+    assert un.per_block is not None and dix.per_block is not None
+    assert abs(un.per_block - dix.per_block) < 1, (
+        "le cout par bloc ne doit pas dependre de la taille du lot"
+    )

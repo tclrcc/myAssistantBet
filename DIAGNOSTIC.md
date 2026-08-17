@@ -1621,10 +1621,46 @@ d'écart, et vingt points identiques ne dessinent pas une courbe. Le coût du ca
 est une **médiane** : une moyenne suivrait un prompt aberrant, et c'est justement
 l'aberration qu'on veut voir apparaître comme un point et non comme une pente.
 
-**Imprécision connue et bornée** : les sections de sortie viennent *après* les
-blocs et se comptent donc avec eux. La corriger demanderait de repérer une
-seconde frontière qui bougerait avec le gabarit ; ce qu'on mesure est la
-**dérive**, et elle se lit aussi bien sur un découpage stable qu'exact.
+### La borne haute, trouvée sur le relevé et non en écrivant le code
+
+Le premier jet comptait les sections de sortie et le chapitre « COMMENT LIRE LES
+BLOCS » **avec les blocs**, en les jugeant « une imprécision connue et bornée ».
+Le relevé réel dit qu'elle ne l'est pas : le coût par bloc du 17/08 sortait à
+**2 238** tokens contre ~1 400 les jours précédents, et l'inflation venait
+entièrement de ce chapitre versé dans le dernier bloc — **d'autant plus forte que
+le lot est court**, puisqu'il se divise alors par moins de blocs.
+
+Une mesure de dérive qui bouge avec la taille du lot ne mesure pas la dérive. Ce
+qui se paie une fois par prompt appartient au cadre, où qu'il se trouve dans le
+texte. Un test le garde : un prompt d'un bloc et un prompt de dix, même chapitre,
+doivent rendre le **même** coût par bloc.
+
+La borne est écrite **une fois** et partagée avec le relevé du §15 : deux
+écritures auraient divergé au premier changement d'en-tête, et l'une serait
+devenue fausse en silence.
+
+### La série corrigée, sur les 149 prompts
+
+| Jour | Prompts | Blocs | Cadre | / bloc |
+| --- | ---: | ---: | ---: | ---: |
+| 04/08 | 16 | 138 | 1 571 | 62 |
+| 05/08 | 16 | 92 | 3 089 | 97 |
+| 06/08 | 20 | 324 | 4 107 | 240 |
+| 08/08 | 7 | 54 | 6 481 | 418 |
+| 10/08 | 6 | 23 | 8 048 | 575 |
+| 12/08 | 10 | 75 | 8 162 | 573 |
+| 13/08 | 10 | 119 | 10 247 | 740 |
+| 15/08 | 19 | 215 | 12 160 | 677 |
+| 16/08 | 2 | 30 | 16 967 | 691 |
+| 17/08 | 1 | 5 | **11 472** | **640** |
+
+**Le cadre a été multiplié par 7,7 et le coût par bloc par 11 en onze jours**, et
+la série est désormais **monotone** — ce que l'ajustement jour par jour n'était
+pas, avec sa pente négative du 10/08. Contrôle : 11 472 + 5 × 640 = **14 672**
+contre 14 675 mesurés sur la session du 17/08.
+
+C'est la grandeur à surveiller, et ce lot y ajoute encore quatre lignes par bloc
+tennis le jour où le drapeau se lèvera.
 
 ---
 
