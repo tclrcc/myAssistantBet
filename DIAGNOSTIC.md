@@ -1038,3 +1038,306 @@ celui-ci », `Fraicheur` sans mention d'escalade — ce qui est correct à trois
 jours.
 
 `ruff` vert, **1979 tests**, `selfcheck-ingestion` **10/10**.
+
+---
+
+# Lot 4, phase 1 — la source manquante existait, sous un autre nom
+
+## §1 — La clé était là, et `extra="ignore"` la jetait
+
+**Cause en une ligne** : `RAPIDAPI_KEY` est présente dans `/home/ubuntu/myAssistantBet/.env`
+sous exactement ce nom ; `Settings` ne déclarait aucun champ correspondant, et
+`model_config` porte `extra="ignore"` — pydantic-settings la supprimait
+silencieusement.
+
+Les trois vérifications du brief, dans l'ordre : le nom est **bon** (`grep -i rapid`
+le trouve ligne 6) ; le fichier lu est **bien** `.env` à la racine, et il est lu
+**relativement au répertoire courant** — un script lancé ailleurs ne le voit pas ;
+le rechargement n'était pas en cause.
+
+C'est la huitième occurrence du défaut caractéristique du projet, et la première
+sur la configuration : **une clé non déclarée est indiscernable d'une clé
+absente.** `Settings.rapidapi_key` est déclarée, et `/health` porte
+`rapidapi_key_present` — un booléen, jamais la valeur.
+
+## §2 — Les trois fixtures : timeline complète et cohérente sur les trois
+
+**Le préfixe réel est `/tennis/v2/extend/api/`**, et non `event/get/…` seul :
+six appels ont été perdus à le chercher avant de le lire dans la documentation.
+Cloudflare renvoie par ailleurs une **erreur 1010** sans `User-Agent` de
+navigateur — même précaution que pour Tennis Abstract.
+
+**Graphie canonique** (`/tennis/v2/profile/search/{nom}/{tour}`) : les six noms se
+résolvent, et la forme est **« Prénom Nom » avec une espace** — pas le CamelCase
+`DaniilMedvedev` que le brief annonçait.
+
+| Fixture (ordre de la base) | Code | Score annoncé | Score reconstruit | Timeline | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| Mananchaya Sawangkaew – Anna Blinkova | 200 | 6-1, 2-6, 3-6 | 6-1, 2-6, 3-6 | 24 jeux | **OK** |
+| Lilli Tagger – Talia Gibson | 200 | 6-4, 1-6, 5-7 | 6-4, 1-6, 5-7 | 29 jeux | **OK** |
+| Maya Joint – Tamara Korpatsch | 200 | 6-0, 3-6, 4-6 | 6-0, 3-6, 4-6 | 25 jeux | **OK** |
+
+La reconstruction est **automatique** et non faite à l'œil : les jeux sont
+retalliés depuis la séquence, les sets fermés sur les conditions standard, et la
+suite comparée à l'annonce. **Zéro ligne de vocabulaire non reconnue** sur les
+trois. Le compte de jeux ferme exactement (24 = 7+7+10, etc.).
+
+**Invariant de contrôle, plus fort que la simple cohérence** : le serveur se
+déduit de `holds` / `breaks`, et les jeux de service doivent **alterner**. Ils
+alternent sur les trois. Tenue et break s'en dérivent :
+
+| Joueuse | Tenue | Break |
+| --- | --- | --- |
+| Sawangkaew | 58,3 % (7/12) | 33,3 % (4/12) |
+| Blinkova | 66,7 % (8/12) | 41,7 % (5/12) |
+| Tagger | 57,1 % (8/14) | 26,7 % (4/15) |
+| Gibson | 73,3 % (11/15) | 42,9 % (6/14) |
+| Joint | 41,7 % (5/12) | 61,5 % (8/13) |
+| Korpatsch | 38,5 % (5/13) | 58,3 % (7/12) |
+
+**Recommandation binaire : la règle de décision est remplie sur les trois.**
+
+Confirmé sans être redécouvert : le bloc `stats` de cet endpoint reste pauvre —
+`aces`, `double_faults`, `win_1st_serve` ambigu, `break_point_conversions` en
+pourcentage **sans dénominateur** — et il n'y a **pas de durée de match**.
+
+## §2 bis — Ce que le test a trouvé et que personne ne cherchait
+
+Les trois fixtures sont des matchs de **tableau principal** : « bas de tableau »
+y désigne des joueuses peu classées, pas un tour de qualification. La couverture
+des qualifications restait donc entière, et c'est en la sondant que le résultat
+utile est apparu.
+
+Deux qualifications WTA du 11/08 rendent **200 avec un `result` vide** et
+`"success": true`. Ce n'est **pas** une absence de couverture : l'API date ce
+match du **12/08**, pas du 11/08. Le décalage se confond avec un trou, et
+`"success": true` sur un résultat vide est le défaut caractéristique du projet
+**dans la source candidate** — tout collecteur écrit dessus devra traiter le vide
+comme un échec nommé, jamais comme une réponse.
+
+En vérifiant par `/tennis/v2/profile/{nom}/matches-played`, le match apparaît —
+**avec un bloc de statistiques que rien n'annonçait** :
+
+| Indicateur du §8 (lot 3) | Colonne Sackmann | Champ `matches-played` |
+| --- | --- | --- |
+| % 1re balle | `1stIn` / `svpt` | `firstServe` / `firstServeOf` |
+| % points gagnés sur 1re | `1stWon` / `1stIn` | `winningOnFirstServe` / `winningOnFirstServeOf` |
+| % points gagnés sur 2e | `2ndWon` / (`svpt` − `1stIn`) | `winningOnSecondServe` / `winningOnSecondServeOf` |
+| Taux d'aces | `ace` / `svpt` | `aces` / `firstServeOf` |
+| Doubles fautes | `df` / 2es balles | `doubleFaults` / `winningOnSecondServeOf` |
+| % BP converties | dérivée de l'adversaire | `breakPointsConverted` / `breakPointsConvertedOf` |
+
+**Tous avec leur dénominateur**, ce qui est exactement ce qui manquait au bloc
+`stats`. Cohérence interne vérifiée sur Charaeva – Marino : 60 + 53 points de
+service pour 63 + 50 points gagnés au total, et `winningOnSecondServeOf` =
+`firstServeOf` − `firstServe` sur les deux joueuses.
+
+**Couverture mesurée**, sur un échantillon étalé sur le classement — sept joueurs
+des cinq derniers lots, **une seule page de dix matchs** chacun :
+
+| Joueur | Rang | Circuit | Matchs avec stats | Points de service | Seuil 400 |
+| --- | ---: | --- | ---: | ---: | --- |
+| Aryna Sabalenka | 1 | WTA | 10 | 764 | **oui** |
+| Viktorija Golubic | 51 | WTA | 10 | 828 | **oui** |
+| Simona Waltert | 90 | WTA | 10 | 680 | **oui** |
+| McCartney Kessler | — | WTA | 10 | 667 | **oui** |
+| Alexander Zverev | 3 | ATP | 10 | 991 | **oui** |
+| Kamil Majchrzak | 67 | ATP | 10 | 818 | **oui** |
+| Jan-Lennard Struff | — | ATP | 10 | 1125 | **oui** |
+
+**Sept sur sept**, et ce sont des **planchers** : dix matchs sont une page, pas
+une fenêtre de 52 semaines. À comparer au Match Charting Project, mesuré au lot 3
+sur la même population : premier quartile à **0** point côté ATP et **19,5** côté
+WTA.
+
+**Un piège rencontré et à retenir** : l'API écrit « Mccartney Kessler » quand la
+base écrit « McCartney Kessler ». Une comparaison stricte a d'abord rendu
+« 0 point de service » — un faux négatif de **mon** rapprochement, pas de la
+source. Tout collecteur devra replier casse et accents, comme `labels.sort_key`.
+
+## §3a — Les feuilles officielles : citation, sans interprétation
+
+**`atptour.com/robots.txt`**, cité mot pour mot :
+
+```
+User-agent: *
+Content-Signal: search=yes,ai-train=no,use=reference
+```
+```
+User-agent: ClaudeBot
+Disallow: /
+```
+
+et, en tête de fichier : *« ANY RESTRICTIONS EXPRESSED VIA CONTENT SIGNALS ARE
+EXPRESS RESERVATIONS OF RIGHTS UNDER ARTICLE 4 OF THE EUROPEAN UNION DIRECTIVE
+2019/790 »*.
+
+**`wtatennis.com/robots.txt`** :
+
+```
+User-agent: *
+Disallow:
+
+Sitemap: https://www.wtatennis.com/sitemap/index.xml
+```
+
+**Conditions d'utilisation WTA**, citées : *« use automated means to access the
+WTA Sites »* et *« "harvest" (or collect) information from the WTA Sites using an
+automated software tool or manually on a mass basis »*, avec cette réserve —
+*« This prohibition does not apply to search engines accessing the WTA Sites
+solely for web indexing purposes. »*
+
+**Forme** : la page `wtatennis.com/scores` n'est pas rendue côté serveur ; elle
+s'alimente à `https://api.wtatennis.com`, une API interne du site.
+
+**Ce qui relève du constat et non de l'interprétation** : le dossier de projet
+porte déjà deux précédents applicables — `atptour.com` est refusé nommément et
+« doit le rester » ; et Transfermarkt a été écarté sur exactement la
+configuration WTA — `robots.txt` permissif, conditions d'utilisation
+prohibitives — au motif que « ce sont les conditions d'utilisation qui
+gouvernent un client automatisé ». L'arbitrage reste à l'utilisateur.
+
+## §3c — Tableau comparé et recommandation
+
+| | Feuilles officielles (§3a) | `tennis-api.com` (§2/§3b) |
+| --- | --- | --- |
+| Couverture ATP | robots.txt nomme `ClaudeBot`, `Disallow: /` | mesurée : 3 joueurs sur 3, 818 à 1125 pts |
+| Couverture WTA | robots permissif, CGU prohibitives | mesurée : 4 sur 4, 667 à 828 pts |
+| Qualifications | non établie | **couvertes** (Charaeva, rang 323) |
+| % 1re balle | oui | **oui** — `firstServe`/`firstServeOf` |
+| Tenue / break | oui | **oui** — deux chemins, timeline et BP |
+| Durée du match | oui | **non** |
+| Niveau de source | 1 | 4 |
+| Fragilité | refonte de page ; API interne non documentée | contrat RapidAPI, versionné `/v2/` |
+| Entretien | un analyseur par site, deux sites | un client HTTP, une clé |
+| Coût | nul | plan gratuit testé ; volume à vérifier |
+
+**Recommandation unique : `tennis-api.com`, et ne rien construire aujourd'hui.**
+
+Elle est la seule des deux à franchir le seuil de couverture sur les lots réels,
+et la seule dont l'accès ne demande aucun arbitrage juridique. Son défaut est son
+**niveau de source 4** — le gabarit y plafonne la confiance à 2 — mais c'est le
+niveau qui convient à un **profil de fond** : ces taux ne portent pas une
+sélection, ils la contextualisent, exactement comme `Profil` et `Marge`
+aujourd'hui.
+
+**Trois réserves à lever avant de construire**, et aucune ne l'a été ici :
+
+1. la mesure porte sur **sept joueurs et une page** chacun. Il faut la refaire
+   sur les 196 joueurs des cinq derniers lots, avec pagination, avant d'engager
+   quoi que ce soit — c'est la règle du lot 3 et elle n'est pas satisfaite ;
+2. le **volume d'appels** du plan gratuit n'est pas connu. Un profil par joueur
+   et par lot, c'est de l'ordre de 40 appels par session ;
+3. `"success": true` sur un `result` vide impose de traiter le vide comme un
+   échec nommé — dans `ingestion_rejects` — dès la première ligne de collecteur.
+
+**Repli partiel mentionné pour mémoire** : `Tennismylife/TML-Database` est ATP
+seulement, quand les lots sont majoritairement WTA. Non évalué, conformément au
+brief.
+
+## §4 — Spécification du test de tendance sur le retard (non implémenté)
+
+**Modèle.** Régression logistique à un paramètre libre, avec offset :
+
+```
+logit( P(gagné) )  =  offset( logit(1/cote) )  +  a  +  b · log(retard_minutes)
+```
+
+- **Variable expliquée** : `picks.result ∈ {win, loss}` recodée 0/1. Les `void`
+  et `pending` sont hors population, comme partout.
+- **Variable explicative** : `log(picks.late_minutes)`. Le logarithme et non les
+  minutes brutes — la distribution va de 12 à 1557 minutes, médiane 133, donc
+  fortement asymétrique ; une pente linéaire y serait dictée par les trois
+  valeurs extrêmes. C'est aussi la forme déjà retenue pour le gradient de cote.
+- **Offset** : `logit(1/price)`, coefficient **fixé à 1** et non estimé. C'est ce
+  qui fait répondre à la question posée — *le retard apporte-t-il de
+  l'information au-delà de ce que le prix contient déjà* — plutôt qu'à « les
+  paris tardifs gagnent-ils plus », à laquelle un taux brut répond déjà et sans
+  intérêt. `1/cote` porte la marge du book, donc l'offset est **conservateur**.
+- **Population** : les 52 sélections tardives tranchées. Aucune sélection
+  principale n'y entre — elles n'ont pas de retard, et leur en attribuer un de
+  zéro créerait un point de masse à `log(0)`.
+- **Effectif et puissance** : 52 observations, un paramètre libre. Pour un test
+  bilatéral à 5 %, 80 % de puissance demandent un `b` d'environ **0,45 par unité
+  de log-minute** — soit un écart de ~11 points de probabilité entre un retard de
+  15 minutes et un de 150. L'effet suggéré par les bandes (−0,193 → +0,126 sur
+  l'échelle du résidu par sélection) est **du même ordre**, ce qui place ce test
+  à la limite de sa puissance : il peut conclure, il peut aussi ne rien voir sans
+  que ce soit une absence d'effet.
+
+**Ce que chaque résultat autoriserait à conclure :**
+
+| Résultat | Conclusion autorisée |
+| --- | --- |
+| `b > 0`, `p < 0,05` | La contamination est **établie** : le retard porte de l'information que le prix n'a pas, et elle croît avec lui. La population tardive cesse d'être comparable et la garde d'écriture peut être resserrée. |
+| `b > 0`, `p ≥ 0,05` | Rien. La direction est celle attendue, l'effectif ne tranche pas — c'est l'état actuel, et il faut le dire ainsi plutôt que « pas d'effet ». |
+| `b ≈ 0`, intervalle **serré** | La population tardive est un **artefact d'import** : elle peut être traitée comme la principale, et la stratification en bandes se retire. |
+| `b ≈ 0`, intervalle **large** | Non concluant, et c'est le cas le plus probable à 52 observations. À ne pas lire comme une équivalence — celle-ci se conclut par un TOST, pas par un test qui échoue à rejeter. |
+| `b < 0` | Contredirait le mécanisme. À ne pas retenir sans réplication : la direction n'était pas prédite, donc ce serait un résultat exploratoire. |
+
+**Bilatéral**, et c'est une condition : la direction a été **vue dans les bandes
+avant** d'être testée. Prendre l'unilatéral reviendrait à diviser le seuil par
+deux après avoir regardé — la faute que cette page a mis huit lots à corriger.
+
+**Ce que le test ne dirait pas** : rien sur la population principale, et rien sur
+la cause. Un retard corrélé au résultat peut venir d'une information acquise
+pendant le match, ou d'un biais de saisie — une sélection perdue se saisit
+peut-être moins vite. Le modèle ne les sépare pas.
+
+## §5 — Dettes
+
+**§5a — Horloge injectable : NON FAIT, et volontairement.** `freshness.note_for`
+est appelée depuis `tennis_history.freshness_line`, donc depuis
+`session.context_block`, donc depuis `build_prompt` : c'est **le chemin de
+génération de prompt**, que la contrainte d'exploitation interdit de toucher
+pendant qu'une session tourne. Le point est prêt à être fait — `note_for` et
+`state` prennent déjà un `now` optionnel, il reste à le faire descendre depuis
+`build_prompt` — et il doit l'être hors fenêtre de session.
+
+**§5b — Registre : aucun chemin à ajouter, vérifié.** `freshness.record` écrit
+dans `source_freshness`, qui n'est pas une table gardée : ce n'est pas une
+prédiction, c'est un témoin de collecte — même statut que `ingestion_rejects` et
+`imports_raw`. Le test du registre passe sans modification.
+
+**§5c — `changelog_mesure` : fait**, migration 057. Deux lignes pour la garde de
+péremption, une par portée : elle change ce que le modèle lit (`gabarit`) **et**
+ce qui entre en base (`ingestion`), et les deux effets se découpent séparément.
+
+**§5d — Population exploratoire : NON VÉRIFIABLE À CETTE HEURE.** La session est
+importée à partir de 16h et il est 15h30. La vérification à faire **après**
+l'import, et à ne pas supposer : `SELECT COUNT(*) FROM picks WHERE exploratoire = 1`
+doit être non nul, et la page `/stats` doit porter le bloc « Sélections
+exploratoires ». Si le compte reste à zéro, `sections.survey()` dira laquelle des
+deux causes s'applique — section jamais demandée, ou demandée et non collée.
+
+**§5e — Coût du gabarit : mesuré, non enregistré.** L'enregistrer demande
+d'instrumenter `save_prompt`, donc le chemin de génération — même blocage que
+§5a. La mesure, elle, se fait en lecture seule sur les 142 prompts archivés :
+
+```
+ajustement global : coût ≈ 8 107 fixe + 344 par bloc
+```
+
+Et la dérive, par jour d'analyse :
+
+| Jour | Prompts | Coût fixe | Coût par bloc |
+| --- | ---: | ---: | ---: |
+| 04/08 | 16 | 853 | 145 |
+| 06/08 | 17 | 5 512 | 174 |
+| 09/08 | 16 | 7 570 | 270 |
+| 12/08 | 10 | 7 477 | 665 |
+| 13/08 | 10 | 6 942 | 1 019 |
+| 14/08 | 16 | 9 881 | 754 |
+| 15/08 | 19 | 11 934 | 698 |
+
+**Le coût fixe a été multiplié par quatorze et le coût par bloc par cinq en onze
+jours.** Le budget de recherche, lui, est resté à sept dossiers. Ce n'est pas
+encore un problème — les deux plafonds de tokens sont des alarmes et ne voient
+jamais un lot réel — mais c'est la grandeur à surveiller, et elle est désormais
+chiffrée.
+
+Réserve de lecture : ces ajustements sont faits **par jour**, sur 4 à 19 prompts
+dont la taille de lot varie peu. Le 10/08 rend une pente négative (−127), ce qui
+n'a pas de sens physique et dit seulement que ce jour-là les lots étaient trop
+homogènes pour identifier une pente. Le chiffre à retenir est l'ajustement
+global, pas la colonne jour par jour.
