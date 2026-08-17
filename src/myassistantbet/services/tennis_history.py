@@ -32,7 +32,7 @@ from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.base import ProviderError
 from ..providers.tennisdata import TOURS, RawMatch, TennisDataClient
-from . import freshness, tennis_load, tennis_round
+from . import freshness, serve_stats, tennis_load, tennis_round
 from .ingestion import Reject
 
 logger = logging.getLogger(__name__)
@@ -1057,6 +1057,7 @@ def lines(
     settings: Settings | None = None,
     competition_id: int | None = None,
     cache: dict[str, Any] | None = None,
+    oddsapi_key: str | None = None,
 ) -> list[tuple[str, str]]:
     """Lignes d'historique tennis, pretes pour `render_event`.
 
@@ -1065,16 +1066,31 @@ def lines(
     une information sur lui.
     """
     settings = settings or get_settings()
+    # **Les lignes de service ne dependent pas de cette source-ci**, et il a fallu
+    # un rendu reel pour le voir : posees apres le retour anticipe ci-dessous,
+    # elles disparaissaient des que `tennis_matches` etait vide. Une source
+    # payante suspendue au telechargement d'un classeur sans rapport est
+    # exactement la dependance invisible que ce projet passe son temps a
+    # supprimer — et le symptome aurait ete un bloc normal, sans quatre lignes.
+    serve = serve_stats.serve_lines(
+        home,
+        away,
+        serve_stats.circuit_of(oddsapi_key or _competition_key(competition_id, settings)),
+        surface,
+        settings,
+    )
+
     index = known_keys(settings)
     if not index:
         # Base vierge : aucun historique n'a jamais ete telecharge. Ecrire
         # « aucun match connu » ferait chercher un probleme de rapprochement la
-        # ou il n'y a qu'une collecte jamais lancee.
-        return []
+        # ou il n'y a qu'une collecte jamais lancee. Les lignes de service, elles,
+        # viennent d'ailleurs et sortent quand meme.
+        return serve
 
     start = _start(commence_time)
     if start is None:
-        return []
+        return serve
     until = _iso(start)
 
     home_keys, away_keys = resolve(home, index), resolve(away, index)
@@ -1158,6 +1174,22 @@ def lines(
     if shape:
         rendered.append(("Profil", shape))
 
+    # **Apres `Profil` et avant `Marge`, parce qu'elles prolongent l'un et
+    # eclairent l'autre.** `Profil` decrit la forme d'un match ; ces lignes-ci
+    # decrivent comment un point se gagne, et `Ecart` est la ligne des marches
+    # de jeux au meme titre que `Marge`.
+    #
+    # Elles sont vides tant que `SERVE_LINES_ENABLED` est bas — le drapeau est
+    # lu dans `serve_lines`, une seule fois, et non ici : deux gardes pour un
+    # meme drapeau finiraient par ne plus dire la meme chose.
+    rendered += serve_stats.serve_lines(
+        home,
+        away,
+        serve_stats.circuit_of(oddsapi_key or _competition_key(competition_id, settings)),
+        surface,
+        settings,
+    )
+
     margin = _pair(_margin_fragment(home, recent[home]), _margin_fragment(away, recent[away]))
     if margin:
         rendered.append(("Marge", margin))
@@ -1204,6 +1236,23 @@ def _pair(home: str, away: str) -> str:
 
 
 # -- Ce qui s'est passe dans ce tournoi --------------------------------------
+
+
+def _competition_key(competition_id: int | None, settings: Settings) -> str:
+    """La cle The Odds API d'une competition. Vide si elle n'en a pas.
+
+    **Le circuit se lit dans la cle**, jamais dans un libelle : les epreuves
+    masculine et feminine de Cincinnati portent des noms differents, et « ATP
+    Cincinnati Open » ne se distingue de son homologue que par
+    `tennis_atp_` / `tennis_wta_`. Meme regle que partout ici.
+    """
+    if not competition_id:
+        return ""
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT oddsapi_key FROM competitions WHERE id = ?", (competition_id,)
+        ).fetchone()
+    return str((row["oddsapi_key"] if row else "") or "")
 
 
 def tournament_names(competition_id: int | None, settings: Settings) -> tuple[str, ...]:

@@ -195,6 +195,10 @@ Pour tout sport, et d'abord — c'est bloquant :
     qui subit quoi — c'est ce qui décide des marchés par set. La ligne
     « Profil » en donne l'empreinte chiffrée : confirme-la ou contredis-la par
     ta recherche, ne la refais pas de zéro
+{%- if serve_lines %}
+    Les lignes « Service », « Retour », « Jeux » et « Ecart » en donnent l'empreinte chiffrée
+    de fond : confirme-les ou contredis-les par ta recherche, ne les refais pas de zéro.
+{%- endif %}
   · Confrontations directes, et sur cette surface
   · Surface et conditions : vitesse du court, balles, altitude, chaleur,
     vent, session de jour ou de nuit, court central ou annexe
@@ -1196,8 +1200,24 @@ trois dernières saisons, ATP et WTA :
     pliés en deux sets : la forme d'un match de ce joueur, là où « Usure » ne dit
     que le temps passé. C'est la ligne des marchés de jeux, et le plus proche du
     **style** que les données permettent — des tie-breaks décrivent un joueur qui
-    tient son engagement, des sets secs un tableau de breaks. Aces, première
-    balle et balles de break ne sont dans aucune source.
+    tient son engagement, des sets secs un tableau de breaks.
+{%- if serve_lines %}
+    Aces, première balle et balles de break sont désormais servis par les lignes
+    « Service », « Retour » et « Jeux » ci-dessous : « Profil » décrit la **forme** d'un
+    match, celles-là décrivent **comment un point se gagne**. Les deux se lisent ensemble.
+  · **« Service », « Retour » et « Jeux »** — les taux agrégés sur 52 semaines, surface du
+    tournoi quand le volume le permet, calculés en sommant les points et non en moyennant des
+    matchs. Chaque taux porte son dénominateur, et la ligne porte sa date d'arrêt. Ces taux
+    **ne sont pas ajustés du niveau des adversaires** — lis-les avec « Niveau adv. », un
+    pourcentage obtenu contre des qualifiés ne vaut pas le même contre le haut du tableau. Ce
+    sont des **fréquences passées** : la même interdiction que partout ailleurs s'applique,
+    ne les rapproche jamais d'une cote et n'en tire aucune probabilité ni aucun total de jeux
+    attendu.
+  · **« Ecart »** est la soustraction des deux, calculée par l'application. Elle nomme le
+    déséquilibre, elle ne prédit rien. C'est la ligne des marchés de jeux, avec « Marge ».
+{%- else %}
+    Aces, première balle et balles de break ne sont dans aucune source.
+{%- endif %}
   · **« Marge »** — l'écart de jeux moyen en victoire, puis en défaite, chacun
     avec son compte. C'est la grandeur du **handicap jeux**, et la seule ligne du
     bloc qui en parle ; une moyenne unique les annulerait.

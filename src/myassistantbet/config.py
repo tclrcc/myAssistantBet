@@ -70,6 +70,19 @@ class Settings(BaseSettings):
     #: largement de quoi voir venir et corriger. Il se regle sans toucher au code.
     rapidapi_call_floor: int = 20_000
 
+    #: Les lignes `Service`, `Retour`, `Jeux` et `Ecart` des blocs tennis.
+    #:
+    #: **Defaut a faux, et c'est le point le plus important de la partie
+    #: gabarit.** Le passage du budget a dix dossiers et l'ajout de ces lignes
+    #: modifient tous deux ce que le modele produit. Livres le meme jour, leurs
+    #: effets seraient indissociables et le `changelog_mesure` ne servirait a
+    #: rien — il existe precisement pour que deux changements de cadre se
+    #: decoupent.
+    #:
+    #: Il se bascule apres quelques sessions, et sa **vraie date d'activation**
+    #: entre au journal des mesures — pas la date du commit.
+    serve_lines_enabled: bool = False
+
     #: Delai entre deux appels a `tennis-api.com`, en secondes.
     #:
     #: **Aucun en-tete de debit n'est servi par ce fournisseur** — ni

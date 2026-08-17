@@ -493,7 +493,7 @@ def context_block(
         # L'historique des matchs joues : confrontations directes, palmares dans
         # ce tournoi, forme, bilan de surface et abandons.
         lines += tennis_history.lines(
-            home, away, surface, commence_time, settings, competition_id, cache
+            home, away, surface, commence_time, settings, competition_id, cache, oddsapi_key
         )
     return lines
 

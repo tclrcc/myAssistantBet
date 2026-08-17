@@ -1291,3 +1291,211 @@ def load_aggregate(
     if large is None or int(large["first_serve_of"]) < MIN_SERVE_POINTS:
         return None
     return _agg_row(large, fell_back=True)
+
+
+# -- Le rendu dans le bloc ---------------------------------------------------
+#
+# **Quatre lignes, et elles prolongent `Profil` plutot que de le doubler.**
+# `Profil` decrit la **forme** d'un match — mediane de jeux, tie-breaks, sets
+# secs ; celles-ci decrivent **comment un point se gagne**. Les deux se lisent
+# ensemble, et c'est ce que dit le gabarit.
+#
+# Elles vivent derriere `SERVE_LINES_ENABLED`, **defaut a faux**. Le budget de
+# recherche et ces lignes modifient tous deux ce que le modele produit ; livres
+# le meme jour, leurs effets seraient indissociables et le `changelog_mesure` ne
+# servirait a rien.
+
+#: La surface se dit en deux vocabulaires : `competitions.surface` porte
+#: `hard`/`clay`/`grass`, la source `Hard`/`Clay`/`Grass`. Le rapprochement se
+#: fait ici, une fois — le recopier ailleurs le ferait diverger.
+SURFACE_TO_SOURCE = {"hard": "Hard", "clay": "Clay", "grass": "Grass", "carpet": "Carpet"}
+
+#: Ce qu'une ligne ecrit quand un joueur n'atteint pas le seuil. **Jamais une
+#: ligne muette** : le bloc porte l'autre joueur, et une moitie absente sans
+#: mention se lirait comme un oubli de collecte.
+UNAVAILABLE = "non disponible"
+
+#: Nombre de decimales des taux rendus. Un pourcentage a deux decimales suggere
+#: une precision que 400 points ne portent pas.
+_PCT = 1
+
+
+def circuit_of(oddsapi_key: str) -> str:
+    """`atp` ou `wta`, lu dans la cle de competition. Vide si ni l'un ni l'autre.
+
+    Le circuit se lit **dans la cle** et non dans un libelle, meme regle que
+    partout : `tennis_atp_cincinnati_open` le porte, « Cincinnati Open » non —
+    et les epreuves masculine et feminine y ont des noms differents.
+    """
+    cle = str(oddsapi_key or "").lower()
+    for tour in ("atp", "wta"):
+        if f"_{tour}_" in cle or cle.startswith(f"tennis_{tour}"):
+            return tour
+    return ""
+
+
+def _pct(value: float | None) -> str:
+    return "" if value is None else f"{100 * value:.{_PCT}f}%"
+
+
+def _serve_fragment(player: str, agg: ServeAggregate | None) -> str:
+    """« Taylor Fritz 64.8% 1re · 78.9% s/1re · 54.1% s/2e · 8.1% aces · 4.2% df »."""
+    if agg is None:
+        return f"{player} {UNAVAILABLE}"
+    morceaux = [
+        f"{_pct(agg.first_serve_pct)} 1re",
+        f"{_pct(agg.won_first_pct)} s/1re",
+        f"{_pct(agg.won_second_pct)} s/2e",
+        f"{_pct(agg.ace_pct)} aces",
+        f"{_pct(agg.double_fault_pct)} df",
+    ]
+    return f"{player} " + " · ".join(m for m in morceaux if not m.startswith(" "))
+
+
+def _return_fragment(player: str, agg: ServeAggregate | None) -> str:
+    if agg is None:
+        return f"{player} {UNAVAILABLE}"
+    bp = _pct(agg.bp_pct)
+    detail = f" · {bp} BP converties" if bp else ""
+    return f"{player} {_pct(agg.return_pct)} pts{detail} ({agg.return_points} pts recus)"
+
+
+def _games_fragment_serve(player: str, agg: ServeAggregate | None) -> str:
+    if agg is None or not agg.enough_games:
+        return f"{player} {UNAVAILABLE}"
+    return (
+        f"{player} tenue {_pct(agg.hold_pct)} · break {_pct(agg.break_pct)} "
+        f"({agg.served} jeux servis)"
+    )
+
+
+def _scope_fragment(
+    home_agg: ServeAggregate | None, away_agg: ServeAggregate | None, surface: str
+) -> str:
+    """La ligne de portee : surface, fenetre, denominateurs, **et `as_of`**.
+
+    L'`as_of` est **obligatoire**. Sans lui, une donnee vieille de six jours se
+    lirait comme actuelle — le defaut que `Fraicheur` existe pour corriger
+    ailleurs. Et le repli se dit : un taux de dur qui melange trois surfaces
+    sans le signaler serait une affirmation fausse.
+    """
+    connus = [agg for agg in (home_agg, away_agg) if agg is not None]
+    if not connus:
+        return ""
+    replie = any(agg.fell_back for agg in connus)
+    portee = "toutes surfaces" if replie or not surface else surface
+    points = " et ".join(str(agg.service_points) for agg in connus)
+    dates = sorted(agg.as_of for agg in connus if agg.as_of)
+    arret = f", arretees au {_short_day(dates[-1])}" if dates else ""
+    mention = " — surface repliee" if replie and surface else ""
+    return f"({portee}, 52 sem., {points} pts de service{arret}){mention} [tennis-api.com]"
+
+
+def _short_day(iso: str) -> str:
+    parts = str(iso)[:10].split("-")
+    return f"{parts[2]}/{parts[1]}" if len(parts) == 3 else str(iso)[:10]
+
+
+def _gap_fragment(
+    home: str,
+    away: str,
+    home_agg: ServeAggregate | None,
+    away_agg: ServeAggregate | None,
+) -> str:
+    """L'ecart, **calcule par l'application** : une soustraction deterministe.
+
+    Ce que l'application peut trancher ne se delegue pas au modele — meme regle
+    que le cran de confiance et le comptage de la section C.
+
+    **Elle nomme un desequilibre, elle ne predit rien.** La mention « taux non
+    ajustes du niveau d'adversaire » n'est pas une precaution de style : un
+    pourcentage obtenu contre des qualifies ne vaut pas le meme contre le haut
+    du tableau, et c'est `Niveau adv.` qui le dit deux lignes plus haut.
+    """
+    if home_agg is None or away_agg is None:
+        return ""
+    lignes = []
+    for etiquette, gauche, droite in (
+        ("service", home_agg.first_serve_pct, away_agg.first_serve_pct),
+        ("retour", home_agg.return_pct, away_agg.return_pct),
+    ):
+        if gauche is None or droite is None:
+            continue
+        ecart = 100 * (gauche - droite)
+        gagnant = home if ecart >= 0 else away
+        detail = " sur la 1re balle" if etiquette == "service" else ""
+        lignes.append(f"{etiquette} {abs(ecart):+.{_PCT}f} pts{detail} pour {gagnant}")
+    if not lignes:
+        return ""
+    lignes[-1] += " · taux non ajustes du niveau d'adversaire"
+    return " | ".join(lignes)
+
+
+def serve_lines(
+    home: str,
+    away: str,
+    circuit: str,
+    surface: str | None,
+    settings: Settings | None = None,
+) -> list[tuple[str, str]]:
+    """Les quatre lignes de service d'un bloc tennis. Vide si le drapeau est bas.
+
+    **Aucune ligne quand les deux joueurs manquent** : un bloc qui annoncerait
+    « non disponible » des deux cotes couterait quatre lignes pour ne rien dire.
+    Une seule moitie manquante, en revanche, se dit — le bloc porte l'autre, et
+    un silence se lirait comme un oubli de collecte.
+    """
+    settings = settings or get_settings()
+    if not settings.serve_lines_enabled or not circuit:
+        return []
+
+    cible = SURFACE_TO_SOURCE.get(str(surface or "").lower(), "")
+    home_agg = _for_player(home, circuit, cible, settings)
+    away_agg = _for_player(away, circuit, cible, settings)
+    if home_agg is None and away_agg is None:
+        return []
+
+    portee = _scope_fragment(home_agg, away_agg, cible)
+    service = _pair_lines(_serve_fragment(home, home_agg), _serve_fragment(away, away_agg), portee)
+    rendu = [
+        ("Service", service),
+        (
+            "Retour",
+            _pair_lines(_return_fragment(home, home_agg), _return_fragment(away, away_agg)),
+        ),
+    ]
+    # **`Jeux` s'omet quand aucun des deux camps n'a le volume**, et c'est la
+    # regle du bloc depuis toujours : une ligne sans donnee est omise, jamais
+    # rendue vide. La timeline a sa propre couverture — partielle, trois
+    # rencontres sur huit muettes — donc ce cas est frequent alors que `Service`
+    # est servi. Deux « non disponible » cote a cote couteraient une ligne pour
+    # ne rien dire ; une seule moitie manquante, elle, se dit.
+    if (home_agg and home_agg.enough_games) or (away_agg and away_agg.enough_games):
+        rendu.append(
+            (
+                "Jeux",
+                _pair_lines(
+                    _games_fragment_serve(home, home_agg), _games_fragment_serve(away, away_agg)
+                ),
+            )
+        )
+    ecart = _gap_fragment(home, away, home_agg, away_agg)
+    if ecart:
+        rendu.append(("Ecart", ecart))
+    return rendu
+
+
+def _pair_lines(*fragments: str) -> str:
+    """Un joueur par ligne. **Trois informations par fragment**, donc deux
+    joueurs bout a bout ne se lisent plus d'un coup d'oeil — meme arbitrage que
+    `Rest` au tennis, qui rend un joueur par ligne pour la meme raison."""
+    return "\n".join(fragment for fragment in fragments if fragment)
+
+
+def _for_player(
+    player: str, circuit: str, surface: str, settings: Settings
+) -> ServeAggregate | None:
+    """L'agregat d'un joueur, resolu par son alias local quand il en a un."""
+    identity = load_identity(player, circuit, settings)
+    canonical = identity.canonical if identity and identity.resolved else player
+    return load_aggregate(canonical, circuit, surface, settings)

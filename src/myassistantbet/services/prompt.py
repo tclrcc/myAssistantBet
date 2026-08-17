@@ -937,6 +937,17 @@ def build_prompt(
             # session : meme regle que les libelles de contexte, un cran plus
             # loin — celle-ci est faite pour ne jamais servir.
             handicap_alerts=any(handicap_alert(event) for event in events),
+            # Vrai des qu'un bloc du lot porte les lignes de service.
+            #
+            # **La porte est plus etroite que le drapeau, et c'est voulu.** Le
+            # brief demande de conditionner les trois passages a
+            # `SERVE_LINES_ENABLED` ; se poser sur les libelles reellement
+            # rendus l'implique — le drapeau bas ne produit aucune ligne, donc
+            # aucun libelle — et ferme en plus le cas ou le drapeau est haut sur
+            # un lot dont aucun joueur n'atteint le seuil. Meme regle que partout
+            # ici : un mode d'emploi ne se paie que sur un lot qui le porte.
+            serve_lines="Service"
+            in {label for event in events for label, _ in event.context_lines},
             # Vrai des qu'un bloc du lot lit ses agregats dans le championnat
             # domestique de ses equipes. Meme regle que les libelles de
             # contexte : le mode d'emploi d'une lecture croisee ne se paie pas

@@ -127,6 +127,19 @@ CONTEXT_ICONS = {
     # ne dit rien du match — seulement jusqu'ou remonte ce qu'on sait.
     "Niveau adv.": "jauge",
     "Marge": "relief",
+    # Les quatre lignes de service. **Elles entrent ici le jour ou elles sont
+    # ecrites**, et pas plus tard : huit libelles ont deja sorti sans
+    # pictogramme, releves en rendant 250 evenements reels, et la colonne se
+    # vidait sans rien dire.
+    #
+    # « Service » et « Retour » sont deux faces d'un meme point, d'ou la meme
+    # jauge que « Niveau adv. » — les trois mesurent un niveau. « Jeux » prend le
+    # relief de « Profil » et « Marge », qui decrivent comme lui la forme d'une
+    # rencontre. « Ecart » aussi : c'est une soustraction entre deux reliefs.
+    "Service": "jauge",
+    "Retour": "jauge",
+    "Jeux": "relief",
+    "Ecart": "relief",
     "Historique": "horloge",
     # Ce que le retard de l'historique coute en matchs. Meme horloge que la ligne
     # dont elle tire la consequence : les deux parlent du temps, pas du match.

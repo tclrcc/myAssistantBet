@@ -864,3 +864,160 @@ def test_le_seuil_est_en_points_de_service_et_non_en_matchs() -> None:
 
     assert not maigre.enough
     assert dense.enough
+
+
+# -- Le rendu dans le bloc ---------------------------------------------------
+
+
+def _agg(joueur: str, **extra: Any) -> serve_stats.ServeAggregate:
+    """Un agregat plausible : 1 000 points de service, largement au-dessus du seuil."""
+    defauts: dict[str, Any] = {
+        "first_serve": 648,
+        "first_serve_of": 1000,
+        "aces": 81,
+        "double_faults": 15,
+        "won_first": 511,
+        "won_first_of": 648,
+        "won_second": 190,
+        "won_second_of": 352,
+        "bp_converted": 42,
+        "bp_converted_of": 100,
+        "return_points": 980,
+        "return_won": 335,
+        "served": 317,
+        "held": 277,
+        "returned": 310,
+        "broke": 65,
+        "games_matches": 30,
+        "as_of": "2026-08-16",
+    }
+    defauts.setdefault("surface", "Hard")
+    defauts.update(extra)
+    return serve_stats.ServeAggregate(player=joueur, circuit="atp", **defauts)
+
+
+def _drapeau(monkeypatch: pytest.MonkeyPatch, actif: bool) -> Settings:
+    from myassistantbet.config import get_settings
+
+    monkeypatch.setenv("SERVE_LINES_ENABLED", "1" if actif else "0")
+    get_settings.cache_clear()
+    return get_settings()
+
+
+def test_le_drapeau_bas_ne_rend_aucune_ligne(
+    migrated: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**Defaut a faux, et c'est le point le plus important de la partie
+    gabarit.**
+
+    Le budget et ces lignes modifient tous deux ce que le modele produit ;
+    livres le meme jour, leurs effets seraient indissociables et le
+    `changelog_mesure` ne servirait a rien.
+    """
+    reglages = _drapeau(monkeypatch, False)
+    serve_stats.store_aggregate(_agg("Taylor Fritz"), reglages)
+    serve_stats.store_aggregate(_agg("Alex Michelsen"), reglages)
+
+    assert serve_stats.serve_lines("Taylor Fritz", "Alex Michelsen", "atp", "hard", reglages) == []
+
+
+def test_les_quatre_lignes_sortent_quand_le_drapeau_est_haut(
+    migrated: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    reglages = _drapeau(monkeypatch, True)
+    serve_stats.store_aggregate(_agg("Taylor Fritz"), reglages)
+    serve_stats.store_aggregate(_agg("Alex Michelsen", first_serve=610), reglages)
+
+    lignes = serve_stats.serve_lines("Taylor Fritz", "Alex Michelsen", "atp", "hard", reglages)
+
+    assert [label for label, _ in lignes] == ["Service", "Retour", "Jeux", "Ecart"]
+
+
+def test_l_as_of_est_obligatoire_sur_la_ligne_rendue(
+    migrated: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**Sans lui, une donnee vieille de six jours serait lue comme actuelle** —
+    le defaut que `Fraicheur` existe pour corriger ailleurs."""
+    reglages = _drapeau(monkeypatch, True)
+    serve_stats.store_aggregate(_agg("Taylor Fritz"), reglages)
+    serve_stats.store_aggregate(_agg("Alex Michelsen"), reglages)
+
+    rendu = dict(serve_stats.serve_lines("Taylor Fritz", "Alex Michelsen", "atp", "hard", reglages))
+
+    assert "arretees au 16/08" in rendu["Service"]
+    assert "pts de service" in rendu["Service"], "le denominateur voyage avec"
+    assert "[tennis-api.com]" in rendu["Service"], "attribution de la source"
+
+
+def test_un_seul_joueur_au_dessus_du_seuil_rend_non_disponible_pour_l_autre(
+    migrated: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**Jamais une ligne muette.** Le bloc porte l'autre joueur, et une moitie
+    absente sans mention se lirait comme un oubli de collecte."""
+    reglages = _drapeau(monkeypatch, True)
+    serve_stats.store_aggregate(_agg("Taylor Fritz"), reglages)
+
+    rendu = dict(serve_stats.serve_lines("Taylor Fritz", "Alex Michelsen", "atp", "hard", reglages))
+
+    assert "Taylor Fritz 64.8% 1re" in rendu["Service"]
+    assert "Alex Michelsen non disponible" in rendu["Service"]
+    assert "Ecart" not in rendu, "une soustraction demande les deux cotes"
+
+
+def test_aucune_ligne_quand_les_deux_joueurs_manquent(
+    migrated: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Quatre lignes de « non disponible » couteraient de la place pour ne rien
+    dire — c'est la regle du bloc depuis toujours."""
+    reglages = _drapeau(monkeypatch, True)
+
+    assert serve_stats.serve_lines("A", "B", "atp", "hard", reglages) == []
+
+
+def test_l_ecart_est_calcule_par_l_application(
+    migrated: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**Ce que l'application peut trancher ne se delegue pas au modele** —
+    meme regle que le cran de confiance et le comptage de la section C."""
+    reglages = _drapeau(monkeypatch, True)
+    serve_stats.store_aggregate(_agg("Taylor Fritz", first_serve=648), reglages)
+    serve_stats.store_aggregate(_agg("Alex Michelsen", first_serve=610), reglages)
+
+    rendu = dict(serve_stats.serve_lines("Taylor Fritz", "Alex Michelsen", "atp", "hard", reglages))
+
+    assert "service +3.8 pts sur la 1re balle pour Taylor Fritz" in rendu["Ecart"]
+    assert "taux non ajustes du niveau d'adversaire" in rendu["Ecart"]
+
+
+def test_le_repli_de_surface_se_dit_dans_la_ligne(
+    migrated: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Un taux de dur qui melange trois surfaces sans le signaler serait une
+    affirmation fausse."""
+    reglages = _drapeau(monkeypatch, True)
+    for joueur in ("Taylor Fritz", "Alex Michelsen"):
+        serve_stats.store_aggregate(_agg(joueur, surface=""), reglages)
+
+    rendu = dict(serve_stats.serve_lines("Taylor Fritz", "Alex Michelsen", "atp", "hard", reglages))
+
+    assert "toutes surfaces" in rendu["Service"]
+    assert "surface repliee" in rendu["Service"]
+
+
+def test_le_circuit_se_lit_dans_la_cle_et_jamais_dans_un_libelle() -> None:
+    """Les epreuves masculine et feminine de Cincinnati portent des noms
+    differents : seule la cle les distingue."""
+    assert serve_stats.circuit_of("tennis_atp_cincinnati_open") == "atp"
+    assert serve_stats.circuit_of("tennis_wta_cincinnati_open") == "wta"
+    assert serve_stats.circuit_of("soccer_epl") == ""
+
+
+def test_chaque_libelle_rendu_a_son_pictogramme() -> None:
+    """**Toute ligne ajoutee a un bloc entre dans `CONTEXT_ICONS` le meme jour.**
+
+    Huit libelles ont deja sorti sans pictogramme, releves en rendant 250
+    evenements reels : la colonne se vidait sans rien dire.
+    """
+    from myassistantbet.services.labels import CONTEXT_ICONS
+
+    assert {"Service", "Retour", "Jeux", "Ecart"} <= set(CONTEXT_ICONS)
