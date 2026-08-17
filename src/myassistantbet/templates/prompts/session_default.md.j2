@@ -274,18 +274,31 @@ pas des angles : dis ce qu'ils changent sur un match précis, ou ne les cite pas
   · {{ note.line }}
 {%- endfor %}
 {% endif %}
-{% if research.crowded %}
+{% if research.dossiers %}
 ### BUDGET DE RECHERCHE
 
 Ce lot comporte {{ research.lot }} matchs. **Ce prompt** ouvre
-**{{ research.budget }} dossiers** en recherche approfondie — le budget se compte par
-prompt, et une journée en produit plusieurs. Au-delà, la recherche se
+**{{ research.available }} dossiers** en recherche approfondie — le budget se compte par
+prompt, et une journée en produit plusieurs.
+{% if research.crowded %}
+Au-delà, la recherche se
 priorise : les matchs **non recherchés** se rendent en `lecture`, et **c'est un
 résultat attendu, pas un manquement** — la consigne « si la section A laisse trop de
 trous, c'est un PASSE » vise un dossier travaillé et resté creux, pas un dossier
 qu'un budget fini n'a pas permis d'ouvrir. Leur bloc est là, plein : il y a quelque
 chose à lire.
-{% if research.dossiers %}
+{% else %}
+Le lot tient dans ce budget : **tous les matchs sont ouvrables**, et aucun n'est
+écarté faute de place. La fiche ci-dessous n'est donc pas un tri mais un **ordre
+de traitement** — par lequel commencer, pas lesquels laisser. La section F
+continue de nommer ceux que tu n'as pas ouverts.
+{% endif %}
+Ce nombre est un **plafond, jamais un objectif**. Un dossier ouvert est un dossier où tu
+as réellement cherché ; si un bloc n'appelle aucune recherche, ne l'ouvre pas et ne
+l'inscris pas dans `dossiers_ouverts`. Une liste gonflée pour atteindre le budget rend
+`lecture` indiscernable d'un fait daté, et c'est la seule comparaison que ce relevé
+puisse produire.
+
 La fiche ci-dessous classe les dossiers par **ce qu'une recherche peut y changer**.
 Elle ne regarde aucune cote : trier sur le prix ne ferait jamais chercher là où le
 marché est confiant, donc ne ferait jamais trouver ce qui le contredit. Traite-les
@@ -317,7 +330,6 @@ disent pas la même chose :
    -> {{ link }}
 {%- endfor %}
 {% endfor %}
-{% endif %}
 {% endif %}
 {% for block in event_blocks %}
 {{ block }}

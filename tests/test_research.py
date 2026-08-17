@@ -16,6 +16,7 @@ from myassistantbet.services import context as context_service
 from myassistantbet.services import research
 from myassistantbet.services.context import KIND_H2H, KIND_TEAMS, store
 from myassistantbet.services.render import RenderableEvent
+from myassistantbet.services.thresholds import value_of
 
 PARIS = ZoneInfo("Europe/Paris")
 COUP_ENVOI = datetime(2026, 8, 13, 20, 0, tzinfo=PARIS)
@@ -138,16 +139,22 @@ def test_un_lot_qui_tient_dans_le_budget_ne_produit_aucune_fiche(migrated: Setti
     assert fiche.dossiers == []
 
 
-def test_un_lot_trop_grand_ouvre_la_fiche(migrated: Settings) -> None:
+def test_un_lot_trop_grand_est_declare_a_l_etroit(migrated: Settings) -> None:
+    """**Le critere est une propriete, jamais la valeur du jour.**
+
+    Le budget se regle : ecrire son nombre ici ferait casser le test le jour ou
+    on le change, sans qu'aucune regle ait bouge.
+    """
     fiche = research.sheet([_event(i) for i in range(1, 22)], migrated)
 
-    assert fiche.crowded is True
     assert fiche.lot == 21
-    assert fiche.budget == 7
+    assert fiche.budget == value_of("recherche_dossiers", migrated)
+    assert fiche.crowded is (fiche.lot > fiche.budget)
 
 
-def test_la_fiche_ne_depasse_jamais_le_budget(migrated: Settings) -> None:
-    """Une fiche de vingt lignes reproduirait le probleme qu'elle corrige."""
+def test_la_fiche_produit_le_minimum_du_budget_et_du_lot(migrated: Settings) -> None:
+    """**`min(budget, lot)`**, et une fiche de vingt lignes reproduirait le
+    probleme qu'elle corrige."""
     events = []
     for index in range(1, 22):
         event_id = 100 + index
@@ -157,7 +164,29 @@ def test_la_fiche_ne_depasse_jamais_le_budget(migrated: Settings) -> None:
 
     fiche = research.sheet(events, migrated)
 
-    assert len(fiche.dossiers) == fiche.budget == 7
+    assert len(fiche.dossiers) == min(fiche.budget, fiche.lot) == fiche.available
+
+
+def test_sur_un_lot_plus_court_que_le_budget_la_fiche_liste_tout(
+    migrated: Settings,
+) -> None:
+    """**Changement voulu du lot 5.** Elle ne se rendait pas sous le seuil, au
+    motif que « classer trois dossiers sur trois n'apprend rien ». C'est vrai
+    d'un **tri** et faux d'un **ordre de traitement** : tous les matchs sont
+    ouvrables, et le classement dit encore par lequel commencer.
+    """
+    events = []
+    for index in range(1, 4):
+        event_id = 300 + index
+        _en_base(migrated, event_id, index)
+        _aller(migrated, event_id, buts_adversaire=1)
+        events.append(_event(index, event_id))
+
+    fiche = research.sheet(events, migrated)
+
+    assert not fiche.crowded
+    assert fiche.available == 3
+    assert len(fiche.dossiers) == 3
 
 
 # -- Le classement -----------------------------------------------------------
@@ -371,16 +400,42 @@ def _lot(settings: Settings, matchs: int) -> int:
     return session_id
 
 
-def test_la_fiche_ne_parait_pas_sur_un_lot_qui_tient(migrated: Settings) -> None:
-    """Le mode d'emploi ne se paie que sur un lot qui le porte, comme partout."""
+def test_un_lot_qui_tient_dans_le_budget_recoit_un_ordre_et_non_un_tri(
+    migrated: Settings,
+) -> None:
+    """**Le texte change avec le lot, et c'est tout ce que `crowded` decide.**
+
+    « Les matchs non recherches se rendent en lecture » est vrai au-dela du
+    budget et **hors sujet en deca** : sur un lot de 3 avec un budget de 10,
+    aucun match n'est ecarte faute de place, et laisser la phrase ferait
+    renoncer a des dossiers qu'il y avait tout le temps d'ouvrir.
+    """
     from myassistantbet.services.prompt import build_prompt
 
-    corps = build_prompt(
+    rendu = build_prompt(
         _lot(migrated, 3), settings=migrated, now=datetime(2026, 8, 13, 12, tzinfo=UTC)
     ).body
+    corps = " ".join(rendu.split())
 
-    assert "BUDGET DE RECHERCHE" not in corps
-    assert "À CHERCHER EN PRIORITÉ" not in corps
+    assert "BUDGET DE RECHERCHE" in corps
+    assert "**tous les matchs sont ouvrables**" in corps
+    assert "un **ordre de traitement**" in corps
+    assert "les matchs **non recherchés** se rendent en `lecture`" not in corps
+
+
+def test_le_plafond_n_est_jamais_un_objectif(migrated: Settings) -> None:
+    """**Une liste gonflee rend `lecture` indiscernable d'un fait date**, et
+    c'est la seule comparaison que ce releve puisse produire."""
+    from myassistantbet.services.prompt import build_prompt
+
+    corps = " ".join(
+        build_prompt(
+            _lot(migrated, 12), settings=migrated, now=datetime(2026, 8, 13, 12, tzinfo=UTC)
+        ).body.split()
+    )
+
+    assert "Ce nombre est un **plafond, jamais un objectif**." in corps
+    assert "si un bloc n'appelle aucune recherche, ne l'ouvre pas" in corps
 
 
 def test_le_prompt_ouvre_la_fiche_au_dela_du_budget(migrated: Settings) -> None:
@@ -411,7 +466,13 @@ def test_le_prompt_ouvre_la_fiche_au_dela_du_budget(migrated: Settings) -> None:
     assert "**c'est un résultat attendu, pas un manquement**" in corps
     assert "Leur bloc est là, plein : il y a quelque chose à lire." in corps
     assert "À CHERCHER EN PRIORITÉ" in rendu
-    assert rendu.count("   -> rechercher") == 7, "une entree par dossier, plafonnee au budget"
+    # **Une propriete, jamais la valeur du jour** : le budget se regle, et
+    # recopier son nombre ferait casser ce test le jour ou on le change sans
+    # qu'aucune regle ait bouge.
+    budget = value_of("recherche_dossiers", migrated)
+    assert rendu.count("   -> rechercher") == min(budget, 21), (
+        "une entree par dossier, plafonnee a min(budget, lot)"
+    )
 
 
 def test_le_prompt_dit_qu_aucune_cote_ne_trie(migrated: Settings) -> None:

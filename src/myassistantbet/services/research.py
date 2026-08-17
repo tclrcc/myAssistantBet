@@ -192,13 +192,30 @@ class Sheet:
 
     @property
     def crowded(self) -> bool:
-        """Vrai quand le lot depasse ce qu'une session peut couvrir.
+        """Vrai quand le lot depasse ce que le budget couvre.
 
-        En dessous, la fiche ne se rend pas : classer trois dossiers sur trois
-        n'apprend rien, et la ligne de budget ferait renoncer a un match qu'il y
-        avait tout le temps de traiter.
+        **Ce n'est plus la condition d'affichage de la fiche, et c'est un
+        changement voulu.** Elle ne se rendait pas sous le seuil, au motif que
+        « classer trois dossiers sur trois n'apprend rien ». C'est vrai d'un
+        **tri** et faux d'un **ordre de traitement** : sur un lot plus court que
+        le budget, tous les matchs sont ouvrables, et le classement dit encore
+        par lequel commencer.
+
+        `crowded` ne decide donc plus que du **texte** : au-dessus, les matchs
+        non recherches se rendent en `lecture` et c'est un resultat attendu ; en
+        dessous, cette phrase serait hors sujet et trompeuse.
         """
         return self.lot > self.budget
+
+    @property
+    def available(self) -> int:
+        """Dossiers reellement ouvrables : `min(budget, lot)`.
+
+        Sur un lot plus court que le budget, c'est le lot qui borne — et le
+        prompt annonce ce nombre-la plutot que le reglage, sinon il inviterait a
+        chercher des dossiers qui n'existent pas.
+        """
+        return min(self.budget, self.lot)
 
 
 def sheet(events: list[RenderableEvent], settings: Settings | None = None) -> Sheet:
@@ -212,7 +229,7 @@ def sheet(events: list[RenderableEvent], settings: Settings | None = None) -> Sh
     settings = settings or get_settings()
     budget = threshold("recherche_dossiers", settings)
     resultat = Sheet(lot=len(events), budget=budget)
-    if len(events) <= budget:
+    if not events:
         return resultat
 
     dossiers = [_dossier(event, settings) for event in events]
@@ -220,6 +237,7 @@ def sheet(events: list[RenderableEvent], settings: Settings | None = None) -> Sh
     # ici » sur un dossier dont tous les criteres disent l'inverse.
     retenus = [item for item in dossiers if item.score > 0]
     retenus.sort(key=lambda item: item.rank_key)
+    # `min(budget, lot)` par construction : `retenus` ne peut pas depasser le lot.
     resultat.dossiers = retenus[:budget]
     logger.info(
         "fiche de recherche : %d dossiers retenus sur %d, budget %d",
