@@ -118,6 +118,7 @@ SECTIONS: tuple[Section, ...] = (
     Section("", EXPLORATORY_BLOCK),
     Section(EXPLORATORY_BLOCK, "Par palier"),
     Section("", LATE_BLOCK),
+    Section(LATE_BLOCK, "Par retard"),
     Section("", COMBOS_BLOCK),
     Section("", LABELLING_BLOCK),
     Section(LABELLING_BLOCK, "Par confiance annoncée"),
@@ -322,6 +323,10 @@ class StatsReport:
                 bool(self.exploratory.by_tier),
             ),
             (Section("", LATE_BLOCK), not self.late.empty),
+            (
+                Section(LATE_BLOCK, "Par retard"),
+                not self.late.empty and bool(self.late.bands),
+            ),
             (Section("", COMBOS_BLOCK), not self.combos.empty),
             (Section("", LABELLING_BLOCK), bool(self.labelling)),
             *((Section(LABELLING_BLOCK, f"Par {block.label}"), True) for block in self.labelling),
@@ -769,6 +774,31 @@ def as_json(found: StatsReport) -> dict[str, Any]:
             "interval": (list(found.exploratory.interval) if found.exploratory.interval else None),
             "residual": _residual(found.exploratory.residual),
             "by_tier": [_rate(row) for row in found.exploratory.by_tier],
+        },
+        # La population tardive, **et son decoupage par retard**. Une bande a
+        # trois selections y figure avec son compte : la fondre reproduirait le
+        # bloc unique que ce decoupage defait.
+        "late": {
+            "settled": found.late.settled,
+            "won": found.late.won,
+            "pending": found.late.pending,
+            "interval": (list(found.late.interval) if found.late.interval else None),
+            "residual": _residual(found.late.residual),
+            "gap_per_selection": found.late_gap,
+            "bands": [
+                {
+                    "label": band.label,
+                    "low": band.low,
+                    "high": band.high,
+                    "settled": band.settled,
+                    "won": band.won,
+                    "pending": band.pending,
+                    "interval": list(band.interval) if band.interval else None,
+                    "residual": _residual(band.residual),
+                    "per_selection": band.per_selection,
+                }
+                for band in found.late.bands
+            ],
         },
         "combos": [
             {
@@ -1423,6 +1453,22 @@ def as_markdown(found: StatsReport) -> str:
         ]
         for libelle, compte in lot.reasons:
             out.append(f"- {libelle} : {compte}")
+        # **Le decoupage par retard, et chaque bande porte son denominateur.**
+        # Une bande a trois selections est ecrite quand meme, avec son
+        # intervalle : la fondre reproduirait le bloc unique que ce decoupage
+        # defait, et c'est l'intervalle qui doit dire qu'elle ne conclut rien.
+        if lot.bands:
+            out += ["", "### Par retard", ""]
+            for band in lot.bands:
+                out.append(f"- {band.line}")
+            out += [
+                "",
+                "Si l'écart par sélection croît avec le retard, la contamination est "
+                "démontrée et cesse d'être une hypothèse de lecture. S'il est plat, la "
+                "population tardive est un artefact d'import. Les bandes sont posées "
+                "d'avance, sur ce qu'un retard suppose et non sur ce que les données "
+                "montrent — un découpage choisi après avoir regardé ne conclurait rien.",
+            ]
         if found.late_gap is not None:
             out += [
                 "",

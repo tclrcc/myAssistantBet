@@ -1475,6 +1475,66 @@
     ajoute, une fois chaque population comparée à ses propres prix.
   </p>
   {% endif %}
+
+  {# **Le bloc unique ne répondait pas à la question qu'il posait.** Une
+     sélection écrite quatre minutes après le coup d'envoi et une écrite
+     quatre-vingt-dix minutes après ne décrivent pas la même chose : la première
+     peut n'être qu'un retard d'import, la seconde suppose de connaître le
+     déroulement du match.
+
+     Les trois bandes sont **posées d'avance**, sur ce qu'un retard suppose et
+     non sur ce que les données montrent — un découpage choisi après avoir
+     regardé serait la faute que cette page a mis huit lots à corriger.
+
+     **Aucune fusion sous un seuil d'effectif** : une bande à trois sélections
+     s'affiche avec son compte, et c'est son intervalle — large — qui dit
+     qu'elle ne conclut rien. Les fondre reproduirait le bloc unique. #}
+  {% if late.bands %}
+  <h3>Par retard</h3>
+  <table class="board">
+    <thead>
+      <tr>
+        <th>Bande</th>
+        <th class="num">Tranchées</th>
+        <th class="num">Gagnées</th>
+        <th>Intervalle</th>
+        <th class="num">Écart au prix</th>
+        <th class="num">Par sélection</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for band in late.bands %}
+      <tr>
+        <td>{{ band.label }}</td>
+        <td class="num">{{ band.settled }}</td>
+        <td class="num">{{ band.won }}</td>
+        <td>
+          {%- if band.interval %}[{{ '%.0f' | format(band.interval[0] * 100) }} –
+          {{ '%.0f' | format(band.interval[1] * 100) }}]{% else %}—{% endif %}
+        </td>
+        <td class="num">
+          {%- if band.settled %}{{ '%+.2f' | format(band.residual.gap) }}{% else %}—{% endif %}
+        </td>
+        <td class="num">
+          {%- if band.per_selection is not none %}
+          {{ '%+.3f' | format(band.per_selection) }}{% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="block-note">
+    <strong>Si l'écart par sélection croît avec le retard, la contamination est
+    démontrée</strong> et cesse d'être une hypothèse de lecture. S'il est plat, la
+    population tardive est un artefact d'import et peut être traitée plus légèrement.
+    Les deux réponses sont utiles ; l'absence de stratification n'en donnait aucune.
+  </p>
+  <p class="block-note">
+    Une bande est affichée <strong>même à trois sélections</strong>, avec son compte :
+    c'est l'intervalle qui dit ce qu'elle vaut. Un retard inconnu n'entre dans aucune
+    bande — le ranger dans la première le ferait passer pour une saisie immédiate.
+  </p>
+  {% endif %}
 </section>
 {% endif %}
 

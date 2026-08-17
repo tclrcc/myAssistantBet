@@ -1936,7 +1936,16 @@ def add_pick(
                 utcnow(),
             ),
         )
-        return int(cursor.lastrowid)
+        pick_id = int(cursor.lastrowid)
+        # **Le retard en minutes se pose par la regle commune**, jamais a cote.
+        # `tardive` est calcule ci-dessus contre `utcnow()` et la regle compare
+        # `created_at` a `commence_time` : les deux coincident a l'insertion, et
+        # rejouer la regle ici les fait coincider **par construction** plutot
+        # que par chance. C'est aussi le seul endroit ou les deux colonnes
+        # peuvent se poser d'un coup.
+        if attached is not None:
+            conn.execute(_LATE_RULE, (attached,))
+        return pick_id
 
 
 def _span(raw: str) -> tuple[int | None, int | None]:
@@ -2013,7 +2022,8 @@ def set_event(pick_id: int, event_id: str = "", settings: Settings | None = None
             # demontre contre un coup d'envoi, et sans match il n'y en a plus.
             # La regle du projet est a sens unique — on ne prouve pas l'absence.
             conn.execute(
-                "UPDATE picks SET event_id = NULL, market_key = NULL, tardive = 0 WHERE id = ?",
+                "UPDATE picks SET event_id = NULL, market_key = NULL, tardive = 0, "
+                "                 late_minutes = NULL WHERE id = ?",
                 (pick_id,),
             )
             return
@@ -2036,20 +2046,17 @@ def set_event(pick_id: int, event_id: str = "", settings: Settings | None = None
         # le retard se demontre contre le coup d'envoi du match rattache, donc un
         # rattachement corrige peut le creer comme le lever. Elle etait fausse,
         # pas perimee.
-        moment = conn.execute(
-            "SELECT k.created_at, e.commence_time FROM picks k "
-            "JOIN events e ON e.id = ? WHERE k.id = ?",
-            (int(identifier), pick_id),
-        ).fetchone()
-        tardive = bool(
-            moment is not None
-            and moment["commence_time"]
-            and str(moment["created_at"]) >= str(moment["commence_time"])
-        )
+        # Le rattachement d'abord, la regle du retard ensuite : elle se lit sur
+        # `picks.event_id`, donc elle a besoin du lien pour dire quoi que ce
+        # soit. Recalculer le retard a la main ici aurait fait une **seconde
+        # ecriture de la meme regle**, qui aurait diverge de `_LATE_RULE` au
+        # premier ajustement — et le premier ajustement est arrive des le lot
+        # suivant, avec les minutes.
         conn.execute(
-            "UPDATE picks SET event_id = ?, market_key = ?, tardive = ? WHERE id = ?",
-            (int(identifier), resolved, 1 if tardive else 0, pick_id),
+            "UPDATE picks SET event_id = ?, market_key = ? WHERE id = ?",
+            (int(identifier), resolved, pick_id),
         )
+        conn.execute(_LATE_RULE, (int(identifier),))
 
 
 #: La regle du retard, ecrite **une seule fois** et en SQL parce que ses trois
@@ -2059,9 +2066,26 @@ def set_event(pick_id: int, event_id: str = "", settings: Settings | None = None
 #: **Sens unique, comme l'anteriorite** : les deux heures doivent etre connues.
 #: Une selection sans match n'est pas tardive — son retard n'est pas plus
 #: demontre que son anteriorite.
+#: **Les deux colonnes dans le meme UPDATE**, et jamais deux regles paralleles.
+#: Le drapeau dit *si* la selection est tardive, les minutes disent *de combien* ;
+#: ecrits separement, ils auraient fini par ne plus dire la meme chose du meme
+#: match — et le cas ou ils divergent est justement celui qui coute, un report
+#: laissant un retard qui n'existe plus.
+#:
+#: `late_minutes` est **NULL et non zero** hors des tardives : une selection
+#: anterieure n'a pas un retard nul, elle n'en a pas. Ecrire 0 la ferait entrer
+#: dans la premiere bande de retard et gonflerait de 178 lignes une population
+#: qui en porte 52.
 _LATE_RULE = (
     "UPDATE picks SET tardive = ("
     "  SELECT e.commence_time IS NOT NULL AND picks.created_at >= e.commence_time "
+    "  FROM events e WHERE e.id = picks.event_id"
+    "), late_minutes = ("
+    "  SELECT CASE WHEN e.commence_time IS NOT NULL "
+    "                   AND picks.created_at >= e.commence_time "
+    "              THEN CAST(ROUND("
+    "                     (julianday(picks.created_at) - julianday(e.commence_time)) * 1440"
+    "                   ) AS INTEGER) END "
     "  FROM events e WHERE e.id = picks.event_id"
     ") WHERE event_id = ?"
 )
@@ -3513,6 +3537,72 @@ def exploratory(settings: Settings | None = None) -> Exploratory:
     return report
 
 
+#: Les bandes de retard, bornes en minutes. `None` en borne haute = sans limite.
+#:
+#: **Trois bandes et ces trois-la, posees d'avance.** Elles ne sortent pas des
+#: donnees — ce serait un decoupage choisi apres avoir regarde, la faute que la
+#: page a mis huit lots a corriger — mais de ce qu'un retard **suppose** :
+#: en dessous d'un quart d'heure une saisie peut n'avoir rien vu du match ;
+#: au-dela d'une heure, un match de football est a la mi-temps et un set de
+#: tennis est joue. La bande du milieu est le cas ambigu, et elle doit exister
+#: pour que les deux autres soient nettes.
+LATE_BANDS: tuple[tuple[str, int, int | None], ...] = (
+    ("moins de 15 min", 0, 15),
+    ("15 à 60 min", 15, 60),
+    ("plus de 60 min", 60, None),
+)
+
+
+@dataclass
+class LateBand:
+    """Une bande de retard : son effectif, son residu, son intervalle.
+
+    **Elle se rend meme a trois selections.** Fusionner sous un seuil
+    d'effectif refabriquerait le bloc unique que la stratification defait, et
+    c'est l'intervalle — large — qui doit dire que la bande ne conclut rien.
+    """
+
+    label: str
+    low: int
+    high: int | None
+    settled: int = 0
+    won: int = 0
+    pending: int = 0
+    residual: Residual = field(default_factory=lambda: Residual(observed=0, implied=[]))
+
+    @property
+    def interval(self) -> tuple[float, float] | None:
+        return wilson(self.won, self.settled)
+
+    @property
+    def per_selection(self) -> float | None:
+        """L'ecart au prix **par selection**, la seule forme comparable.
+
+        Trois bandes d'effectifs tres differents ne se comparent pas par leur
+        ecart brut : celle qui porte le plus de lignes porte mecaniquement le
+        plus d'ecart. C'est la meme regle que l'ecart entre population
+        principale et tardive, qui se lit lui aussi par selection.
+        """
+        if not self.residual.expected:
+            return None
+        return round(self.residual.gap / self.settled, 3) if self.settled else None
+
+    @property
+    def line(self) -> str:
+        if not self.settled:
+            return f"{self.label} : aucune sélection tranchée"
+        borne = ""
+        if self.interval:
+            bas, haut = self.interval
+            borne = f" · intervalle [{bas * 100:.0f} – {haut * 100:.0f}]"
+        ecart = self.per_selection
+        return (
+            f"{self.label} : {self.won} sur {self.settled}{borne} · "
+            f"écart au prix {self.residual.gap:+.2f}"
+            + (f" ({ecart:+.3f} par sélection)" if ecart is not None else "")
+        )
+
+
 @dataclass
 class Late:
     """Les selections **ecrites apres le coup d'envoi**, mesurees a part.
@@ -3540,6 +3630,10 @@ class Late:
     undeclared: int = 0
     residual: Residual = field(default_factory=lambda: Residual(observed=0, implied=[]))
     minimum_rows: int = ANALYSIS_MIN_ROWS
+    #: Le retard, en trois bandes. **Aucune fusion sous un seuil d'effectif** :
+    #: une bande a trois selections s'affiche avec son compte, et son intervalle
+    #: dit ce qu'il vaut. Les fondre reproduirait le bloc unique qu'on defait.
+    bands: list[LateBand] = field(default_factory=list)
 
     @property
     def empty(self) -> bool:
@@ -3565,6 +3659,47 @@ class Late:
         return rendus
 
 
+def _late_bands(rows: list[Any]) -> list[LateBand]:
+    """Range les tardives par bande de retard, sans en fusionner aucune.
+
+    **Un retard inconnu n'entre dans aucune bande.** `late_minutes` est NULL sur
+    les lignes anterieures a la migration 055 dont le match a ete detache
+    depuis : les ranger dans la premiere bande les ferait passer pour des
+    saisies immediates, ce qui est exactement la lecture que la stratification
+    existe pour rendre impossible.
+
+    La borne basse est **incluse** et la haute exclue, comme partout dans ce
+    projet — c'est deja la convention des bandes de cote (`Tier.covers`), et
+    deux conventions dans la meme base se liraient a l'envers.
+    """
+    bandes = [LateBand(label=nom, low=bas, high=haut) for nom, bas, haut in LATE_BANDS]
+    for row in rows:
+        minutes = _column(row, "late_minutes")
+        if minutes is None:
+            continue
+        valeur = int(minutes)
+        for bande in bandes:
+            if valeur >= bande.low and (bande.high is None or valeur < bande.high):
+                _fill_band(bande, row)
+                break
+    return bandes
+
+
+def _fill_band(bande: LateBand, row: Any) -> None:
+    """Ajoute une ligne a sa bande, resultat et prix compris."""
+    resultat = str(row["result"])
+    if resultat not in ("win", "loss"):
+        bande.pending += 1
+        return
+    bande.settled += 1
+    bande.won += 1 if resultat == "win" else 0
+    if row["price"] and float(row["price"]) > 1.0:
+        bande.residual = Residual(
+            observed=bande.residual.observed + (1 if resultat == "win" else 0),
+            implied=[*bande.residual.implied, 1.0 / float(row["price"])],
+        )
+
+
 def late(settings: Settings | None = None) -> Late:
     """Les selections tardives, mesurees a part.
 
@@ -3576,10 +3711,12 @@ def late(settings: Settings | None = None) -> Late:
     settings = settings or get_settings()
     with connect(settings) as conn:
         rows = conn.execute(
-            "SELECT result, price, late_reason FROM picks WHERE tardive = 1 AND exploratoire = 0"
+            "SELECT result, price, late_reason, late_minutes FROM picks "
+            " WHERE tardive = 1 AND exploratoire = 0"
         ).fetchall()
 
     report = Late(minimum_rows=threshold_value("feedback_min_rows", settings))
+    report.bands = _late_bands(rows)
     tranchees = [row for row in rows if str(row["result"]) in ("win", "loss")]
     report.pending = len(rows) - len(tranchees)
     report.settled = len(tranchees)
