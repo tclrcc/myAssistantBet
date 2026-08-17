@@ -476,16 +476,23 @@
     {# Un palier est une bande de cote, et le prompt affirme qu'il « sert à
        calculer un taux de réussite par bande de cote dans le temps ». Un 1.92
        de référence et un 1.92 du book principal ne décrivent pas le même
-       marché, et près des bornes l'écart de marge fait basculer de bande : les
-       sélections dont le prix reste à relever sortent de cet axe, et de
-       celui-là seulement. #}
+       marché, et près des bornes l'écart de marge fait basculer de bande.
+
+       **Elles n'en sortent plus pour autant, et c'est une décision du
+       17/08/2026** : le prix réel ne peut venir que d'une mise, et aucun pari
+       n'est posé — zéro coupon sur douze sessions. L'exclusion était donc une
+       attente sans terme, qui coûtait 20 sélections tranchées sur 178 à l'axe
+       le plus fourni de la page. La différence se mesure maintenant sur son
+       propre axe, « Par origine du prix ». #}
     {{ card("Par palier", analysis.by_tier,
-            note=(analysis.quarantined ~ " sélection(s) tranchée(s) assise(s) sur une cote de
-                   référence attendent leur prix réel.") if analysis.quarantined else "",
-            reason=("Lu sur la cote obtenue quand elle est saisie, sinon sur la cote du bloc.
-                     Le palier d'une sélection dont le prix reste à relever reposerait sur un
-                     prix qu'on n'aurait pas obtenu : elle sort de cet axe, et de celui-là
-                     seulement — elle compte partout ailleurs.")
+            note=(analysis.quarantined ~ " sélection(s) tranchée(s) portent une cote de
+                   référence — elles comptent ici, et se lisent à part sous « Par origine
+                   du prix ».") if analysis.quarantined else "",
+            reason=("Lu sur la cote obtenue quand elle est saisie, sinon sur la cote du bloc,
+                     qui fait autorité. Ces sélections attendaient un prix réel qui ne viendra
+                     jamais : il ne peut venir que d'une mise, et aucun pari n'est posé. Les
+                     écarter était une attente sans terme ; leur origine se mesure désormais
+                     sur son propre axe.")
                    if analysis.quarantined else "",
             comparison=analysis.tier_comparison) }}
     {{ card("Par sport", analysis.by_sport) }}
@@ -555,6 +562,24 @@
               reason="Le fait principal venait-il d'une source officielle, de la presse,
                       de statistiques, d'un agrégateur — ou d'aucun fait daté ? C'est la
                       seule question de cette page dont la réponse changerait la méthode.") }}
+    {% endif %}
+    {# **L'axe qui remplace la quarantaine.** Ces sélections sortaient du
+       regroupement par palier « en attendant leur prix réel » — un prix qui
+       n'arrivera jamais : il ne peut venir que d'une mise, et aucun pari n'est
+       posé. Les écarter était donc une attente sans terme ; les mélanger sans
+       rien dire serait pire. Elles comptent, et cette carte dit si elles se
+       comportent autrement. Une mesure, jamais un filtre. #}
+    {% if analysis.by_price_source %}
+      {{ card("Par origine du prix", analysis.by_price_source,
+              note=(analysis.unlabelled_price_source ~ " sélection(s) tranchée(s) n'en portent
+                     pas : elles sont antérieures à la colonne.")
+                    if analysis.unlabelled_price_source else "",
+              reason="Le bookmaker principal ne sert qu'un seul marché via le fournisseur de
+                      cotes : handicaps, totaux et marchés d'équipe arrivent tous d'un book de
+                      référence. Ces lignes attendaient un prix réel qui ne viendra jamais — il
+                      ne peut venir que d'une mise, et aucun pari n'est posé. Elles comptent
+                      donc, et cette carte est ce qui permet de voir si elles se comportent
+                      autrement.") }}
     {% endif %}
     {# LE RÉSIDU, DÉCLINÉ. Les cartes ci-dessus ventilent des **taux bruts** :
        la métrique retirée de la tête de page, et pour la raison exacte qui a
@@ -858,6 +883,20 @@
         {% if analysis.unlabelled_angle %}
         <p class="muted small">
           + {{ analysis.unlabelled_angle }} sans type, sur {{ analysis.settled }} tranchée(s).
+        </p>
+        {% endif %}
+      </div>
+      {% endif %}
+      {% if analysis.by_price_source %}
+      <div>
+        <h3>Par origine du prix</h3>
+        {% with rows = analysis.by_price_source, heading = "Origine" %}
+          {% include "_rates.html" %}
+        {% endwith %}
+        {% if analysis.unlabelled_price_source %}
+        <p class="muted small">
+          + {{ analysis.unlabelled_price_source }} sans origine, sur
+          {{ analysis.settled }} tranchée(s).
         </p>
         {% endif %}
       </div>

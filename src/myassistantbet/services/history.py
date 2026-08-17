@@ -1876,15 +1876,25 @@ def _antecedence(row: Any) -> bool:
     return bool(commence) and str(row["created_at"]) < str(commence)
 
 
-def _quarantined(row: Any) -> bool:
+def _reference_priced(row: Any) -> bool:
     """La cote vient d'un book de reference et rien n'a ete releve depuis.
 
-    Son palier est bati sur un prix qu'on n'aurait pas obtenu : elle sort des
-    taux **par bande de cote**, et de ceux-la seulement. Une cote du book
-    principal est sa propre cote reelle, et une selection anterieure a la
-    colonne n'a aucune raison d'etre suspectee — exclure tout ce qui n'a pas de
-    `price_real` aurait vide la page d'un coup, en quarantainant surtout du
-    football servi par le book principal.
+    **Ce n'est plus une quarantaine, et c'est une decision datee du
+    17/08/2026.** Ces selections sortaient du regroupement par palier « en
+    attendant leur prix reel » — un prix qui n'arrivera **jamais** : il ne peut
+    venir que d'une mise, et aucun pari n'est pose. Zero coupon sur douze
+    sessions ; l'application n'est pas un carnet de mises, c'est un banc de
+    mesure de predictions.
+
+    L'attente coutait donc 20 selections tranchees sur 178 a l'axe le plus
+    fourni de la page, sans terme. Et le gabarit tranche deja la question
+    d'autorite : « Ces cotes font autorite. Ne remplace jamais une cote du bloc
+    par une cote trouvee en ligne. » La cote du bloc **est** la cote de calcul ;
+    le code n'en tirait pas la consequence.
+
+    Le drapeau reste, et il est desormais un **axe de mesure** : si les lignes
+    servies par un book de reference se comportent autrement, il faut pouvoir le
+    voir. C'est une mesure, jamais un filtre.
     """
     return _column(row, "price_source") == PRICE_REFERENCE and _column(row, "price_real") is None
 
@@ -1973,12 +1983,12 @@ def stats(settings: Settings | None = None) -> Stats:
             "WHERE k.played = 1"
         ).fetchall()
 
-    # Meme regle que sur les deux autres vues : un palier est une bande de cote,
-    # donc il se lit sur la cote obtenue quand elle existe, et une selection
-    # posee a un prix de reference jamais releve n'y a pas sa place. Le sport,
-    # lui, garde tout le monde : il ne mesure pas un prix.
-    quarantined = sum(1 for row in rows if _quarantined(row))
-    by_tier = _tally([row for row in rows if not _quarantined(row)], "tier_effective", tier_labels)
+    # **Plus aucune mise a l'ecart**, et c'est la decision du 17/08/2026 : le
+    # prix reel n'arrivera jamais, il ne peut venir que d'une mise et aucun pari
+    # n'est pose. La cote du bloc fait autorite — le gabarit le dit deja — donc
+    # elle sert de cote de calcul. Le compte reste, comme description.
+    quarantined = sum(1 for row in rows if _reference_priced(row))
+    by_tier = _tally(rows, "tier_effective", tier_labels)
     by_tier.sort(key=lambda item: tier_order.index(item.key) if item.key in tier_order else 99)
     by_sport = sorted(_tally(rows, "sport_key", sport_labels), key=lambda item: item.label)
 
@@ -2545,6 +2555,13 @@ class Analysis:
             for reason, count in sorted(self.late_by_reason.items(), key=lambda item: -item[1])
         ]
 
+    #: Les taux **par origine du prix**. Il remplace la quarantaine : au lieu
+    #: d'ecarter les lignes servies par un book de reference, on regarde si elles
+    #: se comportent autrement. Une mesure, jamais un filtre.
+    by_price_source: list[RateRow] = field(default_factory=list)
+    #: Selections tranchees dont l'origine du prix n'est pas renseignee — les 103
+    #: anterieures a la migration 030, qui ne se devinent pas apres coup.
+    unlabelled_price_source: int = 0
     #: `(reussites, tranchees)` des deux paliers les plus employes **a l'interieur
     #: du niveau de confiance le plus fourni**. C'est l'ecart **residuel** entre
     #: les deux echelles, celui qui dit si la seconde ajoute quelque chose — bien
@@ -3763,20 +3780,19 @@ def analysis(settings: Settings | None = None) -> Analysis:
     )
 
     # **Le palier se lit sur la cote obtenue quand elle existe**, sinon sur la
-    # cote de reference. Et une selection dont le prix vient d'un book de
-    # reference sans releve **sort de cet axe** : son palier est bati sur un
-    # prix qu'on n'aurait pas obtenu, et pres des bornes — 1.70, 2.30 — l'ecart
-    # de marge fait basculer de bande. Elle compte partout ailleurs.
+    # cote du bloc — et plus personne n'est mis a l'ecart en attendant un prix
+    # qui n'arrivera pas. Le compte des lignes servies par un book de reference
+    # reste, mais comme **description** et non comme filtre : il a son propre
+    # axe, `by_price_source`, ou l'on peut voir si elles se comportent autrement.
     report.quarantined = sum(
         1
         for row, result in zip(rows, results, strict=True)
-        if result in ("win", "loss") and _quarantined(row)
+        if result in ("win", "loss") and _reference_priced(row)
     )
     report.by_tier = _rate_tally(
         [
             (_tier_of(row), tier_labels.get(_tier_of(row), _tier_of(row)), result, row)
             for row, result in zip(rows, results, strict=True)
-            if not _quarantined(row)
         ],
         readable=report.minimum_rows,
     )
@@ -3944,6 +3960,27 @@ def analysis(settings: Settings | None = None) -> Analysis:
         ),
         key=lambda item: list(SOURCE_LEVELS).index(item.key),
     )
+    # **D'ou vient le prix, comme axe de mesure.** Il remplace la quarantaine :
+    # au lieu d'ecarter les lignes servies par un book de reference, on regarde
+    # si elles se comportent autrement. C'est une mesure, jamais un filtre — et
+    # sans elle, lever la quarantaine reviendrait a melanger deux populations
+    # sans plus aucun moyen de le voir.
+    report.by_price_source = sorted(
+        _rate_tally(
+            [
+                (row["price_source"], PRICE_SOURCES[row["price_source"]], result, row)
+                for row, result in zip(rows, results, strict=True)
+                if row["price_source"] in PRICE_SOURCES
+            ],
+            readable=report.minimum_rows,
+        ),
+        key=lambda item: list(PRICE_SOURCES).index(item.key),
+    )
+    report.unlabelled_price_source = sum(
+        1
+        for row, result in zip(rows, results, strict=True)
+        if result in ("win", "loss") and row["price_source"] not in PRICE_SOURCES
+    )
     report.unlabelled_angle = sum(
         1
         for row, result in zip(rows, results, strict=True)
@@ -4097,11 +4134,14 @@ def _audit(report: Analysis, tally: list[RateRow]) -> list[AxisGap]:
     # toutes les autres exclusions de cette page.
     total = report.recorded - report.without_antecedence
     axes = [
+        # Plus aucune exclusion : la quarantaine a ete levee, la cote du bloc
+        # faisant autorite. L'axe doit donc retomber **exactement** sur le total.
+        ("Palier", sum(row.settled for row in report.by_tier), 0, "palier non résolu"),
         (
-            "Palier",
-            sum(row.settled for row in report.by_tier),
-            report.quarantined,
-            "cote de référence non relevée",
+            "Origine du prix",
+            sum(row.settled for row in report.by_price_source),
+            report.unlabelled_price_source,
+            "origine du prix non renseignée",
         ),
         (
             "Confiance",
@@ -4594,14 +4634,12 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
         return report
 
     # Meme regle que sur la page : le palier se lit sur la cote obtenue quand
-    # elle existe, et une selection assise sur un prix de reference jamais releve
-    # sort de cet axe. Un 1.92 Pinnacle et un 1.92 Betclic ne decrivent pas le
-    # meme marche, et le prompt affirme que ce palier mesure une bande de cote.
+    # elle existe, sinon sur celle du bloc — qui fait autorite, le gabarit le dit
+    # lui-meme. Plus personne n'attend un prix reel qui ne viendra pas.
     report.by_tier = _feedback_tally(
         [
             (_tier_of(row), tier_labels.get(_tier_of(row), _tier_of(row)), row["result"])
             for row in rows
-            if not _quarantined(row)
         ],
         minimum_rows,
     )

@@ -95,6 +95,7 @@ SECTIONS: tuple[Section, ...] = (
     Section(ANALYSIS_BLOCK, "Par marché"),
     Section(ANALYSIS_BLOCK, "Par type d'angle"),
     Section(ANALYSIS_BLOCK, "Par niveau de source"),
+    Section(ANALYSIS_BLOCK, "Par origine du prix"),
     Section(ANALYSIS_BLOCK, "Résidu au prix, par cran de confiance"),
     Section(ANALYSIS_BLOCK, "Résidu au prix, par type d'angle"),
     Section(ANALYSIS_BLOCK, "Résidu au prix, par marché"),
@@ -225,6 +226,10 @@ class StatsReport:
             ),
             (Section(ANALYSIS_BLOCK, "Par niveau de source"), bool(analysis.by_source)),
             (
+                Section(ANALYSIS_BLOCK, "Par origine du prix"),
+                bool(analysis.by_price_source),
+            ),
+            (
                 Section(ANALYSIS_BLOCK, "Angle « manière » rendu en vainqueur"),
                 analysis.conflicts.known,
             ),
@@ -325,9 +330,11 @@ class StatsReport:
             )
         if analysis.quarantined:
             notes.append(
-                f"{analysis.quarantined} sélection(s) tranchée(s) assise(s) sur une cote "
-                "de référence attendent leur prix réel : elles sortent du regroupement "
-                "par palier, et de celui-là seulement."
+                f"{analysis.quarantined} sélection(s) tranchée(s) portent une cote de "
+                "référence dont le prix réel n'a pas été saisi. Elles comptent partout, "
+                "y compris dans le regroupement par palier : ce prix ne peut venir que "
+                "d'une mise, et aucun pari n'est posé. Leur origine se lit à part, sous "
+                "« Par origine du prix »."
             )
         if analysis.uncategorised:
             notes.append(
@@ -598,6 +605,7 @@ def as_json(found: StatsReport) -> dict[str, Any]:
             "by_market": [_rate(row) for row in analysis.by_market],
             "by_angle": [_rate(row) for row in analysis.by_angle],
             "by_source": [_rate(row) for row in analysis.by_source],
+            "by_price_source": [_rate(row) for row in analysis.by_price_source],
             "carried": [_rate(row) for row in analysis.carried_rows],
             "folded": analysis.folded_rows,
         },
@@ -1024,6 +1032,7 @@ def as_markdown(found: StatsReport) -> str:
         out += _card(found, ANALYSIS_BLOCK, "Par marché", analysis.by_market)
         out += _card(found, ANALYSIS_BLOCK, "Par type d'angle", analysis.by_angle)
         out += _card(found, ANALYSIS_BLOCK, "Par niveau de source", analysis.by_source)
+        out += _card(found, ANALYSIS_BLOCK, "Par origine du prix", analysis.by_price_source)
         # Les trois cartes ci-dessus ventilent des **taux bruts** ; celles-ci
         # comparent chaque selection a son prix. Les deux se lisent ensemble, et
         # seule la seconde permet de comparer deux regroupements.

@@ -2590,10 +2590,18 @@ def test_le_palier_se_lit_sur_la_cote_obtenue(migrated: Settings) -> None:
     assert [row.key for row in analysis(migrated).by_tier] == ["ultra_fun"]
 
 
-def test_une_cote_de_reference_non_relevee_sort_des_taux_par_palier(migrated: Settings) -> None:
-    """Son palier reposerait sur un prix qu'on n'aurait pas obtenu. Elle compte
-    **partout ailleurs** : l'angle qui la portait ne devient pas faux parce que
-    le prix reste a verifier."""
+def test_une_cote_de_reference_compte_dans_les_taux_par_palier(migrated: Settings) -> None:
+    """**La quarantaine est levee, et c'est une decision datee du 17/08/2026.**
+
+    Ces selections attendaient un prix reel qui n'arrivera **jamais** : il ne
+    peut venir que d'une mise, et aucun pari n'est pose — zero coupon sur douze
+    sessions. L'attente coutait 20 selections tranchees sur 178 a l'axe le plus
+    fourni de la page, sans terme. Le gabarit tranche deja l'autorite : « Ces
+    cotes font autorite. » La cote du bloc **est** la cote de calcul.
+
+    Le drapeau reste, et il devient un **axe** : si ces lignes se comportent
+    autrement, il faut pouvoir le voir. Une mesure, jamais un filtre.
+    """
     session_id, event_id = _session_avec_match(migrated)
     _pick(migrated, session_id, event_id, market="Jeux O/U", result="win")
     reference = add_pick(
@@ -2611,11 +2619,14 @@ def test_une_cote_de_reference_non_relevee_sort_des_taux_par_palier(migrated: Se
 
     report = analysis(migrated)
 
-    assert report.quarantined == 1
-    assert sum(row.settled for row in report.by_tier) == 1, "une seule ligne dans l'axe"
-    assert report.settled == 2, "les deux comptent au total"
-    assert sum(row.settled for row in report.by_sport) == 2, "et dans les autres axes"
-    assert report.consistent, "l'addition se ferme, l'exclusion etant declaree"
+    assert report.quarantined == 1, "le compte reste, comme description"
+    assert sum(row.settled for row in report.by_tier) == 2, "plus personne n'est ecarte"
+    assert report.settled == 2
+    assert sum(row.settled for row in report.by_sport) == 2
+    assert report.consistent, "l'addition se ferme sans aucune exclusion a declarer"
+    # Et l'axe qui remplace la quarantaine separe les deux origines de prix.
+    assert {row.key: row.settled for row in report.by_price_source} == {"reference": 1}
+    assert report.unlabelled_price_source == 1, "la ligne sans origine se declare"
 
 
 def test_une_cote_du_book_principal_n_est_jamais_ecartee(migrated: Settings) -> None:
