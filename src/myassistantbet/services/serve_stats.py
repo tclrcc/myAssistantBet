@@ -33,13 +33,23 @@ from __future__ import annotations
 import logging
 import unicodedata
 from dataclasses import dataclass
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
-from ..providers.base import last_known_quota
+from ..providers.base import ProviderError, last_known_quota
 from ..providers.tennisapi import PROVIDER, TennisAPIClient
-from .ingestion import MATCH_REF_UNRESOLVED, SCHEMA_INVALID, SOURCE, SOURCE_VIDE, Reject
+from . import freshness
+from .ingestion import (
+    MATCH_REF_UNRESOLVED,
+    OTHER,
+    SCHEMA_INVALID,
+    SOURCE,
+    SOURCE_VIDE,
+    Reject,
+)
+from .ingestion import record as record_rejects
 from .labels import sort_key
 
 logger = logging.getLogger(__name__)
@@ -1499,3 +1509,267 @@ def _for_player(
     identity = load_identity(player, circuit, settings)
     canonical = identity.canonical if identity and identity.resolved else player
     return load_aggregate(canonical, circuit, surface, settings)
+
+
+# -- La collecte -------------------------------------------------------------
+#
+# Deux regimes, et ils ne demandent pas la meme chose :
+#
+# - la **reprise** couvre tout le catalogue de joueurs une fois. Elle est bornee
+#   par le plancher de quota et **reprenable** : elle saute ce qui est deja
+#   archive, donc une interruption ne coute que ce qui restait ;
+# - l'**entretien** ne touche que les joueurs des lots a venir. Il tourne tous
+#   les jours et doit rester a quelques dizaines d'appels.
+#
+# Les deux passent par la meme fonction : ce qui change est la liste de joueurs
+# et la peremption, jamais la logique. Deux parcours paralleles auraient diverge.
+
+#: Age au-dela duquel un agregat se recalcule, en heures. Un joueur joue tous les
+#: deux a trois jours en tournoi : au-dela de vingt-quatre heures, sa fenetre de
+#: 52 semaines peut avoir bouge d'un match.
+#:
+#: **C'est aussi ce qui rend la reprise reprenable** : un agregat ecrit il y a
+#: dix minutes n'est pas redemande, donc relancer une passe interrompue ne repaie
+#: que ce qui manquait.
+AGG_TTL_HOURS = 24
+
+
+@dataclass
+class SyncReport:
+    """Ce qu'une passe a fait, et ce qu'elle a laisse."""
+
+    players: int = 0
+    resolved: int = 0
+    refreshed: int = 0
+    skipped: int = 0
+    calls: int = 0
+    rejects: list[Reject] = None  # type: ignore[assignment]
+    #: Vrai quand la passe s'est arretee sur le plancher de quota plutot qu'a la
+    #: fin de sa liste. **Distinct d'une passe complete**, et c'est tout le point
+    #: d'un arret propre : sans lui, une reprise a moitie faite ressemblerait a
+    #: une reprise finie.
+    stopped: bool = False
+    remaining: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.rejects is None:
+            self.rejects = []
+
+    @property
+    def line(self) -> str:
+        etat = "arretee sur le plancher de quota" if self.stopped else "complete"
+        return (
+            f"statistiques de service : {self.refreshed} joueur(s) rafraichi(s), "
+            f"{self.skipped} deja a jour, {len(self.rejects)} rejet(s), "
+            f"{self.calls} appel(s) — passe {etat}"
+        )
+
+
+def _is_fresh(player: str, circuit: str, settings: Settings, now: datetime | None = None) -> bool:
+    """Un agregat ecrit recemment ne se redemande pas.
+
+    C'est ce qui rend la reprise **reprenable** : relancer une passe interrompue
+    ne repaie que ce qui manquait, et non toute la liste.
+    """
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT MAX(computed_at) AS quand FROM player_serve_agg "
+            " WHERE player = ? AND circuit = ?",
+            (player, circuit),
+        ).fetchone()
+    quand = _parse_moment(str(row["quand"]) if row and row["quand"] else "")
+    if quand is None:
+        return False
+    return ((now or datetime.now(UTC)) - quand) < timedelta(hours=AGG_TTL_HOURS)
+
+
+def _parse_moment(value: str) -> datetime | None:
+    try:
+        moment = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
+async def sync(
+    client: TennisAPIClient,
+    players: list[tuple[str, str]],
+    settings: Settings | None = None,
+    now: datetime | None = None,
+) -> SyncReport:
+    """Rafraichit les agregats d'une liste de joueurs. **S'arrete proprement.**
+
+    `players` porte des couples `(nom local, circuit)`. La reprise passe tout le
+    catalogue, l'entretien les seuls joueurs des lots a venir : c'est la seule
+    difference entre les deux regimes, et elle est dans l'appelant.
+
+    **Le plancher est verifie avant chaque joueur, pas une fois au depart.** Un
+    controle unique laisserait une reprise de 180 joueurs franchir le plancher en
+    cours de route et le decouvrir a la fin — c'est-a-dire trop tard, le quota
+    etant mensuel.
+    """
+    settings = settings or get_settings()
+    report = SyncReport(players=len(players))
+    horloge = now or datetime.now(UTC)
+
+    for local, circuit in players:
+        etat = budget(settings)
+        report.remaining = etat.remaining
+        if not etat.allowed:
+            report.stopped = True
+            report.rejects.append(
+                Reject(
+                    block_type=SOURCE,
+                    reason=SOURCE_VIDE,
+                    detail=etat.note,
+                    payload=f"plancher/{etat.remaining}",
+                )
+            )
+            logger.warning("%s", etat.note)
+            break
+
+        if _is_fresh(local, circuit, settings, horloge):
+            report.skipped += 1
+            continue
+
+        avant = _calls(settings)
+        try:
+            identity, reponse, rejet = await resolve(client, local, circuit, settings)
+        except ProviderError as exc:
+            report.rejects.append(
+                Reject(
+                    block_type=SOURCE,
+                    reason=OTHER,
+                    detail=f"{local} ({circuit}) : {exc}",
+                    payload=f"{local}/{circuit}",
+                )
+            )
+            continue
+        finally:
+            report.calls += _calls(settings) - avant
+
+        if rejet is not None:
+            report.rejects.append(rejet)
+            continue
+        if not identity.resolved:
+            continue
+        report.resolved += 1
+
+        if reponse is None:
+            # Identite deja en cache : la charge utile n'a pas ete relue.
+            avant = _calls(settings)
+            reponse = await client.matches_played(identity.canonical)
+            report.calls += _calls(settings) - avant
+
+        if _store_player(identity, reponse, circuit, settings, horloge):
+            report.refreshed += 1
+
+    logger.info("%s", report.line)
+    return report
+
+
+def _calls(settings: Settings) -> int:
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM api_usage WHERE provider = ?", (PROVIDER,)
+        ).fetchone()
+    return int(row["n"]) if row else 0
+
+
+def _store_player(
+    identity: Identity,
+    response: Any,
+    circuit: str,
+    settings: Settings,
+    now: datetime,
+) -> bool:
+    """Calcule et ecrit les agregats d'un joueur, toutes surfaces puis par surface.
+
+    **Une seule reponse alimente toutes les fenetres** : la surface est dans la
+    meme charge utile (`tournament.court.name`), donc aucun appel de plus.
+    """
+    lignes, ecartes = parse_matches_played(
+        response.data, identity.canonical, getattr(response, "archive_id", 0)
+    )
+    if not lignes:
+        return False
+    fenetre = (now - timedelta(weeks=52)).date().isoformat()
+    recentes = tuple(ligne for ligne in lignes if ligne.played_on >= fenetre)
+    if not recentes:
+        return False
+    if ecartes:
+        logger.info(
+            "tennisapi %s : %d match(s) sans table de service ou incoherent(s)",
+            identity.canonical,
+            ecartes,
+        )
+    for surface in (ALL_SURFACES, *sorted({ligne.surface for ligne in recentes if ligne.surface})):
+        store_aggregate(aggregate(recentes, identity.canonical, circuit, surface=surface), settings)
+    if identity.provider_id:
+        note_provider_id(identity.local_name, circuit, identity.provider_id, settings)
+    # **La garde de peremption du lot 4 s'applique a cette source comme aux
+    # autres.** Une source payante qui repond encore et n'avance plus est le meme
+    # defaut qu'un classeur hebdomadaire fige : elle rend 200, les memes matchs,
+    # indefiniment. `source_as_of` est le dernier match obtenu.
+    dernier = max(ligne.played_on for ligne in recentes)
+    fige = freshness.record(PROVIDER, circuit, dernier, settings)
+    if fige is not None:
+        record_rejects(None, [fige], settings)
+    return True
+
+
+def upcoming_players(settings: Settings | None = None) -> list[tuple[str, str]]:
+    """Les joueurs des matchs de tennis **a venir**, avec leur circuit.
+
+    C'est la liste de l'entretien quotidien : un lot tennis porte trente-cinq
+    joueurs en moyenne, donc la passe reste a quelques dizaines d'appels. Passer
+    tout le catalogue tous les jours couterait cent-quatre-vingts appels pour
+    rafraichir des joueurs qui ne jouent pas.
+
+    **Le circuit se lit dans la cle de competition**, jamais dans un libelle.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT e.home, e.away, c.oddsapi_key FROM events e "
+            "  JOIN competitions c ON c.id = e.competition_id "
+            " WHERE c.oddsapi_key LIKE 'tennis%' AND e.commence_time >= ? "
+            " ORDER BY e.commence_time",
+            (utcnow(),),
+        ).fetchall()
+
+    vus: dict[tuple[str, str], None] = {}
+    for row in rows:
+        tour = circuit_of(str(row["oddsapi_key"] or ""))
+        if not tour:
+            continue
+        for nom in (row["home"], row["away"]):
+            if nom:
+                vus.setdefault((str(nom), tour), None)
+    return list(vus)
+
+
+def known_players(settings: Settings | None = None) -> list[tuple[str, str]]:
+    """Tous les joueurs de tennis vus en base, a venir ou non.
+
+    C'est la liste de la **reprise**, qui ne passe qu'une fois. Elle est bornee
+    par le plancher de quota et reprenable : un agregat frais n'est pas
+    redemande, donc relancer apres une interruption ne repaie que le reste.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT e.home, e.away, c.oddsapi_key FROM events e "
+            "  JOIN competitions c ON c.id = e.competition_id "
+            " WHERE c.oddsapi_key LIKE 'tennis%'"
+        ).fetchall()
+
+    vus: dict[tuple[str, str], None] = {}
+    for row in rows:
+        tour = circuit_of(str(row["oddsapi_key"] or ""))
+        if not tour:
+            continue
+        for nom in (row["home"], row["away"]):
+            if nom:
+                vus.setdefault((str(nom), tour), None)
+    return list(vus)

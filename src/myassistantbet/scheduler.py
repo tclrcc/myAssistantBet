@@ -32,10 +32,12 @@ from .config import Settings
 from .providers.apifootball import APIFootballClient
 from .providers.oddsapi import OddsAPIClient
 from .providers.tennisabstract import TennisAbstractClient
+from .providers.tennisapi import TennisAPIClient
 from .providers.tennisdata import TennisDataClient
 from .services import competitions as competitions_service
 from .services import elo as elo_service
 from .services import ingestion as ingestion_service
+from .services import serve_stats as serve_stats_service
 from .services import tennis_history as tennis_history_service
 from .services.context import refresh_due_lineups
 from .services.scan import run_scan
@@ -125,6 +127,28 @@ def build_scheduler(client: httpx.AsyncClient, settings: Settings) -> AsyncIOSch
             )
         except Exception:
             logger.exception("Synchronisation des competitions : echec")
+        try:
+            # **L'entretien, et non la reprise.** Seuls les joueurs des matchs a
+            # venir : un lot tennis en porte trente-cinq en moyenne, donc la
+            # passe reste a quelques dizaines d'appels. Passer tout le catalogue
+            # tous les jours en couterait cent-quatre-vingts pour rafraichir des
+            # joueurs qui ne jouent pas.
+            #
+            # **Ce n'est pas une source gratuite**, contrairement aux trois
+            # au-dessus, et c'est assume : elle est ici parce que la cadence est
+            # la bonne — une fois par jour, apres le scan qui vient de decouvrir
+            # les matchs du lendemain. Son garde-fou n'est pas la gratuite mais
+            # le plancher de quota, verifie **avant chaque joueur**.
+            serve = await serve_stats_service.sync(
+                TennisAPIClient(client, settings),
+                serve_stats_service.upcoming_players(settings),
+                settings,
+            )
+            logger.info("Statistiques de service planifiees : %s", serve.line)
+            if serve.rejects:
+                ingestion_service.record(None, serve.rejects, settings)
+        except Exception:
+            logger.exception("Statistiques de service : echec")
 
     async def _lineups() -> None:
         """Compositions des matchs de la shortlist dont le coup d'envoi approche.

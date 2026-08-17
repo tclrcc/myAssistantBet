@@ -16,6 +16,7 @@ import pytest
 import respx
 
 from myassistantbet.config import Settings
+from myassistantbet.db import query
 from myassistantbet.providers.tennisapi import BASE_URL, TennisAPIClient
 from myassistantbet.services import api_archive, serve_stats
 from myassistantbet.services.ingestion import MATCH_REF_UNRESOLVED, SOURCE_VIDE
@@ -1021,3 +1022,162 @@ def test_chaque_libelle_rendu_a_son_pictogramme() -> None:
     from myassistantbet.services.labels import CONTEXT_ICONS
 
     assert {"Service", "Retour", "Jeux", "Ecart"} <= set(CONTEXT_ICONS)
+
+
+# -- La synchronisation ------------------------------------------------------
+
+
+def _profils(joueurs: dict[str, int]) -> None:
+    """Simule les deux endpoints pour une liste de joueurs et leur nombre de matchs."""
+
+    def _repondre(request: httpx.Request) -> httpx.Response:
+        from urllib.parse import unquote
+
+        chemin = unquote(request.url.path)
+        nom = chemin.rsplit("/", 2)[-2]
+        if "/matches-played" in chemin:
+            matchs = [_un_match(nom) for _ in range(joueurs.get(nom, 0))]
+            return httpx.Response(
+                200, json={"singles": matchs, "singlesCount": len(matchs)}, headers=QUOTA_HEADERS
+            )
+        return httpx.Response(200, json=[nom] if nom in joueurs else [], headers=QUOTA_HEADERS)
+
+    respx.get(url__startswith=BASE_URL).mock(side_effect=_repondre)
+
+
+@respx.mock
+async def test_la_passe_ecrit_les_agregats_toutes_surfaces_et_par_surface(
+    tennis_client: TennisAPIClient, migrated: Settings
+) -> None:
+    """**Une seule reponse alimente toutes les fenetres** : la surface est dans
+    la meme charge utile, donc aucun appel de plus."""
+    _profils({"Taylor Fritz": 3})
+
+    rapport = await serve_stats.sync(tennis_client, [("Taylor Fritz", "atp")], migrated)
+
+    assert rapport.refreshed == 1
+    surfaces = {
+        row["surface"] for row in query("SELECT surface FROM player_serve_agg", settings=migrated)
+    }
+    assert surfaces == {"", "Hard"}
+
+
+@respx.mock
+async def test_un_agregat_frais_n_est_pas_redemande(
+    tennis_client: TennisAPIClient, migrated: Settings
+) -> None:
+    """**C'est ce qui rend la reprise reprenable** : relancer une passe
+    interrompue ne repaie que ce qui manquait, pas toute la liste."""
+    _profils({"Taylor Fritz": 3})
+
+    await serve_stats.sync(tennis_client, [("Taylor Fritz", "atp")], migrated)
+    appels = len(respx.calls)
+    seconde = await serve_stats.sync(tennis_client, [("Taylor Fritz", "atp")], migrated)
+
+    assert seconde.skipped == 1
+    assert seconde.refreshed == 0
+    assert len(respx.calls) == appels, "rien n'est redemande"
+
+
+@respx.mock
+async def test_la_passe_s_arrete_proprement_sur_le_plancher(
+    tennis_client: TennisAPIClient, migrated: Settings
+) -> None:
+    """**Le plancher se verifie avant chaque joueur, pas une fois au depart.**
+
+    Un controle unique laisserait une reprise de 180 joueurs franchir le
+    plancher en cours de route et le decouvrir a la fin — trop tard, le quota
+    etant mensuel.
+    """
+
+    def _repondre(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json=[],
+            headers={"x-ratelimit-requests-remaining": "10"},
+        )
+
+    respx.get(url__startswith=BASE_URL).mock(side_effect=_repondre)
+
+    rapport = await serve_stats.sync(
+        tennis_client, [("A", "atp"), ("B", "atp"), ("C", "atp")], migrated
+    )
+
+    assert rapport.stopped is True
+    assert "mensuel" in rapport.rejects[-1].detail
+    assert rapport.line.endswith("passe arretee sur le plancher de quota")
+
+
+@respx.mock
+async def test_une_passe_complete_se_distingue_d_une_passe_arretee(
+    tennis_client: TennisAPIClient, migrated: Settings
+) -> None:
+    """Sans cette distinction, une reprise a moitie faite ressemblerait a une
+    reprise finie."""
+    _profils({"Taylor Fritz": 3})
+
+    rapport = await serve_stats.sync(tennis_client, [("Taylor Fritz", "atp")], migrated)
+
+    assert rapport.stopped is False
+    assert "complete" in rapport.line
+
+
+@respx.mock
+async def test_un_joueur_non_resolu_part_en_rejet_et_la_passe_continue(
+    tennis_client: TennisAPIClient, migrated: Settings
+) -> None:
+    """**Jamais un joueur simplement absent des agregats**, et jamais une passe
+    qui tombe sur un nom."""
+    _profils({"Taylor Fritz": 3})
+
+    rapport = await serve_stats.sync(
+        tennis_client, [("Inconnu Total", "atp"), ("Taylor Fritz", "atp")], migrated
+    )
+
+    assert rapport.refreshed == 1
+    assert any(r.reason == MATCH_REF_UNRESOLVED for r in rapport.rejects)
+
+
+@respx.mock
+async def test_la_garde_de_peremption_s_applique_a_cette_source(
+    tennis_client: TennisAPIClient, migrated: Settings
+) -> None:
+    """**Une source payante qui repond encore et n'avance plus** est le meme
+    defaut qu'un classeur hebdomadaire fige : elle rend 200, les memes matchs,
+    indefiniment.
+    """
+    from myassistantbet.services import freshness
+
+    _profils({"Taylor Fritz": 3})
+    await serve_stats.sync(tennis_client, [("Taylor Fritz", "atp")], migrated)
+
+    etat = freshness.state("tennisapi", "atp", migrated)
+    assert etat.source_as_of == "2026-08-16", "le dernier match obtenu date la source"
+
+
+def test_l_entretien_ne_prend_que_les_matchs_a_venir(migrated: Settings) -> None:
+    """Un lot tennis porte trente-cinq joueurs : passer tout le catalogue tous
+    les jours couterait cent-quatre-vingts appels pour rien."""
+    _event(migrated, "tennis_atp_us_open", "A", "B", "2099-01-01T12:00:00Z")
+    _event(migrated, "tennis_wta_us_open", "C", "D", "2020-01-01T12:00:00Z")
+
+    a_venir = serve_stats.upcoming_players(migrated)
+    tous = serve_stats.known_players(migrated)
+
+    assert set(a_venir) == {("A", "atp"), ("B", "atp")}
+    assert set(tous) == {("A", "atp"), ("B", "atp"), ("C", "wta"), ("D", "wta")}
+
+
+def _event(settings: Settings, cle: str, home: str, away: str, quand: str) -> None:
+    from myassistantbet import db
+
+    sport = db.query_one("SELECT id FROM sports WHERE key = 'tennis'", settings=settings)
+    competition = db.query_one(
+        "SELECT id FROM competitions WHERE oddsapi_key = ?", (cle,), settings=settings
+    )
+    db.execute(
+        "INSERT INTO events (sport_id, competition_id, oddsapi_event_id, home, away, "
+        "commence_time, source, created_at) VALUES (?, ?, ?, ?, ?, ?, 'api', ?)",
+        (sport["id"], competition["id"], f"{home}{away}", home, away, quand, db.utcnow()),
+        settings=settings,
+    )
