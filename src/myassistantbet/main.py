@@ -47,6 +47,7 @@ from .services import market_families as market_families_service
 from .services import odds_view as odds_view_service
 from .services import picks_import as picks_import_service
 from .services import prompt as prompt_service
+from .services import sections as sections_service
 from .services import session as session_service
 from .services import set_scores as set_scores_service
 from .services import stats_export as stats_export_service
@@ -1057,6 +1058,9 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         # Le compte-rendu d'ingestion : ce qui a ete lu, ce qui a ete perdu. Nul
         # hors d'un import, ou il n'y a rien a rendre compte.
         "import_report": None,
+        # Les sections demandees et absentes du collage. Nul hors d'un
+        # apercu : il n'y a alors aucun collage a relire.
+        "missing_sections": None,
         **extra,
     }
 
@@ -1125,11 +1129,21 @@ async def preview_picks_import(request: Request, session_id: int) -> HTMLRespons
     """Lit le tableau de Claude et propose un import. N'ecrit rien en base."""
     _require_session(session_id)
     form = dict(await request.form())
-    preview = picks_import_service.build_preview(
-        session_id, str(form.get("table", "")), get_settings()
-    )
+    settings = get_settings()
+    raw = str(form.get("table", ""))
+    preview = picks_import_service.build_preview(session_id, raw, settings)
     return templates.TemplateResponse(
-        request, "picks.html", _picks_context(session_id, preview=preview)
+        request,
+        "picks.html",
+        _picks_context(
+            session_id,
+            preview=preview,
+            # Ce que le prompt reclamait et que le collage n'a pas rapporte.
+            # **Distinct des rejets** : un rejet est un bloc recu et refuse,
+            # celui-ci un bloc jamais arrive — et c'est ici, pas une semaine plus
+            # tard, que l'information sert encore a quelque chose.
+            missing_sections=sections_service.for_paste(session_id, raw, settings),
+        ),
     )
 
 

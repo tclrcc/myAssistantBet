@@ -70,6 +70,18 @@
     {%- if preview.late_line %}<br>{{ preview.late_line }}{% endif %}
   </p>
 
+  {# **Une section absente n'est pas un bloc rejeté**, et elle n'apparaissait
+     donc nulle part : un rejet décrit un bloc reçu et refusé, celui-ci un bloc
+     qui n'est jamais arrivé. Dite ici, elle se reprend en recollant ; dite sur
+     la page de statistiques, elle ne se répare plus. #}
+  {% if missing_sections and missing_sections.note %}
+  <p class="notice notice-warn">
+    {{ missing_sections.missing | length }} section(s) {{ missing_sections.note }}.
+    Recolle la réponse entière : ce qui manque ici ne produira aucun rejet, seulement
+    un compte à zéro qu'on ne saura pas lire.
+  </p>
+  {% endif %}
+
   {% if preview.notes %}
   <p class="notice notice-warn">{{ preview.notes | join(' ') }}</p>
   {% endif %}

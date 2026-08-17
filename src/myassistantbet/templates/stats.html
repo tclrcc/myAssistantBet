@@ -780,6 +780,53 @@
   </details>
   {% endif %}
 
+  {# **Sections attendues et non trouvées.** Le trou que la table des rejets ne
+     couvre pas : elle attrape ce qui lève, pas ce qui n'arrive jamais. Une
+     section demandée par le prompt et absente du collage ne produit aucun rejet
+     — elle n'a pas échoué, elle n'est pas venue — et le zéro de la population
+     qu'elle alimente devient alors illisible. C'est l'état exact dans lequel
+     les blocs « conf » sont restés quatre jours.
+
+     Rien n'est stocké : les deux moitiés se relisent, le prompt émis dans
+     `prompts.body` et le collage dans `imports_raw`. #}
+  {% if not sections.empty %}
+  <details class="readout">
+    <summary>
+      <span class="readout-facts">
+        {% if sections.concerned %}
+        <b>{{ sections.missing_total }}</b> section(s) demandée(s) et absente(s) du collage,
+        sur <b>{{ sections.concerned | length }}</b> session(s)
+        {% else %}
+        <b>{{ sections.rows | length }}</b> session(s) relue(s) — aucune section demandée
+        ne manque au collage
+        {% endif %}
+      </span>
+      <span class="readout-hint">ce que le prompt réclamait et n'a pas reçu</span>
+    </summary>
+    <div class="why-body">
+      <table class="board">
+        <thead><tr><th>Session</th><th>État du collage</th></tr></thead>
+        <tbody>
+          {% for row in sections.rows %}
+          <tr><td class="num">{{ row.session_id }}</td><td>{{ row.line }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p>
+        Une section <strong>absente</strong> n'est pas un bloc rejeté : un rejet décrit un
+        bloc reçu et refusé, celui-ci un bloc qui n'est jamais arrivé. Les deux se réparent
+        de la même façon — en recollant la réponse entière — et un seul des deux se voyait.
+      </p>
+      <p>
+        Une session dont le prompt ne demandait <strong>aucune</strong> section structurée
+        n'a rien à rapporter, et son zéro n'est pas un manque. C'est cette distinction
+        qui rend lisible un compte à zéro sur la population qu'une section alimente :
+        « jamais demandée » et « demandée et perdue » se lisaient pareil.
+      </p>
+    </div>
+  </details>
+  {% endif %}
+
   <details class="readout">
     <summary>
       <span class="readout-facts">

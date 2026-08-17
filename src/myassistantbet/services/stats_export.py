@@ -39,6 +39,7 @@ from . import combos as combos_service
 from . import coupons as coupons_service
 from . import history as history_service
 from . import ingestion as ingestion_service
+from . import sections as sections_service
 from . import set_scores as set_scores_service
 from .inference import EQUIVALENCE_MARGIN, MARGIN_REFERENCE
 from .thresholds import COUPON_TRACKING, toggle_of
@@ -147,6 +148,11 @@ class StatsReport:
     #: de la page ne dit — que le probleme n'est pas dans les donnees mais dans
     #: le chemin qui les amene.
     ingestion: ingestion_service.Summary = field(default_factory=ingestion_service.Summary)
+    #: Les sections que le prompt a demandees et que le collage n'a pas
+    #: rapportees. **Ce n'est pas un rejet** : un rejet decrit un bloc recu et
+    #: refuse, celui-ci decrit un bloc jamais arrive — l'etat exact dans lequel
+    #: les blocs `conf` sont restes quatre jours sans que rien ne le dise.
+    missing_sections: sections_service.Survey = field(default_factory=sections_service.Survey)
     #: Les combines proposes, sur toute la base. **Un compte et un ecart, jamais
     #: un taux** : au taux de jambe constate, un combine de dix jambes passe une
     #: fois sur 280, et son taux ne sera jamais mesurable.
@@ -199,6 +205,7 @@ class StatsReport:
             "set_score_options": self.set_score_options,
             "set_score_matrix": self.set_score_matrix,
             "ingestion": self.ingestion,
+            "sections": self.missing_sections,
             "combos": self.combos,
             "tier_usage": self.tier_usage,
             "tier_scope": self.tier_scope,
@@ -405,6 +412,18 @@ class StatsReport:
                 "chemin d'ingestion, jamais le modèle — c'est un bloc qui a existé et "
                 "qui n'est pas entré, donc quelque chose que la page ne mesure pas."
             )
+        # **Une section absente n'est pas un rejet**, et c'est pour ça qu'elle a
+        # sa propre réserve : un rejet dit qu'un bloc est arrivé cassé, celui-ci
+        # dit qu'il n'est jamais arrivé. Les deux se réparent au même endroit —
+        # en recollant — et un seul des deux se voyait.
+        if self.missing_sections.concerned:
+            ou = " · ".join(row.line for row in self.missing_sections.concerned)
+            notes.append(
+                f"{self.missing_sections.missing_total} section(s) demandée(s) par le prompt et "
+                f"absente(s) du collage : {ou}. Une section absente ne produit aucun rejet "
+                "— elle n'a pas échoué, elle n'est pas venue — et un zéro sur la "
+                "population qu'elle alimente ne se distingue alors pas d'une mesure."
+            )
         if analysis.clustered_selections:
             # Les rencontres sont **nommees** : un fichier relu ailleurs doit
             # pouvoir mener a la verification, pas seulement l'annoncer.
@@ -500,6 +519,7 @@ def report(settings: Settings | None = None) -> StatsReport:
         set_score_options=list(set_scores_service.SCORES),
         set_score_matrix=set_scores_service.matrix_rows(sets),
         ingestion=ingestion_service.summary(settings),
+        missing_sections=sections_service.survey(settings),
         combos=combos_service.summary(settings),
         tier_usage=history_service.tier_usage(settings),
         tier_scope=history_service.tier_scope(settings),
@@ -662,6 +682,19 @@ def as_json(found: StatsReport) -> dict[str, Any]:
                 for row in found.ingestion.rows
             ],
         },
+        # Demandé par le prompt, absent du collage. **Trois états et non deux** :
+        # `asked` vide veut dire que ce lot n'a jamais demandé la section, ce qui
+        # n'est pas un manque — c'est la distinction qui rendait un zéro
+        # exploratoire illisible.
+        "missing_sections": [
+            {
+                "session_id": row.session_id,
+                "asked": sorted(row.asked),
+                "found": sorted(row.found),
+                "missing": list(row.missing),
+            }
+            for row in found.missing_sections.rows
+        ],
         # Les combines proposes. **Aucun taux** : au taux de jambe constate, un
         # combine de dix jambes passe une fois sur 280.
         "exploratory": {
