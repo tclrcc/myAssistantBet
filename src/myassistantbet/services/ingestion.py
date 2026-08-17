@@ -141,11 +141,26 @@ def _balanced(text: str, start: int) -> int | None:
     return None
 
 
+@dataclass(frozen=True)
+class Body:
+    """Le corps d'un bloc, **et l'endroit d'ou il vient**.
+
+    Les bornes sont celles du texte brut recu : `raw[start:end]` redonne le
+    corps. C'est ce qui rend un rejeu cible possible — sans elles, corriger un
+    lecteur obligerait a re-parser tout un collage et a rapprocher les resultats
+    a la main.
+    """
+
+    start: int
+    end: int
+    text: str
+
+
 def read_bodies(
     raw: str,
     fence: re.Pattern[str],
     belongs: Callable[[dict], bool],
-) -> list[str]:
+) -> list[Body]:
     """Les corps de blocs d'une famille, **clotures ou non**, dans l'ordre.
 
     Deux chemins, et il faut les deux :
@@ -165,14 +180,14 @@ def read_bodies(
     ecrit ainsi se rendrait en bloc de confiance refuse.
     """
     spans: list[tuple[int, int]] = []
-    bodies: list[tuple[int, str]] = []
+    bodies: list[Body] = []
     for found in fence.finditer(raw or ""):
         spans.append((found.start(), found.end()))
         body = found.group(1)
         payload = _loads(body)
         if payload is not None and not belongs(payload) and _shaped(payload):
             continue
-        bodies.append((found.start(), body))
+        bodies.append(Body(found.start(1), found.end(1), body))
 
     index, text = 0, raw or ""
     while index < len(text):
@@ -185,10 +200,10 @@ def read_bodies(
             continue
         payload = _loads(text[index:end])
         if payload is not None and belongs(payload):
-            bodies.append((index, text[index:end]))
+            bodies.append(Body(index, end, text[index:end]))
         index = end if payload is not None else index + 1
 
-    return [body for _, body in sorted(bodies, key=lambda pair: pair[0])]
+    return sorted(bodies, key=lambda body: body.start)
 
 
 def _loads(body: str) -> dict | None:
@@ -218,6 +233,11 @@ class Reject:
     reason: str
     detail: str = ""
     payload: str = ""
+    #: L'endroit du collage brut d'ou le bloc refuse a ete extrait. **C'est ce
+    #: qui rend le rejet reparable au lieu de simplement visible** : le motif dit
+    #: pourquoi, le brut dit quoi, les bornes disent ou.
+    start: int | None = None
+    end: int | None = None
 
     @property
     def label(self) -> str:
@@ -228,12 +248,14 @@ class Reject:
         )
         return f"{head} : {self.detail}" if self.detail else head
 
-    def as_payload(self) -> dict[str, str]:
+    def as_payload(self) -> dict[str, object]:
         return {
             "block_type": self.block_type,
             "reason": self.reason,
             "detail": self.detail,
             "payload": self.payload,
+            "start": self.start,
+            "end": self.end,
         }
 
 
@@ -275,9 +297,19 @@ def from_payload(raw: object) -> list[Reject]:
                 reason=_clean(item.get("reason"), REASONS, OTHER),
                 detail=str(item.get("detail") or ""),
                 payload=str(item.get("payload") or ""),
+                start=_position(item.get("start")),
+                end=_position(item.get("end")),
             )
         )
     return found
+
+
+def _position(value: object) -> int | None:
+    """Une borne de position, ou rien. Une valeur illisible ne coute que l'ancre."""
+    try:
+        return int(str(value))
+    except (TypeError, ValueError):
+        return None
 
 
 def to_payload(rejects: list[Reject]) -> str:
@@ -289,6 +321,7 @@ def record(
     session_id: int,
     rejects: list[Reject],
     settings: Settings | None = None,
+    import_id: int | None = None,
 ) -> int:
     """Journalise ce que l'ingestion a perdu. Rend le nombre de lignes ecrites.
 
@@ -302,7 +335,9 @@ def record(
     with connect(settings) as conn:
         conn.executemany(
             "INSERT INTO ingestion_rejects (session_id, block_type, raw_payload, reason, "
-            "                               detail, created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            "                               detail, created_at, import_id, offset_start, "
+            "                               offset_end) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     session_id,
@@ -311,6 +346,9 @@ def record(
                     _clean(reject.reason, REASONS, OTHER),
                     reject.detail or "",
                     now,
+                    import_id,
+                    reject.start,
+                    reject.end,
                 )
                 for reject in rejects
             ],

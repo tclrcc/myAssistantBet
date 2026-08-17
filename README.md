@@ -260,6 +260,42 @@ pas reconnu est affiche brut plutot que mal interprete.
 | Tennis | The Odds API, 8 marches profonds | aucun | Grands Chelems et Masters seulement ; le reste en saisie manuelle |
 | Cyclisme | saisie manuelle | saisie manuelle | aucune API ne le couvre |
 
+## Rejouer un collage (`myassistantbet-replay`)
+
+Chaque collage recu par l'import est conserve **integralement, avant toute tentative de
+lecture** (table `imports_raw`). Ce n'est pas une precaution de principe : le chantier du
+17/08/2026 a etabli que `picks.claim_raw_json` etait NULL sur 235 selections sur 235, que
+la cause etait un lecteur qui ne reconnaissait un bloc que sous sa cloture, et que le
+rattrapage etait **impossible** faute d'avoir garde le texte. Corriger le lecteur ne
+servait a rien : il n'y avait plus rien a relire.
+
+```bash
+uv run myassistantbet-replay --lister 14   # les collages d'une session
+uv run myassistantbet-replay 1             # simulation : rien n'est ecrit
+uv run myassistantbet-replay 1 --ecrire    # enregistre ce qui manque
+```
+
+**Simulation par defaut**, et c'est delibere : un rejeu qui ecrirait d'office ferait d'un
+outil de diagnostic un outil de risque, sur des donnees dont tout le projet dit qu'elles ne
+se reconstituent pas. Exemple reel, apres correction d'un lecteur :
+
+```
+Import 1 · session 14 · 536 caractères · SIMULATION — rien n'est écrit
+  1 sélection(s) nouvelle(s), 0 déjà présente(s)
+  1 bloc(s) de confiance · 0 combiné(s) · 0 score(s) en sets
+    + Lens – Paris Saint Germain · Handicap Lens +0.5 · 2.05 · cran 3
+```
+
+Le second passage **ne double rien** : une ligne dont la signature (match, marche,
+selection) existe deja dans la session est marquee en doublon, et le rejeu ne garde que ce
+qui manque. Le meme collage rejoue deux fois de suite ecrit donc une fois.
+
+Chaque selection, chaque bloc de confiance, chaque combine et chaque score en sets garde
+en plus son **intervalle de position** dans le texte brut : `raw_text[offset_start:offset_end]`
+redonne le fragment d'ou il a ete extrait, ce qui rend un rejeu cible possible sans
+re-parser l'ensemble. Aucune purge automatique — une trentaine de milliers de caracteres
+par session, une a trois sessions par jour.
+
 ## Sauvegardes
 
 ```bash

@@ -1151,6 +1151,9 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
     # Ce que le collage a perdu voyage avec le formulaire : l'apercu n'ecrit
     # rien, c'est l'import qui journalise. Sans ce transport, un bloc refuse a
     # la lecture se serait affiche une fois puis referme avec l'onglet.
+    # Le collage brut a ete garde a l'apercu, avant toute lecture. Son
+    # identifiant voyage avec le formulaire et rejoint chaque ligne creee.
+    import_id = form.get("import_id", "")
     report = ingestion_service.Report(
         rejects=ingestion_service.from_payload(form.get("rejects", "")),
         claims_read=int(form.get("claims_read", "0") or 0),
@@ -1187,6 +1190,12 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
                 override_cause=form.get(f"override_cause_{index}", ""),
                 # La section C-bis : comptee a part de bout en bout.
                 exploratory=form.get(f"exploratory_{index}") == "1",
+                # D'ou vient cette ligne dans le collage brut : sans elle, un
+                # rejeu devrait re-parser tout un collage et rapprocher les
+                # resultats a la main.
+                import_id=import_id,
+                offsets=form.get(f"offsets_{index}", ""),
+                claim_offsets=form.get(f"claim_offsets_{index}", ""),
                 settings=settings,
             )
             created += 1
@@ -1211,7 +1220,9 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
     # Les scores en sets du meme collage. **Aucun lecteur n'existait** : la
     # section D en impose un par match de tennis a chaque session, et les cinq
     # scores de la base ont tous ete tapes a la main, une ligne a la fois.
-    report.set_scores_read, score_failures = _record_set_scores(session_id, form, settings)
+    report.set_scores_read, score_failures = _record_set_scores(
+        session_id, form, settings, import_id
+    )
     failures.extend(score_failures)
     report.rejects.extend(
         ingestion_service.Reject(
@@ -1222,7 +1233,7 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
         for message in score_failures
     )
 
-    combo_failures = _record_combos(session_id, form, par_ligne, settings)
+    combo_failures = _record_combos(session_id, form, par_ligne, settings, import_id)
     failures.extend(combo_failures)
     report.rejects.extend(
         ingestion_service.Reject(
@@ -1234,7 +1245,12 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
     )
     report.picks_created = created
     report.combos_recorded = _combo_count(form) - len(combo_failures)
-    ingestion_service.record(session_id, report.rejects, settings)
+    ingestion_service.record(
+        session_id,
+        report.rejects,
+        settings,
+        import_id=int(import_id) if str(import_id).strip().isdigit() else None,
+    )
 
     return templates.TemplateResponse(
         request,
@@ -1270,6 +1286,7 @@ def _record_set_scores(
     session_id: int,
     form: dict[str, str],
     settings: Settings,
+    import_id: str = "",
 ) -> tuple[int, list[str]]:
     """Enregistre les scores en sets lus dans le collage. Rend (ecrits, echecs).
 
@@ -1293,6 +1310,8 @@ def _record_set_scores(
                 int(ligne["event_id"]),
                 predicted=str(ligne.get("predicted") or ""),
                 alternate=str(ligne.get("alternate") or ""),
+                import_id=int(import_id) if str(import_id).strip().isdigit() else None,
+                span=(ligne.get("start"), ligne.get("end")),
                 settings=settings,
             )
             ecrits += 1
@@ -1306,6 +1325,7 @@ def _record_combos(
     form: dict[str, str],
     par_ligne: dict[str, int],
     settings: Settings,
+    import_id: str = "",
 ) -> list[str]:
     """Enregistre les combines de l'import. Rend ce qui n'a pas pu l'etre.
 
@@ -1338,6 +1358,8 @@ def _record_combos(
                 declared_price=payload.get("declared"),
                 target_price=payload.get("target"),
                 stop_reason=payload.get("stop") or None,
+                import_id=int(import_id) if str(import_id).strip().isdigit() else None,
+                span=(payload.get("start"), payload.get("end")),
                 settings=settings,
             )
         except (combos_service.ComboError, KeyError, ValueError) as exc:

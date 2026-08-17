@@ -1676,6 +1676,12 @@ def add_pick(
     #: tombe. **Comptee a part de bout en bout** : melanger les deux populations
     #: detruirait la comparaison que cette section existe pour rendre possible.
     exploratory: bool = False,
+    #: D'ou vient cette ligne dans le collage brut. **Trois valeurs et non une** :
+    #: la ligne du tableau et le bloc de confiance arrivent d'endroits differents
+    #: du texte, et une seule paire de bornes ferait mentir l'autre.
+    import_id: str | int = "",
+    offsets: str = "",
+    claim_offsets: str = "",
     played: bool = False,
     result: str = "pending",
     settings: Settings | None = None,
@@ -1869,9 +1875,11 @@ def add_pick(
             "                   late_reason, confidence_computed, claim_raw_json, "
             "                   gap_touches_factor, distinct_publishers, "
             "                   confidence_claimed, research_overridden, "
-            "                   research_override_cause, exploratoire, created_at) "
+            "                   research_override_cause, exploratoire, import_id, "
+            "                   offset_start, offset_end, claim_offset_start, "
+            "                   claim_offset_end, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-            "        ?, ?)",
+            "        ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 attached,
@@ -1898,10 +1906,26 @@ def add_pick(
                 _flag(None if opened is None else not opened),
                 cause,
                 1 if exploratory else 0,
+                int(import_id) if str(import_id).strip().isdigit() else None,
+                *_span(offsets),
+                *_span(claim_offsets),
                 utcnow(),
             ),
         )
         return int(cursor.lastrowid)
+
+
+def _span(raw: str) -> tuple[int | None, int | None]:
+    """« 120:154 » — les bornes d'un fragment du collage brut, ou deux `None`.
+
+    Une valeur illisible ne coute que l'ancre : la selection s'enregistre quand
+    meme, elle ne saura simplement plus d'ou elle vient. Refuser l'ecriture pour
+    une ancre manquante ferait perdre la donnee pour sauver sa provenance.
+    """
+    parts = str(raw or "").split(":")
+    if len(parts) != 2 or not all(part.strip().lstrip("-").isdigit() for part in parts):
+        return None, None
+    return int(parts[0]), int(parts[1])
 
 
 def _flag(value: bool | None) -> int | None:

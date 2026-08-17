@@ -289,3 +289,29 @@ def pose_bandes(settings: Any, bandes: dict[int, tuple[float | None, float | Non
             (low, high, level),
             settings=settings,
         )
+
+
+def migre_jusqu_a(settings: Any, version: int) -> list[str]:
+    """Applique les migrations **jusqu'a** une version, et pas au-dela.
+
+    `run_migrations` ne connait pas de cible : il applique tout ce qui manque.
+    On lui donne donc un dossier qui ne contient que les migrations voulues —
+    c'est un parametre depuis toujours, et c'est plus honnete qu'un drapeau
+    ajoute au moteur pour les seuls tests.
+
+    Sert la **regle de non-regression des populations** : un indicateur de la
+    page doit etre identique avant et apres une migration, hors changement
+    explicitement demande. Le verifier a l'oeil ne tient pas sur trente cartes.
+    """
+    import shutil
+    import tempfile
+    from pathlib import Path
+
+    from myassistantbet import db
+
+    source = settings.migrations_dir
+    dossier = Path(tempfile.mkdtemp())
+    for chemin in sorted(source.glob("*.sql")):
+        if int(chemin.name.split("_", 1)[0]) <= version:
+            shutil.copy(chemin, dossier / chemin.name)
+    return db.run_migrations(settings, migrations_dir=dossier)

@@ -95,7 +95,9 @@
                       "prompt_id": attached.prompt_id,
                       "declared": attached.combo.declared_price,
                       "target": attached.combo.target_price,
-                      "stop": attached.combo.stop_reason} | tojson }}'>
+                      "stop": attached.combo.stop_reason,
+                      "start": attached.combo.start,
+                      "end": attached.combo.end} | tojson }}'>
     {% endfor %}
     {# La liste des dossiers ouverts voyage avec le formulaire : l'aperçu
        n'écrit rien, c'est l'import qui la mémorise. #}
@@ -115,6 +117,11 @@
        tennis à chaque session, et aucun lecteur n'existait : les cinq scores de
        la base ont été tapés à la main, une ligne à la fois. #}
     <input type="hidden" name="set_scores" value="{{ preview.scores_payload }}">
+    {# **La provenance voyage avec le formulaire.** Le collage brut est déjà en
+       base — c'est la seule écriture que l'aperçu fasse — mais l'identifiant et
+       les bornes doivent rejoindre chaque ligne créée : c'est ce qui rendra un
+       rejeu ciblé possible sans re-parser tout un collage. #}
+    <input type="hidden" name="import_id" value="{{ preview.import_id or '' }}">
     <table class="board import-table">
       <thead>
         <tr>
@@ -181,6 +188,15 @@
                empêche les deux populations de se mélanger, et sans lui la
                comparaison que la section existe pour rendre possible n'aurait
                plus de sujet. #}
+            {# L'ancre de cette ligne dans le collage brut, et celle de son bloc
+               de confiance : deux paires distinctes, elles viennent d'endroits
+               différents du texte. #}
+            <input type="hidden" name="offsets_{{ pick.index }}"
+                   value="{% if pick.start is not none %}{{ pick.start }}:{{ pick.end }}{% endif %}">
+            {% if pick.claim and pick.claim.start is not none %}
+            <input type="hidden" name="claim_offsets_{{ pick.index }}"
+                   value="{{ pick.claim.start }}:{{ pick.claim.end }}">
+            {% endif %}
             {% if pick.exploratory %}
             <input type="hidden" name="exploratory_{{ pick.index }}" value="1">
             <span class="badge" title="Section C-bis : produite sans fait daté, comptée à part">

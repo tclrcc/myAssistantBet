@@ -33,7 +33,7 @@ import logging
 import math
 import re
 import statistics
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
@@ -105,6 +105,9 @@ class ParsedCombo:
     declared_price: float | None
     target_price: float | None
     stop_reason: str | None
+    #: L'endroit du collage brut d'ou le bloc vient.
+    start: int | None = None
+    end: int | None = None
 
     @property
     def label(self) -> str:
@@ -185,16 +188,20 @@ def read_combos(raw: str) -> ComboReading:
     reading = ComboReading()
     for index, body in enumerate(read_bodies(raw or "", BLOCK, is_combo), start=1):
         try:
-            reading.combos.append(parse(body))
+            combo = parse(body.text)
         except ComboError as exc:
             reading.rejects.append(
                 Reject(
                     block_type=COMBO,
                     reason=exc.reason,
                     detail=f"bloc combiné {index} : {exc}",
-                    payload=body,
+                    payload=body.text,
+                    start=body.start,
+                    end=body.end,
                 )
             )
+            continue
+        reading.combos.append(replace(combo, start=body.start, end=body.end))
     return reading
 
 
@@ -365,6 +372,8 @@ def record(
     declared_price: float | None = None,
     target_price: float | None = None,
     stop_reason: str | None = None,
+    import_id: int | None = None,
+    span: tuple[int | None, int | None] = (None, None),
     settings: Settings | None = None,
 ) -> int:
     """Enregistre un combine. Renvoie son id.
@@ -418,7 +427,8 @@ def record(
 
         cursor = conn.execute(
             "INSERT INTO combos (session_id, prompt_id, kind, target_price, declared_price, "
-            "stop_reason, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "stop_reason, import_id, offset_start, offset_end, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 prompt_id,
@@ -426,6 +436,9 @@ def record(
                 target_price,
                 declared_price,
                 stop_reason,
+                import_id,
+                span[0],
+                span[1],
                 utcnow(),
             ),
         )

@@ -141,6 +141,11 @@ class Claim:
     declared: int | None = None
     match: str = ""
     raw: str = ""
+    #: L'endroit du collage brut d'ou le bloc vient. Le bloc de confiance vit sur
+    #: la meme ligne de `picks` que la selection mais **arrive d'ailleurs** dans
+    #: le texte : une seule paire de bornes ne pourrait pas porter les deux.
+    start: int | None = None
+    end: int | None = None
 
     @property
     def strong_facts(self) -> tuple[Fact, ...]:
@@ -513,22 +518,28 @@ def read_blocks(raw: str) -> Reading:
     """
     reading = Reading()
     for index, body in enumerate(read_bodies(raw or "", BLOCK, is_claim), start=1):
+        found = body.text
         # La ligne des dossiers ouverts se donne hors de tout bloc, mais un
         # rendu peut la cloturer quand meme. L'ecarter ici plutot que de la
         # rejeter : comptee comme un bloc de confiance en echec, elle ferait
         # diverger le compte des blocs de celui des lignes et couterait les
         # crans de tout le lot pour une ligne qui n'en est pas un.
-        if OPEN_LINE.search(body):
+        if OPEN_LINE.search(found):
             continue
         try:
-            reading.claims.append(parse(body))
+            claim = parse(found)
         except ClaimError as exc:
             reading.rejects.append(
                 Reject(
                     block_type=CONF,
                     reason=exc.reason,
                     detail=f"bloc {index} : {exc}",
-                    payload=body,
+                    payload=found,
+                    start=body.start,
+                    end=body.end,
                 )
             )
+            continue
+        claim.start, claim.end = body.start, body.end
+        reading.claims.append(claim)
     return reading

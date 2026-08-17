@@ -41,6 +41,8 @@ from .history import (
     prompt_headers,
 )
 from .history import tiers as load_tiers
+from .imports_raw import FORM
+from .imports_raw import record as record_import
 from .ingestion import (
     COMBO,
     CONF,
@@ -54,7 +56,7 @@ from .ingestion import (
     to_payload,
 )
 from .prompt import QUOTA_FLOOR_TIERS
-from .set_scores import ParsedScore
+from .set_scores import ParsedScore, _positioned
 from .set_scores import read as read_scores
 
 #: La section **C-bis**, ou l'exigence de fait date tombe. Reconnue sur son
@@ -143,6 +145,12 @@ class ParsedPick:
     #: sont pas la meme observation. Sans la cause, les deux alimentent le meme
     #: taux et une panne de transmission se lit comme un resultat.
     override_cause: str = ""
+    #: L'endroit du collage brut d'ou la ligne du tableau vient, et celui du bloc
+    #: de confiance qui l'accompagne. **Deux paires distinctes** : les deux
+    #: arrivent d'endroits differents du texte, et une seule ferait mentir
+    #: l'autre. C'est ce qui rend un rejeu cible possible.
+    start: int | None = None
+    end: int | None = None
     #: La ligne vient de la section **C-bis**, ou l'exigence d'un fait date
     #: tombe. **Comptee a part de bout en bout** : les indicateurs de la page
     #: portent sur la population principale, et melanger les deux detruirait la
@@ -285,6 +293,10 @@ class ImportPreview:
     #: manuelle, une ligne a la fois, et les cinq scores de la base ont ete tapes
     #: a la main quand une session de huit matchs de tennis en produit huit.
     scores: list[AttachedScore] = field(default_factory=list)
+    #: Le collage brut d'ou tout ceci sort. **Ecrit avant toute lecture**, donc
+    #: present meme quand le parsing echoue entierement — c'est le cas qu'on veut
+    #: pouvoir rejouer.
+    import_id: int | None = None
     #: Ce que l'ingestion a **perdu** : un bloc malforme, un repere qui ne se
     #: resout pas, un bloc cherche et introuvable. Distinct de `notes`, qui est
     #: du texte a lire : ceci se compte, se journalise et se relit des semaines
@@ -314,6 +326,8 @@ class ImportPreview:
                     "event_id": score.event_id,
                     "predicted": score.parsed.predicted,
                     "alternate": score.parsed.alternate,
+                    "start": score.parsed.start,
+                    "end": score.parsed.end,
                 }
                 for score in self.scores
                 if score.resolved and not score.parsed.passe
@@ -620,7 +634,8 @@ def parse_table(
     principaux: set[int] = set()
     exploratoire = False
 
-    for line in (raw or "").splitlines():
+    for offset, brut in _positioned(raw or ""):
+        line = brut.rstrip("\r\n")
         # Le titre de la section fait basculer la lecture, et **remet l'entete a
         # zero** : le second tableau porte le sien, et le manquer ferait lire sa
         # ligne d'en-tete comme une selection.
@@ -696,6 +711,8 @@ def parse_table(
                 # Les deux types de match rapproches portent ce drapeau : la
                 # ligne se decoche quelle que soit l'origine du rapprochement.
                 started=bool(found and found.started),
+                start=offset,
+                end=offset + len(line),
             )
         )
         seen.add(signature)
@@ -1167,9 +1184,19 @@ def build_preview(
     session_id: int,
     raw: str,
     settings: Settings | None = None,
+    source: str = FORM,
 ) -> ImportPreview:
-    """Proposition d'import pour une session, matchs rapproches par leur nom."""
+    """Proposition d'import pour une session, matchs rapproches par leur nom.
+
+    **Le collage est garde avant toute tentative de lecture**, et c'est la seule
+    ecriture que l'apercu fasse — le contrat de longue date porte sur les
+    **selections**, pas sur le texte recu. La difference est tout l'objet du
+    chantier : un collage dont le parsing echoue entierement n'atteint jamais le
+    formulaire d'import, donc ne serait garde nulle part si on attendait la
+    validation. C'est precisement ce cas-la qu'on veut pouvoir rejouer.
+    """
     settings = settings or get_settings()
+    import_id = record_import(session_id, raw, source, settings)
     rows = build_view(session_id, settings).rows
     known = {
         _signature(pick.event_id, pick.market, pick.selection)
@@ -1182,7 +1209,7 @@ def build_preview(
     # Les en-tetes des prompts archives : c'est contre eux que l'appariement des
     # blocs de confiance se verifie. L'information dormait deja en base — les
     # corps sont stockes depuis toujours.
-    return parse_table(
+    preview = parse_table(
         raw,
         rows,
         load_tiers(settings),
@@ -1191,3 +1218,5 @@ def build_preview(
         taken,
         prompt_headers(session_id, settings),
     )
+    preview.import_id = import_id
+    return preview

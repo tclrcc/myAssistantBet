@@ -25,7 +25,7 @@ from __future__ import annotations
 import logging
 import re
 import unicodedata
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
@@ -98,6 +98,9 @@ class ParsedScore:
     match_text: str = ""
     predicted: str = ""
     alternate: str = ""
+    #: L'endroit du collage brut d'ou la ligne vient.
+    start: int | None = None
+    end: int | None = None
 
     @property
     def passe(self) -> bool:
@@ -139,7 +142,11 @@ def read(raw: str) -> ScoreReading:
     """
     found = ScoreReading()
     seen: set[str] = set()
-    for line in (raw or "").splitlines():
+    # **Les lignes se parcourent avec leur position**, pas en `splitlines()` nu :
+    # sans elle, une ligne lue ne sait plus d'ou elle vient et un rejeu cible est
+    # impossible. `keepends` garde les fins de ligne pour que l'offset avance du
+    # bon nombre de caracteres, quelle que soit la convention du collage.
+    for start, line in _positioned(raw or ""):
         parsed = _line(line)
         if parsed is None:
             continue
@@ -147,8 +154,22 @@ def read(raw: str) -> ScoreReading:
         if not cle or cle in seen:
             continue
         seen.add(cle)
-        found.rows.append(parsed)
+        found.rows.append(replace(parsed, start=start, end=start + len(line.rstrip("\r\n"))))
     return found
+
+
+def _positioned(raw: str) -> list[tuple[int, str]]:
+    """Les lignes d'un texte, chacune avec son offset de depart.
+
+    Ecrit une fois et partage : `picks_import` en a besoin pour la meme raison,
+    et deux parcours paralleles auraient fini par ne plus compter les memes
+    caracteres — un `\r\n` suffit a les faire diverger.
+    """
+    lignes, offset = [], 0
+    for line in raw.splitlines(keepends=True):
+        lignes.append((offset, line))
+        offset += len(line)
+    return lignes
 
 
 #: Les colonnes d'un tableau, quel que soit son format de copie — barres
@@ -320,6 +341,8 @@ def save(
     predicted: str = "",
     alternate: str = "",
     actual: str = "",
+    import_id: int | None = None,
+    span: tuple[int | None, int | None] = (None, None),
     settings: Settings | None = None,
 ) -> None:
     """Enregistre ou corrige le score d'un match. Sans score annonce, la ligne part.
@@ -343,11 +366,14 @@ def save(
             return
         conn.execute(
             "INSERT INTO set_scores (session_id, event_id, predicted, alternate, actual, "
-            "                        created_at) VALUES (?, ?, ?, ?, ?, ?) "
+            "                        import_id, offset_start, offset_end, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(session_id, event_id) DO UPDATE SET "
             "  predicted = excluded.predicted, alternate = excluded.alternate, "
-            "  actual = excluded.actual",
-            (session_id, event_id, annonce, second, reel, utcnow()),
+            "  actual = excluded.actual, import_id = COALESCE(excluded.import_id, import_id), "
+            "  offset_start = COALESCE(excluded.offset_start, offset_start), "
+            "  offset_end = COALESCE(excluded.offset_end, offset_end)",
+            (session_id, event_id, annonce, second, reel, import_id, span[0], span[1], utcnow()),
         )
     logger.info(
         "Score en sets — session %d, match %d : %s%s%s",
