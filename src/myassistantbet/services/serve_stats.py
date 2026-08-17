@@ -920,3 +920,311 @@ async def fetch_timeline(
         ),
         payload=f"{first}/{second}/{day}",
     )
+
+
+# -- Les agregats ------------------------------------------------------------
+#
+# **Sommer les comptes, jamais moyenner les pourcentages par match.** L'API sert
+# les denominateurs precisement pour rendre ca possible ; ne pas s'en servir
+# reviendrait a heriter de ses choix d'agregation sans les voir. Moyenner par
+# match donnerait le meme poids a un abandon de trois jeux et a un cinq sets, et
+# fausserait le profil des joueurs a abandons — ceux que la ligne « Abandons »
+# du bloc signale deja.
+
+#: Plancher de points de service sur la fenetre et la surface demandees. **En
+#: points et non en matchs** : c'est le volume qui rend un taux lisible, et deux
+#: matchs de cinq sets en portent plus que six abandons.
+MIN_SERVE_POINTS = 400
+
+#: Le meme plancher pour les jeux. Une tenue de service sur douze jeux est une
+#: soiree, pas un profil. Trois cents jeux valent une trentaine de matchs.
+MIN_GAMES = 300
+
+WINDOW_52W = "52w"
+ALL_SURFACES = ""
+
+
+@dataclass(frozen=True)
+class ServeAggregate:
+    """Les comptes sommes d'un joueur sur une fenetre. **Aucun taux stocke.**
+
+    Un taux se calcule a la lecture, ce qui a deux effets : deux fenetres se
+    recomposent par addition, et un taux mal defini ne peut pas se figer dans
+    l'historique.
+    """
+
+    player: str
+    circuit: str
+    surface: str = ALL_SURFACES
+    window: str = WINDOW_52W
+    matches: int = 0
+    first_serve: int = 0
+    first_serve_of: int = 0
+    aces: int = 0
+    double_faults: int = 0
+    won_first: int = 0
+    won_first_of: int = 0
+    won_second: int = 0
+    won_second_of: int = 0
+    bp_converted: int = 0
+    bp_converted_of: int = 0
+    return_points: int = 0
+    return_won: int = 0
+    games_matches: int = 0
+    served: int = 0
+    held: int = 0
+    returned: int = 0
+    broke: int = 0
+    as_of: str = ""
+    response_id: int | None = None
+    #: Vrai quand cet agregat est un **repli** : la surface demandee n'avait pas
+    #: le volume, et ce sont toutes surfaces qui repondent. Il se rend, jamais ne
+    #: se tait — un taux de dur presente comme tel alors qu'il melange trois
+    #: surfaces serait une affirmation fausse.
+    fell_back: bool = False
+
+    # -- Les six indicateurs, chacun avec **son** denominateur ---------------
+
+    @property
+    def first_serve_pct(self) -> float | None:
+        return _rate(self.first_serve, self.first_serve_of)
+
+    @property
+    def won_first_pct(self) -> float | None:
+        return _rate(self.won_first, self.won_first_of)
+
+    @property
+    def won_second_pct(self) -> float | None:
+        return _rate(self.won_second, self.won_second_of)
+
+    @property
+    def ace_pct(self) -> float | None:
+        """Rapporte aux **points de service**, jamais aux matchs — sinon on
+        mesure la longueur des rencontres."""
+        return _rate(self.aces, self.first_serve_of)
+
+    @property
+    def double_fault_pct(self) -> float | None:
+        """Rapporte aux **secondes balles** : un joueur qui rentre 75 % de
+        premieres a mecaniquement moins d'occasions d'en commettre."""
+        return _rate(self.double_faults, self.second_serves)
+
+    @property
+    def bp_pct(self) -> float | None:
+        return _rate(self.bp_converted, self.bp_converted_of)
+
+    @property
+    def return_pct(self) -> float | None:
+        return _rate(self.return_won, self.return_points)
+
+    @property
+    def hold_pct(self) -> float | None:
+        return _rate(self.held, self.served)
+
+    @property
+    def break_pct(self) -> float | None:
+        return _rate(self.broke, self.returned)
+
+    @property
+    def second_serves(self) -> int:
+        return max(0, self.first_serve_of - self.first_serve)
+
+    @property
+    def service_points(self) -> int:
+        return self.first_serve_of
+
+    @property
+    def enough(self) -> bool:
+        """Assez de volume pour que les taux de service se lisent."""
+        return self.first_serve_of >= MIN_SERVE_POINTS
+
+    @property
+    def enough_games(self) -> bool:
+        """Assez de jeux pour que tenue et break se lisent. **Independant du
+        precedent** : la timeline a sa propre couverture, partielle."""
+        return self.served + self.returned >= MIN_GAMES
+
+
+def _rate(numerator: int, denominator: int) -> float | None:
+    """Un taux, ou None quand le denominateur est nul.
+
+    **None et zero ne se confondent pas** : « aucune balle de break jouee » et
+    « aucune convertie » sont deux faits differents, et rendre 0 % sur le premier
+    decrirait un joueur qui rate tout.
+    """
+    return None if denominator <= 0 else numerator / denominator
+
+
+def aggregate(
+    lines: tuple[ServeLine, ...],
+    player: str,
+    circuit: str,
+    surface: str = ALL_SURFACES,
+    games: tuple[GameLine, ...] = (),
+) -> ServeAggregate:
+    """Somme des lignes de match en un agregat. **Aucune moyenne de taux.**
+
+    Le test piege du brief est celui-ci : un abandon de trois jeux et un cinq
+    sets. En sommant les comptes, le cinq sets pese ce qu'il vaut ; en moyennant
+    les taux match par match, les deux pesent pareil.
+    """
+    retenues = [
+        ligne for ligne in lines if not surface or _fold_case(ligne.surface) == _fold_case(surface)
+    ]
+    dates = sorted(ligne.played_on for ligne in retenues if ligne.played_on)
+    return ServeAggregate(
+        player=player,
+        circuit=circuit,
+        surface=surface,
+        matches=len(retenues),
+        first_serve=sum(ligne.first_serve for ligne in retenues),
+        first_serve_of=sum(ligne.first_serve_of for ligne in retenues),
+        aces=sum(ligne.aces for ligne in retenues),
+        double_faults=sum(ligne.double_faults for ligne in retenues),
+        won_first=sum(ligne.won_first for ligne in retenues),
+        won_first_of=sum(ligne.won_first_of for ligne in retenues),
+        won_second=sum(ligne.won_second for ligne in retenues),
+        won_second_of=sum(ligne.won_second_of for ligne in retenues),
+        bp_converted=sum(ligne.bp_converted for ligne in retenues),
+        bp_converted_of=sum(ligne.bp_converted_of for ligne in retenues),
+        return_points=sum(ligne.return_points for ligne in retenues),
+        return_won=sum(ligne.return_points_won for ligne in retenues),
+        games_matches=len(games),
+        served=sum(jeu.served for jeu in games),
+        held=sum(jeu.held for jeu in games),
+        returned=sum(jeu.returned for jeu in games),
+        broke=sum(jeu.broke for jeu in games),
+        as_of=dates[-1] if dates else "",
+        response_id=next((ligne.archive_id for ligne in retenues if ligne.archive_id), None),
+    )
+
+
+_AGG_COLUMNS = (
+    "player, circuit, surface, window, matches, first_serve, first_serve_of, aces, "
+    "double_faults, won_first, won_first_of, won_second, won_second_of, bp_converted, "
+    "bp_converted_of, return_points, return_won, games_matches, served, held, returned, "
+    "broke, as_of, response_id"
+)
+
+
+def store_aggregate(agg: ServeAggregate, settings: Settings | None = None) -> None:
+    """Ecrit ou remplace un agregat. **`as_of` est toujours ecrit.**
+
+    Sans lui, une donnee vieille de six jours se lirait comme actuelle — le
+    defaut que `Fraicheur` existe pour corriger ailleurs.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        conn.execute(
+            f"INSERT INTO player_serve_agg ({_AGG_COLUMNS}, computed_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(player, circuit, surface, window) DO UPDATE SET "
+            "  matches = excluded.matches, first_serve = excluded.first_serve, "
+            "  first_serve_of = excluded.first_serve_of, aces = excluded.aces, "
+            "  double_faults = excluded.double_faults, won_first = excluded.won_first, "
+            "  won_first_of = excluded.won_first_of, won_second = excluded.won_second, "
+            "  won_second_of = excluded.won_second_of, bp_converted = excluded.bp_converted, "
+            "  bp_converted_of = excluded.bp_converted_of, "
+            "  return_points = excluded.return_points, return_won = excluded.return_won, "
+            "  games_matches = excluded.games_matches, served = excluded.served, "
+            "  held = excluded.held, returned = excluded.returned, broke = excluded.broke, "
+            "  as_of = excluded.as_of, response_id = excluded.response_id, "
+            "  computed_at = excluded.computed_at",
+            (
+                agg.player,
+                agg.circuit,
+                agg.surface,
+                agg.window,
+                agg.matches,
+                agg.first_serve,
+                agg.first_serve_of,
+                agg.aces,
+                agg.double_faults,
+                agg.won_first,
+                agg.won_first_of,
+                agg.won_second,
+                agg.won_second_of,
+                agg.bp_converted,
+                agg.bp_converted_of,
+                agg.return_points,
+                agg.return_won,
+                agg.games_matches,
+                agg.served,
+                agg.held,
+                agg.returned,
+                agg.broke,
+                agg.as_of,
+                agg.response_id,
+                utcnow(),
+            ),
+        )
+
+
+def _agg_row(row: Any, fell_back: bool = False) -> ServeAggregate:
+    return ServeAggregate(
+        player=str(row["player"]),
+        circuit=str(row["circuit"]),
+        surface=str(row["surface"] or ""),
+        window=str(row["window"]),
+        matches=int(row["matches"]),
+        first_serve=int(row["first_serve"]),
+        first_serve_of=int(row["first_serve_of"]),
+        aces=int(row["aces"]),
+        double_faults=int(row["double_faults"]),
+        won_first=int(row["won_first"]),
+        won_first_of=int(row["won_first_of"]),
+        won_second=int(row["won_second"]),
+        won_second_of=int(row["won_second_of"]),
+        bp_converted=int(row["bp_converted"]),
+        bp_converted_of=int(row["bp_converted_of"]),
+        return_points=int(row["return_points"]),
+        return_won=int(row["return_won"]),
+        games_matches=int(row["games_matches"]),
+        served=int(row["served"]),
+        held=int(row["held"]),
+        returned=int(row["returned"]),
+        broke=int(row["broke"]),
+        as_of=str(row["as_of"] or ""),
+        response_id=row["response_id"],
+        fell_back=fell_back,
+    )
+
+
+def load_aggregate(
+    player: str,
+    circuit: str,
+    surface: str = ALL_SURFACES,
+    settings: Settings | None = None,
+) -> ServeAggregate | None:
+    """L'agregat a rendre, **avec son repli quand il y en a un**.
+
+    Trois etats, et le troisieme est celui qui compte :
+
+    1. la surface demandee porte au moins `MIN_SERVE_POINTS` points — on la rend ;
+    2. elle ne les porte pas, mais toutes surfaces les portent — on rend le repli
+       **en le disant** (`fell_back`). Un taux de dur presente comme tel alors
+       qu'il melange trois surfaces serait une affirmation fausse ;
+    3. ni l'une ni l'autre — **on ne rend rien**. Une ligne partielle sous le
+       seuil serait lue comme un fait, et c'est exactement ce que le lot 3 a
+       refuse au Match Charting Project.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        demande = conn.execute(
+            f"SELECT {_AGG_COLUMNS} FROM player_serve_agg "
+            " WHERE player = ? AND circuit = ? AND surface = ? AND window = ?",
+            (player, circuit, surface, WINDOW_52W),
+        ).fetchone()
+        if demande is not None and int(demande["first_serve_of"]) >= MIN_SERVE_POINTS:
+            return _agg_row(demande)
+        if not surface:
+            # Deja toutes surfaces : il n'y a pas de repli plus large.
+            return None
+        large = conn.execute(
+            f"SELECT {_AGG_COLUMNS} FROM player_serve_agg "
+            " WHERE player = ? AND circuit = ? AND surface = '' AND window = ?",
+            (player, circuit, WINDOW_52W),
+        ).fetchone()
+    if large is None or int(large["first_serve_of"]) < MIN_SERVE_POINTS:
+        return None
+    return _agg_row(large, fell_back=True)

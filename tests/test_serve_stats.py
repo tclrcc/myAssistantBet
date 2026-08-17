@@ -682,3 +682,185 @@ async def test_une_source_muette_part_en_rejet_nomme(
     assert rejet is not None
     assert rejet.reason == SOURCE_VIDE
     assert len(respx.calls) == 6, "les deux ordres sur les trois dates"
+
+
+# -- Les agregats ------------------------------------------------------------
+
+
+def _ligne(surface: str, points: int, premieres: int, aces: int = 0, **extra: int) -> Any:
+    """Une ligne de match reduite a ce que la sommation lit."""
+    return serve_stats.ServeLine(
+        played_on=extra.pop("jour", "2026-08-01"),
+        surface=surface,
+        opponent="X",
+        first_serve=premieres,
+        first_serve_of=points,
+        aces=aces,
+        **extra,
+    )
+
+
+def test_la_sommation_ne_se_confond_pas_avec_une_moyenne_de_taux() -> None:
+    """**Le jeu piege du brief : un abandon de trois jeux et un cinq sets.**
+
+    L'abandon rentre 4 premieres sur 10 (40 %), le cinq sets 108 sur 180 (60 %).
+    La moyenne des taux donne 50 % ; la sommation donne 112/190 = **58,9 %**,
+    parce que le cinq sets pese ce qu'il vaut.
+
+    Moyenner donnerait le meme poids aux deux, et fausserait le profil des
+    joueurs a abandons — ceux que la ligne « Abandons » du bloc signale deja.
+    """
+    abandon = _ligne("Hard", points=10, premieres=4)
+    cinq_sets = _ligne("Hard", points=180, premieres=108)
+
+    agg = serve_stats.aggregate((abandon, cinq_sets), "J", "atp")
+
+    par_sommation = agg.first_serve_pct
+    par_moyenne = (4 / 10 + 108 / 180) / 2
+    assert par_sommation is not None
+    assert round(par_sommation, 4) == round(112 / 190, 4)
+    assert abs(par_sommation - par_moyenne) > 0.08, "les deux methodes doivent differer ici"
+
+
+def test_chaque_indicateur_a_son_denominateur() -> None:
+    """**Les aces se rapportent aux points de service, les doubles fautes aux
+    secondes balles.**
+
+    Rapporter les aces aux matchs mesurerait la longueur des rencontres ; et un
+    joueur qui rentre 75 % de premieres a mecaniquement moins d'occasions de
+    commettre une double faute.
+    """
+    ligne = _ligne(
+        "Hard",
+        points=100,
+        premieres=75,
+        aces=10,
+        double_faults=5,
+        won_first=50,
+        won_first_of=75,
+        won_second=12,
+        won_second_of=25,
+        bp_converted=3,
+        bp_converted_of=10,
+    )
+
+    agg = serve_stats.aggregate((ligne,), "J", "atp")
+
+    assert agg.ace_pct == 10 / 100, "aces sur les points de service"
+    assert agg.double_fault_pct == 5 / 25, "doubles fautes sur les secondes balles"
+    assert agg.won_first_pct == 50 / 75
+    assert agg.won_second_pct == 12 / 25
+    assert agg.bp_pct == 3 / 10
+
+
+def test_un_denominateur_nul_ne_rend_pas_zero_pour_cent() -> None:
+    """**« Aucune balle de break jouee » et « aucune convertie » sont deux
+    faits differents**, et rendre 0 % sur le premier decrirait un joueur qui
+    rate tout."""
+    agg = serve_stats.aggregate((_ligne("Hard", points=50, premieres=30),), "J", "atp")
+
+    assert agg.bp_pct is None
+    assert agg.hold_pct is None
+
+
+def test_la_surface_filtre_avant_de_sommer() -> None:
+    agg = serve_stats.aggregate(
+        (_ligne("Hard", 100, 60), _ligne("Clay", 200, 100)), "J", "atp", surface="Hard"
+    )
+
+    assert (agg.matches, agg.first_serve_of) == (1, 100)
+
+
+def test_l_as_of_est_le_dernier_match_compte() -> None:
+    """**C'est le dernier match, pas la date du calcul.** Sans lui, une donnee
+    vieille de six jours se lirait comme actuelle."""
+    agg = serve_stats.aggregate(
+        (
+            _ligne("Hard", 100, 60, jour="2026-07-01"),
+            _ligne("Hard", 100, 60, jour="2026-08-14"),
+        ),
+        "J",
+        "atp",
+    )
+
+    assert agg.as_of == "2026-08-14"
+
+
+def test_les_jeux_se_somment_a_part_des_points(
+    load_fixture: Callable[[str], Any],
+) -> None:
+    """La timeline a **sa propre couverture**, partielle : le compte de matchs
+    a jeux se tient donc separement de celui des points."""
+    jeux, _ = serve_stats.parse_timeline(load_fixture("tennisapi_event.json"), "Taylor Fritz")
+    assert jeux is not None
+
+    agg = serve_stats.aggregate((_ligne("Hard", 100, 60),), "J", "atp", games=(jeux,))
+
+    assert (agg.matches, agg.games_matches) == (1, 1)
+    assert agg.hold_pct == 9 / 10
+    assert agg.break_pct == 3 / 9
+
+
+# -- Le seuil et son repli ---------------------------------------------------
+
+
+def _pose(migrated: Settings, surface: str, points: int) -> None:
+    serve_stats.store_aggregate(
+        serve_stats.ServeAggregate(
+            player="J",
+            circuit="atp",
+            surface=surface,
+            first_serve_of=points,
+            first_serve=points // 2,
+            as_of="2026-08-16",
+        ),
+        migrated,
+    )
+
+
+def test_la_surface_demandee_est_rendue_quand_elle_porte_le_volume(
+    migrated: Settings,
+) -> None:
+    _pose(migrated, "Hard", 900)
+
+    agg = serve_stats.load_aggregate("J", "atp", "Hard", migrated)
+
+    assert agg is not None
+    assert agg.surface == "Hard"
+    assert not agg.fell_back
+
+
+def test_le_repli_toutes_surfaces_se_signale(migrated: Settings) -> None:
+    """**Un taux de dur presente comme tel alors qu'il melange trois surfaces
+    serait une affirmation fausse.**"""
+    _pose(migrated, "Hard", 200)
+    _pose(migrated, "", 900)
+
+    agg = serve_stats.load_aggregate("J", "atp", "Hard", migrated)
+
+    assert agg is not None
+    assert agg.fell_back is True
+    assert agg.surface == ""
+
+
+def test_sous_le_seuil_des_deux_cotes_rien_n_est_rendu(migrated: Settings) -> None:
+    """**Jamais une ligne partielle.**
+
+    C'est exactement ce que le lot 3 a refuse au Match Charting Project : « une
+    ligne Service a moitie vide est pire que pas de ligne, elle sera lue comme
+    un fait ».
+    """
+    _pose(migrated, "Hard", 200)
+    _pose(migrated, "", 300)
+
+    assert serve_stats.load_aggregate("J", "atp", "Hard", migrated) is None
+
+
+def test_le_seuil_est_en_points_de_service_et_non_en_matchs() -> None:
+    """Deux matchs de cinq sets portent plus de points que six abandons : c'est
+    le volume qui rend un taux lisible, pas le nombre de rencontres."""
+    maigre = serve_stats.ServeAggregate(player="J", circuit="atp", matches=40, first_serve_of=399)
+    dense = serve_stats.ServeAggregate(player="J", circuit="atp", matches=5, first_serve_of=400)
+
+    assert not maigre.enough
+    assert dense.enough

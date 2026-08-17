@@ -36,6 +36,7 @@ EXPECTED_TABLES = {
     "picks",
     "player_alias",
     "player_context",
+    "player_serve_agg",
     "preferences",
     "prompt_events",
     "prompt_odds",
