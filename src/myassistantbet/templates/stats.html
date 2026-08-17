@@ -1283,6 +1283,59 @@
 </section>
 {% endif %}
 
+{% if prompt_costs %}
+{# **Le gabarit grossit à chaque lot livré, et personne ne le surveillait.**
+   Mesure du lot 4 : de 853 à 11 934 de coût fixe et de 145 à 698 par bloc en
+   onze jours, quand le budget de recherche restait à sept dossiers.
+
+   Le découpage est **mesuré, jamais ajusté** : un prompt est un préambule suivi
+   de N blocs, et la frontière est un en-tête `### M1`. Une régression sur onze
+   jours d'un gabarit qui bouge tous les jours fait absorber la croissance du
+   fixe par la pente — la taille des lots étant corrélée à la date — et c'est
+   exactement ce qui produisait « 8 107 + 344 », un couple qui ne décrit aucun
+   des trois régimes qu'il mélange. #}
+<section id="cout-gabarit">
+  <h2>Coût du gabarit</h2>
+  <details class="why">
+    <summary>Ce que le cadre coûte, et ce que coûte un bloc</summary>
+    <p>
+      Le coût fixe est une <strong>médiane</strong> par journée d'analyse : une
+      moyenne suivrait un prompt aberrant, et c'est justement l'aberration qu'on
+      veut voir apparaître comme un point et non comme une pente. Le coût par
+      bloc est le total des blocs divisé par leur nombre — <strong>mesuré et non
+      estimé</strong>, donc il ne suppose rien.
+    </p>
+    <p>
+      Par jour et non par prompt : une session en génère jusqu'à vingt, tous
+      rendus par le même gabarit à quelques minutes d'écart, et vingt points
+      identiques ne dessinent pas une courbe.
+    </p>
+  </details>
+  <table class="board">
+    <thead>
+      <tr>
+        <th>Jour</th>
+        <th class="num">Prompts</th>
+        <th class="num">Blocs</th>
+        <th class="num">Cadre</th>
+        <th class="num">/ bloc</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for point in prompt_costs %}
+      <tr>
+        <td>{{ point.day }}</td>
+        <td class="num">{{ point.prompts }}</td>
+        <td class="num">{{ point.blocks }}</td>
+        <td class="num">{{ point.fixed }}</td>
+        <td class="num">{{ '%.0f' | format(point.per_block) if point.per_block else '—' }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endif %}
+
 {% if not set_scores.empty %}
 {# Le score exact en sets : la **seule** mesure de cette page qui ne mélange
    aucun prix. Quatre issues, vérifiables sur n'importe quelle feuille de match.

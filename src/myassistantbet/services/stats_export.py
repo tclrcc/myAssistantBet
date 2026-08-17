@@ -40,6 +40,7 @@ from . import combos as combos_service
 from . import coupons as coupons_service
 from . import history as history_service
 from . import ingestion as ingestion_service
+from . import prompt as prompt_service
 from . import sections as sections_service
 from . import set_scores as set_scores_service
 from .inference import EQUIVALENCE_MARGIN, MARGIN_REFERENCE
@@ -80,6 +81,7 @@ SETS_BLOCK = "Le score en sets annoncé"
 #: aucune section, si bien qu'un combine se lisait sur la feuille de sa session et
 #: nulle part ailleurs.
 COMBOS_BLOCK = "Les combinés proposés"
+COST_BLOCK = "Coût du gabarit"
 #: Le second circuit, ou l'exigence de fait date tombe. **Compte a part de bout
 #: en bout** : melanger les deux populations detruirait la comparaison que la
 #: section existe pour rendre possible.
@@ -120,6 +122,7 @@ SECTIONS: tuple[Section, ...] = (
     Section("", LATE_BLOCK),
     Section(LATE_BLOCK, "Par retard"),
     Section("", COMBOS_BLOCK),
+    Section("", COST_BLOCK),
     Section("", LABELLING_BLOCK),
     Section(LABELLING_BLOCK, "Par confiance annoncée"),
     Section(LABELLING_BLOCK, "Par palier"),
@@ -168,6 +171,10 @@ class StatsReport:
     #: un taux** : au taux de jambe constate, un combine de dix jambes passe une
     #: fois sur 280, et son taux ne sera jamais mesurable.
     combos: combos_service.Summary = field(default_factory=combos_service.Summary)
+    #: La derive du cout du gabarit, par jour d'analyse. **Personne ne la
+    #: surveillait**, et elle est spectaculaire : de 853 a 11 934 de cout fixe en
+    #: onze jours, quand le budget de recherche restait a sept dossiers.
+    prompt_costs: list[prompt_service.CostPoint] = field(default_factory=list)
     #: Ce que chaque palier a **recu** des lots, et ce qu'il en a produit. Trois
     #: causes rendaient un palier vide indiscernables — bande jamais atteinte,
     #: bande atteinte et jamais employee, selection ecartee par le quota — et
@@ -220,6 +227,7 @@ class StatsReport:
             "changelog": self.changelog,
             "splits": self.splits,
             "combos": self.combos,
+            "prompt_costs": self.prompt_costs,
             "tier_usage": self.tier_usage,
             "tier_scope": self.tier_scope,
             "exploratory": self.exploratory,
@@ -328,6 +336,7 @@ class StatsReport:
                 not self.late.empty and bool(self.late.bands),
             ),
             (Section("", COMBOS_BLOCK), not self.combos.empty),
+            (Section("", COST_BLOCK), bool(self.prompt_costs)),
             (Section("", LABELLING_BLOCK), bool(self.labelling)),
             *((Section(LABELLING_BLOCK, f"Par {block.label}"), True) for block in self.labelling),
             # **Le bloc est rendu meme vide**, et ses cartes ne le sont pas :
@@ -560,6 +569,7 @@ def report(settings: Settings | None = None) -> StatsReport:
         changelog=carnet,
         splits=[changelog_service.split(day, settings) for day in carnet.days],
         combos=combos_service.summary(settings),
+        prompt_costs=list(prompt_service.cost_series(settings)),
         tier_usage=history_service.tier_usage(settings),
         tier_scope=history_service.tier_scope(settings),
         exploratory=exploratoire,
@@ -1480,6 +1490,27 @@ def as_markdown(found: StatsReport) -> str:
                 "contre ses propres cotes — jamais deux taux, qui opposeraient des "
                 "populations ne jouant pas aux mêmes prix.",
             ]
+
+    if found.prompt_costs:
+        out += [
+            "",
+            f"## {COST_BLOCK}",
+            "",
+            "Le découpage est **mesuré, jamais ajusté** : un prompt est un préambule suivi de "
+            "N blocs, et la frontière est un en-tête de bloc. Une régression sur onze jours "
+            "d'un gabarit qui bouge tous les jours fait absorber la croissance du coût fixe "
+            "par la pente — la taille des lots étant corrélée à la date. Le coût du cadre est "
+            "une **médiane** par journée : une moyenne suivrait un prompt aberrant, et c'est "
+            "l'aberration qu'on veut voir comme un point.",
+            "",
+            "| Jour | Prompts | Blocs | Cadre | / bloc |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ]
+        for point in found.prompt_costs:
+            par_bloc = "—" if point.per_block is None else f"{point.per_block:.0f}"
+            out.append(
+                f"| {point.day} | {point.prompts} | {point.blocks} | {point.fixed} | {par_bloc} |"
+            )
 
     if not found.combos.empty:
         out += [

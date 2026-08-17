@@ -85,6 +85,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("Schema deja a jour")
     logger.info("Base : %s", settings.db_path_absolute)
 
+    # Le decoupage cout fixe / cout par bloc des prompts archives. **Rien n'est
+    # reconstitue, tout est relu** : le corps est en base depuis toujours et
+    # porte ses propres en-tetes de bloc, donc le decoupage d'un prompt du 04/08
+    # se refait exactement comme celui d'aujourd'hui. Idempotent, et il ne
+    # repasse pas sur ce qu'il a deja ecrit.
+    repris = prompt_service.backfill_costs(settings)
+    if repris:
+        logger.info("Cout du gabarit : %d prompt(s) archive(s) decoupe(s)", repris)
+
     app.state.http = httpx.AsyncClient(follow_redirects=True)
     app.state.scheduler = None
     if settings.scheduler_enabled:

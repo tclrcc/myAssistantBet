@@ -192,8 +192,13 @@ def test_chaque_section_de_la_page_a_son_equivalent_dans_le_fichier(
     sections = _page_sections(page.text)
     blocs = _markdown_blocks(fichier.text)
     # Une page qui ne rendrait qu'un titre ferait passer la parite sans rien
-    # comparer : le lot doit allumer les sept blocs.
-    assert len([section for section in sections if not section.block]) == 7
+    # comparer : le lot doit allumer **plusieurs** blocs.
+    #
+    # **Un minimum et non une egalite**, et c'est une correction : le nombre
+    # exact etait la valeur du jour, donc un bloc ajoute le faisait echouer sans
+    # qu'aucune regle ait bouge. Ce que ce garde-fou doit garantir est que le
+    # test de parite ne soit pas vide, pas que la page compte sept sections.
+    assert len([section for section in sections if not section.block]) >= 7
 
     manquantes = []
     for section in sections:

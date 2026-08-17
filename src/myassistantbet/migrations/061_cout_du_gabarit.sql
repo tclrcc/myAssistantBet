@@ -1,0 +1,52 @@
+-- 061_cout_du_gabarit.sql — separer ce que coute le cadre de ce que coutent les blocs.
+--
+-- **Le gabarit grossit a chaque lot livre, et personne ne le surveille.** Le lot
+-- 4 l'a mesure en lecture seule et le chiffre est spectaculaire : de 853 a 11 934
+-- de cout fixe et de 145 a 698 par bloc, en onze jours. Ce lot-ci y ajoute encore
+-- quatre lignes par bloc tennis.
+--
+-- ## Pourquoi trois colonnes et pas une regression
+--
+-- Le lot 4 a ajuste `cout ≈ 8 107 fixe + 344 par bloc` sur 142 prompts archives,
+-- et la session du 17/08 — 5 blocs, 14 675 tokens — implique un fixe d'environ
+-- 10 350. Refait ici, l'ajustement global donne **8 020 + 350**, donc il se
+-- reproduit exactement : ce n'est pas une erreur de calcul.
+--
+-- **C'est l'outil qui est mauvais.** L'ajustement porte sur onze jours d'un
+-- gabarit qui grossit tous les jours, et la taille des lots est correlee a la
+-- date : la pente absorbe donc la croissance du cout fixe. Jour par jour, la
+-- meme donnee rend 145 par bloc le 04/08 et 1 019 le 13/08. Un couple de nombres
+-- unique sur cette periode ne decrit aucun des trois regimes qu'il melange.
+--
+-- Ajuste sur les quinze derniers prompts, il rend **10 303 + 866**, ce qui
+-- predit 14 633 pour la session du 17/08 contre 14 675 observes — **0,3 %
+-- d'ecart**. L'ecart du brief vient donc de la **croissance du gabarit**, pas
+-- d'un defaut de la regression.
+--
+-- Et surtout : **il n'y a rien a ajuster.** Un prompt est un preambule suivi de N
+-- blocs, et la frontiere est un en-tete `### M1`. Le decoupage se **mesure**, il
+-- ne s'estime pas — une regression sur des donnees dont on tient la
+-- decomposition exacte est de la mecanique pour rien. Meme regle que partout
+-- ici : quand l'identifiant existe, c'est lui.
+
+ALTER TABLE prompts ADD COLUMN blocks INTEGER;
+-- Les tokens du **cadre** : preambule, mode d'emploi, fiche de recherche,
+-- sections de sortie. Tout ce qui se paie une fois par prompt quel que soit le
+-- nombre de matchs.
+ALTER TABLE prompts ADD COLUMN fixed_tokens INTEGER;
+-- Les tokens des **blocs**, du premier en-tete `### M1` a la fin de la section
+-- MATCHS. C'est le cout marginal reel, et il se divise par `blocks` sans
+-- supposer quoi que ce soit.
+ALTER TABLE prompts ADD COLUMN block_tokens INTEGER;
+
+-- **Retro-rempli, et c'est sur ici** — contrairement a `price_source` ou au cran
+-- calcule, qui ne se reconstituent pas. Le corps du prompt est archive depuis
+-- toujours et porte ses propres en-tetes de bloc : le decoupage d'un prompt de
+-- 2026-08-04 se refait exactement comme celui d'aujourd'hui. Rien n'est
+-- reconstitue, tout est relu.
+--
+-- Le SQL fait ce qu'il peut faire : compter les blocs demanderait une expression
+-- reguliere que SQLite n'a pas. La colonne reste donc NULL et se remplit au
+-- premier passage de `prompt.backfill_costs()`, qui relit les corps en Python.
+-- Un decoupage recopie en SQL aurait diverge du decoupage Python au premier
+-- changement d'en-tete — le piege deja paye par les niveaux de competition.

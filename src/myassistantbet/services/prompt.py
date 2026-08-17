@@ -13,6 +13,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
+from statistics import median
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -1096,12 +1097,19 @@ def _capture_odds(conn: Any, session_id: int, event_ids: Sequence[int]) -> int:
 
 
 def save_prompt(session_id: int, prompt: RenderedPrompt, settings: Settings | None = None) -> int:
-    """Archive le prompt genere. Renvoie son id."""
+    """Archive le prompt genere. Renvoie son id.
+
+    Le decoupage cout fixe / cout par bloc s'ecrit **a la generation**, seul
+    moment ou il ne coute rien : le corps est deja en main. Le lot 4 l'avait
+    mesure en lecture seule, faute de pouvoir toucher ce chemin.
+    """
+    cout = split_cost(prompt.body)
     with connect(settings) as conn:
         cursor = conn.execute(
             "INSERT INTO prompts (session_id, template_name, body, token_estimate, "
-            "                     feedback_active, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "                     feedback_active, created_at, blocks, fixed_tokens, "
+            "                     block_tokens) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 prompt.template_name,
@@ -1109,6 +1117,9 @@ def save_prompt(session_id: int, prompt: RenderedPrompt, settings: Settings | No
                 prompt.token_estimate,
                 1 if prompt.feedback_active else 0,
                 utcnow(),
+                cout.blocks,
+                cout.fixed,
+                cout.block_tokens,
             ),
         )
         prompt_id = int(cursor.lastrowid)
@@ -1371,3 +1382,136 @@ def save_tiers(rows: list[dict[str, Any]], settings: Settings | None = None) -> 
                 ),
             )
     logger.info("Bandes de cotes mises a jour : %d paliers", len(rows))
+
+
+# -- Ce que coute le cadre, et ce que coutent les blocs -----------------------
+#
+# **Le gabarit grossit a chaque lot livre, et personne ne le surveille.** Mesure
+# du lot 4 : de 853 a 11 934 de cout fixe et de 145 a 698 par bloc en onze jours,
+# quand le budget de recherche restait a sept dossiers. Ce lot-ci y ajoute encore
+# quatre lignes par bloc tennis.
+#
+# **Le decoupage se mesure, il ne s'ajuste pas.** Un prompt est un preambule
+# suivi de N blocs, et la frontiere est un en-tete `### M1`. Une regression sur
+# une donnee dont on tient la decomposition exacte est de la mecanique pour
+# rien — et elle se trompe : ajustee sur onze jours d'un gabarit qui bouge tous
+# les jours, la pente absorbe la croissance du fixe, parce que la taille des lots
+# est correlee a la date. C'est exactement ce qui produisait `8 107 + 344`, un
+# couple qui ne decrit aucun des trois regimes qu'il melange.
+
+#: L'en-tete qui ouvre le premier bloc de match. **Reutilise depuis
+#: `history`** : deux expressions pour un meme en-tete auraient diverge au
+#: premier changement de forme, et le decoupage serait devenu faux en silence.
+_FIRST_BLOCK = re.compile(r"^### M\d+ ", re.MULTILINE)
+
+
+@dataclass(frozen=True)
+class PromptCost:
+    """Le cout d'un prompt, decoupe entre son cadre et ses blocs."""
+
+    tokens: int
+    blocks: int
+    fixed: int
+    block_tokens: int
+
+    @property
+    def per_block(self) -> float | None:
+        """Cout marginal reel. None sans bloc — et jamais zero, qui se lirait
+        comme un bloc gratuit."""
+        return None if not self.blocks else self.block_tokens / self.blocks
+
+
+def split_cost(body: str) -> PromptCost:
+    """Decoupe un prompt entre son cadre et ses blocs. **Aucune estimation.**
+
+    Le cadre est tout ce qui precede le premier en-tete de bloc : preambule,
+    mode d'emploi, fiche de recherche. Les sections de sortie viennent **apres**
+    les blocs et se comptent donc avec eux — c'est une imprecision connue et
+    bornee, et la corriger demanderait de reperer une seconde frontiere qui
+    bougerait avec le gabarit. Ce qu'on veut mesurer est la **derive**, et elle
+    se lit aussi bien sur un decoupage stable qu'exact.
+    """
+    texte = body or ""
+    entetes = list(_FIRST_BLOCK.finditer(texte))
+    total = estimate_tokens(texte)
+    if not entetes:
+        return PromptCost(tokens=total, blocks=0, fixed=total, block_tokens=0)
+    cadre = estimate_tokens(texte[: entetes[0].start()])
+    return PromptCost(
+        tokens=total,
+        blocks=len(entetes),
+        fixed=cadre,
+        block_tokens=max(0, total - cadre),
+    )
+
+
+def backfill_costs(settings: Settings | None = None) -> int:
+    """Remplit le decoupage des prompts archives. Rend le nombre de lignes ecrites.
+
+    **Retro-remplir est sur ici**, contrairement au cran calcule ou a la source
+    d'un prix : rien n'est reconstitue, tout est **relu**. Le corps est archive
+    depuis toujours et porte ses propres en-tetes ; le decoupage d'un prompt du
+    04/08 se refait exactement comme celui d'aujourd'hui.
+
+    Idempotent : une ligne deja decoupee n'est pas reprise.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT id, body FROM prompts WHERE blocks IS NULL AND body IS NOT NULL"
+        ).fetchall()
+        for row in rows:
+            cout = split_cost(str(row["body"]))
+            conn.execute(
+                "UPDATE prompts SET blocks = ?, fixed_tokens = ?, block_tokens = ? WHERE id = ?",
+                (cout.blocks, cout.fixed, cout.block_tokens, int(row["id"])),
+            )
+    return len(rows)
+
+
+@dataclass(frozen=True)
+class CostPoint:
+    """Le cout moyen d'une journee d'analyse."""
+
+    day: str
+    prompts: int
+    blocks: int
+    fixed: int
+    per_block: float | None
+
+
+def cost_series(settings: Settings | None = None) -> tuple[CostPoint, ...]:
+    """La derive du cout du gabarit, par jour d'analyse.
+
+    **Par jour et non par prompt** : une session en genere jusqu'a vingt, tous
+    rendus par le meme gabarit a quelques minutes d'ecart, et vingt points
+    identiques ne dessinent pas une courbe. Le cout fixe est une **mediane** —
+    une moyenne suivrait un prompt aberrant, et c'est justement l'aberration
+    qu'on veut voir apparaitre comme un point et non comme une pente.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT substr(created_at, 1, 10) AS day, blocks, fixed_tokens, block_tokens "
+            "  FROM prompts WHERE blocks IS NOT NULL ORDER BY day"
+        ).fetchall()
+
+    par_jour: dict[str, list[Any]] = {}
+    for row in rows:
+        par_jour.setdefault(str(row["day"]), []).append(row)
+
+    points = []
+    for day, lot in sorted(par_jour.items()):
+        blocs = sum(int(r["blocks"]) for r in lot)
+        fixes = sorted(int(r["fixed_tokens"]) for r in lot)
+        marginal = sum(int(r["block_tokens"]) for r in lot)
+        points.append(
+            CostPoint(
+                day=day,
+                prompts=len(lot),
+                blocks=blocs,
+                fixed=int(median(fixes)) if fixes else 0,
+                per_block=(marginal / blocs) if blocs else None,
+            )
+        )
+    return tuple(points)

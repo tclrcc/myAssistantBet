@@ -1566,3 +1566,62 @@ ci-dessus étant d'un facteur 2 à 3.
   jamais. La prémisse « des centaines d'appels » du brief est fausse d'un facteur
   dix, et la mesure complète le confirme après le sondage.
 - **355 appels** pour la population entière, soit **0,24 %** du quota mensuel.
+
+---
+
+## §14 — L'écart vient de la croissance du gabarit, et la régression est le mauvais outil
+
+Le brief demande de trancher : l'écart entre `8 107 fixe + 344 par bloc` et les
+**~12 540** impliqués par la session du 17/08 vient-il de la croissance récente
+du gabarit, ou d'un défaut de la régression ?
+
+**Les deux, et dans cet ordre.** Refait sur la copie, l'ajustement global rend
+`8 020 + 350` — le chiffre du lot 4 se reproduit exactement, il n'y a donc pas
+d'erreur de calcul. Mais il ne décrit rien :
+
+| Jour | Prompts | Coût fixe ajusté | Coût par bloc |
+| --- | ---: | ---: | ---: |
+| 04/08 | 16 | 853 | 145 |
+| 06/08 | 17 | 5 512 | 174 |
+| 09/08 | 16 | 7 570 | 270 |
+| 12/08 | 10 | 7 477 | 665 |
+| 13/08 | 10 | 6 942 | **1 019** |
+| 14/08 | 17 | 8 088 | 868 |
+| 15/08 | 19 | **11 934** | 698 |
+
+L'ajustement porte sur **onze jours d'un gabarit qui grossit tous les jours**, et
+la taille des lots est corrélée à la date : la pente absorbe donc la croissance
+du coût fixe. Un couple de nombres unique sur cette période ne décrit **aucun**
+des trois régimes qu'il mélange.
+
+Ajusté sur les **quinze derniers prompts**, il rend `10 303 + 866`, ce qui prédit
+**14 633** tokens pour la session du 17/08 — 5 blocs — contre **14 675**
+observés. **0,3 % d'écart.** L'écart du brief vient donc de la croissance, et le
+« défaut de la régression » est qu'elle ne devrait pas exister.
+
+### Ce qui remplace la régression
+
+**Il n'y a rien à ajuster.** Un prompt est un préambule suivi de N blocs, et la
+frontière est un en-tête `### M1` — le découpage se **mesure**. Une régression
+sur une donnée dont on tient la décomposition exacte est de la mécanique pour
+rien, et elle se trompe.
+
+Trois colonnes s'écrivent donc **à la génération**, seul moment où elles ne
+coûtent rien : `blocks`, `fixed_tokens`, `block_tokens`. Le lot 4 avait mesuré en
+lecture seule faute de pouvoir toucher ce chemin ; la contrainte est levée.
+
+Les 149 prompts archivés sont **rétro-remplis, et c'est sûr ici** — contrairement
+au cran calculé ou à la source d'un prix, rien n'est reconstitué : le corps est
+en base depuis toujours et porte ses propres en-têtes. Le découpage d'un prompt
+du 04/08 se refait exactement comme celui d'aujourd'hui.
+
+La série vit sur `/stats` et dans l'export, **par jour d'analyse** — une session
+en génère jusqu'à vingt, tous rendus par le même gabarit à quelques minutes
+d'écart, et vingt points identiques ne dessinent pas une courbe. Le coût du cadre
+est une **médiane** : une moyenne suivrait un prompt aberrant, et c'est justement
+l'aberration qu'on veut voir apparaître comme un point et non comme une pente.
+
+**Imprécision connue et bornée** : les sections de sortie viennent *après* les
+blocs et se comptent donc avec eux. La corriger demanderait de repérer une
+seconde frontière qui bougerait avec le gabarit ; ce qu'on mesure est la
+**dérive**, et elle se lit aussi bien sur un découpage stable qu'exact.
