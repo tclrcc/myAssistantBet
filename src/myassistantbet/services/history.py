@@ -1467,6 +1467,144 @@ def tier_for_price(price: float | None, settings: Settings | None = None) -> str
     return None
 
 
+@dataclass(frozen=True)
+class TierOffer:
+    """Ce qu'un palier a **recu** d'une session, et ce qu'il en a produit.
+
+    Trois causes rendaient un palier vide indiscernables, et elles n'appellent
+    pas la meme conclusion :
+
+    1. aucune cote du lot n'atteint la bande — le palier n'a **jamais ete
+       propose**, et il n'y a rien a corriger ;
+    2. des cotes existaient et aucune selection n'est sortie dessus — c'est la
+       **methode** qui ne va pas les chercher ;
+    3. une selection a ete produite puis ecartee par le quota — c'est le
+       **reglage** qui mord.
+
+    La page annoncait « 🔴 GIGA FUN 0 sur 12 sessions » sans dire laquelle des
+    trois. Sans cette distinction, une regle assouplie ne se mesure pas : on ne
+    saurait pas si elle a marche.
+
+    **Rien n'est stocke.** Tout se relit dans `prompt_odds`, qui fige le marche
+    de chaque session au moment ou le prompt part — c'est la verite historique,
+    et une table de plus l'aurait doublee.
+    """
+
+    session_id: int
+    tier: str
+    label: str
+    #: Au moins une cote du lot tombe dans la bande.
+    offered: bool
+    #: Selections effectivement produites dans ce palier, cette session-la.
+    produced: int
+
+    @property
+    def unused(self) -> bool:
+        """Propose et jamais employe. **La seule ligne actionnable du releve.**"""
+        return self.offered and not self.produced
+
+
+def tier_offers(settings: Settings | None = None) -> list[TierOffer]:
+    """Par session et par palier : la bande etait-elle atteignable, l'a-t-on
+    employee.
+
+    Le marche se lit dans `prompt_odds` — fige a l'archivage du prompt, donc
+    exactement ce que l'analyse avait sous les yeux. Le relire dans `odds`
+    donnerait le marche **d'aujourd'hui**, qui n'a plus rien a voir : c'est
+    justement pour ca que `prompt_odds` existe.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        bandes = [
+            (str(row["key"]), f"{row['emoji'] or ''} {row['label']}".strip(), row)
+            for row in conn.execute(
+                "SELECT key, label, emoji, min_price, max_price FROM tiers ORDER BY position"
+            )
+        ]
+        # `prompt_odds` porte deja `session_id` : un releve par session et par
+        # match, remplace a chaque prompt. C'est bien le marche fige, pas celui
+        # d'aujourd'hui — et c'est toute la raison d'etre de la table.
+        prix = conn.execute(
+            "SELECT session_id, price FROM prompt_odds WHERE price > 1.0"
+        ).fetchall()
+        produits = conn.execute(
+            "SELECT session_id, tier, COUNT(*) AS n FROM picks GROUP BY session_id, tier"
+        ).fetchall()
+        sessions = [
+            int(row["id"])
+            for row in conn.execute(
+                "SELECT DISTINCT session_id AS id FROM prompts ORDER BY session_id"
+            )
+        ]
+
+    offerts: dict[tuple[int, str], bool] = {}
+    for row in prix:
+        price = float(row["price"])
+        for key, _, bande in bandes:
+            haute = bande["max_price"]
+            if price >= float(bande["min_price"]) and (haute is None or price < float(haute)):
+                offerts[(int(row["session_id"]), key)] = True
+                break
+    comptes = {(int(row["session_id"]), str(row["tier"])): int(row["n"]) for row in produits}
+
+    return [
+        TierOffer(
+            session_id=session_id,
+            tier=key,
+            label=label,
+            offered=offerts.get((session_id, key), False),
+            produced=comptes.get((session_id, key), 0),
+        )
+        for session_id in sessions
+        for key, label, _ in bandes
+    ]
+
+
+@dataclass(frozen=True)
+class TierUsage:
+    """Un palier, vu sur toutes les sessions : propose, employe, jamais employe."""
+
+    tier: str
+    label: str
+    sessions: int
+    offered: int
+    used: int
+    produced: int
+
+    @property
+    def unused(self) -> int:
+        """Sessions ou la bande etait atteignable et n'a rien produit.
+
+        **C'est le chiffre qui dira si une regle assouplie a marche** : il ne
+        bouge pas quand le lot ne portait pas la cote, et il baisse quand la
+        methode va la chercher.
+        """
+        return self.offered - self.used
+
+    @property
+    def never_offered(self) -> int:
+        return self.sessions - self.offered
+
+
+def tier_usage(settings: Settings | None = None) -> list[TierUsage]:
+    """Le releve par palier, agrege sur toutes les sessions."""
+    offres = tier_offers(settings)
+    par_palier: dict[str, list[TierOffer]] = {}
+    for offre in offres:
+        par_palier.setdefault(offre.tier, []).append(offre)
+    return [
+        TierUsage(
+            tier=key,
+            label=lignes[0].label,
+            sessions=len(lignes),
+            offered=sum(1 for ligne in lignes if ligne.offered),
+            used=sum(1 for ligne in lignes if ligne.offered and ligne.produced),
+            produced=sum(ligne.produced for ligne in lignes),
+        )
+        for key, lignes in par_palier.items()
+    ]
+
+
 # -- Ecriture ---------------------------------------------------------------
 
 

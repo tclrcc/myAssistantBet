@@ -46,11 +46,12 @@ from myassistantbet.services.history import (
     set_result,
     stats,
     tier_for_price,
+    tier_usage,
     wilson,
     worksheet,
 )
 from myassistantbet.services.manual import build, save
-from myassistantbet.services.prompt import build_prompt
+from myassistantbet.services.prompt import RenderedPrompt, build_prompt, save_prompt
 
 from .helpers import NOW, lot_avec_recul
 
@@ -3110,3 +3111,82 @@ def test_une_colonne_sans_ligne_posterieure_se_tait(migrated: Settings) -> None:
     """Un chantier livre ce matin n'a rien a prouver avant le premier import :
     sans ligne posterieure a sa migration, il n'y a pas de silence a constater."""
     assert history.column_gaps(migrated) == []
+
+
+# -- Ce qu'un palier vide veut dire ------------------------------------------
+#
+# **Trois causes rendaient un palier vide indiscernables.** La page annoncait
+# « 🔴 GIGA FUN 0 sur 12 sessions » sans dire si aucune cote du lot n'avait
+# jamais atteint la bande, si des cotes existaient et que rien n'etait sorti
+# dessus, ou si une selection avait ete produite puis ecartee par le quota. Les
+# trois n'appellent pas la meme conclusion, et sans la distinction une regle
+# assouplie ne se mesure pas : on ne saurait pas si elle a marche.
+
+
+def test_un_palier_dont_la_bande_n_est_pas_atteinte_n_est_pas_propose(
+    migrated: Settings,
+) -> None:
+    session_id, event_id = _session_avec_match(migrated)
+    save_prompt(
+        session_id,
+        RenderedPrompt(template_name="t.md.j2", body="### M1 · x", blocks=1, event_ids=[event_id]),
+        migrated,
+    )
+    db.execute(
+        "INSERT INTO prompt_odds (session_id, event_id, bookmaker, market_key, outcome_name, "
+        "price, fetched_at, captured_at) VALUES (?, ?, 'betclic_fr', 'h2h', 'Lyon', 1.40, ?, ?)",
+        (session_id, event_id, db.utcnow(), db.utcnow()),
+        settings=migrated,
+    )
+
+    par_palier = {row.tier: row for row in tier_usage(migrated)}
+
+    assert par_palier["safe"].offered == 1, "1.40 tombe dans la bande sûre"
+    assert par_palier["giga_fun"].offered == 0, "aucune cote du lot ne l'atteint"
+    assert par_palier["giga_fun"].unused == 0, "donc rien à reprocher à la méthode"
+
+
+def test_un_palier_propose_et_jamais_employe_se_compte(migrated: Settings) -> None:
+    """**La seule ligne actionnable du releve** : la bande etait atteignable, et
+    rien n'est sorti dessus. C'est cet ecart qui dira si une regle assouplie a
+    marche — il ne bouge pas quand le lot ne portait pas la cote."""
+    session_id, event_id = _session_avec_match(migrated)
+    save_prompt(
+        session_id,
+        RenderedPrompt(template_name="t.md.j2", body="### M1 · x", blocks=1, event_ids=[event_id]),
+        migrated,
+    )
+    for price in (1.40, 7.50):
+        db.execute(
+            "INSERT INTO prompt_odds (session_id, event_id, bookmaker, market_key, "
+            "outcome_name, price, fetched_at, captured_at) "
+            "VALUES (?, ?, 'betclic_fr', 'h2h', 'X', ?, ?, ?)",
+            (session_id, event_id, price, db.utcnow(), db.utcnow()),
+            settings=migrated,
+        )
+    _pick(migrated, session_id, event_id, market="1N2", result="win")
+
+    par_palier = {row.tier: row for row in tier_usage(migrated)}
+
+    assert par_palier["fun"].used == 1, "la sélection produite l'a été en FUN"
+    assert par_palier["giga_fun"].offered == 1, "7.50 tombe dans la bande 5.00-15.00"
+    assert par_palier["giga_fun"].unused == 1, "proposé, jamais employé"
+
+
+def test_le_releve_lit_le_marche_fige_et_non_celui_d_aujourd_hui(migrated: Settings) -> None:
+    """`prompt_odds` fige le marche au moment ou le prompt part. Relire `odds`
+    donnerait le marche **courant**, qui n'a plus rien a voir — c'est exactement
+    la raison d'etre de la table, et une session ne se relit pas autrement une
+    semaine apres."""
+    session_id, event_id = _session_avec_match(migrated)
+    save_prompt(
+        session_id,
+        RenderedPrompt(template_name="t.md.j2", body="### M1 · x", blocks=1, event_ids=[event_id]),
+        migrated,
+    )
+    # Le marche vivant disparait : seul le releve fige subsiste.
+    db.execute("DELETE FROM odds", settings=migrated)
+
+    assert any(row.offered for row in tier_usage(migrated)), (
+        "le relevé figé survit à la disparition du marché courant"
+    )

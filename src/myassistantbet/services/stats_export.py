@@ -138,6 +138,11 @@ class StatsReport:
     #: un taux** : au taux de jambe constate, un combine de dix jambes passe une
     #: fois sur 280, et son taux ne sera jamais mesurable.
     combos: combos_service.Summary = field(default_factory=combos_service.Summary)
+    #: Ce que chaque palier a **recu** des lots, et ce qu'il en a produit. Trois
+    #: causes rendaient un palier vide indiscernables — bande jamais atteinte,
+    #: bande atteinte et jamais employee, selection ecartee par le quota — et
+    #: elles n'appellent pas la meme conclusion.
+    tier_usage: list[history_service.TierUsage] = field(default_factory=list)
     set_score_options: list[str] = field(default_factory=list)
     set_score_matrix: list[tuple[str, list[int], int]] = field(default_factory=list)
     #: Point de comparaison du residu, pas une estimation de l'overround reel.
@@ -165,6 +170,7 @@ class StatsReport:
             "set_score_matrix": self.set_score_matrix,
             "ingestion": self.ingestion,
             "combos": self.combos,
+            "tier_usage": self.tier_usage,
         }
 
     @property
@@ -308,6 +314,17 @@ class StatsReport:
                 f"{analysis.settled} comptée(s) ici.{detail} C'est un défaut de "
                 "l'outil, pas de la saisie."
             )
+        jamais = [row for row in self.tier_usage if row.offered and not row.produced]
+        if jamais:
+            detail = " · ".join(
+                f"{row.label} (proposé sur {row.offered} session(s))" for row in jamais
+            )
+            notes.append(
+                f"{len(jamais)} palier(s) ont été proposés par un lot et n'ont jamais rien "
+                f"produit : {detail}. Un palier qu'aucune cote n'atteint ne compte pas ici — "
+                "c'est la distinction qui manquait, et sans elle une règle assouplie ne se "
+                "mesure pas."
+            )
         if not self.ingestion.empty:
             detail = " · ".join(f"{row.label} ({row.count})" for row in self.ingestion.rows)
             notes.append(
@@ -403,6 +420,7 @@ def report(settings: Settings | None = None) -> StatsReport:
         set_score_matrix=set_scores_service.matrix_rows(sets),
         ingestion=ingestion_service.summary(settings),
         combos=combos_service.summary(settings),
+        tier_usage=history_service.tier_usage(settings),
         generated_at=datetime.now(ZoneInfo(settings.tz)),
     )
 
@@ -578,6 +596,20 @@ def as_json(found: StatsReport) -> dict[str, Any]:
                 "first_loss_rank": combo.first_loss_rank,
             }
             for combo in found.combos.combos
+        ],
+        # Ce que chaque palier a recu des lots, et ce qu'il en a produit.
+        "tier_usage": [
+            {
+                "tier": row.tier,
+                "label": row.label,
+                "sessions": row.sessions,
+                "offered": row.offered,
+                "used": row.used,
+                "produced": row.produced,
+                "unused": row.unused,
+                "never_offered": row.never_offered,
+            }
+            for row in found.tier_usage
         ],
         "sections": [
             {"block": section.block, "title": section.title} for section in found.sections

@@ -680,6 +680,56 @@
      portent d'actionnable est un compte, et un compte tient sur une ligne. Rien
      n'est retiré — la règle de cette page reste que ce qui manque se dit — mais
      le raisonnement attend qu'on le demande. #}
+  {# **Trois causes rendaient un palier vide indiscernables**, et elles
+     n'appellent pas la même conclusion : aucune cote du lot n'atteint la bande —
+     rien à corriger ; des cotes existaient et rien n'est sorti dessus — c'est la
+     méthode ; une sélection a été produite puis écartée par le quota — c'est le
+     réglage. La page annonçait « 0 sur 12 sessions » sans dire laquelle.
+
+     Rien n'est stocké : tout se relit dans `prompt_odds`, qui fige le marché au
+     moment où le prompt part. C'est la vérité historique, et une table de plus
+     l'aurait doublée. #}
+  {% set proposes = tier_usage | selectattr("offered") | list %}
+  {% if proposes %}
+  <details class="readout">
+    <summary>
+      <span class="readout-facts">
+        {{ proposes | rejectattr("produced") | list | length }} palier(s) proposé(s)
+        par un lot et jamais employé(s)
+      </span>
+      <span class="readout-hint">ce qu'un palier vide veut dire</span>
+    </summary>
+    <div class="why-body">
+      <table class="board">
+        <thead>
+          <tr>
+            <th>Palier</th><th class="num">Sessions</th><th class="num">Bande atteinte</th>
+            <th class="num">Employé</th><th class="num">Sélections</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in tier_usage %}
+          <tr>
+            <td>{{ row.label }}</td>
+            <td class="num">{{ row.sessions }}</td>
+            <td class="num">{{ row.offered }}</td>
+            <td class="num">{{ row.used }}</td>
+            <td class="num">{{ row.produced }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p>
+        <strong>« Bande atteinte » compte les sessions dont au moins une cote du lot
+        tombe dans la bande.</strong> Un palier vide dont la bande n'a jamais été
+        atteinte n'est pas un défaut de méthode : il n'a jamais été proposé. C'est
+        l'écart entre « bande atteinte » et « employé » qui dira si une règle
+        assouplie a marché — il ne bouge pas quand le lot ne portait pas la cote.
+      </p>
+    </div>
+  </details>
+  {% endif %}
+
   {# **Blocs rejetés à l'import.** Un rejet décrit le chemin d'ingestion et
      jamais le modèle : c'est un bloc qui a existé et qui n'est pas entré, donc
      quelque chose que cette page ne mesure pas et ne mesurera jamais si
