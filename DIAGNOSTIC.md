@@ -1701,3 +1701,75 @@ plausible** :
    rendue »* — quand le chapitre écrit « aucun absent signalé ». Le marqueur
    accentué ne trouvait que le manuel, donc **zéro** une fois le préambule
    exclu, sur un cas qui arrive **153 fois**.
+
+---
+
+## §7 — Synchronisation : deux régimes, une seule fonction
+
+- **Reprise** : tout le catalogue, une passe, **reprenable**. Un agrégat écrit
+  dans les 24 h n'est pas redemandé, donc une interruption ne coûte que ce qui
+  restait. Coût mesuré au §6 : **355 appels** pour 176 joueurs.
+- **Entretien** : les joueurs des matchs **à venir** seulement. Un lot tennis en
+  porte ~35, contre 180 pour le catalogue entier.
+
+**Le plancher se vérifie avant chaque joueur**, jamais une fois au départ : un
+contrôle unique laisserait une reprise franchir le plancher en cours de route et
+le découvrir à la fin — trop tard, le quota étant mensuel. `SyncReport.stopped`
+distingue une passe arrêtée d'une passe complète.
+
+La garde de péremption du lot 4 s'applique : le dernier match obtenu date la
+source, par circuit, et une stagnation de plus de 48 h écrit `source_figee`.
+
+**Registre des chemins d'écriture : rien à déclarer, vérifié.** `player_alias`,
+`player_serve_agg` et `api_responses` ne sont pas des tables gardées — ce sont
+des témoins de collecte, même statut que `source_freshness` et `imports_raw`, et
+non des prédictions. `tests/test_write_paths.py` passe sans modification et
+`selfcheck-ingestion` rend **10 sur 10**.
+
+---
+
+## Ce que la mesure a contredit — lot 5
+
+C'est la partie du rapport qui a le plus servi au lot 4, et elle est de nouveau
+fournie. **Sept affirmations**, dont deux du brief lui-même et trois de mes
+propres conclusions en cours de route.
+
+| Ce qui était affirmé | Ce que la mesure dit |
+| --- | --- |
+| « la reprise se compte en **centaines d'appels**, à 10 matchs par page » | `pageSize` monte à 200 ; **une page de 100 couvre 52 semaines pour les 174 joueurs résolus**. La reprise coûte 355 appels, soit 2 par joueur |
+| repli d'identité : « exact, casse, accents, **puis recherche via `Players`** » | la recherche **est** le mécanisme, pas le dernier recours ; et le repli d'accents doit se faire **sur l'entrée** — l'endpoint est insensible à la casse et pas aux accents |
+| le seuil de 400 points pourrait fermer un circuit | Q1 à **3 744** (ATP) et **3 346** (WTA), 100 % au-dessus du seuil dans **toutes** les tranches de classement |
+| l'`as_of` des lignes de service passe par l'horloge injectable | il n'est **comparé à rien** : il est rendu, et c'est le lecteur qui soustrait. Un `now` y serait du code mort |
+| **(la mienne)** `event/get` rend vide sur 8 rencontres sur 8 | artefact de ma sonde : lancée hors de la racine, donc **sans `.env`, donc sans clé** — le piège que le lot 4 avait documenté. Le relevé refait donne 5 sur 8 |
+| **(la mienne)** la famille d'appel se dérive du chemin | le segment variable n'est pas au même rang d'un endpoint à l'autre : « premier + dernier segment » rangeait `profile/search` sous `profile/atp` |
+| **(la mienne)** un nom exact est une résolution | `Leylah Fernandez` existe chez le fournisseur avec **zéro match** ; le vrai profil est `Leylah Annie Fernandez`, 452 matchs, et la recherche rend les deux |
+
+### Trois corrections que seul un rendu réel a trouvées
+
+Les tests unitaires passaient dans les trois cas :
+
+1. **Les lignes de service dépendaient de tennis-data.** Posées après le retour
+   anticipé de `tennis_history.lines`, elles disparaissaient dès que
+   `tennis_matches` était vide. Une source payante suspendue au téléchargement
+   d'un classeur gratuit sans rapport — et le symptôme aurait été un bloc
+   normal, sans quatre lignes ;
+2. **Le tiret est une variation réelle et bidirectionnelle** : la source écrit
+   `Pablo Carreno-Busta` quand la base écrit `Pablo Carreno Busta`, et
+   `Felix Auger Aliassime` quand la base écrit `Felix Auger-Aliassime`. Le profil
+   de Carreno porte 1 028 matchs ;
+3. **Le repli par nom de famille se déclenchait sur « recherche vide »**, ce qui
+   ne part jamais quand la recherche rend un candidat unique dont le profil est
+   vide. Il se déclenche sur « aucun candidat validé ».
+
+### Deux erreurs de mesure attrapées avant d'écrire un chiffre
+
+Toutes deux produisaient un compte **plausible**, ce qui est la forme la plus
+coûteuse : le découpage des blocs sans borne haute (§15), et les marqueurs pris
+dans le mode d'emploi au lieu du rendu (§15). Le second sortait **zéro** sur un
+cas qui arrive 153 fois.
+
+### Trois assertions qui recopiaient la valeur du jour
+
+Corrigées en propriétés, conformément à la règle du dépôt : `fiche.budget == 7`,
+`count(...) == 7`, et `len(sections) == 7` dans le test de parité page/fichier.
+Les trois cassaient sur un réglage changé sans qu'aucune règle ait bougé.
