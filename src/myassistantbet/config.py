@@ -29,6 +29,16 @@ class Settings(BaseSettings):
     # --- Secrets -----------------------------------------------------------
     odds_api_key: str = ""
     apifootball_key: str = ""
+    #: Cle RapidAPI, pour l'**evaluation** de `tennis-api.com`. Aucun chemin
+    #: servi ne la lit : elle existe pour qu'un banc de mesure puisse tourner
+    #: sans exporter une variable a la main.
+    #:
+    #: **Elle etait deja dans `.env` et n'arrivait nulle part**, et la cause est
+    #: `extra="ignore"` : une cle non declaree y est indiscernable d'une cle
+    #: absente. Septieme forme du defaut caracteristique du projet — une sortie
+    #: identique pour l'oubli et pour le cas ordinaire — et la premiere sur la
+    #: configuration.
+    rapidapi_key: str = ""
 
     # --- Base de donnees ---------------------------------------------------
     db_path: Path = Path("./data/myassistantbet.db")
@@ -161,6 +171,10 @@ class Settings(BaseSettings):
             "dev_cache": self.dev_cache,
             "odds_api_key_present": bool(self.odds_api_key),
             "apifootball_key_present": bool(self.apifootball_key),
+            # **Le nom, jamais la valeur.** `/health` est servi derriere nginx et
+            # relu dans des captures : un booleen dit qu'une cle est la sans
+            # jamais la montrer, meme regle que les deux autres.
+            "rapidapi_key_present": bool(self.rapidapi_key),
         }
 
 
