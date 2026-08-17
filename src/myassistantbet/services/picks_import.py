@@ -55,6 +55,7 @@ from .ingestion import (
     SCORE_SETS,
     Reject,
     to_payload,
+    unnumber,
 )
 from .prompt import QUOTA_FLOOR_TIERS
 from .set_scores import FROM_PROSE, ParsedScore, _positioned
@@ -1269,6 +1270,12 @@ def build_preview(
     """
     settings = settings or get_settings()
     import_id = record_import(session_id, raw, source, settings)
+    # **Le brut est garde d'abord, la numerotation retiree ensuite**, et jamais
+    # l'inverse : ce qui est conserve doit etre ce qui a ete recu, y compris son
+    # balisage abime — c'est tout l'interet du rejeu. Le retrait ne deplace
+    # aucun caractere (le prefixe devient autant d'espaces), donc les bornes
+    # enregistrees a cote continuent de designer le texte conserve.
+    raw = unnumber(raw)
     rows = build_view(session_id, settings).rows
     known = {
         _signature(pick.event_id, pick.market, pick.selection)

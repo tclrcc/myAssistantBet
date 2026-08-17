@@ -31,7 +31,14 @@ from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services import combos as combos_service
-from myassistantbet.services import confidence, ingestion, picks_import, set_scores, write_paths
+from myassistantbet.services import (
+    confidence,
+    imports_raw,
+    ingestion,
+    picks_import,
+    set_scores,
+    write_paths,
+)
 from myassistantbet.services.manual import build, save
 
 LOIN = "2099-01-01"
@@ -373,3 +380,95 @@ def test_le_selfcheck_echoue_si_un_chemin_devient_muet(
     rapport = selfcheck.run()
 
     assert [check.path for check in rapport.failures] == ["muet"] * len(rapport.families)
+
+
+# -- §5a — la numérotation de lignes se récupère, elle n'est plus seulement vue
+
+
+def test_la_numerotation_de_lignes_est_recuperee(migrated: Settings) -> None:
+    """**La dette nommée au lot 2**, et elle méritait d'être payée.
+
+    Le banc rapportait la numérotation comme « le seul cas qui casse le
+    tableau ». Contrairement aux guillemets typographiques sur du JSON, elle
+    **ne détruit aucune information** : un préfixe `  12  ` se retire sans
+    perte, et prétendre le lire n'invente rien.
+    """
+    session_id = _session(migrated)
+    complet = TABLEAU + "\n" + CONF + "\n" + COMBO + "\n" + SETS
+
+    preview = picks_import.build_preview(session_id, _numerotation(complet), migrated)
+
+    assert len(preview.picks) == 2, "le tableau se lit malgré la numérotation"
+    assert preview.claims_attached == 2
+    assert len(preview.combos) == 1
+    assert len(preview.scores) == 2, "les deux scores en sets sont rattachés"
+
+
+def test_le_retrait_ne_deplace_aucun_caractere() -> None:
+    """**La contrainte du projet, et elle n'est pas négociable.**
+
+    `imports_raw` garde le texte tel quel et chaque ligne lue garde son
+    intervalle de position dedans. Un retrait qui raccourcirait les lignes
+    ferait cesser toutes ces bornes de désigner quoi que ce soit, et le rejeu
+    ciblé — la raison d'être du collage brut — tomberait avec.
+    """
+    numerote = _numerotation(TABLEAU + "\n" + CONF)
+
+    propre = ingestion.unnumber(numerote)
+
+    assert len(propre) == len(numerote)
+    assert propre != numerote
+    assert [len(ligne) for ligne in propre.splitlines()] == [
+        len(ligne) for ligne in numerote.splitlines()
+    ]
+
+
+def test_les_bornes_designent_encore_le_collage_conserve(migrated: Settings) -> None:
+    """Le brut est gardé **avant** le retrait, et les bornes le désignent lui.
+
+    C'est ce qui rend le retrait acceptable : ce qu'on conserve reste le texte
+    reçu, balisage abîmé compris, et une borne relue y retombe sur la même
+    ligne.
+    """
+    session_id = _session(migrated)
+    numerote = _numerotation(TABLEAU)
+
+    preview = picks_import.build_preview(session_id, numerote, migrated)
+
+    assert preview.import_id is not None
+    collage = imports_raw.get(preview.import_id, migrated)
+    assert collage is not None
+    assert collage.raw_text == numerote, "le brut est gardé tel quel"
+    ligne = preview.picks[0]
+    assert ligne.start is not None and ligne.end is not None
+    assert "Lyon" in collage.raw_text[ligne.start : ligne.end]
+
+
+def test_un_tableau_tabule_a_colonne_numerique_n_est_pas_mange() -> None:
+    """**Le faux positif que cette règle existe pour éviter.**
+
+    Le module d'import sait depuis toujours qu'un tableau copié depuis le rendu
+    arrive **tabulé**, les barres ayant été consommées. Si `12\\t` comptait comme
+    un préfixe de numérotation, la première colonne d'un tel tableau — le numéro
+    de ligne, qui est une donnée — se ferait manger.
+
+    Le faux positif coûte une colonne de données ; le faux négatif coûte un
+    rejet déjà visible. La sévérité va donc dans ce sens-là.
+    """
+    tabule = "1\tLyon – Adv Lyon\t1N2\n2\tNice – Adv Nice\t1N2"
+
+    assert ingestion.unnumber(tabule) == tabule
+
+
+def test_une_numerotation_incomplete_ou_desordonnee_n_est_pas_retiree() -> None:
+    """Une numérotation est une propriété du **bloc**, pas d'une ligne.
+
+    Sans cette condition, trois lignes de prose commençant par un nombre
+    passeraient pour une vue numérotée — et ce qui suit leur nombre serait lu
+    comme la ligne entière.
+    """
+    partielle = "  1  première\ndeuxième sans numéro\n  3  troisième"
+    desordonnee = "  1  a\n  5  b\n  9  c"
+
+    assert ingestion.unnumber(partielle) == partielle
+    assert ingestion.unnumber(desordonnee) == desordonnee

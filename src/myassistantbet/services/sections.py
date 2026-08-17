@@ -44,6 +44,7 @@ from ..db import connect
 from . import picks_import, set_scores
 from .combos import read_combos
 from .confidence import OPEN_ABSENT, read_blocks, read_opened
+from .ingestion import unnumber
 
 #: Ce que le gabarit ecrit quand il demande une section. **Ces motifs se posent
 #: sur le prompt emis et non sur le gabarit** : une porte fermee (`{% if
@@ -223,8 +224,14 @@ def read(raw: str, prompt: str) -> tuple[frozenset[str], frozenset[str]]:
     Rendue a part de la lecture en base pour que le rapprochement se teste sans
     session ni migration : c'est la fonction qui porte la regle.
     """
+    # Le collage se lit **comme a l'import**, numerotation retiree : sans ce
+    # passage, une session collee depuis une vue numerotee verrait toutes ses
+    # sections declarees absentes alors que l'import les a lues. Deux lectures
+    # d'un meme collage qui ne voient pas la meme chose sont exactement ce que
+    # ce module existe pour ne pas produire.
+    lisible = unnumber(raw or "")
     asked = {section.key for section in SECTIONS if section.asks(prompt or "")}
-    found = {section.key for section in SECTIONS if section.finds(raw or "")}
+    found = {section.key for section in SECTIONS if section.finds(lisible)}
     return frozenset(asked), frozenset(found)
 
 

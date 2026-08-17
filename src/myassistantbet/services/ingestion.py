@@ -110,6 +110,63 @@ PAYLOAD_MAX = 4000
 # pourtant un bloc par ligne.
 
 
+#: Un prefixe de numerotation de lignes : des chiffres, puis un separateur.
+#:
+#: Les formes observees sont `  12  `, `12→`, `12: ` et `12. `. **La tabulation
+#: seule n'en fait pas partie, et c'est une exclusion mesuree** : le module
+#: d'import sait depuis toujours qu'un tableau copie depuis le rendu arrive
+#: **tabule**, les barres ayant ete consommees. Accepter `12\t` ferait donc
+#: manger la premiere colonne d'un tableau dont le numero de ligne est une
+#: donnee — le format le plus courant du projet. La contrepartie est qu'une vue
+#: numerotee a la `cat -n`, qui separe par une tabulation, n'est pas rattrapee :
+#: elle echoue **visiblement**, ce que le banc garantit deja, et c'est le sens
+#: dans lequel ce projet se trompe.
+_NUMBERED = re.compile(r"^([ \t]*)(\d+)(→[ \t]*|[:.][ \t]+|[ ]{2,})")
+
+
+def unnumber(raw: str) -> str:
+    """Retire un prefixe de numerotation de lignes, **sans deplacer un caractere**.
+
+    Le lot 2 avait laisse cette altération comme le seul cas qui casse le
+    tableau, detectee et non rattrapee. Elle merite de l'etre : contrairement
+    aux guillemets typographiques sur du JSON, elle **ne detruit aucune
+    information** — un prefixe `  12  ` se retire sans perte.
+
+    **Le prefixe est remplace par autant d'espaces, jamais supprime.** C'est la
+    contrainte du projet : `imports_raw` garde le texte tel quel et chaque ligne
+    lue garde son intervalle de position dedans. Un retrait qui raccourcirait
+    les lignes ferait cesser toutes ces bornes de designer quoi que ce soit, et
+    le rejeu cible — la raison d'etre du collage brut — tomberait avec.
+
+    Les espaces de tete ne genent aucun lecteur : le JSON les ignore, le
+    tableau markdown rend une premiere cellule vide comme sur une ligne
+    ordinaire, et la ligne `sets:` se cherche deja avec `^\\s*`.
+
+    **Le retrait exige une sequence complete et consecutive**, et c'est ce qui
+    le rend sur plutot que probable. Une numerotation est une propriete du
+    **bloc**, pas d'une ligne : si toutes les lignes portent 1, 2, 3… dans
+    l'ordre, c'est une vue numerotee. Sans cette condition, un tableau tabule
+    dont la premiere colonne est un numero de ligne — `1\\tLyon – Nice\\t…`,
+    exactement ce que le rendu produit — se ferait manger sa premiere cellule.
+    Le faux positif coute une colonne de donnees, le faux negatif coute un rejet
+    deja visible : la severite va donc dans ce sens-la.
+    """
+    lines = (raw or "").splitlines(keepends=True)
+    if len(lines) < 2:
+        return raw
+    found = [_NUMBERED.match(line) for line in lines]
+    if not all(found):
+        return raw
+    numbers = [int(match.group(2)) for match in found if match is not None]
+    if numbers != list(range(1, len(numbers) + 1)):
+        return raw
+    return "".join(
+        " " * (match.end() - match.start()) + line[match.end() :]
+        for line, match in zip(lines, found, strict=True)
+        if match is not None
+    )
+
+
 def _balanced(text: str, start: int) -> int | None:
     """Fin de l'objet JSON ouvert a `start`, ou rien s'il ne se referme pas.
 

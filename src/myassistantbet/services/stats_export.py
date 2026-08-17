@@ -419,7 +419,10 @@ class StatsReport:
                 "c'est la distinction qui manquait, et sans elle une règle assouplie ne se "
                 f"mesure pas. Relevé sur {couvertes} session(s) sur {total} : le marché "
                 "n'est figé que depuis la migration 033, et les plus anciennes n'ont aucun "
-                "relevé — leurs bandes ne se reconstitueront pas."
+                "relevé — leurs bandes ne se reconstitueront pas. Le texte de leur prompt ne "
+                "les rattrape pas : il est bien archivé, mais la ligne « Paliers » par bloc "
+                "est née avec ce même relevé — 0 ligne sur les 742 blocs des sessions les "
+                "plus anciennes."
             )
         if not self.ingestion.empty:
             detail = " · ".join(f"{row.label} ({row.count})" for row in self.ingestion.rows)

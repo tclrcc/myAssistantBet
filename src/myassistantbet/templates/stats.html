@@ -734,11 +734,22 @@
          antérieures n'ont aucun marché figé, et rien ne dira jamais quelles
          bandes elles proposaient. Les compter ferait lire « bande jamais
          atteinte » sur des sessions dont on ne sait rien — le défaut exact que
-         ce relevé existe pour supprimer. #}
+         ce relevé existe pour supprimer.
+
+         **Le rattrapage par le texte du prompt a été mesuré, et il n'existe
+         pas.** Le corps est bien archivé depuis toujours, mais la ligne
+         « Paliers » par bloc — celle qui porte l'atteignabilité — est apparue
+         *avec* la migration 033 : 0 ligne sur les 742 blocs des sessions 1 à 6
+         et 12, et 7 sur 20 pour la session 7. Il n'y a donc rien à re-parser, et
+         couvrir une session au tiers de ses blocs dirait « bande jamais
+         atteinte » de blocs jamais lus. Résultat négatif écrit ici pour ne pas
+         être refait. #}
       <p class="muted small">
         Relevé sur <strong>{{ tier_scope[0] }} session(s) sur {{ tier_scope[1] }}</strong> :
         le marché n'est figé qu'à partir de la migration 033, et les plus anciennes
-        n'en portent aucun. Leurs bandes ne se reconstitueront pas.
+        n'en portent aucun. <strong>Le texte de leur prompt ne les rattrape pas</strong> —
+        il est bien conservé, mais la ligne « Paliers » par bloc est née avec ce
+        même relevé. Leurs bandes ne se reconstitueront pas.
       </p>
     </div>
   </details>
