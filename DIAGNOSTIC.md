@@ -2023,13 +2023,14 @@ allumer le drapeau ne fera sortir que `Service`, `Retour` et `Ecart`. La ligne
 
 ## §6 — Ce que la mesure contredit dans le brief
 
-Huit affirmations reprises et vérifiées ; **six ne tiennent pas**, dont deux qui
-ont changé le déroulé de la session.
+Huit affirmations reprises et vérifiées ; **quatre ne tiennent pas**, dont deux
+qui ont changé le déroulé de la session. Une cinquième, que j'avais comptée
+comme fausse, ne l'était pas — voir §8, et c'est la correction la plus
+importante de ce relevé.
 
 | Affirmé | Mesuré |
 | --- | --- |
-| « 176 joueurs sur 176, tous au-dessus du seuil de 400 points » | **38 joueurs distincts.** 176 est le nombre de *lignes* de `player_serve_agg` — 38 joueurs × ~4,6 surfaces |
-| « toutes tranches de classement à 100 % » | vrai toutes surfaces et sur Hard/Clay ; **I.hard 13/26, Grass 24/36** |
+| ~~« 176 joueurs sur 176 » serait un compte de lignes~~ | **retiré — c'était mon erreur, pas celle du brief.** Voir §8 : deux populations distinctes, et le nombre 176 tombe des deux côtés par coïncidence |
 | « ~6 200 appels pour 52 semaines, soit ~4 % du quota » | ~270 appels par joueur : **~70 000 appels** pour les 256 joueurs en file, soit ~47 % du quota |
 | « l'invariant d'alternance… à l'échelle, il ne le sera pas » | **0 rupture sur 94 timelines.** La source sert entier ou ne sert pas |
 | « à ~22 jeux par match, une quinzaine de matchs suffit » | juste sur les jeux (21,4 par match mesuré), **faux sur les matchs** : on n'obtient que 2 à 14 timelines par joueur, jamais quinze |
@@ -2102,3 +2103,66 @@ seule entrée les couvrira toutes les deux.
 
 Les onze entrées existantes suivent déjà cette convention : « lot 5 — budget de
 recherche à 10 » est datée du 17/08, jour où le budget a pris effet.
+
+---
+
+## §8 — 38 contre 176 : deux populations, et une coïncidence qui m'a trompé
+
+**Réponse : le troisième cas. Les deux comptes sont justes et ne portent pas sur
+la même population.** Mon relevé précédent affirmait que « 176 » était un compte
+de lignes et que le lot 5 s'était trompé. **C'est moi qui me suis trompé**, et
+la correction compte plus que le constat d'origine : elle décide si la source
+reste adoptée.
+
+```sql
+SELECT (SELECT COUNT(DISTINCT player) FROM player_serve_agg) AS joueurs_persistes,
+       (SELECT COUNT(*)              FROM player_serve_agg) AS lignes_persistees;
+```
+
+| | Compte | Ce que c'est |
+| --- | ---: | --- |
+| `COUNT(DISTINCT player)` de `player_serve_agg` | **38** | les joueurs **persistés** en production |
+| `COUNT(*)` de `player_serve_agg` | **176** | leurs lignes — 38 joueurs × ~4,6 surfaces |
+| `couverture.py` du lot 5 | **176** | les joueurs **distincts des cinq derniers lots**, mesurés sur base temporaire |
+
+**Le nombre 176 tombe des deux côtés par pur hasard**, et c'est toute l'origine
+de la confusion : 38 × 4,63 surfaces ≈ 176 lignes persistées, contre 176 joueurs
+mesurés. Deux grandeurs sans rapport, un seul nombre.
+
+### Ce qui écarte les deux autres cas
+
+**Le premier cas est écarté par la source de `couverture.py`** : il itère sur
+`joueurs.json`, un **dictionnaire indexé par le nom du joueur**. Un dictionnaire
+ne peut pas porter de doublon, donc il comptait bien des joueurs — vérifié :
+176 entrées, **176 clés distinctes**, 89 ATP et 87 WTA. Cela recoupe exactement
+le §6 du lot 5 (88 + 86 résolus, plus 2 non résolus nommés). **Le lot 5 ne s'est
+pas trompé, et la décision d'adopter la source n'est pas invalidée.**
+
+**Le deuxième est écarté par l'intention, écrite dans le script** : « Base
+temporaire : rien n'est écrit en production. » Aucune passe n'a été perdue —
+elle n'a jamais eu vocation à être persistée. C'était une mesure de couverture,
+pas une collecte.
+
+### Les deux populations, nommées
+
+| | Population | Origine |
+| --- | --- | --- |
+| **176** | les joueurs des **cinq derniers lots tennis** au 17/08 | instantané du board, base temporaire |
+| **38** | les joueurs vus par `sync(upcoming_players)` les jours où le planificateur a tourné | population **glissante**, écrite en production |
+
+Recoupement mesuré : **26 joueurs communs**, 12 persistés hors des 176 (arrivés
+au board depuis), **150 des 176 jamais persistés**. Le faible recouvrement est
+normal — l'un est un instantané, l'autre un cumul de ce qui jouait ces jours-là.
+
+### La notation `13/26`, levée
+
+**13 fenêtres sur 26, et non 13 joueurs sur 26 attendus.** Chaque ligne de
+`player_serve_agg` est un couple *(joueur, surface)* : les 26 sont les joueurs
+qui portent **une ligne I.hard**, c'est-à-dire qui ont joué au moins un match
+sur cette surface — pas un effectif attendu. Sur ces 26, 13 franchissent les 400
+points **sur cette surface**. Idem pour `Grass 24/36`.
+
+**Ce n'est donc pas une contradiction du brief**, dont les 100 % portent sur la
+fenêtre *toutes surfaces* — vraie elle aussi : les 38 joueurs persistés y sont
+tous au-dessus de 400. Une couverture par surface est mécaniquement plus basse,
+et le lot 5 le disait déjà (« ATP dur 87/88 »). L'entrée est retirée du §6.
