@@ -2048,5 +2048,30 @@ seuil — est ce qui a été suivi.
    ailleurs, ou dériver tenue et break d'un décompte que `matches-played` porte
    déjà — à vérifier, ce n'est pas établi.
 2. **§2** — le bloc avant/après, quand un joueur passera le seuil.
-3. **§5** — registre des chemins d'écriture, entrée `changelog_mesure` pour la
-   passe de timelines.
+3. **§5** — le registre des chemins d'écriture est **à jour** : la collecte
+   n'ouvre aucun chemin nouveau (elle écrit par `store_aggregate` et
+   `archive_response`, tous deux déjà déclarés), et `test_write_paths` passe.
+   Reste l'entrée `changelog_mesure`, et elle **n'a pas été écrite** — voir
+   ci-dessous.
+
+### L'entrée `changelog_mesure` de la passe : non écrite, et c'est raisonné
+
+Le brief la demande, au motif que la passe « change ce que le modèle lit dès
+l'activation, donc elle mérite sa date ». **Les deux moitiés de cette phrase se
+contredisent**, et la règle du §4 tranche : la date du journal est celle où le
+changement **agit**, pas celle où il a été livré.
+
+`changelog_mesure` coupe la population sur `picks.created_at` — une entrée
+marque le jour où ce que le modèle produit a changé. Or `SERVE_LINES_ENABLED`
+vaut `0` : la collecte de ce matin ne change **rien** à ce que le modèle lit, et
+le test du §4 le prouve octet pour octet. Une entrée datée du 18/08 poserait
+donc une coupure là où rien n'a bougé, et placerait du mauvais côté toutes les
+sessions tirées entre aujourd'hui et l'activation.
+
+C'est exactement ce que le brief interdit par ailleurs — « ne pas écrire
+d'avance la ligne de journal de l'activation ». La passe et l'activation
+partagent la même date d'effet : **celle où le drapeau passe à `1`**, et une
+seule entrée les couvrira toutes les deux.
+
+Les onze entrées existantes suivent déjà cette convention : « lot 5 — budget de
+recherche à 10 » est datée du 17/08, jour où le budget a pris effet.
