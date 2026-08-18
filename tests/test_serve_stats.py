@@ -1181,3 +1181,146 @@ def _event(settings: Settings, cle: str, home: str, away: str, quand: str) -> No
         (sport["id"], competition["id"], f"{home}{away}", home, away, quand, db.utcnow()),
         settings=settings,
     )
+
+
+# -- La collecte des timelines : quand s'arreter -----------------------------
+#
+# `fetch_timeline` savait chercher une rencontre depuis le lot 5 et **rien ne
+# l'appelait** : les 176 lignes de la base portaient `served = 0`, donc la ligne
+# `Jeux` s'omettait partout. Ces tests portent sur le chainon manquant, et sur la
+# seule chose qu'il decide vraiment — quand cesser d'appeler.
+
+
+def _ligne_de_match(jour: str, adversaire: str = "Alex Michelsen") -> serve_stats.ServeLine:
+    return serve_stats.ServeLine(played_on=jour, surface="Hard", opponent=adversaire)
+
+
+@respx.mock
+async def test_la_collecte_s_arrete_des_le_seuil_atteint(
+    tennis_client: TennisAPIClient, load_fixture: Callable[[str], Any]
+) -> None:
+    """**Le dessin entier du §1.** Une quinzaine de rencontres porte les 300 jeux
+    que `enough_games` reclame ; 52 semaines en comptent quarante. S'arreter au
+    seuil divise la passe par deux ou trois, et au-dela un appel de plus
+    n'ajoute rien qu'un taux ne dise deja.
+    """
+    respx.get(url__startswith=BASE_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("tennisapi_event.json"), headers=QUOTA_HEADERS
+        )
+    )
+    lignes = tuple(_ligne_de_match(f"2026-0{1 + i // 28}-{1 + i % 28:02d}") for i in range(40))
+
+    jeux, releve, _ = await serve_stats.collect_games(
+        tennis_client, "Taylor Fritz", lignes, tennis_client._settings
+    )
+
+    porte = sum(jeu.served + jeu.returned for jeu in jeux)
+    assert releve.reached, "le seuil est atteint, donc la collecte s'arrete d'elle-meme"
+    assert porte >= serve_stats.MIN_GAMES
+    assert releve.attempted < len(lignes), "les quarante rencontres ne sont pas toutes payees"
+
+
+@respx.mock
+async def test_les_rencontres_recentes_passent_en_premier(
+    tennis_client: TennisAPIClient, load_fixture: Callable[[str], Any]
+) -> None:
+    """Une interruption doit laisser la fenetre **la plus proche du match
+    analyse**, jamais un fond de saison."""
+    respx.get(url__startswith=BASE_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("tennisapi_event.json"), headers=QUOTA_HEADERS
+        )
+    )
+    lignes = (_ligne_de_match("2026-01-05"), _ligne_de_match("2026-08-16"))
+
+    await serve_stats.collect_games(
+        tennis_client, "Taylor Fritz", lignes, tennis_client._settings, target=1
+    )
+
+    assert "2026-08-16" in str(respx.calls[0].request.url)
+
+
+@respx.mock
+async def test_une_source_vide_se_compte_a_part_d_une_rupture_d_alternance(
+    tennis_client: TennisAPIClient,
+) -> None:
+    """**Quatre taux et non un.** Une couverture partielle et une timeline a
+    trous n'appellent pas le meme comportement : la premiere est un fait sur la
+    source, la seconde un rejet de qualite. Les fondre ferait chercher une panne
+    la ou il n'y a qu'une absence."""
+    troue = {
+        "result": {
+            "participant1": "A",
+            "participant2": "Troue",
+            "timeline": [
+                {"text": "Game 1 - A - holds to 15"},
+                {"text": "Game 2 - A - holds to 15"},
+            ],
+        }
+    }
+
+    def _repondre(request: httpx.Request) -> httpx.Response:
+        corps = troue if "Troue" in str(request.url) else {"result": []}
+        return httpx.Response(200, json=corps, headers=QUOTA_HEADERS)
+
+    respx.get(url__startswith=BASE_URL).mock(side_effect=_repondre)
+    lignes = (_ligne_de_match("2026-08-16", "Troue"), _ligne_de_match("2026-08-15", "Vide"))
+
+    jeux, releve, rejets = await serve_stats.collect_games(
+        tennis_client, "A", lignes, tennis_client._settings
+    )
+
+    assert jeux == ()
+    assert (releve.alternation, releve.empty) == (1, 1)
+    assert not releve.reached, "aucun jeu collecte : la ligne Jeux doit s'omettre"
+    assert len(rejets) == 2
+
+
+@respx.mock
+async def test_une_reprise_ne_redemande_pas_ce_qui_est_deja_archive(
+    tennis_client: TennisAPIClient, load_fixture: Callable[[str], Any]
+) -> None:
+    """C'est ce qui rend la passe **reprenable** : une interruption ne repaie pas
+    ce qui est en base. Sans cela, une reprise de 256 joueurs coupee a mi-chemin
+    recommencerait a zero."""
+    respx.get(url__startswith=BASE_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("tennisapi_event.json"), headers=QUOTA_HEADERS
+        )
+    )
+    lignes = (_ligne_de_match("2026-08-16"),)
+    await serve_stats.collect_games(
+        tennis_client, "Taylor Fritz", lignes, tennis_client._settings, target=1
+    )
+    appels = len(respx.calls)
+
+    jeux, releve, _ = await serve_stats.collect_games(
+        tennis_client, "Taylor Fritz", lignes, tennis_client._settings, target=1
+    )
+
+    assert len(respx.calls) == appels, "la seconde passe ne paie aucun appel"
+    assert releve.replayed == 1
+    assert len(jeux) == 1, "et elle rend quand meme les jeux"
+
+
+@respx.mock
+async def test_une_rencontre_vide_deja_archivee_ne_se_repaie_pas(
+    tennis_client: TennisAPIClient,
+) -> None:
+    """**Un `result` vide archive compte comme vu.** La moitie des rencontres
+    mesurees ne sont pas servies : les redemander a chaque reprise paierait
+    six appels pour reentendre la meme reponse."""
+    respx.get(url__startswith=BASE_URL).mock(
+        return_value=httpx.Response(200, json={"result": []}, headers=QUOTA_HEADERS)
+    )
+    lignes = (_ligne_de_match("2026-08-16"),)
+    await serve_stats.collect_games(tennis_client, "A", lignes, tennis_client._settings)
+    appels = len(respx.calls)
+
+    _, releve, _ = await serve_stats.collect_games(
+        tennis_client, "A", lignes, tennis_client._settings
+    )
+
+    assert len(respx.calls) == appels
+    assert (releve.empty, releve.replayed) == (1, 1)

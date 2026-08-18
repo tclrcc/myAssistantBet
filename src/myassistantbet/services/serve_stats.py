@@ -30,6 +30,7 @@ n'expose nulle part.
 
 from __future__ import annotations
 
+import json
 import logging
 import unicodedata
 from dataclasses import dataclass
@@ -39,7 +40,7 @@ from typing import Any
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.base import ProviderError, last_known_quota
-from ..providers.tennisapi import PROVIDER, TennisAPIClient
+from ..providers.tennisapi import PREFIX, PROVIDER, TennisAPIClient
 from . import freshness
 from .ingestion import (
     MATCH_REF_UNRESOLVED,
@@ -1550,10 +1551,16 @@ class SyncReport:
     #: une reprise finie.
     stopped: bool = False
     remaining: int | None = None
+    #: Le releve de collecte, un triplet par joueur. **Mesure pendant la passe et
+    #: non apres** : sur des milliers d'appels, une couverture partielle et une
+    #: panne reseau ne se distinguent plus une fois la passe finie.
+    timelines: list[tuple[str, str, TimelineTally]] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
         if self.rejects is None:
             self.rejects = []
+        if self.timelines is None:
+            self.timelines = []
 
     @property
     def line(self) -> str:
@@ -1596,6 +1603,7 @@ async def sync(
     players: list[tuple[str, str]],
     settings: Settings | None = None,
     now: datetime | None = None,
+    with_games: bool = False,
 ) -> SyncReport:
     """Rafraichit les agregats d'une liste de joueurs. **S'arrete proprement.**
 
@@ -1661,8 +1669,34 @@ async def sync(
             reponse = await client.matches_played(identity.canonical)
             report.calls += _calls(settings) - avant
 
-        if _store_player(identity, reponse, circuit, settings, horloge):
+        jeux: tuple[GameLine, ...] = ()
+        if with_games:
+            # **Hors de l'entretien quotidien, et c'est deliberе.** Une timeline
+            # coute quatre a six appels la ou une table de service en coute un :
+            # les collecter tous les jours pour tous les joueurs paierait la
+            # reprise chaque matin. Le planificateur appelle donc `sync` sans ce
+            # drapeau, et la reprise le pose.
+            lignes_j, ecartes_j = parse_matches_played(
+                reponse.data, identity.canonical, getattr(reponse, "archive_id", 0)
+            )
+            fenetre_j = (horloge - timedelta(weeks=52)).date().isoformat()
+            avant_j = _calls(settings)
+            jeux, tally, rejets_j = await collect_games(
+                client,
+                identity.canonical,
+                tuple(item for item in lignes_j if item.played_on >= fenetre_j),
+                settings,
+            )
+            report.calls += _calls(settings) - avant_j
+            report.rejects.extend(rejets_j)
+            report.timelines.append((identity.canonical, circuit, tally))
+            if tally.stopped:
+                report.stopped = True
+
+        if _store_player(identity, reponse, circuit, settings, horloge, games=jeux):
             report.refreshed += 1
+        if with_games and report.stopped:
+            break
 
     logger.info("%s", report.line)
     return report
@@ -1682,6 +1716,7 @@ def _store_player(
     circuit: str,
     settings: Settings,
     now: datetime,
+    games: tuple[GameLine, ...] = (),
 ) -> bool:
     """Calcule et ecrit les agregats d'un joueur, toutes surfaces puis par surface.
 
@@ -1703,8 +1738,21 @@ def _store_player(
             identity.canonical,
             ecartes,
         )
+    # **Les jeux se filtrent par surface comme les lignes de service.** Un
+    # agregat de terre battue qui sommerait les jeux de toutes surfaces
+    # afficherait une tenue de service que ce joueur n'a jamais eue sur terre —
+    # et rien ne le montrerait, les deux comptes vivant dans la meme ligne.
+    par_date = {ligne.played_on: ligne.surface for ligne in recentes}
     for surface in (ALL_SURFACES, *sorted({ligne.surface for ligne in recentes if ligne.surface})):
-        store_aggregate(aggregate(recentes, identity.canonical, circuit, surface=surface), settings)
+        retenus = tuple(
+            jeu
+            for jeu in games
+            if not surface or _fold_case(par_date.get(jeu.played_on, "")) == _fold_case(surface)
+        )
+        store_aggregate(
+            aggregate(recentes, identity.canonical, circuit, surface=surface, games=retenus),
+            settings,
+        )
     if identity.provider_id:
         note_provider_id(identity.local_name, circuit, identity.provider_id, settings)
     # **La garde de peremption du lot 4 s'applique a cette source comme aux
@@ -1773,3 +1821,199 @@ def known_players(settings: Settings | None = None) -> list[tuple[str, str]]:
             if nom:
                 vus.setdefault((str(nom), tour), None)
     return list(vus)
+
+
+# -- La collecte des timelines ----------------------------------------------
+#
+# `fetch_timeline` savait chercher **une** rencontre depuis le lot 5, et rien ne
+# l'appelait : `aggregate` etait toujours invoque sans `games=`, donc `served`
+# valait zero sur les 176 lignes de la base et la ligne `Jeux` s'omettait
+# partout. Le chainon manquant est ici, et c'est une regle de collecte — quand
+# s'arreter — plutot qu'un detail de transport.
+
+
+@dataclass
+class TimelineTally:
+    """Ce qu'une collecte de timelines a rencontre. **Quatre taux, pas un.**
+
+    Le brief demande de mesurer pendant la passe et non apres, et chacun de ces
+    compteurs repond a une question differente : `empty` decrit la **couverture
+    de la source**, `alternation` sa **qualite**, `failed` notre reseau. Les
+    fondre en un seul taux d'echec ferait chercher une panne la ou il n'y a
+    qu'une couverture partielle — le defaut caracteristique du projet.
+    """
+
+    attempted: int = 0
+    obtained: int = 0
+    empty: int = 0
+    alternation: int = 0
+    failed: int = 0
+    calls: int = 0
+    replayed: int = 0
+    #: Vrai quand le seuil de jeux a ete atteint, donc quand la collecte s'est
+    #: arretee d'elle-meme. **Distinct d'une liste epuisee** : le premier dit
+    #: que la ligne `Jeux` sortira, le second qu'elle manquera de volume.
+    reached: bool = False
+    #: Vrai quand le plancher de quota a interrompu la collecte.
+    stopped: bool = False
+
+
+def _event_paths(first: str, second: str, day: str) -> tuple[str, ...]:
+    """Les chemins que `fetch_timeline` essaiera, dans son ordre.
+
+    Ecrit **une seule fois** et derive des memes constantes : deux listes
+    paralleles auraient diverge au premier essai ajoute, et la reprise aurait
+    alors redemande ce qu'elle croyait deja tenir.
+    """
+    from datetime import date as _date
+    from datetime import timedelta as _delta
+
+    try:
+        depart = _date.fromisoformat(str(day)[:10])
+    except ValueError:
+        depart = None
+    chemins: list[str] = []
+    for shift in DAY_SHIFTS:
+        if depart is None and shift:
+            break
+        jour = str(day)[:10] if depart is None else (depart + _delta(days=shift)).isoformat()
+        for a, b in ((first, second), (second, first)):
+            chemins.append(f"{PREFIX}/extend/api/event/get/{a}/{b}/{jour}")
+    return tuple(chemins)
+
+
+def archived_timeline(
+    first: str, second: str, day: str, subject: str, settings: Settings
+) -> tuple[GameLine | None, bool]:
+    """La timeline d'une rencontre **deja archivee**, sans un appel de plus.
+
+    C'est ce qui rend la passe reprenable : une interruption ne redemande pas ce
+    qui est en base. Rend `(ligne, vu)` — `vu` dit qu'au moins un des chemins a
+    deja ete appele, donc qu'il ne sert a rien de le repayer pour s'entendre
+    repondre la meme chose.
+
+    **Un `result` vide archive compte comme vu.** Le traiter autrement ferait
+    repayer a chaque reprise les rencontres que la source ne sert pas — soit la
+    moitie d'entre elles, mesuree.
+    """
+    chemins = _event_paths(first, second, day)
+    if not chemins:
+        return None, False
+    marques = ",".join("?" * len(chemins))
+    with connect(settings) as conn:
+        rows = conn.execute(
+            f"SELECT raw_json FROM api_responses "
+            f" WHERE provider = ? AND path IN ({marques}) ORDER BY id",
+            (PROVIDER, *chemins),
+        ).fetchall()
+    if not rows:
+        return None, False
+    for row in rows:
+        try:
+            charge = json.loads(str(row["raw_json"]))
+        except (TypeError, ValueError):
+            continue
+        ligne, _ = parse_timeline(charge, subject)
+        if ligne is not None:
+            return ligne, True
+    return None, True
+
+
+async def collect_games(
+    client: TennisAPIClient,
+    canonical: str,
+    lines: tuple[ServeLine, ...],
+    settings: Settings,
+    target: int = MIN_GAMES,
+) -> tuple[tuple[GameLine, ...], TimelineTally, list[Reject]]:
+    """Les jeux d'un joueur, **du plus recent au plus ancien, et pas un de plus**.
+
+    Trois regles, et c'est le dessin entier :
+
+    - **on s'arrete des que le seuil est atteint.** Une quinzaine de rencontres
+      porte les 300 jeux que `enough_games` reclame (served + returned, soit une
+      vingtaine par match) la ou 52 semaines en comptent quarante. Ce seul choix
+      divise la passe par deux ou trois, et il est juste dans les deux sens :
+      au-dela du seuil, un appel de plus n'ajoute rien qu'un taux ne dise deja ;
+    - **du plus recent au plus ancien**, parce qu'une interruption doit laisser
+      la fenetre la plus proche du match analyse, jamais un fond de saison ;
+    - **le plancher est verifie avant chaque rencontre**, comme dans `sync` et
+      pour la meme raison : un controle unique laisserait une reprise le franchir
+      en cours de route et le decouvrir trop tard, le quota etant mensuel.
+
+    Ce qui n'est **pas** fait ici : aucun ajustement au niveau d'adversaire,
+    aucune projection. On somme des comptes, et c'est tout.
+    """
+    jeux: list[GameLine] = []
+    tally = TimelineTally()
+    rejets: list[Reject] = []
+    total = 0
+
+    for ligne in sorted(lines, key=lambda item: item.played_on, reverse=True):
+        if total >= target:
+            tally.reached = True
+            break
+        if not ligne.opponent or not ligne.played_on:
+            continue
+
+        # **L'archive d'abord.** Gratuite, et c'est elle qui rend la reprise
+        # reprenable ; sans elle une passe interrompue repaierait tout.
+        deja, vu = archived_timeline(
+            canonical, ligne.opponent, ligne.played_on, canonical, settings
+        )
+        if deja is not None:
+            tally.attempted += 1
+            tally.obtained += 1
+            tally.replayed += 1
+            jeux.append(deja)
+            total += deja.served + deja.returned
+            continue
+        if vu:
+            # Deja demande, deja vide. Le redemander couterait un appel pour la
+            # meme reponse.
+            tally.attempted += 1
+            tally.empty += 1
+            tally.replayed += 1
+            continue
+
+        etat = budget(settings)
+        if not etat.allowed:
+            tally.stopped = True
+            logger.warning("timelines %s : %s", canonical, etat.note)
+            break
+
+        avant = _calls(settings)
+        tally.attempted += 1
+        try:
+            hit, rejet = await fetch_timeline(
+                client, canonical, ligne.opponent, ligne.played_on, canonical
+            )
+        except ProviderError as exc:
+            tally.failed += 1
+            rejets.append(
+                Reject(
+                    block_type=SOURCE,
+                    reason=OTHER,
+                    detail=f"{canonical} vs {ligne.opponent} le {ligne.played_on} : {exc}",
+                    payload=f"{canonical}/{ligne.opponent}/{ligne.played_on}",
+                )
+            )
+            continue
+        finally:
+            tally.calls += _calls(settings) - avant
+
+        if hit is not None:
+            tally.obtained += 1
+            jeux.append(hit.line)
+            total += hit.line.served + hit.line.returned
+            continue
+        if rejet is not None:
+            rejets.append(rejet)
+            if rejet.reason == SCHEMA_INVALID:
+                tally.alternation += 1
+            else:
+                tally.empty += 1
+
+    if total >= target:
+        tally.reached = True
+    return tuple(jeux), tally, rejets
