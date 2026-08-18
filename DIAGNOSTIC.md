@@ -2193,3 +2193,61 @@ points **sur cette surface**. Idem pour `Grass 24/36`.
 fenêtre *toutes surfaces* — vraie elle aussi : les 38 joueurs persistés y sont
 tous au-dessus de 400. Une couverture par surface est mécaniquement plus basse,
 et le lot 5 le disait déjà (« ATP dur 87/88 »). L'entrée est retirée du §6.
+
+---
+
+## §9 — Mise en production du 18/08/2026, 09h40
+
+Décision de l'utilisateur, prise en connaissance de cause : il veut voir les
+lignes ce matin.
+
+| Étape | État |
+| --- | --- |
+| Sauvegarde préalable | `data/backups/myassistantbet-20260818-073042.db`, 45,9 Mo |
+| Migrations | schéma **62**, appliquées au démarrage |
+| `SERVE_LINES_ENABLED` | **`1`** — la clé était absente du `.env`, elle a été **ajoutée** |
+| Redémarrage | `systemctl restart`, service `active`, `/health` ok |
+| Suite avant bascule | **2 123 tests**, ruff vert |
+
+### Le prompt réel : les lignes sortent, `Jeux` est absente partout
+
+Lot ATP Cincinnati du jour, **12 blocs**, 21 711 tokens, aucun appel réseau.
+
+| Ligne | Blocs |
+| --- | ---: |
+| `Service` | **8 / 12** |
+| `Retour` | **8 / 12** |
+| `Ecart` | **8 / 12** |
+| **`Jeux`** | **0 / 12** |
+
+Chaque ligne porte son `as_of`, ses dénominateurs et son attribution :
+
+```
+  Service     Andrey Rublev 60.3% 1re · 77.9% s/1re · 50.4% s/2e · 10.3% aces · 9.1% df
+              Nuno Borges 66.9% 1re · 75.0% s/1re · 48.4% s/2e · 9.1% aces · 9.6% df
+              (Hard, 52 sem., 2083 et 2471 pts de service, arretees au 16/08) [tennis-api.com]
+```
+
+**`Jeux : non disponible` n'est pas un défaut aujourd'hui, c'est la règle qui
+fonctionne.** La ligne exige 300 jeux servis + retournés ; la passe n'a couvert
+qu'une fraction du catalogue et aucun joueur mesuré n'atteint le seuil. Elle
+apparaîtra joueur par joueur à mesure que la passe quotidienne avance, et pour
+personne avant. Ne pas la lire comme une régression, et **ne pas abaisser le
+seuil pour la faire sortir** : à 155 jeux elle serait lue comme un fait.
+
+Les 4 blocs sans lignes de service sont des joueurs que la passe n'a pas encore
+résolus — même mécanique, même correctif : elle tourne.
+
+### Les trois entrées de `changelog_mesure`, et le défaut consigné
+
+| id | Portée | Objet |
+| ---: | --- | --- |
+| 12 | gabarit | budget de recherche à 10 — **daté du 18/08**, jour d'effet, car aucune session ne l'avait exercé avant |
+| 13 | gabarit | lignes de service tennis |
+| 14 | restitution | **COUPE JOINTE** — les deux ci-dessus ne seront pas séparables |
+
+L'entrée 14 est le point à retenir : les deux changements partagent la même date
+d'effet, donc **tout écart de résidu mesuré autour du 18/08 mesure leur somme**.
+Il n'existe aucune session au budget 10 sans lignes de service. Les séparer
+demanderait de désactiver l'un des deux pendant quelques sessions. Consigné le
+jour même plutôt que découvert dans trois semaines.
