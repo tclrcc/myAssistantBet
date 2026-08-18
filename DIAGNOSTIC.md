@@ -2642,3 +2642,63 @@ le cadre appelle « la recherche la plus rentable du lot » porte sur une
 information que l'application collecte déjà, presque intégralement. **Le gabarit
 n'est toujours pas modifié** — c'est l'arbitrage de l'utilisateur, et il se prend
 désormais sur 99 % et non sur 56 %.
+
+---
+
+## §11 — La vérification avant de changer le geste : l'aperçu tient, mais **l'interface demandait le tableau**
+
+### Ce qui a été vérifié, et qui passe
+
+Test de bout en bout par la vraie route `POST /history/16/picks/preview`, sur une
+copie de la base, avec un collage de **32 172 caractères** :
+
+| | |
+| --- | --- |
+| HTTP | **200** |
+| `char_count` en base | **32 172 — exact, aucune troncature** |
+| sélections lues | 2 |
+| **`dossiers_ouverts`** | **`renseignee`, `declared=True`, repères `{M1, M2}`** |
+| `sets:` | 2 scores |
+
+**Aucun `maxlength` sur le `<textarea>`, aucune troncature côté serveur** :
+`imports_raw.record` écrit `raw_text` intégral et `char_count = len(text)`.
+
+Les blocs `conf` et le combiné sont ressortis à **0** — et **ce n'est pas une
+limite de taille**. Contrôle : le **même contenu réduit à 632 caractères**, soit
+cinquante fois moins, donne **exactement les mêmes zéros**. La cause est la somme
+de contrôle, qui refuse des repères `M1/M2` ne correspondant à aucun des 4
+prompts archivés de la session — un refus **nommé et visible**, pas un silence :
+
+```
+conf  : Les repères de match des blocs (M1, M2…) ne correspondent à aucun
+        prompt de cette session, ligne par ligne.
+combo : 1 combiné(s) lu(s), aucun rattaché : le prompt d'origine n'a pas pu
+        être identifié.
+```
+
+**Le geste peut donc changer sans risque de remplacer un silence par un autre.**
+
+### Et la cause racine n'est pas le geste : c'est l'interface
+
+`templates/picks.html:311` — le panneau d'import **demande explicitement la
+section C, et rien d'autre** :
+
+```html
+<summary>Importer le tableau de Claude
+  <span class="muted small">section C du rendu, en-tête compris</span></summary>
+<textarea name="table" rows="5"
+          placeholder="| # | Match | Marché | Sélection | Cote | Palier | …">
+```
+
+Le libellé dit « le tableau », sa précision dit « section C du rendu », le
+placeholder montre un en-tête de tableau, et le champ s'appelle `table`.
+**L'utilisateur a collé exactement ce que l'application lui demandait.**
+
+Les 13 collages de 567 à 1 314 caractères ne sont donc pas une négligence : ce
+sont des collages **conformes à la consigne affichée**. Le correctif n'est pas
+seulement dans le geste — il est d'abord dans ces trois lignes de gabarit, sans
+quoi le geste se reprendra tout seul à la session suivante.
+
+**Sixième occurrence du motif, et la plus coûteuse** : l'interface a demandé une
+donnée partielle, l'a reçue, et rien ne pouvait signaler que le reste manquait —
+puisque rien ne l'attendait.
