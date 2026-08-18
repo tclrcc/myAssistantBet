@@ -1995,7 +1995,17 @@ pourrait plus les séparer.
 Commande, le jour venu :
 
 ```bash
-sed -i 's/^SERVE_LINES_ENABLED=.*/SERVE_LINES_ENABLED=1/' .env && sudo systemctl restart myassistantbet
+grep -q '^SERVE_LINES_ENABLED=' .env && sed -i 's/^SERVE_LINES_ENABLED=.*/SERVE_LINES_ENABLED=1/' .env || echo 'SERVE_LINES_ENABLED=1' >> .env; sudo systemctl restart myassistantbet
+```
+
+**La clé est absente du `.env` aujourd'hui** — le drapeau vaut `False` par son
+défaut Pydantic, vérifié. Un `sed` seul n'aurait donc rien substitué et serait
+sorti sans erreur : la commande aurait paru fonctionner, le service aurait
+redémarré, et le drapeau serait resté bas. D'où la forme ci-dessus, qui ajoute
+la ligne quand elle manque. À vérifier après redémarrage :
+
+```bash
+curl -s localhost:8021/health | python3 -m json.tool | grep -i serve
 ```
 
 Ce qui doit être écrit dans `changelog_mesure` **au moment où la commande est
