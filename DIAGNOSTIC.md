@@ -1809,3 +1809,130 @@ cas qui arrive 153 fois.
 Corrigées en propriétés, conformément à la règle du dépôt : `fiche.budget == 7`,
 `count(...) == 7`, et `len(sections) == 7` dans le test de parité page/fichier.
 Les trois cassaient sur un réglage changé sans qu'aucune règle ait bougé.
+
+---
+
+# DIAGNOSTIC — lot 6 : la ligne `Jeux`, et le seuil qu'aucun joueur n'atteint
+
+Relevé du **18/08/2026**, session courte (08h55 – 10h00). Une seule passe a été
+lancée, sur la base servie, et **arrêtée volontairement** au vu de ce qu'elle
+mesurait. Toute mesure ci-dessous vient de `api_responses` et de
+`player_serve_agg`, pas du brief.
+
+---
+
+## §1 — La cause racine, et les quatre taux
+
+**Cause racine constatée.** `fetch_timeline` (`services/serve_stats.py:917`)
+existait depuis le lot 5 et n'avait **aucun appelant** : `aggregate` était
+toujours invoqué sans `games=`, donc `served` valait `0` sur les 176 lignes de
+`player_serve_agg`. La ligne `Jeux` ne disait pas « non disponible » par manque
+de couverture — elle le disait parce que **rien n'avait jamais été collecté**.
+
+**Correctif livré** (commit `ef845d9`) : `collect_games`, qui remonte du match le
+plus récent au plus ancien et **s'arrête dès les 300 jeux atteints** ; reprise
+par l'archive (`archived_timeline` relit les six chemins possibles avant d'en
+payer un) ; plancher vérifié avant chaque rencontre. `TimelineTally` porte
+quatre compteurs. L'entretien quotidien n'est pas touché : `sync` ne collecte
+que sur `with_games`.
+
+### Les quatre taux demandés
+
+Passe du 18/08, **764 appels `event/get`**, arrêtée à trois joueurs complets.
+
+| Mesure | Valeur |
+| --- | --- |
+| timelines obtenues | **50 sur 764 appels — 6,5 %** |
+| `result` vide (HTTP 200) | **714 — 93,5 %** |
+| ruptures d'alternance | **0** |
+| échecs réseau | **0** |
+| joueurs atteignant 300 jeux | **0 sur 3** |
+
+**La ventilation par circuit et par tranche de classement n'a pas été produite,
+et il ne faut pas l'inventer** : trois joueurs, tous ATP. Un taux par tranche
+sur cet effectif décrirait l'échantillon, pas la source.
+
+### Le verdict, et il est celui que le brief avait prévu
+
+| Joueur | Timelines | Jeux (servis + retournés) |
+| --- | ---: | ---: |
+| Nuno Borges | 14 | **299** |
+| Andrey Rublev | 7 | **155** |
+| Joao Fonseca | 5 | **115** |
+
+Aucun n'atteint 300, **fenêtre de 52 semaines épuisée**. Ce n'est donc pas un
+problème de fenêtre ni d'arrêt trop précoce : c'est la couverture de la source.
+
+Le brief demandait explicitement quoi faire dans ce cas — « si moins de la
+moitié des joueurs atteint le seuil, ne bricole pas le seuil : dis-le, et la
+ligne `Jeux` restera omise pour les autres ». **Le seuil n'a pas été touché.**
+La ligne `Jeux` reste omise, et c'est le comportement correct : à 155 jeux, une
+tenue de service serait lue comme un fait alors qu'elle décrit une quinzaine de
+matchs.
+
+### Ce que la mesure change au dessin
+
+**L'auto-limitation ne mord pas.** Elle a été construite parce que le brief la
+demandait, et elle est juste ; elle ne s'est déclenchée **aucune fois**, la
+collecte s'arrêtant sur la liste épuisée et non sur le seuil. La contrainte
+n'est pas le nombre de matchs à parcourir, c'est le **nombre de timelines
+servies** — 5 à 14 là où il en faudrait une quinzaine.
+
+**Le coût par timeline utile est le vrai chiffre.** 764 appels pour 26
+timelines exploitables, soit **~29 appels par timeline obtenue** et ~250 appels
+par joueur. L'estimation du lot 5 — « ~6 200 appels pour 52 semaines » — vaut
+pour 25 joueurs, pas pour le catalogue : à 256 joueurs en file, la passe
+complète demanderait de l'ordre de **60 000 appels et une quinzaine d'heures de
+temps de mur**. Quota consommé ce matin : **878 appels**, 148 102 restants.
+
+**C'est ce qui a motivé l'arrêt de la passe**, et c'est une décision, pas une
+interruption subie : continuer aurait dépensé du quota pour une ligne dont on
+venait d'établir qu'elle ne sortirait pas. La passe est reprenable — les 764
+réponses sont archivées et ne seront pas repayées.
+
+---
+
+## §2 à §5 — non traités, et pourquoi
+
+**Aucun n'a été entamé.** Le §1 a consommé la session : la collecte n'existait
+pas et devait être écrite avant de pouvoir mesurer quoi que ce soit.
+
+- **§2 (rendu réel de la ligne `Jeux`)** — sans objet en l'état : aucun joueur
+  n'atteint le seuil, donc le rendu montrerait exactement ce qu'il montrait
+  avant le lot. À refaire quand un joueur passera 300.
+- **§3 (porte C-bis)** — **non prouvé, et c'est la priorité du prochain lot.**
+  Le brief le dit lui-même : si le §3 échoue, il passe devant. Il n'a pas
+  échoué, il n'a pas été essayé.
+- **§4 (drapeau des deux côtés)** — `SERVE_LINES_ENABLED` reste à `0`, conforme.
+  Le test d'identité stricte n'a pas été écrit. La note d'activation est
+  ci-dessous.
+- **§5** — `lot5-statistiques-de-service` et `main` pointent sur le **même
+  commit** : la fusion demandée était déjà faite, il n'y avait rien à fusionner.
+
+---
+
+## §4 — Note d'activation (à ne pas jouer aujourd'hui)
+
+L'activation est **une décision de l'utilisateur**, prise après quelques
+sessions au budget de 10, et elle ne doit pas être jouée ce matin : le budget de
+recherche est passé à 10 hier sans qu'aucune session l'ait exercé, et allumer
+les lignes de service maintenant ferait porter à la première session les deux
+changements à la fois — le découpage avant/après du `changelog_mesure` ne
+pourrait plus les séparer.
+
+Commande, le jour venu :
+
+```bash
+sed -i 's/^SERVE_LINES_ENABLED=.*/SERVE_LINES_ENABLED=1/' .env && sudo systemctl restart myassistantbet
+```
+
+Ce qui doit être écrit dans `changelog_mesure` **au moment où la commande est
+jouée, et pas avant** : une entrée datée du jour de l'activation, portant que
+les lignes de service entrent dans le bloc tennis. **La date du journal est
+celle où le changement agit sur ce que le modèle lit, jamais celle où il a été
+livré** — une entrée écrite d'avance daterait le changement du jour du code et
+placerait du mauvais côté de la coupure les sessions qui n'en ont pas bénéficié.
+
+**Préalable à ne pas oublier** : tant qu'aucun joueur n'atteint 300 jeux,
+allumer le drapeau ne fera sortir que `Service`, `Retour` et `Ecart`. La ligne
+`Jeux` restera omise.
