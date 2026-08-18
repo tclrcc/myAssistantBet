@@ -2440,10 +2440,19 @@ autorise.
 | | Joueurs distincts dans `player_serve_agg` |
 | --- | ---: |
 | avant | **38** |
-| pendant la passe (arrêt de session) | **124** |
+| après | **250** |
 
-Passe `matches-played` seule, sur les 256 joueurs du catalogue, ~2 appels par
-joueur. Elle tourne encore au moment du relevé.
+Passe `matches-played` seule sur les 256 joueurs du catalogue, **terminée**.
+Coût : **445 appels** (3 304 − 2 859), soit **1,7 par joueur** — le
+dimensionnement du lot 5 (~2) tombe juste. Quota restant : **145 673**.
+
+Deux joueurs restent non résolus et sont **nommés** plutôt que tus — JJ Wolf et
+Bianca Andreescu : la source ne sert aucun match sous les graphies rendues.
+C'est une absence réelle, pas un défaut de rapprochement, et elle part en
+`ingestion_rejects`.
+
+**Effet attendu au prochain prompt** : les 4 blocs sans lignes de service de ce
+matin devraient en porter. La ligne `Jeux`, elle, ne bougera pas — voir §1c.
 
 ## §4 — Les trois réponses
 
@@ -2467,3 +2476,41 @@ joueur. Elle tourne encore au moment du relevé.
 **52 sélections tardives tranchées** (32 gagnées, 20 perdues), exactement
 l'effectif sur lequel la spécification du lot 4 est écrite. **Rien n'a bougé, la
 spécification n'a pas à être reprise.** Non implémentée, conformément au brief.
+
+---
+
+## §1c — La passe longue n'a PAS été lancée, et c'est une recommandation d'inaction
+
+**Le §1a la déconseille, et c'est exactement pourquoi il était bloquant.**
+
+État au moment de l'arrêt :
+
+| | |
+| --- | ---: |
+| joueurs porteurs de jeux | **6** |
+| joueurs au seuil de 300 jeux | **0** |
+| appels `tennisapi` consommés | 3 304 |
+| quota restant | **145 673** |
+
+Lancer la passe complète cette nuit aurait coûté de l'ordre de **60 000
+appels** — 40 % du quota mensuel — sur un chemin dont on vient de mesurer qu'il
+**gaspille 94 % de ses appels** et que `J+1`, essayé à chaque échec, n'a jamais
+rien rapporté en 564 tentatives.
+
+Dépenser 60 000 appels sur la version inefficace, la veille du jour où l'on
+peut la rendre 2,7 fois moins chère, serait précisément l'erreur que la règle
+« mesurer avant de lancer » existe pour empêcher. **La passe attend l'arbitrage
+du §1b.**
+
+Elle reste reprenable et rien n'est perdu — les 2 767 réponses sont archivées et
+ne seront pas repayées.
+
+```bash
+uv run myassistantbet-timelines --joueurs 400
+```
+
+Le job planifié (`TIMELINES_JOB_ID`, 30 min après le scan) continue d'avancer par
+lots de 12 en attendant.
+
+**À décider avant de relancer** : garder les six combinaisons, ou ne tenter que
+`J+0` — 106 timelines sur 113 pour 2,7 fois moins de quota.
