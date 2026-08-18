@@ -166,6 +166,11 @@ COMBO = '```combo\n{"type": "court", "jambes": ["M1", "M2"], "cote": 2.32}\n```\
 
 SETS = "sets: M1=2-0/2-1 | M2=PASSE\n"
 
+#: **Le cinquieme format, et le seul du gabarit qui manquait a ce banc.** Son
+#: absence est la cinquieme occurrence du motif du projet : trois sessions
+#: consecutives l'ont perdue sans qu'aucun test ne surveille son transport.
+DOSSIERS = "dossiers_ouverts: [M1, M2]\n"
+
 
 def _match(settings: Settings, nom: str) -> int:
     return save(
@@ -215,6 +220,10 @@ ATTENDU = {
     "conf": ingestion.CONF,
     "combo": ingestion.COMBO,
     "sets": ingestion.SCORE_SETS,
+    # La ligne des dossiers ouverts est lue par le meme lecteur que les blocs de
+    # confiance, et son echec sort donc sous le meme type. C'est juste : les deux
+    # se perdent par le meme geste — un collage qui s'arrete au tableau.
+    "dossiers": ingestion.CONF,
 }
 
 FORMATS = {
@@ -222,6 +231,12 @@ FORMATS = {
     "conf": (TABLEAU + "\n" + CONF, lambda preview: preview.claims_attached),
     "combo": (TABLEAU + "\n" + CONF + "\n" + COMBO, lambda preview: len(preview.combos)),
     "sets": (TABLEAU + "\n" + SETS, lambda preview: len(preview.scores)),
+    # **Lu se mesure sur l'etat declare, pas sur le nombre de reperes.** Une
+    # ligne `dossiers_ouverts: []` est une declaration legitime — le modele n'a
+    # rien ouvert — et compter ses reperes la confondrait avec une ligne absente,
+    # qui est un defaut de collage. C'est exactement la distinction que la
+    # migration 049 a du ajouter apres coup.
+    "dossiers": (TABLEAU + "\n" + DOSSIERS, lambda preview: preview.opened.declared),
 }
 
 
@@ -260,11 +275,11 @@ def test_aucune_alteration_ne_produit_de_perte_silencieuse(
     )
 
 
-def test_le_banc_couvre_bien_quatre_formats_et_onze_alterations() -> None:
+def test_le_banc_couvre_bien_cinq_formats_et_onze_alterations() -> None:
     """**Le compte, ecrit pour qu'il ne derive pas en silence.** Un format ajoute
     a `FORMATS` sans entree dans `ATTENDU` tomberait sur une cle manquante ; une
     alteration retiree ferait baisser ce produit sans que personne le voie."""
-    assert len(FORMATS) == 4
+    assert len(FORMATS) == 5
     assert len(ALTERATIONS) == 11
     assert set(FORMATS) == set(ATTENDU), "tout format testé sait quel rejet le prouve"
 

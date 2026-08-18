@@ -2514,3 +2514,52 @@ lots de 12 en attendant.
 
 **À décider avant de relancer** : garder les six combinaisons, ou ne tenter que
 `J+0` — 106 timelines sur 113 pour 2,7 fois moins de quota.
+
+---
+
+## §1 (lot 7 bis) — `dossiers_ouverts` : ni le modèle, ni l'extracteur — le collage
+
+**Tranché en une requête, et la dichotomie du brief rate le vrai cas.**
+
+```sql
+SELECT id, session_id, char_count, raw_text LIKE '%dossiers_ouverts%' FROM imports_raw;
+```
+
+| | |
+| --- | ---: |
+| collages archivés | **13** |
+| portant `dossiers_ouverts` | **0** |
+| portant un bloc ` ```conf ` | **0** |
+| taille des collages | **567 à 1 314 caractères** |
+
+**La taille tranche à elle seule.** Un rendu complet en fait des dizaines de
+milliers ; 1 314 caractères, c'est un tableau et rien d'autre. Vérifié sur le
+collage 13 : il **commence** à `C. Tableau des sélections` et **s'arrête** à sa
+dernière ligne. Ni section A, ni B, ni D, ni E, ni F, ni bloc `conf`, ni ligne
+`dossiers_ouverts`.
+
+**Ce n'est donc aucun des deux cas proposés.** Ce n'est pas un défaut
+d'extraction — la donnée n'arrive jamais. Et ce n'est pas « le modèle ne la
+produit pas » — un modèle muet sur cette ligne aurait quand même produit les
+sections A à F, absentes elles aussi. **C'est le copier-coller qui ne prend que
+le tableau.**
+
+La distinction décide du correctif : reprendre le gabarit ne changerait rien, et
+c'est le geste de collage qu'il faut viser — coller la réponse entière.
+
+**Un seul chemin est donc mesuré aujourd'hui, et il fonctionne** : la colonne
+`Source` du tableau est bien lue (valeurs `1` et `2` en base). Tout ce qui vit
+**hors** du tableau est perdu depuis le premier import.
+
+### Le banc de transport passe à cinq formats
+
+`dossiers_ouverts` était **le seul format structuré du gabarit absent du banc** —
+cinquième occurrence du motif du projet, un silence que rien ne surveillait. Il y
+entre, avec ses 11 altérations.
+
+- Son échec sort sous le type `CONF`, et c'est juste : la ligne et les blocs de
+  confiance sont lus par le même lecteur et se perdent **par le même geste**.
+- « Lu » se mesure sur `opened.declared`, **jamais sur le nombre de repères** :
+  `dossiers_ouverts: []` est une déclaration légitime, et compter ses repères la
+  confondrait avec une ligne absente, qui est un défaut de collage. C'est
+  exactement la distinction que la migration 049 a dû ajouter après coup.
