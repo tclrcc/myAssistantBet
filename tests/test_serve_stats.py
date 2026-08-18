@@ -16,7 +16,7 @@ import pytest
 import respx
 
 from myassistantbet.config import Settings
-from myassistantbet.db import query
+from myassistantbet.db import execute, query
 from myassistantbet.providers.tennisapi import BASE_URL, TennisAPIClient
 from myassistantbet.services import api_archive, serve_stats
 from myassistantbet.services.ingestion import MATCH_REF_UNRESOLVED, SOURCE_VIDE
@@ -1324,3 +1324,73 @@ async def test_une_rencontre_vide_deja_archivee_ne_se_repaie_pas(
 
     assert len(respx.calls) == appels
     assert (releve.empty, releve.replayed) == (1, 1)
+
+
+# -- Le drapeau, des deux cotes ---------------------------------------------
+
+
+def test_drapeau_bas_le_bloc_et_le_gabarit_sont_ceux_d_avant_le_lot(
+    migrated: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """**La garantie que l'activation reste une decision.**
+
+    Les tests voisins portent sur `serve_lines` seule ; celui-ci porte sur le
+    **prompt entier**, parce que c'est lui qui part a l'analyse. Le drapeau bas,
+    le rendu doit etre **strictement** celui d'une installation qui n'a jamais
+    collecte : ni ligne, ni mode d'emploi, ni ligne blanche de plus laissee par
+    une porte de preambule qui se serait ouverte pour rien.
+
+    La reference est un rendu produit **sans aucun agregat en base** — c'est
+    l'etat d'avant le lot, et le seul qu'on puisse comparer sans recopier une
+    sortie du jour dans une assertion.
+    """
+    from myassistantbet.services import board as board_service
+    from myassistantbet.services.manual import build, save
+    from myassistantbet.services.prompt import build_prompt
+
+    event_id = save(
+        build(
+            "tennis",
+            "ATP 250 Gstaad",
+            "Taylor Fritz",
+            "Alex Michelsen",
+            "2026-08-04",
+            "20:45",
+            "Taylor Fritz 1.85\nAlex Michelsen 1.95",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+    session_id = board_service.toggle_selection(event_id, True, migrated)
+    # Le circuit se lit sur la cle du fournisseur et la surface se saisit : sans
+    # les deux, `serve_lines` rend une liste vide quel que soit le drapeau, et
+    # le test passerait pour la mauvaise raison.
+    execute(
+        "UPDATE competitions SET oddsapi_key = 'tennis_atp_gstaad', surface = 'hard' "
+        " WHERE id = (SELECT competition_id FROM events WHERE id = ?)",
+        (event_id,),
+        settings=migrated,
+    )
+
+    # 1. L'avant-lot : rien en base, donc rien a rendre.
+    avant = build_prompt(session_id, settings=_drapeau(monkeypatch, False)).body
+
+    # 2. Les agregats arrivent, drapeau toujours bas.
+    bas = _drapeau(monkeypatch, False)
+    serve_stats.store_aggregate(_agg("Taylor Fritz"), bas)
+    serve_stats.store_aggregate(_agg("Alex Michelsen"), bas)
+    apres = build_prompt(session_id, settings=bas).body
+
+    assert apres == avant, (
+        "drapeau bas, la collecte ne doit rien changer au prompt — "
+        "sinon le changelog ne pourrait pas separer le budget des lignes de service"
+    )
+    assert "tennis-api.com" not in apres, "aucune attribution de source non plus"
+
+    # Le cote **haut** du drapeau est verifie par
+    # `test_les_quatre_lignes_sortent_quand_le_drapeau_est_haut`, au niveau de
+    # `serve_lines` : c'est la que la decision se prend. Le verifier ici
+    # demanderait de monter tout le chemin de contexte d'un match de tennis pour
+    # reverifier la meme branche.

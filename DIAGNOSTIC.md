@@ -1838,37 +1838,47 @@ que sur `with_games`.
 
 ### Les quatre taux demandés
 
-Passe du 18/08, **764 appels `event/get`**, arrêtée à trois joueurs complets.
+Passe du 18/08, **1 604 appels `event/get`**, arrêtée à six joueurs complets
+(trois par circuit). Quota consommé : **1 691 appels**, 147 288 restants.
 
 | Mesure | Valeur |
 | --- | --- |
-| timelines obtenues | **50 sur 764 appels — 6,5 %** |
-| `result` vide (HTTP 200) | **714 — 93,5 %** |
+| timelines obtenues | **94 sur 1 604 appels — 5,9 %** |
+| `result` vide (HTTP 200) | **1 510 — 94,1 %** |
 | ruptures d'alternance | **0** |
 | échecs réseau | **0** |
-| joueurs atteignant 300 jeux | **0 sur 3** |
+| joueurs atteignant 300 jeux | **0 sur 6** |
 
-**La ventilation par circuit et par tranche de classement n'a pas été produite,
-et il ne faut pas l'inventer** : trois joueurs, tous ATP. Un taux par tranche
-sur cet effectif décrirait l'échantillon, pas la source.
+**L'invariant d'alternance ne s'est jamais rompu**, sur 94 timelines et non sur
+trois. Le brief attendait le contraire — « à l'échelle, il ne le sera pas » — et
+la mesure ne le suit pas : la source, quand elle sert une timeline, la sert
+entière. Ce qu'elle fait mal, c'est **servir**.
+
+**La ventilation par tranche de classement n'a pas été produite, et il ne faut
+pas l'inventer** : six joueurs. La ventilation par circuit, elle, tient — et les
+deux circuits se ressemblent.
 
 ### Le verdict, et il est celui que le brief avait prévu
 
-| Joueur | Timelines | Jeux (servis + retournés) |
-| --- | ---: | ---: |
-| Nuno Borges | 14 | **299** |
-| Andrey Rublev | 7 | **155** |
-| Joao Fonseca | 5 | **115** |
+| Joueur | Circuit | Timelines | Jeux (servis + retournés) |
+| --- | --- | ---: | ---: |
+| Nuno Borges | atp | 14 | **299** |
+| Madison Keys | wta | 10 | **200** |
+| Andrey Rublev | atp | 7 | **155** |
+| Joao Fonseca | atp | 5 | **115** |
+| Janice Tjen | wta | 3 | **61** |
+| Katerina Siniakova | wta | 2 | **37** |
 
 Aucun n'atteint 300, **fenêtre de 52 semaines épuisée**. Ce n'est donc pas un
 problème de fenêtre ni d'arrêt trop précoce : c'est la couverture de la source.
+Borges échoue à **un jeu près**, ce qui est une coïncidence et non un signal —
+les cinq autres sont entre 37 et 200.
 
 Le brief demandait explicitement quoi faire dans ce cas — « si moins de la
 moitié des joueurs atteint le seuil, ne bricole pas le seuil : dis-le, et la
 ligne `Jeux` restera omise pour les autres ». **Le seuil n'a pas été touché.**
 La ligne `Jeux` reste omise, et c'est le comportement correct : à 155 jeux, une
-tenue de service serait lue comme un fait alors qu'elle décrit une quinzaine de
-matchs.
+tenue de service serait lue comme un fait alors qu'elle décrit sept matchs.
 
 ### Ce que la mesure change au dessin
 
@@ -1878,12 +1888,12 @@ collecte s'arrêtant sur la liste épuisée et non sur le seuil. La contrainte
 n'est pas le nombre de matchs à parcourir, c'est le **nombre de timelines
 servies** — 5 à 14 là où il en faudrait une quinzaine.
 
-**Le coût par timeline utile est le vrai chiffre.** 764 appels pour 26
-timelines exploitables, soit **~29 appels par timeline obtenue** et ~250 appels
-par joueur. L'estimation du lot 5 — « ~6 200 appels pour 52 semaines » — vaut
+**Le coût par timeline utile est le vrai chiffre.** 1 604 appels pour 94
+timelines, soit **~17 appels par timeline obtenue** et ~270 appels par joueur. L'estimation du lot 5 — « ~6 200 appels pour 52 semaines » — vaut
 pour 25 joueurs, pas pour le catalogue : à 256 joueurs en file, la passe
-complète demanderait de l'ordre de **60 000 appels et une quinzaine d'heures de
-temps de mur**. Quota consommé ce matin : **878 appels**, 148 102 restants.
+complète demanderait de l'ordre de **70 000 appels et une quinzaine d'heures de
+temps de mur** — soit la moitié du quota mensuel, pour une ligne dont on vient
+d'établir qu'elle ne sortirait pas.
 
 **C'est ce qui a motivé l'arrêt de la passe**, et c'est une décision, pas une
 interruption subie : continuer aurait dépensé du quota pour une ligne dont on
@@ -1892,26 +1902,88 @@ réponses sont archivées et ne seront pas repayées.
 
 ---
 
-## §2 à §5 — non traités, et pourquoi
+## §3 — La porte C-bis s'ouvre
 
-**Aucun n'a été entamé.** Le §1 a consommé la session : la collecte n'existait
-pas et devait être écrite avant de pouvoir mesurer quoi que ce soit.
+**Verdict : elle s'ouvre.** Prouvé le 18/08 par le vrai chemin d'import — les
+routes HTTP, pas `replay` — sur une **copie** de la base servie.
 
-- **§2 (rendu réel de la ligne `Jeux`)** — sans objet en l'état : aucun joueur
-  n'atteint le seuil, donc le rendu montrerait exactement ce qu'il montrait
-  avant le lot. À refaire quand un joueur passera 300.
-- **§3 (porte C-bis)** — **non prouvé, et c'est la priorité du prochain lot.**
-  Le brief le dit lui-même : si le §3 échoue, il passe devant. Il n'a pas
-  échoué, il n'a pas été essayé.
-- **§4 (drapeau des deux côtés)** — `SERVE_LINES_ENABLED` reste à `0`, conforme.
-  Le test d'identité stricte n'a pas été écrit. La note d'activation est
-  ci-dessous.
-- **§5** — `lot5-statistiques-de-service` et `main` pointent sur le **même
-  commit** : la fusion demandée était déjà faite, il n'y avait rien à fusionner.
+Collage de test : une section C d'une ligne, puis une section C-bis de cinq,
+dont trois valides et les deux cas de rejet spécifiés.
+
+| Ligne C-bis | Palier | Résultat |
+| --- | --- | --- |
+| Levski Sofia | 🟠 ULTRA FUN | importée, `exploratoire = 1` |
+| Viking FK | 🔴 GIGA FUN | importée, `exploratoire = 1` |
+| Fenerbahce – Lyon | 💥 GIGA+ | importée, `exploratoire = 1` |
+| Viking FK (doublon) | 🔵 FUN | **refusée** — `schema_invalid`, palier sûr |
+| Shanghai Shenhua | 🟠 ULTRA FUN | **refusée** — `duplicate`, déjà pris en section C |
+
+Les deux refus sont **journalisés** et non silencieux, et les lignes ne sont pas
+proposées du tout — les corriger sur place inventerait une décision que le rendu
+n'a pas prise.
+
+**L'exclusion des agrégats est réelle, et il a fallu un contrôle pour le dire.**
+Les trois lignes étant en attente de résultat, leur absence des axes pouvait
+n'être qu'un artefact — une sélection non tranchée n'entre nulle part. Les neuf
+exploratoires de la copie ont donc été **tranchées à `gagne`**, et les axes n'ont
+pas bougé : `by_tier`, `by_confidence`, `by_sport` restent à **197**, `overall`
+à 197 également. L'addition ferme : `Populations(main=197, exploratory=9,
+late=52, total=258)` — 197 + 9 + 52 = 258.
+
+Le bloc de la page répond (`history.exploratory().empty` est faux, l'ancre
+`#exploratoires` est rendue).
+
+### Et la porte était déjà ouverte en production
+
+**La prémisse du §3 ne tient plus.** Le brief la donne comme « population
+exploratoire à zéro depuis trois lots », et le lot 5 l'expliquait par un
+`imports_raw` vide. Relevé sur la base servie ce matin :
+
+| | |
+| --- | --- |
+| `imports_raw` | **7 lignes**, pas vide |
+| `picks.exploratoire = 1` | **6 sélections**, session 15, datées du **17/08** |
+| leur `import_id` | **3, 4 et 7** — trois imports réels distincts |
+
+Elles sont donc arrivées par le vrai chemin, hier, sur de vrais collages :
+`Magdalena Frech +4.5`, `Maja Chwalinska`, `Jiri Lehecka`, `Emma Navarro`,
+`Wrexham AFC`, `Match nul` — quatre ULTRA FUN et deux GIGA FUN, toutes en palier
+haut comme la règle l'exige. Cinq sont encore `pending`, une est tranchée.
+
+**Le verdict est donc doublement établi** : par le collage de test ci-dessus, et
+par six lignes que personne n'avait regardées. Ce qui manquait n'était pas une
+preuve, c'était de relire la table.
 
 ---
 
-## §4 — Note d'activation (à ne pas jouer aujourd'hui)
+## §2 et §5 — non traités, et pourquoi
+
+- **§2 (rendu réel de la ligne `Jeux`)** — **sans objet en l'état** : aucun
+  joueur n'atteint le seuil, donc le rendu montrerait exactement ce qu'il
+  montrait avant le lot. Le bloc avant/après demandé sur Fritz – Michelsen et
+  sur un match WTA hors top 50 n'a pas été produit, et le produire aurait
+  affiché deux fois « non disponible ». À refaire quand un joueur passera 300.
+- **§5** — `lot5-statistiques-de-service` et `main` pointent sur le **même
+  commit** : la fusion demandée était déjà faite, il n'y avait rien à fusionner.
+  Les deux autres points du §5 n'ont pas été faits.
+
+---
+
+## §4 — Le drapeau des deux côtés, et la note d'activation
+
+**`SERVE_LINES_ENABLED` reste à `0`.** Conforme, et ce n'est pas un oubli.
+
+Le test livré porte sur le **prompt entier** et non sur `serve_lines` seule :
+drapeau bas, un rendu produit **avec** les agrégats en base est comparé octet
+pour octet à un rendu produit **sans aucun agrégat** — c'est-à-dire à l'état
+d'avant le lot. Les deux sont identiques, et aucune attribution
+`[tennis-api.com]` n'apparaît. La référence est un rendu et non une sortie du
+jour recopiée dans une assertion : si elle casse, on aura appris quelque chose.
+
+Le côté haut du drapeau reste couvert au niveau de `serve_lines`, là où la
+décision se prend.
+
+### La note d'activation (à ne pas jouer aujourd'hui)
 
 L'activation est **une décision de l'utilisateur**, prise après quelques
 sessions au budget de 10, et elle ne doit pas être jouée ce matin : le budget de
@@ -1936,3 +2008,45 @@ placerait du mauvais côté de la coupure les sessions qui n'en ont pas bénéfi
 **Préalable à ne pas oublier** : tant qu'aucun joueur n'atteint 300 jeux,
 allumer le drapeau ne fera sortir que `Service`, `Retour` et `Ecart`. La ligne
 `Jeux` restera omise.
+
+---
+
+## §6 — Ce que la mesure contredit dans le brief
+
+Huit affirmations reprises et vérifiées ; **six ne tiennent pas**, dont deux qui
+ont changé le déroulé de la session.
+
+| Affirmé | Mesuré |
+| --- | --- |
+| « 176 joueurs sur 176, tous au-dessus du seuil de 400 points » | **38 joueurs distincts.** 176 est le nombre de *lignes* de `player_serve_agg` — 38 joueurs × ~4,6 surfaces |
+| « toutes tranches de classement à 100 % » | vrai toutes surfaces et sur Hard/Clay ; **I.hard 13/26, Grass 24/36** |
+| « ~6 200 appels pour 52 semaines, soit ~4 % du quota » | ~270 appels par joueur : **~70 000 appels** pour les 256 joueurs en file, soit ~47 % du quota |
+| « l'invariant d'alternance… à l'échelle, il ne le sera pas » | **0 rupture sur 94 timelines.** La source sert entier ou ne sert pas |
+| « à ~22 jeux par match, une quinzaine de matchs suffit » | juste sur les jeux (21,4 par match mesuré), **faux sur les matchs** : on n'obtient que 2 à 14 timelines par joueur, jamais quinze |
+| « le §1 est le seul point qui exige du temps de mur » | vrai, et il en exige **un ordre de grandeur de plus** que prévu |
+| « la ligne `Jeux` ne sort pas [car] les timelines ne sont pas collectées en masse » | exact, et la cause est plus nette : `fetch_timeline` n'avait **aucun appelant** |
+| « la population exploratoire est à zéro depuis trois lots » / « `imports_raw` est vide » | **faux** : 7 lignes dans `imports_raw`, **6 sélections exploratoires** en base, arrivées par trois imports réels le 17/08 |
+
+**Les deux qui ont changé une décision** sont la troisième et la cinquième. Sans
+elles, la passe aurait été lancée sur tout le catalogue et laissée tourner : elle
+aurait consommé près de la moitié du quota mensuel pour produire une ligne que le
+seuil omet de toute façon. C'est ce qui a motivé l'arrêt volontaire à six
+joueurs.
+
+**Une affirmation du brief est correcte et mérite d'être notée** : il prévoyait
+le cas « moins de la moitié des joueurs atteint le seuil » et disait quoi faire.
+C'est exactement ce qui s'est produit, et la consigne — ne pas bricoler le
+seuil — est ce qui a été suivi.
+
+---
+
+## §7 — Ce qui reste, dans l'ordre
+
+1. **La ligne `Jeux` ne sortira pas sans une autre source de jeux.** La
+   couverture `event/get` est à 5,9 % et ne dépend pas de nous. Trois voies :
+   accepter que la ligne reste omise, chercher une source de timelines
+   ailleurs, ou dériver tenue et break d'un décompte que `matches-played` porte
+   déjà — à vérifier, ce n'est pas établi.
+2. **§2** — le bloc avant/après, quand un joueur passera le seuil.
+3. **§5** — registre des chemins d'écriture, entrée `changelog_mesure` pour la
+   passe de timelines.
