@@ -2305,3 +2305,119 @@ contention. À ne pas tenter en fin de session.
 **Ce qu'il ne faut PAS refaire** : passer `connect()` en `BEGIN IMMEDIATE` sans
 traiter la réentrance. La mesure isolée est excellente (72 → 0) et **c'est un
 piège** : elle ne teste pas l'imbrication, qui est le régime réel de ce code.
+
+---
+
+# DIAGNOSTIC — lot 7 : le coût réel de la passe, et le levier qui n'est pas celui prévu
+
+Session courte (23h39 – 00h15). Tout ce qui suit est mesuré sur `api_responses`
+et sur la base servie ; rien n'est repris du brief sans vérification.
+
+## §1a — Le coût réel, sur 2 767 appels `event/get`
+
+| Mesure | Valeur |
+| --- | ---: |
+| rencontres tentées | 564 |
+| rencontres aboutissant à une timeline | **113 — 20,0 %** |
+| appels | 2 767 |
+| **appels par rencontre tentée** | **4,91** |
+| **appels par timeline obtenue** | **24,5** |
+| `result` vide (HTTP 200) | 2 647 |
+| 404 / erreurs réseau | **0** |
+| ruptures d'alternance | **0** |
+
+L'ordre de grandeur du brief est confirmé : à 24,5 appels par timeline utile, et
+~15 timelines par joueur pour atteindre 300 jeux, couvrir 176 joueurs coûterait
+de l'ordre de **60 000 appels** — 40 % du quota mensuel.
+
+## §1b — Le tâtonnement n'est PAS le coût, et le brief se trompe de levier
+
+**L'hypothèse du brief est renversée par la mesure.** Il proposait de mémoriser
+par tournoi le décalage de date et l'ordre des joueurs. Les deux branches de
+cette idée tombent :
+
+| Rang de l'essai qui aboutit | Rencontres |
+| --- | ---: |
+| **1er essai** | **106 / 113 (93,8 %)** |
+| 5e essai | 7 |
+
+**Quand une timeline existe, elle est trouvée du premier coup neuf fois sur
+dix.** Il n'y a donc presque rien à mémoriser. Et l'ordre des joueurs est un
+tirage à pile ou face — **60 fois l'ordre inverse, 53 fois l'ordre direct** :
+aucun ordre systématique à apprendre.
+
+**Où part réellement le quota :**
+
+| | Appels | Part |
+| --- | ---: | ---: |
+| rencontres qui aboutissent | 170 | **6,1 %** |
+| rencontres sans timeline | 2 597 | **93,9 %** |
+
+**94 % du quota est dépensé sur des rencontres que la source ne sert sous
+AUCUNE combinaison.** 407 rencontres ont brûlé les six essais pour rien. Aucune
+mémorisation ne peut les aider : il n'y a rien à mémoriser d'un échec total.
+
+### Le vrai levier : `J+1` ne paie jamais
+
+| Décalage qui aboutit | Rencontres |
+| --- | ---: |
+| `J+0` | **106** |
+| `J-1` | 7 |
+| **`J+1`** | **0** |
+
+`J+1` est essayé sur chaque rencontre en échec et **n'a jamais rien rapporté**,
+sur 564 tentatives. Contrefactuel, en ne tentant que `J+0` (les deux ordres,
+2 appels au plus) :
+
+| | Actuel | `J+0` seul |
+| --- | ---: | ---: |
+| timelines obtenues | 113 | **106 (−6 %)** |
+| appels | 2 767 | **1 029** |
+| **coût par timeline** | 24,5 | **9,7** |
+
+**2,7 fois moins cher pour 94 % du rendement.** C'est l'arbitrage à trancher, et
+il n'est pas de même nature que celui proposé : on n'optimise pas la recherche,
+on **cesse de chercher là où la mesure dit qu'on ne trouve pas**.
+
+**Rien n'a été implémenté** — 23h45 était l'heure d'arrêt de construction, et le
+choix (perdre 6 % de couverture pour 2,7× de quota) est un arbitrage de
+l'utilisateur, pas une évidence technique.
+
+## §2 — Non traité
+
+La mesure du tournoi en cours demande des appels et du temps de lecture des
+dates ; elle n'a pas été faite. **C'est le livrable le plus rentable qui reste**,
+et il n'est pas entamé.
+
+## §3 — Le catalogue se peuple
+
+| | Joueurs distincts dans `player_serve_agg` |
+| --- | ---: |
+| avant | **38** |
+| pendant la passe (arrêt de session) | **124** |
+
+Passe `matches-played` seule, sur les 256 joueurs du catalogue, ~2 appels par
+joueur. Elle tourne encore au moment du relevé.
+
+## §4 — Les trois réponses
+
+- **§4a — rien à rétablir.** La session 16 porte **4 matchs de tennis** et
+  **15 sélections** : elle a été consommée dans la journée. Les 12 ATP que
+  j'avais cochés ce matin ont été décochés par l'usage. Rétablir un état
+  antérieur écraserait le travail réel.
+- **§4b — la porte C-bis s'est ouverte pour de bon.** 6 imports aujourd'hui,
+  15 sélections, dont **5 exploratoires** en production. Ce n'est plus un
+  collage de test.
+- **§4c — la question ne peut pas être répondue, et c'est le constat.**
+  `open_dossiers_state` vaut **`absente`** sur la session 16 comme sur toutes
+  les précédentes, et les **15 sélections du jour portent
+  `research_overridden = 1`, cause `ligne_absente`**. La ligne
+  `dossiers_ouverts` n'a **toujours pas** été collée. On ne sait donc pas si le
+  modèle ouvre 10 dossiers ou 6 : **troisième session consécutive sans cette
+  entrée**, et toute la machinerie du cran calculé reste sans mesure.
+
+## §5 — La spécification du retard est toujours à jour
+
+**52 sélections tardives tranchées** (32 gagnées, 20 perdues), exactement
+l'effectif sur lequel la spécification du lot 4 est écrite. **Rien n'a bougé, la
+spécification n'a pas à être reprise.** Non implémentée, conformément au brief.
