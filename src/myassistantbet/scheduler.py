@@ -28,6 +28,7 @@ import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from . import timelines as timelines_service
 from .config import Settings
 from .providers.apifootball import APIFootballClient
 from .providers.oddsapi import OddsAPIClient
@@ -47,12 +48,19 @@ logger = logging.getLogger(__name__)
 SCAN_JOB_ID = "scan_quotidien"
 FREE_JOB_ID = "sources_gratuites"
 LINEUPS_JOB_ID = "compositions"
+TIMELINES_JOB_ID = "timelines_service"
 
 #: Minutes apres le scan pour les sources gratuites. Elles ne dependent pas du
 #: scan, mais les enchainer groupe les appels sortants sur un seul moment de la
 #: journee — et si le scan a decouvert une competition, la synchronisation qui
 #: suit la voit tout de suite.
 FREE_JOB_DELAY_MIN = 15
+
+#: La reprise des timelines part apres les sources gratuites. **Elle n'est pas
+#: gratuite**, et son garde-fou n'est donc pas la gratuite mais le plancher de
+#: quota, verifie avant chaque joueur — meme regime que les statistiques de
+#: service, dont elle prolonge la passe.
+TIMELINES_JOB_DELAY_MIN = 30
 
 #: Cadence du balayage des compositions. Elles sortent environ une heure avant
 #: le coup d'envoi, sans horaire fixe : dix minutes suffisent a les prendre
@@ -150,6 +158,22 @@ def build_scheduler(client: httpx.AsyncClient, settings: Settings) -> AsyncIOSch
         except Exception:
             logger.exception("Statistiques de service : echec")
 
+    async def _timelines() -> None:
+        """Reprise des timelines de service, par lots bornes.
+
+        **Elle ne finit pas en une fois et n'a pas a le faire.** La couverture
+        mesuree de `event/get` est de 6 %, donc couvrir le catalogue demande une
+        quinzaine d'heures : un passage quotidien borne a quelques joueurs
+        avance sans jamais chevaucher le suivant, et l'archive fait que rien
+        n'est repaye. Les joueurs des lots a venir passent en premier.
+        """
+        if not settings.rapidapi_key:
+            return
+        try:
+            await timelines_service.run(settings=settings)
+        except Exception:
+            logger.exception("Timelines de service : echec")
+
     async def _lineups() -> None:
         """Compositions des matchs de la shortlist dont le coup d'envoi approche.
 
@@ -186,6 +210,19 @@ def build_scheduler(client: httpx.AsyncClient, settings: Settings) -> AsyncIOSch
         ),
         id=FREE_JOB_ID,
         replace_existing=True,
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+    tl_hour, tl_minute = divmod(settings.scan_minute + TIMELINES_JOB_DELAY_MIN, 60)
+    scheduler.add_job(
+        _timelines,
+        trigger=CronTrigger(
+            hour=(settings.scan_hour + tl_hour) % 24, minute=tl_minute, timezone=settings.tz
+        ),
+        id=TIMELINES_JOB_ID,
+        replace_existing=True,
+        # Un passage manque ne se rattrape pas : la passe est reprenable, donc
+        # celui de demain reprendra exactement ou celui-ci s'est arrete.
         misfire_grace_time=3600,
         coalesce=True,
     )

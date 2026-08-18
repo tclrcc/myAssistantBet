@@ -15,6 +15,7 @@ from myassistantbet.scheduler import (
     LINEUPS_EVERY_MIN,
     LINEUPS_JOB_ID,
     SCAN_JOB_ID,
+    TIMELINES_JOB_ID,
     build_scheduler,
 )
 
@@ -34,8 +35,21 @@ def _job(scheduler: AsyncIOScheduler, job_id: str) -> Any:
     return next(job for job in scheduler.get_jobs() if job.id == job_id)
 
 
-def test_les_trois_taches_sont_planifiees(scheduler: AsyncIOScheduler) -> None:
-    assert {job.id for job in scheduler.get_jobs()} == {SCAN_JOB_ID, FREE_JOB_ID, LINEUPS_JOB_ID}
+def test_les_quatre_taches_sont_planifiees(scheduler: AsyncIOScheduler) -> None:
+    """La reprise des timelines rejoint les trois autres.
+
+    **Elle n'est pas gratuite**, contrairement aux sources du lot voisin, et son
+    garde-fou n'est donc pas la gratuite mais le plancher de quota verifie avant
+    chaque joueur. Elle est ici parce qu'elle ne peut pas finir en une fois : la
+    couverture mesuree de la source est de 6 %, elle avance par lots bornes, et
+    l'archive fait qu'un passage ne repaie jamais le precedent.
+    """
+    assert {job.id for job in scheduler.get_jobs()} == {
+        SCAN_JOB_ID,
+        FREE_JOB_ID,
+        LINEUPS_JOB_ID,
+        TIMELINES_JOB_ID,
+    }
 
 
 def test_aucune_tache_n_enrichit_la_shortlist(scheduler: AsyncIOScheduler) -> None:

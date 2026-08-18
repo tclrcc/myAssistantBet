@@ -1880,6 +1880,33 @@ ligne `Jeux` restera omise pour les autres ». **Le seuil n'a pas été touché.
 La ligne `Jeux` reste omise, et c'est le comportement correct : à 155 jeux, une
 tenue de service serait lue comme un fait alors qu'elle décrit sept matchs.
 
+### La passe se relance sans personne
+
+Elle ne meurt pas avec la session qui l'a lancée. Deux chemins, le même code :
+
+```bash
+uv run myassistantbet-timelines --joueurs 12
+```
+
+Et **automatiquement** : `TIMELINES_JOB_ID`, 30 minutes après le scan, chaque
+jour. Elle est bornée à `BATCH` (12) joueurs par passage — **une borne de temps
+de mur, pas de quota**, le plancher gardant le second : sans elle un passage
+tournerait quinze heures et chevaucherait le suivant.
+
+Trois propriétés en font une reprise et non un recommencement :
+
+- **l'archive est l'index.** Une rencontre déjà demandée n'est jamais repayée,
+  y compris quand la réponse était vide — et c'est le cas de 94 % d'entre
+  elles ;
+- **les lots à venir passent en premier**, donc une interruption laisse
+  couverts les joueurs utiles aujourd'hui ;
+- **un passage manqué ne se rattrape pas** (`misfire_grace_time` d'une heure,
+  `coalesce`) : celui de demain reprendra exactement où celui-ci s'est arrêté.
+
+Elle n'est **pas** gratuite, contrairement aux trois sources du lot voisin, et
+son garde-fou n'est donc pas la gratuité mais le plancher de quota, vérifié
+avant chaque joueur.
+
 ### Ce que la mesure change au dessin
 
 **L'auto-limitation ne mord pas.** Elle a été construite parce que le brief la
