@@ -2383,11 +2383,57 @@ on **cesse de chercher là où la mesure dit qu'on ne trouve pas**.
 choix (perdre 6 % de couverture pour 2,7× de quota) est un arbitrage de
 l'utilisateur, pas une évidence technique.
 
-## §2 — Non traité
+## §2 — Oui, le tournoi en cours est couvert, statistiques comprises
 
-La mesure du tournoi en cours demande des appels et du temps de lecture des
-dates ; elle n'a pas été faite. **C'est le livrable le plus rentable qui reste**,
-et il n'est pas entamé.
+**Répondu depuis l'archive, pour zéro appel** — et sur **243 profils** au lieu
+des trois ou quatre demandés, ce qui rend la réponse bien plus solide.
+
+### Le retard
+
+| Mesure | Valeur |
+| --- | ---: |
+| profils lus | 243 |
+| **retard médian** (jour d'appel − dernier match servi) | **2 jours** |
+| retard minimum | **0 jour** |
+| retard maximum | 20 jours |
+
+Distribution : 24 profils à `0`, 33 à `1`, 66 à `2`, 22 à `3`, 30 à `4`, 38 à
+`5`, 18 à `6`.
+
+**Le médian de 2 jours surestime le vrai retard, et il faut le dire** : il
+mesure l'écart au dernier match *servi*, or un joueur ne joue pas tous les
+jours. Les **24 profils à 0 jour** sont la vraie borne — la source sait servir
+un match **le jour même**.
+
+### Le tournoi en cours, spécifiquement
+
+Sur les 247 profils appelés le 18/08, Cincinnati étant en cours depuis le 15 :
+
+| | |
+| --- | ---: |
+| profils servant un match du 15/08 ou après | **139 — 56 %** |
+| matchs du tournoi en cours servis | **180** |
+| **dont statistiques de service renseignées** | **173 — 96 %** |
+
+### Ce que ça décide
+
+**La consigne de recherche du gabarit — « ses matchs déjà joués dans ce
+tournoi-ci, la recherche la plus rentable du lot » — porte sur une information
+que l'application collecte déjà**, avec ses statistiques de service, à un ou
+deux jours près.
+
+C'est l'inverse de la situation de `tennis-data.co.uk`, qui accuse **dix jours**
+et publie une fois par semaine — c'est lui que la ligne `Historique` date, et
+c'est de lui que venait la conviction que le tournoi en cours est hors de
+portée. Deux sources, deux fraîcheurs, et la conclusion tirée de l'une avait été
+étendue à l'autre.
+
+**Le gabarit n'est pas modifié** : retirer la consigne et rendre le budget de
+recherche à autre chose est un arbitrage de l'utilisateur. La mesure est là pour
+qu'il se prenne sur un chiffre. Réserve à garder : 56 % des profils seulement
+portent le tournoi en cours, donc la consigne resterait utile sur près de la
+moitié des blocs — la retirer entièrement serait plus fort que ce que la mesure
+autorise.
 
 ## §3 — Le catalogue se peuple
 
