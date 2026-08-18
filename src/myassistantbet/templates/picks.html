@@ -309,13 +309,14 @@
 
 <details class="panel" {% if not picks and not preview %}open{% endif %}>
   <summary>
-    Importer le tableau de Claude
-    <span class="muted small">section C du rendu, en-tête compris</span>
+    Importer la réponse de Claude
+    <span class="muted small">la réponse entière, telle qu'elle sort — tableau des sélections,
+      blocs conf, dossiers_ouverts, combinés, ligne sets:</span>
   </summary>
   <form method="post" action="/history/{{ session_id }}/picks/preview" class="paste-form">
-    <textarea name="table" rows="5"
-              placeholder="| # | Match | Marché | Sélection | Cote | Palier | Conf/5 | Type | Source | …"></textarea>
-    <button type="submit" class="button">Lire le tableau</button>
+    <textarea name="table" rows="12"
+              placeholder="Colle ici la réponse complète, de la section A à la section F"></textarea>
+    <button type="submit" class="button">Lire la réponse</button>
   </form>
 </details>
 

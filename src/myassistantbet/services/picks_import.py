@@ -12,6 +12,7 @@ proposition que l'utilisateur valide, corrige ou rejette ligne par ligne.
 from __future__ import annotations
 
 import json
+import logging
 import math
 import re
 import unicodedata
@@ -61,12 +62,20 @@ from .prompt import QUOTA_FLOOR_TIERS
 from .set_scores import FROM_PROSE, ParsedScore, _positioned
 from .set_scores import read as read_scores
 
+logger = logging.getLogger(__name__)
+
 #: La section **C-bis**, ou l'exigence de fait date tombe. Reconnue sur son
 #: repere ou sur son titre : le gabarit ecrit « C-bis. Sélections
 #: exploratoires », et un rendu qui n'en garde qu'une moitie doit passer quand
 #: meme — perdre la section entiere pour un tiret serait la reproduction exacte
 #: du defaut que ce chantier corrige.
 EXPLORATORY_HEAD = re.compile(r"\bc\s*bis\b|selections? exploratoires?")
+
+#: En dessous, un collage est presque surement partiel. **Mesure, pas invente** :
+#: les treize collages tronques de la base pesent 567 a 1 314 caracteres, un
+#: rendu complet plus de 30 000. Le seuil se pose entre les deux populations, et
+#: il **avertit sans jamais refuser** — un collage court peut etre legitime.
+PASTE_SHORT = 3_000
 
 #: Une ligne de tableau Markdown : `| a | b | c |`.
 TABLE_ROW = re.compile(r"^\s*\|(.+)\|\s*$")
@@ -314,6 +323,14 @@ class ImportPreview:
     #: compare a l'ordre de passage propose par l'application, y compris pour
     #: les dossiers qui n'ont produit aucune selection.
     opened: Opened = field(default_factory=Opened)
+    #: Les sections que le **prompt de cette session a demandees** et que le
+    #: collage n'a pas rapportees. Rendu ici et pas seulement sur la page de
+    #: statistiques : `SessionSections.note` a ete ecrite pour ce moment-la — au
+    #: collage une section laissee derriere se reprend en dix secondes, une
+    #: semaine plus tard elle ne se repare plus.
+    sections_note: str = ""
+    #: La taille du collage, pour l'avertissement de troncature.
+    char_count: int = 0
 
     @property
     def count(self) -> int:
@@ -440,11 +457,35 @@ class ImportPreview:
             OPEN_MALFORMED: "ligne dossiers_ouverts illisible",
             OPEN_ABSENT: "ligne dossiers_ouverts absente",
         }
-        return (
+        releve = (
             f"{self.count} sélection(s) détectée(s) · "
             f"{self.claims_attached} bloc(s) de confiance apparié(s) · "
             f"{len(self.combos)} combiné(s) rattaché(s) · "
             + etats.get(self.opened.state, f"état inconnu ({self.opened.state})")
+        )
+        # **Les sections manquantes d'abord**, parce qu'elles nomment ce qui
+        # s'est perdu quand les compteurs ci-dessus ne disent que des zeros. Un
+        # zero de bloc `conf` se lit « le modele n'en a pas produit » ; « blocs
+        # conf demandes et absents du collage » se lit « recolle ».
+        return " · ".join(part for part in (releve, self.short_note, self.sections_note) if part)
+
+    @property
+    def short_note(self) -> str:
+        """Un collage trop court pour etre une reponse entiere. **Jamais un
+        refus.**
+
+        Un collage court peut etre legitime — une seule selection reprise a la
+        main, un rendu volontairement reduit — donc rien n'est bloque. Mais le
+        seuil est mesure et non invente : les treize collages tronques de la
+        base vont de **567 a 1 314 caracteres**, quand un rendu complet en pese
+        **plus de 30 000**. Deux ordres de grandeur separent les deux
+        populations, et `PASTE_SHORT` se pose au milieu.
+        """
+        if not self.char_count or self.char_count >= PASTE_SHORT:
+            return ""
+        return (
+            f"collage de {self.char_count} caractères — un rendu complet en fait "
+            f"plus de 30 000, celui-ci est probablement partiel"
         )
 
     @property
@@ -1298,4 +1339,17 @@ def build_preview(
         prompt_headers(session_id, settings),
     )
     preview.import_id = import_id
+    preview.char_count = len(raw or "")
+    # **Le releve de sections vient d'un module qui existait deja et que rien
+    # n'appelait ici.** Il compare le prompt emis au collage recu, donc il
+    # distingue « jamais demandee » de « demandee et perdue » — la seule des deux
+    # qui appelle un geste. Une lecture, aucun appel reseau.
+    try:
+        # Import differe : `sections` importe ce module, et le poser en tete
+        # ferait un cycle. Le cout est nul, la fonction n'etant appelee qu'ici.
+        from . import sections
+
+        preview.sections_note = sections.for_paste(session_id, raw, settings).note
+    except Exception:  # pragma: no cover - un releve ne doit jamais casser un import
+        logger.exception("Releve de sections indisponible pour la session %d", session_id)
     return preview

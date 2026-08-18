@@ -827,3 +827,86 @@ def test_le_motif_est_relu_sur_la_feuille_de_session(
     page = client.get(f"/history/{session_id}").text
 
     assert str(escape(history_service.LATE_REASONS["live"])) in page
+
+
+# -- Le releve d'apercu : ce que le collage a laisse derriere lui -------------
+#
+# **Sixieme occurrence du motif du projet, et la premiere ou l'application
+# demandait elle-meme la mauvaise chose.** Le panneau d'import reclamait « le
+# tableau de Claude, section C du rendu » : treize collages de 567 a 1 314
+# caracteres sont arrives, conformes a cette consigne, et quatre jours ont ete
+# passes a chercher un parseur casse. Le libelle corrige la cause ; ces deux
+# lignes-ci attrapent la recidive, parce qu'un texte d'interface ne se relit pas
+# et qu'un compte-rendu se lit a chaque import.
+
+
+def test_un_collage_court_est_signale_sans_etre_refuse(migrated: Settings) -> None:
+    """**Un avertissement, jamais un refus.** Un collage court peut etre
+    legitime — une selection reprise a la main. Le seuil est mesure et non
+    invente : les treize collages tronques pesent 567 a 1 314 caracteres, un
+    rendu complet plus de 30 000, et deux ordres de grandeur separent les deux
+    populations."""
+    session_id, hurkacz, _ = _session(migrated)
+    court = (
+        "| # | Match | Marché | Sélection | Cote | Palier |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        "| M1 | Hubert Hurkacz – Marcos Giron | Vainqueur | Hubert Hurkacz | 1.55 | 🟢 SAFE |\n"
+    )
+
+    preview = picks_import.build_preview(session_id, court, migrated)
+
+    assert preview.picks, "la ligne est lue — le collage n'est pas refuse"
+    assert "probablement partiel" in preview.readout
+    assert str(len(court)) in preview.readout, "le compte de caracteres est dit"
+
+
+def test_un_collage_long_ne_declenche_aucun_avertissement(migrated: Settings) -> None:
+    """La reciproque, sans quoi l'avertissement se poserait partout et cesserait
+    d'informer — le defaut exact des lignes `A relever` du bloc CONTEXTE."""
+    session_id, _, _ = _session(migrated)
+    long = (
+        "| # | Match | Marché | Sélection | Cote | Palier |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        "| M1 | Hubert Hurkacz – Marcos Giron | Vainqueur | Hubert Hurkacz | 1.55 | 🟢 SAFE |\n"
+    ) + ("Prose de section A, datee et nommee. " * 200)
+
+    preview = picks_import.build_preview(session_id, long, migrated)
+
+    assert len(long) >= picks_import.PASTE_SHORT
+    assert "probablement partiel" not in preview.readout
+
+
+def test_le_releve_nomme_les_sections_demandees_et_absentes(migrated: Settings) -> None:
+    """**Le module existait et rien ne l'appelait ici.** `SessionSections.note`
+    est ecrite pour ce moment precis — au collage une section laissee derriere se
+    reprend en dix secondes, une semaine plus tard sur la page de statistiques
+    elle ne se repare plus.
+
+    Le releve doit distinguer « jamais demandee » de « demandee et perdue » :
+    seule la seconde appelle un geste.
+    """
+    session_id, _, _ = _session(migrated)
+    # Un prompt qui reclame les blocs, et un collage qui n'apporte que le tableau.
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, ?, ?, ?, ?)",
+        (
+            session_id,
+            "defaut.md.j2",
+            "### M1 · tennis\n```conf\n{}\n```\ndossiers_ouverts: [M1]\nsets: M1=2-0\n",
+            10,
+            db.utcnow(),
+        ),
+        settings=migrated,
+    )
+    tableau = (
+        "| # | Match | Marché | Sélection | Cote | Palier |\n"
+        "| --- | --- | --- | --- | --- | --- |\n"
+        "| M1 | Hubert Hurkacz – Marcos Giron | Vainqueur | Hubert Hurkacz | 1.55 | 🟢 SAFE |\n"
+    )
+
+    preview = picks_import.build_preview(session_id, tableau, migrated)
+
+    assert "absente(s) du collage" in preview.readout
+    for attendu in ("blocs conf", "ligne dossiers_ouverts", "ligne sets:"):
+        assert attendu in preview.readout, f"« {attendu} » doit être nommée"

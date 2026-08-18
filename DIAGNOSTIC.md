@@ -2702,3 +2702,43 @@ quoi le geste se reprendra tout seul à la session suivante.
 **Sixième occurrence du motif, et la plus coûteuse** : l'interface a demandé une
 donnée partielle, l'a reçue, et rien ne pouvait signaler que le reste manquait —
 puisque rien ne l'attendait.
+
+### Le correctif : le libellé, et les deux filets qui attrapent la récidive
+
+**Le libellé corrige la cause.** `picks.html` ne demande plus « le tableau,
+section C du rendu » mais **la réponse entière**, avec le placeholder « Colle ici
+la réponse complète, de la section A à la section F » et `rows="12"` au lieu de
+`5`. Le champ garde son nom `table` : le renommer toucherait la route et le banc
+pour zéro gain fonctionnel.
+
+**Mais un texte d'interface ne se relit pas, alors qu'un compte-rendu se lit à
+chaque import.** D'où deux filets, tous deux dans `ImportPreview.readout` —
+c'est-à-dire **au seul moment où l'information est encore récupérable** :
+
+1. **Les sections demandées et absentes sont nommées.** `sections.for_paste()`
+   existait depuis le lot 3, avec ses trois états, et **rien ne l'appelait
+   ici** : elle ne parlait qu'à la page de statistiques, une semaine trop tard.
+   `SessionSections.note` était pourtant écrite pour ce moment précis — son
+   docstring le dit. Elle est branchée, par un import différé (`sections`
+   importe ce module).
+2. **Un collage de moins de `PASTE_SHORT` (3 000) caractères est signalé, jamais
+   refusé.** Le seuil est mesuré : les treize collages tronqués pèsent 567 à
+   1 314 caractères, un rendu complet plus de 30 000 — deux ordres de grandeur
+   séparent les deux populations, et le seuil se pose au milieu. Un collage
+   court peut être légitime, donc rien n'est bloqué.
+
+**Rejeu du collage réel #13 (1 314 caractères) à travers le nouveau relevé :**
+
+```
+· 4 sélection(s) détectée(s)
+· 0 bloc(s) de confiance apparié(s)
+· 0 combiné(s) rattaché(s)
+· ligne dossiers_ouverts absente
+· collage de 1314 caractères — un rendu complet en fait plus de 30 000,
+  celui-ci est probablement partiel
+· demandée(s) par le prompt et absente(s) du collage : section C-bis,
+  blocs conf, ligne sets:, ligne dossiers_ouverts
+```
+
+**Cette ligne aurait été visible au tout premier import.** Elle est le coût de
+quatre jours d'enquête, écrit en une phrase.
