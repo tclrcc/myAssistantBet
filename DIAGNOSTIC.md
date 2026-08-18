@@ -1,3 +1,27 @@
+# ÉTAT AU 19/08/2026, 00h30 — à lire en premier
+
+**En service** : commit `8f2ffab`, schéma **62**, `SERVE_LINES_ENABLED=1`, lignes
+`Service`/`Retour`/`Ecart` rendues — `Jeux` reste absente, aucun joueur n'atteint
+les 300 jeux et c'est le comportement voulu. Le panneau d'import demande
+désormais **la réponse entière**, et son relevé nomme les sections manquantes.
+
+**Le geste de demain** : coller la réponse complète, de la section A à la
+section F. C'est gratuit et ça débloque d'un coup les crans calculés, les scores
+en sets, les combinés et la mesure du budget à 10.
+
+**Reprendre la passe de timelines** — ne pas la lancer avant le filtre ci-dessous :
+
+```bash
+uv run myassistantbet-timelines --joueurs 400
+```
+
+**Les deux gestes du prochain lot, dans cet ordre** : (1) un **filtre d'âge à
+90 jours** dans `collect_games` — aucune timeline au-delà de 80 jours sur 387
+tentatives, il supprime 69 % des appels sans perdre une seule timeline ; (2) la
+**passe longue** ensuite, qui passe alors de ~60 000 appels à moins de 10 000.
+
+---
+
 # DIAGNOSTIC — lot 1 : l'ingestion, les paliers hauts, et ce qui se perdait en silence
 
 Relevé du **17/08/2026**, sur une copie de la base servie (29 Mo, 235 sélections,
