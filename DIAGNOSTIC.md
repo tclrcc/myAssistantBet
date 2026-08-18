@@ -2563,3 +2563,82 @@ entre, avec ses 11 altérations.
   `dossiers_ouverts: []` est une déclaration légitime, et compter ses repères la
   confondrait avec une ligne absente, qui est un défaut de collage. C'est
   exactement la distinction que la migration 049 a dû ajouter après coup.
+
+---
+
+## §2 (lot 7 bis) — `J+1` retiré : 33 % d'appels en moins, zéro perte
+
+`DAY_SHIFTS` passe de `(0, 1, -1)` à `(0, -1)`. Rejeu de la mesure sur les 564
+rencontres de l'archive :
+
+| | Appels | Timelines | Par timeline |
+| --- | ---: | ---: | ---: |
+| avant `(0, 1, -1)` | 2 767 | 113 | 24,5 |
+| **après `(0, -1)`** | **1 844** | **113** | **16,3** |
+
+**923 appels économisés (33 %), zéro timeline perdue.** `J-1` est gardé — 7 sur
+113, peu mais pas zéro.
+
+**Une réserve, et elle est écrite dans le test plutôt que masquée.** Le lot 5
+documente un cas réel où `J+1` aboutissait : Fernandez – Wang, programmé le
+16/08 à **19h10 UTC**, daté du **17** par la source. Le mécanisme est causal — un
+match de fin de soirée bascule au lendemain chez un fournisseur qui date plus à
+l'est — et **ce match n'est pas dans l'archive**. Les deux constats sont vrais
+sur deux populations différentes, et l'archive ne connaît pas les heures de coup
+d'envoi : elle ne peut pas dire si elle contient des matchs tardifs.
+
+`test_la_fenetre_d_un_jour_rattrape_un_decalage_de_date` a donc été **réécrit
+pour décrire la perte** au lieu d'être supprimé : il échouera le jour où `J+1`
+reviendra, et la question se rouvre si des matchs tardifs se mettent à manquer.
+
+## §3 (lot 7 bis) — Il existe une borne nette, et elle règle la question du coût
+
+**C'est une fenêtre de rétention côté source, exactement l'hypothèse du brief.**
+Croisement des 113 rencontres qui aboutissent contre les 451 qui échouent, sur
+l'âge du match au moment de l'appel :
+
+| Âge du match | Tentées | Timelines | Taux |
+| --- | ---: | ---: | ---: |
+| 0 – 7 j | 20 | 16 | **80 %** |
+| 8 – 30 j | 30 | 24 | **80 %** |
+| 31 – 90 j | 127 | 73 | **57 %** |
+| **91 – 180 j** | **154** | **0** | **0 %** |
+| **181 – 365 j** | **233** | **0** | **0 %** |
+
+**Âge maximum d'un match portant une timeline : 80 jours.** 387 rencontres
+au-delà de 90 jours, **zéro timeline**.
+
+| Filtre | Rencontres tentées | Timelines gardées |
+| --- | ---: | ---: |
+| aucun | 564 (100 %) | 113 / 113 |
+| **≤ 90 jours** | **177 (31 %)** | **113 / 113** |
+
+**Un filtre d'âge à 90 jours supprime 69 % des tentatives sans perdre une seule
+timeline.** Combiné au retrait de `J+1`, le coût par timeline tombe de **24,5 à
+~4** — la passe complète repasse de ~60 000 appels à **moins de 10 000**, et la
+question du coût est réglée.
+
+**Non implémenté** : c'est un filtre en amont de `collect_games`, et l'heure
+d'arrêt était passée. C'est le premier geste du prochain lot, et il est
+mécanique.
+
+## §4 (lot 7 bis) — Le dénominateur était faux, et la conclusion se renforce
+
+Le brief avait raison de s'en méfier. Un joueur qui n'a pas encore joué dans le
+tournoi en cours n'a rien à servir, et son absence n'est pas un défaut de
+couverture.
+
+| Dénominateur | Taux |
+| --- | ---: |
+| tous les profils appelés (250) | 56 % |
+| **profils dont un match du 15/08+ figure au board (125)** | **99 % — 124 / 125** |
+
+**`matches-played` sert le tournoi en cours pour 99 % des joueurs qui y
+jouent**, statistiques de service comprises (173 matchs sur 180). Le 56 % ne
+mesurait que la proportion de joueurs engagés cette semaine-là.
+
+La conclusion du §2 d'hier s'en trouve **beaucoup plus forte** : la consigne que
+le cadre appelle « la recherche la plus rentable du lot » porte sur une
+information que l'application collecte déjà, presque intégralement. **Le gabarit
+n'est toujours pas modifié** — c'est l'arbitrage de l'utilisateur, et il se prend
+désormais sur 99 % et non sur 56 %.

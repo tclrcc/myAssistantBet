@@ -617,8 +617,24 @@ async def test_le_jour_annonce_est_essaye_en_premier(
 async def test_la_fenetre_d_un_jour_rattrape_un_decalage_de_date(
     tennis_client: TennisAPIClient, load_fixture: Callable[[str], Any]
 ) -> None:
-    """**Cas mesure** : le Fernandez – Wang programme chez nous le 16/08 a 19h10
-    UTC est date du **17** par la source. Une date exacte le manquerait."""
+    """**La perte assumee du retrait de `J+1`, ecrite plutot que masquee.**
+
+    Le cas est reel et documente au lot 5 : le Fernandez – Wang programme chez
+    nous le 16/08 a **19h10 UTC** est date du **17** par la source — un match de
+    fin de soiree bascule au lendemain chez un fournisseur qui date plus a l'est.
+    Le mecanisme est causal, pas accidentel.
+
+    `J+1` a pourtant ete retire le 19/08, sur une mesure d'archive : **zero**
+    aboutissement en 564 rencontres, quand `J+0` en rend 106 et `J-1` sept. Les
+    deux constats sont vrais et ne portent pas sur la meme population — l'archive
+    ne contient pas ce match-la, et elle ne connait pas les heures de coup
+    d'envoi, donc elle ne peut pas dire si elle contient des matchs de fin de
+    soiree.
+
+    **Ce test garde donc la trace de ce qu'on a decide de perdre.** Il echouera
+    le jour ou `J+1` reviendra, et c'est bien : la question se rouvre si des
+    matchs tardifs se mettent a manquer.
+    """
     evenement = load_fixture("tennisapi_event.json")
 
     def _repondre(request: httpx.Request) -> httpx.Response:
@@ -627,12 +643,13 @@ async def test_la_fenetre_d_un_jour_rattrape_un_decalage_de_date(
 
     respx.get(url__startswith=BASE_URL).mock(side_effect=_repondre)
 
-    trouve, _ = await serve_stats.fetch_timeline(
+    trouve, rejet = await serve_stats.fetch_timeline(
         tennis_client, "Taylor Fritz", "Alex Michelsen", "2026-08-16", "Taylor Fritz"
     )
 
-    assert trouve is not None
-    assert trouve.shift == 1
+    assert 1 not in serve_stats.DAY_SHIFTS, "J+1 est retire — ce test decrit sa perte"
+    assert trouve is None, "un match date du lendemain n'est plus rattrape"
+    assert rejet is not None and rejet.reason == SOURCE_VIDE
 
 
 @respx.mock
@@ -682,7 +699,7 @@ async def test_une_source_muette_part_en_rejet_nomme(
     assert trouve is None
     assert rejet is not None
     assert rejet.reason == SOURCE_VIDE
-    assert len(respx.calls) == 6, "les deux ordres sur les trois dates"
+    assert len(respx.calls) == 4, "les deux ordres sur les deux dates restantes (J+0, J-1)"
 
 
 # -- Les agregats ------------------------------------------------------------

@@ -778,10 +778,21 @@ def _sans_accents(text: str) -> str:
 #   trois restent vides**. C'est un fait sur la source, pas un defaut de notre
 #   collecte, et c'est `SOURCE_VIDE` qui le dit.
 
-#: Les decalages tentes, dans l'ordre. Le jour annonce d'abord — cinq des huit
-#: rencontres mesurees repondent des le premier essai, donc l'ordinaire ne paie
-#: qu'un appel.
-DAY_SHIFTS = (0, 1, -1)
+#: Les decalages tentes, dans l'ordre. Le jour annonce d'abord — **106 des 113
+#: rencontres qui aboutissent repondent des le premier essai**, donc l'ordinaire
+#: ne paie qu'un appel.
+#:
+#: **`J+1` a ete retire, et ce n'est pas un arbitrage.** Mesure du 18/08/2026 sur
+#: les 2 767 appels `event/get` de l'archive, 564 rencontres tentees : `J+0`
+#: aboutit 106 fois, `J-1` **7** fois, `J+1` **zero**. Il etait essaye sur chaque
+#: rencontre en echec — deux appels a chaque fois, sur 451 rencontres — et n'a
+#: jamais rien rapporte. Un essai qui n'aboutit jamais n'a pas de compromis a
+#: arbitrer : il se supprime.
+#:
+#: `J-1` **reste**. Sept sur 113 est peu, mais ce n'est pas zero, et le
+#: compromis — perdre 6 % de couverture pour deux appels de moins par echec — se
+#: pose a froid, pas dans la meme minute que la suppression d'un essai mort.
+DAY_SHIFTS = (0, -1)
 
 #: Les jeux d'une timeline se lisent sur ces deux mots. Ils sont **du
 #: fournisseur** et recopies tels quels : « Game 3 - Taylor Fritz - holds to 15 ».
@@ -928,9 +939,9 @@ async def fetch_timeline(
 
     - l'endpoint est **positionnel**, et l'ordre des joueurs ne correspond pas
       toujours a celui de la base ;
-    - la date du fournisseur peut differer d'un jour — le Fernandez – Wang
-      programme chez nous le 16/08 a 19h10 UTC est date du **17** par la source.
-      D'ou `DAY_SHIFTS` et non une date exacte ;
+    - la date du fournisseur peut differer d'un jour — d'ou `DAY_SHIFTS` et non
+      une date exacte. **Seule la veille est tentee** : mesure sur 564
+      rencontres, `J-1` aboutit 7 fois et `J+1` jamais ;
     - la couverture reste **partielle** apres tout cela : sur huit rencontres de
       la veille, cinq repondent et trois restent vides. C'est un fait sur la
       source, et `SOURCE_VIDE` le dit au lieu de le taire.
