@@ -2251,3 +2251,57 @@ d'effet, donc **tout écart de résidu mesuré autour du 18/08 mesure leur somme
 Il n'existe aucune session au budget 10 sans lignes de service. Les séparer
 demanderait de désactiver l'un des deux pendant quelques sessions. Consigné le
 jour même plutôt que découvert dans trois semaines.
+
+---
+
+## §10 — `BEGIN IMMEDIATE` : correctif tenté, mesuré, et **rejeté**
+
+Résultat négatif, écrit sous la forme qui empêche de le refaire.
+
+**Le défaut est réel et caractérisé.** `connect()` ouvre un `BEGIN` *déféré* :
+il lit, puis se **promeut** en écriture au premier INSERT. Sur cette promotion
+SQLite rend `SQLITE_BUSY` **immédiatement**, sans honorer `busy_timeout` — qui
+couvre l'attente d'un verrou, pas le conflit d'instantané. Il a dormi tant qu'il
+n'y avait qu'un écrivain, puis a cassé un enrichissement réel le 18/08 quand une
+passe de collecte tournait en même temps (`Rublev – Borges — OperationalError:
+database is locked`).
+
+Mesure isolée, trois écrivains, 120 transactions, `busy_timeout` à 5 s :
+
+| Ouverture | « database is locked » |
+| --- | ---: |
+| `BEGIN` | **72** |
+| `BEGIN IMMEDIATE` | **0** |
+
+**Et pourtant le correctif ne passe pas.** Appliqué à `connect()` (écrivains en
+`IMMEDIATE`, `query`/`query_one` laissés déférés), il fait **échouer une douzaine
+de tests** répartis sur la moitié de la suite — dont
+`test_le_prompt_se_tait_sur_un_regroupement_trop_maigre`, qui meurt sur le
+`BEGIN IMMEDIATE` lui-même.
+
+**Cause : `connect()` s'imbrique, et dynamiquement.** Une transaction écrivain
+externe tient le verrou ; du code appelé à l'intérieur ouvre sa **propre**
+connexion écrivain ; les deux s'attendent sur des connexions distinctes du même
+fil, et `busy_timeout` ne fait que retarder l'échec de 5 s. En déféré la seconde
+passait tant qu'elle ne faisait que lire — c'est ce qui masquait l'imbrication.
+
+**L'imbrication n'est pas lexicale, et c'est ce qui rend le correctif coûteux** :
+mesuré par AST sur tout `src/`, **0 imbrication `connect()`-dans-`connect()`
+écrite littéralement**. Elle se produit à l'exécution, une fonction sous
+`with connect()` en appelant une autre qui ouvre la sienne. Aucune recherche
+textuelle ne les trouvera.
+
+**Revenu en arrière.** L'application sert le code d'avant, et le contournement du
+jour est opérationnel : **ne pas faire tourner la passe de collecte pendant un
+enrichissement**. Le job planifié part 30 min après le scan, donc hors des heures
+de travail.
+
+**Ce qu'il faudrait, et ce n'est pas une ligne** : rendre `connect()` réentrant —
+une transaction par fil, les appels internes rejoignant celle de l'extérieur au
+lieu d'en ouvrir une seconde. C'est la vraie correction, elle touche le point de
+passage de **toutes** les écritures, et elle se livre avec sa propre mesure de
+contention. À ne pas tenter en fin de session.
+
+**Ce qu'il ne faut PAS refaire** : passer `connect()` en `BEGIN IMMEDIATE` sans
+traiter la réentrance. La mesure isolée est excellente (72 → 0) et **c'est un
+piège** : elle ne teste pas l'imbrication, qui est le régime réel de ce code.
