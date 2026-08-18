@@ -2043,10 +2043,27 @@ seuil — est ce qui a été suivi.
 ## §7 — Ce qui reste, dans l'ordre
 
 1. **La ligne `Jeux` ne sortira pas sans une autre source de jeux.** La
-   couverture `event/get` est à 5,9 % et ne dépend pas de nous. Trois voies :
-   accepter que la ligne reste omise, chercher une source de timelines
-   ailleurs, ou dériver tenue et break d'un décompte que `matches-played` porte
-   déjà — à vérifier, ce n'est pas établi.
+   couverture `event/get` est à 5,9 % et ne dépend pas de nous.
+
+   **La voie la moins chère a été vérifiée ce matin, et elle est fermée pour la
+   tenue de service.** `profile/matches-played` — déjà appelé, déjà archivé,
+   aucun appel de plus — porte 23 champs par match et 18 par joueur, et
+   **aucun ne compte les jeux de service** : ni `SvGms`, ni `serviceGames`, ni
+   holds. Ce qu'il porte :
+
+   | Champ | Ce qu'il vaut |
+   | --- | --- |
+   | `result` (« 6-3 7-5 ») | le **total** de jeux du match, exact |
+   | `breakPointsConverted` | le **nombre de breaks réussis**, exact |
+   | *(rien)* | les jeux **servis** par chaque joueur — le dénominateur |
+
+   Le numérateur du taux de break est donc gratuit et exact ; **les deux
+   dénominateurs manquent**. Les déduire du score supposerait que chacun sert
+   la moitié des jeux à une unité près — une approximation, sur une ligne qui
+   serait lue comme un fait. C'est précisément ce que le seuil de 300 refuse.
+
+   Restent donc deux voies : accepter que la ligne reste omise, ou trouver une
+   source de timelines dont la couverture ne soit pas de 6 %.
 2. **§2** — le bloc avant/après, quand un joueur passera le seuil.
 3. **§5** — le registre des chemins d'écriture est **à jour** : la collecte
    n'ouvre aucun chemin nouveau (elle écrit par `store_aggregate` et
