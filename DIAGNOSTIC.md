@@ -1,45 +1,42 @@
-# ÉTAT AU 19/08/2026, 20h30 — à lire en premier
+# ÉTAT AU 19/08/2026, 21h30 — à lire en premier
 
-**En service** : schéma **63**, `SERVE_LINES_ENABLED=1`,
-`CURRENT_EVENT_LINE_ENABLED=0`.
+**En service** : schéma **64**, `SERVE_LINES_ENABLED=1`, et
+**`CURRENT_EVENT_LINE_ENABLED=1` depuis ce lot**. Service redémarré et vérifié
+depuis le serveur, pas depuis un rendu local.
 
-**Ce que le lot 9 a récupéré, en écriture sur la base servie** : les blocs de
-confiance des trois collages complets étaient produits, transmis, et posés nulle
-part. `myassistantbet-replay --rattacher` les a posés — **15 blocs sur 15**, le
-**premier combiné de l'histoire de la base** (3 jambes), et la ligne
-`dossiers_ouverts` de la session 17 (9 repères). **Zéro sélection créée, zéro
-doublon**, les trois populations strictement inchangées (218 / 16 / 52 = 286).
+**La ligne `Ici` est en production.** Le bloc tennis porte, pour chaque joueur,
+ce qu'il a fait dans *ce* tournoi : score tour par tour, abandons et forfaits
+nommés, agrégat de service avec son dénominateur en points. Aucun appel — la
+charge utile est archivée. Coût mesuré : **+131 tokens par bloc**. Couverture à
+l'activation : **79 %** des 190 blocs tennis déjà partis à l'analyse (80 % ATP,
+78 % WTA).
 
-**Le geste de demain n'a pas changé** : coller la réponse entière. Le gabarit
-demande désormais un bloc `conf` **aussi sous la section C-bis**.
+**La coupe est isolée**, contrairement à celle du 18/08 : le budget de recherche
+à 10 s'étant révélé sans effet, il n'y a pas de seconde variable active à cette
+date. Tout écart mesuré autour du 19/08 se rapporte à cette ligne seule.
 
-**Trois premisses du brief que la mesure a renversées** :
+**Le garde-fou du registre d'écriture : le brief se trompait de moitié.** Le test
+a bien mordu au lot 9 — c'est par lui que le défaut a été trouvé. Ce qui est resté
+aveugle est `selfcheck-ingestion`, dont le dénominateur vient d'un **agrégat de
+familles** insensible à un déplacement de déclaration. Trois vues indépendantes le
+gardent désormais, et le garde-fou se teste contre sa propre panne.
 
-1. **le budget de recherche ne bornait rien.** « 6, 7 et 9 repères pour un budget
-   de 10 » se lit comme un modèle qui s'approche de son budget ; les lots
-   correspondants comptaient **exactement 6, 7 et 9 blocs**. Le budget effectif
-   valait 6, 7 et 9, et le lot entier a été déclaré les trois fois ;
-2. **`hors_dossiers` n'était pas une observation sur le modèle**, contrairement à
-   ce que le lot 8 a conclu : c'était un défaut de collecte, le repli de
-   résolution ayant choisi le mauvais prompt parmi les trois de la session ;
-3. **la seconde moitié du principe `Non joué` / `Ici` est sans objet** : `Ici`
-   nomme déjà les forfaits, donc rien à coder de ce côté.
+**Deux dettes soldées, l'une par un résultat non concluant assumé** :
+
+1. **métrique du retard** — `b = +0,122` par log-minute, IC 95 % `[-0,328 ; +0,573]`,
+   `p = 0,594`, pente détectable à 80 % : `0,643`. Non concluant, direction
+   attendue, effectif insuffisant. **Dette close**, quel que soit le verdict ;
+2. **écart de cran** — 6 écarts sur 15, ventilés 3 / 3, tous à `+1`. Le modèle
+   déclare systématiquement **un cran sous** ce que sa propre table implique.
 
 **Ce qui reste ouvert** :
 
-- **§2d — la puce « Ses matchs déjà joués dans ce tournoi-ci »** du gabarit. Deux
-  variantes rédigées, aucune appliquée. Sa phrase « aucune de nos sources ne les
-  porte » devient fausse le jour où `Ici` s'active. **Ne s'arbitre qu'après avoir
-  vu `Ici` rendue sur quelques lots.**
-- **la métrique du retard**, spécifiée au lot 4, effectif reconfirmé au lot 9 :
-  52 tardives tranchées, 32/20, médiane 133 min, étendue 12 – 1 557. Toujours non
-  implémentée, en attente d'arbitrage.
-- **le service systemd n'a pas été redémarré** : le code et le schéma ont changé,
-  le processus servi porte encore les anciens.
-
-```bash
-sudo systemctl restart myassistantbet
-```
+- **§2d — la puce « Ses matchs déjà joués dans ce tournoi-ci »**. Les deux
+  variantes sont écrites et augmentées du rendu réel (lot 10, §3). **Aucune n'est
+  appliquée** : l'arbitrage appartient à l'utilisateur, et il se prend sur les
+  chiffres de couverture ci-dessus.
+- **`/tmp`** est un tmpfs de 5,8 Go qui était à 96 %. La convention de nettoyage
+  est écrite dans `CONTRIBUTING.md` ; rien ne surveille le disque.
 
 **La passe de timelines tourne**, et se reprend sans état :
 
@@ -4193,3 +4190,523 @@ Ce qui l'aurait attrapé est la règle que le projet applique déjà ailleurs :
 annonçait « même repli que `_apply_research` ». C'était faux — un des trois
 chemins avait la garde, les deux autres non. **Un commentaire qui affirme une
 symétrie est un endroit où la vérifier.**
+
+---
+
+# DIAGNOSTIC — lot 10 : le garde-fou éteint, la ligne `Ici`, et deux dettes soldées
+
+Relevé du **19/08/2026**, sur une copie de la base servie (275 Mo, 286 sélections,
+17 sessions). **Quatre affirmations du brief sont contredites par la mesure**, dont
+une qui portait sur le point le plus important du lot.
+
+Arbre propre au démarrage, aucune modification concurrente : la règle 9 est
+satisfaite.
+
+---
+
+## §0 — Préalables d'exploitation
+
+**L'état servi est le bon, et c'est vérifié depuis le serveur.** Le processus a
+démarré à 20:43:55, après la dernière modification de source (20:41:50) ; mais
+l'inférence par horodatage ne prouve rien, donc trois marqueurs de code du lot 9
+ont été cherchés dans la page servie sur `localhost:8021` — « Dossiers de
+recherche déclarés », « Cran annoncé contre cran calculé, sur cette population »
+et `min(réglage, taille du lot)`. Les trois y sont. Schéma **63** au démarrage du
+lot.
+
+**`/tmp` : l'inventaire, et ce qui est supprimable.**
+
+| Ce qui remplit | Volume | Supprimable par moi ? |
+| --- | ---: | --- |
+| `/tmp/claude-1000/…` (sessions) | 2,0 Go | **non** — 136 Ko m'appartiennent |
+| `/tmp/pytest-of-ubuntu` | 1,1 Go | **non à la main** — `pytest` en retire au-delà de trois |
+| `~/lot9-travail` (mes copies) | 789 Mo | **oui**, supprimé |
+
+Le tmpfs fait 5,8 Go. Une suite complète coûte 450 à 600 Mo, `pytest` en conserve
+trois : **1,5 Go de régime permanent** pour les seuls tests. La convention est
+écrite dans `CONTRIBUTING.md` — une copie de base ne va jamais dans `/tmp`, on ne
+supprime que ce qu'on a créé, et `df -h /tmp` coûte une seconde avant une suite de
+quatre minutes.
+
+**La ligne `Non joué` telle qu'elle sort aujourd'hui**, sur un prompt réel de la
+session 17 généré sans drapeau. Le lot avait raison de passer hors du drapeau, et
+le rendu le montre — **une seule** ligne `Non joué` sur sept blocs, celle du
+forfait saisi à la main :
+
+```
+### M4 · TENNIS · ATP Cincinnati Open · Taylor Fritz – Christopher O'Connell · 20/08 01:00
+  Parcours    Taylor Fritz Alex Michelsen (1847), Daniel Merida Aguilar (1847)
+              | Christopher O'Connell Dane Sweeny (1472), Alexander Shevchenko (1669),
+              Kamil Majchrzak (1795), Casper Ruud (1954) [vu depuis le 11/08]
+  Non joue    Christopher O'Connell — Joao Fonseca (1934) le 18/08 15:00 UTC,
+              forfait adverse, non disputee
+```
+
+Et le bloc corrigé, où la ligne a disparu et l'adversaire a rejoint `Parcours` :
+
+```
+  Parcours    Madison Keys … | Xiyu Wang Bianca Andreescu (1714),
+              Polina Kudermetova (1697), Maria Timofeeva (1718),
+              Leylah Fernandez (1816), Elina Svitolina (2054) [vu depuis le 12/08]
+```
+
+---
+
+## §1 — Pourquoi le garde-fou n'a-t-il pas mordu ? Il a mordu.
+
+**C'est la contradiction la plus importante du lot.** Le brief dit : *« `add_pick`
+a perdu son décorateur, et rien n'a échoué : le `selfcheck` affichait 10/10 parce
+que le dénominateur venait du registre lui-même. »* La seconde moitié est exacte.
+La première ne l'est pas.
+
+### La reproduction, à l'identique
+
+L'état du lot 9 a été réinjecté dans une copie du dépôt — `@writes(...)` suivi
+d'un `@dataclass` interposé, `add_pick` nue en dessous :
+
+| Instrument | Ce qu'il a fait |
+| --- | --- |
+| `tests/test_write_paths.py` | **2 assertions tombent**, et le message nomme `add_pick → picks` |
+| `selfcheck-ingestion` | **15 sur 15, 0 manque**, code de retour 0 |
+
+Le test a donc mordu — c'est par lui que le défaut a été trouvé au début du lot 9,
+en lançant la suite sur l'état hérité.
+
+### La cause de l'aveuglement, et elle est précise
+
+Le registre, sous le défaut, contient :
+
+```
+myassistantbet.services.combos.record
+myassistantbet.services.history._Interpose     ← la classe interposée
+myassistantbet.services.set_scores.save
+```
+
+`add_pick` a disparu, `_Interpose` a pris sa place — **et
+`declared_block_types()` rend exactement la même chose qu'avant** :
+`('conf', 'combo', 'score_sets', 'selection', 'exploratoire')`. C'est un **agrégat
+de familles** : la classe portait les mêmes trois familles que la fonction, donc
+la somme ne bouge pas d'un mot.
+
+**Un contrôle dont le dénominateur vient de ce qu'il contrôle ne peut pas voir un
+déplacement à l'intérieur.** Il ne regardait pas mal ; il regardait la bonne chose
+au mauvais niveau d'agrégation.
+
+### Le correctif de forme demandé était déjà en place
+
+Le brief demande que l'énumération vienne d'une source indépendante du registre —
+l'AST, les `INSERT INTO` vers table gardée. **Elle en venait déjà** :
+`_inserting_functions` walk l'AST de tous les `.py` du paquet et cherche un
+`INSERT INTO` dans les **corps** de fonction, sans regarder un seul décorateur.
+C'est pour cela que le test a mordu.
+
+Ce qui manquait n'était pas l'énumération : c'était que le **contrôle
+d'exploitation** s'en serve. Le recensement vivait dans le fichier de test, donc
+hors de portée du banc.
+
+### Le recensement complet, aujourd'hui
+
+| | Compte |
+| --- | ---: |
+| occurrences brutes d'`INSERT INTO` vers table gardée | **4** |
+| fonctions qui les portent | **3** |
+| déclarées au registre | **3** |
+| désaccords | **0** |
+
+Les 4 occurrences pour 3 fonctions viennent de `combos.record`, qui insère dans
+`combos` **et** `combo_legs`. **Aucun autre chemin n'est dans le cas
+d'`add_pick`.**
+
+### Trois vues indépendantes, et deux trous fermés
+
+Le recensement quitte `tests/` pour `write_paths`, où le test et le banc le lisent
+tous les deux :
+
+- `inserting_functions` — les **corps** : qui écrit, déclaré ou non ;
+- `decorated_nodes` — les **décorateurs** : une déclaration posée ailleurs que sur
+  une fonction, ce qui nomme le défaut du lot 9 directement ;
+- `REGISTRY` — le seul témoin d'**exécution** : une déclaration qui n'a jamais
+  tourné, faute d'import.
+
+Aucune ne se dérive d'une autre. Deux trous fermés au passage, **tous deux
+latents et non vivants**, mesurés comme tels :
+
+- `INSERT OR REPLACE INTO` et `REPLACE INTO` n'étaient pas reconnus. Zéro
+  occurrence dans le dépôt ;
+- le recensement s'arrêtait au **premier** `INSERT` d'une fonction, donc
+  `combos.record` n'était vue que sur une de ses deux tables. Sans effet sur
+  « est-elle déclarée », mais le message d'erreur nommait une table sur deux.
+
+### Le test du test
+
+Quatre mutations sur un faux paquet, et la réciproque :
+
+| Mutation | Attendu | Obtenu |
+| --- | --- | --- |
+| `@writes` retiré **au-dessus** d'un autre décorateur | désaccord | ✔ |
+| `@writes` retiré **en dessous** d'un autre décorateur | désaccord | ✔ |
+| `@writes` au-dessus / en dessous, **sain** | rien | ✔ |
+| le défaut du lot 9 rejoué (`@dataclass` interposé) | **deux** lignes | ✔ |
+
+La réciproque compte autant : un contrôle qui crie sur tout crie aussi sur le code
+sain, et c'est ce qui rendrait le cri des trois autres non informatif.
+
+**Vérification finale** : le défaut réinjecté contre le banc corrigé donne
+maintenant code de retour **1** et deux lignes nommées, là où il donnait 0.
+
+---
+
+## §2 — La ligne `Ici` en production
+
+### Le rendu, et le coût
+
+Six blocs sur six portent une ligne renseignée sur le lot du jour, ATP et WTA.
+Deux extraits, l'un avec un abandon et un forfait :
+
+```
+  Ici   Xiyu Wang 13/08 bat Polina Kudermetova 6-3 6-2 | 13/08 bat Bianca Vanessa
+        Andreescu 6-0 6-4 | 14/08 bat Maria Timofeeva 6-0 3-0 (abandon) | 17/08 bat
+        Leylah Annie Fernandez 3-6 6-2 6-2 | 18/08 forfait de Elina Svitolina
+        [releve au 19/08]
+        service ici 68.9% 1re · 70.1% s/1re · 9 df (4 matchs, 209 pts)
+```
+
+**Coût mesuré sur le même lot**, drapeau bas puis haut : 18 003 → **18 789**
+tokens pour six blocs, soit **+131 par bloc**, préambule compris.
+
+### La vérification depuis le serveur
+
+Lot 6 a failli rapporter une régression inexistante en interrogeant la mauvaise
+route. La fiche du match 827 a donc été lue sur `localhost:8021` après
+redémarrage, et elle porte la ligne, ses deux joueurs, le forfait de Svitolina et
+l'horodatage. Schéma servi : **64**.
+
+### La couverture à l'activation
+
+| Mois | Circuit | Blocs | Renseignés | Partiels | Absents | Part servie |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 2026-08 | atp | 97 | 46 | 32 | 19 | **80 %** |
+| 2026-08 | wta | 93 | 41 | 32 | 20 | **78 %** |
+| | **total** | **190** | **87** | **64** | **39** | **79 %** |
+
+**Trois états et non deux, et la distinction n'est pas cosmétique.** Un bloc
+*partiel* porte des résultats d'un côté et « aucun match dans ce tournoi » de
+l'autre : c'est un **fait sur le match**, souvent le fait dominant quand l'un sort
+de trois tours et l'autre entre en lice. Les fondre avec les absents ferait lire
+une entrée en lice comme un trou de collecte — exactement ce que la mention
+explicite existe pour éviter.
+
+La mesure se fait **hors du drapeau** : gardée par lui, elle rendrait des zéros le
+jour où il redescend, et ça se lirait comme une source tarie.
+
+### Elle n'est pas branchée sur `/stats`, et c'est un arbitrage mesuré
+
+Le balayage coûte **2,8 s** sur une page qui en coûte **2,3**. Le contrat de
+parité page/export interdit de la mettre dans l'un sans l'autre, donc c'était
+page **et** export, ou ni l'un ni l'autre. Une mesure qui justifie une décision
+n'a pas à être payée à chaque consultation ; sa conclusion, si — elle est au
+journal des mesures et ici.
+
+### Migration 064 : l'index qui manquait
+
+`archived_profile` filtre sur `(provider, path)` ; l'index portait
+`(provider, endpoint, fetched_at)`. La recherche se faisait donc sur le **seul**
+`provider`, puis triait dans un B-tree temporaire.
+
+| | Avant | Après |
+| --- | ---: | ---: |
+| génération d'un prompt de six blocs tennis | 2,11 s | **1,43 s** (−32 %) |
+| balayage de couverture, 190 blocs | 8,9 s | 3,6 s |
+| idem, avec un cache de profils passé par l'appelant | — | **2,8 s** |
+
+Le gain de 32 % porte sur le **chemin servi**, généré plusieurs fois par session :
+il justifie la migration à lui seul, indépendamment de la mesure de couverture.
+
+### Le défaut que l'activation elle-même a trouvé
+
+Activer le drapeau a fait tomber **deux tests** qui n'avaient rien à voir avec le
+changement : ceux qui décrivent ce que le bloc rend **drapeau bas**. La suite
+lisait le `.env` servi.
+
+Les deux drapeaux de gabarit sont donc épinglés à leur défaut de code dans le
+`conftest`, même règle que les clés factices qui y sont depuis longtemps — *« un
+test qui passe parce qu'une clé existe sur cette machine-ci échouerait
+ailleurs »*. Épingler `SERVE_LINES_ENABLED` n'a **rien cassé** : aucun test ne
+s'appuyait dessus sans le dire.
+
+---
+
+## §3 — Les deux variantes du gabarit, augmentées du rendu réel
+
+**Aucune n'est appliquée.** Ce qui suit reprend les variantes du lot 8 et y ajoute
+ce que le rendu en production a montré.
+
+### Ce que `Ici` porte effectivement — mesuré, plus riche qu'annoncé
+
+| Élément | Exemple réel |
+| --- | --- |
+| score tour par tour, nom complet de l'adversaire | `16/08 bat Alex Michelsen 6-3 6-4` |
+| abandons **nommés** | `14/08 bat Maria Timofeeva 6-0 3-0 (abandon)` |
+| forfaits **nommés** | `18/08 forfait de Elina Svitolina` |
+| service agrégé du tournoi, **avec son dénominateur** | `service ici 68.9% 1re · 70.1% s/1re · 9 df (4 matchs, 209 pts)` |
+| date du relevé, **par joueur** | `[releve au 19/08]` |
+| entrée en lice, explicite | `Bianca Andreescu aucun match dans ce tournoi` |
+
+Le lot 8 annonçait « l'adversaire, le score set par set et le service agrégé ». Il
+faut y ajouter **les abandons et les forfaits nommés** : la ligne distingue un
+tour gagné sur le court d'un tour obtenu sans jouer, ce qu'aucune autre ligne du
+bloc ne fait.
+
+### Ce qu'elle ne porte pas, et qui reste à chercher
+
+- la **durée** de chaque match — aucune source automatisable ne la sert, établi au
+  lot 3 et non démenti depuis. C'est le seul substitut d'`Usure` au niveau du
+  match, et `Usure` compte les jeux : deux matchs de 22 jeux à 1h05 et à 2h33 y
+  sont identiques ;
+- les **conditions réelles du court** — session, vent, chaleur, court central ou
+  annexe ;
+- le **double** engagé sur place — le fournisseur de cotes ne sert pas les
+  doubles, et 10 des 16 joueuses d'une journée WTA en avaient joué un la veille ;
+- l'**ordre du jeu** réel, qui décide de l'heure effective.
+
+### Le fait nouveau, et il pèse sur l'arbitrage
+
+**La ligne est renseignée sur 79 % des blocs, pas sur tous.** Sur les 21 % restants
+— 39 blocs sur 190 — la puce du gabarit est le **seul** chemin, et la variante A
+comme la variante B lui retirent la demande des scores.
+
+C'est la considération que le lot 8 ne pouvait pas avoir : il raisonnait sur un
+lot où la ligne sortait partout.
+
+### Variante A — « allégée », augmentée
+
+> · **Ce que la ligne `Ici` ne porte pas de ses matchs dans ce tournoi.** Quand
+> elle est présente, elle donne pour chaque tour l'adversaire, le score set par
+> set, les abandons et forfaits nommés, et le service agrégé du tournoi avec la
+> date de son relevé — ne les cherche pas, et ne les refais pas de zéro. Va
+> chercher les trois choses qu'aucune source ne sert : la **durée** de chaque
+> match, les conditions réelles du court (session, vent, chaleur, court central ou
+> annexe), et le **double** s'il est engagé sur place. Un match postérieur à la
+> date de relevé manque : celui-là se cherche. **Quand la ligne `Ici` est absente
+> du bloc, cherche aussi les scores.** Un tour non trouvé s'écrit « non trouvé ».
+
+- **On gagne** : la recherche cesse de re-trouver ce que le bloc porte déjà, sur
+  les 79 % où il le porte.
+- **On garde** : la durée, et le repli explicite — désormais **deux** replis, le
+  relevé en retard et la ligne absente.
+- **On perd** : rien de mesurable. Le coût en tokens reste du même ordre.
+
+### Variante B — « retirée », augmentée
+
+La puce disparaît ; conditions de court et double rejoignent les puces « Surface
+et conditions » et « Charge » ; la durée est ajoutée à « Charge ».
+
+- **On gagne** : **213 tokens** de préambule tennis, et un dossier de recherche
+  libéré par bloc.
+- **On perd** : la durée, définitivement — et, fait nouveau, **les scores sur les
+  21 % de blocs sans ligne `Ici`**. Le lot 8 chiffrait cette perte à zéro parce
+  qu'il supposait la couverture totale ; elle vaut 39 blocs sur 190.
+
+### Recommandation, et elle n'engage pas
+
+**La variante A**, et la mesure de couverture la renforce par rapport au lot 8 :
+elle est la seule des deux qui gère les deux régimes — ligne présente et ligne
+absente — dans une puce unique. Le coût de la phrase ajoutée est d'une ligne.
+
+**L'arbitrage appartient à l'utilisateur**, et il se prend sur les 79 %.
+
+---
+
+## §4 — `dossiers_ouverts` a cessé de discriminer
+
+La série du lot 9 portait déjà lot, budget et repères **sur la même ligne**. Ce
+lot y ajoute la phrase, dans la partie visible de la page et non sous le pli :
+
+> Le budget de recherche ne borne plus : sur les 11 derniers lots, de 4 à 9 blocs,
+> le réglage n'a pas mordu une seule fois — c'est la taille du lot qui limite, pas
+> lui. Quand la déclaration couvre le lot entier, « hors_dossiers » ne peut donc
+> plus se produire, et le seul discriminant restant pour comparer un fait daté à
+> une lecture est le niveau de source.
+
+**Le brief dit « lots de 6 à 12 matchs », la mesure dit 4 à 9.** La direction est
+juste, la borne non : aucun lot n'a atteint 12 depuis le changement de réglage.
+Les bornes sont donc **calculées et jamais écrites en dur** — elles bougeront au
+premier lot plus grand, et une phrase figée se mettrait à mentir sans que rien ne
+le dise.
+
+| Jour | Prompts | Lots | Le réglage a mordu |
+| --- | ---: | --- | ---: |
+| 14/08 | 13 | 4 – 26 blocs | 10 |
+| 15/08 | 19 | 6 – 20 | 16 |
+| 16/08 | 2 | 15 | 2 |
+| 17/08 | 4 | 5 – 8 | **0** |
+| 18/08 | 6 | 4 – 8 | **0** |
+| 19/08 | 1 | 9 | **0** |
+
+**Le budget n'est pas modifié.** Le remettre à 7 le ferait mordre à nouveau, donc
+réintroduirait la variable qu'on vient de voir disparaître, sans bénéfice mesuré.
+
+**Défaut trouvé en écrivant le test** : le constat était rangé sous la branche
+« il existe une déclaration collée ». Il aurait donc disparu exactement quand la
+ligne manque — c'est-à-dire au moment où l'on se demande si le budget y est pour
+quelque chose. Il porte sur les lots **soumis**, pas sur ce que le modèle en a dit.
+
+---
+
+## §5a — La métrique du retard : exécutée une fois, dette close
+
+Le modèle est celui de la spécification du lot 4, sans un écart :
+
+```
+logit( P(gagné) )  =  offset( logit(1/cote) )  +  a  +  b · log(retard_minutes)
+```
+
+Population : **52 sélections tardives tranchées**, 32 gagnées / 20 perdues,
+`log(retard)` de 2,48 à 7,35.
+
+| | Valeur |
+| --- | ---: |
+| `b`, pente par log-minute | **+0,122** |
+| erreur type | 0,230 |
+| intervalle à 95 % | **[−0,328 ; +0,573]** |
+| `p`, **bilatérale** | **0,594** |
+| pente détectable à 80 % de puissance | **0,643** |
+| ordonnée à l'origine (nuisance) | −0,342 |
+
+### Le verdict, et c'est celui que la spécification avait prévu
+
+`b > 0`, `p ≥ 0,05` → *« Rien. La direction est celle attendue, l'effectif ne
+tranche pas — c'est l'état actuel, et il faut le dire ainsi plutôt que "pas
+d'effet". »*
+
+**À ne pas lire comme une équivalence** : celle-ci se conclut par un TOST, pas par
+un test qui échoue à rejeter.
+
+### La spécification se trompait sur sa propre puissance
+
+Elle annonçait qu'il faudrait `b ≈ 0,45` pour 80 % de puissance. La mesure dit
+**0,643**. Le test voit donc encore moins loin qu'annoncé, et l'effet observé vaut
+**un cinquième** de ce qu'il faudrait pour le voir.
+
+### Vérifié par deux méthodes indépendantes
+
+L'ajustement est écrit à la main — Newton-Raphson sur une matrice 2×2 — plutôt
+qu'importé : `scipy` ferait entrer une bibliothèque de calcul scientifique dans un
+projet qui tient sur un processus et un fichier SQLite.
+
+| Contrôle | Résultat |
+| --- | --- |
+| récupération d'une pente connue (simulation, n=4000) | `b` vrai 0,800 → estimé **0,809** |
+| l'offset est bien fixé à 1 | décaler l'offset de 0,5 décale l'ordonnée de −0,5 **exactement**, pente inchangée |
+| balayage de vraisemblance sur les données réelles | `b = +0,120` contre +0,1224 |
+| intervalle de vraisemblance | **[−0,330 ; +0,582]** contre Wald [−0,328 ; +0,573] |
+
+Une séparation parfaite **ne converge pas et ne rend rien**, plutôt qu'une pente
+infinie.
+
+**La dette est close**, quel que soit le verdict : une spécification maintenue six
+lots sans être exécutée coûte plus qu'elle ne rapporte.
+
+---
+
+## §5b — L'écart de cran, ventilé
+
+**15 sélections portent les deux crans. 9 accords, 6 écarts, tous à `+1`, aucune
+correction à la baisse.**
+
+| id | Section | Écart | Faits | Éditeurs | Cause |
+| ---: | --- | --- | ---: | ---: | --- |
+| 281 | C-bis | 2 → 3 | 2 | 1 | manque touche le facteur — la table plafonne à 3 |
+| 282 | C-bis | 2 → 3 | 2 | 1 | idem |
+| 286 | C-bis | 2 → 3 | 1 | 1 | idem |
+| 283 | C | 4 → 5 | 3 | 3 | faisceau complet — deux éditeurs distincts, la table dit 5 |
+| 287 | C | 4 → 5 | 2 | 2 | idem |
+| 290 | C | 4 → 5 | 2 | 2 | idem |
+
+**Ventilation : 3 sur 6 / 3 sur 6**, et le partage tombe exactement sur la
+frontière des sections.
+
+### Le brief se trompe sur la première cause
+
+Il la formule *« un `manque_touche_facteur` déclaré `true` alors qu'aucun fait
+n'est touché »*, ce qui suppose une déclaration abusive. La table dit autre chose :
+
+```python
+if self.gap_touches_factor:
+    return 3
+```
+
+`true` rend **exactement 3** — un **plafond**, pas un plancher. Le modèle a
+déclaré **2**, donc *sous* le plafond de sa propre table. Il n'y a **aucun** cas de
+déclaration de manque abusive.
+
+### Les deux groupes sont le même phénomène
+
+Une fois lus ainsi, les six écarts disent la même chose en deux endroits : **le
+modèle déclare un cran sous ce que sa propre table implique** — une fois sous le
+plafond d'un manque qui touche (2 contre 3), une fois au sommet d'un faisceau
+complet (4 contre 5).
+
+**Aucune conclusion sur la qualité de l'analyse.** Quinze observations, et
+l'effectif est écrit à côté du chiffre.
+
+---
+
+## §6 — Dettes de forme
+
+### Le registre couvre-t-il les lots 9 et 10 ? Par la mesure, oui
+
+Le §1 répond par un recensement et non par une revue : **4 occurrences, 3
+fonctions, 3 déclarées, 0 désaccord**. Le lot 10 n'ajoute aucune fonction
+d'écriture — `here_coverage` lit, `offset_logistic` est pure. Le banc compte **15
+contrôles sur 3 chemins**, dont le `rattachement` ajouté au lot 9.
+
+### `changelog_mesure` : une entrée
+
+| # | Date | Portée | Ce qui change |
+| ---: | --- | --- | --- |
+| **22** | 19/08 | `gabarit` | **La ligne `Ici` entre en production.** Coût +131 tokens/bloc, couverture 79 %. **La coupe est isolée** — le budget à 10 s'étant révélé sans effet, il n'y a pas de seconde variable à cette date. |
+
+Le §1, le §4, le §5 et le §6 n'ont **pas** d'entrée : ils touchent au contrôle, à
+la restitution et à la mesure, jamais à ce que le modèle lit ni à ce que
+l'application écrit sur une sélection.
+
+### Le test de bout en bout comptait-il les blocs de C-bis ? Non
+
+**Et le compte le cachait.** Le collage archivé porte cinq blocs `conf` — M1, M4,
+M5, M8, M9 — et ses cinq lignes de section C ; ses deux lignes exploratoires (M3,
+M7) n'en portent aucune. « 5 » valait donc aussi bien « tous les blocs » que
+« ceux de la section C », et un appariement qui aurait ignoré C-bis **aurait rendu
+exactement le même nombre**.
+
+Deux corrections, sans toucher à la fixture — c'est un vrai collage reçu :
+
+- l'attribution se vérifie **ligne par ligne** et plus seulement en compte ;
+- un second test compose les mêmes 21 559 caractères **plus** les deux blocs que
+  le gabarit réclame du côté exploratoire depuis le lot 9. Le compte monte à
+  **sept**, les sept lignes portent le leur, le drapeau exploratoire ne bouge pas,
+  et les crans de C-bis valent 1.
+
+---
+
+## §7 — Ce que la mesure contredit dans le brief
+
+**Quatre affirmations, et la première portait sur le point le plus important.**
+
+| Ce qui était affirmé | Ce que la mesure dit |
+| --- | --- |
+| « `add_pick` a perdu son décorateur, et **rien n'a échoué** » | le test **a mordu**, sur ses deux assertions, et c'est par lui que le défaut a été trouvé. Ce qui est resté aveugle est `selfcheck`, dont le dénominateur est un **agrégat de familles** insensible à un déplacement |
+| « le correctif de forme : l'énumération doit venir d'une source indépendante du registre » | **elle en venait déjà** — l'AST, sur les corps de fonction. Ce qui manquait est que le contrôle d'exploitation s'en serve |
+| « le budget ne borne plus depuis les lots de **6 à 12** matchs » | depuis le changement de réglage, les lots vont de **4 à 9**. Aucun n'a atteint 12 ; la direction est juste, la borne inventée |
+| « combien viennent d'un `manque_touche_facteur` déclaré `true` **alors qu'aucun fait n'est touché** » | aucun. `true` fait rendre **3** à la table — un plafond — et le modèle a déclaré **2**, donc *sous* son propre plafond. Il n'y a pas de déclaration abusive, il y a une sous-déclaration systématique |
+
+### La leçon de méthode du lot
+
+**Un garde-fou peut être vivant et son voyant éteint.** Le réflexe, devant
+« `selfcheck` disait 10/10 », est de conclure que le contrôle est mort et de le
+réécrire. La mesure dit qu'il y en avait **deux**, que l'un a fait son travail, et
+que l'autre regardait la bonne chose au mauvais niveau d'agrégation.
+
+Réécrire le premier aurait coûté du temps et n'aurait rien réparé. La distinction
+ne se voit qu'en **rejouant la panne** — ce qui est aussi, exactement, ce que le
+test du test institutionnalise pour la prochaine fois.
