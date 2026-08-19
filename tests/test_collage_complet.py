@@ -32,6 +32,7 @@ from myassistantbet.config import Settings
 from myassistantbet.services import board as board_service
 from myassistantbet.services import picks_import
 from myassistantbet.services.manual import build, save
+from myassistantbet.services.render import ESTIMATED_MARK
 
 #: Le collage réel du 19/08/2026, 21 559 caractères, tel qu'il a été reçu —
 #: clôtures de blocs mangées par le rendu, tabulations à la place des barres,
@@ -52,8 +53,14 @@ ATTENDU = {
 
 #: Les en-têtes du prompt d'origine : c'est contre eux que la somme de contrôle
 #: de l'appariement se fait. Recopiés du prompt 159 de la base servie.
+#: Les en-tetes portent la mention `(estimée)`, comme le rendu servi depuis le
+#: lot 12. **C'est la forme qui va reellement arriver a l'import**, et le test de
+#: bout en bout doit la voir : la somme de controle de l'appariement compare
+#: l'affiche d'un en-tete a la colonne Match d'un tableau colle, et un champ
+#: ajoute a l'en-tete est exactement le genre de changement qui la ferait mordre
+#: sans qu'on le voie avant le lendemain.
 ENTETES = "\n".join(
-    f"### M{index} · TENNIS · {tournoi} Cincinnati Open · {affiche} · {heure}"
+    f"### M{index} · TENNIS · {tournoi} Cincinnati Open · {affiche} · {heure} {ESTIMATED_MARK}"
     for index, (tournoi, affiche, heure) in enumerate(
         [
             ("WTA", "Diana Shnaider – Elena Rybakina", "19/08 20:00"),
@@ -211,3 +218,75 @@ def test_les_blocs_de_c_bis_sont_comptes_eux_aussi(lot: int, migrated: Settings)
     assert [pick.exploratory for pick in preview.picks] == [False] * 5 + [True] * 2
     # Et le cran des lignes de C-bis est bien celui d'une lecture.
     assert [pick.claim.rung for pick in preview.picks[5:]] == [1, 1]
+
+
+# -- Le contrat entre celui qui ecrit l'en-tete et ceux qui le lisent ---------
+
+
+def test_tous_les_lecteurs_d_entete_connus_lisent_un_en_tete_reel() -> None:
+    """**Un seul test corrigé ne prouve pas qu'il n'y avait qu'un seul lecteur.**
+
+    L'en-tête de bloc est écrit à **un** endroit — `render._header` — et lu à
+    **cinq**. Le lot 12 y a ajouté un champ (`(estimée)`), et rien ne garantissait
+    que les cinq le supportent : la somme de contrôle de l'appariement compare
+    l'affiche d'un en-tête à la colonne Match d'un tableau collé, et elle tombe en
+    tout ou rien. Une régression y coûterait **tous** les imports d'une journée,
+    sans rien afficher d'anormal.
+
+    Ce test prend un en-tête **réellement rendu** et le passe à chacun. Il casse
+    le jour où un champ est ajouté sans que tous suivent — ce qui est le
+    comportement voulu.
+    """
+    import re
+
+    from myassistantbet.services import history as history_service
+    from myassistantbet.services import prompt as prompt_service
+    from myassistantbet.services.picks_import import (
+        HEADER_AFFICHE,
+        HEADER_FIELDS,
+        _affiche_of,
+    )
+    from myassistantbet.services.render import ESTIMATED_MARK
+
+    entete = (
+        "### M4 · TENNIS · ATP Cincinnati Open · "
+        f"Taylor Fritz – Christopher O'Connell · 20/08 01:00 {ESTIMATED_MARK}"
+    )
+
+    # 1. `render` écrit cinq champs : repère, sport, compétition, affiche, heure.
+    champs = entete.split(" · ")
+    assert len(champs) == HEADER_FIELDS + 1, (
+        "l'en-tête a changé de nombre de champs : les lecteurs ci-dessous le "
+        "découpent par position, et un champ inséré les décalerait tous"
+    )
+
+    # 2. `picks_import._affiche_of` — la somme de contrôle de l'appariement.
+    #    C'est le lecteur dont une régression coûterait le plus cher.
+    assert _affiche_of(entete.split("### M4 · ", 1)[1]) == "Taylor Fritz – Christopher O'Connell"
+    assert champs[HEADER_AFFICHE + 1] == "Taylor Fritz – Christopher O'Connell"
+
+    # 3. `history._NUMBERED_HEADER` — le repère et le reste, pour `prompt_headers`.
+    numerote = re.findall(r"^### (M\d+) · (.+)$", entete, re.MULTILINE)
+    assert numerote == [("M4", entete.split("### M4 · ", 1)[1])]
+
+    # 4. `history._BLOCK_HEADER` — l'identité du match, pour les lots reconstruits.
+    assert history_service._BLOCK_HEADER.findall(entete) == [entete.split("### M4 · ", 1)[1]]
+
+    # 5. `prompt.BLOCK_HEADER` — la frontière du découpage de coût, et
+    #    `coverage_gabarit` qui la réutilise telle quelle.
+    assert prompt_service.BLOCK_HEADER.search(entete) is not None
+
+
+def test_la_marque_d_estimation_ne_deplace_pas_l_affiche() -> None:
+    """**La mention s'ajoute au dernier champ, jamais au milieu.**
+
+    C'est ce qui rend le changement sûr : l'affiche reste en troisième position,
+    donc la somme de contrôle compare la même chose qu'avant. Le test le vérifie
+    en confrontant les deux formes plutôt qu'en le supposant.
+    """
+    from myassistantbet.services.picks_import import _affiche_of
+    from myassistantbet.services.render import ESTIMATED_MARK
+
+    nu = "TENNIS · ATP Cincinnati Open · Fritz – O'Connell · 20/08 01:00"
+
+    assert _affiche_of(f"{nu} {ESTIMATED_MARK}") == _affiche_of(nu) == "Fritz – O'Connell"
