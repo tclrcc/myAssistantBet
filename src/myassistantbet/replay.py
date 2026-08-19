@@ -387,9 +387,7 @@ def attach(
     # pour interdire.
     report.rejects.extend(preview.rejects)
     if write:
-        ingestion_service.record(
-            collage.session_id, report.rejects, settings, import_id=import_id
-        )
+        ingestion_service.record(collage.session_id, report.rejects, settings, import_id=import_id)
     return report
 
 
