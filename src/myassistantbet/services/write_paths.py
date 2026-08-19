@@ -42,8 +42,11 @@ chemin a tracer, et la recursion n'apprendrait rien.
 
 from __future__ import annotations
 
+import ast
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TypeVar
 
 from .ingestion import BLOCK_TYPES
@@ -52,6 +55,140 @@ from .ingestion import BLOCK_TYPES
 #: qui en porte une doit figurer au registre, et le test le verifie par lecture
 #: de la source.
 GUARDED = ("picks", "combos", "combo_legs", "set_scores")
+
+
+#: La racine du paquet, pour les deux recensements de source ci-dessous.
+PACKAGE = Path(__file__).resolve().parent.parent
+
+#: `INSERT INTO picks (…`, quelle que soit la mise en forme du SQL.
+#:
+#: **`OR REPLACE` et `REPLACE INTO` y sont, et c'est une porte fermee plutot
+#: qu'un defaut repare** : mesure du 19/08/2026, aucune des deux formes n'existe
+#: dans le depot. Le critere d'origine ne les voyait pas, et une ecriture posee
+#: sous cette forme aurait donc echappe au recensement sans qu'aucune ligne ne le
+#: dise — le motif que ce module existe pour supprimer.
+INSERT = re.compile(
+    r"\b(?:insert(?:\s+or\s+\w+)?|replace)\s+into\s+(" + "|".join(GUARDED) + r")\b",
+    re.IGNORECASE,
+)
+
+
+def _qualname(tree: ast.Module, target: ast.AST) -> str:
+    """Le `qualname` d'un noeud, reconstruit depuis la racine du module."""
+    chemin: list[str] = []
+
+    def descend(node: ast.AST, prefixe: list[str]) -> bool:
+        for child in ast.iter_child_nodes(node):
+            if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+                suite = [*prefixe, child.name]
+                if child is target:
+                    chemin.extend(suite)
+                    return True
+                if descend(child, suite):
+                    return True
+            elif descend(child, prefixe):
+                return True
+        return False
+
+    descend(tree, [])
+    return ".".join(chemin)
+
+
+def _modules(root: Path) -> list[tuple[str, ast.Module]]:
+    """Chaque module du paquet, avec son nom qualifie et son arbre."""
+    out = []
+    for path in sorted(root.rglob("*.py")):
+        parts = path.relative_to(root.parent).with_suffix("").parts
+        out.append((".".join(parts), ast.parse(path.read_text(encoding="utf-8"), str(path))))
+    return out
+
+
+def inserting_functions(root: Path | None = None) -> dict[str, tuple[str, ...]]:
+    """Nom qualifie -> tables gardees, pour toute fonction du paquet qui insere.
+
+    **C'est l'enumeration independante du registre**, et c'est ce qui empeche le
+    controle de se comparer a lui-meme. Elle se pose sur la chose : un
+    `INSERT INTO` vers une table gardee, dans le corps d'une fonction. Aucun
+    nommage, aucune discipline, aucun decorateur — donc rien qu'un deplacement
+    de decorateur puisse rendre invisible.
+
+    **Toutes les tables et non la premiere.** Le critere s'arretait au premier
+    `INSERT` trouve : `combos.record` en porte deux — `combos` puis `combo_legs` —
+    et n'etait donc recense que sur l'un des deux. Sans effet sur la question
+    « est-elle declaree », mais le message d'erreur nommait une table sur deux.
+    """
+    found: dict[str, tuple[str, ...]] = {}
+    for module, tree in _modules(root or PACKAGE):
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            tables = {
+                trouve.group(1).lower()
+                for child in ast.walk(node)
+                if isinstance(child, ast.Constant) and isinstance(child.value, str)
+                for trouve in [INSERT.search(child.value)]
+                if trouve
+            }
+            if tables:
+                found[f"{module}.{_qualname(tree, node)}"] = tuple(sorted(tables))
+    return found
+
+
+def decorated_nodes(root: Path | None = None) -> dict[str, str]:
+    """Nom qualifie -> genre du noeud, pour tout ce que `@writes` decore.
+
+    **Troisieme vue, et c'est elle qui nomme le defaut du lot 9.** Le registre
+    d'execution dit *qu'une* declaration existe ; il ne dit pas qu'elle porte sur
+    une fonction. Un `@dataclass` glisse entre le decorateur et `add_pick` a
+    transfere la declaration sur la classe : le registre restait plein, et
+    `declared_block_types()` — un agregat de familles — ne bougeait pas d'un
+    mot. Cette vue-ci rend le genre du noeud, donc « declaration posee sur une
+    classe » se lit directement.
+
+    Elle est **de source**, comme le recensement d'insertion, ce qui rend le
+    couple testable par mutation sans importer quoi que ce soit.
+    """
+    found: dict[str, str] = {}
+    for module, tree in _modules(root or PACKAGE):
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+                continue
+            for decorator in node.decorator_list:
+                appel = decorator.func if isinstance(decorator, ast.Call) else decorator
+                nom = appel.attr if isinstance(appel, ast.Attribute) else getattr(appel, "id", "")
+                if nom == "writes":
+                    genre = "classe" if isinstance(node, ast.ClassDef) else "fonction"
+                    found[f"{module}.{_qualname(tree, node)}"] = genre
+    return found
+
+
+def mismatches(root: Path | None = None) -> list[str]:
+    """Les desaccords entre les trois vues, en clair. Vide quand tout tient.
+
+    **Trois vues et non deux**, parce qu'elles echouent differemment :
+
+    - `inserting_functions` lit les corps : elle voit une fonction qui ecrit,
+      declaree ou non ;
+    - `decorated_nodes` lit les decorateurs : elle voit une declaration posee
+      ailleurs que sur une fonction — le defaut exact du lot 9 ;
+    - `REGISTRY` est le seul temoin d'execution : il voit une declaration qui
+      n'a jamais tourne, faute d'import.
+
+    Aucune ne se derive d'une autre. C'est la condition pour qu'un controle
+    prouve quelque chose plutot que de se comparer a lui-meme.
+    """
+    ecrivains = inserting_functions(root)
+    decores = decorated_nodes(root)
+    out = []
+    for nom, tables in sorted(ecrivains.items()):
+        if nom not in decores:
+            out.append(f"{nom} insère dans {', '.join(tables)} sans porter @writes")
+    for nom, genre in sorted(decores.items()):
+        if genre != "fonction":
+            out.append(f"{nom} porte @writes alors que c'est une {genre}")
+        elif nom not in ecrivains:
+            out.append(f"{nom} porte @writes et n'insère plus dans aucune table gardée")
+    return out
 
 
 @dataclass(frozen=True)

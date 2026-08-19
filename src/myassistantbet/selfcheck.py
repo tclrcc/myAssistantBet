@@ -118,6 +118,21 @@ class Report:
     #: attendus : sans lui, « 8 sur 8 » compare une liste a elle-meme.
     families: tuple[str, ...] = ()
     paths: tuple[str, ...] = ()
+    #: Les desaccords entre les trois vues du registre d'ecriture.
+    #:
+    #: **C'est ce qui manquait, et le lot 9 l'a prouve.** `add_pick` a perdu sa
+    #: declaration — un `@dataclass` glisse entre le decorateur et la fonction —
+    #: et ce controle affichait `10 sur 10` pendant ce temps. La cause n'est pas
+    #: qu'il regardait mal : c'est que son denominateur, `declared_block_types()`,
+    #: **agrege les familles**. La declaration etait passee sur la classe, donc
+    #: les memes trois familles restaient declarees, et l'agregat ne bougeait pas
+    #: d'un mot. Le registre restait plein, avec la mauvaise cle.
+    #:
+    #: Un controle dont le denominateur vient de ce qu'il controle ne peut pas
+    #: voir un deplacement a l'interieur. Celui-ci lit donc **aussi** la source,
+    #: par `write_paths.mismatches()` — la meme fonction que le test, ecrite une
+    #: fois : deux implementations de la meme regle auraient diverge.
+    mismatches: list[str] = field(default_factory=list)
 
     @property
     def failures(self) -> list[Check]:
@@ -136,6 +151,15 @@ class Report:
             f"{len(self.failures)} manque(s)"
         ]
         out += [check.line for check in self.checks]
+        for ecart in self.mismatches:
+            out.append(f"  REGISTRE  {ecart}")
+        if self.mismatches:
+            out.append(
+                "Le registre d'écriture ne décrit plus le code : une fonction insère sans "
+                "être déclarée, ou une déclaration s'est posée ailleurs que sur une "
+                "fonction. Le compte ci-dessus reste vert parce qu'il dérive du registre — "
+                "c'est précisément ce qu'il ne peut pas voir tout seul."
+            )
         if self.failures:
             out.append(
                 "Un chemin d'import ne journalise pas ses rejets : une table vide y "
@@ -299,7 +323,11 @@ def run(settings: Settings | None = None) -> Report:
     """
     write_paths.load()
     familles = write_paths.declared_block_types()
-    report = Report(families=familles, paths=tuple(PATHS))
+    # **La source, en plus du registre.** Un controle dont le denominateur vient
+    # de ce qu'il controle ne peut pas voir un deplacement a l'interieur : c'est
+    # ce qui l'a laisse afficher « 10 sur 10 » pendant que `add_pick` n'etait
+    # plus declaree.
+    report = Report(families=familles, paths=tuple(PATHS), mismatches=write_paths.mismatches())
     for chemin, executer in PATHS.items():
         for nom in familles:
             motif = IMPOSSIBLE.get(chemin, {}).get(nom)
@@ -383,9 +411,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.parse_args(argv)
     logging.basicConfig(level=logging.WARNING, format="%(levelname)-8s %(message)s")
     report = run()
+    faute = bool(report.failures or report.mismatches)
     for line in report.lines:
-        print(line, file=sys.stderr if report.failures else sys.stdout)
-    return 1 if report.failures else 0
+        print(line, file=sys.stderr if faute else sys.stdout)
+    return 1 if faute else 0
 
 
 if __name__ == "__main__":  # pragma: no cover
