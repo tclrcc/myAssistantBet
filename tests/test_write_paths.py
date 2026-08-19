@@ -222,3 +222,43 @@ def test_un_type_de_bloc_inconnu_est_refuse_a_la_declaration() -> None:
     """
     with pytest.raises(ValueError, match="Type de bloc inconnu"):
         write_paths.writes("confiance")
+
+
+def test_tout_chemin_d_entree_journalise_ou_declare_pourquoi_il_ne_peut_pas() -> None:
+    """**Il était muet, et c'est la deuxième fois sur le même fichier.**
+
+    `CONTRIBUTING.md` dit de la première : « `myassistantbet-replay` a été écrit
+    le même jour et par la même main que cette phrase, et il a laissé tomber ses
+    échecs d'écriture sans les journaliser ». Le rattachement du lot 9 l'a refait
+    — un bloc qui ne trouve pas sa sélection, un combiné dont une jambe manque,
+    se disaient à l'écran et nulle part ailleurs.
+
+    `PATHS` s'énumère à la main : rien dans la source ne distingue une route
+    d'entrée d'une route quelconque. Ce test ne peut donc pas prouver que la
+    liste est complète — il vérifie ce qui est prouvable : que **chaque chemin
+    listé** couvre chaque famille du registre, ou déclare pourquoi il ne le peut
+    pas. Une exemption se déclare, elle ne se devine pas : sans cette table, le
+    premier réflexe devant un manque serait de retirer le chemin de la liste,
+    c'est-à-dire de le rendre muet à nouveau.
+    """
+    from myassistantbet import selfcheck
+
+    write_paths.load()
+    familles = set(write_paths.declared_block_types())
+    inconnues = {
+        (chemin, nom)
+        for chemin, exemptions in selfcheck.IMPOSSIBLE.items()
+        for nom in exemptions
+        if nom not in familles
+    }
+
+    assert not inconnues, (
+        f"Ces exemptions visent une famille que le registre ne déclare plus : {inconnues}. "
+        "Une exemption qui ne correspond à rien fait passer un contrôle pour couvert."
+    )
+    assert set(selfcheck.IMPOSSIBLE) <= set(selfcheck.PATHS), (
+        "Une exemption sur un chemin qui n'existe pas ne garde rien."
+    )
+    assert "rattachement" in selfcheck.PATHS, (
+        "Le rattachement écrit dans `combos` : sans son entrée ici, il ne se contrôle nulle part."
+    )

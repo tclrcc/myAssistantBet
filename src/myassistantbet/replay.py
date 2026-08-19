@@ -215,6 +215,15 @@ class AttachReport:
     marks: int = 0
     combos: int = 0
     combo_failures: list[str] = field(default_factory=list)
+    #: Ce que ce chemin a **perdu**, journalise comme partout ailleurs.
+    #:
+    #: **Il ne l'etait pas, et c'est la deuxieme fois sur ce fichier.**
+    #: `CONTRIBUTING.md` dit de la premiere : « `myassistantbet-replay` a ete
+    #: ecrit le meme jour et par la meme main que cette phrase, et il a laisse
+    #: tomber ses echecs d'ecriture sans les journaliser ». Le rattachement l'a
+    #: refait — un bloc qui ne trouve pas sa selection, un combine dont une jambe
+    #: manque, se disaient a l'ecran et nulle part ailleurs.
+    rejects: list[ingestion_service.Reject] = field(default_factory=list)
     dry_run: bool = True
 
     @property
@@ -285,6 +294,16 @@ def attach(
             continue
         if cible is None:
             report.unmatched.append(f"{pick.market} {pick.selection} : {motif}")
+            report.rejects.append(
+                ingestion_service.Reject(
+                    block_type=ingestion_service.CONF,
+                    reason=ingestion_service.MATCH_REF_UNRESOLVED,
+                    detail=f"{pick.market} {pick.selection} : {motif}",
+                    payload=pick.claim.raw,
+                    start=pick.claim.start,
+                    end=pick.claim.end,
+                )
+            )
             continue
         if not write:
             deja = history_service.has_claim(cible, settings)
@@ -318,9 +337,20 @@ def attach(
     for attache in preview.combos:
         manquantes = [row for row in attache.rows if row not in par_ligne]
         if manquantes:
-            report.combo_failures.append(
+            motif = (
                 f"Combiné {attache.combo.kind or '?'} non rattaché : "
                 f"{len(manquantes)} de ses {len(attache.rows)} jambes ne se retrouvent pas."
+            )
+            report.combo_failures.append(motif)
+            report.rejects.append(
+                ingestion_service.Reject(
+                    block_type=ingestion_service.COMBO,
+                    reason=ingestion_service.MATCH_REF_UNRESOLVED,
+                    detail=motif,
+                    payload=", ".join(attache.combo.marks),
+                    start=attache.combo.start,
+                    end=attache.combo.end,
+                )
             )
             continue
         if not write:
@@ -341,6 +371,25 @@ def attach(
             report.combos += 1
         except (combos_service.ComboError, KeyError, ValueError) as exc:
             report.combo_failures.append(f"Combiné {attache.combo.kind or '?'} : {exc}")
+            report.rejects.append(
+                ingestion_service.Reject(
+                    block_type=ingestion_service.COMBO,
+                    reason=reject_reason(str(exc)),
+                    detail=f"Combiné {attache.combo.kind or '?'} : {exc}",
+                    payload=", ".join(attache.combo.marks),
+                    start=attache.combo.start,
+                    end=attache.combo.end,
+                )
+            )
+    # **Les rejets de l'apercu voyagent avec les notres.** Ce chemin relit un
+    # collage entier : ce que la lecture y perd est perdu ici aussi, et le taire
+    # ferait de `--rattacher` le chemin muet que `selfcheck-ingestion` existe
+    # pour interdire.
+    report.rejects.extend(preview.rejects)
+    if write:
+        ingestion_service.record(
+            collage.session_id, report.rejects, settings, import_id=import_id
+        )
     return report
 
 

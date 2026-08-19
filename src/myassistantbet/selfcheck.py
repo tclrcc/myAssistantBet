@@ -244,9 +244,48 @@ def _by_replay(session_id: int, raw: str, settings: Settings) -> set[str]:
 #: (`tests/test_write_paths.py`). Un chemin d'ecriture ajoute sans declaration
 #: fait echouer la suite ; c'est ce que la regle de `CONTRIBUTING.md` ne faisait
 #: pas, et `replay` l'a prouve en la violant le jour meme de sa redaction.
+def _by_attach(session_id: int, raw: str, settings: Settings) -> set[str]:
+    """Le chemin du rattachement : `--rattacher`, qui complete sans creer.
+
+    **Il etait muet, et c'est la deuxieme fois sur ce fichier.**
+    `CONTRIBUTING.md` dit de la premiere : « `myassistantbet-replay` a ete ecrit
+    le meme jour et par la meme main que cette phrase, et il a laisse tomber ses
+    echecs d'ecriture sans les journaliser ». Le rattachement l'a refait, et rien
+    ne l'aurait dit — `PATHS` s'enumere a la main, donc un chemin d'entree ajoute
+    sans son entree ici ne se controle nulle part.
+    """
+    from .replay import attach
+
+    import_id = imports_raw.record(session_id, raw, imports_raw.REPLAY, settings)
+    if import_id is None:
+        return set()
+    return {
+        reject.block_type for reject in attach(import_id, write=True, settings=settings).rejects
+    }
+
+
 PATHS: dict[str, Callable[[int, str, Settings], set[str]]] = {
     "formulaire": _by_form,
     "rejeu": _by_replay,
+    "rattachement": _by_attach,
+}
+
+#: Les familles qu'un chemin **ne peut pas** produire, avec la raison.
+#:
+#: **Une exemption se declare, elle ne se devine pas.** Sans cette table, un
+#: chemin qui n'ecrit qu'une partie des familles apparaitrait en manque sur les
+#: autres, et le premier reflexe serait de le retirer de `PATHS` — c'est-a-dire
+#: de le rendre muet a nouveau, exactement ce qu'on vient de corriger.
+#:
+#: Le sens est celui du controle et non celui de la commodite : une famille n'y
+#: entre que si le chemin est **structurellement** incapable de la produire.
+IMPOSSIBLE: dict[str, dict[str, str]] = {
+    "rattachement": {
+        "selection": (
+            "ce chemin ne crée aucune sélection — il complète celles qui existent, "
+            "donc il ne peut pas en refuser une"
+        ),
+    },
 }
 
 
@@ -263,6 +302,12 @@ def run(settings: Settings | None = None) -> Report:
     report = Report(families=familles, paths=tuple(PATHS))
     for chemin, executer in PATHS.items():
         for nom in familles:
+            motif = IMPOSSIBLE.get(chemin, {}).get(nom)
+            if motif:
+                report.checks.append(
+                    Check(path=chemin, fmt=nom, seen=True, detail=f"sans objet — {motif}")
+                )
+                continue
             if nom not in BROKEN:
                 report.checks.append(
                     Check(
