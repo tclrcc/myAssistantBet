@@ -2543,6 +2543,82 @@ def _here_for(
     return fragments, identifiant
 
 
+def contested_days(
+    player: str,
+    competition_id: int | None,
+    commence_time: str,
+    settings: Settings | None = None,
+) -> dict[str, int]:
+    """Combien de matchs **disputes** la source rapporte, par jour de tournoi.
+
+    **Elle sert a demonter une premisse, pas a nommer un adversaire**, et c'est
+    ce qui la rend utilisable. `tennis_load._resolve_duplicates` repose sur « un
+    joueur ne dispute qu'une rencontre par journee de tournoi » ; le jour ou la
+    source en compte deux, la premisse est fausse **pour ce jour-la**, et ca se
+    lit sans rapprocher un seul nom.
+
+    Mesure du 19/08/2026 qui l'impose. Sur Madison Keys – Xiyu Wang, le bloc rend
+    a quatre lignes d'ecart :
+
+        Non joue   Xiyu Wang — Bianca Andreescu le 13/08, adversaire remplace,
+                   non disputee
+        Ici        Xiyu Wang 13/08 bat Polina Kudermetova 6-3 6-2
+                   | 13/08 bat Bianca Vanessa Andreescu 6-0 6-4 | …
+
+    Nos deux scans du 13/08 sont reels, les deux matchs ont ete joues, et c'est
+    la deduction qui a produit un faux positif — le cas que `CLAUDE.md` annoncait
+    comme « ne s'observe pas en base ». Il s'observe.
+
+    **Le rapprochement par nom etait la fausse piste**, et il fallait le mesurer
+    pour l'ecarter : la source ecrit « Bianca Vanessa Andreescu » ou nos scans
+    disent « Bianca Andreescu », donc `sort_key` ne tombe pas et une comparaison
+    souple serait exactement le « en cas de doute on devine » que le projet
+    refuse partout. Le **jour**, lui, est le meme des deux cotes — verifie, la
+    journee de tournoi de nos deux evenements vaut `2026-08-13` et la source
+    date les deux matchs du meme jour.
+
+    **Positif seulement.** Un jour absent de la reponse ne prouve rien : la
+    source peut ne pas couvrir ce tournoi, ou ce joueur, ou n'avoir pas encore
+    publie. On ne leve donc la deduction que la ou la source **affirme**, jamais
+    la ou elle se tait.
+
+    **Hors du drapeau `CURRENT_EVENT_LINE_ENABLED`, et c'est deliberе.** Le
+    drapeau garde une ligne *ajoutee* au bloc ; ici on retire une affirmation
+    *fausse* d'une ligne deja servie. Attendre l'activation d'`Ici` laisserait
+    « adversaire remplace, non disputee » sur un match joue, sur toutes les
+    sessions d'ici la.
+    """
+    settings = settings or get_settings()
+    from .tennis_round import _edition_in_base
+
+    if not player or not competition_id or not commence_time:
+        return {}
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT oddsapi_key FROM competitions WHERE id = ?", (competition_id,)
+        ).fetchone()
+    circuit = circuit_of(str(row["oddsapi_key"]) if row and row["oddsapi_key"] else "")
+    if not circuit:
+        return {}
+    edition = _edition_in_base(competition_id, commence_time, settings)
+    if not edition.matches:
+        return {}
+    identity = load_identity(player, circuit, settings)
+    canonical = identity.canonical if identity and identity.resolved else player
+    charge, _ = archived_profile(canonical, settings)
+    if charge is None:
+        return {}
+    identifiant = _tournament_id(charge, canonical, (edition.matches[0][0], commence_time))
+    if not identifiant:
+        return {}
+    compte: dict[str, int] = {}
+    for item in _tournament_matches(charge, canonical, identifiant, commence_time):
+        if item.contested:
+            jour = str(item.played_on)[:10]
+            compte[jour] = compte.get(jour, 0) + 1
+    return compte
+
+
 def here_lines(
     home: str,
     away: str,

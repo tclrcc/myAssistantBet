@@ -2058,3 +2058,68 @@ def test_la_ligne_jeux_se_replie_sur_toutes_surfaces_et_le_dit(migrated: Setting
     # **La date est sur cette ligne**, les deux agregats pouvant differer.
     assert "arretees au 18/08" in lignes["Jeux"]
     assert "Hard" in lignes["Service"], "les points de service restent sur leur surface"
+
+
+# -- §4 — la contradiction entre `Non joue` et `Ici` --------------------------
+#
+# **Le cas s'est produit, et `CLAUDE.md` l'annonçait comme impossible.** La
+# déduction « un joueur ne dispute qu'une rencontre par journée de tournoi »
+# portait la limite : *« un tableau retardé par la pluie peut faire jouer deux
+# simples dans la même journée. Le cas ne s'observe pas en base. »* Relevé du
+# 19/08/2026 — Xiyu Wang a joué Kudermetova puis Andreescu le 13/08, et le bloc
+# annonçait « adversaire remplacé, non disputée » sur un match dont la source
+# porte le score et les statistiques de service.
+
+
+def test_la_source_compte_les_matchs_disputes_par_jour(migrated: Settings) -> None:
+    """**Elle sert à démonter une prémisse, pas à nommer un adversaire.**
+
+    C'est ce qui la rend utilisable : la source écrit « Bianca Vanessa
+    Andreescu » où nos scans disent « Bianca Andreescu », donc `sort_key` ne
+    tombe pas et un rapprochement souple serait le « en cas de doute on devine »
+    que le projet refuse partout. Le **jour**, lui, est le même des deux côtés.
+    """
+    competition = _tournoi(
+        migrated,
+        [("A", "X", "2026-08-14T12:00:00Z"), ("A", "B", "2026-08-18T12:00:00Z")],
+    )
+    _profil_tournoi(
+        "A",
+        [
+            _match_source("A", "X", "2026-08-14", "6-3 6-4"),
+            _match_source("A", "Z", "2026-08-14", "6-0 6-4"),
+            _match_source("A", "Y", "2026-08-16", "6-2 6-2"),
+        ],
+        migrated,
+    )
+
+    compte = serve_stats.contested_days("A", competition, "2026-08-18T12:00:00Z", migrated)
+
+    assert compte == {"2026-08-14": 2, "2026-08-16": 1}
+
+
+def test_un_forfait_ne_compte_pas_comme_un_match_dispute(migrated: Settings) -> None:
+    """Un tapis vert n'est pas un match joué — même règle qu'`Usure`, et c'est
+    elle qui empêche la levée de s'appliquer à un vrai forfait."""
+    competition = _tournoi(
+        migrated,
+        [("A", "X", "2026-08-14T12:00:00Z"), ("A", "B", "2026-08-18T12:00:00Z")],
+    )
+    # La source encode le forfait dans le score (`w/o`), jamais dans un champ a
+    # part : c'est `UNPLAYED_MARKS` qui le lit, et un test qui inventerait un
+    # autre format testerait la fixture au lieu de la regle.
+    _profil_tournoi("A", [_match_source("A", "X", "2026-08-14", "w/o")], migrated)
+
+    assert serve_stats.contested_days("A", competition, "2026-08-18T12:00:00Z", migrated) == {}
+
+
+def test_la_source_muette_ne_leve_rien(migrated: Settings) -> None:
+    """**Positif seulement.** Un jour absent de la réponse ne prouve rien : la
+    source peut ne pas couvrir ce tournoi, ce joueur, ou n'avoir pas encore
+    publié. On ne lève la déduction que là où elle **affirme**."""
+    competition = _tournoi(
+        migrated,
+        [("A", "X", "2026-08-14T12:00:00Z"), ("A", "B", "2026-08-18T12:00:00Z")],
+    )
+
+    assert serve_stats.contested_days("A", competition, "2026-08-18T12:00:00Z", migrated) == {}

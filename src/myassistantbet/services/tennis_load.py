@@ -220,7 +220,17 @@ def load_for(
             (played, int(row["id"]), autre, jour, _outcome(row["match_outcome_type"]))
         )
 
-    apparitions = _resolve_duplicates(programmees, {int(r["id"]): r["created_at"] for r in toutes})
+    # **Ce que la source affirme demonte la premisse, jour par jour.** La
+    # deduction ci-dessous repose sur « un joueur ne dispute qu'une rencontre par
+    # journee de tournoi » ; la ou la source en compte deux, elle est fausse pour
+    # ce jour-la. Aucun nom n'est rapproche — c'est le jour qui parle, et c'est
+    # ce qui rend la levee sure.
+    from .serve_stats import contested_days
+
+    disputes = contested_days(player, competition_id, commence_time, settings)
+    apparitions = _resolve_duplicates(
+        programmees, {int(r["id"]): r["created_at"] for r in toutes}, disputes
+    )
     disputees = [item for item in apparitions if item.contested]
 
     if not apparitions:
@@ -252,6 +262,7 @@ def _outcome(value: str | None) -> str | None:
 def _resolve_duplicates(
     programmees: list[tuple[datetime, int, str, str | None, str | None]],
     created: dict[int, str],
+    contested: dict[str, int] | None = None,
 ) -> list[Appearance]:
     """**Un joueur ne dispute qu'une rencontre par journee de tournoi.**
 
@@ -267,17 +278,41 @@ def _resolve_duplicates(
     contre Toby Samuel a 19h00 (enregistre a 12h32), puis contre Shintaro
     Mochizuki a 21h45 (enregistre a 21h51).
 
-    Limite assumee : un tableau retarde par la pluie peut faire jouer deux
-    simples dans la meme journee. Le cas ne s'observe pas en base, et le degat
-    serait une ligne de parcours en trop plutot qu'un repos faux — l'inverse de
-    ce que le silence coutait.
+    **La limite assumee s'est produite, et `contested` la leve.** Le commentaire
+    d'origine disait : « un tableau retarde par la pluie peut faire jouer deux
+    simples dans la meme journee. Le cas ne s'observe pas en base. » Il s'observe
+    depuis le 19/08/2026 — Xiyu Wang a joue Kudermetova puis Andreescu le 13/08,
+    et la deduction annoncait « adversaire remplace, non disputee » sur un match
+    dont la source porte le score et les statistiques de service.
+
+    `contested` compte, par journee, les matchs que la source declare **disputes**.
+    Au-dela d'un, la premisse est fausse pour cette journee : toutes les
+    apparitions scannees y sont tenues pour reelles.
+
+    **La levee est positive seulement.** Un jour absent de `contested` ne prouve
+    rien — la source peut ne pas couvrir ce tournoi, ce joueur, ou n'avoir pas
+    encore publie — et la deduction s'applique alors comme avant. On ne se fie
+    qu'a ce que la source **affirme**, jamais a son silence.
     """
     par_jour: dict[str, list[tuple[datetime, int, str, str | None, str | None]]] = {}
     for item in programmees:
         par_jour.setdefault(str(item[3]), []).append(item)
 
     resolues: list[tuple[datetime, int, Appearance]] = []
-    for lot in par_jour.values():
+    for jour, lot in par_jour.items():
+        if (contested or {}).get(jour, 0) > 1:
+            # Deux matchs disputes ce jour-la : rien n'est remplace, tout a ete
+            # joue. Le marquage a la main, lui, n'est pas touche — il n'est pas
+            # deduit, c'est un geste humain.
+            resolues.extend(
+                (
+                    played,
+                    identifiant,
+                    Appearance(day=str(j), opponent=autre, outcome=marque, start=played),
+                )
+                for played, identifiant, autre, j, marque in lot
+            )
+            continue
         tenue = max(lot, key=lambda item: (created.get(item[1]) or "", item[0], item[1]))
         for played, identifiant, autre, jour, marque in lot:
             remplacee = identifiant != tenue[1]

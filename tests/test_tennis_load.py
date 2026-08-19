@@ -588,3 +588,125 @@ def test_sans_evenement_la_fenetre_de_scan_ne_dit_rien(migrated: Settings) -> No
     """Une fenetre inventee sur une competition jamais scannee ferait chercher un
     trou de collecte la ou il n'y a rien eu a collecter."""
     assert tennis_load.scan_window(_competition(migrated), migrated) == ""
+
+
+def _profil_source(joueur: str, matchs: list[dict], settings: Settings) -> None:
+    """Archive une réponse `matches-played`. **Aucun appel** — c'est le contrat."""
+    import json
+
+    from myassistantbet.providers.tennisapi import PREFIX, PROVIDER
+
+    db.execute(
+        "INSERT INTO api_responses (provider, endpoint, path, params, raw_json, sha256, "
+        "  http_status, fetched_at) VALUES (?, 'profile/matches-played', ?, '{}', ?, ?, 200, ?)",
+        (
+            PROVIDER,
+            f"{PREFIX}/profile/{joueur}/matches-played",
+            json.dumps({"singles": matchs}),
+            f"sha-{joueur}",
+            "2026-08-12T06:00:00Z",
+        ),
+        settings=settings,
+    )
+
+
+def _match_joue(gagnant: str, perdant: str, jour: str, score: str, tournoi: int = 900) -> dict:
+    stats = {
+        "firstServe": {"value": "20/30"},
+        "firstServePointsWon": {"value": "15/20"},
+        "doubleFaults": {"value": "2"},
+    }
+    return {
+        "tournamentId": tournoi,
+        "date": f"{jour}T12:00:00.000Z",
+        "result": score,
+        "player1": {"name": gagnant, "stats": dict(stats)},
+        "player2": {"name": perdant, "stats": dict(stats)},
+        "tournament": {"id": tournoi, "name": "Tournoi", "court": {"name": "Hard"}},
+    }
+
+
+def test_deux_matchs_disputes_le_meme_jour_ne_font_plus_un_remplacement(
+    migrated: Settings,
+) -> None:
+    """**La limite assumée s'est produite, et la source la lève.**
+
+    Le commentaire d'origine disait : « un tableau retardé par la pluie peut
+    faire jouer deux simples dans la même journée. Le cas ne s'observe pas en
+    base. » Relevé du 19/08/2026 — Xiyu Wang a joué Kudermetova puis Andreescu
+    le 13/08, et le bloc annonçait « adversaire remplacé, non disputée » sur un
+    match dont la source porte le score et les statistiques de service.
+
+    **Aucun nom n'est rapproché** : la source écrit « Bianca Vanessa Andreescu »
+    où nos scans disent « Bianca Andreescu ». C'est le **jour** qui parle, et
+    c'est ce qui rend la levée sûre.
+    """
+    # La fenetre de l'edition part de notre premier scan : les matchs de la
+    # source doivent y tomber, sinon le tournoi ne se resout pas. C'est le
+    # comportement voulu — `_tournament_id` lit dans la fenetre de notre edition
+    # et jamais sur le dernier tournoi du joueur.
+    _match(migrated, "Xiyu Wang", "Bianca Andreescu", "2026-08-11T12:00:00Z")
+    _match(migrated, "Xiyu Wang", "Polina Kudermetova", "2026-08-11T16:30:00Z")
+    _profil_source(
+        "Xiyu Wang",
+        [
+            _match_joue("Xiyu Wang", "Polina Kudermetova", "2026-08-11", "6-3 6-2"),
+            _match_joue("Xiyu Wang", "Bianca Vanessa Andreescu", "2026-08-11", "6-0 6-4"),
+        ],
+        migrated,
+    )
+    quand = "2026-08-12T18:30:00Z"
+
+    charge = tennis_load.load_for("Xiyu Wang", _competition(migrated), quand, migrated)
+    non_joue = tennis_load.unplayed_lines(
+        "Xiyu Wang", "Madison Keys", _competition(migrated), quand, None, migrated
+    )
+
+    assert not non_joue, "la source dit que les deux ont été disputés"
+    assert set(charge.opponents) == {"Bianca Andreescu", "Polina Kudermetova"}
+
+
+def test_la_source_muette_laisse_la_deduction_agir(migrated: Settings) -> None:
+    """**La levée est positive seulement.** Un jour absent ne prouve rien — la
+    source peut ne pas couvrir ce tournoi, ce joueur, ou n'avoir pas encore
+    publié — et la déduction s'applique alors comme avant."""
+    _match(migrated, "JJ Wolf", "Toby Samuel", "2026-08-11T19:00:00Z")
+    _match(migrated, "JJ Wolf", "Shintaro Mochizuki", "2026-08-11T21:45:00Z")
+    quand = "2026-08-12T18:30:00Z"
+
+    non_joue = tennis_load.unplayed_lines(
+        "JJ Wolf", "Sho Shimabukuro", _competition(migrated), quand, None, migrated
+    )
+
+    assert "adversaire remplace" in non_joue[0][1]
+
+
+def test_un_forfait_saisi_a_la_main_survit_a_la_source(migrated: Settings) -> None:
+    """**La levée ne touche que ce qui est déduit.** Un marquage à la main est un
+    geste humain, pas une heuristique : la source ne l'écrase pas.
+
+    Et le cas ne se pose pas en pratique — mesuré le 19/08/2026 sur O'Connell —
+    Fonseca, où `Non joue` dit « forfait adverse » depuis nos scans et où la
+    source rend « 18/08 forfait de Joao Fonseca » : les deux tombent sur la même
+    lecture, sans se contredire.
+    """
+    _match(migrated, "Alina Korneeva", "Coco Gauff", "2026-08-11T12:00:00Z")
+    _match(migrated, "Belinda Bencic", "Coco Gauff", "2026-08-11T23:00:00Z")
+    _marquer(migrated, "Belinda Bencic", "Coco Gauff", tennis_load.WALKOVER)
+    # La source rapporte deux matchs disputes le meme jour : la deduction se
+    # leve, le marquage a la main reste.
+    _profil_source(
+        "Coco Gauff",
+        [
+            _match_joue("Coco Gauff", "Alina Korneeva", "2026-08-11", "6-3 6-4"),
+            _match_joue("Coco Gauff", "Someone Else", "2026-08-11", "6-0 6-4"),
+        ],
+        migrated,
+    )
+    quand = "2026-08-13T00:30:00Z"
+
+    non_joue = tennis_load.unplayed_lines(
+        "Coco Gauff", "Elena Rybakina", _competition(migrated), quand, None, migrated
+    )
+
+    assert non_joue and "forfait adverse" in non_joue[0][1]
