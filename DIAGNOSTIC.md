@@ -1,36 +1,51 @@
-# ÉTAT AU 19/08/2026, 19h00 — à lire en premier
+# ÉTAT AU 19/08/2026, 20h30 — à lire en premier
 
-**En service** : schéma **62**, `SERVE_LINES_ENABLED=1`,
-`CURRENT_EVENT_LINE_ENABLED=0`. La ligne **`Jeux` sort pour la première fois** —
-deux blocages levés le même jour, aucun n'était un manque de volume. La ligne
-**`Ici`** (tournoi en cours) est écrite, testée et **désactivée**.
+**En service** : schéma **63**, `SERVE_LINES_ENABLED=1`,
+`CURRENT_EVENT_LINE_ENABLED=0`.
 
-**Le point le plus lourd du lot, et il était classé avant-dernier** : le collage
-complet demandé depuis avant-hier **arrivait**, et l'import **jetait la section C**
-— une phrase de la section B qui mentionne « C-bis » faisait basculer la lecture
-avant le tableau principal. Corrigé. Rejeu des deux collages réels : **5 sélections
-et 5 blocs de confiance appariés** de chaque côté, contre 2 et 0 auparavant.
+**Ce que le lot 9 a récupéré, en écriture sur la base servie** : les blocs de
+confiance des trois collages complets étaient produits, transmis, et posés nulle
+part. `myassistantbet-replay --rattacher` les a posés — **15 blocs sur 15**, le
+**premier combiné de l'histoire de la base** (3 jambes), et la ligne
+`dossiers_ouverts` de la session 17 (9 repères). **Zéro sélection créée, zéro
+doublon**, les trois populations strictement inchangées (218 / 16 / 52 = 286).
 
-**Le geste de demain n'a pas changé** : coller la réponse entière. Elle sera
-maintenant lue en entier — crans calculés, dossiers ouverts, scores en sets.
+**Le geste de demain n'a pas changé** : coller la réponse entière. Le gabarit
+demande désormais un bloc `conf` **aussi sous la section C-bis**.
+
+**Trois premisses du brief que la mesure a renversées** :
+
+1. **le budget de recherche ne bornait rien.** « 6, 7 et 9 repères pour un budget
+   de 10 » se lit comme un modèle qui s'approche de son budget ; les lots
+   correspondants comptaient **exactement 6, 7 et 9 blocs**. Le budget effectif
+   valait 6, 7 et 9, et le lot entier a été déclaré les trois fois ;
+2. **`hors_dossiers` n'était pas une observation sur le modèle**, contrairement à
+   ce que le lot 8 a conclu : c'était un défaut de collecte, le repli de
+   résolution ayant choisi le mauvais prompt parmi les trois de la session ;
+3. **la seconde moitié du principe `Non joué` / `Ici` est sans objet** : `Ici`
+   nomme déjà les forfaits, donc rien à coder de ce côté.
+
+**Ce qui reste ouvert** :
+
+- **§2d — la puce « Ses matchs déjà joués dans ce tournoi-ci »** du gabarit. Deux
+  variantes rédigées, aucune appliquée. Sa phrase « aucune de nos sources ne les
+  porte » devient fausse le jour où `Ici` s'active. **Ne s'arbitre qu'après avoir
+  vu `Ici` rendue sur quelques lots.**
+- **la métrique du retard**, spécifiée au lot 4, effectif reconfirmé au lot 9 :
+  52 tardives tranchées, 32/20, médiane 133 min, étendue 12 – 1 557. Toujours non
+  implémentée, en attente d'arbitrage.
+- **le service systemd n'a pas été redémarré** : le code et le schéma ont changé,
+  le processus servi porte encore les anciens.
+
+```bash
+sudo systemctl restart myassistantbet
+```
 
 **La passe de timelines tourne**, et se reprend sans état :
 
 ```bash
 uv run myassistantbet-timelines --joueurs 0 --reprise
 ```
-
-**Les trois décisions qui attendent** :
-
-1. **§2d — la puce « Ses matchs déjà joués dans ce tournoi-ci »** du gabarit. Deux
-   variantes rédigées, aucune appliquée. Sa phrase « aucune de nos sources ne les
-   porte » devient fausse le jour où `Ici` s'active.
-2. **§2c — la contradiction entre `Non joue` et `Ici`** sur un match réellement
-   joué deux fois dans la même journée de tournoi. À trancher **avant**
-   d'activer `CURRENT_EVENT_LINE_ENABLED`.
-3. **§4 — les lignes de C-bis portent-elles un bloc `conf` ?** Le gabarit ne le
-   dit pas, le modèle a répondu les deux fois d'une façon et deux fois de
-   l'autre. L'import s'accommode des deux, une phrase le trancherait.
 
 ---
 # DIAGNOSTIC — lot 1 : l'ingestion, les paliers hauts, et ce qui se perdait en silence
@@ -3697,3 +3712,484 @@ elle donne ici le **moins** bon résultat — 98,85 % contre 99,98 % — parce q
 casse le sens du score sans toucher à la position. Le réflexe reste juste, la
 mesure tranche autrement, et c'est écrit dans le module pour qu'il ne se re-dérive
 pas.
+
+---
+
+# DIAGNOSTIC — lot 9 : récupérer ce que le défaut a coûté, puis mesurer
+
+Relevé du **19/08/2026**, sur une copie de la base servie (275 Mo, 286 sélections,
+17 sessions). Aucune mesure n'est reprise du brief sans vérification ; **trois le
+contredisent**, et l'une contredit une conclusion du lot 8 — la mienne.
+
+**Une session concurrente travaillait le même brief sur le même arbre.** Elle a
+livré le §0b, le §3 et une première version du §0a avant d'être arrêtée ; son
+travail est repris ici, vérifié et complété. Deux défauts qu'elle avait laissés
+sont corrigés plus bas — une déclaration de registre perdue, et un chemin muet.
+
+---
+
+## §0a — Le rejeu, en écriture, sur les dix-neuf collages
+
+### La première question, et la réponse est « simulation »
+
+Le rapport du lot 8 annonçait « rejeu des trois collages complets à travers le
+code corrigé ». Mesure sur la base servie avant toute écriture :
+
+| | Base servie, 19/08 19h20 |
+| --- | ---: |
+| `picks.claim_raw_json` renseigné | **0 sur 286** |
+| `combos` / `combo_legs` | **0 / 0** |
+| `sessions.open_dossiers_state` | `absente` sur **toutes** |
+
+**C'était une simulation.** Le tableau du lot 8 décrivait ce qui pourrait être,
+pas ce qui est.
+
+### L'inventaire est complet, pas un échantillon
+
+Les dix-neuf collages archivés ont été balayés, pas les trois du rapport
+précédent. Le résultat le plus important est un **zéro** :
+
+| | Compte |
+| --- | ---: |
+| collages archivés | **19** |
+| collages rejoués | **19** |
+| collages portant des blocs `conf` | **3** (imports 14, 16, 18 — tous session 17) |
+| **sélections nouvelles** | **0** |
+| blocs `conf` posés | **15** |
+| combinés rattachés | **1** (3 jambes) |
+| `dossiers_ouverts` relues | **3** (6, 7 et 9 repères) |
+
+**Zéro sélection nouvelle change le geste de récupération, et c'est le résultat
+du §0a.** Les lignes de section C des trois collages complets sont déjà en
+base — entrées par les re-collages du seul tableau qui les ont suivis, avec
+`ligne_absente` donc un cran 1 forcé. Ce qui leur manquait n'était pas leur
+existence, c'était leur **bloc de confiance**. `replay` ne pouvait rien y faire :
+il crée, il ne complète pas.
+
+D'où `myassistantbet-replay --rattacher`, qui pose sur des sélections **déjà
+enregistrées** ce qu'un collage portait en plus. Trois règles, et c'est le dessin
+entier : **on ne crée rien**, **on n'écrase rien** (le premier relevé fait foi),
+et **le rapprochement exige l'unicité** — un bloc qui correspond à zéro ou à
+plusieurs sélections de la session est dit, jamais posé au hasard.
+
+### Ce que l'écriture a produit, et le contrôle de non-régression
+
+| | Avant | Après |
+| --- | ---: | ---: |
+| `picks` | 286 | **286** |
+| avec bloc `conf` | 0 | **15** |
+| `combos` / `combo_legs` | 0 / 0 | **1 / 3** |
+| principale / exploratoire / tardive | 218 / 16 / 52 | **218 / 16 / 52** |
+
+**Aucun doublon**, vérifié en SQL sur `(session, marché, sélection)` : les seize
+paires vues deux fois sont toutes antérieures (sessions 3 à 14) et portent sur
+des matchs différents — c'est d'ailleurs pourquoi le rapprochement exige
+l'unicité plutôt que de la supposer.
+
+Les quinze sélections passent d'un cran 1 forcé à leur cran calculé réel, et leur
+`research_override_cause` se vide.
+
+### Deux prémisses de ma propre implémentation, mesurées et corrigées
+
+- **la garde de doublon de l'aperçu se périme.** `parse_table` marque `duplicate`
+  sur une signature qui inclut l'identifiant de match, lequel se résout par la
+  shortlist et le voisinage — donc **cesse de se résoudre** dès que le match sort
+  de la fenêtre. Douze sélections d'un rejeu se déclaraient neuves, douze avec
+  `event_id = None`, et **les douze existaient déjà**. Un second filet ne
+  dépendant d'aucune résolution — marché et libellé, dans la session — refuse
+  d'écrire : refuser une ligne se rattrape en la saisissant, un doublon non ;
+- **`build_preview` archive à chaque appel, et je craignais qu'un balayage
+  pollue `imports_raw`. Faux** : `imports_raw.record` déduplique sur l'empreinte
+  SHA-256. Dix-neuf lignes avant le balayage, dix-neuf après, sur une trentaine
+  d'appels. Le code était juste, l'inquiétude non.
+
+---
+
+## §0b — Le test de bout en bout, sur le rendu entier
+
+**C'est par là que le défaut du lot 8 est passé.** Le banc de transport applique
+onze altérations à chaque format structuré, mais il les teste **isolés** : un
+tableau seul, un bloc `conf` seul, une ligne `sets:` seule. Le défaut ne se
+voyait que dans le rendu complet, où la prose de la section B côtoie les deux
+tableaux. Chaque format passait son banc, et le rendu entier perdait la moitié de
+sa substance.
+
+`tests/test_collage_complet.py` prend le collage réel du 19/08 — 21 559
+caractères, tel qu'il a été reçu, clôtures mangées, tabulations à la place des
+barres — le passe par le **vrai** chemin d'import sur une base de test, et compte
+chaque objet :
+
+| Objet | Attendu |
+| --- | ---: |
+| sélections de section C | 5 |
+| sélections de section C-bis | 2 |
+| blocs de confiance appariés | 5 |
+| combinés | 1 |
+| scores en sets | 10 |
+| repères `dossiers_ouverts` | 9 |
+
+**Un compte, pas une présence** : c'est le compte qui aurait crié. Le collage
+portait cinq blocs et deux sélections sont entrées ; une assertion « il y a des
+sélections » serait passée pendant toute la panne.
+
+---
+
+## §1 — L'écart entre cran déclaré et cran recalculé
+
+### La population, et ce qui en sort
+
+**15 sélections portent les deux crans.** 120 autres portent
+`confidence_computed = 1` **sans aucun bloc** : ce sont des écrasements forcés,
+pas des calculs, et les compter ferait mesurer à la page sa propre correction —
+le piège que la migration 045 a été écrite pour éviter.
+
+### La distribution
+
+| Cran | 1 | 2 | 3 | 4 | 5 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| déclaré | 0 | 3 | 4 | 7 | 1 |
+| recalculé | 0 | 0 | 7 | 4 | 4 |
+
+Écart signé (recalculé − déclaré) : **0 sur 9 sélections, +1 sur 6, et aucune
+correction à la baisse.**
+
+| `manque_touche_facteur` | n | accord | écarts |
+| --- | ---: | ---: | --- |
+| `false` | 8 | 5 | +1 × 3 |
+| `true` | 7 | 4 | +1 × 3 |
+
+### Les corrections à la baisse : **il n'y en a aucune**
+
+Le brief les attendait — « deux faits d'un même éditeur déclarés indépendants,
+`faits: []` déclaré au-dessus de 1 » — et la mesure n'en trouve pas une. L'écart
+est **entièrement unidirectionnel** : le modèle se note **sous** ce que sa propre
+table autorise. Les six désaccords forment deux groupes nets :
+
+| Sélections | Passage | Ce qu'elles portent |
+| --- | --- | --- |
+| #283, #287, #290 (section C) | 4 → 5 | source 1, 2 ou 3 faits, autant d'éditeurs distincts, `manque_touche_facteur: false` |
+| #281, #282, #286 (C-bis) | 2 → 3 | source 2, au moins un fait daté, `manque_touche_facteur: true` |
+
+**Aucune conclusion sur la qualité de l'analyse n'est tirée**, l'effectif étant de
+quinze. Ce qui est rendu est la distribution.
+
+### Ce que la page montrait, et la moitié qui manquait
+
+`Notation` existait et rendait déjà **3 sur 12** avec son effectif visible. Elle
+compte la population **principale seule** — et c'est juste, les trois populations
+ne se mélangent jamais. Mais les trois désaccords 2 → 3 sont **exploratoires**, et
+`Exploratory` n'avait aucun champ pour eux : la moitié de la mesure était
+invisible, au moment précis où le §3 la rend possible.
+
+Le bloc exploratoire porte donc son propre écart — **3 sur 3, dérive −1,0**,
+transition 2 → 3, sans clause nommée (l'effectif de 3 est sous le seuil de 8 de la
+page, et la garde fonctionne). Les deux ne sont **jamais fondus** : les
+additionner désignerait une clause moyenne que ni l'une ni l'autre ne réclame.
+
+### Un 500 trouvé en écrivant le test, et il valait plus que le test
+
+`Residual.gap` rend `None` pour dire qu'un résidu sans effectif n'est pas un
+résidu. **Deux des trois rendus le formataient sans garde** : une population
+portant des sélections mais aucune tranchée faisait tomber `/stats` en 500 — pas
+une ligne absente, la page entière. C'est l'état exact dans lequel C-bis entre
+aujourd'hui, sa première volée de blocs étant toute en attente. Le troisième
+rendu — les bandes de retard, trois lignes plus bas dans le même gabarit — portait
+déjà la garde, et personne ne l'avait reprise.
+
+---
+
+## §2 — `dossiers_ouverts` : la série, et la prémisse renversée
+
+### La maille est le lot, pas la session
+
+La session 17 porte **trois lots** — six, sept et neuf blocs — et trois
+déclarations. Rangée par session, elle rendrait « 9 repères pour 22 matchs », deux
+nombres qui ne se sont jamais rencontrés. `sessions.open_dossiers` ne garde
+d'ailleurs que la dernière des trois : c'est un état courant, pas un historique.
+
+### La série
+
+| Jour | Prompt | Lot | Budget | Déclarés | Lot entier ? |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 18/08 | 157 | 6 | 6 | 6 | **oui** |
+| 18/08 | 158 | 7 | 7 | 7 | **oui** |
+| 19/08 | 159 | 9 | 9 | 9 | **oui** |
+
+Part des sélections en `lecture`, par jour : 13/08 `0/20` · 14/08 `29/29` ·
+15/08 `49/49` · 17/08 `21/21` · 18/08 `10/17` · 19/08 `0/5`.
+Résidu au prix du cran 3 : **aucune sélection de ce cran n'est encore tranchée**.
+
+**Trois points ne font pas une tendance, et rien n'en est tiré.** Un test vérifie
+qu'aucun champ de pente, de moyenne ou de projection n'existe sur ce bloc.
+
+### Ce que la mesure renverse
+
+Le brief lit « 6, 7 et 9 repères pour un budget de 10 » et en tire « le budget
+mordait au moins parfois ». Les lots correspondants comptaient **exactement 6, 7
+et 9 blocs**. Le budget effectif étant `min(réglage, taille du lot)`, il valait 6,
+7 et 9 : **le modèle a déclaré tout le lot les trois fois**, et ce n'est pas le
+réglage qui bornait, c'est le lot.
+
+Le réglage, lui, a bien mordu — mais **avant**, quand il valait 7 : sur **28
+prompts** des 45 dont le corps porte le nombre, dont un lot de 26 blocs ramené à
+7. **Depuis son passage à 10 le 18/08, aucun lot ne l'a atteint.**
+
+**Conséquence à connaître, et elle porte sur la mesure elle-même** : quand la
+déclaration couvre le lot entier, `hors_dossiers` **ne peut plus se produire**. Le
+compteur d'inflation des migrations 043 et 045 est alors neutralisé — non par un
+défaut de code, mais par une déclaration qui ne laisse rien dehors.
+
+### La colonne, et pourquoi elle est stockée
+
+Migration 063, `prompts.research_budget`. Le réglage **change** — 7 puis 10 — et
+`preferences` ne garde que sa valeur courante : recalculer à la lecture ferait
+décrire les sessions d'hier par le réglage d'aujourd'hui. Rétro-rempli en Python
+depuis le corps archivé, qui écrit le nombre en toutes lettres — **le corps est la
+preuve**, rien n'est reconstitué. 45 prompts sur 159 le portent ; les 114 autres
+sont antérieurs à la phrase du gabarit et restent `NULL`, ce qui est la vérité.
+
+---
+
+## §3 — Les lignes de C-bis portent un bloc `conf`
+
+Décision appliquée, phrase du gabarit ajoutée **au mot près**.
+
+**Conséquence sur le code, et elle n'était pas dans le brief** : le compte de
+blocs cesse de valoir compte de lignes de la section C, donc l'appariement par
+l'ordre ne tient plus. Il se fait désormais **par le repère de match** — « une
+seule sélection par match, tous tableaux confondus » étant déjà une règle de
+rejet, le repère suffit. La somme de contrôle ne bouge pas : le repère doit
+désigner, dans le prompt d'origine, une affiche que porte la ligne.
+
+Deux gains au passage : deux blocs dans le désordre se rangent chacun chez lui au
+lieu de coûter les crans du lot entier, et une ligne sans bloc est **nommée** au
+lieu de faire tomber l'appariement en entier.
+
+Le drapeau `exploratoire` se dérive de la sélection appariée et **jamais d'un
+champ déclaré** : la ligne vient d'un tableau ou de l'autre, c'est déterministe.
+
+---
+
+## §4 — `Non joué` contre `Ici` : la source démonte la prémisse
+
+### §4a — Le cas concret, et d'où vient chaque affirmation
+
+Sur **Madison Keys – Xiyu Wang** (19/08), le bloc rendait à quatre lignes
+d'écart :
+
+```
+  Non joue   Xiyu Wang — Bianca Andreescu (1714) le 13/08 14:00 UTC,
+             adversaire remplace, non disputee
+  Ici        Xiyu Wang 13/08 bat Polina Kudermetova 6-3 6-2
+             | 13/08 bat Bianca Vanessa Andreescu 6-0 6-4 | …
+```
+
+- **`Non joué` vient de nos propres scans.** Deux événements le 13/08 — #400 vs
+  Andreescu (14:00, créé le 11/08 à 21h51) et #539 vs Kudermetova (16:30, créé le
+  13/08 à 08h49) — et la déduction « un joueur ne dispute qu'une rencontre par
+  journée de tournoi, c'est la plus récemment créée qui tient ».
+- **`Ici` vient de la charge utile `matches-played` archivée**, qui porte les deux
+  matchs avec leur score et leurs statistiques de service.
+
+Les deux matchs ont été joués. C'est la déduction qui a produit un faux positif —
+exactement le cas que `CLAUDE.md` annonçait comme « ne s'observe pas en base ».
+
+### Le principe tient sur sa première moitié ; la seconde est **sans objet**
+
+- *« Un match qui porte un score a été joué : la source gagne, et `Non joué` doit
+  cesser de le mentionner »* — **confirmé**, et appliqué.
+- *« Un match que la source ignore et que `Non joué` signale : `Ici` doit alors le
+  nommer plutôt que l'omettre »* — **le cas ne se produit pas.** Mesuré sur
+  O'Connell — Fonseca : `Non joué` dit « forfait adverse, non disputée » et `Ici`
+  rend « 18/08 forfait de Joao Fonseca ». Les deux disent la même chose, ce qui
+  est une **redondance et non une contradiction**. Rien à coder de ce côté.
+
+### Le rapprochement par nom était la fausse piste
+
+La source écrit « Bianca **Vanessa** Andreescu » quand nos scans disent « Bianca
+Andreescu » : `sort_key` ne tombe pas, et une comparaison souple serait le « en
+cas de doute on devine » que le projet refuse partout.
+
+**C'est le jour qui parle.** Vérifié : la journée de tournoi de nos deux
+événements vaut `2026-08-13`, et la source date les deux matchs du même jour.
+`contested_days` compte donc les matchs **disputés** par jour ; au-delà d'un, la
+prémisse est fausse pour ce jour-là et toutes les apparitions scannées y sont
+tenues pour réelles. Aucun nom n'est rapproché.
+
+Trois gardes :
+
+- **positif seulement** — un jour absent ne prouve rien, la source pouvant ne pas
+  couvrir ce tournoi, ce joueur, ou n'avoir pas encore publié ;
+- un **forfait n'est pas un match disputé** (même règle qu'`Usure`), donc il ne
+  lève rien ;
+- le **marquage à la main** n'est jamais touché : c'est un geste humain.
+
+**Hors du drapeau `CURRENT_EVENT_LINE_ENABLED`, et c'est délibéré** : le drapeau
+garde une ligne *ajoutée* au bloc ; ici on retire une affirmation *fausse* d'une
+ligne déjà servie. Attendre l'activation d'`Ici` laisserait « adversaire remplacé,
+non disputée » sur un match joué, sur toutes les sessions d'ici là.
+
+### §4b — Le rendu, avant / après
+
+**Drapeau bas — ce qui part en production dès maintenant :**
+
+```
+AVANT  Parcours   … | Xiyu Wang Polina Kudermetova (1697), Maria Timofeeva (1718),
+                  Leylah Fernandez (1816), Elina Svitolina (2054) [vu depuis le 12/08]
+       Non joue   Xiyu Wang — Bianca Andreescu (1714) le 13/08 14:00 UTC,
+                  adversaire remplace, non disputee
+
+APRES  Parcours   … | Xiyu Wang Bianca Andreescu (1714), Polina Kudermetova (1697),
+                  Maria Timofeeva (1718), Leylah Fernandez (1816),
+                  Elina Svitolina (2054) [vu depuis le 12/08]
+       (la ligne Non joue disparait)
+```
+
+Le forfait, lui, ne bouge pas :
+
+```
+       Non joue   Christopher O'Connell — Joao Fonseca (1934) le 18/08 15:00 UTC,
+                  forfait adverse, non disputee
+```
+
+**Drapeau haut, en test seulement.** Les trois cas demandés sont couverts et la
+contradiction a disparu :
+
+| Cas | Vérification |
+| --- | --- |
+| plusieurs tours disputés (Keys – Wang) | `Ici` liste 5 rencontres pour Wang, `Non joué` ne dit plus rien |
+| entrant en lice (Andreescu, match #400) | `Bianca Andreescu aucun match dans ce tournoi [releve au 18/08]` — la mention explicite, jamais un silence |
+| portant un `Non joué` (Fritz – O'Connell) | `Non joué` et `Ici` disent le même forfait, sans se contredire |
+
+`as_of` est présent sur **chaque** fragment (`[releve au 19/08]`), **par joueur** —
+deux profils se rafraîchissent à deux instants différents. Les dénominateurs
+accompagnent chaque taux (`(2 matchs, 139 pts)`, `(4 matchs, 265 pts)`).
+
+**Le drapeau reste bas en production.**
+
+---
+
+## §5 — La ligne `Jeux` sur un rendu réel
+
+**14 agrégats au seuil de 300 jeux, sur 239 joueurs porteurs de jeux — et les 14
+sont « toutes surfaces ».** Zéro par surface, ce qui confirme le blocage
+structurel mesuré au lot 8.
+
+Quatre blocs rendus, ATP et WTA :
+
+```
+ATP  Jeux   Taylor Fritz tenue 88.8% · break 19.9% (160 jeux servis)
+            Christopher O'Connell non disponible
+            (toutes surfaces, arretees au 18/08 — le seuil de jeux ne s'atteint pas par surface)
+
+WTA  Jeux   Barbora Krejcikova tenue 77.1% · break 45.4% (157 jeux servis)
+            Sara Bejlek non disponible
+            (toutes surfaces, arretees au 16/08 — le seuil de jeux ne s'atteint pas par surface)
+```
+
+Les trois vérifications demandées passent :
+
+- **le repli de portée est déclaré dans la ligne**, et il compte double ici : la
+  ligne `Service` juste au-dessus porte `(Hard, 52 sem., …)`. Les deux lignes ont
+  des portées différentes, et c'est la mention qui rend l'écart lisible ;
+- **un joueur sous le seuil rend `non disponible`** ;
+- **les deux sous le seuil omettent la ligne** — vérifié sur Coco Gauff – Marie
+  Bouzkova, où `Service`, `Retour` et `Ecart` sortent et `Jeux` non.
+
+La date d'arrêt diffère parfois de celle de `Service` (16/08 contre 18/08) : deux
+agrégats, deux relevés, et chacun porte le sien.
+
+**Rien à corriger.** La ligne reste rare — un ou deux blocs par lot.
+
+---
+
+## §6 — Dettes
+
+### La métrique du retard : spécification inchangée, effectif identique
+
+| | Lots 4 / 7 / 8 | 19/08, après le rejeu |
+| --- | ---: | ---: |
+| sélections tardives tranchées | 52 | **52** |
+| gagnées / perdues | 32 / 20 | **32 / 20** |
+| `late_minutes` renseignées | 52 | **52** |
+| étendue (minutes) | 12 – 1 557 | **12 – 1 557** |
+| médiane | 133 | **133** |
+
+Cohérent avec le §0a : le rejeu n'a créé aucune sélection, donc la population
+tardive ne pouvait pas bouger. **Toujours non implémentée**, conformément au
+brief.
+
+*Note de méthode, et c'est la deuxième fois qu'elle sert* : ma première requête a
+rendu une médiane de 136 et ressemblait à un changement. C'était mon `OFFSET`, qui
+prend la valeur haute des deux centrales sur un effectif pair. Une mesure qui
+contredit un chiffre stable de quatre lots mérite d'abord un doute sur la mesure.
+
+### Le registre des chemins d'écriture : deux défauts, tous deux corrigés
+
+- **`add_pick` avait perdu sa déclaration.** Un `@dataclass` s'était glissé entre
+  le décorateur `@writes(...)` et la fonction : le registre pointait sur le
+  dataclass, et `add_pick` — le seul écrivain de `picks` — n'était plus déclaré.
+  `tests/test_write_paths.py` l'a dit, et c'est exactement ce pour quoi il existe.
+- **`--rattacher` était muet, et c'est la deuxième fois sur ce fichier.**
+  `CONTRIBUTING.md` dit de la première : *« `myassistantbet-replay` a été écrit le
+  même jour et par la même main que cette phrase, et il a laissé tomber ses échecs
+  d'écriture sans les journaliser. »* Le rattachement l'a refait — un bloc qui ne
+  trouve pas sa sélection, un combiné dont une jambe manque, se disaient à l'écran
+  et nulle part ailleurs. Il journalise désormais, et il entre au banc.
+
+**`PATHS` s'énumère à la main** — rien dans la source ne distingue une route
+d'entrée d'une route quelconque — donc le banc ne peut pas prouver que la liste
+est complète. Il prouve ce qui est prouvable : chaque chemin listé couvre chaque
+famille du registre, **ou déclare pourquoi il ne le peut pas**. Sans cette table
+d'exemptions, le premier réflexe devant un manque serait de retirer le chemin de
+la liste, c'est-à-dire de le rendre muet à nouveau. Une seule exemption
+aujourd'hui : le rattachement ne crée aucune sélection, donc il ne peut pas en
+refuser une.
+
+Le banc passe de **10 à 15 contrôles**, sur trois chemins, **0 manque**.
+
+### `changelog_mesure` : quatre entrées, à leur date d'effet
+
+| # | Date | Portée | Ce qui change |
+| ---: | --- | --- | --- |
+| **18** | 19/08 | `ingestion` | Les blocs `conf` des trois collages complets sont posés. 15 sélections passent d'un cran 1 forcé à leur cran calculé réel. |
+| **19** | 19/08 | `gabarit` | Les lignes de C-bis portent un bloc `conf`. **Complétion de la spécification du lot 1, pas un changement de comportement attendu.** |
+| **20** | 19/08 | `gabarit` | `Non joué` cesse d'annoncer un match que la source dit joué. Hors du drapeau `CURRENT_EVENT_LINE_ENABLED`, qui reste bas. |
+| **21** | 19/08 | `ingestion` | Le repli de résolution des dossiers ouverts choisit le prompt du tableau, et non le premier qui porte assez de repères. |
+
+Le §1 et le §2 n'ont **pas** d'entrée : ils ajoutent de la restitution et une
+colonne de mesure, sans changer ce que le modèle lit ni ce que l'application
+écrit sur une sélection.
+
+---
+
+## §7 — Ce que la mesure contredit dans le brief
+
+**Trois affirmations, et la troisième porte sur une conclusion du lot 8 —
+c'est-à-dire sur la mienne.**
+
+| Ce qui était affirmé | Ce que la mesure dit |
+| --- | --- |
+| « 6, 7 et 9 repères pour un budget de 10, donc le budget mordait au moins parfois » | les lots comptaient **exactement** 6, 7 et 9 blocs : le budget effectif valait 6, 7 et 9, et le lot entier a été déclaré les trois fois. Le réglage a mordu **avant**, quand il valait 7 — 28 prompts — et jamais depuis |
+| « `Ici` doit nommer un forfait que la source ignore plutôt que l'omettre » | `Ici` le nomme déjà (« 18/08 forfait de Joao Fonseca »). Le cas décrit ne se produit pas ; rien à coder |
+| lot 8 : « `hors_dossiers` est une observation sur le modèle, pas un défaut de collecte » | **faux, et c'était mon erreur**. Le repli de résolution avait choisi le mauvais prompt parmi les trois de la session : Bodø/Glimt est `M3` du prompt 157, et `M3` figure dans la liste déclarée. Les deux sélections portaient bien sur des dossiers ouverts |
+
+**Et une quatrième, sur ma propre inquiétude plutôt que sur le brief** : je
+craignais qu'un balayage de rejeu pollue `imports_raw`, `build_preview` archivant
+à chaque appel. `record` déduplique sur l'empreinte : dix-neuf lignes avant,
+dix-neuf après, sur une trentaine d'appels.
+
+### La leçon de méthode du lot
+
+**Un défaut corrigé peut laisser sa conclusion fausse en place.** Le lot 8 a
+corrigé `EXPLORATORY_HEAD`, mesuré ce que le correctif rendait, et lu les deux
+`hors_dossiers` restants comme une observation sur le modèle — parce que le
+chemin *avait l'air* de fonctionner de bout en bout. Il fonctionnait à moitié :
+les blocs s'appariaient, et la résolution des dossiers passait par un **second**
+chemin, non corrigé, qui choisissait son prompt sur un critère de comptage.
+
+Ce qui l'aurait attrapé est la règle que le projet applique déjà ailleurs :
+`_attach_combos` exigeait la bonne garde depuis toujours, et son propre docstring
+annonçait « même repli que `_apply_research` ». C'était faux — un des trois
+chemins avait la garde, les deux autres non. **Un commentaire qui affirme une
+symétrie est un endroit où la vérifier.**
