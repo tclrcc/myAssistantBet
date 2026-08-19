@@ -923,6 +923,146 @@ def ordinal_trend(cells: list[tuple[int, int]]) -> float | None:
     return erfc(z / sqrt(2)) / 2
 
 
+@dataclass(frozen=True)
+class OffsetSlope:
+    """La pente d'une regression logistique **a offset fixe**, et ce qu'elle vaut.
+
+    Le modele est celui specifie au lot 4, et il repond a une question precise :
+
+        logit( P(gagne) ) = offset( logit(1/cote) ) + a + b · x
+
+    **L'offset a son coefficient fixe a 1 et non estime.** C'est ce qui fait
+    repondre a « `x` apporte-t-il de l'information au-dela de ce que le prix
+    contient deja » plutot qu'a « les paris tardifs gagnent-ils plus », a
+    laquelle un taux brut repond deja et sans interet. `1/cote` porte la marge du
+    book, donc l'offset est **conservateur** : la barre est trop haute, la
+    franchir serait un constat solide, ne pas la franchir n'accuse de rien.
+
+    `a` est un **parametre de nuisance** : il porte le deficit global, deja
+    mesure ailleurs, et n'est pas la question. Seul `b` se lit.
+    """
+
+    #: La pente estimee, par unite de `x`.
+    slope: float
+    #: Son erreur type, de l'inverse de la matrice d'information.
+    error: float
+    #: L'ordonnee a l'origine — nuisance, rendue pour que le modele se refasse.
+    intercept: float
+    observations: int
+    #: Vrai quand Newton-Raphson a converge. Faux, rien ne se lit.
+    converged: bool = True
+
+    @property
+    def interval(self) -> tuple[float, float] | None:
+        """L'intervalle de Wald a 95 %."""
+        if not self.converged or not self.error:
+            return None
+        return (
+            self.slope - TEST_Z_ALPHA * self.error,
+            self.slope + TEST_Z_ALPHA * self.error,
+        )
+
+    @property
+    def p_value(self) -> float | None:
+        """**Bilaterale, et c'est une condition.**
+
+        La direction a ete vue dans les bandes **avant** d'etre testee. Prendre
+        l'unilaterale reviendrait a diviser le seuil par deux apres avoir
+        regarde — la faute que cette page a mis huit lots a corriger.
+        """
+        if not self.converged or not self.error:
+            return None
+        return erfc(abs(self.slope / self.error) / sqrt(2))
+
+    @property
+    def detectable(self) -> float | None:
+        """La pente qu'il faudrait pour 80 % de puissance a cet effectif.
+
+        **Elle se lit avec le resultat, jamais apres.** Un test non concluant ne
+        dit rien tant qu'on ignore ce qu'il pouvait voir : c'est ce nombre qui
+        separe « aucun effet » de « aucun effet **visible d'ici** ».
+        """
+        if not self.converged or not self.error:
+            return None
+        return (TEST_Z_ALPHA + TEST_Z_BETA) * self.error
+
+
+def offset_logistic(
+    outcomes: list[int],
+    exposure: list[float],
+    offsets: list[float],
+    rounds: int = 50,
+    tolerance: float = 1e-10,
+) -> OffsetSlope | None:
+    """Ajuste `logit(p) = offset + a + b·x` par Newton-Raphson. `None` si impossible.
+
+    **Deux parametres estimes, un seul lu.** L'ajustement est ecrit a la main
+    plutot qu'importe : `scipy` ferait entrer une bibliotheque de calcul
+    scientifique dans un projet qui tient sur un processus et un fichier SQLite,
+    pour une matrice 2x2 dont l'inverse s'ecrit en une ligne.
+
+    Newton-Raphson converge en une poignee d'iterations sur une log-vraisemblance
+    concave ; `rounds` est un garde-fou contre une separation parfaite, ou la
+    pente part a l'infini et ou **rien ne doit se lire** — d'ou `converged`.
+    """
+    if len(outcomes) != len(exposure) or len(outcomes) != len(offsets) or len(outcomes) < 3:
+        return None
+    if len({round(value, 12) for value in exposure}) < 2:
+        # Une explicative constante ne porte aucune pente : la matrice
+        # d'information est singuliere, et l'ajustement rendrait n'importe quoi.
+        return None
+
+    a, b = 0.0, 0.0
+    converged = False
+    for _ in range(rounds):
+        # Score (gradient) et information (hessienne changee de signe).
+        g_a = g_b = i_aa = i_ab = i_bb = 0.0
+        for outcome, x, offset in zip(outcomes, exposure, offsets, strict=True):
+            eta = offset + a + b * x
+            # `exp` deborde au-dela de ~709 : la forme stable donne 1 ou 0, ce
+            # qui est la bonne limite et evite un OverflowError sur une
+            # separation nette.
+            p = 1.0 / (1.0 + exp(-eta)) if -709 < eta < 709 else (1.0 if eta > 0 else 0.0)
+            residu = outcome - p
+            poids = p * (1.0 - p)
+            g_a += residu
+            g_b += residu * x
+            i_aa += poids
+            i_ab += poids * x
+            i_bb += poids * x * x
+        determinant = i_aa * i_bb - i_ab * i_ab
+        if abs(determinant) < 1e-12:
+            return None
+        pas_a = (i_bb * g_a - i_ab * g_b) / determinant
+        pas_b = (i_aa * g_b - i_ab * g_a) / determinant
+        a, b = a + pas_a, b + pas_b
+        if abs(pas_a) < tolerance and abs(pas_b) < tolerance:
+            converged = True
+            break
+    if not converged:
+        return OffsetSlope(
+            slope=b, error=0.0, intercept=a, observations=len(outcomes), converged=False
+        )
+
+    i_aa = i_ab = i_bb = 0.0
+    for x, offset in zip(exposure, offsets, strict=True):
+        eta = offset + a + b * x
+        p = 1.0 / (1.0 + exp(-eta)) if -709 < eta < 709 else (1.0 if eta > 0 else 0.0)
+        poids = p * (1.0 - p)
+        i_aa += poids
+        i_ab += poids * x
+        i_bb += poids * x * x
+    determinant = i_aa * i_bb - i_ab * i_ab
+    if determinant <= 0:
+        return None
+    return OffsetSlope(
+        slope=b,
+        error=sqrt(i_aa / determinant),
+        intercept=a,
+        observations=len(outcomes),
+    )
+
+
 def benjamini_hochberg(p_values: list[float], alpha: float = ALPHA) -> int:
     """Nombre de tests retenus par la procedure de Benjamini-Hochberg.
 

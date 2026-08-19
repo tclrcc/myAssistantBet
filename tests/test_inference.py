@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import pytest
 
+from myassistantbet.services import inference
 from myassistantbet.services.inference import (
     ALPHA,
     TOST_Z,
@@ -741,3 +742,114 @@ def test_un_residu_positif_ou_vide_n_a_pas_d_horizon() -> None:
     s'il s'agissait d'un deficit qu'on attend."""
     assert residual_horizon(Residual(observed=9, implied=[0.5] * 10)) is None
     assert residual_horizon(Residual(observed=0, implied=[])) is None
+
+
+# -- La pente logistique a offset fixe (specification du lot 4) ---------------
+
+
+def test_la_pente_retrouve_une_valeur_connue() -> None:
+    """**Vérifié contre une valeur connue, pas contre sa propre sortie.**
+
+    Le module se teste contre des valeurs publiées ou simulées et jamais contre
+    ce qu'il affiche : c'est la règle qui a fait trouver une borne fausse dans le
+    cahier des charges d'origine.
+    """
+    import math
+    import random
+
+    random.seed(7)
+    vrai_a, vrai_b, n = -0.4, 0.8, 4000
+    xs = [random.uniform(-2, 2) for _ in range(n)]
+    ys = [1 if random.random() < 1 / (1 + math.exp(-(vrai_a + vrai_b * x))) else 0 for x in xs]
+
+    found = inference.offset_logistic(ys, xs, [0.0] * n)
+
+    assert found is not None and found.converged
+    assert abs(found.slope - vrai_b) < 0.05
+    assert abs(found.intercept - vrai_a) < 0.05
+
+
+def test_l_offset_a_son_coefficient_fixe_a_un() -> None:
+    """**C'est ce qui fait répondre à la question posée.**
+
+    Estimé, le modèle dirait « les paris tardifs gagnent-ils plus », à quoi un
+    taux brut répond déjà. Fixé, il dit « le retard apporte-t-il de l'information
+    au-delà de ce que le prix contient déjà ».
+
+    La propriété se vérifie sans connaître la vraie valeur : décaler l'offset
+    d'une constante doit décaler l'ordonnée à l'origine d'exactement l'opposé et
+    **ne pas toucher à la pente**.
+    """
+    import math
+    import random
+
+    random.seed(11)
+    xs = [random.uniform(-2, 2) for _ in range(2000)]
+    ys = [1 if random.random() < 1 / (1 + math.exp(-(0.2 + 0.5 * x))) else 0 for x in xs]
+
+    nu = inference.offset_logistic(ys, xs, [0.0] * len(xs))
+    decale = inference.offset_logistic(ys, xs, [0.5] * len(xs))
+
+    assert nu is not None and decale is not None
+    assert abs(decale.slope - nu.slope) < 1e-6
+    assert abs(decale.intercept - (nu.intercept - 0.5)) < 1e-6
+
+
+def test_une_explicative_constante_ne_porte_aucune_pente() -> None:
+    """L'information est singulière : l'ajustement rendrait n'importe quoi, donc
+    il ne rend rien. Même règle que partout — en cas de doute, rien."""
+    assert inference.offset_logistic([0, 1, 0, 1], [2.0] * 4, [0.0] * 4) is None
+
+
+def test_un_effectif_trop_court_ne_s_ajuste_pas() -> None:
+    assert inference.offset_logistic([0, 1], [1.0, 2.0], [0.0, 0.0]) is None
+
+
+def test_la_puissance_se_lit_avec_le_resultat() -> None:
+    """**Un test non concluant ne dit rien tant qu'on ignore ce qu'il pouvait
+    voir.** `detectable` est ce qui sépare « aucun effet » de « aucun effet
+    visible d'ici », et il se lit dans la même phrase que la pente."""
+    import random
+
+    random.seed(3)
+    xs = [random.uniform(0, 3) for _ in range(52)]
+    ys = [index % 2 for index in range(52)]
+
+    found = inference.offset_logistic(ys, xs, [0.0] * 52)
+
+    assert found is not None
+    assert found.detectable is not None and found.detectable > 0
+    # La pente détectable à 80 % vaut (1,96 + 0,84) fois l'erreur type : c'est la
+    # même formule que `required_sample`, et elle se relit sur le même couple.
+    assert abs(found.detectable - (1.96 + 0.84) * found.error) < 1e-9
+    borne = found.interval
+    assert borne is not None and borne[0] < found.slope < borne[1]
+
+
+def test_la_valeur_p_est_bilaterale() -> None:
+    """**Condition, pas préférence.** La direction a été vue dans les bandes
+    avant d'être testée : prendre l'unilatérale reviendrait à diviser le seuil
+    par deux après avoir regardé.
+
+    La propriété se vérifie sur le signe : deux jeux symétriques doivent rendre
+    la **même** valeur p, ce qu'une unilatérale ne ferait pas.
+    """
+    import random
+
+    import math
+
+    random.seed(5)
+    xs = [random.uniform(-1, 1) for _ in range(300)]
+    # **Bruite, et pas une separation parfaite** : sur des donnees parfaitement
+    # separees la pente part a l'infini et l'ajustement refuse de converger,
+    # ce qui est le comportement voulu — mais ne teste pas la symetrie.
+    ys = [1 if random.random() < 1 / (1 + math.exp(-2.0 * x)) else 0 for x in xs]
+    miroir = [1 - value for value in ys]
+
+    montante = inference.offset_logistic(ys, xs, [0.0] * len(xs))
+    descendante = inference.offset_logistic(miroir, xs, [0.0] * len(xs))
+
+    assert montante is not None and descendante is not None
+    assert montante.slope * descendante.slope < 0, "les deux pentes sont de signes opposés"
+    assert montante.p_value is not None and descendante.p_value is not None
+    assert abs(montante.p_value - descendante.p_value) < 1e-9
