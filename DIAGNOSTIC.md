@@ -1,27 +1,35 @@
-# ÉTAT AU 19/08/2026, 00h30 — à lire en premier
+# ÉTAT AU 19/08/2026, 19h00 — à lire en premier
 
-**En service** : commit `8f2ffab`, schéma **62**, `SERVE_LINES_ENABLED=1`, lignes
-`Service`/`Retour`/`Ecart` rendues — `Jeux` reste absente, aucun joueur n'atteint
-les 300 jeux et c'est le comportement voulu. Le panneau d'import demande
-désormais **la réponse entière**, et son relevé nomme les sections manquantes.
+**En service** : schéma **62**, `SERVE_LINES_ENABLED=1`,
+`CURRENT_EVENT_LINE_ENABLED=0`. La ligne **`Jeux` sort pour la première fois** —
+deux blocages levés le même jour, aucun n'était un manque de volume. La ligne
+**`Ici`** (tournoi en cours) est écrite, testée et **désactivée**.
 
-**Le geste de demain** : coller la réponse complète, de la section A à la
-section F. C'est gratuit et ça débloque d'un coup les crans calculés, les scores
-en sets, les combinés et la mesure du budget à 10.
+**Le point le plus lourd du lot, et il était classé avant-dernier** : le collage
+complet demandé depuis avant-hier **arrivait**, et l'import **jetait la section C**
+— une phrase de la section B qui mentionne « C-bis » faisait basculer la lecture
+avant le tableau principal. Corrigé. Rejeu des deux collages réels : **5 sélections
+et 5 blocs de confiance appariés** de chaque côté, contre 2 et 0 auparavant.
 
-**Reprendre la passe de timelines** — ne pas la lancer avant le filtre ci-dessous :
+**Le geste de demain n'a pas changé** : coller la réponse entière. Elle sera
+maintenant lue en entier — crans calculés, dossiers ouverts, scores en sets.
+
+**La passe de timelines tourne**, et se reprend sans état :
 
 ```bash
-uv run myassistantbet-timelines --joueurs 400
+uv run myassistantbet-timelines --joueurs 0 --reprise
 ```
 
-**Les deux gestes du prochain lot, dans cet ordre** : (1) un **filtre d'âge à
-90 jours** dans `collect_games` — aucune timeline au-delà de 80 jours sur 387
-tentatives, il supprime 69 % des appels sans perdre une seule timeline ; (2) la
-**passe longue** ensuite, qui passe alors de ~60 000 appels à moins de 10 000.
+**Les deux décisions qui attendent** :
+
+1. **§2d — la puce « Ses matchs déjà joués dans ce tournoi-ci »** du gabarit. Deux
+   variantes rédigées, aucune appliquée. Sa phrase « aucune de nos sources ne les
+   porte » devient fausse le jour où `Ici` s'active.
+2. **§2c — la contradiction entre `Non joue` et `Ici`** sur un match réellement
+   joué deux fois dans la même journée de tournoi. À trancher **avant**
+   d'activer `CURRENT_EVENT_LINE_ENABLED`.
 
 ---
-
 # DIAGNOSTIC — lot 1 : l'ingestion, les paliers hauts, et ce qui se perdait en silence
 
 Relevé du **17/08/2026**, sur une copie de la base servie (29 Mo, 235 sélections,
@@ -2766,3 +2774,825 @@ c'est-à-dire **au seul moment où l'information est encore récupérable** :
 
 **Cette ligne aurait été visible au tout premier import.** Elle est le coût de
 quatre jours d'enquête, écrit en une phrase.
+
+---
+
+# DIAGNOSTIC — lot 8 : la ligne `Jeux`, le tournoi en cours, et le collage complet qui perdait la section C
+
+Relevé du **19/08/2026**, sur une copie de la base servie (121 Mo, 279 sélections,
+17 sessions) et sur l'archive des réponses `tennisapi` — 844 rencontres et
+27 242 matchs de simple. Aucune mesure n'est reprise du brief sans vérification ;
+**cinq le contredisent**, et la première a déplacé tout l'ordre de la session.
+
+---
+
+## §4 — Le collage complet arrive, et il rendait **moins** que le collage du tableau
+
+**Ce point vient en tête parce que la mesure a renversé la question.** Le brief le
+plaçait en avant-dernier, avec la réserve « s'il n'existe aucun import postérieur
+au correctif, dis-le en une ligne et passe ». Il en existe, ils portent tout ce que
+la machinerie attendait depuis le lot 1 — et l'import le jetait.
+
+### Les quatre imports du 18/08 au soir
+
+| Import | Session | Heure | Caractères | `dossiers_ouverts` | blocs `conf` dans le texte |
+| ---: | ---: | --- | ---: | --- | ---: |
+| 14 | 17 | 22:48 | **16 559** | `[M1…M6]` | **5** |
+| 15 | 17 | 22:49 | 1 022 | absente | 0 |
+| 16 | 17 | 22:50 | **17 780** | `[M1…M7]` | **5** |
+| 17 | 17 | 22:50 | 1 155 | absente | 0 |
+
+**Le geste a changé : deux collages complets sont arrivés.** Ils portent la ligne
+`dossiers_ouverts`, ils portent cinq blocs de confiance chacun — sans clôture, les
+trois accents graves ayant été mangés par le rendu, exactement comme le lot 1
+l'avait établi — et `confidence.read_blocks` les lit tous les cinq.
+
+**Et pourtant `picks.claim_raw_json` est NULL sur les dix sélections de la
+session 17.** Rejeu des deux collages à travers `build_preview` :
+
+| | Import 14 | Import 16 |
+| --- | ---: | ---: |
+| sélections détectées | **2** | **1** |
+| blocs de confiance appariés | **0** | **0** |
+| lignes refusées « exploratoire en palier sûr » | 3 | 4 |
+
+Les lignes refusées **sont la section C**. Les sélections détectées sont la seule
+section C-bis.
+
+### Cause racine
+
+`picks_import.EXPLORATORY_HEAD` cherchait `C-bis` **n'importe où dans la ligne** :
+
+```python
+EXPLORATORY_HEAD = re.compile(r"\bc\s*bis\b|selections? exploratoires?")
+```
+
+Or la section B en parle. Sur les deux collages, la bascule s'est déclenchée
+**avant** le tableau de la section C, sur ces phrases :
+
+```
+… on ferme au-dessus des deux paliers sûrs, l'angle part en exploratoire (C-bis) …
+… pas de fait nommé et daté de niveau 1-2, il part en C-bis
+… mais vainqueur des deux derniers H2H dont février 2026 sur dur (voir C-bis)
+```
+
+Le gabarit lui-même en écrit une, ligne 671 : *« le fait qu'il soit rempli en
+section C-bis ne dispense pas de ce commentaire »*. La bascule était donc
+**structurellement atteignable**, pas accidentelle.
+
+Une fois le drapeau posé, la section C entière tombe sous les deux refus propres à
+C-bis, dont « une ligne en palier sûr n'y a rien à faire ». Les trois SAFE/FUN de
+l'import 14 et les quatre de l'import 16 ont donc été **journalisés et non
+importés** — puis le compte de blocs (5) ne tombait plus sur le compte de lignes
+(2, puis 1), et `_attach_claims` refusait tout l'appariement, ce qui est son
+comportement correct.
+
+**C'est ce qui explique l'alternance des quatre imports.** Le collage complet
+perdant le tableau principal, il a fallu recoller la seule section C juste après —
+et celle-ci, arrivant sans blocs, force tout le lot en `lecture` (`ligne_absente`,
+7 sélections sur 10 de la session).
+
+### Le correctif, et ce qu'il rend
+
+Les deux motifs s'ancrent désormais en tête de ligne, et les titres `A.` à `F.`
+ferment la section exploratoire autant que son titre l'ouvre. Rejeu des deux
+collages réels :
+
+| | Import 14 | Import 16 |
+| --- | ---: | ---: |
+| sélections détectées | **5** (3 en C, 2 en C-bis) | **5** (4 en C, 1 en C-bis) |
+| blocs de confiance appariés | **5 / 5** | **5 / 5** |
+| `dossiers_ouverts` | `renseignee`, 6 repères | `renseignee`, 7 repères |
+
+**Toute la machinerie des migrations 042, 043, 045 et 049 s'allume d'un coup**, et
+elle attendait depuis le lot 1.
+
+- Le motif se lit sur la **ligne brute** pour les lettres seules, et pas sur la
+  ligne repliée : repliée, `C'est` commence par `c` suivi d'un espace, donc
+  exactement comme `C. Tableau`. C'est le séparateur qui distingue un titre d'un
+  début de phrase française. `C-bis`, lui, n'a pas d'homonyme et se passe du sien.
+- Le **découpage en sections entre au banc de transport**, sixième format. Son
+  absence est ce qui a laissé passer ce défaut : le banc testait chaque format
+  **isolé**, jamais le rendu complet où la prose de la section B côtoie les deux
+  tableaux. « Lu » s'y mesure sur les lignes de la section C et non sur leur
+  total — les compter toutes aurait rendu le banc vert pendant la panne.
+
+### Ce que la session 17 dit quand même
+
+Les dix sélections importées portent une information qui n'existait nulle part
+avant :
+
+| Cause de l'écrasement en lecture | Sélections |
+| --- | ---: |
+| `hors_dossiers` (import 14, collage complet) | 2 |
+| `ligne_absente` (imports 15 et 17, collages du seul tableau) | 7 |
+| aucun écrasement (import 16, dossier ouvert) | 1 |
+
+**`hors_dossiers` est une observation sur le modèle, pas un défaut de collecte** :
+la ligne a été lue, les repères résolus, et les deux sélections portaient sur des
+matchs hors des six dossiers ouverts. C'est la première fois que ce chemin
+fonctionne de bout en bout.
+
+### Les trois réponses du §4, en une ligne chacune
+
+- **Blocs `conf`** : 10 produits, 0 appariés avant correctif, **10 sur 10** après —
+  et le cran calculé vaudra donc désormais quelque chose. L'écart calculé/déclaré
+  ne se mesure pas encore : il demande un import passé par le code corrigé.
+- **`dossiers_ouverts`** : présente sur les deux collages complets, **6 et 7
+  repères** pour un budget réglé à 10. Le modèle n'ouvre donc pas son budget, et
+  **le budget n'était pas la contrainte** — exactement ce que le brief voulait
+  savoir. À lire avec la réserve du §1c du lot 5 : le vivier de jambes se mesurait
+  jusqu'ici en régime cassé.
+- **Combinés et scores en sets** : `jambes` **absent des deux collages** (le
+  modèle n'a produit aucun bloc `combo`) ; `sets:` présent sur l'import 16
+  seulement. `combos` et `combo_legs` restent vides ; `set_scores` est passé de 5
+  à 13 lignes.
+
+---
+
+## §1 — La ligne `Jeux`
+
+### §1a — Le filtre d'âge, mesuré sur une archive deux fois plus grande
+
+Le lot 7 avait mesuré sur 564 rencontres et 2 767 appels. L'archive en porte
+désormais **844 et 3 818**, et le constat se renforce.
+
+| Âge du match à l'appel | Rencontres tentées | Timelines | Taux |
+| --- | ---: | ---: | ---: |
+| 0 – 7 j | 33 | 28 | **85 %** |
+| 8 – 30 j | 44 | 37 | **84 %** |
+| 31 – 90 j | 169 | 91 | **54 %** |
+| **91 – 180 j** | **235** | **0** | **0 %** |
+| **181 j et plus** | **362** | **0** | **0 %** |
+
+**Âge maximum d'une rencontre servie : 76 jours.** Les huit plus anciennes servies
+sont à 70, 71, 71, 73, 75, 75, 76 et 76 jours. 597 rencontres au-delà de 90 jours,
+**zéro timeline**.
+
+| Filtre | Rencontres tentées | Appels | Timelines | Appels / timeline |
+| --- | ---: | ---: | ---: | ---: |
+| aucun | 844 | 3 818 | 157 | 24,3 |
+| **≤ 90 jours** | **247 (29 %)** | **689 (−82 %)** | **157 / 157** | **4,4** |
+
+**Le gain réel est plus grand que celui du brief** : 82 % d'appels en moins et non
+69 %, parce que les rencontres hors fenêtre brûlaient plus d'appels chacune que la
+moyenne — une rencontre servie coûte peu (le premier essai aboutit neuf fois sur
+dix), une rencontre absente coûte tous les essais.
+
+**Une erreur de méthode attrapée avant d'écrire un chiffre.** Le premier relevé
+groupait les appels par **paire de joueurs** et annonçait « âge maximum 359 jours,
+28 timelines au-delà de 90 » — l'inverse du lot 7. La faute est dans le
+regroupement : deux rencontres des mêmes joueurs à un mois d'écart sont deux
+rencontres, et prendre la date la plus ancienne du groupe vieillissait
+artificiellement les succès. Une rencontre est une **paire plus une grappe de dates
+voisines**, ce que `_event_paths` produit — et alors les deux relevés concordent.
+
+Trois gardes, et **leur ordre porte la règle** :
+
+- l'**archive** passe avant le filtre : une timeline déjà payée se relit
+  gratuitement quel que soit l'âge de la rencontre, et l'écarter perdrait une
+  donnée qu'on possède pour économiser un appel qu'on ne ferait pas ;
+- le **filtre** passe avant le plancher de quota : ce qui n'est pas demandé n'a pas
+  à être budgété ;
+- une rencontre hors fenêtre **saute**, elle n'interrompt pas le parcours : les
+  lignes sont triées par date, mais une seule date aberrante ferait sinon perdre
+  tout le fond de liste.
+
+Le compte des rencontres hors fenêtre sort **à part** (`TimelineTally.too_old`) et
+se journalise. Fondu dans les vides, il ferait lire une couverture qui s'effondre
+là où il n'y a qu'un filtre qui travaille — et c'est lui qui dira le jour où la
+rétention de la source aura bougé.
+
+`TIMELINE_MAX_AGE_DAYS` se règle, zéro le désactive : c'est le seul moyen de
+rejouer la mesure ce jour-là.
+
+**Un test a dû être réparé, et il avait raison de casser.** Le test du seuil de
+300 jeux datait ses quarante rencontres de janvier et février : hors fenêtre dès le
+mois de mai. Il recevait une horloge implicite, donc il mesurait le jour où il
+tournait. Il reçoit maintenant la sienne.
+
+### §1b — La passe longue, et la seconde péremption que personne ne regardait
+
+**Le brief demandait d'ouvrir la passe ; il manquait une condition qu'aucune mesure
+n'avait cherchée.** `sync` saute un joueur dont l'agrégat a moins de 24 heures, et
+ce saut emporte la collecte de timelines avec lui. Mesure au moment du départ :
+**221 couples joueur/circuit sur 250 étaient frais**. Une reprise lancée le
+lendemain d'un entretien aurait donc sauté 88 % de sa file et **rendu un passage
+complet indiscernable d'un catalogue déjà couvert** — le défaut caractéristique du
+projet, sur le chantier lui-même.
+
+Deux fraîcheurs sont en jeu et ce n'en est pas une seule : un agrégat écrit ce
+matin ne dit rien des timelines, qui sont un second étage de collecte et vivent
+bien plus longtemps. `--reprise` lève la première et laisse la seconde.
+
+La file passe de deux étages à trois — matchs à venir, joueurs des cinq derniers
+**lots analysés** (`prompt_events`, ce qui est parti à l'analyse, jamais la
+shortlist qui se vide), puis fond de catalogue. Mesure au départ : **256 joueurs,
+dont 28 à venir et 111 des cinq derniers lots.**
+
+**État de la passe**, relevé au moment d'écrire :
+
+| | Avant le lot | Maintenant |
+| --- | ---: | ---: |
+| joueurs porteurs de jeux | **12** | **209** |
+| joueurs au seuil de 300 jeux | **0** | **10** |
+| appels `tennisapi` consommés dans la journée | — | **~4 640** |
+| quota mensuel restant | 145 673 | **139 958** |
+
+Elle **tourne encore** et se reprend sans état :
+
+```bash
+uv run myassistantbet-timelines --joueurs 0 --reprise
+```
+
+**Rien de ce qui a déjà été payé ne se repaie** : `archived_timeline` rend chaque
+timeline obtenue depuis `api_responses`, et un `result` vide archivé compte comme
+vu. La passe a d'ailleurs été **arrêtée et relancée en cours de route** (voir §1c),
+et le coût de ce redémarrage se limite aux appels `matches-played`, soit un par
+joueur.
+
+Le job planifié (`TIMELINES_JOB_ID`, 30 min après le scan) continue d'avancer par
+lots de 12 entre deux passes longues, sans `--reprise` : l'entretien quotidien n'a
+pas de raison de forcer la péremption.
+
+### §1c — Le rendu réel, et le défaut le plus coûteux du lot
+
+**Refaire le rendu était la consigne, et c'est ce qui a trouvé le défaut.** À
+mi-passe, la base était passée de **12 joueurs porteurs de jeux à 177**, dont
+**7 au seuil de 300**. Les blocs de ces sept joueurs ne rendaient **toujours pas**
+la ligne `Jeux`.
+
+L'absence d'une ligne sous son seuil est son comportement normal. **L'échec avait
+donc exactement la même sortie que le cas ordinaire** — sixième occurrence du motif
+du projet, et cette fois sur la ligne que trois lots consécutifs essayaient de
+faire sortir.
+
+**Cause racine.** `result.startTimestamp` est un **entier epoch** — `1780565400` —
+et il était lu `str(value)[:10]`, ce qui rend les dix premiers **chiffres**. Une
+chaîne qui ressemble à une date par sa longueur et n'en est pas une.
+`_store_player` rapproche ensuite les jeux de leur surface **par cette date** :
+aucun rapprochement ne tombait, et les jeux n'atteignaient donc que l'agrégat
+**toutes surfaces**, seul cas où le filtre est court-circuité (`if not surface`).
+
+Or `serve_lines` est appelé avec la surface du tournoi, `competitions.surface`
+étant renseignée sur les tournois de tennis. C'est donc l'agrégat **par surface**
+qui est lu, et il portait `served = 0` partout.
+
+| Joueur | jeux, toutes surfaces | jeux, agrégat `Hard` |
+| --- | ---: | ---: |
+| Taylor Fritz | 316 | **0** |
+| Alexandra Eala | 300 | **0** |
+| Zeynep Sonmez | 301 | **0** |
+
+**La ligne `Jeux` était donc inatteignable sur tous les blocs**, quel que soit le
+volume collecté, et l'aurait été après une passe complète de 60 000 appels.
+
+**Deux correctifs, et le second compte plus que le premier :**
+
+- `_from_epoch` lit le champ pour ce qu'il est. La fixture du lot 4 porte déjà la
+  valeur réelle de la source (`1786892400`) : un test sur cette seule fonction
+  aurait suffi, et il n'existait pas ;
+- **le rapprochement jeu / surface cesse de passer par la date.** `collect_games`
+  sait quelle ligne de service a demandé quelle timeline — c'est le seul endroit où
+  le couple est certain — et la surface est désormais **portée** par le jeu. Le
+  rapprochement par date serait resté fragile une fois réparé : la timeline se
+  trouve parfois à `J-1`, et les deux dates ne coïncident alors plus.
+
+Le test qui manquait vérifie **la propriété et non une valeur** : au moins un
+agrégat par surface porte des jeux. Vérifié en réintroduisant le défaut à
+l'identique — il tombe, avec son message.
+
+**Et le rendu réel a trouvé un second blocage, sous le premier.** Une fois les jeux
+arrivés dans les agrégats par surface, la ligne ne sortait toujours pas :
+
+| Joueur | jeux, toutes surfaces | `Hard` | `Grass` | `Clay` |
+| --- | ---: | ---: | ---: | ---: |
+| Taylor Fritz | **316** | 105 | 211 | 0 |
+
+**`collect_games` s'arrête à 300 jeux toutes surfaces confondues** — c'est sa
+règle, et elle est juste. Il en découle qu'**aucun agrégat par surface ne peut
+atteindre 300**. Mesure sur la base servie : **zéro ligne par surface au-dessus du
+seuil**, maximum observé **225**. Et `serve_lines` est appelé avec la surface du
+tournoi, `competitions.surface` étant renseignée sur tous les tournois de tennis.
+
+Le blocage n'était donc pas de volume : il était **structurel**, et aucune passe,
+si longue soit-elle, ne l'aurait levé.
+
+**Le seuil de 300 n'est pas abaissé** — c'est un interdit du brief, et il est
+juste : une ligne `Jeux` sur 155 jeux serait lue comme un fait. Ce qui change est
+la **portée** : quand l'agrégat de surface n'atteint pas le seuil et que celui de
+toutes surfaces l'atteint, la ligne se rend depuis le second **et le déclare**.
+
+```
+  Jeux       Nuno Borges tenue 88.1% · break 25.2% (159 jeux servis)
+             (toutes surfaces, arretees au 18/08 — le seuil de jeux ne s'atteint
+              pas par surface)
+```
+
+Le module avait déjà ce troisième état pour les **points de service**
+(`fell_back`), avec la même raison : un repli tu serait une affirmation fausse, un
+repli dit est une information de plus. Il lui manquait sur l'axe des jeux, parce
+que `load_aggregate` ne connaît qu'un seuil et que les deux grandeurs n'ont pas le
+même. La date est portée par la ligne `Jeux` elle-même : les deux agrégats ne sont
+plus forcément le même relevé.
+
+**Le choix n'est pas entre deux portées, il est entre une ligne repliée qui se
+déclare et pas de ligne du tout.**
+
+**Conséquence sur la passe** : elle tournait avec le code d'avant. Elle a été
+arrêtée à 4 204 appels et relancée avec le correctif. **Rien n'est repayé** —
+l'archive `api_responses` rend chaque timeline déjà obtenue sans un appel, ce qui
+est exactement la propriété que le lot 6 avait construite pour cette raison-là.
+
+---
+
+## §2 — Le tournoi en cours entre dans le bloc
+
+### §2a — Ce que `matches-played` sert par match, mesuré sur 27 242 matchs
+
+Relevé sur les 276 réponses `matches-played` archivées, soit **27 242 matchs de
+simple**, dont 217 du tournoi en cours.
+
+| Ce que le brief demandait | Servi ? | Taux |
+| --- | --- | ---: |
+| **score set par set** (`result`) | **oui** | **100 %** |
+| **durée** | **NON — aucun champ, sous aucun nom** | 0 % |
+| aces | oui | 99,9 % |
+| doubles fautes | oui | 100 % |
+| 1re balle et son dénominateur (`firstServe` / `firstServeOf`) | oui | 100 % |
+| points gagnés sur 1re, et dénominateur | oui | 100 % |
+| points gagnés sur 2e, et dénominateur | oui | 100 % |
+| balles de break converties, et dénominateur | oui | 100 % |
+| total de points gagnés | oui | 100 % |
+| **le tour** | **partiellement** — voir ci-dessous | 100 % |
+| nom de l'adversaire | oui | 100 % |
+| surface, tournoi, catégorie | oui | 100 % |
+
+Servis mais **inégaux**, donc inutilisables comme ligne : `fastestServe` (10,9 %),
+vitesses moyennes de service (10,6 %), montées au filet (14,8 %), fautes directes
+et coups gagnants (15,2 %). `best_of` et `draw_size` sont dans le schéma et **nuls
+sur 27 242 lignes**.
+
+**La durée n'est servie par aucun des deux endpoints.** Le lot 4 l'avait établi
+pour `event/get` ; c'est vrai aussi de `matches-played`, et c'est vérifié
+exhaustivement plutôt que sur trois exemples — aucune clé contenant `dur`, `time`
+ou `minut` n'existe dans la charge utile.
+
+**Le tour est servi et ne se nomme pas.** `roundId` est présent à 100 %, mais c'est
+un **entier opaque** : seize valeurs observées, aucun libellé nulle part dans la
+charge utile, et `draw` est un **numéro de place dans le tour** — non une taille de
+tableau, vérifié sur la distribution croisée. Il **ordonne** les tours à
+l'intérieur d'un tournoi (Cincinnati 2026 : 1 → 3 → 4 → 5 → 6 par date croissante)
+mais ne les nomme pas. La ligne porte donc **la date**, qui est un fait, plutôt
+qu'un `Q1` qui serait une invention — même règle que partout, sauf qu'ici il n'y a
+même pas de libellé à déduire.
+
+**Vocabulaire fermé du champ `result`**, et il porte exactement ce que §2c
+réclamait : les sets, plus `ret.` (789 occurrences) et `w/o` (203). Rien d'autre.
+
+### §2b — La ligne `Ici`
+
+Une ligne, deux fragments par joueur, insérée **après `Non joue`** et avant
+`Historique` / `Fraicheur`. Le brief demandait « après `Parcours` » : `Non joue`
+s'intercale, et c'est délibéré — le code dit depuis le lot précédent que ces
+deux-là se complètent et doivent rester adjacents, un forfait retirant un nom du
+parcours.
+
+Rendu réel, sur la base servie, drapeau levé en test — **avant / après**, ATP :
+
+```
+AVANT
+  Parcours   Taylor Fritz Alex Michelsen (1847), Daniel Merida Aguilar (1847)
+             | Christopher O'Connell Dane Sweeny (1472), Alexander Shevchenko (1669),
+               Kamil Majchrzak (1795), Casper Ruud (1954) [vu depuis le 11/08]
+  Non joue   Christopher O'Connell — Joao Fonseca (1934) le 18/08 15:00 UTC,
+             forfait adverse, non disputee
+
+APRES — la même chose, plus :
+  Ici        Taylor Fritz 16/08 bat Alex Michelsen 6-3 6-4 [releve au 18/08]
+             service ici 53.5% 1re · 81.6% s/1re · 6 df (1 match, 71 pts)
+             Christopher O'Connell 11/08 bat Dane Sweeny 6-7(3) 6-2 7-5
+             | 13/08 bat Alexander Shevchenko 6-4 6-1 | 14/08 bat Kamil Majchrzak 6-4 7-6(5)
+             | 16/08 bat Casper Ruud 7-5 1-2 (abandon) | 18/08 forfait de Joao Fonseca
+             [releve au 18/08]
+             service ici 58.1% 1re · 76.0% s/1re · 5 df (4 matchs, 265 pts)
+```
+
+WTA, hors top 50, avec un joueur entrant en lice — le second cas demandé :
+
+```
+  Ici        Aryna Sabalenka 16/08 bat Talia Gibson 6-2 7-6(2) [releve au 18/08]
+             service ici 59.3% 1re · 70.8% s/1re · 2 df (1 match, 81 pts)
+             Sara Bejlek 14/08 bat Karolina Pliskova 6-0 6-2
+             | 16/08 bat Barbora Krejcikova 7-6(5) 6-4 [releve au 18/08]
+             service ici 61.5% 1re · 71.2% s/1re · 7 df (2 matchs, 130 pts)
+```
+
+**Le vainqueur se lit sur la position, et c'est la mesure qui l'impose contre
+l'intuition.** Le réflexe du projet — lire le fait dans la donnée plutôt que dans
+une convention — désignait le score : compter les sets gagnés. Recoupement des deux
+lectures contre `tennis_matches` sur **12 049 rencontres** :
+
+| Méthode | Juste | Faux | Indécidable |
+| --- | ---: | ---: | ---: |
+| `player1` est le vainqueur | **12 046 — 99,98 %** | 3 | 0 |
+| vainqueur déduit des sets gagnés | 11 910 — 98,85 % | 16 | 123 |
+
+**Quinze des seize erreurs de la seconde méthode sont des abandons** : sur un
+`4-6 3-6 3-1 ret.`, celui qui menait au tableau d'affichage est celui qui a perdu.
+`ret.` casse le sens du score sans toucher à la position. Le réflexe reste juste,
+la mesure tranche autrement — et la ligne le documente pour qu'il ne se re-dérive
+pas.
+
+Corollaire vérifié sur un cas réel : la position dit aussi **le sens d'un forfait**,
+et `Non joue`, qui le tire de nos propres scans, tombe sur la même lecture
+(« forfait adverse » contre « forfait de Joao Fonseca »).
+
+Le score se rend **du point de vue du joueur nommé**, comme `H2H` et `Aller` : deux
+conventions dans le même bloc se liraient à l'envers. Le test ne vérifie pas une
+valeur mais l'**invariant** — le camp que le verbe annonce est celui qui mène au
+score, quel que soit le côté depuis lequel la source écrit.
+
+**L'identifiant de tournoi se lit dans la fenêtre de notre édition**
+(`tennis_round.edition_for`, déjà écrit) et jamais sur le dernier match du joueur :
+un entrant n'a rien joué ici, et son dernier tournoi est celui de la semaine
+passée. Il se partage entre les deux joueurs — celui qui a joué le donne à celui
+qui entre, sans quoi l'entrant se tairait là où sa ligne a le plus à dire. Une fois
+connu, **tous** les matchs qui le portent sont pris, y compris ceux joués avant
+notre premier scan : c'est précisément ce que `Parcours` ne peut pas faire.
+
+**Deux défauts trouvés en rendant pour de vrai**, et aucun test unitaire ne les
+aurait vus :
+
+- la **date du relevé** manquait. Sur le rendu du 19/08, le match de Jaime Faria
+  contre Adam Walton — joué après le dernier relevé — manquait à `Ici` alors que
+  `Parcours` le portait, et rien ne le disait. La ligne porte donc
+  `[releve au 18/08]`, **par joueur** : deux profils se rafraîchissent à deux
+  instants différents ;
+- **deux écritures du même instant ne se comparent pas comme des chaînes.** La
+  source écrit `2026-08-14T12:00:00.000Z`, nos événements `2026-08-14T12:00:00Z`,
+  et le point trie avant le `Z` : le **premier match d'un tournoi** tombait juste
+  avant le début de sa propre fenêtre, silencieusement et seulement pour lui.
+  Trouvé par un test, pas par une relecture.
+
+Coût : **aucun appel**. La charge utile est relue dans `api_responses`, même idiome
+qu'`archived_timeline`, et un test le vérifie **sans simuler la moindre route**.
+
+`Ici` n'entre **pas** dans `CONTEXT_EXPECTED`, comme les quatre lignes de service
+avant elle : le dénominateur de densité doit bouger le jour où la ligne rend
+vraiment, c'est-à-dire à l'activation, et pas au commit.
+
+### §2c — Ce que ça change ailleurs, et une contradiction mesurée
+
+**`Parcours` : ne pas l'alléger, et surtout pas maintenant.** Il porte deux choses
+qu'`Ici` n'a pas — l'**Elo des adversaires**, qui distingue un parcours facile d'un
+parcours d'usure, et la **fenêtre de nos scans**. Et il s'est révélé plus **frais**
+qu'`Ici` sur un cas réel (le match de Faria contre Walton). Les deux populations
+sont différentes : `Ici` remonte plus loin dans le tableau, `Parcours` descend plus
+près de maintenant. Proposition, non appliquée : ne rien changer tant qu'`Ici`
+n'est pas activée et mesurée sur quelques lots.
+
+**`Fraicheur` : intacte.** Elle décrit le retard de `tennis-data.co.uk`, source
+hebdomadaire et distincte, qui alimente `Forme` / `Usure` / `Profil` / `Marge`.
+`Ici` ne la remplace en rien — et c'est exactement la confusion qui a coûté une
+conclusion au lot 7.
+
+**`Non joue` : une contradiction réelle, et c'est `Ici` qui la révèle.** Sur
+Madison Keys – Xiyu Wang, le bloc rend :
+
+```
+  Non joue   Xiyu Wang — Bianca Andreescu (1714) le 13/08 14:00 UTC,
+             adversaire remplace, non disputee
+  Ici        Xiyu Wang 13/08 bat Polina Kudermetova 6-3 6-2
+             | 13/08 bat Bianca Vanessa Andreescu 6-0 6-4 | …
+```
+
+La source rapporte un match **joué**, avec son score et ses statistiques de
+service. Notre `match_outcome_type = 'replaced'` vient de la règle « un joueur ne
+dispute qu'une rencontre par journée de tournoi, et c'est la plus récemment créée
+qui tient » — dont `CLAUDE.md` note la limite : *« un tableau retardé par la pluie
+peut faire jouer deux simples dans la même journée. Le cas ne s'observe pas en
+base. »*
+
+**Il s'observe maintenant.** Xiyu Wang a bien joué deux simples le 13/08, et la
+dérivation a produit un faux positif. Ce n'est **pas corrigé ici** : changer
+`tennis_load` est une décision, et le drapeau étant bas rien ne part en production
+avec la contradiction. C'est **le point à trancher avant l'activation**, et la piste
+est écrite plus bas.
+
+### §2d — Les deux variantes de gabarit, écrites et **non appliquées**
+
+Texte actuel, `session_default.md.j2` lignes 180-189 :
+
+> · **Ses matchs déjà joués dans ce tournoi-ci** — la recherche la plus rentable
+> du lot, et la première à faire : aucune de nos sources ne les porte. Pour chaque
+> joueur et chaque tour déjà disputé — score set par set, durée, et si le site du
+> tournoi ou de l'ATP/WTA les publie, les statistiques de service (aces, doubles
+> fautes, % de première balle, balles de break sauvées et converties) — elles
+> vivent derrière l'onglet « Stats » […] Un tour non trouvé s'écrit « non trouvé ».
+
+**La phrase « aucune de nos sources ne les porte » devient fausse le jour où `Ici`
+s'active.** C'est le seul point non négociable des deux variantes : une affirmation
+fausse dans la consigne qui commande la recherche la plus chère du lot est le pire
+endroit du gabarit où en laisser une.
+
+#### Variante A — « allégée » : la puce reste et ne demande que ce qui manque
+
+> · **Ce que la ligne `Ici` ne porte pas de ses matchs dans ce tournoi.** Elle
+> donne, pour chaque tour déjà disputé, l'adversaire, le score set par set et le
+> service agrégé du tournoi, avec la date de son relevé — ne les cherche pas, et
+> ne les refais pas de zéro. Va chercher les trois choses qu'aucune source ne
+> sert : la **durée** de chaque match, les conditions réelles du court (session,
+> vent, chaleur, court central ou annexe), et le **double** s'il est engagé sur
+> place. Un match postérieur à la date de relevé de la ligne manque : celui-là se
+> cherche. Un tour non trouvé s'écrit « non trouvé ».
+
+- **On gagne** : la recherche cesse de re-trouver ce que le bloc porte déjà. Mesure
+  sur le lot du 18/08 — le bloc `conf` de M3 citait *« Tirante : Choinski
+  7-6(9) 6-7(7) 7-6(4) en 2h56 puis Djokovic 2-6 6-4 6-4 en 2h44 »*, et `Ici` rend
+  aujourd'hui `13/08 bat Jan Choinski 7-6(9) 6-7(7) 7-6(4) | 15/08 bat Novak
+  Djokovic 2-6 6-4 6-4`. **Les scores sont identiques ; seules les durées ne sont
+  pas dans le bloc.** Le budget se reporte sur elles.
+- **On garde** : la durée, qui est le seul élément décisif de la puce qu'aucune
+  source ne sert, et le repli explicite quand le relevé a pris du retard.
+- **On perd** : rien de mesurable. La puce reste, donc le coût en tokens aussi —
+  environ le même, la liste des statistiques de service étant remplacée par la
+  liste de ce qui manque.
+
+#### Variante B — « retirée » : la puce disparaît
+
+La puce est supprimée ; les conditions de court et le double rejoignent les puces
+« Surface et conditions » et « Charge » qui existent déjà et les mentionnent ; la
+durée est ajoutée à « Charge ».
+
+- **On gagne** : **213 tokens** de préambule tennis (mesurés avec
+  `prompt.estimate_tokens`), et un dossier de
+  recherche libéré par bloc — le budget en ouvre 10, et la puce en consommait un
+  par joueur ayant joué.
+- **On perd** : la **durée**, définitivement. C'est le seul substitut d'`Usure` au
+  niveau du match, et `Usure` compte les jeux et non les minutes : deux matchs de
+  22 jeux à 1h05 et à 2h33 y sont identiques. Le lot 3 a établi qu'aucune source
+  automatisable ne la sert ; la retirer du gabarit, c'est décider de ne plus jamais
+  l'avoir. On perd aussi le repli quand le relevé a pris du retard.
+
+**Recommandation, et elle n'engage pas** : la variante A. La mesure qui la porte
+est que la recherche a effectivement ramené, sur le dernier lot réel, exactement ce
+que la ligne rend — sauf les durées. Retirer la puce reviendrait à supprimer une
+recherche dont on vient de mesurer qu'elle rapporte encore une chose.
+
+**Aucune des deux n'est appliquée**, et l'arbitrage appartient à l'utilisateur.
+
+---
+
+## §3 — Le football : rien à construire, et c'est un résultat
+
+### §3a — Le fournisseur, le plan, le quota
+
+Lus dans les en-têtes et dans `/status`, qui font foi :
+
+| | |
+| --- | --- |
+| fournisseur | **API-Football** (`v3.football.api-sports.io`), appelé directement — pas via RapidAPI |
+| plan | **Pro**, actif jusqu'au **06/09/2026** |
+| quota | **7 500 appels / jour** (`x-ratelimit-requests-limit`), **300 / minute** (`x-ratelimit-limit`) |
+| consommé au moment de la sonde | 0 sur 7 500 |
+
+**Première affirmation du brief contredite : la clé ne « dort » pas dans le
+`.env`.** Elle est en service et l'a toujours été — la base porte **323 relevés de
+contexte** issus de ce fournisseur, sur onze types de lignes. Le trou est ailleurs.
+
+**Piège rencontré pendant la sonde, et il est documenté dans le dossier** : le
+dépassement de débit arrive en **HTTP 200** avec un objet `errors`, donc une
+réponse « vide » n'est pas une absence de couverture. La première passe l'a
+rencontré sur cinq compétitions ; la sonde a été refaite avec espacement et
+réessai, et aucune conclusion n'est tirée d'une réponse dont l'erreur applicative
+n'a pas été écartée.
+
+### La couverture, compétition par compétition
+
+Deux mesures indépendantes : la **couverture déclarée** par `/leagues` et ce que
+`/injuries?league=&season=2026` **sert réellement**.
+
+| Ligue | Compétition | Déclaré | Lignes servies | Joueurs |
+| ---: | --- | --- | ---: | ---: |
+| 94 | Primeira Liga — Portugal | `false` | **0** | 0 |
+| 144 | Belgium First Div | `false` | **0** | 0 |
+| 218 | Austrian Bundesliga | `false` | **0** | 0 |
+| 141 | La Liga 2 — Espagne | `false` | **0** | 0 |
+| 179 | Premiership — Écosse | `false` | **0** | 0 |
+| 207 | Swiss Superleague | `false` | **0** | 0 |
+| 169 | Super League — Chine | `false` | **0** | 0 |
+| 307 | Saudi Pro League | `false` | **0** | 0 |
+| 848 | UEFA Conference League | `false` | **0** | 0 |
+| 3 | UEFA Europa League | `false` | **0** | 0 |
+| 81 | DFB-Pokal | `false` | **0** | 0 |
+| 48 | EFL Cup | `false` | **0** | 0 |
+| 772 | Leagues Cup | `false` | **0** | 0 |
+| 135 | **Serie A — Italie** | `false` | **0** | 0 |
+| **103** | **Eliteserien — Norvège** | **`true`** | **1 300** | **208** |
+| **203** | **Turkey Super League** | **`true`** | **56** | **27** |
+| **88** | Dutch Eredivisie | `true` | 205 | 64 |
+| 39 | EPL *(témoin)* | — | 38 | 19 |
+| 61 | Ligue 1 *(témoin)* | — | 12 | 6 |
+| 140 | La Liga *(témoin)* | — | 86 | 38 |
+
+**La couverture déclarée est exacte, sans une exception.** Là où le fournisseur
+annonce `injuries: false`, l'endpoint ne sert rien ; là où il annonce `true`, il
+sert. La règle du projet — *« la couverture déclarée par le fournisseur fait
+foi »* — est validée sur seize compétitions au lieu d'être supposée.
+
+**Deuxième et troisième affirmations du brief contredites.** Il nomme sept
+compétitions dites « non interrogées », dont **la Norvège et la Turquie — qui sont
+couvertes**, et l'étaient déjà avant ce lot (10 relevés sur 10 et 9 sur 9 dans la
+base). À l'inverse, il ne cite pas la **Serie A**, qui déclare `injuries: false`
+pour 2026 : un championnat du top 5 européen, et le fait n'était nulle part.
+
+### Le retard : non mesurable, et la cause est structurelle
+
+**On ne conserve qu'un instantané par match.** `context` porte **323 lignes
+`injuries` pour 323 événements distincts** : la table est indexée par
+(événement, type) et chaque enrichissement **écrase** le précédent. Il n'existe
+donc aucune série temporelle d'où tirer un délai — même forme que `commence_time`
+avant la migration 040 et que `odds` avant la 048, et le correctif serait de la
+même famille. **Non construit** : ce n'est pas dans le périmètre du lot, et ça se
+décide.
+
+Ce que les données permettent, en revanche, c'est de **recouper la liste du
+fournisseur contre ce que la recherche a trouvé le même jour**. Les deux collages
+complets du 18/08 citent 28 absents nommés et datés, avec leur éditeur :
+
+| Match | Cités par la recherche | Déjà dans le bloc |
+| --- | ---: | --- |
+| Atlético Madrid – Málaga | 11 | **7** — manquent Llorente, Baena, Musso, Dotor |
+| Celtic – LASK | 4 | **4** |
+| NEC Nijmegen – Bodø/Glimt | 7 | **5** — manquent Nuytinck, Linssen |
+| Hapoel Be'er Sheva – Sabah FK | 2 | **2** |
+| Slovan Bratislava – NK Celje | 5 | **4** — manque Ibrahim |
+| **Total** | **29** | **22 — 76 %** |
+
+**Le bloc portait déjà les trois quarts de ce que la recherche est allée
+chercher** — Sørloth avec son « Muscle Injury », Jota, Oxlade-Chamberlain, Šporar,
+Schuurs. Et trois des sept manquants (Álvarez, Llorente, Baena, Musso) sont décrits
+par la recherche elle-même comme *« une semaine d'entraînement, non attendus
+titulaires »* : une décision de rotation, que `/injuries` n'a aucune raison de
+porter. Le désaccord réel se réduit à **Dotor, Nuytinck, Linssen et Ibrahim**.
+
+C'est une information sur le **gabarit** et non sur la source : la recherche
+football dépense son budget à re-trouver ce que le bloc dit déjà. Hors périmètre
+ici, et noté.
+
+### §3b — Ce qu'on en fait : rien, et la branche « nulle part » est la réponse
+
+Le brief prévoyait les deux issues. C'est la seconde.
+
+- **Il n'y a pas de couverture à récupérer.** Zéro ligne servie sur les treize
+  compétitions déclarées non couvertes, réessais compris.
+- **L'état « non interrogés » n'est pas factuellement faux : il est exact.** Il dit
+  *« le fournisseur ne couvre pas cette compétition, ça ne changera pas »*, ce qui
+  est précisément ce que la mesure établit. Le corriger le rendrait faux.
+- **Et le substitut existe déjà, et il fonctionne.** `Effectif` reconstruit les
+  absents depuis les feuilles de match là où `injuries` est faux et `lineups` vrai.
+  Rendu réel de **120 blocs football**, sans un appel :
+
+| | |
+| --- | ---: |
+| substitut possible (`injuries=false` **et** `lineups=true`) | **51 blocs** |
+| feuilles de match effectivement collectées | **51 / 51 — 100 %** |
+| ligne `Effectif` rendue | **21 / 51 — 41 %** |
+
+**Le mécanisme n'est ni cassé ni sous-collecté : il tire partout où il peut.** Les
+59 % restants sont le comportement documenté — *« Rien quand personne ne manque :
+écrire "aucun" affirmerait un effectif au complet, ce que des feuilles ne peuvent
+pas prouver. »*
+
+**Quatrième affirmation du brief contredite : la densité football.** Elle n'est pas
+« 31-38 % », elle est **médiane 42 %**, et surtout elle est **bimodale** :
+
+| Densité | Blocs |
+| --- | ---: |
+| 0-9 % | 1 |
+| 20-29 % | 2 |
+| **30-39 %** | **43** |
+| 40-49 % | 20 |
+| 50-59 % | 8 |
+| 60-69 % | 18 |
+| 70-79 % | 3 |
+| **90-100 %** | **25** |
+
+Le « 31-38 % » du brief décrit le mode principal, pas le lot. Un cinquième des
+blocs football est **complet ou presque**, et ce qui sépare les deux masses est
+l'avancement de la saison, pas la couverture des absents : la ligne `Absents` sort
+sur **119 blocs sur 120**, et 62 d'entre eux portent une liste réelle.
+
+**Décision : ne rien construire.** Aucune source d'absences n'est branchée, aucun
+état n'est ajouté à la ligne, et l'instrumentation demandée par le brief
+(« nombre de blocs football portant une liste réelle, par compétition et par
+mois ») ne se construit pas non plus — elle mesurerait une couverture qu'on vient
+de constater fixe et déclarée à la source.
+
+Ce qui **améliorerait** vraiment les blocs football n'est donc pas une source de
+plus : c'est que la section A cesse de rechercher les absents que le bloc porte
+déjà. C'est une modification de gabarit, hors périmètre, et c'est le pendant
+football du §2d.
+
+---
+
+## §5 — Dettes et arbitrages
+
+### La métrique du retard : spécification inchangée, effectif identique
+
+**Rien n'a bougé.** Relevé du jour contre celui du lot 4 :
+
+| | Lot 4 / lot 7 | 19/08 |
+| --- | ---: | ---: |
+| sélections tardives tranchées | 52 | **52** |
+| gagnées / perdues | 32 / 20 | **32 / 20** |
+| `late_minutes` renseignées | 52 | **52** |
+| étendue (minutes) | 12 – 1 557 | **12 – 1 557** |
+| médiane | 133 | **133** |
+
+La spécification du §4 du lot 4 est **à jour telle quelle**. Toujours non
+implémentée, conformément au brief.
+
+*Note de méthode, parce qu'elle a failli entrer dans ce rapport comme une
+découverte* : la première requête a rendu « 52 tardives, 0 gagnée, 0 perdue » et
+ressemblait à une contradiction du brief. C'était ma requête : le vocabulaire de
+`picks.result` est `win` / `loss` / `pending` / `void`, pas `gagne` / `perdu`. Une
+mesure qui contredit un chiffre stable de trois lots mérite d'abord un doute sur
+la mesure.
+
+### Le registre des chemins d'écriture
+
+**Aucun chemin ajouté par ce lot.** Il n'insère dans aucune des quatre tables
+gardées (`picks`, `combos`, `combo_legs`, `set_scores`) : la ligne `Ici` et le
+filtre d'âge lisent, et le correctif de section change ce qui **arrive** à
+`add_pick` sans toucher à son appelant. `tests/test_write_paths.py` lit la source
+et fait échouer la suite sur un `INSERT` non déclaré : il passe.
+
+### `changelog_mesure`
+
+Trois entrées, **à leur date d'effet** :
+
+| # | Date | Portée | Ce qui change |
+| ---: | --- | --- | --- |
+| **15** | 19/08 | `ingestion` | La section C d'un collage complet est de nouveau lue. Les blocs `conf` s'apparient, `dossiers_ouverts` se résout. **Change la composition de toutes les populations à partir de cette date.** |
+| **16** | 19/08 | `gabarit` | **La ligne `Jeux` sort pour la première fois.** Le bloc tennis porte une ligne de plus, sur les joueurs au seuil — et `SERVE_LINES_ENABLED` étant à 1, c'est une vraie date d'activation. |
+| **17** | 19/08 | `ingestion` | Filtre d'âge à 90 jours sur les timelines : la couverture de `Jeux` monte pour cette raison, et non parce que la source aurait changé. |
+| *(non écrite)* | — | `gabarit` | La ligne `Ici` **n'entre pas au journal** : son drapeau est bas, elle ne change rien à ce que le modèle lit. Elle y entrera à son activation, avec sa vraie date — pas celle du commit. Même règle que `SERVE_LINES_ENABLED`. |
+
+**La première est la plus importante du journal depuis le lot 1**, et elle mérite
+d'être lue comme telle : la population « sélections portant un cran calculé »
+commence au 19/08/2026, et les 279 sélections antérieures n'en auront jamais.
+
+### `CURRENT_EVENT_LINE_ENABLED` reste bas
+
+Conformément au brief, et la raison tient toute seule : la coupe budget / lignes de
+service est déjà jointe au 18/08. Une troisième variable à la même date rendrait
+les trois effets indissociables, et le journal des mesures existe pour qu'ils se
+découpent.
+
+**Un point à trancher avant l'activation**, et c'est le seul : la contradiction du
+§2c entre `Non joue` et `Ici` sur un match réellement joué deux fois dans la même
+journée de tournoi. Trois issues possibles, aucune décidée ici :
+
+1. laisser les deux lignes, la contradiction étant visible et le lecteur arbitrant
+   — c'est ce que le projet fait déjà pour le terrain neutre non vérifiable ;
+2. faire de `Ici` la source d'autorité sur `match_outcome_type` — la source
+   rapporte, nos scans programment, et un score avec ses statistiques de service
+   est une preuve qu'un match a eu lieu ;
+3. lever la règle « une rencontre par journée de tournoi » quand la source en
+   rapporte deux.
+
+La 2 est la plus proche de la règle du projet (« quand une ligne paraît fausse,
+chercher d'abord si le bloc ne porte pas déjà le fait qui la contredit »), et c'est
+aussi la plus lourde. Elle ne se décide pas dans un lot qui n'active rien.
+
+---
+
+## Ce que la mesure a contredit — lot 8
+
+**Cinq affirmations du brief**, et la première a déplacé tout l'ordre de la
+session.
+
+| Ce que le brief affirmait | Ce que la mesure dit |
+| --- | --- |
+| §4 est un point de vérification, « s'il n'existe aucun import postérieur, passe » | Il en existe deux, et ils révèlent que **le collage complet rendait moins que le collage du tableau** — le correctif d'hier soir était annulé par un motif de lecture. Point le plus lourd du lot. |
+| §1 est « mécanique » : un filtre d'âge, puis la passe | Le filtre l'était. Mais la ligne `Jeux` était **inatteignable sur tous les blocs** pour une raison sans rapport — un horodatage lu comme une date — et aucun volume collecté ne l'aurait fait sortir. Trouvé en refaisant le rendu, comme le §1c l'exigeait. |
+| une clé API-Football « dort » dans le `.env` | Elle est en service depuis toujours : **323 relevés de contexte** en base, plan Pro, 7 500 appels/jour. |
+| la ligne `Absents` dit « non interrogés » sur Portugal, Belgique, Autriche, **Norvège**, Liga 2, **Turquie**, Trophée des Champions | **La Norvège et la Turquie sont couvertes**, et l'étaient déjà (10/10 et 9/9 relevés). En revanche la **Serie A** ne l'est pas, et le brief ne la cite pas. |
+| les blocs football sont « à 31-38 % de densité » | Médiane **42 %**, distribution **bimodale** : 43 blocs entre 30 et 39 %, mais **25 entre 90 et 100 %**. |
+
+**Et deux de mes propres mesures ont été reprises avant d'être écrites** :
+
+- le premier relevé du filtre d'âge annonçait « âge maximum 359 jours, 28 timelines
+  au-delà de 90 » — l'inverse du lot 7. La faute était dans mon regroupement : deux
+  rencontres des mêmes joueurs à un mois d'écart ne sont pas une rencontre ;
+- le premier relevé de la population tardive annonçait « 0 gagnée, 0 perdue » sur
+  un chiffre stable depuis trois lots. C'était le vocabulaire de `picks.result`.
+
+**Et une intuition de conception renversée par la mesure** : lire le vainqueur
+**dans le score** plutôt que dans la position des joueurs est la règle du projet, et
+elle donne ici le **moins** bon résultat — 98,85 % contre 99,98 % — parce que `ret.`
+casse le sens du score sans toucher à la position. Le réflexe reste juste, la
+mesure tranche autrement, et c'est écrit dans le module pour qu'il ne se re-dérive
+pas.
