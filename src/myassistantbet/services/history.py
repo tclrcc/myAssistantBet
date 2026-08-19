@@ -4327,6 +4327,172 @@ def _by_session(
     return found
 
 
+@dataclass(frozen=True)
+class DossierPoint:
+    """Un lot, et ce que l'analyse y a declare ouvrir.
+
+    **La maille est le prompt, pas la session, et c'est mesure.** La session 17
+    porte trois lots — six, sept et neuf blocs — et trois declarations. Rangee
+    par session, elle rendrait « 9 reperes pour 22 matchs », deux nombres qui ne
+    se sont jamais rencontres : le lot de la declaration a neuf matchs, pas
+    vingt-deux. `sessions.open_dossiers` ne garde d'ailleurs que la derniere des
+    trois — c'est un etat courant, pas un historique.
+    """
+
+    prompt_id: int
+    session_id: int
+    day: str
+    #: Blocs du prompt, c'est-a-dire la taille du lot soumis.
+    lot: int
+    #: `min(reglage, lot)` au moment de la generation, relu dans le corps.
+    budget: int | None
+    #: Reperes que le collage a declares, `None` si aucun collage de ce lot n'a
+    #: porte la ligne. **Zero et « pas de ligne » ne sont pas la meme chose** :
+    #: l'un est une declaration du modele, l'autre un collage qui l'a laissee.
+    declared: int | None
+    #: Etat de la ligne, vocabulaire de `confidence.OPEN_STATES`.
+    state: str = ""
+
+    @property
+    def saturated(self) -> bool | None:
+        """Le lot a-t-il ete declare en entier ?
+
+        C'est la seule lecture que trois points autorisent, et elle ne suppose
+        aucune tendance : soit la declaration touche le plafond, soit non.
+        """
+        if self.declared is None or self.budget is None:
+            return None
+        return self.declared >= self.budget
+
+
+@dataclass
+class Dossiers:
+    """La serie des dossiers declares, **et rien de plus qu'une serie**.
+
+    **Trois points ne concluent rien, et ce bloc ne conclut rien.** Il n'y a ni
+    pente, ni moyenne, ni projection : trois releves sur un seul jour et une
+    seule session ne decrivent pas un comportement. Ce qui se rend est la liste,
+    avec de quoi la lire — le lot, le budget effectif, ce qui a ete declare.
+
+    **Ce qu'elle dit deja, en revanche, contredit ce qu'on en attendait.** Les
+    trois declarations valent 6, 7 et 9 pour un reglage a 10, ce qui se lit comme
+    « le modele s'approche de son budget sans l'epuiser ». Les lots
+    correspondants comptaient **exactement 6, 7 et 9 blocs** : le budget effectif
+    valait donc 6, 7 et 9, et le modele a declare **tout le lot** les trois fois.
+    Ce n'est pas le reglage qui bornait, c'est le lot.
+
+    Consequence a connaitre, et elle porte sur la mesure elle-meme : quand la
+    declaration couvre le lot entier, `hors_dossiers` **ne peut plus se
+    produire**. Le compteur d'inflation des migrations 043 et 045 est alors
+    neutralise — non par un defaut de code, mais par une declaration qui ne
+    laisse rien dehors.
+    """
+
+    points: list[DossierPoint] = field(default_factory=list)
+    #: Part des selections en lecture, par jour du releve. Le brief demande de
+    #: croiser les deux ; les deux se rendent cote a cote et **ne se divisent
+    #: pas l'une par l'autre** — trois points ne portent aucun rapport.
+    reading_share: dict[str, tuple[int, int]] = field(default_factory=dict)
+    #: Residu au prix du cran 3, la ou il se calcule. `None` tant qu'aucune
+    #: selection de ce cran n'est tranchee.
+    rung_three: Residual | None = None
+
+    @property
+    def empty(self) -> bool:
+        return not self.points
+
+    @property
+    def declared_points(self) -> list[DossierPoint]:
+        """Les lots dont un collage a rapporte la ligne."""
+        return [point for point in self.points if point.declared is not None]
+
+    @property
+    def line(self) -> str:
+        """Une phrase qui dit l'effectif et s'arrete la."""
+        vus = self.declared_points
+        if not vus:
+            return "aucun lot n'a encore rapporté sa ligne « dossiers_ouverts »"
+        satures = sum(1 for point in vus if point.saturated)
+        return (
+            f"{len(vus)} lot(s) avec la ligne, sur {len(self.points)} soumis · "
+            f"{satures} déclare(nt) le lot entier · "
+            "trois points ne font pas une tendance, et rien n'en est tiré ici"
+        )
+
+
+def dossiers(settings: Settings | None = None) -> Dossiers:
+    """La serie des dossiers de recherche declares, lot par lot.
+
+    Les trois grandeurs viennent de trois endroits et aucune n'est estimee : le
+    lot de `prompt_events`, le budget du corps du prompt (migration 063), les
+    reperes du collage conserve (`imports_raw`). Aucun appel, aucune estimation.
+    """
+    from .confidence import read_opened
+
+    settings = settings or get_settings()
+    found = Dossiers()
+    with connect(settings) as conn:
+        prompts = conn.execute(
+            "SELECT p.id, p.session_id, substr(p.created_at, 1, 10) AS day, "
+            "       p.research_budget, "
+            "       (SELECT COUNT(*) FROM prompt_events pe WHERE pe.prompt_id = p.id) AS lot "
+            "  FROM prompts p ORDER BY p.id"
+        ).fetchall()
+        collages = conn.execute(
+            "SELECT session_id, raw_text FROM imports_raw ORDER BY id"
+        ).fetchall()
+        # **La declaration se range par session et non par prompt**, parce que
+        # c'est tout ce que le collage porte : rien dans le texte recu ne dit de
+        # quel prompt il repond. On la rattache donc au lot dont la taille tombe
+        # sur le nombre de reperes — ce qui est verifiable et se refuse en cas
+        # d'ambiguite, plutot que devine.
+        par_session: dict[int, list[Any]] = {}
+        for row in collages:
+            lu = read_opened(str(row["raw_text"]))
+            if lu.marks:
+                par_session.setdefault(int(row["session_id"]), []).append(lu)
+
+        for row in prompts:
+            lus = par_session.get(int(row["session_id"]), [])
+            candidats = [lu for lu in lus if len(lu.marks) == int(row["lot"])]
+            retenu = candidats[0] if len(candidats) == 1 else None
+            found.points.append(
+                DossierPoint(
+                    prompt_id=int(row["id"]),
+                    session_id=int(row["session_id"]),
+                    day=str(row["day"]),
+                    lot=int(row["lot"]),
+                    budget=(
+                        int(row["research_budget"]) if row["research_budget"] is not None else None
+                    ),
+                    declared=len(retenu.marks) if retenu is not None else None,
+                    state=retenu.state if retenu is not None else "",
+                )
+            )
+
+        # Le croisement demande : part de `lecture`, et residu du cran 3. Les
+        # deux se rendent **a cote** de la serie, jamais fondus dedans.
+        for row in conn.execute(
+            "SELECT substr(k.created_at, 1, 10) AS day, "
+            "       SUM(k.source_level_effective = ?) AS lecture, COUNT(*) AS total "
+            "  FROM picks k WHERE k.exploratoire = 0 GROUP BY 1 ORDER BY 1",
+            (READING_LEVEL,),
+        ).fetchall():
+            found.reading_share[str(row["day"])] = (int(row["lecture"] or 0), int(row["total"]))
+
+        prix = conn.execute(
+            "SELECT k.price, k.result FROM picks k "
+            " WHERE k.exploratoire = 0 AND k.confidence_computed = 3 "
+            "   AND k.result IN ('win', 'loss') AND k.price > 1.0"
+        ).fetchall()
+    if prix:
+        found.rung_three = Residual(
+            observed=sum(1 for row in prix if str(row["result"]) == "win"),
+            implied=[1.0 / float(row["price"]) for row in prix],
+        )
+    return found
+
+
 @dataclass
 class Override:
     """Les selections ecrasees faute de dossier ouvert.

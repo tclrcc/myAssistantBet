@@ -1,0 +1,44 @@
+-- 063_budget_de_recherche.sql — le budget de dossiers qu'un prompt a reellement ouvert.
+--
+-- **Ce que le brief croyait, et ce que la mesure dit.** Trois releves de
+-- `dossiers_ouverts` existent — 6, 7 et 9 reperes — et le brief en tire « pour un
+-- budget de 10, donc le budget mordait au moins parfois ». Mesure du 19/08/2026
+-- sur les 45 prompts dont le corps porte le nombre :
+--
+--   * les trois lots concernes comptaient **exactement 6, 7 et 9 blocs**. Le
+--     budget effectif est `min(reglage, taille du lot)`, donc 6, 7 et 9 : le
+--     modele a declare **tout le lot** les trois fois, et ce n'est pas le
+--     reglage qui bornait, c'est le lot ;
+--   * le reglage, lui, a bien mordu — mais **avant**, quand il valait 7 : sur
+--     28 prompts, dont un lot de 26 blocs ramene a 7. Depuis son passage a 10 le
+--     18/08, **aucun lot n'a atteint 10**, donc il n'a plus jamais mordu.
+--
+-- Les deux nombres ne se lisent donc pas l'un pour l'autre, et c'est pour ca
+-- qu'ils se stockent tous les deux. Sans cette colonne, « 9 reperes » se lit
+-- comme « il restait de la marge » alors que ca veut dire « il n'y avait plus
+-- rien a ouvrir ».
+--
+-- ## Pourquoi une colonne et pas un calcul a la lecture
+--
+-- Le reglage **change** — 7 puis 10 le 18/08 — et `preferences` ne garde que sa
+-- valeur courante. Recalculer `min(reglage, blocs)` a la lecture ferait donc
+-- decrire les sessions d'hier par le reglage d'aujourd'hui, et le jour ou le
+-- seuil rebouge toute la serie se reecrirait en silence. Meme famille que
+-- `sessions.scale_version` : une echelle ne se reconstitue pas apres coup.
+ALTER TABLE prompts ADD COLUMN research_budget INTEGER;
+
+-- **Retro-rempli, et c'est sur ici** — meme argument que la migration 061, et il
+-- tient a une chose : **le corps du prompt est la preuve**. Le gabarit ecrit le
+-- nombre en toutes lettres (« **ce prompt** en ouvre N »), les corps sont
+-- archives depuis toujours, et rien n'est donc reconstitue — tout est relu.
+--
+-- Le SQL fait ce qu'il peut faire : extraire ce nombre demanderait une
+-- expression reguliere que SQLite n'a pas. La colonne reste NULL et se remplit
+-- au premier passage de `prompt.backfill_research_budget()`, qui relit les corps
+-- en Python. Une extraction recopiee en SQL aurait diverge de la Python au
+-- premier changement de formulation — le piege deja paye par les niveaux de
+-- competition.
+--
+-- Les 114 prompts anterieurs a la ligne resteront NULL : le gabarit ne l'ecrivait
+-- pas encore, et il n'y a rien a relire. NULL veut dire « on ne sait pas », et
+-- c'est la verite.

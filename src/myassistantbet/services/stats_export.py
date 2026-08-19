@@ -82,6 +82,7 @@ SETS_BLOCK = "Le score en sets annoncé"
 #: nulle part ailleurs.
 COMBOS_BLOCK = "Les combinés proposés"
 COST_BLOCK = "Coût du gabarit"
+DOSSIERS_BLOCK = "Dossiers de recherche déclarés"
 #: Le second circuit, ou l'exigence de fait date tombe. **Compte a part de bout
 #: en bout** : melanger les deux populations detruirait la comparaison que la
 #: section existe pour rendre possible.
@@ -175,6 +176,10 @@ class StatsReport:
     #: surveillait**, et elle est spectaculaire : de 853 a 11 934 de cout fixe en
     #: onze jours, quand le budget de recherche restait a sept dossiers.
     prompt_costs: list[prompt_service.CostPoint] = field(default_factory=list)
+    #: La serie des dossiers declares, lot par lot. **Une serie et rien de
+    #: plus** : trois releves sur un seul jour ne portent aucune tendance, et
+    #: rien ici n'en tire une.
+    dossiers: history_service.Dossiers = field(default_factory=history_service.Dossiers)
     #: Ce que chaque palier a **recu** des lots, et ce qu'il en a produit. Trois
     #: causes rendaient un palier vide indiscernables — bande jamais atteinte,
     #: bande atteinte et jamais employee, selection ecartee par le quota — et
@@ -228,6 +233,7 @@ class StatsReport:
             "splits": self.splits,
             "combos": self.combos,
             "prompt_costs": self.prompt_costs,
+            "dossiers": self.dossiers,
             "tier_usage": self.tier_usage,
             "tier_scope": self.tier_scope,
             "exploratory": self.exploratory,
@@ -337,6 +343,10 @@ class StatsReport:
             ),
             (Section("", COMBOS_BLOCK), not self.combos.empty),
             (Section("", COST_BLOCK), bool(self.prompt_costs)),
+            (
+                Section("", DOSSIERS_BLOCK),
+                not self.dossiers.empty and bool(self.dossiers.declared_points),
+            ),
             (Section("", LABELLING_BLOCK), bool(self.labelling)),
             *((Section(LABELLING_BLOCK, f"Par {block.label}"), True) for block in self.labelling),
             # **Le bloc est rendu meme vide**, et ses cartes ne le sont pas :
@@ -570,6 +580,7 @@ def report(settings: Settings | None = None) -> StatsReport:
         splits=[changelog_service.split(day, settings) for day in carnet.days],
         combos=combos_service.summary(settings),
         prompt_costs=list(prompt_service.cost_series(settings)),
+        dossiers=history_service.dossiers(settings),
         tier_usage=history_service.tier_usage(settings),
         tier_scope=history_service.tier_scope(settings),
         exploratory=exploratoire,
@@ -1536,6 +1547,50 @@ def as_markdown(found: StatsReport) -> str:
             out.append(
                 f"| {point.day} | {point.prompts} | {point.blocks} | {point.fixed} | {par_bloc} |"
             )
+
+    if not found.dossiers.empty and found.dossiers.declared_points:
+        lot = found.dossiers
+        out += [
+            "",
+            f"## {DOSSIERS_BLOCK}",
+            "",
+            "**Une série, et rien de plus qu'une série.** Trois relevés, un seul jour, une "
+            "seule session : il n'y a ni pente, ni moyenne, ni projection ici, et il ne doit "
+            "pas y en avoir.",
+            "",
+            "Ce qu'elle dit déjà contredit ce qu'on en attendait. « 6, 7 et 9 repères pour un "
+            "budget de 10 » se lit comme un modèle qui s'approche de son budget sans "
+            "l'épuiser ; les lots correspondants comptaient **exactement 6, 7 et 9 blocs**, "
+            "donc le budget effectif valait 6, 7 et 9 et le lot entier a été déclaré les "
+            "trois fois. Ce n'est pas le réglage qui bornait, c'est le lot — et quand la "
+            "déclaration couvre le lot entier, `hors_dossiers` ne peut plus se produire.",
+            "",
+            f"- {lot.line}",
+            "",
+            "| Jour | Prompt | Lot | Budget | Déclarés | Lot entier ? |",
+            "| --- | ---: | ---: | ---: | ---: | --- |",
+        ]
+        for point in lot.declared_points:
+            entier = "oui" if point.saturated else ("non" if point.saturated is False else "—")
+            out.append(
+                f"| {point.day} | {point.prompt_id} | {point.lot} | "
+                f"{point.budget if point.budget is not None else '—'} | "
+                f"{point.declared} | {entier} |"
+            )
+        part = " · ".join(
+            f"{jour} {compte[0]}/{compte[1]}" for jour, compte in lot.reading_share.items()
+        )
+        residu = (
+            f"{_decimal(lot.rung_three.gap)} pour {_decimal(lot.rung_three.expected)} payée(s)"
+            if lot.rung_three is not None and lot.rung_three.gap is not None
+            else "aucune sélection de ce cran n'est encore tranchée"
+        )
+        out += [
+            "",
+            f"**Part des sélections en lecture, par jour** : {part}.",
+            f"**Résidu au prix du cran 3** : {residu}. Les deux se lisent à côté de la série "
+            "et jamais divisés l'un par l'autre — trois points ne portent aucun rapport.",
+        ]
 
     if not found.combos.empty:
         out += [

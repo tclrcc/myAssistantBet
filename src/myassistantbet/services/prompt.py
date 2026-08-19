@@ -642,6 +642,17 @@ class RenderedPrompt:
     #: donc cesse d'etre mesurable. La question « depuis quand » se posait sans
     #: qu'aucune donnee n'y reponde autrement qu'en relisant des corps archives.
     feedback_active: bool = False
+    #: Le nombre de dossiers de recherche que **ce prompt** a ouverts, soit
+    #: `min(reglage, taille du lot)`.
+    #:
+    #: **Il se stocke parce que le reglage change et que la taille du lot en
+    #: decide autant.** Recalculer a la lecture ferait decrire les sessions
+    #: d'hier par le reglage d'aujourd'hui — meme famille que
+    #: `sessions.scale_version`. Et sans lui, « 9 reperes declares » se lit comme
+    #: « il restait de la marge » alors que la mesure dit l'inverse : les trois
+    #: lots concernes comptaient exactement 6, 7 et 9 blocs, donc le modele a
+    #: declare tout le lot et il n'y avait plus rien a ouvrir.
+    research_budget: int | None = None
 
     @property
     def token_estimate(self) -> int:
@@ -1049,6 +1060,10 @@ def build_prompt(
         template_name=template_name,
         body=_collapse_blank_lines(body),
         blocks=len(blocks),
+        # Le meme calcul que celui ecrit dans le corps, et par la meme
+        # expression : deux ecritures auraient diverge au premier ajustement, et
+        # la colonne aurait alors decrit un budget que le prompt n'annoncait pas.
+        research_budget=min(threshold("recherche_dossiers", settings), len(blocks)),
         started=started_labels(session_id, settings, moment, competition_id),
         event_ids=[event.event_id for event in events],
         # `enough` et non `not empty` : le bloc peut paraitre en ne portant que
@@ -1108,8 +1123,8 @@ def save_prompt(session_id: int, prompt: RenderedPrompt, settings: Settings | No
         cursor = conn.execute(
             "INSERT INTO prompts (session_id, template_name, body, token_estimate, "
             "                     feedback_active, created_at, blocks, fixed_tokens, "
-            "                     block_tokens) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "                     block_tokens, research_budget) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 prompt.template_name,
@@ -1120,6 +1135,7 @@ def save_prompt(session_id: int, prompt: RenderedPrompt, settings: Settings | No
                 cout.blocks,
                 cout.fixed,
                 cout.block_tokens,
+                prompt.research_budget,
             ),
         )
         prompt_id = int(cursor.lastrowid)
@@ -1485,6 +1501,54 @@ def backfill_costs(settings: Settings | None = None) -> int:
                 (cout.blocks, cout.fixed, cout.block_tokens, int(row["id"])),
             )
     return len(rows)
+
+
+#: Le budget de recherche, tel que le gabarit l'ecrit dans le corps du prompt.
+#:
+#: **Le corps est la preuve**, et c'est ce qui rend le retro-remplissage sur —
+#: meme argument que le decoupage du cout, et que `prompts.feedback_active`
+#: avant lui. Rien n'est reconstitue : le nombre est ecrit en toutes lettres.
+#:
+#: Le motif traverse un retour a la ligne (`\s+`) parce que le gabarit coupe la
+#: phrase la : ecrit sans, il ne trouverait rien et la colonne resterait vide
+#: sans qu'aucune erreur ne le dise — le defaut caracteristique du projet.
+RESEARCH_BUDGET = re.compile(r"\*\*ce prompt\*\* en ouvre\s+(\d+)")
+
+
+def read_research_budget(body: str) -> int | None:
+    """Le budget qu'un prompt archive annonce, ou `None` s'il ne l'annonce pas.
+
+    Les prompts anterieurs a cette phrase du gabarit rendent `None`, et c'est la
+    verite : il n'y a rien a relire chez eux. Un repli sur le reglage courant
+    ferait decrire un prompt du 04/08 par une valeur posee le 18.
+    """
+    found = RESEARCH_BUDGET.search(body or "")
+    return int(found.group(1)) if found else None
+
+
+def backfill_research_budget(settings: Settings | None = None) -> int:
+    """Remplit le budget des prompts archives. Rend le nombre de lignes ecrites.
+
+    Idempotent : une ligne deja remplie n'est pas reprise. Un corps qui n'annonce
+    rien est **repasse a chaque fois**, ce qui ne coute qu'une lecture et evite
+    d'ecrire un zero qui se lirait comme « aucun dossier ouvert ».
+    """
+    settings = settings or get_settings()
+    ecrites = 0
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT id, body FROM prompts WHERE research_budget IS NULL AND body IS NOT NULL"
+        ).fetchall()
+        for row in rows:
+            budget = read_research_budget(str(row["body"]))
+            if budget is None:
+                continue
+            conn.execute(
+                "UPDATE prompts SET research_budget = ? WHERE id = ?",
+                (budget, int(row["id"])),
+            )
+            ecrites += 1
+    return ecrites
 
 
 @dataclass(frozen=True)

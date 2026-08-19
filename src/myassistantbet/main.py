@@ -94,6 +94,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if repris:
         logger.info("Cout du gabarit : %d prompt(s) archive(s) decoupe(s)", repris)
 
+    # Le budget de recherche, meme argument et meme forme : le gabarit ecrit le
+    # nombre en toutes lettres dans le corps, donc rien n'est reconstitue. Les
+    # prompts anterieurs a cette phrase restent NULL, ce qui est la verite.
+    budgets = prompt_service.backfill_research_budget(settings)
+    if budgets:
+        logger.info("Budget de recherche : %d prompt(s) archive(s) relu(s)", budgets)
+
     app.state.http = httpx.AsyncClient(follow_redirects=True)
     app.state.scheduler = None
     if settings.scheduler_enabled:

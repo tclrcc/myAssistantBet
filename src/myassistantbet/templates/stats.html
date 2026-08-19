@@ -1336,6 +1336,81 @@
 </section>
 {% endif %}
 
+{% if not dossiers.empty and dossiers.declared_points %}
+{# **LA SÉRIE DES DOSSIERS DÉCLARÉS, ET RIEN DE PLUS QU'UNE SÉRIE.** Trois
+   relevés, un seul jour, une seule session : il n'y a ni pente, ni moyenne, ni
+   projection ici, et il ne doit pas y en avoir. Ce qui se rend est la liste
+   avec de quoi la lire.
+
+   Ce qu'elle dit déjà contredit ce qu'on en attendait. « 6, 7 et 9 repères pour
+   un budget de 10 » se lit comme un modèle qui s'approche de son budget sans
+   l'épuiser ; les lots correspondants comptaient exactement 6, 7 et 9 blocs,
+   donc le budget effectif valait 6, 7 et 9 et le lot entier a été déclaré les
+   trois fois. Ce n'est pas le réglage qui bornait, c'est le lot. #}
+<section id="dossiers">
+  <h2>Dossiers de recherche déclarés</h2>
+  <p class="block-note"><strong>{{ dossiers.line }}</strong></p>
+  <details class="why">
+    <summary>Pourquoi la maille est le lot et non la session</summary>
+    <p>
+      La session 17 porte <strong>trois lots</strong> — six, sept et neuf blocs —
+      et trois déclarations. Rangée par session elle rendrait « 9 repères pour
+      22 matchs », deux nombres qui ne se sont jamais rencontrés : le lot de la
+      déclaration a neuf matchs, pas vingt-deux.
+      <code>sessions.open_dossiers</code> ne garde d'ailleurs que la dernière des
+      trois — c'est un état courant, pas un historique.
+    </p>
+    <p>
+      Le budget effectif est <code>min(réglage, taille du lot)</code>. Il est
+      <strong>stocké</strong> et non recalculé : le réglage est passé de 7 à 10
+      le 18/08, et le recalculer ferait décrire les sessions d'hier par la valeur
+      d'aujourd'hui. Le réglage a bien mordu, mais <strong>avant</strong> — sur
+      28 prompts quand il valait 7, dont un lot de 26 blocs ramené à 7. Depuis
+      son passage à 10, aucun lot ne l'a atteint.
+    </p>
+    <p>
+      Conséquence à connaître, et elle porte sur la mesure elle-même : quand la
+      déclaration couvre le lot entier, <code>hors_dossiers</code> ne peut plus
+      se produire. Le compteur d'inflation est alors neutralisé — non par un
+      défaut de code, mais par une déclaration qui ne laisse rien dehors.
+    </p>
+  </details>
+  <table class="board">
+    <thead>
+      <tr>
+        <th>Jour</th><th>Prompt</th><th class="num">Lot</th>
+        <th class="num">Budget</th><th class="num">Déclarés</th><th>Lot entier ?</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for point in dossiers.declared_points %}
+      <tr>
+        <td>{{ point.day }}</td>
+        <td class="num">{{ point.prompt_id }}</td>
+        <td class="num">{{ point.lot }}</td>
+        <td class="num">{{ point.budget if point.budget is not none else '—' }}</td>
+        <td class="num">{{ point.declared }}</td>
+        <td>{{ 'oui' if point.saturated else ('non' if point.saturated is false else '—') }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {# Les deux croisements demandés, **rendus à côté et jamais divisés l'un par
+     l'autre** : trois points ne portent aucun rapport. #}
+  <p class="block-note">
+    Part des sélections en lecture, par jour :
+    {% for jour, compte in dossiers.reading_share.items() %}
+    {{ jour }} <strong>{{ compte[0] }}/{{ compte[1] }}</strong>{% if not loop.last %} ·
+    {% endif %}{% endfor %}.
+    Résidu au prix du cran 3 :
+    {% if dossiers.rung_three and dossiers.rung_three.gap is not none %}
+    <strong>{{ '%.1f' | format(dossiers.rung_three.gap) }}</strong> pour
+    {{ '%.1f' | format(dossiers.rung_three.expected) }} payée(s).
+    {% else %}aucune sélection de ce cran n'est encore tranchée.{% endif %}
+  </p>
+</section>
+{% endif %}
+
 {% if not set_scores.empty %}
 {# Le score exact en sets : la **seule** mesure de cette page qui ne mélange
    aucun prix. Quatre issues, vérifiables sur n'importe quelle feuille de match.
