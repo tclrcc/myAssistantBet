@@ -4407,17 +4407,69 @@ class Dossiers:
         return [point for point in self.points if point.declared is not None]
 
     @property
+    def binding(self) -> list[DossierPoint]:
+        """Les lots ou le **reglage** a borne, c'est-a-dire budget < taille du lot.
+
+        C'est la seule lecture qui dise si la variable existe encore. Un lot
+        entierement declare ne prouve rien tout seul : il peut venir d'un budget
+        atteint ou d'un lot plus petit que lui, et ce sont deux faits opposes.
+        """
+        return [
+            point for point in self.points if point.budget is not None and point.budget < point.lot
+        ]
+
+    @property
+    def bounded_line(self) -> str:
+        """Ce que le budget borne encore, en une phrase et sur la mesure du jour.
+
+        **Le fait a rendre visible, pour ne pas etre relu a l'envers dans un
+        mois.** Le reglage est passe de 7 a 10 : sur les lots soumis depuis, il
+        n'a plus borne une seule fois — ce n'est pas lui qui limite, c'est la
+        taille du lot. Consequence directe : quand la declaration couvre le lot
+        entier, `hors_dossiers` **ne peut plus se produire**, et le compteur
+        d'inflation des migrations 043 et 045 est neutralise.
+
+        **Les bornes sont mesurees, jamais ecrites en dur** : elles bougeront au
+        premier lot plus grand, et une phrase qui annoncerait « de 6 a 12 » se
+        mettrait a mentir sans que rien ne le dise.
+        """
+        avec = [point for point in self.points if point.budget is not None]
+        if not avec:
+            return ""
+        recents = [point for point in avec if not self.binding or point.day >= self.binding[-1].day]
+        depuis = [point for point in recents if point not in self.binding]
+        if not depuis:
+            return ""
+        tailles = [point.lot for point in depuis]
+        return (
+            f"Le budget de recherche ne borne plus : sur les {len(depuis)} derniers lots, "
+            f"de {min(tailles)} à {max(tailles)} blocs, le réglage n'a pas mordu une seule "
+            "fois — c'est la taille du lot qui limite, pas lui. Quand la déclaration couvre "
+            "le lot entier, « hors_dossiers » ne peut donc plus se produire, et le seul "
+            "discriminant restant pour comparer un fait daté à une lecture est le niveau "
+            "de source."
+        )
+
+    @property
     def line(self) -> str:
         """Une phrase qui dit l'effectif et s'arrete la."""
         vus = self.declared_points
-        if not vus:
-            return "aucun lot n'a encore rapporté sa ligne « dossiers_ouverts »"
-        satures = sum(1 for point in vus if point.saturated)
-        return (
-            f"{len(vus)} lot(s) avec la ligne, sur {len(self.points)} soumis · "
-            f"{satures} déclare(nt) le lot entier · "
-            "trois points ne font pas une tendance, et rien n'en est tiré ici"
-        )
+        if vus:
+            satures = sum(1 for point in vus if point.saturated)
+            out = (
+                f"{len(vus)} lot(s) avec la ligne, sur {len(self.points)} soumis · "
+                f"{satures} déclare(nt) le lot entier · "
+                "trois points ne font pas une tendance, et rien n'en est tiré ici"
+            )
+        else:
+            out = "aucun lot n'a encore rapporté sa ligne « dossiers_ouverts »"
+        # **Le constat sur le budget ne depend pas d'une declaration collee** :
+        # il porte sur les lots soumis, pas sur ce que le modele en a dit. Le
+        # ranger sous la branche « il existe une declaration » le ferait
+        # disparaitre exactement quand la ligne manque — et c'est alors qu'on se
+        # demande si le budget y est pour quelque chose.
+        borne = self.bounded_line
+        return f"{out}. {borne}" if borne else out
 
 
 def dossiers(settings: Settings | None = None) -> Dossiers:

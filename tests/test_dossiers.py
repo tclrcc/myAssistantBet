@@ -198,3 +198,39 @@ def test_le_croisement_se_rend_a_cote_et_jamais_divise(migrated: Settings, reper
 
     assert isinstance(serie.reading_share, dict)
     assert serie.rung_three is None, "aucune sélection de cran 3 tranchée dans cette base"
+
+
+def test_la_page_dit_que_le_budget_ne_borne_plus(migrated: Settings) -> None:
+    """**Le fait à rendre visible, pour ne pas être relu à l'envers dans un
+    mois.** Le réglage est passé de 7 à 10 : sur les lots soumis depuis, il n'a
+    plus borné une seule fois. Ce n'est pas lui qui limite, c'est la taille du
+    lot — et quand la déclaration couvre le lot entier, `hors_dossiers` ne peut
+    plus se produire.
+
+    **Les bornes sont mesurées, jamais écrites en dur** : elles bougeront au
+    premier lot plus grand, et une phrase qui annoncerait « de 6 à 12 » se
+    mettrait à mentir sans que rien ne le dise.
+    """
+    session_id = _session(migrated)
+    _prompt(migrated, session_id, blocs=12, budget=7)  # le réglage bornait
+    _prompt(migrated, session_id, blocs=5, budget=5)  # il ne borne plus
+    _prompt(migrated, session_id, blocs=9, budget=9)
+    prompt_service.backfill_research_budget(migrated)
+
+    serie = dossiers(settings=migrated)
+
+    assert len(serie.binding) == 1, "un seul lot où le réglage a mordu"
+    assert "de 5 à 9 blocs" in serie.bounded_line, "les bornes viennent de la mesure"
+    assert "hors_dossiers » ne peut donc plus se produire" in serie.bounded_line
+    assert "le niveau de source" in serie.bounded_line
+    assert serie.bounded_line in serie.line, "la phrase est rendue, pas seulement calculée"
+
+
+def test_un_reglage_qui_borne_encore_ne_dit_rien(migrated: Settings) -> None:
+    """La réciproque : tant que le réglage mord sur le dernier lot, la phrase ne
+    se pose pas. Un constat daté ne s'écrit pas d'avance."""
+    session_id = _session(migrated)
+    _prompt(migrated, session_id, blocs=20, budget=7)
+    prompt_service.backfill_research_budget(migrated)
+
+    assert dossiers(settings=migrated).bounded_line == ""
