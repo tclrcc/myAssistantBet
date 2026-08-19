@@ -14,8 +14,11 @@ from __future__ import annotations
 
 import argparse
 import logging
+import shutil
 import sqlite3
 import sys
+import tempfile
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -28,6 +31,25 @@ MIN_SQLITE = (3, 27, 0)
 
 BACKUP_PREFIX = "myassistantbet-"
 BACKUP_SUFFIX = ".db"
+
+#: Le prefixe que porte **tout** repertoire temporaire cree par le projet.
+#:
+#: **Il existe pour rendre l'appartenance explicite, et c'est toute la garde.**
+#: `tempfile.mkdtemp()` sans prefixe rend `/tmp/tmpXXXXXXXX`, indiscernable de
+#: celui de n'importe quel autre programme de la machine — et une purge qui
+#: effacerait `tmp*` toucherait ce que le projet n'a pas cree. Mesure du
+#: 19/08/2026 : **208 repertoires anonymes, 63 Mo**, tous laisses par
+#: `tests/helpers.migre_jusqu_a`, et impossibles a reclamer par une regle sure
+#: puisque rien dans leur nom ne les rattache a ce depot.
+TEMP_PREFIX = "myassistantbet-"
+
+#: Age au-dela duquel un artefact temporaire du projet est purge.
+#:
+#: **Vingt-quatre heures et non une**, parce qu'une suite de tests dure quatre
+#: minutes mais qu'une session de travail garde ses copies ouvertes toute une
+#: journee. En dessous, la purge retirerait un repertoire sous les pieds d'un
+#: travail en cours ; au-dessus, elle laisserait passer une nuit de plus.
+TEMP_MAX_HOURS = 24
 
 
 class BackupError(RuntimeError):
@@ -106,6 +128,83 @@ def rotate(directory: Path, keep_days: int, now: datetime | None = None) -> list
             removed.append(path)
             logger.info("Sauvegarde expiree supprimee : %s", path.name)
     return removed
+
+
+@dataclass(frozen=True)
+class Purge:
+    """Ce qu'une purge d'artefacts temporaires a retire."""
+
+    removed: int = 0
+    freed: int = 0
+    kept: int = 0
+
+    @property
+    def line(self) -> str:
+        return (
+            f"{self.removed} artefact(s) temporaire(s) purge(s), "
+            f"{self.freed / 1_048_576:.1f} Mo liberes · {self.kept} conserve(s)"
+        )
+
+
+def _size(path: Path) -> int:
+    """Les octets d'un fichier ou d'une arborescence. Ce qui ne se lit pas vaut 0."""
+    if path.is_file():
+        return path.stat().st_size
+    return sum(item.stat().st_size for item in path.rglob("*") if item.is_file())
+
+
+def purge_temp(
+    directory: Path | None = None,
+    max_hours: int = TEMP_MAX_HOURS,
+    now: datetime | None = None,
+) -> Purge:
+    """Retire les artefacts temporaires **du projet** vieux de plus de `max_hours`.
+
+    **Le critere d'appartenance est le prefixe, jamais un motif large.** C'est la
+    seule regle qui ne puisse pas emporter le travail d'un autre programme, et
+    ce repertoire est partage par toute la machine : `pytest`, `uv`, `ruff` et
+    les sessions de travail y ecrivent aussi. Un `tmp*` aurait tout pris.
+
+    **Les repertoires de `pytest` ne sont pas touches**, et ce n'est pas un
+    oubli : `pytest` fait sa propre rotation — il garde les trois dernieres
+    executions — et les retirer pendant qu'une suite tourne lui retirerait sa
+    base sous les pieds. La convention de `CONTRIBUTING.md` le dit deja.
+
+    Un artefact qu'on ne sait pas supprimer est **compte et laisse** : une purge
+    qui echoue en silence dirait « rien a faire » quand elle veut dire « je n'ai
+    pas pu », et c'est le defaut caracteristique de ce projet.
+    """
+    racine = directory or Path(tempfile.gettempdir())
+    limite = (now or datetime.now(UTC)).timestamp() - max_hours * 3600
+    found = Purge()
+    if not racine.is_dir():
+        return found
+    removed = freed = kept = 0
+    for chemin in sorted(racine.glob(f"{TEMP_PREFIX}*")):
+        try:
+            age = chemin.stat().st_mtime
+        except OSError:
+            kept += 1
+            continue
+        if age >= limite:
+            kept += 1
+            continue
+        taille = _size(chemin)
+        try:
+            if chemin.is_file():
+                chemin.unlink()
+            else:
+                shutil.rmtree(chemin)
+        except OSError as exc:
+            logger.warning("Artefact temporaire non supprime : %s (%s)", chemin.name, exc)
+            kept += 1
+            continue
+        removed += 1
+        freed += taille
+    found = Purge(removed=removed, freed=freed, kept=kept)
+    if removed:
+        logger.info("Purge des artefacts temporaires — %s", found.line)
+    return found
 
 
 def run(

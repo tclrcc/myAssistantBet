@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from myassistantbet import db
+from myassistantbet import backup, db
 from myassistantbet.backup import (
     BackupError,
     backup_name,
@@ -227,3 +227,110 @@ def test_cli_retention_personnalisee(migrated: Settings) -> None:
     main(["--keep-days", "1"])
 
     assert not expiree.exists()
+
+
+# -- La purge des artefacts temporaires ---------------------------------------
+#
+# **Le disque plein est la seule panne d'exploitation que rien ne surveille.**
+# `/tmp` est un tmpfs de 5,8 Go — de la mémoire vive — et il est passé par 96 %,
+# 68 % puis 78 % en trois sessions. SQLite y pose ses fichiers temporaires : un
+# `ENOSPC` ferait échouer un `VACUUM INTO` sur la base servie, et l'erreur ne
+# ressemble pas à ce qu'elle est.
+
+
+def _vieux(chemin: Path, heures: int) -> Path:
+    """Vieillit un artefact de `heures`, sans attendre."""
+    quand = datetime.now(UTC).timestamp() - heures * 3600
+    os.utime(chemin, (quand, quand))
+    return chemin
+
+
+def test_la_purge_retire_les_artefacts_du_projet_expires(tmp_path: Path) -> None:
+    """Le cas ordinaire : un répertoire du projet, vieux de plus de 24 h."""
+    vieux = tmp_path / f"{backup.TEMP_PREFIX}ancien"
+    vieux.mkdir()
+    (vieux / "001_init.sql").write_text("x" * 2048, encoding="utf-8")
+    _vieux(vieux, heures=30)
+
+    purge = backup.purge_temp(tmp_path)
+
+    assert purge.removed == 1
+    assert purge.freed >= 2048
+    assert not vieux.exists()
+
+
+def test_un_artefact_hors_perimetre_survit(tmp_path: Path) -> None:
+    """**Le critère d'appartenance est le préfixe, jamais un motif large.**
+
+    Ce répertoire est partagé par toute la machine : `pytest`, `uv`, `ruff` et
+    les sessions de travail y écrivent aussi. Un `tmp*` aurait tout pris — et
+    c'est précisément pourquoi les 208 répertoires anonymes laissés par
+    `migre_jusqu_a` n'étaient **pas** réclamables par une règle sûre : rien dans
+    leur nom ne les rattachait à ce dépôt.
+    """
+    for nom in ("tmpXXXXXXXX", "pytest-of-ubuntu", "autre-programme", "myassistantbet"):
+        etranger = tmp_path / nom
+        etranger.mkdir()
+        (etranger / "donnee").write_text("précieux", encoding="utf-8")
+        _vieux(etranger, heures=999)
+
+    purge = backup.purge_temp(tmp_path)
+
+    assert purge.removed == 0, "aucun de ces noms ne porte le préfixe du projet"
+    assert all((tmp_path / nom).exists() for nom in ("tmpXXXXXXXX", "pytest-of-ubuntu"))
+    # `myassistantbet` sans tiret n'est pas `myassistantbet-` : le préfixe est
+    # exact, et un préfixe qui déborde vaut un motif large.
+    assert (tmp_path / "myassistantbet").exists()
+
+
+def test_un_artefact_de_moins_de_24_h_survit(tmp_path: Path) -> None:
+    """**Une purge trop courte retire un répertoire sous les pieds d'un travail
+    en cours.** Une suite de tests dure quatre minutes, mais une session de
+    travail garde ses copies ouvertes toute une journée."""
+    recent = tmp_path / f"{backup.TEMP_PREFIX}en-cours"
+    recent.mkdir()
+    (recent / "base.db").write_text("x", encoding="utf-8")
+    _vieux(recent, heures=23)
+
+    purge = backup.purge_temp(tmp_path)
+
+    assert (purge.removed, purge.kept) == (0, 1)
+    assert recent.exists()
+
+
+def test_la_purge_compte_ce_qu_elle_laisse(tmp_path: Path) -> None:
+    """**Un artefact qu'on ne sait pas retirer est compté et laissé.** Une purge
+    qui échouerait en silence dirait « rien à faire » quand elle veut dire « je
+    n'ai pas pu » — le défaut caractéristique de ce projet."""
+    for heures, nom in ((30, "vieux"), (1, "frais")):
+        chemin = tmp_path / f"{backup.TEMP_PREFIX}{nom}"
+        chemin.mkdir()
+        _vieux(chemin, heures=heures)
+
+    purge = backup.purge_temp(tmp_path)
+
+    assert (purge.removed, purge.kept) == (1, 1)
+    assert "1 artefact(s) temporaire(s) purge(s)" in purge.line
+    assert "1 conserve(s)" in purge.line
+
+
+def test_un_repertoire_absent_ne_fait_rien(tmp_path: Path) -> None:
+    """Une machine sans répertoire temporaire n'est pas une erreur."""
+    assert backup.purge_temp(tmp_path / "inexistant").removed == 0
+
+
+def test_les_deux_repertoires_temporaires_du_projet_portent_le_prefixe() -> None:
+    """**Sans le préfixe, la purge n'a rien à reconnaître.**
+
+    C'est la moitié qui manquait : `tempfile.mkdtemp()` rend
+    `/tmp/tmpXXXXXXXX`, indiscernable de n'importe quel autre programme. Les 208
+    répertoires anonymes mesurés le 19/08/2026 — 63 Mo — venaient tous de là.
+    """
+    for chemin in (
+        Path("src/myassistantbet/selfcheck.py"),
+        Path("tests/helpers.py"),
+    ):
+        source = chemin.read_text(encoding="utf-8")
+        assert "mkdtemp(prefix=TEMP_PREFIX)" in source, (
+            f"{chemin} crée un répertoire temporaire sans le préfixe du projet"
+        )

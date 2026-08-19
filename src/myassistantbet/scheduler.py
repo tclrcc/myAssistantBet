@@ -28,6 +28,7 @@ import httpx
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 
+from . import backup as backup_service
 from . import timelines as timelines_service
 from .config import Settings
 from .providers.apifootball import APIFootballClient
@@ -157,6 +158,22 @@ def build_scheduler(client: httpx.AsyncClient, settings: Settings) -> AsyncIOSch
                 ingestion_service.record(None, serve.rejects, settings)
         except Exception:
             logger.exception("Statistiques de service : echec")
+        try:
+            # **Le disque plein est la seule panne d'exploitation que rien ne
+            # surveille**, et elle arreterait le service sans qu'aucun des
+            # dispositifs construits ne dise pourquoi : `/tmp` est de la memoire
+            # vive, SQLite y pose ses fichiers temporaires, et un `ENOSPC` ne
+            # ressemble pas a ce qu'il est.
+            #
+            # Elle est **ici** et non au demarrage : un service reste allume des
+            # jours, et une purge qui ne tourne qu'au redemarrage ne tourne pas.
+            # Elle ne coute rien et ne sort pas de la machine — sa place parmi
+            # les sources gratuites est la cadence, une fois par jour.
+            purge = backup_service.purge_temp()
+            if purge.removed:
+                logger.info("Artefacts temporaires : %s", purge.line)
+        except Exception:
+            logger.exception("Purge des artefacts temporaires : echec")
 
     async def _timelines() -> None:
         """Reprise des timelines de service, par lots bornes.

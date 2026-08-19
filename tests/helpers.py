@@ -308,10 +308,19 @@ def migre_jusqu_a(settings: Any, version: int) -> list[str]:
     from pathlib import Path
 
     from myassistantbet import db
+    from myassistantbet.backup import TEMP_PREFIX
 
     source = settings.migrations_dir
-    dossier = Path(tempfile.mkdtemp())
-    for chemin in sorted(source.glob("*.sql")):
-        if int(chemin.name.split("_", 1)[0]) <= version:
-            shutil.copy(chemin, dossier / chemin.name)
-    return db.run_migrations(settings, migrations_dir=dossier)
+    # **Le repertoire se retire apres usage, et il porte le prefixe du projet.**
+    # Sans le premier, chaque appel laissait un dossier derriere lui : 208 en
+    # quinze jours, 63 Mo, sur un `/tmp` qui est de la memoire vive. Sans le
+    # second, aucune purge ne pouvait les reclamer — `tempfile.mkdtemp()` rend un
+    # nom que rien ne rattache a ce depot.
+    dossier = Path(tempfile.mkdtemp(prefix=TEMP_PREFIX))
+    try:
+        for chemin in sorted(source.glob("*.sql")):
+            if int(chemin.name.split("_", 1)[0]) <= version:
+                shutil.copy(chemin, dossier / chemin.name)
+        return db.run_migrations(settings, migrations_dir=dossier)
+    finally:
+        shutil.rmtree(dossier, ignore_errors=True)

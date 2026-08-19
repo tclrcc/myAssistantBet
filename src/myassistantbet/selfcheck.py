@@ -31,6 +31,7 @@ from html import unescape
 from pathlib import Path
 
 from . import db
+from .backup import TEMP_PREFIX
 from .config import Settings, get_settings
 from .services import board as board_service
 from .services import imports_raw, picks_import, write_paths
@@ -380,7 +381,10 @@ class _temporary:
     """
 
     def __enter__(self) -> Settings:
-        self.dossier = Path(tempfile.mkdtemp())
+        # Le prefixe rend l'appartenance explicite : sans lui, ce repertoire est
+        # indiscernable de celui de n'importe quel programme de la machine, et la
+        # purge ne pourrait pas le reclamer sans emporter le reste.
+        self.dossier = Path(tempfile.mkdtemp(prefix=TEMP_PREFIX))
         # `DB_PATH` **et** le cache de configuration : les routes appellent
         # `get_settings()` elles-memes, et sans cette bascule le controle
         # ecrirait ses selections cassees dans la base servie. Le projet a deja
