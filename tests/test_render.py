@@ -7,6 +7,7 @@ import pytest
 
 from myassistantbet.config import get_settings
 from myassistantbet.services.render import (
+    ESTIMATED_MARK,
     Outcome,
     RenderableEvent,
     common_unplayable,
@@ -1012,7 +1013,11 @@ def test_un_horaire_deplace_se_lit_sous_l_heure() -> None:
     )
 
     lignes = bloc.splitlines()
-    assert lignes[0].endswith("· 12/08 23:00")
+    # **L'heure est dans l'en-tete, la mention juste dessous** : c'est ce que ce
+    # test garde. Elle n'est plus en fin de ligne depuis que le tennis porte
+    # « (estimée) », et exiger la fin de ligne testerait la mise en forme plutot
+    # que la regle.
+    assert "· 12/08 23:00" in lignes[0]
     assert lignes[1] == "    (horaire deplace de +5h05, constate le 12/08 22:14)"
 
 
@@ -1154,3 +1159,42 @@ def test_le_constat_du_book_de_substitution_porte_deja_le_sien(
 
     assert "book de substitution" in ligne
     assert "books interroges" not in ligne
+
+
+def test_l_heure_d_un_bloc_tennis_est_annoncee_comme_estimee() -> None:
+    """**Une heure au quart d'heure près se lit comme une heure ferme.**
+
+    Au tennis elle ne l'est pas : un match qui suit trois autres sur le même
+    court part quand il part. Le lot 11 a établi qu'aucune source accessible ne
+    sert le court ni le rang dans le programme — l'heure est donc
+    **invérifiable**, et deux blocs d'une session réelle du 16/08 étaient faux de
+    deux à trois heures.
+
+    La mention ne coûte rien et retire la fausse précision. Elle ne prétend pas
+    corriger l'heure : rien ne le permet.
+    """
+    from datetime import UTC, datetime
+
+    del UTC, datetime
+    bloc = _bloc_deplace()
+
+    assert bloc.splitlines()[0].endswith(ESTIMATED_MARK)
+
+
+def test_le_football_ne_porte_aucune_mention_d_estimation() -> None:
+    """**La différence est le point.** Un coup d'envoi de football est fixé à
+    l'avance, et un report s'y dit déjà par sa propre ligne. Marquer les deux
+    ferait de la mention un décor, et elle cesserait d'être lue."""
+    from datetime import UTC, datetime
+
+    event = RenderableEvent(
+        index=1,
+        sport_key="football",
+        competition="Ligue 1",
+        home="Lyon",
+        away="Nice",
+        commence_local=datetime(2026, 8, 12, 20, 45, tzinfo=UTC),
+        markets={"h2h": [Outcome("Lyon", 1.99)]},
+    )
+
+    assert ESTIMATED_MARK not in render_event(event).splitlines()[0]

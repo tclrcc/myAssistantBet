@@ -897,9 +897,30 @@ def _unplayable_line(event: RenderableEvent, common: Sequence[str] = ()) -> list
 # -- Bloc complet -----------------------------------------------------------
 
 
+#: Sports dont l'heure de coup d'envoi est **structurellement** une estimation.
+#:
+#: **Au tennis, un match qui suit trois autres sur le meme court part quand il
+#: part.** L'heure servie est une heure « a suivre », et le lot 11 a etabli
+#: qu'aucune source accessible ne sert le court ni le rang dans le programme :
+#: elle est donc **invérifiable**, et une heure au quart d'heure pres se lit
+#: comme une heure ferme. Mesure qui l'impose : deux blocs d'une session reelle
+#: du 16/08 etaient faux de deux a trois heures.
+#:
+#: Le football n'y est pas, et c'est la difference qui compte : un coup d'envoi
+#: y est fixe a l'avance, et un report se dit deja par `_shift_line`.
+ESTIMATED_START = ("tennis",)
+
+#: La mention accolee a l'heure. **Constante et non litteral recopie** : le
+#: gabarit l'explique, et deux ecritures du meme mot auraient fini par ne plus
+#: se reconnaitre — meme regle que `NEUTRAL_MARK` et `weather.ALERT_MARK`.
+ESTIMATED_MARK = "(estimée)"
+
+
 def _header(event: RenderableEvent) -> list[str]:
     sport = SPORT_LABELS.get(event.sport_key, event.sport_key.upper())
     when = event.commence_local.strftime("%d/%m %H:%M")
+    if event.sport_key in ESTIMATED_START:
+        when = f"{when} {ESTIMATED_MARK}"
     # Le cyclisme n'a pas de second participant : l'etape tient lieu d'affiche.
     rows = [
         f"### M{event.index} · {sport} · {event.competition} · "

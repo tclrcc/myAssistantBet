@@ -173,7 +173,7 @@ Pour tout sport, et d'abord — c'est bloquant :
   · Calendrier : match 3 jours avant ou après, voyage long, turnover annoncé
   · Conférence de presse et déclarations de l'entraîneur
   · Conditions : météo, pelouse, terrain neutre, altitude, affluence
-  · Arbitre : tendance cartons et penaltys
+  · Arbitre : son bilan cartons **seulement si tu vises un marché de cartons**
   · État de saison : championnat commencé ou non, forme lisible ou non
 
 {% endif %}{% if 'tennis' in sports %}TENNIS
@@ -193,9 +193,13 @@ Pour tout sport, et d'abord — c'est bloquant :
     feuille de match sur atptour.com et wtatennis.com, et c'est l'instance qui
     les publie : **niveau 1**. Un match postérieur à la date de relevé de la
     ligne manque aussi. Un tour non trouvé s'écrit « non trouvé ».
-  · Ordre du jeu réel : sur un tournoi perturbé (pluie, tours reportés), les
-    horaires du bloc sont des estimations « à suivre », pas des heures fixes —
-    et un match peut basculer de la session de nuit au plein jour
+  · Ordre du jeu réel : **l'heure d'un bloc tennis est toujours une estimation**,
+    et elle porte « (estimée) » pour le dire. Aucune source accessible ne sert le
+    court ni le rang dans le programme — mesuré au lot 11 — donc un match qui
+    suit trois autres sur le même court part quand il part. Deux blocs d'une
+    session réelle étaient faux de deux à trois heures. Sur un tournoi perturbé
+    l'écart grandit, et un match peut basculer de la session de nuit au plein
+    jour ; c'est la seule ligne du bloc dont l'imprécision est structurelle
   · Statut dans le tableau : qualifié, wild card, lucky loser, tête de série
   · Matchup de style : gros serveur contre relanceur, droitier ou gaucher,
     qui subit quoi — c'est ce qui décide des marchés par set. La ligne
@@ -1039,7 +1043,12 @@ pas comme une information.
 **« Arbitre »** donne **le nom, et rien d'autre** : la source ne sert ni
 identifiant, ni pays, ni historique. C'est une **économie de recherche, pas un
 fait** — sans elle il fallait une requête pour savoir qui arbitre avant d'en
-dépenser une seconde sur ses habitudes. Cherche son bilan cartons et penaltys.
+dépenser une seconde sur ses habitudes.
+
+**Ne cherche son bilan cartons que si la sélection porte sur un marché de
+cartons.** Ailleurs, cette requête n'a jamais abouti dans le budget d'une
+session — huit arbitres sur deux sessions réelles, huit « non trouvé » — et elle
+en coûte une.
 
 Deux réponses sont valables, et la seconde est **un fait du match, pas un
 échec** : un bilan chiffré, ou « aucun historique dans cette confédération » —
@@ -1049,7 +1058,7 @@ telle et non en section F comme un manque.
 **Trois libellés, trois comportements**, et les deux derniers sont l'inverse
 l'un de l'autre :
 
-  · **un nom** — cherche son bilan cartons et penaltys ;
+  · **un nom** — son bilan cartons, mais seulement sur un marché de cartons ;
   · **« non encore désigné »** — ne cherche pas, la désignation n'est pas
     tombée et rien ne l'a remplacée ;
   · **« non servi sur cette compétition »** — cherche **le nom lui-même**. La
