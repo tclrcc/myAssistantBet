@@ -1,42 +1,38 @@
-# ÉTAT AU 19/08/2026, 21h30 — à lire en premier
+# ÉTAT AU 19/08/2026, 23h00 — à lire en premier
 
-**En service** : schéma **64**, `SERVE_LINES_ENABLED=1`, et
-**`CURRENT_EVENT_LINE_ENABLED=1` depuis ce lot**. Service redémarré et vérifié
-depuis le serveur, pas depuis un rendu local.
+**En service** : schéma **64**, `SERVE_LINES_ENABLED=1`,
+`CURRENT_EVENT_LINE_ENABLED=1`.
 
-**La ligne `Ici` est en production.** Le bloc tennis porte, pour chaque joueur,
-ce qu'il a fait dans *ce* tournoi : score tour par tour, abandons et forfaits
-nommés, agrégat de service avec son dénominateur en points. Aucun appel — la
-charge utile est archivée. Coût mesuré : **+131 tokens par bloc**. Couverture à
-l'activation : **79 %** des 190 blocs tennis déjà partis à l'analyse (80 % ATP,
-78 % WTA).
+**Ce lot ne construit presque rien, et c'est son résultat.** Trois trous de
+contenu ont été mesurés avant d'être comblés ; **deux se ferment sur une branche
+« nulle part »**, et la mesure contredit le brief sur les deux.
 
-**La coupe est isolée**, contrairement à celle du 18/08 : le budget de recherche
-à 10 s'étant révélé sans effet, il n'y a pas de seconde variable active à cette
-date. Tout écart mesuré autour du 19/08 se rapporte à cette ligne seule.
+| § | Question | Réponse mesurée |
+| --- | --- | --- |
+| §1 | l'heure de coup d'envoi tennis | la source ne sert **ni court ni rang** ; son seul champ d'heure est un **marqueur de session** — 77 matchs à 11:00 |
+| §2 | le bilan cartons de l'arbitre | **145 arbitres pour 147 matchs**, médiane 1, **zéro à 5 matchs**. Et aucun carton par match, aucun penalty |
+| §3 | les alertes météo officielles | la source existe, gratuite, CC BY — mais **le filtrage régional n'est pas atteignable** sans table tenue à la main |
+| §4 | la variante A | **appliquée**, +118 tokens |
+| §5 | la durée d'un match de tennis | **non**, définitivement. 153 clés inspectées |
 
-**Le garde-fou du registre d'écriture : le brief se trompait de moitié.** Le test
-a bien mordu au lot 9 — c'est par lui que le défaut a été trouvé. Ce qui est resté
-aveugle est `selfcheck-ingestion`, dont le dénominateur vient d'un **agrégat de
-familles** insensible à un déplacement de déclaration. Trois vues indépendantes le
-gardent désormais, et le garde-fou se teste contre sa propre panne.
+**Le seul changement de comportement** est la puce de recherche tennis
+(variante A). C'est la **troisième** variable de gabarit active, et sa coupe
+**n'est pas isolée** de celle de la ligne `Ici` : les deux portent le 19/08.
 
-**Deux dettes soldées, l'une par un résultat non concluant assumé** :
-
-1. **métrique du retard** — `b = +0,122` par log-minute, IC 95 % `[-0,328 ; +0,573]`,
-   `p = 0,594`, pente détectable à 80 % : `0,643`. Non concluant, direction
-   attendue, effectif insuffisant. **Dette close**, quel que soit le verdict ;
-2. **écart de cran** — 6 écarts sur 15, ventilés 3 / 3, tous à `+1`. Le modèle
-   déclare systématiquement **un cran sous** ce que sa propre table implique.
+**Le §1 a failli produire un faux résultat, et c'est la leçon du lot.** En
+confrontant notre `commence_time` au `startTimestamp` de `tennis-api`, 20
+sélections changeaient de camp — toutes vers « tardive », faisant passer la
+population du §5a de 52 à 72. **C'était un artefact** : `startTimestamp` est un
+marqueur de session, pas un coup d'envoi. **Zéro sélection change de camp sur une
+base défendable, et le verdict du §5a du lot 10 tient.**
 
 **Ce qui reste ouvert** :
 
-- **§2d — la puce « Ses matchs déjà joués dans ce tournoi-ci »**. Les deux
-  variantes sont écrites et augmentées du rendu réel (lot 10, §3). **Aucune n'est
-  appliquée** : l'arbitrage appartient à l'utilisateur, et il se prend sur les
-  chiffres de couverture ci-dessus.
-- **`/tmp`** est un tmpfs de 5,8 Go qui était à 96 %. La convention de nettoyage
-  est écrite dans `CONTRIBUTING.md` ; rien ne surveille le disque.
+- la **reformulation de la puce `Arbitre`**, qui demande une recherche
+  n'aboutissant jamais. C'est un arbitrage, pas une conséquence automatique ;
+- les **alertes météo**, si une table EMMA_ID ↔ ville est un jour jugée
+  soutenable — ou si une source sert des polygones ;
+- rien ne surveille le disque ; la convention est dans `CONTRIBUTING.md`.
 
 **La passe de timelines tourne**, et se reprend sans état :
 
@@ -4710,3 +4706,365 @@ que l'autre regardait la bonne chose au mauvais niveau d'agrégation.
 Réécrire le premier aurait coûté du temps et n'aurait rien réparé. La distinction
 ne se voit qu'en **rejouant la panne** — ce qui est aussi, exactement, ce que le
 test du test institutionnalise pour la prochaine fois.
+
+---
+
+# DIAGNOSTIC — lot 11 : trois trous de contenu, deux portes fermées
+
+Relevé du **19/08/2026**, sur une copie de la base servie (276 Mo, 286 sélections,
+17 sessions) et sur ~90 appels de sonde à `tennis-api.com`. Arbre propre au
+démarrage, aucune modification concurrente.
+
+**Quatre affirmations du brief sont contredites par la mesure**, et l'une d'elles
+a failli produire un résultat faux de ma part avant d'être vérifiée.
+
+---
+
+## §1 — L'heure de coup d'envoi au tennis
+
+### §1a — Ce que la source sert, et ce qu'elle ne sert pas
+
+**Les endpoints de calendrier existent mais ne sont pas atteignables à l'aveugle.**
+`/date/fixtures` répond, valide correctement `startDate` au format `YYYY-MM-DD`,
+et **rejette `tourType` sur 18 orthographes réparties en 6 noms de paramètre** —
+`atp`, `wta`, `1`, `2`, `singles`, `atp_singles`… sous `tourType`, `tour`, `type`,
+`tour_type`, `tourtype`, `circuit`, `tourTypes`. Le message est constant :
+`"Tour type is not valid."`
+
+`/tournament/fixtures/{id}/{n}` existe aussi et exige deux segments numériques,
+mais rend `result: null` sur toutes les valeurs essayées.
+
+**L'exploration s'arrête là, délibérément.** Le projet a déjà payé une fois ce
+chemin — *« six appels ont été perdus à le chercher avant de le lire dans la
+documentation »* (lot 4, sur le préfixe `/tennis/v2/extend/api/`). Continuer à
+deviner reproduirait la même dépense. **Ce qu'il faut est la documentation
+RapidAPI du fournisseur, pas d'autres essais.**
+
+### Le seul champ d'heure servi est un marqueur de session
+
+`event/get` porte `startTimestamp`. **Ce n'est pas un coup d'envoi**, et la mesure
+est sans appel :
+
+| | Mesure |
+| --- | ---: |
+| matchs archivés avec horodatage | 1 878 |
+| **partageant leur horodatage** avec un autre match du même tournoi-jour | **1 133 (60 %)** |
+| plus gros groupe simultané | **21 matchs** (Cincinnati, 16/08 15:00 UTC) |
+
+Cincinnati, en heure locale (UTC−4) :
+
+| Heure locale | Matchs |
+| --- | ---: |
+| **11:00** | **77** |
+| **10:00** | **32** |
+| 20:30 | 11 |
+| 20:00 | 10 |
+
+Soixante-dix-sept matchs ne commencent pas à 11:00 sur un court. **Ce sont des
+heures de session** — session de jour à 10:00/11:00, session de nuit à
+20:00/20:30. La source ne sert **ni le court, ni le rang dans le programme, ni de
+mention « not before »** : `area`, `court`, `order` n'existent nulle part dans la
+charge utile.
+
+### Le faux résultat que j'ai failli rapporter
+
+En confrontant `commence_time` à `startTimestamp` sur les rencontres appariées
+(±48 h, même paire de joueurs) :
+
+| | Mesure |
+| --- | ---: |
+| rencontres appariées | 283 |
+| écart absolu médian | **1,60 h** |
+| au-delà de 2 h | 118 (42 %) |
+| source **plus tôt** que nous | 198 sur 245 signés |
+
+Et la reclassification qui en découlait : **20 sélections changeaient de camp,
+toutes vers « tardive »**, faisant passer la population du §5a du lot 10 de 52 à
+**72** — soit +38 %.
+
+**C'était un artefact, et il fallait le vérifier pour le voir.** Un marqueur de
+session est systématiquement *antérieur* au coup d'envoi réel de tous les matchs
+de la session sauf le premier ; le substituer à une estimation par match fait donc
+mécaniquement paraître tardives des sélections qui ne le sont pas. Le signe
+uniforme — 198 « plus tôt » contre 47 — était lui-même le symptôme.
+
+**Conclusion : zéro sélection change de camp sur une base défendable. Le §5a du
+lot 10 n'est pas à rejouer, et son verdict tient.**
+
+### §1b — Branche « nulle part », et la formulation proposée
+
+La source ne servant ni court ni rang, **rien n'est construit**. Ce que la mesure
+autorise à dire, et qui n'est pas rien :
+
+- **nous n'avons aucun moyen de vérifier notre propre heure de coup d'envoi.** Le
+  seul autre relevé disponible est une heure de session. C'est ce qui rend une
+  heure affichée au quart d'heure près dangereuse — elle est invérifiable, et se
+  lit comme vérifiée ;
+- le marqueur de session, lui, **est réel et mesuré** : à Cincinnati, 11:00 et
+  20:00/20:30 locales.
+
+**Formulation proposée, non appliquée** (le gabarit est hors périmètre) — elle
+remplacerait l'heure dans l'en-tête de bloc tennis :
+
+```
+### M4 · TENNIS · ATP Cincinnati Open · Fritz – O'Connell · 20/08 01:00 (estimée)
+    session du soir, à partir de 20:00 locales — rang sur le court inconnu
+```
+
+Trois propriétés, et chacune répond à un défaut mesuré : le mot **« estimée »**
+retire la fausse précision ; l'**ancrage de session** est un fait vérifié ; et
+**« rang inconnu »** dit pourquoi l'heure ne peut pas être serrée, au lieu de
+laisser croire à une négligence.
+
+---
+
+## §2 — Le bilan de l'arbitre : branche « nulle part », et le brief se trompe deux fois
+
+Le brief pose : *« Or l'application a probablement déjà la réponse. Elle collecte
+des matchs avec leur arbitre nommé et, sur les compétitions couvertes, des comptes
+de cartons. »* **Les deux moitiés sont fausses.**
+
+### §2a — Le dénominateur interdit tout agrégat
+
+| | Mesure |
+| --- | ---: |
+| relevés `referee` en base | 180 |
+| dont un nom non vide | **147** |
+| **arbitres distincts** | **145** |
+| compétitions distinctes | 21 |
+| matchs par arbitre : médiane | **1** |
+| matchs par arbitre : maximum | **2** |
+| **arbitres à 5 matchs ou plus** | **0** |
+
+Les deux plus vus — J. Pinheiro et S. Gozubuyuk — ont **deux** matchs. Aucun
+seuil, si bas soit-il, ne rend une fréquence lisible sur un dénominateur de 1.
+
+**La cause est structurelle et déjà écrite dans `CLAUDE.md`** : *« sur une saison
+de Conference League, 157 arbitres sur 183 n'ont qu'un seul match »*. Notre base
+n'enrichit que les matchs mis en shortlist — 180 en tout, sur 21 compétitions.
+Un arbitre y revient par coïncidence, pas par construction.
+
+### Et le numérateur n'existe pas non plus
+
+| | Mesure |
+| --- | ---: |
+| événements avec arbitre nommé | 147 |
+| dont avec statistiques de match | 144 |
+| **dont la charge utile mentionne `card`** | **0** |
+| **dont elle mentionne `penalt`** | **0** |
+
+Les champs `yellow` et `red` que nous stockons existent bien — mais dans
+`KIND_PROFILE`, où ce sont les **moyennes de l'équipe sur ses derniers matchs**,
+pas les cartons *de ce match-là*. Ils ne sont donc attribuables à aucun arbitre.
+Les penaltys ne sont collectés nulle part.
+
+### §2b — Rien n'est construit, et la puce reste à arbitrer
+
+La ligne `Arbitre` ne bouge pas. Ce que la mesure établit, c'est que **la puce du
+gabarit demande une recherche dont l'échec est structurel** : huit arbitres, deux
+sessions, huit « bilan cartons et penaltys non trouvé ».
+
+**Reformulation proposée, non appliquée** — c'est un arbitrage :
+
+> · **Arbitre** — le nom seul, et c'est une économie de recherche : sans lui il
+> fallait une requête pour savoir qui arbitre. **Ne cherche son bilan cartons que
+> si la sélection porte sur un marché de cartons** ; ailleurs, cette requête n'a
+> jamais abouti dans le budget d'une session, et elle en coûte une.
+
+---
+
+## §3 — Les alertes météo officielles : la source existe, le filtre non
+
+### §3a — Ce qui répond, et sous quelle licence
+
+**MeteoAlarm répond, sans compte, et la licence est utilisable.**
+
+| | Constat |
+| --- | --- |
+| accès | `feeds.meteoalarm.org/api/v1/warnings/feeds-{pays}` — **HTTP 200, sans clé** |
+| `robots.txt` | **tout est commenté** : rien n'est interdit |
+| licence | *« Licensed under terms equivalent to CC BY 4.0 »* — attribution requise, comme Open-Meteo |
+| format | CAP 1.2, en JSON **et** en Atom |
+
+Et surtout, l'objection que le projet avait notée — *« MeteoAlarm agrège l'Europe
+mais n'émet rien »* — **est levée par la charge utile** : elle porte
+`senderName: "GeoSphere Austria"` et `sender: cap@zamg.ac.at`. L'émetteur réel est
+donc **recopiable**, exactement comme la ligne NWS le fait déjà. Le niveau 1 tient.
+
+La charge utile sert tout ce dont la ligne existante a besoin : `event`,
+`severity`, `urgency`, `certainty`, `onset`, `expires`, `headline`, `senderName`.
+
+### Le filtrage régional, et c'est lui qui ferme la porte
+
+Le brief le dit lui-même : *« C'est le point qui décide si le résultat est
+exploitable ou du bruit. »* Il l'est.
+
+| | Constat |
+| --- | ---: |
+| alertes dans le flux autrichien | **930** |
+| zones distinctes (Autriche) | 116 |
+| alertes dans le flux français | 85 |
+| zones distinctes (France) | 93 |
+| **aires portant un polygone** | **0 sur 1 860** |
+
+Les aires ne portent que `areaDesc` (un nom de district) et un `geocode` EMMA_ID.
+**Sans polygone, il n'y a pas de point-dans-polygone possible**, et il reste le
+rapprochement par libellé — que ce projet interdit partout.
+
+Et il échouerait, c'est mesuré sur nos propres villes de stade :
+
+| Ville | Ce que notre géocodeur rend | Ce que MeteoAlarm écrit |
+| --- | --- | --- |
+| Klagenfurt | `admin2 = Klagenfurt am Wörthersee` | `Klagenfurt (Stadt)` |
+| Annecy | `admin2 = Upper Savoy` | `Haute-Savoie` |
+| Lyon | `admin2 = Rhône` | `Rhône` ✔ |
+| Reims | `admin2 = Marne` | `Marne` ✔ |
+
+**Le géocodeur localise ses noms d'unités administratives** — « Upper Savoy » en
+anglais — et MeteoAlarm écrit les siens dans la langue du pays, avec ses propres
+conventions (« Hautes Alpes » sans trait d'union). Deux sur quatre tombent, deux
+non.
+
+**Et le mode d'échec est le pire possible pour cette ligne.** Une alerte manquée
+ne produit pas un silence : elle produit `aucune alerte en vigueur`,
+c'est-à-dire **l'affirmation qu'on a regardé et qu'il n'y a rien**. Le gabarit
+distingue exprès ce libellé de `non interrogées` ; un rapprochement par libellé
+détruirait précisément cette distinction, sur la ligne dont le projet a mesuré
+qu'elle a changé une analyse deux fois.
+
+### §3b — Branche « nulle part », et ce qui la rouvrirait
+
+Rien n'est construit, la ligne ne bouge pas, et **le troisième libellé reste le
+bon** : personne n'a regardé, et c'est vrai.
+
+Ce qui rouvrirait la question, et rien d'autre :
+
+- une **table EMMA_ID ↔ ville** tenue à la main — une centaine d'entrées par pays,
+  sur sept pays. C'est le coût réel, et il se compare à celui de
+  `APIFOOTBALL_LEAGUES` ou `TENNISDATA_TOURNAMENTS`, qui ont été jugés
+  soutenables. **C'est un arbitrage, pas une impossibilité** ;
+- une source servant des **polygones** ou les coordonnées de l'aire ;
+- un géocodeur rendant directement le code NUTS3 / EMMA de la ville.
+
+**Hors d'Europe, la couverture est nulle** : MeteoAlarm est européen, et le Brésil
+n'y figure pas. La mention actuelle y reste inchangée, définitivement.
+
+---
+
+## §4 — La variante A, appliquée
+
+La puce tennis cesse de demander ce que la ligne `Ici` porte déjà, et nomme les
+trois choses qu'aucune source ne sert — **durée**, **conditions de court**,
+**double**. Elle dit aussi, et c'est ce qui la distingue de l'ancienne, qu'elle
+s'applique **quand `Ici` est absente ou partielle**, avec la couverture écrite
+dedans (« quatre blocs sur cinq, pas tous »).
+
+La phrase *« aucune de nos sources ne les porte »* est retirée : devenue fausse le
+19/08, dans la consigne qui commande la recherche la plus chère du lot.
+
+**Coût : 213 → 331 tokens, soit +118.** Le lot 8 annonçait « environ le même » ;
+la clause des deux régimes, qu'il n'avait pas prévue, se paie. Les deux plafonds
+tiennent largement.
+
+**Troisième variable de gabarit active — et sa coupe n'est PAS isolée** de celle de
+la ligne `Ici` : les deux portent le 19/08. Tout écart mesuré autour de cette date
+mélange leurs deux effets, et c'est écrit dans l'entrée de journal.
+
+---
+
+## §5 — La durée d'un match de tennis : **non**, et la question est close
+
+**Réponse : non.** Aucune source du projet ne sert la durée.
+
+`profile/matches-played` — **153 clés distinctes inspectées**, aucune ne contient
+`duration`, `elapsed`, `minute`, `time` ni `length`. Voici la charge utile d'un
+match complet, telle quelle :
+
+```json
+{
+  "date": "2026-08-17T04:35:00.000Z",
+  "result": "3-6 7-6(5) 6-0",
+  "roundId": 5, "draw": 8, "best_of": null, "h2h": "1-0",
+  "tournamentId": 16740,
+  "tournament": {"id": 16740, "name": "Cincinnati Open - Cincinnati", "court": …},
+  "player1": {"id": 11371, "name": "Elina Svitolina", "stats": {…}},
+  "player2": {"id": 73274, "name": "Tereza Valentova", "stats": {…}}
+}
+```
+
+Les `stats` portent aces, doubles fautes, première balle, balles de break, vitesse
+moyenne de service, montées au filet — **jamais de durée**.
+
+`event/get` porte `startTimestamp` (un début, et c'est un marqueur de session, cf.
+§1) et une `timeline` dont **chaque entrée n'a que `id` et `text`** :
+
+```json
+{"id": "304408980", "text": "Game 1 - Hannah Klugman - holds to 40"}
+```
+
+Aucun horodatage par jeu, donc aucune durée reconstructible.
+
+**Consequence : la ligne `Usure` reste le seul substitut**, et le gabarit a raison
+de l'annoncer comme tel. La question est close, et la variante A du §4 la range
+définitivement du côté « à chercher ».
+
+---
+
+## §6 — Dettes de forme
+
+### Le registre couvre-t-il ce lot ? Par la mesure, oui
+
+**Ce lot n'ajoute aucune fonction d'écriture** — les sondes lisent, la variante A
+est du texte. Les trois vues du lot 10 le confirment, et le test comme le banc
+lisent le **même** recensement :
+
+| Vue | Résultat |
+| --- | --- |
+| `inserting_functions` | 3 fonctions, `combos.record` sur ses deux tables |
+| `decorated_nodes` | les 3, toutes `fonction` |
+| `REGISTRY` | les 3 |
+| `mismatches()` | **aucun** |
+
+Banc : **15 contrôles sur 15, 0 manque**, code de retour 0.
+
+### `changelog_mesure` : une entrée
+
+| # | Date | Portée | Ce qui change |
+| ---: | --- | --- | --- |
+| **23** | 19/08 | `gabarit` | **La puce tennis passe en variante A.** +118 tokens. Troisième variable active, **coupe jointe** avec la ligne `Ici`. |
+
+Les §1, §2, §3 et §5 n'ont **pas** d'entrée : ce sont des mesures et des portes
+fermées, et rien n'y change ce que le modèle lit.
+
+### Le test de bout en bout
+
+**Ce lot n'ajoute aucun objet au rendu** — pas de nouvelle ligne de bloc, pas de
+nouveau format structuré. Les comptes du test restent ceux du lot 10, et les deux
+tests qui gardent l'attribution des blocs `conf` par section passent inchangés.
+
+---
+
+## §7 — Ce que la mesure contredit dans le brief
+
+**Quatre affirmations, et la première est la mienne autant que la sienne.**
+
+| Ce qui était affirmé | Ce que la mesure dit |
+| --- | --- |
+| §1 : *« si l'heure de coup d'envoi est fausse de trois heures, des sélections classées tardives ne le sont pas »* — donc les 52 sont à rejouer | la seule heure alternative disponible est un **marqueur de session** (77 matchs à 11:00). Les « 20 sélections qui changent de camp » sont un **artefact de cette substitution**. Zéro change de camp sur une base défendable, et le §5a tient |
+| §2 : *« l'application a probablement déjà la réponse »* | **non, deux fois** : 145 arbitres pour 147 matchs (médiane 1, zéro à ≥5), et **zéro** carton par match ou penalty en base |
+| §3 : la source d'alertes est le point à établir | la **source** est le point facile — elle répond, gratuite, CC BY, et nomme son émetteur. C'est le **filtrage régional** qui ferme : zéro polygone sur 1 860 aires, et le géocodeur rend « Upper Savoy » là où MeteoAlarm écrit « Haute-Savoie » |
+| §4 : la variante A coûte « environ le même » (lot 8) | **+118 tokens**. La clause des deux régimes, exigée par ce brief-ci, n'était pas dans l'estimation du lot 8 |
+
+### La leçon de méthode du lot
+
+**Une mesure qui confirme spectaculairement le brief mérite le même doute qu'une
+mesure qui le contredit.** Le §1 produisait un résultat net, chiffré, dans la
+direction annoncée — 20 sélections, +38 % de population tardive — et il était
+faux. Ce qui l'a démonté n'est pas une intuition mais une question de forme :
+*ce champ est-il vraiment ce que je crois ?* Soixante secondes de comptage — 21
+matchs au même instant — ont suffi.
+
+Le projet a une règle pour ça depuis le lot 8 (« cherchez l'identifiant ») et une
+autre depuis le lot 9 (« un champ dont le nom évoque une date peut être un
+entier »). En voici la troisième face : **un champ dont la valeur est plausible
+peut décrire un autre objet que celui qu'on croit mesurer.**
