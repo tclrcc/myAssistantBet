@@ -1571,3 +1571,80 @@ async def test_une_rencontre_hors_fenetre_n_interrompt_pas_le_parcours(
     assert releve.too_old == 1
     assert releve.attempted == 2, "les deux rencontres dans la fenetre sont bien tentees"
     assert len(jeux) == 2
+
+
+# -- La file de la passe longue : trois etages -------------------------------
+
+
+def test_la_file_de_reprise_range_les_lots_recents_avant_le_fond_de_catalogue(
+    migrated: Settings,
+) -> None:
+    """**Une passe longue s'interrompt**, donc son ordre decide de ce qu'elle
+    laisse derriere. Un joueur vu dans un lot recent reviendra — un tournoi dure
+    une semaine ; un joueur vu une fois en juin n'a aucune raison de revenir.
+
+    Le lot se lit sur `prompt_events`, ce qui est **parti a l'analyse**, jamais
+    sur la shortlist : elle se vide a mesure qu'on decoche.
+    """
+    from myassistantbet import db
+    from myassistantbet.timelines import players
+
+    _event(migrated, "tennis_atp_us_open", "A venir 1", "A venir 2", "2099-01-01T12:00:00Z")
+    _event(migrated, "tennis_wta_us_open", "Analyse 1", "Analyse 2", "2020-06-01T12:00:00Z")
+    _event(migrated, "tennis_wta_us_open", "Oublie 1", "Oublie 2", "2020-01-01T12:00:00Z")
+
+    session = db.execute(
+        "INSERT INTO sessions (created_at) VALUES (?)", (db.utcnow(),), settings=migrated
+    )
+    prompt = db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, created_at) "
+        "VALUES (?, 'session_default.md.j2', '', ?)",
+        (session, db.utcnow()),
+        settings=migrated,
+    )
+    analyse = db.query_one("SELECT id FROM events WHERE home = 'Analyse 1'", settings=migrated)
+    db.execute(
+        "INSERT INTO prompt_events (prompt_id, event_id) VALUES (?, ?)",
+        (prompt, analyse["id"]),
+        settings=migrated,
+    )
+
+    file = players(migrated, limit=0)
+
+    assert file[:2] == [("A venir 1", "atp"), ("A venir 2", "atp")]
+    assert set(file[2:4]) == {("Analyse 1", "wta"), ("Analyse 2", "wta")}
+    assert set(file[4:]) == {("Oublie 1", "wta"), ("Oublie 2", "wta")}
+
+
+def test_une_limite_nulle_ne_borne_pas_la_file(migrated: Settings) -> None:
+    """`--joueurs 0` est la passe longue. **C'est une borne de temps de mur, pas
+    de quota** : le plancher garde le second, et les confondre ferait chercher
+    un garde-fou de credit dans un nombre de joueurs."""
+    from myassistantbet.timelines import players
+
+    for index in range(6):
+        _event(migrated, "tennis_atp_us_open", f"J{index}", f"K{index}", "2020-01-01T12:00:00Z")
+
+    assert len(players(migrated, limit=0)) == 12
+    assert len(players(migrated, limit=3)) == 3
+
+
+@respx.mock
+async def test_la_reprise_leve_la_peremption_de_l_agregat(
+    tennis_client: TennisAPIClient, migrated: Settings, load_fixture: Callable[[str], Any]
+) -> None:
+    """**Deux fraicheurs, et ce n'en est pas une seule.** Un agregat ecrit ce
+    matin ne dit rien des timelines, qui sont un second etage de collecte.
+
+    Sans ce drapeau, une reprise lancee le lendemain d'un entretien sautait 221
+    joueurs sur 250 et ne collectait rien — un passage complet dont la sortie
+    est indiscernable d'un catalogue deja couvert.
+    """
+    _profils({"Taylor Fritz": 3})
+    await serve_stats.sync(tennis_client, [("Taylor Fritz", "atp")], migrated)
+
+    sans = await serve_stats.sync(tennis_client, [("Taylor Fritz", "atp")], migrated)
+    avec = await serve_stats.sync(tennis_client, [("Taylor Fritz", "atp")], migrated, force=True)
+
+    assert (sans.skipped, sans.refreshed) == (1, 0)
+    assert (avec.skipped, avec.refreshed) == (0, 1)

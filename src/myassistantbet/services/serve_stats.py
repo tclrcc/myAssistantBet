@@ -1615,6 +1615,7 @@ async def sync(
     settings: Settings | None = None,
     now: datetime | None = None,
     with_games: bool = False,
+    force: bool = False,
 ) -> SyncReport:
     """Rafraichit les agregats d'une liste de joueurs. **S'arrete proprement.**
 
@@ -1626,6 +1627,19 @@ async def sync(
     controle unique laisserait une reprise de 180 joueurs franchir le plancher en
     cours de route et le decouvrir a la fin — c'est-a-dire trop tard, le quota
     etant mensuel.
+
+    `force` leve la peremption de l'agregat, et **seule la passe longue le
+    pose**. La raison est que les deux fraicheurs n'en sont pas une seule : un
+    agregat ecrit ce matin ne dit rien des timelines, qui sont un second etage de
+    collecte et vivent bien plus longtemps. Sans ce drapeau, une reprise lancee
+    le lendemain d'un entretien sautait 221 joueurs sur 250 et ne collectait
+    rien — un passage complet dont la sortie est indiscernable d'un catalogue
+    deja couvert.
+
+    Ce qu'il coute est borne et mesure : un appel `matches-played` par joueur
+    saute, soit ~250, contre les milliers que coutent les timelines elles-memes.
+    Ce qu'il rapporte au passage n'est pas rien — la table de service est relue
+    le jour meme, donc le tournoi en cours entre avec.
     """
     settings = settings or get_settings()
     report = SyncReport(players=len(players))
@@ -1647,7 +1661,7 @@ async def sync(
             logger.warning("%s", etat.note)
             break
 
-        if _is_fresh(local, circuit, settings, horloge):
+        if not force and _is_fresh(local, circuit, settings, horloge):
             report.skipped += 1
             continue
 
@@ -1795,6 +1809,46 @@ def upcoming_players(settings: Settings | None = None) -> list[tuple[str, str]]:
             " WHERE c.oddsapi_key LIKE 'tennis%' AND e.commence_time >= ? "
             " ORDER BY e.commence_time",
             (utcnow(),),
+        ).fetchall()
+
+    vus: dict[tuple[str, str], None] = {}
+    for row in rows:
+        tour = circuit_of(str(row["oddsapi_key"] or ""))
+        if not tour:
+            continue
+        for nom in (row["home"], row["away"]):
+            if nom:
+                vus.setdefault((str(nom), tour), None)
+    return list(vus)
+
+
+def recent_players(sessions: int = 5, settings: Settings | None = None) -> list[tuple[str, str]]:
+    """Les joueurs des `sessions` derniers **lots analyses**, les plus recents d'abord.
+
+    L'etage intermediaire de la reprise, entre les matchs a venir et le fond de
+    catalogue. Il ne se deduit pas de la date d'un match : un lot est ce qui est
+    **parti a l'analyse**, donc `prompt_events` — la meme table qui porte deja le
+    denominateur du taux de selection. La shortlist ne conviendrait pas, elle se
+    vide a mesure qu'on decoche.
+
+    Pourquoi cet ordre a un sens ici et pas ailleurs : une passe longue
+    s'interrompt, et ce qu'elle laisse derriere doit etre ce qui sert le moins.
+    Un joueur revu dans un lot recent reviendra ; un joueur vu une fois en juin
+    n'a aucune raison de revenir avant sa prochaine entree au board.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT e.home, e.away, c.oddsapi_key FROM prompt_events pe "
+            "  JOIN prompts p ON p.id = pe.prompt_id "
+            "  JOIN events e ON e.id = pe.event_id "
+            "  JOIN competitions c ON c.id = e.competition_id "
+            " WHERE c.oddsapi_key LIKE 'tennis%' "
+            "   AND p.session_id IN ("
+            "         SELECT session_id FROM prompts GROUP BY session_id "
+            "          ORDER BY MAX(id) DESC LIMIT ?) "
+            " ORDER BY p.id DESC",
+            (max(0, int(sessions)),),
         ).fetchall()
 
     vus: dict[tuple[str, str], None] = {}

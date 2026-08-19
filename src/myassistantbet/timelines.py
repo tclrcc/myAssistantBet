@@ -32,30 +32,60 @@ logger = logging.getLogger(__name__)
 BATCH = 12
 
 
-def players(settings, limit: int = BATCH) -> list[tuple[str, str]]:
-    """Les joueurs a traiter, **les lots a venir d'abord**.
+#: Combien de lots analyses recents forment l'etage intermediaire de la file.
+RECENT_LOTS = 5
 
-    L'ordre est ce qui rend une interruption acceptable : ce sont les joueurs
-    utiles aujourd'hui qui sont couverts, et le reste du catalogue attend le
-    passage suivant.
+
+def players(settings, limit: int = BATCH) -> list[tuple[str, str]]:
+    """Les joueurs a traiter, **en trois etages et dans cet ordre**.
+
+    L'ordre est ce qui rend une interruption acceptable — une passe longue
+    s'interrompt, et ce qu'elle laisse derriere doit etre ce qui sert le moins :
+
+    1. les joueurs des matchs **a venir** : ceux dont un bloc se rendra demain ;
+    2. ceux des `RECENT_LOTS` derniers **lots analyses** : ils reviennent, un
+       tournoi durant une semaine et un joueur y jouant plusieurs tours ;
+    3. le reste du catalogue.
+
+    `limit` a zero ou moins ne borne rien. **C'est une borne de temps de mur, pas
+    de quota** — le plancher garde le second, et le confondre ferait chercher un
+    garde-fou de credit dans un nombre de joueurs.
     """
     a_venir = serve_stats_service.upcoming_players(settings)
     vus = set(a_venir)
+    recents = [
+        couple
+        for couple in serve_stats_service.recent_players(RECENT_LOTS, settings)
+        if couple not in vus
+    ]
+    vus |= set(recents)
     suite = [couple for couple in serve_stats_service.known_players(settings) if couple not in vus]
-    return [*a_venir, *suite][: max(1, int(limit))]
+    file = [*a_venir, *recents, *suite]
+    return file if int(limit) <= 0 else file[: int(limit)]
 
 
-async def run(limit: int = BATCH, settings=None) -> serve_stats_service.SyncReport:
-    """Un passage. Rend son releve, et journalise les quatre taux."""
+async def run(
+    limit: int = BATCH, settings=None, force: bool = False
+) -> serve_stats_service.SyncReport:
+    """Un passage. Rend son releve, et journalise les cinq taux."""
     settings = settings or get_settings()
     if not settings.rapidapi_key:
         logger.warning("Timelines : aucune cle RapidAPI, passe non lancee")
         return serve_stats_service.SyncReport()
 
     file = players(settings, limit)
+    logger.info(
+        "Timelines : file de %d joueur(s) — %d a venir, %d des %d derniers lots, "
+        "%d de fond de catalogue",
+        len(file),
+        len(serve_stats_service.upcoming_players(settings)),
+        len(serve_stats_service.recent_players(RECENT_LOTS, settings)),
+        RECENT_LOTS,
+        len(serve_stats_service.known_players(settings)),
+    )
     async with httpx.AsyncClient() as http:
         report = await serve_stats_service.sync(
-            TennisAPIClient(http, settings), file, settings, with_games=True
+            TennisAPIClient(http, settings), file, settings, with_games=True, force=force
         )
 
     tentees = sum(item[2].attempted for item in report.timelines)
@@ -90,10 +120,21 @@ def main() -> int:
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s — %(message)s")
     parser = argparse.ArgumentParser(description="Reprise des timelines de service (tennis).")
     parser.add_argument(
-        "--joueurs", type=int, default=BATCH, help=f"joueurs a traiter (defaut {BATCH})"
+        "--joueurs",
+        type=int,
+        default=BATCH,
+        help=f"joueurs a traiter, 0 pour ne pas borner (defaut {BATCH})",
+    )
+    parser.add_argument(
+        "--reprise",
+        action="store_true",
+        help=(
+            "passe longue : leve la peremption de l'agregat, qui ne dit rien "
+            "des timelines. Le plancher de quota borne toujours."
+        ),
     )
     args = parser.parse_args()
-    report = asyncio.run(run(args.joueurs))
+    report = asyncio.run(run(args.joueurs, force=args.reprise))
     print(report.line)
     return 0
 
