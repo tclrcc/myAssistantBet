@@ -1988,3 +1988,73 @@ async def test_les_jeux_atteignent_l_agregat_de_leur_surface(
         "aucun agregat par surface ne porte de jeux : la ligne « Jeux » serait "
         "inatteignable sur tous les blocs, exactement le defaut du lot 8"
     )
+
+
+def test_la_ligne_jeux_se_replie_sur_toutes_surfaces_et_le_dit(migrated: Settings) -> None:
+    """**Le seuil de jeux ne s'atteint pas par surface, et c'est structurel.**
+
+    `collect_games` s'arrete a `MIN_GAMES` jeux **toutes surfaces confondues** :
+    aucun agregat par surface ne peut donc l'atteindre. Mesure sur la base
+    servie : **zero ligne par surface au-dessus de 300**, maximum observe 225. La
+    ligne etait inatteignable sur tout bloc portant une surface — c'est-a-dire
+    sur tous, `competitions.surface` etant renseignee au tennis.
+
+    Le choix n'est pas entre deux portees mais entre **une ligne repliee qui se
+    declare** et pas de ligne du tout. Le seuil, lui, ne bouge pas.
+    """
+    serve_stats.store_aggregate(
+        serve_stats.ServeAggregate(
+            player="A",
+            circuit="atp",
+            surface="Hard",
+            matches=20,
+            first_serve=1200,
+            first_serve_of=2000,
+            won_first=900,
+            won_first_of=1200,
+            won_second=400,
+            won_second_of=800,
+            return_points=2000,
+            return_won=800,
+            games_matches=8,
+            served=105,
+            held=90,
+            returned=104,
+            broke=25,
+            as_of="2026-08-12",
+        ),
+        migrated,
+    )
+    serve_stats.store_aggregate(
+        serve_stats.ServeAggregate(
+            player="A",
+            circuit="atp",
+            surface="",
+            matches=30,
+            first_serve=1800,
+            first_serve_of=3000,
+            won_first=1400,
+            won_first_of=1800,
+            won_second=600,
+            won_second_of=1200,
+            return_points=3000,
+            return_won=1200,
+            games_matches=15,
+            served=160,
+            held=140,
+            returned=156,
+            broke=40,
+            as_of="2026-08-18",
+        ),
+        migrated,
+    )
+    avec = migrated.model_copy(update={"serve_lines_enabled": True})
+
+    lignes = dict(serve_stats.serve_lines("A", "B", "atp", "hard", avec))
+
+    assert "Jeux" in lignes, "la ligne sort, alors que l'agregat de surface est sous le seuil"
+    assert "tenue" in lignes["Jeux"] and "160 jeux servis" in lignes["Jeux"]
+    assert "toutes surfaces" in lignes["Jeux"], "le repli se declare, il ne se tait pas"
+    # **La date est sur cette ligne**, les deux agregats pouvant differer.
+    assert "arretees au 18/08" in lignes["Jeux"]
+    assert "Hard" in lignes["Service"], "les points de service restent sur leur surface"

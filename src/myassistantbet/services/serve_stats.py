@@ -1505,6 +1505,20 @@ def serve_lines(
     away_agg = _for_player(away, circuit, cible, settings)
     if home_agg is None and away_agg is None:
         return []
+    # **Les jeux ne se comptent pas sur la meme portee que les points**, et c'est
+    # structurel : `collect_games` s'arrete a `MIN_GAMES` jeux **toutes surfaces
+    # confondues**, donc aucun agregat par surface ne peut atteindre ce seuil —
+    # mesure sur la base servie, **zero ligne par surface au-dessus de 300**, et
+    # le maximum observe est de 225. La ligne `Jeux` etait donc inatteignable sur
+    # tout bloc portant une surface, c'est-a-dire sur tous.
+    #
+    # Le choix n'est pas entre une portee et une autre, il est entre une ligne
+    # repliee **qui se declare** et pas de ligne du tout. Le module a deja ce
+    # troisieme etat pour les points de service (`fell_back`), avec la meme
+    # raison : un repli tu serait une affirmation fausse, un repli dit est une
+    # information de plus.
+    home_games = _games_source(home, circuit, cible, home_agg, settings)
+    away_games = _games_source(away, circuit, cible, away_agg, settings)
 
     portee = _scope_fragment(home_agg, away_agg, cible)
     service = _pair_lines(_serve_fragment(home, home_agg), _serve_fragment(away, away_agg), portee)
@@ -1521,15 +1535,26 @@ def serve_lines(
     # rencontres sur huit muettes — donc ce cas est frequent alors que `Service`
     # est servi. Deux « non disponible » cote a cote couteraient une ligne pour
     # ne rien dire ; une seule moitie manquante, elle, se dit.
-    if (home_agg and home_agg.enough_games) or (away_agg and away_agg.enough_games):
-        rendu.append(
-            (
-                "Jeux",
-                _pair_lines(
-                    _games_fragment_serve(home, home_agg), _games_fragment_serve(away, away_agg)
-                ),
-            )
+    if (home_games and home_games.enough_games) or (away_games and away_games.enough_games):
+        lignes_jeux = _pair_lines(
+            _games_fragment_serve(home, home_games), _games_fragment_serve(away, away_games)
         )
+        # **Le repli se dit, et une seule fois pour la ligne.** Le rappeler par
+        # joueur repeterait la meme phrase sur deux lignes voisines ; le taire
+        # ferait lire une tenue de service de dur sur un chiffre qui melange
+        # trois surfaces.
+        replies = [agg for agg in (home_games, away_games) if agg is not None and not agg.surface]
+        if cible and replies:
+            # **La date est sur cette ligne et pas seulement sur celle de
+            # `Service`.** Les deux ne sortent plus forcement du meme agregat :
+            # celle du dessus date le releve de la surface, celle-ci date le
+            # releve toutes surfaces, et ils peuvent differer d'un match.
+            dates = sorted(agg.as_of for agg in replies if agg.as_of)
+            arret = f", arretees au {_short_day(dates[-1])}" if dates else ""
+            lignes_jeux += (
+                f"\n(toutes surfaces{arret} — le seuil de jeux ne s'atteint pas par surface)"
+            )
+        rendu.append(("Jeux", lignes_jeux))
     ecart = _gap_fragment(home, away, home_agg, away_agg)
     if ecart:
         rendu.append(("Ecart", ecart))
@@ -1541,6 +1566,42 @@ def _pair_lines(*fragments: str) -> str:
     joueurs bout a bout ne se lisent plus d'un coup d'oeil — meme arbitrage que
     `Rest` au tennis, qui rend un joueur par ligne pour la meme raison."""
     return "\n".join(fragment for fragment in fragments if fragment)
+
+
+def _games_source(
+    player: str,
+    circuit: str,
+    surface: str,
+    chosen: ServeAggregate | None,
+    settings: Settings,
+) -> ServeAggregate | None:
+    """L'agregat qui porte les **jeux**, replie sur toutes surfaces s'il le faut.
+
+    Distinct de celui des points de service, et il fallait qu'il le soit : les
+    deux seuils ne portent pas sur la meme grandeur, et `load_aggregate` ne
+    connait que le premier. Un agregat de dur peut porter 2 952 points de service
+    — largement au-dessus de `MIN_SERVE_POINTS` — et 105 jeux, tres en dessous de
+    `MIN_GAMES`.
+
+    **Le seuil ne bouge pas**, seule la portee change : une ligne `Jeux` sur 155
+    jeux serait lue comme un fait, et c'est precisement ce que ce repli ne fait
+    pas — il rend 300 jeux vrais, sur une portee qu'il declare.
+    """
+    if chosen is not None and chosen.enough_games:
+        return chosen
+    if not surface:
+        return chosen
+    large = load_aggregate(
+        (lambda identity: identity.canonical if identity and identity.resolved else player)(
+            load_identity(player, circuit, settings)
+        ),
+        circuit,
+        ALL_SURFACES,
+        settings,
+    )
+    if large is not None and large.enough_games:
+        return large
+    return chosen
 
 
 def _for_player(
