@@ -428,3 +428,80 @@ def test_la_page_avertit_que_le_taux_faible_est_attendu(
 
     assert "produites sans fait daté, par construction" in page.text
     assert "pas pour être bonne" in page.text
+
+
+def test_les_lignes_c_bis_portent_leur_propre_bloc_conf(migrated: Settings) -> None:
+    """**Complétion de la spécification du lot 1**, décidée au lot 9.
+
+    « Même tableau, mêmes colonnes, mêmes règles » ne tranchait pas ce point.
+    Sans bloc du côté exploratoire, ces sélections n'ont aucun cran déclaré, et
+    la comparaison « fait daté contre lecture » qui justifie l'existence de la
+    section C-bis devient impossible d'un côté. Les deux populations doivent
+    être symétriques.
+
+    Le bloc d'une ligne C-bis est le plus souvent `source_level: "lecture"` avec
+    `faits: []` — c'est attendu, et le gabarit le dit.
+    """
+    session_id, _ = _lot(migrated, ["Lyon", "Nice"])
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 't.md.j2', ?, 0, ?)",
+        (
+            session_id,
+            "### M1 · football · Amical · Lyon – Adv Lyon · 01/01 20:45\n"
+            "### M2 · football · Amical · Nice – Adv Nice · 01/01 20:45\n",
+            db.utcnow(),
+        ),
+        settings=migrated,
+    )
+    rendu = RENDU + (
+        '\n{"match": "M1", "confiance": 4, "type": "issue", "source_level": 1,\n'
+        ' "faits": [{"enonce": "retour daté", "date": "2026-08-12",\n'
+        '            "editeur": "lequipe.fr", "niveau": 1}],\n'
+        ' "manque_touche_facteur": false}\n'
+        '\n{"match": "M2", "confiance": 1, "type": "issue", "source_level": "lecture",\n'
+        ' "faits": [], "manque_touche_facteur": true}\n'
+    )
+
+    preview = picks_import.build_preview(session_id, rendu, migrated)
+
+    assert [pick.exploratory for pick in preview.picks] == [False, True]
+    assert preview.claims_attached == 2, "les deux tableaux portent un bloc"
+    assert preview.picks[1].claim is not None
+    assert preview.picks[1].claim.source_level == "lecture"
+    assert preview.picks[1].claim.facts == ()
+
+
+def test_le_drapeau_exploratoire_ne_vient_jamais_du_bloc(migrated: Settings) -> None:
+    """**Il se dérive de la sélection appariée, jamais d'un champ déclaré.**
+
+    C'est déterministe — la ligne vient d'un tableau ou de l'autre — et ce que
+    l'application peut trancher ne se délègue pas au modèle. Un bloc qui
+    prétendrait le contraire ne doit rien changer.
+    """
+    session_id, _ = _lot(migrated, ["Lyon", "Nice"])
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 't.md.j2', ?, 0, ?)",
+        (
+            session_id,
+            "### M1 · football · Amical · Lyon – Adv Lyon · 01/01 20:45\n"
+            "### M2 · football · Amical · Nice – Adv Nice · 01/01 20:45\n",
+            db.utcnow(),
+        ),
+        settings=migrated,
+    )
+    # Le bloc de la ligne C-bis se declare « exploratoire: false », celui de la
+    # section C « exploratoire: true » : deux mensonges, aucun effet.
+    rendu = RENDU + (
+        '\n{"match": "M1", "confiance": 4, "type": "issue", "source_level": 1,\n'
+        ' "exploratoire": true, "faits": [], "manque_touche_facteur": false}\n'
+        '\n{"match": "M2", "confiance": 1, "type": "issue", "source_level": "lecture",\n'
+        ' "exploratoire": false, "faits": [], "manque_touche_facteur": true}\n'
+    )
+
+    preview = picks_import.build_preview(session_id, rendu, migrated)
+
+    assert [pick.exploratory for pick in preview.picks] == [False, True], (
+        "le drapeau suit le tableau d'origine, pas ce que le bloc raconte"
+    )

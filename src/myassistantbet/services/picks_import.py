@@ -1185,48 +1185,34 @@ def _attach_claims(
                 "rendu — recolle la réponse entière plutôt que les seules lignes.",
             )
         return None
-    # **Deux populations candidates, et le gabarit les rend toutes deux
-    # legitimes.** Il demande « un bloc par ligne, dans l'ordre du tableau », et
-    # cette consigne est posee sous la section C, avant que C-bis existe. Le
-    # modele l'a lue des deux facons, et c'est mesure sur quatre collages reels :
-    # le 18/08 il a rendu 5 blocs pour 3 lignes de C et 2 de C-bis, le 19/08
-    # 5 blocs pour 5 lignes de C et 2 de C-bis.
+    # **L'appariement se fait par le repere de match, plus par l'ordre.** C'est ce
+    # qui permet aux deux tableaux d'en porter : depuis le lot 9 le gabarit
+    # demande un bloc par ligne **de la section C-bis aussi**, et le compte de
+    # blocs cesse alors de valoir compte de lignes de la section C. Un
+    # appariement par l'ordre y aurait exige que les deux tableaux soient
+    # toujours complets ensemble ; par le repere, cinq blocs pour sept lignes
+    # rattachent cinq lignes et le disent.
     #
-    # **Ce n'est pas retenir la lecture qui arrange** — ce que le module refuse
-    # explicitement pour les prompts. Ce sont deux ensembles definis d'avance,
-    # chacun valide ou refuse **en entier** par la somme de controle : un
-    # ensemble mal choisi echoue sur ses affiches. C'est la garde qui rend le
-    # choix sur, pas l'inverse.
-    principales = [pick for pick in preview.picks if not pick.exploratory]
-    candidats = [preview.picks]
-    if len(principales) != len(preview.picks):
-        candidats.append(principales)
-    lignes = next((groupe for groupe in candidats if len(groupe) == len(reading.claims)), None)
-    if lignes is None:
-        _lost(
-            preview,
-            CONF,
-            MATCH_REF_UNRESOLVED,
-            f"{len(reading.claims)} bloc(s) de confiance pour {len(preview.picks)} "
-            "ligne(s) : aucun n'est rattaché, le cran resterait faux sans qu'on le voie. "
-            "Complète les blocs manquants et recolle.",
-        )
-        return
-    valide = _select(lignes, reading.claims, headers or [])
-    if valide is None:
+    # La somme de controle ne bouge pas : le repere doit designer, **dans le
+    # prompt d'origine**, une affiche qui correspond a la ligne. Ce qui ne peut
+    # pas se relire ne doit toujours pas pouvoir s'ecrire.
+    choix = _select(preview.picks, reading.claims, headers or [])
+    if choix is None:
         _lost(
             preview,
             CONF,
             MATCH_REF_UNRESOLVED,
             "Les repères de match des blocs (M1, M2…) ne correspondent à aucun prompt de "
-            "cette session, ligne par ligne. Rien n'est rattaché — un cran décalé serait "
-            "faux sans se voir. "
-            + (_mismatch(lignes, reading.claims, headers or []) or "")
+            "cette session. Rien n'est rattaché — un cran posé sur la mauvaise ligne "
+            "serait faux sans se voir. "
+            + (_mismatch(preview.picks, reading.claims, headers or []) or "")
             + "Corrige l'affiche dans le tableau, telle qu'elle est écrite en tête du "
             "bloc, et recolle.",
         )
         return None
-    for pick, claim in zip(lignes, reading.claims, strict=True):
+    valide, apparie = choix
+    for index, claim in apparie.items():
+        pick = preview.picks[index]
         pick.claim = claim
         # Le bloc fait foi sur les deux colonnes qu'il porte aussi : c'est la
         # meme declaration sous une forme relisable, et en garder deux
@@ -1234,6 +1220,21 @@ def _attach_claims(
         pick.source = claim.source_level or pick.source
         if claim.declared is not None:
             pick.confidence = str(claim.declared)
+    # **Une ligne sans bloc se dit, et c'est nouveau.** L'appariement par l'ordre
+    # ne pouvait pas la nommer : il tombait en entier ou passait en entier. Par
+    # le repere, le manque est localise — et il compte, puisque le gabarit
+    # reclame desormais un bloc de chaque cote.
+    sans = [pick for index, pick in enumerate(preview.picks) if index not in apparie]
+    if sans:
+        _lost(
+            preview,
+            CONF,
+            MATCH_REF_UNRESOLVED,
+            f"{len(sans)} sélection(s) sans bloc de confiance : "
+            + ", ".join(f"{pick.market} {pick.selection}" for pick in sans)
+            + ". Leur cran ne sera pas calculé — les blocs suivent chaque tableau "
+            "dans le rendu, section C-bis comprise.",
+        )
     return valide
 
 
@@ -1252,32 +1253,75 @@ def _mismatch(picks: list[ParsedPick], claims: list[Claim], headers: list[Prompt
     """
     if not headers:
         return "Aucun prompt n'est archivé pour cette session. "
-    proche = min(
-        headers,
-        key=lambda mapping: sum(
-            not _pairs(pick, claim, mapping) for pick, claim in zip(picks, claims, strict=True)
-        ),
-    )
-    for index, (pick, claim) in enumerate(zip(picks, claims, strict=True), start=1):
-        if not _pairs(pick, claim, proche):
-            attendu = _fold(_affiche_of(proche.marks.get(claim.match, ""))) or "—"
-            recu = _fold(pick.match_text) or "—"
-            return (
-                f"Première paire en cause : ligne {index}, bloc {claim.match or '?'} — "
-                f"attendu « {attendu} », reçu « {recu} ». "
-            )
+    connues = {_fold(pick.match_text) for pick in picks if pick.match_text}
+
+    def _resolus(mapping: PromptBlocks) -> int:
+        return sum(
+            1
+            for claim in claims
+            if _fold(_affiche_of(mapping.marks.get(claim.match or "", ""))) in connues
+        )
+
+    proche = max(headers, key=_resolus)
+    for claim in claims:
+        attendu = _fold(_affiche_of(proche.marks.get(claim.match or "", "")))
+        if attendu in connues:
+            continue
+        return (
+            f"Premier repère en cause : bloc {claim.match or '?'} — il désigne "
+            f"« {attendu or '—'} », qu'aucune ligne du tableau ne porte. "
+        )
     return ""
+
+
+def _by_mark(
+    picks: list[ParsedPick], claims: list[Claim], blocks: PromptBlocks
+) -> dict[int, Claim] | None:
+    """Chaque bloc rendu a la ligne que **son repere** designe, ou rien.
+
+    **L'appariement se fait par le repere et non par l'ordre**, et c'est ce qui
+    permet aux deux tableaux d'en porter. Le repere `M8` change d'une generation
+    a l'autre, donc il ne peut pas servir de cle entre un rendu et un autre ; a
+    l'interieur d'**un** rendu il est coherent, et une fois le prompt d'origine
+    identifie il nomme un match sans ambiguite. « Une seule selection par match,
+    tous tableaux confondus » est deja une regle de rejet : le repere suffit
+    donc, section C et section C-bis confondues.
+
+    Trois refus, et ils gardent la meme propriete que l'appariement par l'ordre —
+    **ce qui ne peut pas se relire ne doit pas pouvoir s'ecrire** :
+
+    - un repere que ce prompt ne connait pas ;
+    - un repere dont l'affiche ne correspond a aucune ligne du tableau ;
+    - deux blocs qui designent la meme ligne.
+
+    Rend `None` des qu'un seul echoue : la validation reste en tout ou rien, et
+    retenir les paires qui passent reviendrait a piocher la lecture qui arrange.
+    """
+    par_affiche: dict[str, int] = {}
+    for index, pick in enumerate(picks):
+        cle = _fold(pick.match_text)
+        if not cle or cle in par_affiche:
+            # Deux lignes sur la meme affiche : le repere ne les separe plus, et
+            # deviner serait exactement ce que la somme de controle interdit.
+            par_affiche[cle] = -1
+            continue
+        par_affiche[cle] = index
+    apparie: dict[int, Claim] = {}
+    for claim in claims:
+        entete = blocks.marks.get(claim.match or "")
+        if not entete:
+            return None
+        index = par_affiche.get(_fold(_affiche_of(entete)), -1)
+        if index < 0 or index in apparie:
+            return None
+        apparie[index] = claim
+    return apparie
 
 
 def _select(
     picks: list[ParsedPick], claims: list[Claim], headers: list[PromptBlocks]
-) -> PromptBlocks | None:
-    """Le prompt de la session qui valide toutes les paires a la fois, ou rien.
-
-    **Une paire qui ne passe pas fait tomber le lot entier**, jamais elle seule :
-    la retirer en laissant passer les autres serait le « meilleur des prompts
-    paire par paire » qu'on a justement ecarte, et l'appariement des lignes
-    restantes ne serait plus demontre par rien.
+) -> tuple[PromptBlocks, dict[int, Claim]] | None:
+    """Le prompt de la session qui apparie **tous** les blocs, ou rien.
 
     Le rapprochement se fait sur le **texte de la colonne Match**, pas sur
     l'evenement resolu : c'est l'appariement du modele qu'on verifie, et il doit
@@ -1287,14 +1331,11 @@ def _select(
     prompts paire par paire reviendrait a piocher la lecture qui arrange, ce qui
     ne demontrerait plus rien.
     """
-    return next(
-        (
-            mapping
-            for mapping in headers
-            if all(_pairs(pick, claim, mapping) for pick, claim in zip(picks, claims, strict=True))
-        ),
-        None,
-    )
+    for mapping in headers:
+        apparie = _by_mark(picks, claims, mapping)
+        if apparie is not None:
+            return mapping, apparie
+    return None
 
 
 #: L'en-tete d'un bloc de prompt : `sport · competition · affiche · heure`. Le

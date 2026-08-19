@@ -702,6 +702,13 @@ cote et de l'affiche. `Source` y vaudra le plus souvent `lecture` et `Conf/5`
 vaudra 1 ou 2 : c'est attendu, et le déclarer franchement est tout l'intérêt de
 la section.
 
+Redonne chaque sélection de cette section sous forme de bloc `conf`, comme en
+section C, un bloc par ligne et dans l'ordre du tableau, après celui-ci. Ils
+seront le plus souvent `source_level: "lecture"` avec `faits: []` — c'est
+attendu, et ce n'est pas une raison de les omettre : `manque_touche_facteur`
+doit être déclaré ici comme ailleurs, sans quoi ces sélections n'ont pas de cran
+et ne se comparent à rien.
+
 Contraintes qui ne tombent pas : **une seule sélection par match, tous tableaux
 confondus** — un match retenu en section C ne peut pas reparaître ici. Les
 lignes en quart restent non sélectionnables. Aucune sélection de cette section

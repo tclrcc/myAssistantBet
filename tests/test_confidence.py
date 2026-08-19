@@ -281,10 +281,17 @@ def _session(settings: Settings) -> int:
     return int(db.query_one("SELECT MAX(id) AS id FROM sessions", settings=settings)["id"])
 
 
-def test_un_nombre_de_blocs_different_ne_rattache_rien(migrated: Settings) -> None:
-    """**Aligner sept blocs sur huit lignes decalerait les faits d'une selection
-    a l'autre** : le cran serait faux et personne ne le verrait. Le desaccord se
-    dit plutot que de se rattraper au jugé."""
+def test_un_bloc_dont_le_repere_ne_designe_aucune_ligne_fait_tomber_le_lot(
+    migrated: Settings,
+) -> None:
+    """**La somme de controle n'a pas bouge en passant a l'appariement par
+    repere.** Un bloc dont le repere ne designe aucune ligne du tableau ne se
+    range nulle part, et le lot entier reste sans cran : poser les autres
+    reviendrait a retenir les paires qui arrangent.
+
+    Le message, lui, a change : il ne parle plus d'un compte de blocs — le compte
+    a cesse de decider — mais du repere qui bloque.
+    """
     session_id = _session(migrated)
     deux_blocs = _rendu(source_level=1, faits=[_fait()], manque_touche_facteur=False)
     deux_blocs += "```conf\n" + _bloc(source_level="lecture", faits=[]) + "\n```\n"
@@ -292,7 +299,7 @@ def test_un_nombre_de_blocs_different_ne_rattache_rien(migrated: Settings) -> No
     preview = picks_import.build_preview(session_id, deux_blocs, migrated)
 
     assert preview.picks[0].claim is None
-    assert any("bloc(s) de confiance" in note for note in preview.notes)
+    assert any("repères de match" in note for note in preview.notes)
 
 
 def test_le_cran_calcule_arrive_en_base(migrated: Settings) -> None:
@@ -535,16 +542,25 @@ def test_le_bloc_est_lu_dans_le_meme_copier_coller_et_apparie_au_prompt(
     assert not preview.ignored
 
 
-def test_des_blocs_dans_le_desordre_ne_rattachent_rien(migrated: Settings) -> None:
-    """**Le defaut que le compte ne voyait pas.** Deux blocs pour deux lignes,
-    mais inverses : sans somme de controle, chaque cran atterrissait sur l'autre
-    selection sans qu'aucun compteur ne bouge."""
+def test_des_blocs_dans_le_desordre_se_rangent_par_leur_repere(migrated: Settings) -> None:
+    """**Ce que l'appariement par repere change, et c'est une amelioration.**
+
+    Deux blocs inverses coutaient auparavant les crans du lot entier : l'ordre
+    etait la cle, et un ordre faux ne pouvait pas se distinguer d'un decalage. Le
+    repere, lui, nomme son match — chacun se range chez lui, et le refus n'a plus
+    lieu d'etre.
+
+    La garde qui comptait reste entiere : c'est la somme de controle sur
+    l'affiche, pas l'ordre, qui empeche un cran d'atterrir sur la mauvaise ligne.
+    """
     session_id, _ = _lot_de_deux(migrated)
 
     preview = picks_import.build_preview(session_id, _avec_blocs("M2", "M1"), migrated)
 
-    assert [pick.claim for pick in preview.picks] == [None, None]
-    assert any("repères de match" in note for note in preview.notes)
+    assert [pick.claim.match for pick in preview.picks] == ["M1", "M2"], (
+        "chaque bloc se range sur la ligne que son repère désigne, pas sur sa voisine"
+    )
+    assert not [note for note in preview.notes if "repères de match" in note]
 
 
 def test_sans_prompt_archive_rien_n_est_rattache(migrated: Settings) -> None:
@@ -720,10 +736,12 @@ def test_le_rejet_nomme_la_paire_en_cause(migrated: Settings) -> None:
     preview = picks_import.build_preview(session_id, rendu, migrated)
 
     note = " ".join(preview.notes)
-    assert "ligne 2" in note
     assert "bloc M2" in note
-    assert "attendu « reims brest »" in note, "la chaine attendue, apres normalisation"
-    assert "reçu « reims »" in note
+    # **Ce que le message doit dire a change avec l'appariement**, et la propriete
+    # non : il nomme le repere qui bloque et l'affiche qu'il designe, apres
+    # normalisation — c'est sous cette forme que la comparaison a eu lieu, et
+    # deux caracteres a corriger s'y voient.
+    assert "reims brest" in note, "l'affiche attendue, après normalisation"
 
 
 def test_sans_prompt_le_rejet_le_dit(migrated: Settings) -> None:
@@ -1487,13 +1505,14 @@ def test_un_collage_complet_ne_porte_aucun_avertissement(migrated: Settings) -> 
 def test_un_appariement_refuse_ne_compte_aucun_bloc(migrated: Settings) -> None:
     """Le releve compte les blocs **apparies**, pas les blocs presents.
 
-    Deux blocs dans le desordre ne rattachent rien — un cran decale serait faux
-    sans se voir — et le compte doit dire zero, sans quoi il annoncerait des
+    Un bloc dont le repere designe une affiche que le tableau ne porte pas fait
+    tomber le lot, et le compte doit dire zero — sans quoi il annoncerait des
     crans que l'import n'ecrira pas.
     """
     session_id, _ = _lot_de_deux(migrated)
+    rendu = _avec_blocs("M1", "M2").replace("Reims – Brest", "Reims")
 
-    preview = picks_import.build_preview(session_id, _avec_blocs("M2", "M1"), migrated)
+    preview = picks_import.build_preview(session_id, rendu, migrated)
 
     assert preview.claims_attached == 0
     assert not preview.complete
