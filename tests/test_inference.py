@@ -834,9 +834,8 @@ def test_la_valeur_p_est_bilaterale() -> None:
     La propriété se vérifie sur le signe : deux jeux symétriques doivent rendre
     la **même** valeur p, ce qu'une unilatérale ne ferait pas.
     """
-    import random
-
     import math
+    import random
 
     random.seed(5)
     xs = [random.uniform(-1, 1) for _ in range(300)]
