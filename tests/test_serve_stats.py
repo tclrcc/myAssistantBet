@@ -17,7 +17,7 @@ import pytest
 import respx
 
 from myassistantbet.config import Settings
-from myassistantbet.db import execute, query
+from myassistantbet.db import execute, query, query_one, utcnow
 from myassistantbet.providers.tennisapi import BASE_URL, TennisAPIClient
 from myassistantbet.services import api_archive, serve_stats
 from myassistantbet.services.ingestion import MATCH_REF_UNRESOLVED, SOURCE_VIDE
@@ -2123,3 +2123,109 @@ def test_la_source_muette_ne_leve_rien(migrated: Settings) -> None:
     )
 
     assert serve_stats.contested_days("A", competition, "2026-08-18T12:00:00Z", migrated) == {}
+
+
+# -- La couverture de la ligne `Ici` -----------------------------------------
+
+
+def test_la_couverture_separe_les_trois_etats(migrated: Settings) -> None:
+    """**Trois états et non deux**, parce qu'ils n'appellent pas la même lecture.
+
+    Un bloc `renseigné` porte des résultats des deux côtés ; un bloc `partiel`
+    en porte d'un côté et « aucun match dans ce tournoi » de l'autre — ce qui est
+    un **fait sur le match**, souvent le fait dominant quand l'un sort de trois
+    tours et l'autre entre en lice ; un bloc `absent` n'a pas de ligne du tout,
+    et c'est le seul des trois qui décrive un manque de collecte.
+
+    Les fondre ferait lire une entrée en lice comme un trou, exactement ce que
+    la mention explicite existe pour éviter.
+    """
+    competition = _tournoi(
+        migrated,
+        [
+            ("A", "X", "2026-08-14T12:00:00Z"),
+            ("A", "B", "2026-08-18T12:00:00Z"),
+            ("C", "D", "2026-08-18T13:00:00Z"),
+        ],
+    )
+    _profil_tournoi("A", [_match_source("A", "X", "2026-08-14", "6-3 6-4")], migrated)
+    _profil_tournoi("B", [], migrated)
+    # `C` et `D` n'ont aucun profil archive : leur bloc n'aura pas de ligne.
+    execute(
+        "INSERT INTO sessions (label, created_at) VALUES ('essai', ?)",
+        (utcnow(),),
+        settings=migrated,
+    )
+    session_id = int(query_one("SELECT MAX(id) AS id FROM sessions", settings=migrated)["id"])
+    execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 't.md.j2', '', 0, ?)",
+        (session_id, utcnow()),
+        settings=migrated,
+    )
+    prompt_id = int(query_one("SELECT MAX(id) AS id FROM prompts", settings=migrated)["id"])
+    for row in query(
+        "SELECT id FROM events WHERE competition_id = ? ORDER BY id",
+        (competition,),
+        settings=migrated,
+    ):
+        execute(
+            "INSERT INTO prompt_events (prompt_id, event_id) VALUES (?, ?)",
+            (prompt_id, int(row["id"])),
+            settings=migrated,
+        )
+
+    couverture = serve_stats.here_coverage(migrated)
+
+    assert len(couverture) == 1
+    lot = couverture[0]
+    assert (lot.month, lot.circuit) == ("2026-08", "atp")
+    assert lot.blocks == 3
+    # A – B : A a joué, B entre en lice -> partiel. A – X et C – D : absents,
+    # X et C/D n'ayant aucun profil.
+    assert (lot.partial, lot.absent) == (1, 2)
+    assert lot.served == lot.filled + lot.partial
+
+
+def test_la_couverture_se_mesure_hors_du_drapeau(migrated: Settings) -> None:
+    """**Gardée par le drapeau, elle rendrait des zéros le jour où il redescend**
+    — et ça se lirait comme une source tarie plutôt que comme une configuration.
+
+    Le drapeau est forcé là, et nulle part ailleurs.
+    """
+    competition = _tournoi(
+        migrated,
+        [("A", "X", "2026-08-14T12:00:00Z"), ("A", "B", "2026-08-18T12:00:00Z")],
+    )
+    _profil_tournoi("A", [_match_source("A", "X", "2026-08-14", "6-3 6-4")], migrated)
+    _profil_tournoi("B", [], migrated)
+    execute(
+        "INSERT INTO sessions (label, created_at) VALUES ('essai', ?)",
+        (utcnow(),),
+        settings=migrated,
+    )
+    session_id = int(query_one("SELECT MAX(id) AS id FROM sessions", settings=migrated)["id"])
+    execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 't.md.j2', '', 0, ?)",
+        (session_id, utcnow()),
+        settings=migrated,
+    )
+    prompt_id = int(query_one("SELECT MAX(id) AS id FROM prompts", settings=migrated)["id"])
+    event = query_one(
+        "SELECT id FROM events WHERE competition_id = ? AND away = 'B'",
+        (competition,),
+        settings=migrated,
+    )
+    execute(
+        "INSERT INTO prompt_events (prompt_id, event_id) VALUES (?, ?)",
+        (prompt_id, int(event["id"])),
+        settings=migrated,
+    )
+
+    # `migrated` porte le drapeau bas : la ligne ne se rend pas...
+    assert (
+        serve_stats.here_lines("A", "B", "atp", competition, "2026-08-18T12:00:00Z", migrated) == []
+    )
+    # ...et la couverture le mesure quand même.
+    assert serve_stats.here_coverage(migrated)[0].served == 1

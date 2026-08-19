@@ -2389,13 +2389,22 @@ def _tournament_matches(
     return sorted(matchs, key=lambda item: item.played_on)
 
 
-def archived_profile(canonical: str, settings: Settings) -> tuple[Any, str]:
+def archived_profile(
+    canonical: str, settings: Settings, cache: dict[str, tuple[Any, str]] | None = None
+) -> tuple[Any, str]:
     """La derniere reponse `matches-played` archivee d'un joueur, et sa date.
 
     **Aucun appel.** Meme idiome qu'`archived_timeline`, et pour la meme raison :
     ce bloc se rend a chaque generation de prompt et a chaque ouverture d'une
     fiche de match, donc il ne peut pas etre suspendu a un appel reseau.
+
+    **Le cache est passe par l'appelant et vit le temps d'un lot**, meme idiome
+    que `ratings_by_key` : un joueur revient dans plusieurs blocs d'une meme
+    session, et la charge utile se decode a chaque fois. Pas de memo global —
+    son invalidation apres une passe de collecte serait a inventer.
     """
+    if cache is not None and canonical in cache:
+        return cache[canonical]
     chemin = f"{PREFIX}/profile/{canonical}/matches-played"
     with connect(settings) as conn:
         row = conn.execute(
@@ -2404,11 +2413,15 @@ def archived_profile(canonical: str, settings: Settings) -> tuple[Any, str]:
             (PROVIDER, chemin),
         ).fetchone()
     if row is None:
-        return None, ""
-    try:
-        return json.loads(str(row["raw_json"])), str(row["fetched_at"] or "")
-    except (TypeError, ValueError):
-        return None, ""
+        found: tuple[Any, str] = (None, "")
+    else:
+        try:
+            found = (json.loads(str(row["raw_json"])), str(row["fetched_at"] or ""))
+        except (TypeError, ValueError):
+            found = (None, "")
+    if cache is not None:
+        cache[canonical] = found
+    return found
 
 
 def _tournament_id(payload: Any, name: str, window: tuple[str, str]) -> int:
@@ -2507,11 +2520,12 @@ def _here_for(
     until: str,
     settings: Settings,
     tournament_id: int = 0,
+    cache: dict[str, tuple[Any, str]] | None = None,
 ) -> tuple[list[str], int]:
     """Les fragments d'un joueur, et l'identifiant de tournoi qu'il a servi."""
     identity = load_identity(player, circuit, settings)
     canonical = identity.canonical if identity and identity.resolved else player
-    charge, releve = archived_profile(canonical, settings)
+    charge, releve = archived_profile(canonical, settings, cache)
     if charge is None:
         return [], tournament_id
     identifiant = tournament_id or _tournament_id(charge, canonical, window)
@@ -2524,7 +2538,7 @@ def _here_for(
         # quand l'autre sort de trois tours — et un blanc se lirait comme un
         # defaut de collecte.
         horodatage = f" [releve au {_short_day(releve)}]" if releve else ""
-        return [f"{player} aucun match dans ce tournoi{horodatage}"], identifiant
+        return [f"{player} {HERE_NO_MATCH}{horodatage}"], identifiant
     parcours = " | ".join(_here_result(item) for item in matchs)
     # **La ligne porte la date de son releve, comme `Parcours` porte la fenetre
     # de nos scans.** Sans elle, une liste s'arretant la veille se lit comme un
@@ -2619,6 +2633,103 @@ def contested_days(
     return compte
 
 
+#: Ce qu'un joueur qui entre en lice rend. **Une constante et non un litteral
+#: recopie** : la mesure de couverture la relit pour classer un bloc, et deux
+#: ecritures de la meme phrase auraient diverge au premier ajustement — meme
+#: regle que `NEUTRAL_MARK` et `weather.ALERT_MARK`.
+HERE_NO_MATCH = "aucun match dans ce tournoi"
+
+
+@dataclass(frozen=True)
+class HereCoverage:
+    """Ce que la ligne `Ici` couvre, par circuit et par mois.
+
+    **Trois etats et non deux**, parce qu'ils n'appellent pas la meme lecture :
+    un bloc `renseigne` porte des resultats des deux cotes ; un bloc `partiel`
+    en porte d'un cote et « aucun match dans ce tournoi » de l'autre — ce qui est
+    un **fait sur le match**, souvent le fait dominant quand l'un sort de trois
+    tours et l'autre entre en lice ; un bloc `absent` n'a pas de ligne du tout,
+    et c'est le seul des trois qui decrive un manque de collecte.
+
+    Les fondre ferait lire une entree en lice comme un trou, exactement ce que
+    la mention explicite existe pour eviter.
+    """
+
+    month: str
+    circuit: str
+    blocks: int = 0
+    filled: int = 0
+    partial: int = 0
+    absent: int = 0
+
+    @property
+    def served(self) -> int:
+        """Blocs portant une ligne, quelle qu'elle dise."""
+        return self.filled + self.partial
+
+    @property
+    def share(self) -> float | None:
+        return self.served / self.blocks if self.blocks else None
+
+
+def here_coverage(settings: Settings | None = None) -> list[HereCoverage]:
+    """La couverture de la ligne `Ici` sur les blocs tennis reellement soumis.
+
+    La population est `prompt_events` — les matchs **partis a l'analyse** — et
+    non le board : c'est la seule qui dise ce que le modele a eu sous les yeux.
+
+    **Mesure hors du drapeau, et c'est delibere.** Elle decrit ce que la source
+    sait servir, pas ce que la configuration du jour rend : gardee par le
+    drapeau, elle rendrait des zeros le jour ou il redescend et se lirait comme
+    une source tarie. Le drapeau est donc force ici, et nulle part ailleurs.
+
+    Aucun appel : la charge utile `matches-played` est archivee.
+    """
+    settings = settings or get_settings()
+    ouvert = settings.model_copy(update={CURRENT_EVENT_LINE_ENABLED: True})
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT e.home, e.away, e.commence_time, e.competition_id, c.oddsapi_key "
+            "  FROM prompt_events pe "
+            "  JOIN events e ON e.id = pe.event_id "
+            "  JOIN sports s ON s.id = e.sport_id "
+            "  JOIN competitions c ON c.id = e.competition_id "
+            " WHERE s.key = 'tennis' ORDER BY e.commence_time"
+        ).fetchall()
+
+    # Un joueur revient dans plusieurs blocs d'un meme tournoi : sans ce cache,
+    # sa charge utile se relit et se decode a chaque fois. Mesure sur les 190
+    # blocs archives — 414 lectures pour 253 profils distincts.
+    cache: dict[str, tuple[Any, str]] = {}
+    tally: dict[tuple[str, str], dict[str, int]] = {}
+    for row in rows:
+        circuit = circuit_of(str(row["oddsapi_key"] or ""))
+        if not circuit:
+            continue
+        cle = (str(row["commence_time"])[:7], circuit)
+        compte = tally.setdefault(cle, {"blocks": 0, "filled": 0, "partial": 0, "absent": 0})
+        compte["blocks"] += 1
+        lignes = here_lines(
+            str(row["home"] or ""),
+            str(row["away"] or ""),
+            circuit,
+            row["competition_id"],
+            str(row["commence_time"]),
+            ouvert,
+            cache,
+        )
+        if not lignes:
+            compte["absent"] += 1
+        elif HERE_NO_MATCH in lignes[0][1]:
+            compte["partial"] += 1
+        else:
+            compte["filled"] += 1
+    return [
+        HereCoverage(month=mois, circuit=circuit, **compte)
+        for (mois, circuit), compte in sorted(tally.items())
+    ]
+
+
 def here_lines(
     home: str,
     away: str,
@@ -2626,6 +2737,7 @@ def here_lines(
     competition_id: int | None,
     commence_time: str,
     settings: Settings | None = None,
+    cache: dict[str, tuple[Any, str]] | None = None,
 ) -> list[tuple[str, str]]:
     """La ligne `Ici` : ce que chaque joueur a fait dans **ce** tournoi.
 
@@ -2657,12 +2769,12 @@ def here_lines(
     for joueur in (home, away):
         if joueur:
             rendus[joueur], identifiant = _here_for(
-                joueur, circuit, window, commence_time, settings, identifiant
+                joueur, circuit, window, commence_time, settings, identifiant, cache
             )
     for joueur in (home, away):
         if joueur and not rendus.get(joueur) and identifiant:
             rendus[joueur], _ = _here_for(
-                joueur, circuit, window, commence_time, settings, identifiant
+                joueur, circuit, window, commence_time, settings, identifiant, cache
             )
     for joueur in (home, away):
         fragments.extend(rendus.get(joueur) or [])

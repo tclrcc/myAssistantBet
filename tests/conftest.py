@@ -48,6 +48,17 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     monkeypatch.setenv("TZ", "Europe/Paris")
     monkeypatch.setenv("SCHEDULER_ENABLED", "0")
     monkeypatch.setenv("HTTP_BACKOFF_BASE", "0")
+    # **Les drapeaux de gabarit sont epingles a leur defaut de code**, et c'est la
+    # meme regle que les cles ci-dessus : un test qui passe parce qu'une variable
+    # est active sur cette machine-ci echouerait ailleurs.
+    #
+    # Mesure qui l'impose : activer `CURRENT_EVENT_LINE_ENABLED` en production a
+    # fait tomber deux tests qui n'avaient rien a voir avec le changement — ceux
+    # qui decrivent ce que le bloc rend **drapeau bas**. Un drapeau
+    # d'exploitation ne doit pas decider de ce que la suite verifie ; les tests
+    # qui ont besoin de la ligne l'ouvrent explicitement, par `model_copy`.
+    monkeypatch.setenv("SERVE_LINES_ENABLED", "0")
+    monkeypatch.setenv("CURRENT_EVENT_LINE_ENABLED", "0")
 
     get_settings.cache_clear()
     ENRICH_PROGRESS.clear()

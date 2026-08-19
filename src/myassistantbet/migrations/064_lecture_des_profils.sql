@@ -1,0 +1,31 @@
+-- 064_lecture_des_profils.sql — l'index qui manquait a la relecture des archives.
+--
+-- **Mesure avant, correctif ensuite.** `archived_profile` et `archived_timeline`
+-- relisent la derniere reponse d'un chemin :
+--
+--     SELECT raw_json, fetched_at FROM api_responses
+--      WHERE provider = ? AND path = ? ORDER BY id DESC LIMIT 1
+--
+-- L'index existant porte `(provider, endpoint, fetched_at)` : la recherche se
+-- faisait donc **sur le seul `provider`**, ramenait des milliers de lignes, puis
+-- filtrait `path` et triait dans une table temporaire. Plan constate :
+--
+--     SEARCH api_responses USING INDEX idx_api_responses_lookup (provider=?)
+--     USE TEMP B-TREE FOR ORDER BY
+--
+-- Ce que ca coutait, mesure le 19/08/2026 sur la base servie (9 442 reponses) :
+--
+--   * **generation d'un prompt de six blocs tennis : 2,11 s -> 1,43 s**, soit
+--     32 % — la ligne `Ici` relit deux profils par bloc, et le chemin est servi
+--     a chaque generation, donc plusieurs fois par session ;
+--   * balayage de couverture sur les 190 blocs archives : 8,9 s -> 3,6 s.
+--
+-- `id` en troisieme colonne : c'est la cle de tri de la requete, donc l'index la
+-- sert aussi et le B-tree temporaire disparait. Plan apres :
+--
+--     SEARCH api_responses USING INDEX idx_api_responses_path (provider=? AND path=?)
+--
+-- L'index existant **reste** : il sert les lectures par endpoint et par
+-- fraicheur, qui sont d'autres questions. Deux index sur une table d'archive
+-- dont on ne supprime rien coutent de l'espace d'ecriture, pas de la lecture.
+CREATE INDEX IF NOT EXISTS idx_api_responses_path ON api_responses (provider, path, id);
