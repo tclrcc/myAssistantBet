@@ -9,6 +9,7 @@ negatif de notre rapprochement, pas de la source.
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -1228,8 +1229,16 @@ async def test_la_collecte_s_arrete_des_le_seuil_atteint(
     )
     lignes = tuple(_ligne_de_match(f"2026-0{1 + i // 28}-{1 + i % 28:02d}") for i in range(40))
 
+    # **L'horloge est donnee**, sinon ce test mesurerait le jour ou il tourne :
+    # ses quarante rencontres sont datees de janvier et fevrier, donc hors de la
+    # fenetre de retention des le mois de mai. Ce qu'il enonce est que le seuil
+    # arrete la collecte, pas que le calendrier la laisse partir.
     jeux, releve, _ = await serve_stats.collect_games(
-        tennis_client, "Taylor Fritz", lignes, tennis_client._settings
+        tennis_client,
+        "Taylor Fritz",
+        lignes,
+        tennis_client._settings,
+        now=datetime(2026, 3, 1, tzinfo=UTC),
     )
 
     porte = sum(jeu.served + jeu.returned for jeu in jeux)
@@ -1411,3 +1420,154 @@ def test_drapeau_bas_le_bloc_et_le_gabarit_sont_ceux_d_avant_le_lot(
     # `serve_lines` : c'est la que la decision se prend. Le verifier ici
     # demanderait de monter tout le chemin de contexte d'un match de tennis pour
     # reverifier la meme branche.
+
+
+# -- Le filtre d'age : une falaise, pas une decroissance ---------------------
+
+
+@respx.mock
+async def test_une_rencontre_de_plus_de_90_jours_n_est_pas_tentee(
+    tennis_client: TennisAPIClient, load_fixture: Callable[[str], Any]
+) -> None:
+    """**Le levier du lot 8, et il est mesure.** 387 rencontres tentees au-dela
+    de 90 jours dans l'archive, **zero timeline** ; la tranche precedente en
+    sert encore 57 %. Ce n'est pas une decroissance, c'est une falaise, et
+    demander au-dela paie six appels pour une reponse connue d'avance.
+
+    Le compte sort a part (`too_old`) : fondu dans `empty`, il ferait lire une
+    couverture qui s'effondre la ou il n'y a qu'un filtre qui travaille.
+    """
+    respx.get(url__startswith=BASE_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("tennisapi_event.json"), headers=QUOTA_HEADERS
+        )
+    )
+    maintenant = datetime(2026, 8, 19, tzinfo=UTC)
+    vieille = _ligne_de_match("2026-05-01", "Vieux")  # 110 jours
+
+    jeux, releve, rejets = await serve_stats.collect_games(
+        tennis_client, "A", (vieille,), tennis_client._settings, now=maintenant
+    )
+
+    assert respx.calls.call_count == 0, "aucun appel n'est emis au-dela de la fenetre"
+    assert (releve.too_old, releve.attempted, releve.empty) == (1, 0, 0)
+    assert jeux == () and rejets == [], "ce n'est pas un echec de source : rien n'a ete demande"
+
+
+@respx.mock
+async def test_une_rencontre_de_80_jours_est_toujours_tentee(
+    tennis_client: TennisAPIClient, load_fixture: Callable[[str], Any]
+) -> None:
+    """**La borne se prend du cote qui ne perd pas de donnee.** 80 jours est
+    l'age maximum d'une rencontre reellement servie dans l'archive : le filtre
+    doit la laisser passer, sans quoi il couterait la timeline qu'il devait
+    epargner."""
+    respx.get(url__startswith=BASE_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("tennisapi_event.json"), headers=QUOTA_HEADERS
+        )
+    )
+    maintenant = datetime(2026, 8, 19, tzinfo=UTC)
+    recente = _ligne_de_match("2026-05-31", "Recent")  # 80 jours
+
+    jeux, releve, _ = await serve_stats.collect_games(
+        tennis_client, "Taylor Fritz", (recente,), tennis_client._settings, now=maintenant
+    )
+
+    assert respx.calls.call_count >= 1
+    assert (releve.too_old, releve.attempted) == (0, 1)
+    assert len(jeux) == 1
+
+
+@respx.mock
+async def test_une_timeline_deja_archivee_survit_au_filtre_d_age(
+    tennis_client: TennisAPIClient, load_fixture: Callable[[str], Any]
+) -> None:
+    """**L'archive passe avant le filtre, et l'ordre porte la regle.** Une
+    timeline deja payee se relit gratuitement quel que soit l'age de la
+    rencontre : l'ecarter perdrait une donnee qu'on possede pour economiser un
+    appel qu'on ne ferait pas."""
+    respx.get(url__startswith=BASE_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("tennisapi_event.json"), headers=QUOTA_HEADERS
+        )
+    )
+    ligne = _ligne_de_match("2026-05-01", "Vieux")
+    # Payee alors qu'elle etait encore dans la fenetre.
+    await serve_stats.collect_games(
+        tennis_client,
+        "Taylor Fritz",
+        (ligne,),
+        tennis_client._settings,
+        target=1,
+        now=datetime(2026, 5, 2, tzinfo=UTC),
+    )
+    appels = respx.calls.call_count
+
+    jeux, releve, _ = await serve_stats.collect_games(
+        tennis_client,
+        "Taylor Fritz",
+        (ligne,),
+        tennis_client._settings,
+        target=1,
+        now=datetime(2026, 8, 19, tzinfo=UTC),
+    )
+
+    assert respx.calls.call_count == appels, "rien n'est repaye"
+    assert len(jeux) == 1, "et la timeline archivee sort quand meme"
+    assert releve.too_old == 0
+
+
+@respx.mock
+async def test_le_filtre_d_age_se_desactive_par_le_reglage(
+    tennis_client: TennisAPIClient, load_fixture: Callable[[str], Any]
+) -> None:
+    """Le seuil est un **reglage**, pas une constante : c'est le seul moyen de
+    rejouer la mesure le jour ou la retention de la source aura bouge. A zero,
+    le filtre ne s'applique plus."""
+    respx.get(url__startswith=BASE_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("tennisapi_event.json"), headers=QUOTA_HEADERS
+        )
+    )
+    reglages = tennis_client._settings.model_copy(update={"timeline_max_age_days": 0})
+
+    _, releve, _ = await serve_stats.collect_games(
+        tennis_client,
+        "Taylor Fritz",
+        (_ligne_de_match("2024-01-01", "Antique"),),
+        reglages,
+        now=datetime(2026, 8, 19, tzinfo=UTC),
+    )
+
+    assert (releve.too_old, releve.attempted) == (0, 1)
+
+
+@respx.mock
+async def test_une_rencontre_hors_fenetre_n_interrompt_pas_le_parcours(
+    tennis_client: TennisAPIClient, load_fixture: Callable[[str], Any]
+) -> None:
+    """Les lignes sont triees par date, mais une seule date aberrante ne doit
+    pas faire perdre le fond de liste : le filtre **saute**, il n'arrete pas."""
+    respx.get(url__startswith=BASE_URL).mock(
+        return_value=httpx.Response(
+            200, json=load_fixture("tennisapi_event.json"), headers=QUOTA_HEADERS
+        )
+    )
+    lignes = (
+        _ligne_de_match("2026-08-18", "Recent"),
+        _ligne_de_match("2026-01-01", "Vieux"),
+        _ligne_de_match("2026-08-10", "Autre"),
+    )
+
+    jeux, releve, _ = await serve_stats.collect_games(
+        tennis_client,
+        "Taylor Fritz",
+        lignes,
+        tennis_client._settings,
+        now=datetime(2026, 8, 19, tzinfo=UTC),
+    )
+
+    assert releve.too_old == 1
+    assert releve.attempted == 2, "les deux rencontres dans la fenetre sont bien tentees"
+    assert len(jeux) == 2

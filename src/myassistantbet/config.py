@@ -83,6 +83,23 @@ class Settings(BaseSettings):
     #: entre au journal des mesures — pas la date du commit.
     serve_lines_enabled: bool = False
 
+    #: Age maximum, en jours, d'une rencontre dont on tente encore la timeline.
+    #:
+    #: **C'est une fenetre de retention de la source, mesuree et non supposee.**
+    #: Releve du 18/08/2026 sur les 564 rencontres tentees et archivees : age
+    #: maximum d'une rencontre servie, **80 jours** ; 387 tentatives au-dela de
+    #: 90 jours, **zero timeline**. Le taux passe de 57 % sur la tranche
+    #: 31-90 jours a 0 % sur les deux tranches suivantes — ce n'est pas une
+    #: decroissance, c'est une falaise.
+    #:
+    #: 90 est donc la premiere dizaine au-dessus du dernier succes observe : la
+    #: marge se prend du cote qui ne perd pas de donnee. Le filtre supprime 69 %
+    #: des tentatives en gardant **113 timelines sur 113**.
+    #:
+    #: Zero ou negatif desactive le filtre — c'est le seul moyen de rejouer la
+    #: mesure le jour ou la retention de la source changerait.
+    timeline_max_age_days: int = 90
+
     #: Delai entre deux appels a `tennis-api.com`, en secondes.
     #:
     #: **Aucun en-tete de debit n'est servi par ce fournisseur** — ni
@@ -200,6 +217,7 @@ class Settings(BaseSettings):
             "odds_api_credit_floor": self.odds_api_credit_floor,
             "apifootball_call_floor": self.apifootball_call_floor,
             "rapidapi_call_floor": self.rapidapi_call_floor,
+            "timeline_max_age_days": self.timeline_max_age_days,
             "scan_window_days": self.scan_window_days,
             "scheduler_enabled": self.scheduler_enabled,
             "scan_at": f"{self.scan_hour:02d}:{self.scan_minute:02d}",

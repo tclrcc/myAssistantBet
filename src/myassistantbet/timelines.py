@@ -62,15 +62,22 @@ async def run(limit: int = BATCH, settings=None) -> serve_stats_service.SyncRepo
     obtenues = sum(item[2].obtained for item in report.timelines)
     vides = sum(item[2].empty for item in report.timelines)
     alternance = sum(item[2].alternation for item in report.timelines)
+    hors_fenetre = sum(item[2].too_old for item in report.timelines)
     au_seuil = sum(1 for item in report.timelines if item[2].reached)
+    # **Les rencontres hors fenetre sont dites, jamais tues.** Un filtre qui
+    # travaille en silence est indiscernable d'une source qui s'assechue : c'est
+    # ce compte, rapporte aux tentees, qui permettra de rouvrir la question le
+    # jour ou la retention de la source aura bouge.
     logger.info(
         "Timelines : %d joueur(s), %d rencontre(s) tentee(s), %d obtenue(s), "
-        "%d vide(s), %d rupture(s) d'alternance, %d au seuil, %d appel(s)",
+        "%d vide(s), %d rupture(s) d'alternance, %d hors fenetre d'age, "
+        "%d au seuil, %d appel(s)",
         len(report.timelines),
         tentees,
         obtenues,
         vides,
         alternance,
+        hors_fenetre,
         au_seuil,
         report.calls,
     )

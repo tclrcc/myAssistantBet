@@ -1867,6 +1867,13 @@ class TimelineTally:
     reached: bool = False
     #: Vrai quand le plancher de quota a interrompu la collecte.
     stopped: bool = False
+    #: Rencontres ecartees sur leur **age**, sans un appel. **Compte a part et
+    #: jamais fondu dans `empty`** : l'une dit que la source ne sert pas cette
+    #: rencontre, l'autre qu'on ne le lui a pas demande. Les confondre ferait
+    #: lire une couverture en baisse la ou il n'y a qu'un filtre qui travaille,
+    #: et c'est exactement ce chiffre qui dira le jour ou la fenetre de
+    #: retention de la source aura bouge.
+    too_old: int = 0
 
 
 def _event_paths(first: str, second: str, day: str) -> tuple[str, ...]:
@@ -1930,16 +1937,36 @@ def archived_timeline(
     return None, True
 
 
+def _older_than(day: str, max_age: int, now: datetime) -> bool:
+    """La rencontre est-elle hors de la fenetre de retention de la source ?
+
+    **Une date illisible est tentee**, jamais ecartee. Ce filtre existe pour ne
+    pas depenser d'appel la ou la mesure dit qu'on ne trouve rien ; il n'a pas
+    vocation a trancher un doute, et perdre une timeline sur une date mal formee
+    serait payer le filtre du mauvais cote. Le cas est de toute facon hors de
+    portee : la fenetre de 52 semaines en amont compare des chaines ISO et
+    refuse deja tout le reste.
+    """
+    if max_age <= 0:
+        return False
+    try:
+        joue = datetime.fromisoformat(str(day)[:10]).replace(tzinfo=UTC)
+    except ValueError:
+        return False
+    return (now - joue).days > max_age
+
+
 async def collect_games(
     client: TennisAPIClient,
     canonical: str,
     lines: tuple[ServeLine, ...],
     settings: Settings,
     target: int = MIN_GAMES,
+    now: datetime | None = None,
 ) -> tuple[tuple[GameLine, ...], TimelineTally, list[Reject]]:
     """Les jeux d'un joueur, **du plus recent au plus ancien, et pas un de plus**.
 
-    Trois regles, et c'est le dessin entier :
+    Quatre regles, et c'est le dessin entier :
 
     - **on s'arrete des que le seuil est atteint.** Une quinzaine de rencontres
       porte les 300 jeux que `enough_games` reclame (served + returned, soit une
@@ -1948,9 +1975,20 @@ async def collect_games(
       au-dela du seuil, un appel de plus n'ajoute rien qu'un taux ne dise deja ;
     - **du plus recent au plus ancien**, parce qu'une interruption doit laisser
       la fenetre la plus proche du match analyse, jamais un fond de saison ;
+    - **on ne demande rien au-dela de la fenetre de retention de la source**
+      (`timeline_max_age_days`). Ce n'est pas une economie prudente, c'est une
+      falaise mesuree : 387 rencontres tentees au-dela de 90 jours, **zero**
+      timeline, quand la tranche precedente sert encore 57 %. Le filtre supprime
+      69 % des tentatives **sans perdre une seule timeline** ;
     - **le plancher est verifie avant chaque rencontre**, comme dans `sync` et
       pour la meme raison : un controle unique laisserait une reprise le franchir
       en cours de route et le decouvrir trop tard, le quota etant mensuel.
+
+    **L'ordre des trois gardes n'est pas indifferent.** L'archive passe avant le
+    filtre d'age : une timeline deja payee se relit gratuitement quel que soit
+    l'age de la rencontre, et l'ecarter perdrait une donnee qu'on possede pour
+    economiser un appel qu'on ne ferait pas. Le filtre passe avant le plancher :
+    ce qui n'est pas demande n'a pas a etre budgete.
 
     Ce qui n'est **pas** fait ici : aucun ajustement au niveau d'adversaire,
     aucune projection. On somme des comptes, et c'est tout.
@@ -1959,6 +1997,8 @@ async def collect_games(
     tally = TimelineTally()
     rejets: list[Reject] = []
     total = 0
+    horloge = now or datetime.now(UTC)
+    age_max = int(settings.timeline_max_age_days)
 
     for ligne in sorted(lines, key=lambda item: item.played_on, reverse=True):
         if total >= target:
@@ -1985,6 +2025,15 @@ async def collect_games(
             tally.attempted += 1
             tally.empty += 1
             tally.replayed += 1
+            continue
+
+        if _older_than(ligne.played_on, age_max, horloge):
+            # **Hors fenetre de retention : on ne demande pas.** Cette rencontre
+            # n'entre pas dans `attempted` — elle n'a pas ete tentee — et le
+            # parcours **continue** plutot que de s'interrompre : les lignes sont
+            # triees par date, mais une seule date aberrante ferait alors perdre
+            # tout le fond de liste.
+            tally.too_old += 1
             continue
 
         etat = budget(settings)
