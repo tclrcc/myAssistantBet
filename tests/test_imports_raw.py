@@ -299,6 +299,157 @@ def test_le_rejeu_rattrape_ce_qu_un_lecteur_corrige_sait_lire(migrated: Settings
     assert ligne["confidence_computed"] == 1
 
 
+def test_un_match_sorti_de_la_fenetre_ne_se_rejoue_pas_en_doublon(
+    migrated: Settings,
+) -> None:
+    """**La garde de doublon de l'aperçu se périme, et il a fallu la mesurer.**
+
+    `parse_table` marque `duplicate` sur une signature qui inclut l'identifiant
+    de match — lequel se résout par la shortlist et le voisinage, donc **cesse de
+    se résoudre** dès que le match sort de la fenêtre. Relevé du 19/08/2026 sur
+    les dix-neuf collages archivés : douze sélections déclarées « neuves »,
+    **douze avec `event_id = None`, et douze déjà en base**. Un `--ecrire` naïf
+    aurait inséré douze doublons orphelins.
+    """
+    session_id, events = _lot(migrated, ["Lyon", "Nice"])
+    import_id = int(picks_import.build_preview(session_id, TABLEAU, migrated).import_id or 0)
+    replay(import_id, write=True, settings=migrated)
+    # Le match quitte le board **et** le voisinage : c'est ce que le temps fait
+    # tout seul, et rien d'autre n'est simulé ici.
+    for event_id in events:
+        db.execute("DELETE FROM session_events WHERE event_id = ?", (event_id,), settings=migrated)
+        db.execute(
+            "UPDATE events SET commence_time = '2020-01-01T12:00:00Z' WHERE id = ?",
+            (event_id,),
+            settings=migrated,
+        )
+
+    second = replay(import_id, write=True, settings=migrated)
+
+    assert second.written == 0, "une ligne non résolue n'est pas une ligne nouvelle"
+    assert len(second.known) == 2
+    assert db.query_one("SELECT COUNT(*) AS n FROM picks", settings=migrated)["n"] == 2
+
+
+def test_le_rattachement_pose_un_bloc_sans_creer_de_selection(migrated: Settings) -> None:
+    """**Le geste que `replay` ne peut pas faire.** Les trois collages complets de
+    la base ne rendent aucune sélection neuve — leurs lignes sont entrées par les
+    re-collages du seul tableau qui les ont suivis. Ce qui leur manque n'est pas
+    leur existence, c'est leur bloc de confiance, donc le cran calculé.
+    """
+    from myassistantbet.replay import attach
+
+    session_id, _ = _lot(migrated, ["Lyon"])
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 't.md.j2', ?, 0, ?)",
+        (
+            session_id,
+            "### M1 · football · Amical · Lyon – Adv Lyon · 01/01 20:45\n",
+            db.utcnow(),
+        ),
+        settings=migrated,
+    )
+    tableau = (
+        "| # | Match | Marché | Sélection | Cote | Palier |\n"
+        "|---|---|---|---|---|---|\n"
+        "| 1 | Lyon – Adv Lyon | 1N2 | Lyon | 1.45 | 🟢 SAFE |\n"
+    )
+    complet = (
+        tableau + '\n{"match": "M1", "confiance": 4, "type": "issue", "source_level": 1,\n'
+        ' "faits": [{"enonce": "retour daté", "date": "2026-08-12",\n'
+        '            "editeur": "lequipe.fr", "niveau": 1}],\n'
+        ' "manque_touche_facteur": false}\n'
+        "\ndossiers_ouverts: [M1]\n"
+    )
+    # La sélection entre **sans son bloc**, comme un re-collage du seul tableau.
+    court = int(picks_import.build_preview(session_id, tableau, migrated).import_id or 0)
+    replay(court, write=True, settings=migrated)
+    avant = db.query_one("SELECT COUNT(*) AS n FROM picks", settings=migrated)["n"]
+    long = int(picks_import.build_preview(session_id, complet, migrated).import_id or 0)
+
+    rapport = attach(long, write=True, settings=migrated)
+
+    assert rapport.attached == 1 and rapport.already == 0
+    assert db.query_one("SELECT COUNT(*) AS n FROM picks", settings=migrated)["n"] == avant, (
+        "le rattachement ne crée aucune sélection"
+    )
+    ligne = db.query_one("SELECT claim_raw_json, confidence_computed FROM picks", settings=migrated)
+    assert ligne["claim_raw_json"] is not None
+    assert ligne["confidence_computed"] == 4
+    session = db.query_one(
+        "SELECT open_dossiers, open_dossiers_state FROM sessions WHERE id = ?",
+        (session_id,),
+        settings=migrated,
+    )
+    assert (session["open_dossiers"], session["open_dossiers_state"]) == ("M1", "renseignee")
+
+
+def test_le_rattachement_n_ecrase_jamais_un_bloc_deja_pose(migrated: Settings) -> None:
+    """Le premier relevé fait foi : ce chemin répare un collage dont les blocs se
+    sont perdus, il ne corrige pas une déclaration."""
+    from myassistantbet.replay import attach
+
+    session_id, _ = _lot(migrated, ["Lyon"])
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 't.md.j2', ?, 0, ?)",
+        (
+            session_id,
+            "### M1 · football · Amical · Lyon – Adv Lyon · 01/01 20:45\n",
+            db.utcnow(),
+        ),
+        settings=migrated,
+    )
+    complet = (
+        "| # | Match | Marché | Sélection | Cote | Palier |\n"
+        "|---|---|---|---|---|---|\n"
+        "| 1 | Lyon – Adv Lyon | 1N2 | Lyon | 1.45 | 🟢 SAFE |\n"
+        '\n{"match": "M1", "confiance": 4, "type": "issue", "source_level": 1,\n'
+        ' "faits": [{"enonce": "retour daté", "date": "2026-08-12",\n'
+        '            "editeur": "lequipe.fr", "niveau": 1}],\n'
+        ' "manque_touche_facteur": false}\n'
+    )
+    import_id = int(picks_import.build_preview(session_id, complet, migrated).import_id or 0)
+    replay(import_id, write=True, settings=migrated)
+
+    rapport = attach(import_id, write=True, settings=migrated)
+
+    assert (rapport.attached, rapport.already) == (0, 1)
+
+
+def test_un_bloc_qui_ne_designe_pas_une_selection_unique_est_dit(migrated: Settings) -> None:
+    """**Poser un cran sur la mauvaise ligne serait le défaut que la somme de
+    contrôle existe pour empêcher.** Zéro ou plusieurs correspondances : on le
+    dit, on ne devine pas."""
+    from myassistantbet.replay import attach
+
+    session_id, _ = _lot(migrated, ["Lyon"])
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 't.md.j2', ?, 0, ?)",
+        (
+            session_id,
+            "### M1 · football · Amical · Lyon – Adv Lyon · 01/01 20:45\n",
+            db.utcnow(),
+        ),
+        settings=migrated,
+    )
+    complet = (
+        "| # | Match | Marché | Sélection | Cote | Palier |\n"
+        "|---|---|---|---|---|---|\n"
+        "| 1 | Lyon – Adv Lyon | 1N2 | Lyon | 1.45 | 🟢 SAFE |\n"
+        '\n{"match": "M1", "confiance": 4, "type": "issue", "source_level": 1,\n'
+        ' "faits": [], "manque_touche_facteur": false}\n'
+    )
+    import_id = int(picks_import.build_preview(session_id, complet, migrated).import_id or 0)
+
+    rapport = attach(import_id, write=True, settings=migrated)
+
+    assert rapport.attached == 0
+    assert rapport.unmatched and "aucune sélection" in rapport.unmatched[0]
+
+
 def test_le_rejeu_d_un_import_inconnu_le_dit(migrated: Settings) -> None:
     assert replay_main(["9999"]) == 1
 

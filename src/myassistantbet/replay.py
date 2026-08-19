@@ -29,9 +29,11 @@ import sys
 from dataclasses import dataclass, field
 
 from .config import Settings, get_settings
+from .services import combos as combos_service
 from .services import history as history_service
 from .services import imports_raw, picks_import
 from .services import ingestion as ingestion_service
+from .services.confidence import OPEN_ABSENT
 from .services.ingestion import reject_reason
 
 logger = logging.getLogger(__name__)
@@ -103,12 +105,35 @@ def replay(
         raise LookupError(f"Aucun collage conservé sous l'identifiant {import_id}.")
 
     preview = picks_import.build_preview(collage.session_id, collage.raw_text, settings)
+    # **La garde de doublon de l'apercu se perime, et il a fallu la mesurer pour
+    # le voir.** `parse_table` marque `duplicate` sur une signature qui inclut
+    # l'identifiant de match — lequel se resout par la shortlist et le voisinage,
+    # donc **cesse de se resoudre** des que le match sort de la fenetre. Releve du
+    # 19/08/2026 sur les dix-neuf collages archives : douze selections declarees
+    # « neuves », **douze avec `event_id = None`, et douze deja en base**. Un
+    # `--ecrire` naif aurait donc insere douze doublons orphelins — sans sport, ni
+    # competition, ni palier reel, donc muets dans toutes les statistiques.
+    #
+    # Le second filet ne depend d'aucune resolution : marche et libelle, dans la
+    # session. Il est **plus large** que la signature d'origine et c'est voulu —
+    # ici on refuse d'ecrire, et refuser une ligne se rattrape en la saisissant,
+    # quand un doublon ne se rattrape pas.
+    deja = {
+        (pick.market.strip(), pick.selection.strip())
+        for pick in history_service.list_picks(collage.session_id, settings)
+    }
+    fresh, known = [], []
+    for pick in preview.picks:
+        cible = known if pick.duplicate else fresh
+        if not pick.duplicate and (pick.market.strip(), pick.selection.strip()) in deja:
+            cible = known
+        cible.append(pick)
     report = ReplayReport(
         import_id=import_id,
         session_id=collage.session_id,
         char_count=collage.char_count,
-        fresh=[pick for pick in preview.picks if not pick.duplicate],
-        known=[pick for pick in preview.picks if pick.duplicate],
+        fresh=fresh,
+        known=known,
         claims=preview.claims_attached,
         combos=len(preview.combos),
         set_scores=len(preview.scores),
@@ -166,6 +191,159 @@ def _span(start: int | None, end: int | None) -> str:
     return "" if start is None or end is None else f"{start}:{end}"
 
 
+@dataclass
+class AttachReport:
+    """Ce qu'un rattachement a pose sur des selections **deja en base**.
+
+    Distinct de `ReplayReport`, et il fallait qu'il le soit : l'un cree des
+    selections, l'autre en complete. Les fondre aurait fait lire « 5 recuperees »
+    la ou rien n'est apparu et ou cinq lignes ont gagne leur cran.
+    """
+
+    import_id: int
+    session_id: int
+    #: Blocs lus et apparies a une ligne du collage.
+    claims_read: int = 0
+    #: Selections **deja en base** qui ont recu leur bloc.
+    attached: int = 0
+    #: Selections qui en portaient deja un. **Jamais reecrites** : le premier
+    #: releve fait foi, et le rattachement n'est pas une correction.
+    already: int = 0
+    #: Blocs sans selection correspondante, ou correspondant a plusieurs.
+    unmatched: list[str] = field(default_factory=list)
+    dossiers: str = ""
+    marks: int = 0
+    combos: int = 0
+    combo_failures: list[str] = field(default_factory=list)
+    dry_run: bool = True
+
+    @property
+    def lines(self) -> list[str]:
+        mode = "SIMULATION — rien n'est écrit" if self.dry_run else "ÉCRITURE"
+        out = [
+            f"Import {self.import_id} · session {self.session_id} · {mode}",
+            f"  {self.claims_read} bloc(s) lu(s) · {self.attached} posé(s) sur une "
+            f"sélection existante · {self.already} déjà pourvue(s)",
+            f"  dossiers_ouverts : {self.dossiers or '—'} ({self.marks} repère(s))"
+            f" · {self.combos} combiné(s)",
+        ]
+        out += [f"    ! {motif}" for motif in self.unmatched]
+        out += [f"    ✗ {motif}" for motif in self.combo_failures]
+        return out
+
+
+def attach(
+    import_id: int,
+    write: bool = False,
+    settings: Settings | None = None,
+) -> AttachReport:
+    """Pose sur les selections **deja en base** ce qu'un collage portait en plus.
+
+    **C'est le geste que `replay` ne peut pas faire, et le seul qui recupere
+    quelque chose ici.** Mesure du 19/08/2026 : les trois collages complets de la
+    base ne rendent **aucune selection neuve** — leurs lignes de section C sont
+    entrees par les re-collages du seul tableau qui les ont suivis. Ce qui manque
+    a ces lignes n'est pas leur existence, c'est leur **bloc de confiance**, donc
+    le cran calcule, donc la mesure que toute la chaine attend depuis le lot 1.
+
+    Trois regles, et c'est le dessin entier :
+
+    - **on ne cree rien.** Une selection absente reste absente : la creer serait
+      le travail de `replay`, et melanger les deux ferait lire « recuperees » la
+      ou rien n'est apparu ;
+    - **on n'ecrase rien.** Une selection qui porte deja un bloc est comptee et
+      laissee : le premier releve fait foi, et ce rattachement n'est pas une
+      correction ;
+    - **le rapprochement exige l'unicite.** Un bloc qui correspond a zero ou a
+      plusieurs selections de la session est **dit**, jamais pose au hasard —
+      poser un cran sur la mauvaise ligne serait exactement le defaut que la
+      somme de controle de l'appariement existe pour empecher.
+    """
+    settings = settings or get_settings()
+    collage = imports_raw.get(import_id, settings)
+    if collage is None:
+        raise LookupError(f"Aucun collage conservé sous l'identifiant {import_id}.")
+
+    preview = picks_import.build_preview(collage.session_id, collage.raw_text, settings)
+    report = AttachReport(
+        import_id=import_id,
+        session_id=collage.session_id,
+        claims_read=preview.claims_attached,
+        dossiers=preview.opened.state or "",
+        marks=len(preview.opened.marks or ()),
+        dry_run=not write,
+    )
+
+    par_ligne: dict[int, int] = {}
+    for pick in preview.picks:
+        cible, motif = history_service.unique_pick(
+            collage.session_id, pick.market, pick.selection, settings
+        )
+        if cible is not None:
+            par_ligne[pick.index] = cible
+        if pick.claim is None:
+            continue
+        if cible is None:
+            report.unmatched.append(f"{pick.market} {pick.selection} : {motif}")
+            continue
+        if not write:
+            deja = history_service.has_claim(cible, settings)
+            report.already += int(deja)
+            report.attached += int(not deja)
+            continue
+        pose = history_service.attach_claim(
+            cible,
+            claim=pick.claim.raw,
+            source_level=pick.source,
+            opened=pick.opened,
+            override_cause=pick.override_cause,
+            claim_offsets=_span(pick.claim.start, pick.claim.end),
+            settings=settings,
+        )
+        report.attached += int(pose)
+        report.already += int(not pose)
+
+    # **Un rattachement ne pose jamais `absente`.** L'etat de session s'ecrase a
+    # chaque lecture — « le dernier rendu colle decrit l'analyse en cours » — et
+    # c'est juste pour un import ordinaire. Ici on repare : un collage qui n'a pas
+    # emporte la ligne ne dit rien de l'analyse, il dit quelque chose du collage,
+    # et le laisser effacer une declaration recuperee inverserait le sens du geste.
+    if write and preview.opened.state and preview.opened.state != OPEN_ABSENT:
+        history_service.set_open_dossiers(
+            collage.session_id,
+            set(preview.opened.marks or ()),
+            settings,
+            state=preview.opened.state,
+        )
+    for attache in preview.combos:
+        manquantes = [row for row in attache.rows if row not in par_ligne]
+        if manquantes:
+            report.combo_failures.append(
+                f"Combiné {attache.combo.kind or '?'} non rattaché : "
+                f"{len(manquantes)} de ses {len(attache.rows)} jambes ne se retrouvent pas."
+            )
+            continue
+        if not write:
+            report.combos += 1
+            continue
+        try:
+            combos_service.record(
+                collage.session_id,
+                attache.prompt_id,
+                kind=attache.combo.kind,
+                pick_ids=[par_ligne[row] for row in attache.rows],
+                declared_price=attache.combo.declared_price,
+                target_price=attache.combo.target_price,
+                stop_reason=attache.combo.stop_reason or None,
+                import_id=import_id,
+                settings=settings,
+            )
+            report.combos += 1
+        except (combos_service.ComboError, KeyError, ValueError) as exc:
+            report.combo_failures.append(f"Combiné {attache.combo.kind or '?'} : {exc}")
+    return report
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description=(
@@ -188,6 +366,14 @@ def main(argv: list[str] | None = None) -> int:
         metavar="SESSION",
         help="liste les collages conservés d'une session, puis sort",
     )
+    parser.add_argument(
+        "--rattacher",
+        action="store_true",
+        help=(
+            "pose les blocs de confiance, les dossiers ouverts et les combinés sur "
+            "les sélections DÉJÀ en base, sans en créer aucune"
+        ),
+    )
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)-8s %(message)s")
     settings = get_settings()
@@ -202,8 +388,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.import_id is None:
         parser.error("indique un identifiant, ou --lister SESSION pour les voir")
+    action = attach if args.rattacher else replay
     try:
-        report = replay(args.import_id, write=args.ecrire, settings=settings)
+        report = action(args.import_id, write=args.ecrire, settings=settings)
     except LookupError as exc:
         print(str(exc), file=sys.stderr)
         return 1

@@ -19,7 +19,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
-from ..db import connect, utcnow
+from ..db import connect, execute, query, query_one, utcnow
 from .competitions import category_label, category_rank
 from .confidence import (
     OPEN_ABSENT,
@@ -1679,6 +1679,180 @@ def _vocabulary(raw: str, allowed: dict[str, str]) -> str | None:
     return value if value in allowed else None
 
 
+@dataclass(frozen=True)
+class ClaimColumns:
+    """Ce qu'un bloc de confiance ecrit sur une selection, une fois applique.
+
+    **Ecrit une fois et pose deux fois** : `add_pick` s'en sert a la creation, le
+    rattachement d'un rejeu s'en sert sur une selection deja en base. Deux
+    ecritures de cette table auraient diverge — c'est le piege que le projet paie
+    a chaque regle recopiee, et celle-ci porte le cran calcule, donc la seule
+    chose que toute la chaine d'ingestion mesure.
+    """
+
+    source_effective: str | None
+    computed: int | None
+    claimed: int | None
+    overridden: int | None
+    cause: str | None
+    raw: str | None
+    gap_touches_factor: int | None
+    distinct_publishers: int | None
+    #: Le niveau de source **declare**, corrige par le bloc quand il en porte un.
+    #: Reste une entree de la mesure : il ne se confond pas avec l'effectif.
+    source_declared: str | None
+
+
+def claim_columns(
+    claim: str,
+    source_level: str | None,
+    opened: bool | None,
+    override_cause: str = "",
+) -> ClaimColumns:
+    """Applique la table des crans a un bloc de confiance.
+
+    **Aucun repli silencieux sur la valeur declaree.** Un bloc illisible laisse
+    le cran a NULL et journalise : retomber sur l'annonce ferait passer pour
+    calculee une note qui ne l'est pas, et le taux de desaccord — la seule chose
+    que ce chantier mesure — annoncerait un accord parfait.
+    """
+    declaration: Claim | None = None
+    if (claim or "").strip():
+        try:
+            declaration = parse_claim(claim)
+        except ClaimError as exc:
+            logger.warning("Bloc de confiance illisible, cran laisse inconnu : %s", exc)
+
+    source_value = source_level
+    if declaration is not None:
+        # Le bloc structure fait foi sur le niveau de source : c'est la meme
+        # declaration, sous une forme que l'application sait relire. En laisser
+        # deux ecritures les aurait fait diverger au premier rendu ou la colonne
+        # du tableau et le bloc ne disent pas la meme chose.
+        source_value = _vocabulary(declaration.source_level, SOURCE_LEVELS) or source_value
+
+    claimed = declaration.rung if declaration is not None else None
+    computed = claimed
+    overridden = opened is False
+    effective = source_value
+    cause = None
+    if overridden:
+        effective, computed = READING_LEVEL, FORCED_RUNG
+        cause = override_cause if override_cause in OVERRIDE_CAUSES else None
+    elif opened and declaration is not None and not declaration.facts:
+        # **La regle est a sens unique.** L'absence de dossier force la lecture ;
+        # la presence n'accorde rien. Un dossier ouvert dont l'analyse ne tire
+        # aucun fait date **est** une lecture des blocs.
+        effective, computed = READING_LEVEL, FORCED_RUNG
+        cause = OVERRIDE_SANS_FAIT
+    return ClaimColumns(
+        source_effective=effective,
+        computed=computed,
+        claimed=claimed if overridden else None,
+        overridden=_flag(None if opened is None else not opened),
+        cause=cause,
+        raw=declaration.raw if declaration is not None else None,
+        gap_touches_factor=(
+            _flag(declaration.gap_touches_factor) if declaration is not None else None
+        ),
+        distinct_publishers=declaration.distinct_publishers if declaration is not None else None,
+        source_declared=source_value,
+    )
+
+
+def unique_pick(
+    session_id: int,
+    market: str,
+    selection: str,
+    settings: Settings | None = None,
+) -> tuple[int | None, str]:
+    """La selection de cette session portant ce marche et ce libelle, si elle est
+    **unique**. Rend `(None, motif)` sinon.
+
+    **Le rapprochement ne passe pas par l'evenement, et c'est mesure.** La
+    signature d'import inclut l'identifiant de match, qui se resout par la
+    shortlist et le voisinage — donc qui **se perime** : releve du 19/08/2026, les
+    douze selections qu'un rejeu declarait « neuves » portaient toutes
+    `event_id = None` parce que leur match avait quitte la fenetre, et **toutes
+    les douze existaient deja en base**. Une cle qui decroit avec le temps ne peut
+    pas servir a reconnaitre ce qu'on a deja.
+
+    L'unicite est **exigee** plutot que contournee : une session peut porter deux
+    selections du meme marche sur deux matchs, et poser un cran sur la mauvaise
+    ligne serait le defaut que la somme de controle de l'appariement existe pour
+    empecher. Le cas se dit, il ne se devine pas.
+    """
+    rows = query(
+        "SELECT id FROM picks WHERE session_id = ? AND market = ? AND selection = ?",
+        (session_id, market.strip(), selection.strip()),
+        settings=settings,
+    )
+    if not rows:
+        return None, "aucune sélection de la session ne porte ce marché et ce libellé"
+    if len(rows) > 1:
+        return None, f"{len(rows)} sélections portent ce marché et ce libellé"
+    return int(rows[0]["id"]), ""
+
+
+def has_claim(pick_id: int, settings: Settings | None = None) -> bool:
+    """Cette selection porte-t-elle deja un bloc de confiance ?"""
+    row = query_one("SELECT claim_raw_json FROM picks WHERE id = ?", (pick_id,), settings=settings)
+    return row is not None and row["claim_raw_json"] is not None
+
+
+def attach_claim(
+    pick_id: int,
+    claim: str,
+    source_level: str = "",
+    opened: bool | None = None,
+    override_cause: str = "",
+    claim_offsets: str = "",
+    settings: Settings | None = None,
+) -> bool:
+    """Pose un bloc de confiance sur une selection **deja enregistree**.
+
+    Rend vrai s'il a ete pose, faux si la selection en portait deja un.
+
+    **Rien n'est ecrase.** Le premier releve fait foi : ce chemin repare un
+    collage dont les blocs se sont perdus en route, il ne corrige pas une
+    declaration. Et il applique **la meme table** que `add_pick`, par le meme
+    appel — deux ecritures du calcul du cran auraient diverge, et c'est lui que
+    toute la chaine d'ingestion mesure.
+
+    **La declaration reste intacte** : `source_level` et `confidence` sont les
+    entrees de la mesure, et cette fonction ne touche qu'a ce qui vit a cote.
+    """
+    if has_claim(pick_id, settings):
+        return False
+    row = query_one("SELECT source_level FROM picks WHERE id = ?", (pick_id,), settings=settings)
+    if row is None:
+        raise HistoryError(f"Sélection inconnue : {pick_id}")
+    colonnes = claim_columns(claim, source_level or row["source_level"], opened, override_cause)
+    debut, _, fin = str(claim_offsets or "").partition(":")
+    execute(
+        "UPDATE picks SET claim_raw_json = ?, confidence_computed = ?, "
+        "  confidence_claimed = ?, gap_touches_factor = ?, distinct_publishers = ?, "
+        "  source_level_effective = ?, research_overridden = ?, "
+        "  research_override_cause = ?, claim_offset_start = ?, claim_offset_end = ? "
+        " WHERE id = ?",
+        (
+            colonnes.raw,
+            colonnes.computed,
+            colonnes.claimed,
+            colonnes.gap_touches_factor,
+            colonnes.distinct_publishers,
+            colonnes.source_effective,
+            colonnes.overridden,
+            colonnes.cause,
+            int(debut) if debut.isdigit() else None,
+            int(fin) if fin.isdigit() else None,
+            pick_id,
+        ),
+        settings=settings,
+    )
+    return True
+
+
 @writes(SELECTION, CONF, EXPLORATOIRE)
 def add_pick(
     session_id: int,
@@ -1758,66 +1932,17 @@ def add_pick(
     # dit ce que ca valait — 90 % du volume sur deux crans, aucun cran 1 sur 149,
     # et un ordre non monotone. Ce qui est deterministe se calcule.
     #
-    # **Aucun repli silencieux sur la valeur declaree.** Un bloc illisible laisse
-    # le cran a NULL et journalise : retomber sur l'annonce ferait passer pour
-    # calculee une note qui ne l'est pas, et le taux de desaccord — la seule
-    # chose que ce chantier mesure — annoncerait un accord parfait.
-    declaration: Claim | None = None
-    if (claim or "").strip():
-        try:
-            declaration = parse_claim(claim)
-        except ClaimError as exc:
-            logger.warning("Bloc de confiance illisible, cran laisse inconnu : %s", exc)
-    if declaration is not None:
-        # Le bloc structure fait foi sur le niveau de source : c'est la meme
-        # declaration, sous une forme que l'application sait relire. En laisser
-        # deux ecritures les aurait fait diverger au premier rendu ou la colonne
-        # du tableau et le bloc ne disent pas la meme chose.
-        source_value = _vocabulary(declaration.source_level, SOURCE_LEVELS) or source_value
-
-    # L'OVERRIDE DE RECHERCHE. Une selection sur un dossier que l'analyse declare
-    # elle-meme n'avoir pas ouvert est une **lecture des blocs**, quoi qu'elle
-    # ait annonce. Mesure : 0 `lecture` sur 149, pour un budget de sept dossiers
-    # sur des lots de 57 a 72 matchs.
-    #
-    # `None` veut dire « on ne sait pas » et n'ecrase rien : c'est le cas de la
-    # saisie a la main, qui est un geste humain et non une declaration de modele.
+    # **Le calcul vit dans `claim_columns` et non ici**, parce qu'il se pose
+    # aussi sur une selection **deja en base** : le rejeu d'un collage dont les
+    # lignes sont entrees sans bloc ne cree rien, il complete. Deux ecritures de
+    # cette table auraient diverge au premier ajustement.
     #
     # **La declaration reste intacte.** `source_level` et `confidence` sont les
     # **entrees** de la mesure ; l'effectif et le cran calcule vivent a cote. Les
-    # ecraser ferait mesurer a la page sa propre correction — un accord parfait
-    # entre ce que l'application a ecrit et ce qu'elle relit.
-    claimed = declaration.rung if declaration is not None else None
-    computed = claimed
-    overridden = opened is False
-    effective = source_value
-    # **La cause accompagne l'ecrasement, et sans elle le compte ne mesure
-    # rien.** Un cran 1 pose parce que la ligne `dossiers_ouverts` n'a pas ete
-    # collee et un cran 1 pose parce que le match n'y figure pas sont deux
-    # observations differentes : la premiere se repare en recollant, la seconde
-    # decrit ce que l'analyse a fait. Mesure du 14/08/2026 — les 16 selections
-    # ecrasees de la base viennent **toutes** de la premiere, et se lisaient
-    # comme la seconde.
-    cause = None
-    if overridden:
-        effective, computed = READING_LEVEL, FORCED_RUNG
-        # Controle **strict**, la ou l'angle et le niveau de source passent par
-        # `_vocabulary` : ce vocabulaire-ci n'est pas ecrit par le modele mais
-        # par `Opened.cause`, donc il n'y a aucune orthographe a rattraper. Une
-        # valeur inconnue vaut « on ne sait pas » plutot qu'un refus — meme
-        # regle que partout, un import de vingt lignes ne tombe pas sur un mot.
-        cause = override_cause if override_cause in OVERRIDE_CAUSES else None
-    elif opened and declaration is not None and not declaration.facts:
-        # **La regle est a sens unique.** L'absence de dossier force la lecture ;
-        # la presence n'accorde rien. Un dossier ouvert dont l'analyse ne tire
-        # aucun fait date **est** une lecture des blocs — c'est le resultat de la
-        # recherche, pas son absence, et il se note pareil.
-        #
-        # La cause est notee malgre tout : c'est la seule des six qui dise que la
-        # recherche a eu lieu et n'a rien donne, et elle ne passe pas par
-        # `research_overridden`, qui ne compte que les dossiers non ouverts.
-        effective, computed = READING_LEVEL, FORCED_RUNG
-        cause = OVERRIDE_SANS_FAIT
+    # ecraser ferait mesurer a la page sa propre correction.
+    colonnes = claim_columns(claim, source_value, opened, override_cause)
+    source_value = colonnes.source_declared
+
     # D'ou vient la cote recopiee. Facultative comme les deux precedentes : une
     # valeur inconnue vaut « on ne sait pas », jamais un refus.
     price_origin = _vocabulary(price_source, PRICE_SOURCES)
@@ -1916,18 +2041,18 @@ def add_pick(
                 result,
                 angle_value,
                 source_value,
-                effective,
+                colonnes.source_effective,
                 price_origin,
                 note or None,
                 resolved,
                 late,
-                computed,
-                declaration.raw if declaration is not None else None,
-                _flag(declaration.gap_touches_factor) if declaration is not None else None,
-                declaration.distinct_publishers if declaration is not None else None,
-                claimed if overridden else None,
-                _flag(None if opened is None else not opened),
-                cause,
+                colonnes.computed,
+                colonnes.raw,
+                colonnes.gap_touches_factor,
+                colonnes.distinct_publishers,
+                colonnes.claimed,
+                colonnes.overridden,
+                colonnes.cause,
                 1 if exploratory else 0,
                 1 if tardive else 0,
                 int(import_id) if str(import_id).strip().isdigit() else None,
@@ -4086,8 +4211,16 @@ class Notation:
     desaccord concentre sur un passage — 3 vers 4, 4 vers 5 — designe la clause
     a reprendre.
 
-    Comptee sur les selections **tranchees**, comme tout le reste de la page :
-    une selection en attente n'a pas encore de quoi peser.
+    **Comptee sur toutes les selections portant les deux crans, tranchees ou
+    non**, et c'est la seule carte de la page dans ce cas. Les garde-fous de
+    resultat protegent des **taux de reussite**, qui mesurent des issues ; celle-ci
+    compare deux declarations, toutes deux connues a l'import. Ecarter les
+    selections en attente etait la meme erreur de categorie qu'un taux lu sans son
+    prix — meme exemption que `labelling()`, et pour la meme raison.
+
+    Mesure qui l'a rendue visible : les quinze premieres selections a porter les
+    deux crans sont **toutes en attente**, et la page ne montrait rien le jour ou
+    l'ecart est devenu mesurable pour la premiere fois.
     """
 
     #: Selections portant les deux valeurs. C'est le seul denominateur honnete
@@ -4274,7 +4407,21 @@ def _notation(rows: list[Any], results: list[str], minimum: int) -> Notation:
     ecarts: list[int] = []
     passages: dict[tuple[int, int], int] = {}
     for row, result in zip(rows, results, strict=True):
-        if result not in ("win", "loss") or _column(row, "research_overridden"):
+        # **Aucun filtre sur le resultat, et c'est une correction du 19/08/2026.**
+        # Ce bloc ne mesure pas une issue : il compare **deux declarations** —
+        # le cran annonce et celui que la table calcule — et les deux sont
+        # connues a l'import. Une selection en attente porte donc exactement ce
+        # qu'il faut, et l'ecarter etait la meme erreur de categorie que compter
+        # un taux sans son prix.
+        #
+        # Meme exemption que `labelling()` : les garde-fous de resultat
+        # protegent des **taux de reussite**, qui mesurent des issues. Ce qui
+        # decrit un **comportement** n'a pas a les subir. Mesure qui l'a rendu
+        # visible : les quinze premieres selections a porter les deux crans sont
+        # toutes en attente, et la page n'affichait rien le jour ou l'ecart est
+        # devenu mesurable.
+        del result
+        if _column(row, "research_overridden"):
             continue
         computed = _column(row, "confidence_computed")
         declared = _column(row, "confidence")
