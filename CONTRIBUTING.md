@@ -67,6 +67,27 @@ tomber le controle. C'est voulu, et c'est ce qui a fait passer le compte de 8 a
 10 — la famille `exploratoire` etait declaree nulle part et verifiee nulle part,
 sans que « 8 sur 8 » puisse le dire.
 
+**Et le decorateur se pose sur la fonction, pas a cote.** Mesure du 19/08/2026 :
+un `@dataclass` glisse entre `@writes(...)` et `add_pick` a transfere la
+declaration sur la classe. Le test a bien mordu — c'est par lui que le defaut a
+ete trouve — mais `selfcheck-ingestion` affichait `10 sur 10` pendant ce temps,
+parce que son denominateur vient de `declared_block_types()`, **un agregat de
+familles** : la classe portait les memes trois familles, donc l'agregat ne
+bougeait pas d'un mot.
+
+D'ou trois vues **independantes**, ecrites une fois dans `write_paths` et lues
+par le test comme par le banc : `inserting_functions` (les corps — qui ecrit),
+`decorated_nodes` (les decorateurs — qui declare, et sur quel genre d'objet) et
+`REGISTRY` (quelle declaration a reellement tourne). Un controle dont le
+denominateur vient de ce qu'il controle ne peut pas voir un deplacement a
+l'interieur.
+
+Corollaire pour tout garde-fou de ce depot : **il se teste contre sa propre
+panne**. `tests/test_write_paths.py` injecte le decorateur manquant dans les deux
+positions et verifie que le desaccord ressort — et verifie aussi les deux
+positions **saines**, sans quoi un controle qui crie sur tout passerait pour un
+controle qui marche.
+
 ## Toute lecture d'un collage passe par `imports_raw`
 
 Le texte recu est conserve **avant** toute tentative de lecture, y compris quand
@@ -101,3 +122,42 @@ garde.
 Un indicateur qui les melangerait detruirait les deux comparaisons que ces
 populations existent pour rendre possibles : fait date contre lecture, et prix
 d'avant-match contre prix ecrit en connaissant le debut du match.
+
+## Le disque est une panne d'exploitation, et rien ne la surveille
+
+`/tmp` est un **tmpfs de 5,8 Go**, donc de la mémoire vive. Relevé du
+19/08/2026 : il était à **96 %**, et les deux consommateurs sont connus.
+
+| Ce qui remplit | Volume | Qui l'a créé |
+| --- | ---: | --- |
+| `/tmp/pytest-of-ubuntu` | ~1,1 Go | les exécutions de la suite |
+| `/tmp/claude-1000/…` | ~2,0 Go | les copies de base des sessions de travail |
+
+**Une exécution complète de la suite coûte 450 à 600 Mo** — 2 200 tests, chacun
+avec sa base SQLite migrée — et `pytest` en **conserve trois** (son défaut,
+`tmp_path_retention_count`). Le régime permanent est donc de l'ordre de 1,5 Go
+pour les seuls tests.
+
+Ce que ça casse, et ce n'est pas théorique : un `/tmp` plein fait échouer les
+écritures de test avec un `ENOSPC` que la sortie de `pytest` **n'explique pas**,
+et SQLite y pose ses fichiers temporaires — un `VACUUM INTO` ou un tri volumineux
+échouent alors sur la base servie. Le motif habituel du projet : une panne
+d'exploitation qui ne ressemble pas à ce qu'elle est.
+
+**Les trois règles, dans l'ordre où elles évitent le problème :**
+
+1. **Une copie de base ne va jamais dans `/tmp`.** Elle pèse 275 Mo. Le disque
+   `/` en a 50 Go de libre ; le tmpfs, cinq fois moins au total. Une session de
+   travail pose ses copies sous `~/`, dans un dossier à son nom.
+2. **On ne supprime que ce qu'on a créé.** Les répertoires de `/tmp/claude-1000`
+   appartiennent à d'autres sessions, dont certaines tournent encore — en effacer
+   un lui retire son état de travail sans qu'elle puisse le savoir. Les siens se
+   nettoient à la fin, y compris le dossier de travail sous `~/`.
+3. **On regarde avant de lancer une suite longue.** `df -h /tmp` coûte une
+   seconde ; découvrir le disque plein au milieu d'un `pytest` de quatre minutes
+   coûte les quatre minutes, et le diagnostic se paie une deuxième fois parce que
+   l'erreur ne nomme pas sa cause.
+
+`pytest` fait sa part tout seul — il retire les exécutions au-delà des trois
+dernières — donc ses répertoires ne se suppriment pas à la main : le faire
+pendant qu'une suite tourne lui retire sa base sous les pieds.

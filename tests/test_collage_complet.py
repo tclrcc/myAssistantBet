@@ -137,6 +137,16 @@ def test_un_rendu_complet_rend_chaque_objet_dans_le_compte_attendu(
         "le rendu complet ne produit plus les mêmes comptes — vérifie que le "
         "nouveau compte est celui qu'on voulait avant de mettre ce test à jour"
     )
+    # **Le compte seul était ambigu, et c'est le lot 10 qui l'a vu.** Ce collage
+    # porte cinq blocs et cinq lignes de section C : « 5 » valait donc aussi bien
+    # « tous les blocs » que « ceux de la section C », et un appariement qui
+    # aurait ignoré C-bis aurait rendu le même nombre. L'attribution se vérifie
+    # donc ligne par ligne.
+    porteurs = [pick.claim is not None for pick in preview.picks]
+    assert porteurs == [True] * 5 + [False] * 2, (
+        "les cinq blocs de ce rendu désignent les cinq lignes de la section C ; "
+        "les deux lignes de C-bis n'en portent pas — le modèle n'en avait pas donné"
+    )
 
 
 def test_le_collage_complet_ne_perd_aucune_ligne_de_section_c(lot: int, migrated: Settings) -> None:
@@ -167,3 +177,37 @@ def test_la_ligne_dossiers_ouverts_est_lue_avec_ses_neuf_reperes(
     assert sorted(preview.opened.marks, key=lambda mark: int(mark[1:])) == [
         f"M{index}" for index in range(1, 10)
     ]
+
+
+def test_les_blocs_de_c_bis_sont_comptes_eux_aussi(lot: int, migrated: Settings) -> None:
+    """**La sortie que le gabarit demande depuis le lot 9**, et que ce collage-ci
+    ne porte pas encore.
+
+    Le rendu archivé date d'avant la phrase ajoutée en section C-bis : ses cinq
+    blocs désignent les cinq lignes de la section C, et les deux lignes
+    exploratoires n'en ont aucun. Le compte de cinq était donc **ambigu** — il
+    valait aussi bien « tous les blocs » que « ceux de la section C ».
+
+    Ce test lève l'ambiguïté sur la forme attendue désormais : les mêmes 21 559
+    caractères, plus les deux blocs que le gabarit réclame maintenant du côté
+    exploratoire. Le compte doit monter à sept, et les sept lignes porter le leur.
+
+    La fixture n'est **pas** modifiée : c'est un vrai collage reçu, et le tronquer
+    ou le compléter lui retirerait ce qui fait sa valeur.
+    """
+    complet = COLLAGE + (
+        '\n{"match": "M3", "confiance": 1, "type": "maniere", "source_level": "lecture",\n'
+        ' "faits": [], "manque_touche_facteur": true}\n'
+        '\n{"match": "M7", "confiance": 1, "type": "issue", "source_level": "lecture",\n'
+        ' "faits": [], "manque_touche_facteur": true}\n'
+    )
+
+    preview = picks_import.build_preview(lot, complet, migrated)
+
+    assert preview.claims_attached == ATTENDU["blocs_conf"] + 2 == 7
+    assert [pick.claim is not None for pick in preview.picks] == [True] * 7
+    # Le drapeau exploratoire ne bouge pas : il se dérive du tableau d'origine,
+    # jamais de ce que le bloc raconte.
+    assert [pick.exploratory for pick in preview.picks] == [False] * 5 + [True] * 2
+    # Et le cran des lignes de C-bis est bien celui d'une lecture.
+    assert [pick.claim.rung for pick in preview.picks[5:]] == [1, 1]
