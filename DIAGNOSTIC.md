@@ -20,7 +20,7 @@ maintenant lue en entier — crans calculés, dossiers ouverts, scores en sets.
 uv run myassistantbet-timelines --joueurs 0 --reprise
 ```
 
-**Les deux décisions qui attendent** :
+**Les trois décisions qui attendent** :
 
 1. **§2d — la puce « Ses matchs déjà joués dans ce tournoi-ci »** du gabarit. Deux
    variantes rédigées, aucune appliquée. Sa phrase « aucune de nos sources ne les
@@ -28,6 +28,9 @@ uv run myassistantbet-timelines --joueurs 0 --reprise
 2. **§2c — la contradiction entre `Non joue` et `Ici`** sur un match réellement
    joué deux fois dans la même journée de tournoi. À trancher **avant**
    d'activer `CURRENT_EVENT_LINE_ENABLED`.
+3. **§4 — les lignes de C-bis portent-elles un bloc `conf` ?** Le gabarit ne le
+   dit pas, le modèle a répondu les deux fois d'une façon et deux fois de
+   l'autre. L'import s'accommode des deux, une phrase le trancherait.
 
 ---
 # DIAGNOSTIC — lot 1 : l'ingestion, les paliers hauts, et ce qui se perdait en silence
@@ -2877,6 +2880,53 @@ elle attendait depuis le lot 1.
   tableaux. « Lu » s'y mesure sur les lignes de la section C et non sur leur
   total — les compter toutes aurait rendu le banc vert pendant la panne.
 
+### Le défaut s'est reproduit deux fois de plus **pendant la session**
+
+Deux imports sont arrivés à **15:59 et 16:00**, avant que le correctif soit
+livré — et ils rejouent le même scénario, sur des données que je n'avais pas vues
+en posant le diagnostic :
+
+| Import | Heure | Caractères | Sélections entrées | Ce que le texte portait |
+| ---: | --- | ---: | ---: | --- |
+| 18 | 15:59 | **21 559** | **2**, toutes deux exploratoires | 5 blocs `conf`, 1 bloc `combo`, `sets:`, `dossiers_ouverts: [M1…M9]` |
+| 19 | 16:00 | 1 426 | 5, toutes en `ligne_absente` | le seul tableau |
+
+**Même alternance, troisième fois** : le collage complet perd sa section C,
+l'utilisateur recolle le tableau seul, et les cinq sélections principales entrent
+sans bloc. C'est la confirmation la plus forte du diagnostic — elle est arrivée
+d'elle-même, sur un lot que je n'avais pas regardé.
+
+Rejeu de l'import 18 à travers le code corrigé : **7 sélections** (5 en C, 2 en
+C-bis), **5 blocs de confiance appariés**, **1 combiné rattaché — le premier de
+l'histoire de la base** — et **9 repères de dossiers ouverts**.
+
+### Une seconde ambiguïté, révélée par le correctif lui-même
+
+Avec la section C rétablie, le compte de blocs cessait de tomber sur le compte de
+lignes : 5 blocs pour **7** lignes (5 de C, 2 de C-bis), donc refus.
+
+**Le gabarit rend les deux lectures légitimes.** Il demande « un bloc par ligne,
+dans l'ordre du tableau » (`session_default.md.j2:559`) — et cette consigne est
+posée **sous la section C**, quatre-vingts lignes avant que C-bis existe. Le
+modèle l'a lue des deux façons, et c'est mesuré :
+
+| Collage | Blocs | Lignes section C | Lignes C-bis |
+| ---: | ---: | ---: | ---: |
+| 14 (18/08) | 5 | 3 | 2 |
+| 16 (18/08) | 5 | 4 | 1 |
+| **18 (19/08)** | **5** | **5** | **2** |
+
+L'appariement essaie donc **deux populations définies d'avance** — le tableau
+entier, puis la seule section C — et **la somme de contrôle décide**. Ce n'est pas
+retenir la lecture qui arrange, ce que le module refuse explicitement pour les
+prompts : chaque ensemble est validé ou refusé **en entier** sur les affiches de
+son prompt d'origine, et un ensemble mal choisi échoue sur ses paires. Un test le
+garde : un bloc dont l'affiche ne correspond à rien fait toujours tomber le lot.
+
+**Le gabarit étant hors périmètre, la levée de l'ambiguïté n'est pas faite** — une
+phrase précisant si les lignes de C-bis portent un bloc supprimerait le besoin de
+cette souplesse. Elle est notée pour l'arbitrage, avec les deux variantes du §2d.
+
 ### Ce que la session 17 dit quand même
 
 Les dix sélections importées portent une information qui n'existait nulle part
@@ -2898,15 +2948,17 @@ fonctionne de bout en bout.
 - **Blocs `conf`** : 10 produits, 0 appariés avant correctif, **10 sur 10** après —
   et le cran calculé vaudra donc désormais quelque chose. L'écart calculé/déclaré
   ne se mesure pas encore : il demande un import passé par le code corrigé.
-- **`dossiers_ouverts`** : présente sur les deux collages complets, **6 et 7
-  repères** pour un budget réglé à 10. Le modèle n'ouvre donc pas son budget, et
-  **le budget n'était pas la contrainte** — exactement ce que le brief voulait
-  savoir. À lire avec la réserve du §1c du lot 5 : le vivier de jambes se mesurait
-  jusqu'ici en régime cassé.
-- **Combinés et scores en sets** : `jambes` **absent des deux collages** (le
-  modèle n'a produit aucun bloc `combo`) ; `sets:` présent sur l'import 16
-  seulement. `combos` et `combo_legs` restent vides ; `set_scores` est passé de 5
-  à 13 lignes.
+- **`dossiers_ouverts`** : présente sur **les trois** collages complets, avec
+  **6, 7 et 9 repères** pour un budget réglé à 10. Le modèle s'approche donc de
+  son budget sans l'épuiser, et **le budget n'était pas la contrainte** —
+  exactement ce que le brief voulait savoir. À lire avec la réserve du §1c du
+  lot 5 : le vivier de jambes se mesurait jusqu'ici en régime cassé.
+- **Combinés et scores en sets** : `jambes` absent des deux collages du 18/08,
+  **présent sur celui du 19/08** — et son rejeu à travers le code corrigé rattache
+  **le premier combiné de l'histoire de la base**. `sets:` est présent sur deux
+  des trois ; `set_scores` est passé de 5 à 21 lignes pendant la session.
+  `combos` et `combo_legs` restent vides, faute d'un import passé par le code
+  corrigé.
 
 ---
 
@@ -2990,16 +3042,26 @@ La file passe de deux étages à trois — matchs à venir, joueurs des cinq der
 shortlist qui se vide), puis fond de catalogue. Mesure au départ : **256 joueurs,
 dont 28 à venir et 111 des cinq derniers lots.**
 
-**État de la passe**, relevé au moment d'écrire :
+**La passe est allée au bout.** Relevé final, 250 joueurs traités :
 
-| | Avant le lot | Maintenant |
+| | Avant le lot | Après |
 | --- | ---: | ---: |
-| joueurs porteurs de jeux | **12** | **209** |
-| joueurs au seuil de 300 jeux | **0** | **10** |
-| appels `tennisapi` consommés dans la journée | — | **~4 640** |
-| quota mensuel restant | 145 673 | **139 958** |
+| joueurs porteurs de jeux | **12** | **239** |
+| joueurs au seuil de 300 jeux | **0** | **14** |
+| rencontres tentées | — | 4 853 |
+| **timelines obtenues** | — | **1 970** |
+| rencontres vides | — | 2 838 |
+| ruptures d'alternance | — | 45 |
+| **rencontres écartées sur leur âge** | — | **8 677** |
+| appels consommés par cette passe | — | **876** |
+| quota mensuel restant | 145 673 | **139 533** |
 
-Elle **tourne encore** et se reprend sans état :
+**Le filtre d'âge a écarté 8 677 rencontres sur 13 530**, soit **64 % des
+tentatives** — et la passe n'a coûté que **876 appels**, le reste venant de
+l'archive. Sans le filtre, ces 8 677 rencontres auraient coûté au minimum deux
+appels chacune, soit plus de 17 000 de plus, pour zéro timeline.
+
+Elle se relance sans état :
 
 ```bash
 uv run myassistantbet-timelines --joueurs 0 --reprise
@@ -3061,6 +3123,45 @@ volume collecté, et l'aurait été après une passe complète de 60 000 appels.
 Le test qui manquait vérifie **la propriété et non une valeur** : au moins un
 agrégat par surface porte des jeux. Vérifié en réintroduisant le défaut à
 l'identique — il tombe, avec son message.
+
+**Et la ligne sort.** Rendu réel sur la base servie, après la passe, drapeau
+`SERVE_LINES_ENABLED=1` — c'est-à-dire **en production** :
+
+```
+  Service    Nuno Borges 66.8% 1re · 75.0% s/1re · 48.5% s/2e · 9.2% aces · 9.5% df
+             (Hard, 52 sem., 2530 pts de service, arretees au 18/08) [tennis-api.com]
+  Retour     Nuno Borges 34.7% pts · 37.8% BP converties (2495 pts recus)
+  Jeux       Nuno Borges tenue 88.1% · break 25.2% (159 jeux servis)
+             (toutes surfaces, arretees au 18/08 — le seuil de jeux ne s'atteint
+              pas par surface)
+```
+
+Tenue, break, compte de jeux servis, portée et `as_of` : la ligne porte les quatre
+choses que le §1c demandait de vérifier.
+
+**Avant / après sur des blocs réels**, ATP et WTA hors top 50 — le bloc passe de
+15 à 19 lignes :
+
+```
+ATP — Taylor Fritz – Christopher O'Connell   [ATP Cincinnati Open]
+  Jeux      Taylor Fritz tenue 88.8% · break 19.9% (160 jeux servis)
+            Christopher O'Connell non disponible
+            (toutes surfaces, arretees au 18/08 — …)
+
+WTA — Barbora Krejcikova – Sara Bejlek   [WTA Cincinnati Open]
+  Jeux      Barbora Krejcikova tenue 77.1% · break 45.4% (157 jeux servis)
+            Sara Bejlek non disponible
+            (toutes surfaces, arretees au 16/08 — …)
+
+WTA — Alexandra Eala – Amanda Anisimova   [WTA Cincinnati Open]
+  Jeux      Alexandra Eala tenue 71.7% · break 32.4% (152 jeux servis)
+            Amanda Anisimova non disponible
+```
+
+**Une moitié manquante se dit**, elle ne se tait pas : le bloc porte l'autre
+joueur, et un silence se lirait comme un oubli de collecte. C'est le comportement
+attendu à 14 joueurs au seuil sur 250 — et c'est aussi la mesure de ce qu'il reste
+à couvrir.
 
 **Et le rendu réel a trouvé un second blocage, sous le premier.** Une fois les jeux
 arrivés dans les agrégats par surface, la ligne ne sortait toujours pas :

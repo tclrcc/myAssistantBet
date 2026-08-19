@@ -165,6 +165,81 @@ def test_un_debut_de_phrase_francaise_n_est_pas_un_titre_de_section(
     assert [pick.exploratory for pick in preview.picks] == [False, True]
 
 
+def test_les_blocs_de_confiance_s_apparient_a_la_section_c_seule(
+    migrated: Settings,
+) -> None:
+    """**Le gabarit rend les deux lectures legitimes**, et le modele les a prises
+    toutes les deux.
+
+    « Un bloc par ligne, dans l'ordre du tableau » est ecrit sous la section C,
+    avant que C-bis existe. Mesure sur quatre collages reels : le 18/08 le modele
+    a rendu 5 blocs pour 3 lignes de C et 2 de C-bis, le 19/08 5 blocs pour 5
+    lignes de C et 2 de C-bis.
+
+    Ce n'est **pas** retenir la lecture qui arrange : ce sont deux ensembles
+    definis d'avance, chacun valide ou refuse **en entier** par la somme de
+    controle sur l'affiche. Un ensemble mal choisi echoue sur ses paires.
+    """
+    session_id, _ = _lot(migrated, ["Lyon", "Nice"])
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 't.md.j2', ?, 0, ?)",
+        (
+            session_id,
+            "### M1 · football · Amical · Lyon – Adv Lyon · 01/01 20:45\n"
+            "### M2 · football · Amical · Nice – Adv Nice · 01/01 20:45\n",
+            db.utcnow(),
+        ),
+        settings=migrated,
+    )
+    bloc = (
+        '{"match": "M1", "confiance": 4, "type": "issue", "source_level": 1,\n'
+        ' "faits": [{"enonce": "retour date", "date": "2026-08-12",\n'
+        '            "editeur": "lequipe.fr", "niveau": 1}],\n'
+        ' "manque_touche_facteur": false}\n'
+    )
+    rendu = RENDU + "\n" + bloc
+
+    preview = picks_import.build_preview(session_id, rendu, migrated)
+
+    assert [pick.exploratory for pick in preview.picks] == [False, True]
+    assert preview.claims_attached == 1, (
+        "un bloc pour la seule ligne de section C : l'appariement doit tomber "
+        "sur cette population-la"
+    )
+    assert preview.picks[0].claim is not None
+    assert preview.picks[1].claim is None, "la ligne C-bis n'a pas de bloc, et c'est normal"
+
+
+def test_un_bloc_qui_ne_correspond_a_aucune_population_est_refuse(
+    migrated: Settings,
+) -> None:
+    """La souplesse porte sur **quelles lignes**, jamais sur la somme de
+    controle : un bloc dont l'affiche ne correspond a rien fait tomber le lot
+    entier, comme avant."""
+    session_id, _ = _lot(migrated, ["Lyon", "Nice"])
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 't.md.j2', ?, 0, ?)",
+        (
+            session_id,
+            "### M1 · football · Amical · Lyon – Adv Lyon · 01/01 20:45\n",
+            db.utcnow(),
+        ),
+        settings=migrated,
+    )
+    bloc = (
+        '{"match": "M1", "confiance": 4, "type": "issue", "source_level": 1,\n'
+        ' "faits": [], "manque_touche_facteur": false}\n'
+    )
+    ailleurs = RENDU.replace("Lyon – Adv Lyon", "Marseille – Adv Marseille")
+
+    preview = picks_import.build_preview(session_id, ailleurs + "\n" + bloc, migrated)
+
+    assert preview.claims_attached == 0
+    assert any("ne correspondent à aucun prompt" in note for note in preview.notes)
+
+
 def test_une_ligne_c_bis_en_palier_sur_est_refusee_et_journalisee(
     migrated: Settings,
 ) -> None:

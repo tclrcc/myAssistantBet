@@ -1185,7 +1185,24 @@ def _attach_claims(
                 "rendu — recolle la réponse entière plutôt que les seules lignes.",
             )
         return None
-    if len(reading.claims) != len(preview.picks):
+    # **Deux populations candidates, et le gabarit les rend toutes deux
+    # legitimes.** Il demande « un bloc par ligne, dans l'ordre du tableau », et
+    # cette consigne est posee sous la section C, avant que C-bis existe. Le
+    # modele l'a lue des deux facons, et c'est mesure sur quatre collages reels :
+    # le 18/08 il a rendu 5 blocs pour 3 lignes de C et 2 de C-bis, le 19/08
+    # 5 blocs pour 5 lignes de C et 2 de C-bis.
+    #
+    # **Ce n'est pas retenir la lecture qui arrange** — ce que le module refuse
+    # explicitement pour les prompts. Ce sont deux ensembles definis d'avance,
+    # chacun valide ou refuse **en entier** par la somme de controle : un
+    # ensemble mal choisi echoue sur ses affiches. C'est la garde qui rend le
+    # choix sur, pas l'inverse.
+    principales = [pick for pick in preview.picks if not pick.exploratory]
+    candidats = [preview.picks]
+    if len(principales) != len(preview.picks):
+        candidats.append(principales)
+    lignes = next((groupe for groupe in candidats if len(groupe) == len(reading.claims)), None)
+    if lignes is None:
         _lost(
             preview,
             CONF,
@@ -1195,7 +1212,7 @@ def _attach_claims(
             "Complète les blocs manquants et recolle.",
         )
         return
-    valide = _select(preview.picks, reading.claims, headers or [])
+    valide = _select(lignes, reading.claims, headers or [])
     if valide is None:
         _lost(
             preview,
@@ -1204,12 +1221,12 @@ def _attach_claims(
             "Les repères de match des blocs (M1, M2…) ne correspondent à aucun prompt de "
             "cette session, ligne par ligne. Rien n'est rattaché — un cran décalé serait "
             "faux sans se voir. "
-            + (_mismatch(preview.picks, reading.claims, headers or []) or "")
+            + (_mismatch(lignes, reading.claims, headers or []) or "")
             + "Corrige l'affiche dans le tableau, telle qu'elle est écrite en tête du "
             "bloc, et recolle.",
         )
         return None
-    for pick, claim in zip(preview.picks, reading.claims, strict=True):
+    for pick, claim in zip(lignes, reading.claims, strict=True):
         pick.claim = claim
         # Le bloc fait foi sur les deux colonnes qu'il porte aussi : c'est la
         # meme declaration sous une forme relisable, et en garder deux

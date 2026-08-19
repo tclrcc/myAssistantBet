@@ -1317,6 +1317,49 @@ pas de correctif de regle, seulement de quoi la voir.
   Les sites de clubs, eux, demanderaient un analyseur par club — licite peut-etre,
   exploitable non.
 
+## Les absents au football : la couverture declaree est exacte, et la porte est fermee
+
+**Resultat negatif du 19/08/2026, ecrit sous la forme qui empeche de le refaire.**
+La question revient naturellement — la moitie des matchs analyses sont du
+football, la ligne `Absents` dit « non interroges » sur la moitie des blocs, et
+une absence est le fait date le plus decisif du sport. Elle est close.
+
+Sonde sur **seize competitions**, avec la couverture declaree par `/leagues` d'un
+cote et ce que `/injuries?league=&season=` sert reellement de l'autre :
+
+- **treize competitions declarees `injuries: false` servent zero ligne**, reessais
+  compris — Portugal, Belgique, Autriche, Liga 2, Ecosse, Suisse, Chine, Arabie
+  saoudite, Conference League, Europa League, DFB-Pokal, EFL Cup, Leagues Cup, et
+  **la Serie A**, qui la declare fausse en 2026 ;
+- **les trois declarees `true` servent** : Eliteserien 1 300 lignes, Turquie 56,
+  Eredivisie 205.
+
+**La couverture declaree fait donc foi, verifie plutot que suppose**, et l'etat
+« non interroges » est **exact** partout ou il parait : le corriger le rendrait
+faux. La Norvege et la Turquie, souvent citees comme non couvertes, le sont.
+
+- Compte : **API-Football plan Pro**, 7 500 appels/jour, 300/minute. La cle est en
+  service depuis toujours — 323 releves de contexte en base.
+- **Le substitut fonctionne deja.** `Effectif` reconstruit les absents depuis les
+  feuilles la ou `injuries` est faux et `lineups` vrai. Rendu de 120 blocs reels :
+  51 blocs eligibles, **51 feuilles collectees sur 51**, et la ligne sort sur 21.
+  Les 30 autres sont le comportement documente — rien quand personne ne manque.
+- **Le retard entre l'annonce et l'apparition n'est pas mesurable**, et la cause
+  est structurelle : `context` est indexee par (evenement, type) et chaque
+  enrichissement **ecrase** le precedent — 323 lignes pour 323 evenements. Meme
+  forme que `commence_time` avant la migration 040 et `odds` avant la 048. Ce qui
+  se mesure a la place est l'**accord** : sur le lot du 18/08, le bloc portait
+  deja **22 des 29 absents** que la recherche est allee chercher, et trois des
+  sept manquants etaient des choix de rotation qu'`/injuries` n'a aucune raison de
+  porter.
+- **Ce qui ameliorerait les blocs football n'est donc pas une source de plus** :
+  c'est que la section A cesse de rechercher ce que le bloc dit deja. C'est une
+  question de gabarit.
+
+Ce qui rouvrirait la question, et rien d'autre : une competition qui passerait de
+`false` a `true` chez le fournisseur — ce que la synchronisation constate deja
+toute seule.
+
 ## L'arbitre : le nom seul, et pourquoi il n'y a rien d'autre
 
 Un marche Cartons est servi sur une partie des blocs sans qu'aucune ligne ne permette de le
@@ -1538,6 +1581,62 @@ signale.
   fraicheur du module** plutot que sur une constante inventee. Les deux lignes qui datent
   un releve parlent le meme langage : on ne compte le temps qu'une fois qu'il commence a
   vouloir dire quelque chose.
+
+## Un titre de section se reconnait en tete de ligne, jamais a une mention
+
+**Regle de revue, du 19/08/2026, et elle a coute deux sessions d'analyse.** Le
+lecteur d'import basculait en section C-bis des qu'il voyait « C-bis » **n'importe
+ou** dans une ligne. Or la section B en parle — « il part en C-bis », « voir
+C-bis » — et le gabarit lui-meme en ecrit une. La bascule se produisait donc
+**avant** le tableau de la section C, dont toutes les lignes etaient alors
+refusees comme « exploratoires en palier sur ».
+
+**Le collage complet rendait moins que le collage du seul tableau**, ce qui est
+l'inverse exact de ce que le correctif d'interface de la veille visait. Mesure sur
+les trois collages complets de la base : 3 selections sur 5 perdues, 4 sur 5, puis
+5 sur 7 — et **zero bloc de confiance rattache** dans les trois cas, le compte de
+blocs ne tombant plus sur le compte de lignes.
+
+- Le motif s'ancre en tete de ligne, et les titres `A.` a `F.` **ferment** la
+  section autant que son titre l'ouvre.
+- **Les lettres seules se lisent sur la ligne brute et non repliee** : repliee,
+  « C'est » commence par `c` suivi d'un espace, donc exactement comme
+  « C. Tableau ». C'est le separateur (`.`, `)`, `:`) qui distingue un titre d'un
+  debut de phrase francaise. `C-bis` n'a pas d'homonyme et se passe du sien.
+- **Le banc de transport testait chaque format isole**, jamais le rendu complet ou
+  la prose de la section B cotoie les deux tableaux. C'est ce qui a laisse passer
+  le defaut, et le decoupage en sections y entre donc comme **sixieme format**.
+  « Lu » s'y mesure sur les lignes de la section C et non sur leur total — les
+  compter toutes aurait rendu le banc vert pendant la panne.
+
+## Un champ dont le nom evoque une date peut etre un entier
+
+**Regle de revue, meme jour, et c'est la soeur de « cherchez l'identifiant ».**
+`result.startTimestamp` de `tennis-api.com` vaut `1780565400`. Il etait lu
+`str(value)[:10]`, ce qui rend dix **chiffres** — une chaine qui ressemble a une
+date par sa longueur et n'en est pas une.
+
+Le degat etait total et invisible : `_store_player` rapproche les jeux de leur
+surface **par cette date**, aucun rapprochement ne tombait, et les jeux
+n'atteignaient donc que l'agregat toutes surfaces — seul cas ou le filtre est
+court-circuite. La ligne `Jeux` etait **inatteignable sur tous les blocs**, y
+compris pour les joueurs qui venaient d'atteindre le seuil de 300 jeux, et son
+absence sous le seuil est son comportement normal. Sixieme occurrence du motif du
+projet.
+
+- **Le correctif qui compte n'est pas la conversion**, c'est la suppression du
+  rapprochement par date : `collect_games` sait quelle ligne de service a demande
+  quelle timeline, et la surface est desormais **portee** par le jeu. Rapprocher
+  deux flux par une date reste faux meme apres reparation, la timeline se trouvant
+  parfois a `J-1`.
+- La fixture du lot 4 portait deja la valeur reelle : **un test sur la seule
+  fonction de lecture aurait suffi**, et il n'existait pas.
+- **Second blocage sous le premier, et structurel** : `collect_games` s'arrete a
+  300 jeux **toutes surfaces confondues**, donc aucun agregat par surface ne peut
+  atteindre ce seuil — zero ligne au-dessus de 300 par surface sur la base servie,
+  maximum 225. Le seuil ne bouge pas ; c'est la **portee** qui se replie sur toutes
+  surfaces, **en le declarant**, comme `fell_back` le fait deja pour les points de
+  service.
 
 ## Avant de coder une heuristique sur des libelles, cherchez l'identifiant
 
