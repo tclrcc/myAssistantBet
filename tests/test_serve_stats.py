@@ -1920,3 +1920,71 @@ def test_le_verbe_et_le_score_ne_peuvent_pas_se_contredire(migrated: Settings) -
             assert perdus > gagnes, f"« {morceau} » annonce une defaite sur un score gagnant"
         else:
             assert gagnes > perdus, f"« {morceau} » annonce une victoire sur un score perdant"
+
+
+# -- Les jeux atteignent-ils l'agregat par surface ? --------------------------
+#
+# **Le defaut le plus couteux du lot 8, et aucun test unitaire ne l'aurait vu.**
+# Les quatre lignes de service sortaient, `Jeux` restait absente, et son absence
+# est son comportement normal sous le seuil : l'echec avait exactement la meme
+# sortie que le cas ordinaire.
+
+
+def test_l_horodatage_d_une_timeline_est_un_entier_et_se_lit_comme_tel() -> None:
+    """`startTimestamp` vaut `1786892400`, pas `2026-08-16`.
+
+    Il etait lu `str(value)[:10]`, ce qui rend les dix premiers **chiffres** —
+    une chaine qui ressemble a une date par sa longueur et n'en est pas une. La
+    fixture porte la valeur reelle de la source : ce test aurait suffi.
+    """
+    assert serve_stats._from_epoch(1786892400) == "2026-08-16"
+    assert serve_stats._from_epoch("pas un entier") == ""
+    assert serve_stats._from_epoch(None) == ""
+
+
+@respx.mock
+async def test_les_jeux_atteignent_l_agregat_de_leur_surface(
+    tennis_client: TennisAPIClient, migrated: Settings, load_fixture: Callable[[str], Any]
+) -> None:
+    """**La propriete qui manquait.** `serve_lines` est appele avec la surface du
+    tournoi, donc c'est l'agregat par surface qu'il lit : des jeux qui n'y
+    arrivent pas rendent la ligne `Jeux` inatteignable sur **tous** les blocs, y
+    compris pour un joueur qui vient de passer le seuil de 300 jeux.
+
+    Le rapprochement se faisait par la date, et il ne pouvait pas tomber. Il se
+    fait desormais par la surface **portee** par le jeu, recopiee de la ligne de
+    service qui a demande cette timeline — le seul endroit ou le couple est connu
+    avec certitude, la timeline se trouvant parfois a J-1.
+    """
+
+    def _repondre(request: httpx.Request) -> httpx.Response:
+        from urllib.parse import unquote
+
+        chemin = unquote(request.url.path)
+        if "/event/get/" in chemin:
+            return httpx.Response(
+                200, json=load_fixture("tennisapi_event.json"), headers=QUOTA_HEADERS
+            )
+        nom = chemin.rsplit("/", 2)[-2]
+        if "/matches-played" in chemin:
+            return httpx.Response(
+                200, json={"singles": [_un_match(nom)], "singlesCount": 1}, headers=QUOTA_HEADERS
+            )
+        return httpx.Response(200, json=[nom], headers=QUOTA_HEADERS)
+
+    respx.get(url__startswith=BASE_URL).mock(side_effect=_repondre)
+
+    await serve_stats.sync(tennis_client, [("Taylor Fritz", "atp")], migrated, with_games=True)
+
+    lignes = query(
+        "SELECT surface, served, returned FROM player_serve_agg WHERE player = 'Taylor Fritz'",
+        settings=migrated,
+    )
+    par_surface = {row["surface"]: row["served"] for row in lignes}
+    assert par_surface[""] > 0, "l'agregat toutes surfaces porte les jeux"
+    surfaces = [cle for cle in par_surface if cle]
+    assert surfaces, "la fixture porte au moins une surface"
+    assert any(par_surface[cle] > 0 for cle in surfaces), (
+        "aucun agregat par surface ne porte de jeux : la ligne « Jeux » serait "
+        "inatteignable sur tous les blocs, exactement le defaut du lot 8"
+    )

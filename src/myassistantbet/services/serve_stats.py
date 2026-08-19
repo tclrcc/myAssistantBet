@@ -34,7 +34,7 @@ import json
 import logging
 import re
 import unicodedata
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
@@ -811,6 +811,12 @@ class GameLine:
     returned: int = 0
     broke: int = 0
     archive_id: int = 0
+    #: La surface, **recopiee de la ligne de service qui a demande cette
+    #: timeline** et jamais deduite de la reponse. Le rapprochement est connu au
+    #: moment de la collecte : le redecouvrir par la date ferait dependre les
+    #: agregats par surface d'un accord de dates entre deux endpoints, et cet
+    #: accord n'existe pas — la timeline se trouve parfois a J-1.
+    surface: str = ""
 
     @property
     def consistent(self) -> bool:
@@ -877,7 +883,7 @@ def parse_timeline(payload: Any, name: str) -> tuple[GameLine | None, str]:
         return None, "alternance"
     return (
         GameLine(
-            played_on=str(result.get("startTimestamp") or "")[:10],
+            played_on=_from_epoch(result.get("startTimestamp")),
             served=served,
             held=held,
             returned=returned,
@@ -885,6 +891,28 @@ def parse_timeline(payload: Any, name: str) -> tuple[GameLine | None, str]:
         ),
         "",
     )
+
+
+def _from_epoch(value: Any) -> str:
+    """`1780565400` devient `2026-06-04`. **Ce champ est un entier, pas une date.**
+
+    Il etait lu `str(value)[:10]`, ce qui rend les dix premiers chiffres de
+    l'horodatage — une chaine qui ressemble a une date par sa longueur et n'en
+    est pas une. Le degat etait invisible et total : `_store_player` rapproche
+    les jeux de leur surface par cette date, aucun rapprochement ne tombait, et
+    **les jeux n'atteignaient que l'agregat toutes surfaces**, seul cas ou le
+    filtre est court-circuite. Comme `serve_lines` est appele avec la surface du
+    tournoi, la ligne `Jeux` ne pouvait sortir sur **aucun** bloc — y compris
+    pour les sept joueurs qui venaient d'atteindre le seuil de 300 jeux.
+
+    Constate en rendant pour de vrai, jamais par un test : les quatre lignes de
+    service sortaient, et l'absence de la cinquieme se lisait comme un manque de
+    volume, qui est son comportement normal.
+    """
+    try:
+        return datetime.fromtimestamp(int(value), UTC).date().isoformat()
+    except (TypeError, ValueError, OSError, OverflowError):
+        return ""
 
 
 def _read_game(texte: str) -> tuple[str, str]:
@@ -1768,12 +1796,14 @@ def _store_player(
     # agregat de terre battue qui sommerait les jeux de toutes surfaces
     # afficherait une tenue de service que ce joueur n'a jamais eue sur terre —
     # et rien ne le montrerait, les deux comptes vivant dans la meme ligne.
-    par_date = {ligne.played_on: ligne.surface for ligne in recentes}
+    #
+    # **La surface est portee par le jeu, plus rapprochee par sa date.** Le
+    # rapprochement par date etait faux de bout en bout — le champ lu n'etait pas
+    # une date — et il serait reste fragile une fois repare : la timeline se
+    # trouve parfois a J-1, et les deux dates ne coincideraient alors plus.
     for surface in (ALL_SURFACES, *sorted({ligne.surface for ligne in recentes if ligne.surface})):
         retenus = tuple(
-            jeu
-            for jeu in games
-            if not surface or _fold_case(par_date.get(jeu.played_on, "")) == _fold_case(surface)
+            jeu for jeu in games if not surface or _fold_case(jeu.surface) == _fold_case(surface)
         )
         store_aggregate(
             aggregate(recentes, identity.canonical, circuit, surface=surface, games=retenus),
@@ -2071,7 +2101,7 @@ async def collect_games(
             tally.attempted += 1
             tally.obtained += 1
             tally.replayed += 1
-            jeux.append(deja)
+            jeux.append(replace(deja, surface=ligne.surface, played_on=ligne.played_on))
             total += deja.served + deja.returned
             continue
         if vu:
@@ -2119,7 +2149,12 @@ async def collect_games(
 
         if hit is not None:
             tally.obtained += 1
-            jeux.append(hit.line)
+            # **Le rapprochement se fait ici et nulle part ailleurs** : c'est ce
+            # parcours qui sait quelle ligne de service a demande cette timeline.
+            # La date de la source peut differer d'un jour (`DAY_SHIFTS`), donc
+            # la rapprocher apres coup par la date serait faux une fois sur
+            # seize — et invisible.
+            jeux.append(replace(hit.line, surface=ligne.surface, played_on=ligne.played_on))
             total += hit.line.served + hit.line.returned
             continue
         if rejet is not None:
