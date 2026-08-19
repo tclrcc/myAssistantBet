@@ -3571,6 +3571,113 @@ def _count_vacancy(block: Mix, rows: list[Any], column: str) -> None:
 
 
 @dataclass
+class Notation:
+    """L'accord entre le cran annonce et le cran calcule.
+
+    **Ce que cet ecart mesure a change de nature, et le libelle doit le dire.**
+    Tant que le modele notait seul, on aurait mesure son flair. Depuis qu'il
+    declare ses entrees et que l'application applique la table, les deux valeurs
+    sortent du **meme** faisceau : leur ecart ne teste plus son jugement, il
+    teste s'il applique correctement sa propre table. C'est un **lint sur la
+    redaction du gabarit**, pas sur l'analyse — et c'est plus utile ainsi, parce
+    qu'une clause ambigue se reecrit quand un jugement ne se corrige pas.
+
+    D'ou `transitions` : un desaccord disperse est du bruit de redaction, un
+    desaccord concentre sur un passage — 3 vers 4, 4 vers 5 — designe la clause
+    a reprendre.
+
+    **Comptee sur toutes les selections portant les deux crans, tranchees ou
+    non**, et c'est la seule carte de la page dans ce cas. Les garde-fous de
+    resultat protegent des **taux de reussite**, qui mesurent des issues ; celle-ci
+    compare deux declarations, toutes deux connues a l'import. Ecarter les
+    selections en attente etait la meme erreur de categorie qu'un taux lu sans son
+    prix — meme exemption que `labelling()`, et pour la meme raison.
+
+    Mesure qui l'a rendue visible : les quinze premieres selections a porter les
+    deux crans sont **toutes en attente**, et la page ne montrait rien le jour ou
+    l'ecart est devenu mesurable pour la premiere fois.
+    """
+
+    #: Selections portant les deux valeurs. C'est le seul denominateur honnete
+    #: du taux de desaccord — les autres n'ont rien a comparer.
+    comparable: int = 0
+    agreed: int = 0
+    #: Annoncees sans bloc structure lisible. **Compte a part et jamais fondu
+    #: dans l'accord** : un cran manquant n'est pas un cran d'accord, et c'est
+    #: l'erreur que la page a deja payee sur les lignes maigres.
+    uncomputed: int = 0
+    #: Ecart moyen en crans, signe. Positif : le modele se notait plus haut que
+    #: la table ne l'autorise.
+    drift: float = 0.0
+    #: Les passages en desaccord, du plus frequent au moins : `(annonce, calcule,
+    #: compte)`. C'est **le seul champ actionnable du bloc** — il nomme la clause
+    #: du gabarit a reecrire.
+    transitions: list[tuple[int, int, int]] = field(default_factory=list)
+    #: Effectif sous lequel rien ne se conclut. **Le seuil de la page, reutilise
+    #: et non redefini** — sous quel compte une repartition ne veut plus rien
+    #: dire est une propriete des donnees, pas du bloc qui les affiche. Il
+    #: **descend dans l'objet** au lieu d'etre lu d'une constante : une classe
+    #: qui va chercher son propre reglage est intestable hors d'une base.
+    minimum: int = ANALYSIS_MIN_ROWS
+
+    @property
+    def disagreed(self) -> int:
+        return self.comparable - self.agreed
+
+    @property
+    def dominant(self) -> tuple[int, int, int] | None:
+        """Le passage le plus frequent, sous **deux** conditions.
+
+        **L'effectif d'abord.** Sous `minimum`, rien ne se conclut : c'est le
+        seuil que la page applique deja a tout regroupement, et cette
+        repartition-ci n'y echappe pas. La sortie de ce bloc n'est pas un taux
+        mais une **consigne** — reecrire une clause du gabarit — donc la publier
+        sur trois desaccords ferait reecrire un texte sur du bruit, ce qui coute
+        plus qu'un silence.
+
+        **La concentration ensuite**, et l'inegalite est **stricte** a dessein :
+        deux desaccords partages un-un n'en designent aucun, et « au moins la
+        moitie » les aurait declares concentres tous les deux. Trouve en ecrivant
+        le test — la version large nommait une clause sur un ex aequo.
+        """
+        if self.comparable < self.minimum or not self.transitions:
+            return None
+        first = self.transitions[0]
+        return first if first[2] * 2 > self.disagreed else None
+
+    @property
+    def clause_line(self) -> str:
+        """La clause du gabarit a reprendre, quand une seule se designe.
+
+        Vide tant que `dominant` ne rend rien — donc vide sur un effectif court,
+        et vide sur un desaccord disperse.
+        """
+        if self.dominant is None:
+            return ""
+        declared, computed, count = self.dominant
+        return (
+            f"{count} des {self.disagreed} désaccords sont un {declared} annoncé que la "
+            f"table met à {computed} : c'est cette clause du gabarit qui est ambiguë."
+        )
+
+    @property
+    def rate(self) -> float | None:
+        """Part de desaccord, ou `None` faute de quoi que ce soit a comparer."""
+        return self.disagreed / self.comparable if self.comparable else None
+
+    @property
+    def line(self) -> str:
+        """« 12 sur 30 en desaccord · le modele se note +0.4 cran trop haut »."""
+        if not self.comparable:
+            return f"aucune sélection ne porte les deux crans · {self.uncomputed} sans bloc lu"
+        sens = "trop haut" if self.drift > 0 else "trop bas"
+        return (
+            f"{self.disagreed} sur {self.comparable} en désaccord · "
+            f"le modèle se note {self.drift:+.1f} cran {sens}"
+        )
+
+
+@dataclass
 class Exploratory:
     """Ce que valent les selections **produites sans fait date**.
 
@@ -3596,6 +3703,23 @@ class Exploratory:
     #: le cas ordinaire au depart — la comparaison est la mesure que toute cette
     #: construction existe pour rendre possible, pas une decoration.
     comparisons: list[tuple[str, str, RateRow, RateRow]] = field(default_factory=list)
+    #: L'ecart entre cran annonce et cran calcule, **pour cette population-ci**.
+    #:
+    #: Il n'existait pas, et il ne pouvait pas exister : jusqu'au lot 9 le
+    #: gabarit ne demandait pas de bloc `conf` sous la section C-bis, si bien que
+    #: ces selections n'avaient aucun cran declare. La phrase ajoutee au gabarit
+    #: est la moitie du chantier ; celle-ci est l'autre — un cran qu'on demande
+    #: et que rien ne relit finirait par se retirer, comme l'effectif collecte
+    #: des mois sans lecteur.
+    #:
+    #: **Jamais fondu dans celui de la population principale**, et ce n'est pas
+    #: une precaution de forme : mesure du 19/08/2026 sur les quinze premieres
+    #: selections a porter les deux crans, les desaccords des deux cotes ne sont
+    #: pas le meme passage — 4 vers 5 en section C, 2 vers 3 en C-bis. Les
+    #: additionner designerait une clause moyenne que ni l'une ni l'autre ne
+    #: reclame, alors que ce champ n'a qu'un usage : nommer le passage a
+    #: reecrire.
+    notation: Notation = field(default_factory=Notation)
 
     @property
     def empty(self) -> bool:
@@ -3627,6 +3751,7 @@ def exploratory(settings: Settings | None = None) -> Exploratory:
         tier_order = [row["key"] for row in conn.execute("SELECT key FROM tiers ORDER BY position")]
         rows = conn.execute(
             "SELECT k.id, k.tier, k.tier_real, k.result, k.price, k.event_id, k.created_at, "
+            "       k.confidence, k.confidence_computed, k.research_overridden, "
             "       e.commence_time FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "WHERE k.exploratoire = 1"
@@ -3659,6 +3784,13 @@ def exploratory(settings: Settings | None = None) -> Exploratory:
         ),
         implied=implicites,
     )
+    # **Sur `lignes` et non sur `tranchees`**, exactement comme la population
+    # principale : ce bloc compare deux declarations, toutes deux connues a
+    # l'import, et non une issue. Ecarter les selections en attente serait la
+    # meme erreur de categorie qu'un taux lu sans son prix — et le cas est ici
+    # la regle plutot que l'exception, la premiere volee de blocs de C-bis etant
+    # entiere en attente.
+    report.notation = _notation(lignes, [str(row["result"]) for row in lignes], report.minimum_rows)
     return report
 
 
@@ -4193,113 +4325,6 @@ def _by_session(
             _count(entry.rates, pick["result"] or "pending", pick)
         found.append(entry)
     return found
-
-
-@dataclass
-class Notation:
-    """L'accord entre le cran annonce et le cran calcule.
-
-    **Ce que cet ecart mesure a change de nature, et le libelle doit le dire.**
-    Tant que le modele notait seul, on aurait mesure son flair. Depuis qu'il
-    declare ses entrees et que l'application applique la table, les deux valeurs
-    sortent du **meme** faisceau : leur ecart ne teste plus son jugement, il
-    teste s'il applique correctement sa propre table. C'est un **lint sur la
-    redaction du gabarit**, pas sur l'analyse — et c'est plus utile ainsi, parce
-    qu'une clause ambigue se reecrit quand un jugement ne se corrige pas.
-
-    D'ou `transitions` : un desaccord disperse est du bruit de redaction, un
-    desaccord concentre sur un passage — 3 vers 4, 4 vers 5 — designe la clause
-    a reprendre.
-
-    **Comptee sur toutes les selections portant les deux crans, tranchees ou
-    non**, et c'est la seule carte de la page dans ce cas. Les garde-fous de
-    resultat protegent des **taux de reussite**, qui mesurent des issues ; celle-ci
-    compare deux declarations, toutes deux connues a l'import. Ecarter les
-    selections en attente etait la meme erreur de categorie qu'un taux lu sans son
-    prix — meme exemption que `labelling()`, et pour la meme raison.
-
-    Mesure qui l'a rendue visible : les quinze premieres selections a porter les
-    deux crans sont **toutes en attente**, et la page ne montrait rien le jour ou
-    l'ecart est devenu mesurable pour la premiere fois.
-    """
-
-    #: Selections portant les deux valeurs. C'est le seul denominateur honnete
-    #: du taux de desaccord — les autres n'ont rien a comparer.
-    comparable: int = 0
-    agreed: int = 0
-    #: Annoncees sans bloc structure lisible. **Compte a part et jamais fondu
-    #: dans l'accord** : un cran manquant n'est pas un cran d'accord, et c'est
-    #: l'erreur que la page a deja payee sur les lignes maigres.
-    uncomputed: int = 0
-    #: Ecart moyen en crans, signe. Positif : le modele se notait plus haut que
-    #: la table ne l'autorise.
-    drift: float = 0.0
-    #: Les passages en desaccord, du plus frequent au moins : `(annonce, calcule,
-    #: compte)`. C'est **le seul champ actionnable du bloc** — il nomme la clause
-    #: du gabarit a reecrire.
-    transitions: list[tuple[int, int, int]] = field(default_factory=list)
-    #: Effectif sous lequel rien ne se conclut. **Le seuil de la page, reutilise
-    #: et non redefini** — sous quel compte une repartition ne veut plus rien
-    #: dire est une propriete des donnees, pas du bloc qui les affiche. Il
-    #: **descend dans l'objet** au lieu d'etre lu d'une constante : une classe
-    #: qui va chercher son propre reglage est intestable hors d'une base.
-    minimum: int = ANALYSIS_MIN_ROWS
-
-    @property
-    def disagreed(self) -> int:
-        return self.comparable - self.agreed
-
-    @property
-    def dominant(self) -> tuple[int, int, int] | None:
-        """Le passage le plus frequent, sous **deux** conditions.
-
-        **L'effectif d'abord.** Sous `minimum`, rien ne se conclut : c'est le
-        seuil que la page applique deja a tout regroupement, et cette
-        repartition-ci n'y echappe pas. La sortie de ce bloc n'est pas un taux
-        mais une **consigne** — reecrire une clause du gabarit — donc la publier
-        sur trois desaccords ferait reecrire un texte sur du bruit, ce qui coute
-        plus qu'un silence.
-
-        **La concentration ensuite**, et l'inegalite est **stricte** a dessein :
-        deux desaccords partages un-un n'en designent aucun, et « au moins la
-        moitie » les aurait declares concentres tous les deux. Trouve en ecrivant
-        le test — la version large nommait une clause sur un ex aequo.
-        """
-        if self.comparable < self.minimum or not self.transitions:
-            return None
-        first = self.transitions[0]
-        return first if first[2] * 2 > self.disagreed else None
-
-    @property
-    def clause_line(self) -> str:
-        """La clause du gabarit a reprendre, quand une seule se designe.
-
-        Vide tant que `dominant` ne rend rien — donc vide sur un effectif court,
-        et vide sur un desaccord disperse.
-        """
-        if self.dominant is None:
-            return ""
-        declared, computed, count = self.dominant
-        return (
-            f"{count} des {self.disagreed} désaccords sont un {declared} annoncé que la "
-            f"table met à {computed} : c'est cette clause du gabarit qui est ambiguë."
-        )
-
-    @property
-    def rate(self) -> float | None:
-        """Part de desaccord, ou `None` faute de quoi que ce soit a comparer."""
-        return self.disagreed / self.comparable if self.comparable else None
-
-    @property
-    def line(self) -> str:
-        """« 12 sur 30 en desaccord · le modele se note +0.4 cran trop haut »."""
-        if not self.comparable:
-            return f"aucune sélection ne porte les deux crans · {self.uncomputed} sans bloc lu"
-        sens = "trop haut" if self.drift > 0 else "trop bas"
-        return (
-            f"{self.disagreed} sur {self.comparable} en désaccord · "
-            f"le modèle se note {self.drift:+.1f} cran {sens}"
-        )
 
 
 @dataclass

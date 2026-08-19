@@ -787,6 +787,22 @@ def as_json(found: StatsReport) -> dict[str, Any]:
             "interval": (list(found.exploratory.interval) if found.exploratory.interval else None),
             "residual": _residual(found.exploratory.residual),
             "by_tier": [_rate(row) for row in found.exploratory.by_tier],
+            # L'ecart des deux crans **de cette population-ci**, tenu a part de
+            # celui de la principale : les desaccords des deux cotes ne sont pas
+            # le meme passage, et ce champ n'a qu'un usage, nommer la clause a
+            # reecrire.
+            "notation": {
+                "comparable": found.exploratory.notation.comparable,
+                "agreed": found.exploratory.notation.agreed,
+                "disagreed": found.exploratory.notation.disagreed,
+                "uncomputed": found.exploratory.notation.uncomputed,
+                "drift": found.exploratory.notation.drift,
+                "transitions": [
+                    {"declared": declared, "computed": computed, "count": count}
+                    for declared, computed, count in found.exploratory.notation.transitions
+                ],
+                "clause": found.exploratory.notation.clause_line,
+            },
         },
         # La population tardive, **et son decoupage par retard**. Une bande a
         # trois selections y figure avec son compte : la fondre reproduirait le
@@ -1430,8 +1446,15 @@ def as_markdown(found: StatsReport) -> str:
                 else ""
             ),
             f"- **Résidu au prix** : {_decimal(lot.residual.gap)} pour "
-            f"{_decimal(lot.residual.expected)} payée(s)",
+            f"{_decimal(lot.residual.expected)} payée(s)"
+            if lot.residual.gap is not None
+            else "- **Résidu au prix** : aucune tranchée, il ne se calcule pas encore",
         ]
+        if lot.notation.comparable or lot.notation.uncomputed:
+            out.append(
+                f"- **Cran annoncé contre cran calculé** : {lot.notation.line}"
+                + (f" · {lot.notation.clause_line}" if lot.notation.clause_line else "")
+            )
         out += _card(found, EXPLORATORY_BLOCK, "Par palier", lot.by_tier)
         for _, libelle, principale, exploratoire in lot.comparisons:
             out += [
@@ -1462,7 +1485,9 @@ def as_markdown(found: StatsReport) -> str:
                 else ""
             ),
             f"- **Résidu au prix** : {_decimal(lot.residual.gap)} pour "
-            f"{_decimal(lot.residual.expected)} payée(s)",
+            f"{_decimal(lot.residual.expected)} payée(s)"
+            if lot.residual.gap is not None
+            else "- **Résidu au prix** : aucune tranchée, il ne se calcule pas encore",
         ]
         for libelle, compte in lot.reasons:
             out.append(f"- {libelle} : {compte}")

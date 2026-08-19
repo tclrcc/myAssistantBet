@@ -505,3 +505,154 @@ def test_le_drapeau_exploratoire_ne_vient_jamais_du_bloc(migrated: Settings) -> 
     assert [pick.exploratory for pick in preview.picks] == [False, True], (
         "le drapeau suit le tableau d'origine, pas ce que le bloc raconte"
     )
+
+
+def test_l_ecart_des_deux_crans_se_mesure_aussi_de_ce_cote(migrated: Settings) -> None:
+    """**L'autre moitié du chantier du lot 9.**
+
+    La phrase ajoutée au gabarit fait porter un bloc `conf` aux lignes de C-bis ;
+    sans lecteur en face, ce cran ne se compare à rien et finirait par se
+    retirer — le sort exact de l'effectif collecté des mois sans lecteur.
+
+    Le bloc se compte comme celui de la population principale : **sur toutes les
+    sélections portant les deux crans, tranchées ou non**, parce qu'il compare
+    deux déclarations connues à l'import et non une issue. C'est ici la règle
+    plutôt que l'exception — la première volée de blocs de C-bis est entière en
+    attente.
+    """
+    session_id, _ = _lot(migrated, ["Lyon", "Nice"])
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 't.md.j2', ?, 0, ?)",
+        (
+            session_id,
+            "### M1 · football · Amical · Lyon – Adv Lyon · 01/01 20:45\n"
+            "### M2 · football · Amical · Nice – Adv Nice · 01/01 20:45\n",
+            db.utcnow(),
+        ),
+        settings=migrated,
+    )
+    # La ligne C-bis annonce 1 et porte de quoi valoir 2 : un fait daté d'un
+    # éditeur, sans manque qui touche le facteur.
+    rendu = RENDU + (
+        '\n{"match": "M1", "confiance": 4, "type": "issue", "source_level": 1,\n'
+        ' "faits": [{"enonce": "retour daté", "date": "2026-08-12",\n'
+        '            "editeur": "lequipe.fr", "niveau": 1}],\n'
+        ' "manque_touche_facteur": false}\n'
+        '\n{"match": "M2", "confiance": 1, "type": "issue", "source_level": 3,\n'
+        ' "faits": [{"enonce": "note de forum", "date": "2026-08-12",\n'
+        '            "editeur": "forum.example", "niveau": 3}],\n'
+        ' "manque_touche_facteur": false}\n'
+        "\ndossiers_ouverts: [M1, M2]\n"
+    )
+    preview = picks_import.build_preview(session_id, rendu, migrated)
+    for pick in preview.picks:
+        add_pick(
+            session_id,
+            pick.tier,
+            pick.market,
+            pick.selection,
+            price=pick.price,
+            confidence=pick.confidence,
+            source_level=pick.source,
+            claim=pick.claim.raw if pick.claim else "",
+            opened=pick.opened,
+            exploratory=pick.exploratory,
+            event_id=pick.event_id,
+            settings=migrated,
+        )
+
+    principale = analysis(settings=migrated).notation
+    exploratoire = exploratory(settings=migrated).notation
+
+    assert (principale.comparable, exploratoire.comparable) == (1, 1), (
+        "chaque population compte son propre écart"
+    )
+    assert exploratoire.transitions and exploratoire.transitions[0][:2] == (1, 2), (
+        "le désaccord de C-bis est son passage à lui, pas celui de la section C"
+    )
+    assert principale.transitions != exploratoire.transitions, (
+        "les fondre désignerait une clause moyenne qu'aucune des deux ne réclame"
+    )
+
+
+def test_le_desaccord_de_c_bis_est_rendu_avec_son_effectif(
+    client: TestClient, migrated: Settings
+) -> None:
+    """Un écart sans son dénominateur se lit comme un fait — même règle que
+    partout sur cette page."""
+    session_id, _ = _lot(migrated, ["Lyon", "Nice"])
+    add_pick(
+        session_id,
+        "giga_fun",
+        "1N2",
+        "Nice",
+        price="7.50",
+        confidence="1",
+        source_level="3",
+        claim=(
+            '{"match": "M2", "confiance": 1, "type": "issue", "source_level": 3,'
+            ' "faits": [{"enonce": "note", "date": "2026-08-12",'
+            ' "editeur": "forum.example", "niveau": 3}],'
+            ' "manque_touche_facteur": false}'
+        ),
+        opened=True,
+        exploratory=True,
+        settings=migrated,
+    )
+
+    page = client.get("/stats")
+
+    assert "Cran annoncé contre cran calculé, sur cette population" in page.text
+    assert "1 sur 1 en désaccord" in page.text
+
+
+def test_une_population_sans_tranchee_ne_fait_pas_tomber_la_page(
+    client: TestClient, migrated: Settings
+) -> None:
+    """**Un résidu sans effectif n'est pas un résidu, et `gap` rend `None` pour
+    le dire.** Le rendre sans garde faisait tomber `/stats` en 500 — pas une
+    ligne absente, la page entière.
+
+    C'est l'état exact dans lequel C-bis entre depuis que ses lignes portent un
+    bloc : la première volée est toute en attente. Le défaut dormait derrière
+    une population qui avait toujours eu au moins une sélection tranchée.
+
+    Le même piège existait sur la population tardive, et la garde des bandes de
+    retard — trois lignes plus bas dans le même gabarit — l'avait déjà résolu de
+    son côté sans que les deux autres la reprennent.
+    """
+    session_id, events = _lot(migrated, ["Lyon", "Nice"])
+    add_pick(
+        session_id,
+        "giga_fun",
+        "1N2",
+        "Nice",
+        price="7.50",
+        confidence="1",
+        exploratory=True,
+        settings=migrated,
+    )
+    # La tardive porte le meme piege, et il faut un vrai coup d'envoi passe pour
+    # l'atteindre : le drapeau se derive de l'heure, pas du motif.
+    db.execute(
+        "UPDATE events SET commence_time = '2020-01-01T20:00:00Z' WHERE id = ?",
+        (events[0],),
+        settings=migrated,
+    )
+    add_pick(
+        session_id,
+        "fun",
+        "1N2",
+        "Lyon",
+        price="2.00",
+        confidence="3",
+        event_id=str(events[0]),
+        late_reason="differee",
+        settings=migrated,
+    )
+
+    page = client.get("/stats")
+
+    assert page.status_code == 200
+    assert page.text.count("le résidu au prix ne se calcule pas encore") == 2

@@ -1466,14 +1466,41 @@
     [{{ '%.0f' | format(exploratory.interval[0] * 100) }} –
     {{ '%.0f' | format(exploratory.interval[1] * 100) }}]{% endif %}
     {%- if exploratory.pending %} · {{ exploratory.pending }} en attente{% endif %}.
-    Résidu au prix : {{ '%.1f' | format(exploratory.residual.gap) }} pour
+    {# **Un résidu sans effectif n'est pas un résidu**, et `gap` rend `None` pour le
+       dire. La rendre sans garde faisait tomber la page entière en 500 dès qu'une
+       population portait des sélections mais aucune tranchée — l'état exact dans
+       lequel C-bis entre depuis que ses lignes portent un bloc, la première volée
+       étant toute en attente. Même garde que les bandes de retard, trois lignes
+       plus bas. #}
+    {% if exploratory.residual.gap is not none %}Résidu au prix :
+    {{ '%.1f' | format(exploratory.residual.gap) }} pour
     {{ '%.1f' | format(exploratory.residual.expected) }} payée(s).
+    {% else %}Aucune tranchée : le résidu au prix ne se calcule pas encore.{% endif %}
   </p>
 
   {% if exploratory.by_tier %}
   <div class="charts is-single">
     {{ card("Par palier", exploratory.by_tier) }}
   </div>
+  {% endif %}
+
+  {# L'ÉCART ENTRE CRAN ANNONCÉ ET CRAN CALCULÉ, DE CE CÔTÉ-CI. Il n'existait
+     pas et ne pouvait pas exister : jusqu'au lot 9 le gabarit ne demandait pas
+     de bloc `conf` sous la section C-bis, si bien que ces sélections n'avaient
+     aucun cran déclaré. Le rendre ici est l'autre moitié de ce chantier — un
+     cran qu'on demande et que rien ne relit finirait par se retirer.
+
+     **Jamais fondu avec celui de la population principale**, et ce n'est pas
+     une précaution de forme : les désaccords des deux côtés ne sont pas le même
+     passage, et les additionner désignerait une clause moyenne que ni l'une ni
+     l'autre ne réclame. #}
+  {% if exploratory.notation.comparable or exploratory.notation.uncomputed %}
+  <p class="block-note">
+    Cran annoncé contre cran calculé, sur cette population :
+    <strong>{{ exploratory.notation.line }}</strong>
+    {%- if exploratory.notation.clause_line %} ·
+    {{ exploratory.notation.clause_line }}{% endif %}
+  </p>
   {% endif %}
 
   {# **La mesure que toute cette construction existe pour rendre possible.**
@@ -1522,8 +1549,16 @@
     [{{ '%.0f' | format(late.interval[0] * 100) }} –
     {{ '%.0f' | format(late.interval[1] * 100) }}]{% endif %}
     {%- if late.pending %} · {{ late.pending }} en attente{% endif %}.
-    Résidu au prix : {{ '%.1f' | format(late.residual.gap) }} pour
+    {# **Un résidu sans effectif n'est pas un résidu**, et `gap` rend `None` pour le
+       dire. La rendre sans garde faisait tomber la page entière en 500 dès qu'une
+       population portait des sélections mais aucune tranchée — l'état exact dans
+       lequel C-bis entre depuis que ses lignes portent un bloc, la première volée
+       étant toute en attente. Même garde que les bandes de retard, trois lignes
+       plus bas. #}
+    {% if late.residual.gap is not none %}Résidu au prix :
+    {{ '%.1f' | format(late.residual.gap) }} pour
     {{ '%.1f' | format(late.residual.expected) }} payée(s).
+    {% else %}Aucune tranchée : le résidu au prix ne se calcule pas encore.{% endif %}
     {% for libelle, compte in late.reasons %}
     <br>{{ compte }} — {{ libelle }}
     {%- endfor %}
