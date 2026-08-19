@@ -889,7 +889,11 @@ def _attach_scores(
     lecture = read_scores(raw)
     reperes = {parsed.mark for parsed in lecture.rows if parsed.mark}
     mapping = valide or next(
-        (candidate for candidate in (headers or []) if reperes <= set(candidate.marks)),
+        (
+            candidate
+            for candidate in (headers or [])
+            if reperes <= set(candidate.marks) and _covers(preview, candidate)
+        ),
         None,
     )
     # **Le rapprochement decide de l'identite, donc c'est lui qui deduplique.**
@@ -973,7 +977,9 @@ def _attach_combos(
         (
             candidate
             for candidate in (headers or [])
-            if reperes <= set(candidate.marks) and _resolves(preview, candidate, reperes)
+            if reperes <= set(candidate.marks)
+            and _covers(preview, candidate)
+            and _resolves(preview, candidate, reperes)
         ),
         None,
     )
@@ -1050,6 +1056,39 @@ def _rows_by_mark(preview: ImportPreview, blocks: PromptBlocks) -> dict[str, lis
     return par_repere
 
 
+def _covers(preview: ImportPreview, blocks: PromptBlocks) -> bool:
+    """Ce prompt est-il celui d'ou sort ce tableau ?
+
+    **« Il porte assez de reperes » ne prouve rien, et ca a coute une mesure
+    fausse.** Une session porte plusieurs prompts — trois pour la session 17, un
+    lot de football et deux de tennis — et `M1` y designe trois matchs
+    differents. Le repli qui retenait le premier prompt portant les reperes
+    declares choisissait donc, sur `M1..M6`, n'importe lequel des trois : le
+    plus recent, jamais celui qui avait produit le collage.
+
+    Degat mesure le 19/08/2026 sur l'import 14 : les affiches comparees etaient
+    celles du lot de Cincinnati quand le tableau portait du football, aucune ne
+    tombait, et les deux selections sortaient en `hors_dossiers`. Le lot 8 les a
+    lues comme **une observation sur le modele** — « les deux selections
+    portaient sur des matchs hors des six dossiers ouverts ». C'etait un defaut
+    de collecte : Bodo/Glimt est `M3` du prompt 157, et `M3` est dans la liste.
+    Septieme occurrence du defaut caracteristique du projet, cette fois sur la
+    mesure elle-meme.
+
+    Le critere est donc celui du contenu et non du compte : **toutes** les
+    lignes du tableau doivent etre des affiches de ce prompt. `_attach_combos`
+    exigeait deja l'equivalent par `_resolves` ; son propre docstring annoncait
+    « meme repli que `_apply_research` », et c'etait faux — l'un avait la garde,
+    les deux autres non.
+
+    Un tableau vide passe : il n'y a alors rien a rattacher, et refuser
+    reviendrait a signaler un repere non resolu la ou il n'y a pas de ligne.
+    """
+    affiches = {_fold(_affiche_of(entete)) for entete in blocks.marks.values()}
+    lignes = {_fold(pick.match_text) for pick in preview.picks if pick.match_text}
+    return lignes <= affiches
+
+
 def _resolves(preview: ImportPreview, blocks: PromptBlocks, marks: set[str]) -> bool:
     """Ce prompt permet-il de designer une ligne unique pour chaque repere ?
 
@@ -1096,7 +1135,12 @@ def _apply_research(
     # premier qui porte **tous** les reperes declares : deux resolutions
     # paralleles finiraient par designer deux matchs sous le meme numero.
     mapping = valide or next(
-        (candidate for candidate in headers if opened.marks <= set(candidate.marks)), None
+        (
+            candidate
+            for candidate in headers
+            if opened.marks <= set(candidate.marks) and _covers(preview, candidate)
+        ),
+        None,
     )
     if mapping is not None and not opened.marks <= set(mapping.marks):
         mapping = None

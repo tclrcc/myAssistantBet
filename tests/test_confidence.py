@@ -1709,3 +1709,80 @@ def test_le_cran_calcule_ne_recopie_jamais_l_annonce(migrated: Settings) -> None
     assert ligne["confidence"] == 5, "l'annonce reste écrite telle quelle"
     assert ligne["confidence_computed"] == 4, "et le calcul la corrige"
     assert ligne["distinct_publishers"] == 1
+
+
+def test_le_repli_choisit_le_prompt_du_tableau_et_non_le_premier_qui_compte(
+    migrated: Settings,
+) -> None:
+    """**« Il porte assez de repères » ne prouve rien, et ça a coûté une mesure
+    fausse.**
+
+    Une session porte plusieurs prompts — trois pour la session 17, un lot de
+    football et deux de tennis — et `M1` y désigne trois matchs différents. Le
+    repli qui retenait le premier prompt portant les repères déclarés choisissait
+    donc n'importe lequel des trois, en pratique le plus récent.
+
+    Dégât mesuré le 19/08/2026 sur l'import 14 : les affiches comparées étaient
+    celles du lot de Cincinnati quand le tableau portait du football, aucune ne
+    tombait, et les deux sélections sortaient en `hors_dossiers`. Le lot 8 les a
+    lues comme **une observation sur le modèle**. C'était un défaut de collecte.
+
+    Ici : deux prompts numérotent `M1`/`M2`, le second est celui du tableau. Sans
+    la garde, le premier gagne et les deux sélections passent en `hors_dossiers`
+    alors qu'elles portent sur des dossiers ouverts.
+    """
+    session_id, _ = _lot_de_deux(migrated)
+    # Un prompt plus recent, d'un autre lot, qui porte les memes reperes.
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 'session_default.md.j2', ?, 0, ?)",
+        (
+            session_id,
+            "### M1 · Tennis · Cincinnati · Sinner – Alcaraz · 02/01 20:45\n"
+            "### M2 · Tennis · Cincinnati · Zverev – Paul · 02/01 20:45\n",
+            db.utcnow(),
+        ),
+        settings=migrated,
+    )
+
+    preview = picks_import.build_preview(
+        session_id, TABLEAU_DEUX + "\ndossiers_ouverts: [M1, M2]\n", migrated
+    )
+
+    assert [pick.opened for pick in preview.picks] == [True, True], (
+        "les repères se résolvent contre le prompt qui a produit ce tableau"
+    )
+    assert [pick.override_cause for pick in preview.picks] == ["", ""]
+
+
+def test_un_tableau_qu_aucun_prompt_ne_porte_reste_en_lecture(migrated: Settings) -> None:
+    """En cas de doute, rien — et « rien » vaut ici la lecture, cran 1.
+
+    Un repli qui prendrait un prompt approchant poserait des crans calculés sur
+    une résolution que personne ne peut refaire. Le défaut est `lecture`, et il
+    se voit ; un niveau de source gonflé qui passe pour vérifié ne se voit pas.
+    """
+    session_id, _ = _lot_de_deux(migrated)
+    db.execute("DELETE FROM prompts WHERE session_id = ?", (session_id,), settings=migrated)
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 'session_default.md.j2', ?, 0, ?)",
+        (
+            session_id,
+            "### M1 · Tennis · Cincinnati · Sinner – Alcaraz · 02/01 20:45\n"
+            "### M2 · Tennis · Cincinnati · Zverev – Paul · 02/01 20:45\n",
+            db.utcnow(),
+        ),
+        settings=migrated,
+    )
+
+    preview = picks_import.build_preview(
+        session_id, TABLEAU_DEUX + "\ndossiers_ouverts: [M1, M2]\n", migrated
+    )
+
+    assert [pick.opened for pick in preview.picks] == [False, False]
+    assert [pick.override_cause for pick in preview.picks] == [
+        OVERRIDE_REPERES,
+        OVERRIDE_REPERES,
+    ]
+    assert is_collection_fault(OVERRIDE_REPERES), "un rattachement raté n'est pas une observation"
