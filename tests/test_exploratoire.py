@@ -97,6 +97,74 @@ def test_la_section_c_bis_pose_le_drapeau_et_pas_la_section_c(migrated: Settings
     assert [pick.exploratory for pick in preview.picks] == [False, True]
 
 
+def test_une_mention_de_c_bis_en_prose_ne_fait_pas_basculer_la_lecture(
+    migrated: Settings,
+) -> None:
+    """**Le defaut du lot 8, et il a coute les deux seuls collages complets.**
+
+    Le motif cherchait « C-bis » n'importe ou dans la ligne. Or la section B en
+    parle — « il part en C-bis », « voir C-bis », et le gabarit lui-meme en ecrit
+    une : la lecture basculait donc *avant* le tableau de la section C, dont
+    toutes les lignes etaient alors refusees comme « exploratoires en palier
+    sur ». Le collage complet rendait moins que le collage du seul tableau, ce
+    qui est l'inverse exact de ce que le correctif d'interface visait.
+
+    Mesure sur la base servie : 3 selections sur 5 perdues, puis 4 sur 5, et
+    **aucun bloc de confiance rattache** — le compte de blocs ne tombait plus
+    sur le compte de lignes.
+    """
+    session_id, _ = _lot(migrated, ["Lyon", "Nice"])
+    avec_prose = RENDU.replace(
+        "### C. Tableau des sélections",
+        "### B. Analyse par match\n\nAucun fait daté ne le porte, il part en C-bis.\n\n"
+        "### C. Tableau des sélections",
+    )
+
+    preview = picks_import.build_preview(session_id, avec_prose, migrated)
+
+    assert [pick.exploratory for pick in preview.picks] == [False, True]
+    assert not [note for note in preview.notes if "palier sûr" in note]
+
+
+def test_un_titre_de_section_referme_la_section_exploratoire(migrated: Settings) -> None:
+    """Les titres `A.` a `F.` **ferment** C-bis autant que son titre l'ouvre.
+
+    Sans eux le drapeau ne redescendait jamais : tout ce qui suit le second
+    tableau restait exploratoire, et un rendu qui remettrait une table apres se
+    lirait sous les regles du mauvais tableau.
+    """
+    session_id, _ = _lot(migrated, ["Lyon", "Nice"])
+    suite = RENDU + (
+        "\n### D. Combinés\n\n"
+        "| # | Match | Marché | Sélection | Cote | Palier | Conf/5 |\n"
+        "|---|-------|--------|-----------|------|--------|--------|\n"
+        "| 1 | Lyon – Adv Lyon | O/U 2.5 | Over 2.5 | 1.60 | 🟢 SAFE | 4 |\n"
+    )
+
+    preview = picks_import.build_preview(session_id, suite, migrated)
+
+    assert [pick.exploratory for pick in preview.picks] == [False, True, False]
+
+
+def test_un_debut_de_phrase_francaise_n_est_pas_un_titre_de_section(
+    migrated: Settings,
+) -> None:
+    """**C'est la lettre seule qui impose de lire la ligne brute.** Repliee,
+    « C'est » commence par `c` suivi d'un espace, donc exactement comme
+    « C. Tableau ». Le separateur distingue un titre d'un debut de phrase."""
+    session_id, _ = _lot(migrated, ["Lyon", "Nice"])
+    avec_prose = RENDU.replace(
+        "### C-bis. Sélections exploratoires",
+        "C'est le seul endroit où l'exigence tombe.\n\n"
+        "D'ailleurs, aucune autre section ne le permet.\n\n"
+        "### C-bis. Sélections exploratoires",
+    )
+
+    preview = picks_import.build_preview(session_id, avec_prose, migrated)
+
+    assert [pick.exploratory for pick in preview.picks] == [False, True]
+
+
 def test_une_ligne_c_bis_en_palier_sur_est_refusee_et_journalisee(
     migrated: Settings,
 ) -> None:

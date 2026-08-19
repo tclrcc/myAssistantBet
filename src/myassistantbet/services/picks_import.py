@@ -64,12 +64,37 @@ from .set_scores import read as read_scores
 
 logger = logging.getLogger(__name__)
 
-#: La section **C-bis**, ou l'exigence de fait date tombe. Reconnue sur son
-#: repere ou sur son titre : le gabarit ecrit « C-bis. Sélections
-#: exploratoires », et un rendu qui n'en garde qu'une moitie doit passer quand
-#: meme — perdre la section entiere pour un tiret serait la reproduction exacte
-#: du defaut que ce chantier corrige.
-EXPLORATORY_HEAD = re.compile(r"\bc\s*bis\b|selections? exploratoires?")
+#: Le titre de la section **C-bis**, ou l'exigence de fait date tombe.
+#:
+#: **Le motif s'ancre en tete de ligne, et c'est tout le correctif.** Il
+#: cherchait « C-bis » n'importe ou dans la ligne, si bien qu'une phrase de la
+#: section B — « il part en C-bis », « voir C-bis » — faisait basculer la lecture
+#: *avant* le tableau de la section C. Toutes les lignes de ce tableau etaient
+#: alors refusees comme « exploratoires en palier sur », et seule la section
+#: C-bis entrait. Mesure sur les deux seuls collages complets de la base : 3
+#: selections sur 5 perdues, puis 4 sur 5, et **aucun bloc de confiance rattache
+#: des deux cotes** — le compte de blocs ne tombait plus sur le compte de lignes.
+#:
+#: Le titre reste reconnu sur son repere **ou** sur son intitule : le gabarit
+#: ecrit « ### C-bis. Sélections exploratoires », et un rendu qui n'en garde
+#: qu'une moitie doit passer quand meme. `_fold` ayant deja mange les `#`, les
+#: `*` et les tirets, l'ancrage porte sur le premier mot utile de la ligne.
+EXPLORATORY_HEAD = re.compile(r"^(?:section )?(?:c bis\b|selections? exploratoires?\b)")
+
+#: Les autres titres de section du rendu — `A.` a `F.`, C-bis excepte.
+#:
+#: **Ils ferment la section C-bis autant que son titre l'ouvre.** Sans eux le
+#: drapeau ne redescendait jamais : tout ce qui suit le second tableau restait
+#: exploratoire, et un rendu qui remettrait une table apres — un recapitulatif,
+#: un tableau de combines — se lirait sous les regles du mauvais tableau.
+#:
+#: **Le motif se lit sur la ligne brute et non repliee**, contrairement au
+#: precedent, et c'est la lettre seule qui l'impose : repliee, « C'est » commence
+#: par `c` suivi d'un espace, donc exactement comme « C. Tableau ». Le
+#: separateur (`.`, `)`, `:`) est ce qui distingue un titre d'un debut de phrase
+#: francaise, et il est **obligatoire** ici — la ou « C-bis » se passe du sien,
+#: aucun mot francais ne commencant ainsi.
+SECTION_HEAD = re.compile(r"^[\s#*>_-]*(?:[Ss]ection\s+)?[A-F]\s*[.):]\s")
 
 #: En dessous, un collage est presque surement partiel. **Mesure, pas invente** :
 #: les treize collages tronques de la base pesent 567 a 1 314 caracteres, un
@@ -735,8 +760,17 @@ def parse_table(
         # Le titre de la section fait basculer la lecture, et **remet l'entete a
         # zero** : le second tableau porte le sien, et le manquer ferait lire sa
         # ligne d'en-tete comme une selection.
+        #
+        # **Un titre, jamais une mention.** Les deux motifs s'ancrent en tete de
+        # ligne : une phrase de la section B qui renvoie a C-bis — le gabarit lui
+        # meme en ecrit une — faisait sinon basculer la lecture avant le tableau
+        # de la section C, dont toutes les lignes etaient alors refusees comme
+        # « exploratoires en palier sur ».
         if EXPLORATORY_HEAD.search(_fold(line)):
             exploratoire, columns = True, None
+            continue
+        if SECTION_HEAD.match(line):
+            exploratoire, columns = False, None
             continue
         cells = _cells(line)
         if cells is None:

@@ -171,6 +171,30 @@ SETS = "sets: M1=2-0/2-1 | M2=PASSE\n"
 #: consecutives l'ont perdue sans qu'aucun test ne surveille son transport.
 DOSSIERS = "dossiers_ouverts: [M1, M2]\n"
 
+#: **Le sixieme format, et il ne ressemble a aucun des cinq autres** : ce n'est
+#: pas une ligne ni un bloc, c'est le **decoupage en sections** du rendu. Il est
+#: pourtant structure, echange avec le modele, et il decide de la lecture des
+#: deux tableaux — donc il tombe sous la meme regle.
+#:
+#: Son absence de ce banc est ce qui a laisse passer le defaut du lot 8 : la
+#: bascule vers la section C-bis se declenchait sur une **mention en prose**, si
+#: bien qu'un collage complet perdait tout le tableau de la section C. Les deux
+#: seuls collages complets de la base y ont perdu 3 selections sur 5, puis 4
+#: sur 5, et la totalite de leurs blocs de confiance.
+#:
+#: La prose de la section B qui renvoie a C-bis est **dans le format teste**, et
+#: pas a cote : c'est elle le degat, et un banc qui l'omettrait testerait un
+#: rendu que le modele ne produit pas.
+SECTIONS = (
+    "### B. Analyse par match\n\n"
+    "Aucun fait daté ne porte Nice au-dessus de 2.30, il part en C-bis.\n\n"
+    "### C. Tableau des sélections\n\n" + TABLEAU + "\n"
+    "### C-bis. Sélections exploratoires\n\n"
+    "| # | Match | Marché | Sélection | Cote | Palier | Conf/5 |\n"
+    "|---|-------|--------|-----------|------|--------|--------|\n"
+    "| 1 | Nice – Adv Nice | O/U 2.5 | Over 2.5 | 7.50 | 🔴 GIGA FUN | 1 |\n"
+)
+
 
 def _match(settings: Settings, nom: str) -> int:
     return save(
@@ -224,6 +248,11 @@ ATTENDU = {
     # confiance, et son echec sort donc sous le meme type. C'est juste : les deux
     # se perdent par le meme geste — un collage qui s'arrete au tableau.
     "dossiers": ingestion.CONF,
+    # Le decoupage en sections ne se rejette pas en propre : ce qu'il decide est
+    # **quelles lignes du tableau sont lues**, donc son echec sort la ou une
+    # ligne de tableau se perd. Un rendu dont l'en-tete de tableau n'a pas
+    # survecu passe par `preview.ignored`, comme le format « tableau ».
+    "sections": ingestion.SELECTION,
 }
 
 FORMATS = {
@@ -237,6 +266,11 @@ FORMATS = {
     # qui est un defaut de collage. C'est exactement la distinction que la
     # migration 049 a du ajouter apres coup.
     "dossiers": (TABLEAU + "\n" + DOSSIERS, lambda preview: preview.opened.declared),
+    # **« Lu » se mesure sur les lignes de la section C**, et pas sur le total :
+    # c'est exactement ce que le defaut du lot 8 detruisait, en les faisant
+    # toutes passer pour exploratoires. Compter `len(preview.picks)` aurait rendu
+    # ce banc vert pendant la panne.
+    "sections": (SECTIONS, lambda preview: sum(not p.exploratory for p in preview.picks)),
 }
 
 
@@ -245,7 +279,7 @@ FORMATS = {
 def test_aucune_alteration_ne_produit_de_perte_silencieuse(
     format_name: str, alteration: str, migrated: Settings
 ) -> None:
-    """**Le banc, 4 formats × 11 altérations.**
+    """**Le banc, 6 formats × 11 altérations.**
 
     Un seul résultat est acceptable : soit le format est lu, soit son échec
     laisse une trace. La troisième issue — lu à moitié, ou pas lu du tout, sans
@@ -268,18 +302,20 @@ def test_aucune_alteration_ne_produit_de_perte_silencieuse(
     # accepter n'importe quelle trace ferait passer ce banc partout sans rien
     # verifier — l'assertion decrirait au lieu de contraindre.
     motifs = {reject.block_type for reject in preview.rejects}
-    trace = ATTENDU[format_name] in motifs or (format_name == "tableau" and preview.ignored)
+    trace = ATTENDU[format_name] in motifs or (
+        format_name in ("tableau", "sections") and bool(preview.ignored)
+    )
     assert lu or trace, (
         f"« {format_name} » sous « {alteration} » : ni lu, ni signalé — "
         "c'est exactement la perte silencieuse que ce banc interdit"
     )
 
 
-def test_le_banc_couvre_bien_cinq_formats_et_onze_alterations() -> None:
+def test_le_banc_couvre_bien_six_formats_et_onze_alterations() -> None:
     """**Le compte, ecrit pour qu'il ne derive pas en silence.** Un format ajoute
     a `FORMATS` sans entree dans `ATTENDU` tomberait sur une cle manquante ; une
     alteration retiree ferait baisser ce produit sans que personne le voie."""
-    assert len(FORMATS) == 5
+    assert len(FORMATS) == 6
     assert len(ALTERATIONS) == 11
     assert set(FORMATS) == set(ATTENDU), "tout format testé sait quel rejet le prouve"
 
