@@ -100,6 +100,18 @@ class Settings(BaseSettings):
     #: mesure le jour ou la retention de la source changerait.
     timeline_max_age_days: int = 90
 
+    #: La ligne `Ici` — ce que chaque joueur a fait dans le tournoi en cours.
+    #:
+    #: **Defaut a faux, et pour la meme raison que `serve_lines_enabled`.** La
+    #: coupe budget/lignes de service est deja jointe au 18/08 ; joindre une
+    #: troisieme variable a la meme date rendrait les trois effets
+    #: indissociables, et le `changelog_mesure` existe precisement pour qu'ils
+    #: se decoupent.
+    #:
+    #: Il se bascule apres quelques sessions, et sa **vraie date d'activation**
+    #: entre au journal des mesures — pas la date du commit.
+    current_event_line_enabled: bool = False
+
     #: Delai entre deux appels a `tennis-api.com`, en secondes.
     #:
     #: **Aucun en-tete de debit n'est servi par ce fournisseur** — ni

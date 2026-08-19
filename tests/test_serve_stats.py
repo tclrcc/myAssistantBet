@@ -1648,3 +1648,275 @@ async def test_la_reprise_leve_la_peremption_de_l_agregat(
 
     assert (sans.skipped, sans.refreshed) == (1, 0)
     assert (avec.skipped, avec.refreshed) == (0, 1)
+
+
+# -- La ligne `Ici` : le tournoi en cours ------------------------------------
+#
+# **Ce que `Parcours` ne peut pas dire.** Il nomme les adversaires et jamais les
+# resultats, parce qu'il sort de nos propres scans, qui programment sans
+# rapporter. Ici la source rapporte : le score est un fait.
+
+#: **Les deux tables ferment l'invariant `totalPointsWon`**, sans quoi
+#: `parse_matches_played` les ecarte : points de service gagnes + points de
+#: retour gagnes doit valoir le total annonce, des deux cotes. C'est le seul
+#: garde-fou qui rattache les colonnes adverses aux notres, et une fixture qui
+#: ne le respecte pas testerait le rejet au lieu du rendu.
+_STATS_1 = {
+    "firstServe": 30,
+    "firstServeOf": 50,
+    "aces": 3,
+    "doubleFaults": 2,
+    "winningOnFirstServe": 22,
+    "winningOnFirstServeOf": 30,
+    "winningOnSecondServe": 10,
+    "winningOnSecondServeOf": 20,
+    "breakPointsConverted": 2,
+    "breakPointsConvertedOf": 5,
+    "totalPointsWon": 48,  # 22 + 10 + (48 - 20 - 12)
+}
+_STATS_2 = {
+    "firstServe": 28,
+    "firstServeOf": 48,
+    "aces": 2,
+    "doubleFaults": 3,
+    "winningOnFirstServe": 20,
+    "winningOnFirstServeOf": 28,
+    "winningOnSecondServe": 12,
+    "winningOnSecondServeOf": 20,
+    "breakPointsConverted": 3,
+    "breakPointsConvertedOf": 6,
+    "totalPointsWon": 50,  # 20 + 12 + (50 - 22 - 10)
+}
+
+
+def _match_source(gagnant: str, perdant: str, jour: str, score: str, tournoi: int = 900) -> dict:
+    """Un match tel que la source le rend : **`player1` est le vainqueur**.
+
+    Recoupe sur 12 049 rencontres contre `tennis_matches` : la position est juste
+    a 99,98 %, quand le vainqueur deduit du nombre de sets ne l'est qu'a 98,85 %
+    — 15 de ses 16 erreurs etant des abandons, ou celui qui menait a perdu.
+    """
+    return {
+        "tournamentId": tournoi,
+        "date": f"{jour}T12:00:00.000Z",
+        "result": score,
+        "player1": {"name": gagnant, "stats": dict(_STATS_1)},
+        "player2": {"name": perdant, "stats": dict(_STATS_2)},
+        "tournament": {"id": tournoi, "name": "Tournoi", "court": {"name": "Hard"}},
+    }
+
+
+def _profil_tournoi(joueur: str, matchs: list[dict], settings: Settings) -> None:
+    """Archive une reponse `matches-played`. **Aucun appel** — c'est le contrat."""
+    import json as _json
+
+    from myassistantbet.providers.tennisapi import PREFIX, PROVIDER
+
+    execute(
+        "INSERT INTO api_responses (provider, endpoint, path, params, raw_json, sha256, "
+        "  http_status, fetched_at) VALUES (?, 'profile/matches-played', ?, '{}', ?, ?, 200, ?)",
+        (
+            PROVIDER,
+            f"{PREFIX}/profile/{joueur}/matches-played",
+            _json.dumps({"singles": matchs}),
+            f"sha-{joueur}",
+            "2026-08-18T06:00:00Z",
+        ),
+        settings=settings,
+    )
+
+
+def _tournoi(settings: Settings, jours: list[tuple[str, str, str]]) -> int:
+    """Une edition de tournoi en base — c'est elle qui dit quel tournoi se joue."""
+    for home, away, quand in jours:
+        _event(settings, "tennis_atp_us_open", home, away, quand)
+    row = db_query_one(settings)
+    return int(row["id"])
+
+
+def db_query_one(settings: Settings):
+    from myassistantbet import db
+
+    return db.query_one(
+        "SELECT id FROM competitions WHERE oddsapi_key = 'tennis_atp_us_open'", settings=settings
+    )
+
+
+def _avec_ligne(settings: Settings) -> Settings:
+    return settings.model_copy(update={"current_event_line_enabled": True})
+
+
+def test_la_ligne_ici_rend_les_resultats_du_tournoi_en_cours(migrated: Settings) -> None:
+    """**Le score est un fait, pas une deduction.** `Parcours` nomme les
+    adversaires et s'arrete la, parce qu'il sort de nos scans, qui programment
+    sans rapporter ; la source, elle, rapporte."""
+    competition = _tournoi(
+        migrated,
+        [
+            ("A", "X", "2026-08-14T12:00:00Z"),
+            ("A", "Y", "2026-08-16T12:00:00Z"),
+            ("A", "B", "2026-08-18T12:00:00Z"),
+        ],
+    )
+    _profil_tournoi(
+        "A",
+        [
+            _match_source("A", "X", "2026-08-14", "6-3 6-4"),
+            _match_source("Y", "A", "2026-08-16", "7-6(5) 6-2"),
+        ],
+        migrated,
+    )
+    _profil_tournoi("B", [], migrated)
+
+    lignes = serve_stats.here_lines(
+        "A", "B", "atp", competition, "2026-08-18T12:00:00Z", _avec_ligne(migrated)
+    )
+
+    assert [label for label, _ in lignes] == ["Ici"]
+    valeur = lignes[0][1]
+    assert "14/08 bat X 6-3 6-4" in valeur
+    # **Le score se lit du point de vue du joueur nomme**, comme `H2H` et
+    # `Aller` : la source l'ecrit du cote du vainqueur, et deux conventions dans
+    # le meme bloc se liraient a l'envers.
+    assert "16/08 perd contre Y 6-7(5) 2-6" in valeur
+    assert "service ici" in valeur and "pts)" in valeur
+
+
+def test_un_joueur_qui_entre_en_lice_le_dit(migrated: Settings) -> None:
+    """**Jamais un silence.** Un joueur qui entre en lice est un fait sur le
+    match — le fait dominant quand l'autre sort de trois tours — et un blanc se
+    lirait comme un defaut de collecte.
+
+    L'identifiant de tournoi lui vient de son adversaire : sans ce partage, un
+    entrant n'aurait aucune reference et sa ligne se tairait la ou elle a le plus
+    a dire.
+    """
+    competition = _tournoi(
+        migrated,
+        [("A", "X", "2026-08-14T12:00:00Z"), ("A", "B", "2026-08-18T12:00:00Z")],
+    )
+    _profil_tournoi("A", [_match_source("A", "X", "2026-08-14", "6-3 6-4")], migrated)
+    _profil_tournoi("B", [_match_source("B", "Z", "2026-08-05", "6-1 6-1", tournoi=700)], migrated)
+
+    lignes = serve_stats.here_lines(
+        "A", "B", "atp", competition, "2026-08-18T12:00:00Z", _avec_ligne(migrated)
+    )
+
+    assert "B aucun match dans ce tournoi" in lignes[0][1]
+    assert "Z" not in lignes[0][1], "le tournoi de la semaine passee n'est pas « ici »"
+
+
+def test_un_forfait_ne_se_rend_pas_comme_un_match_gagne(migrated: Settings) -> None:
+    """**Coherence avec `Non joue`.** Un match programme et non dispute ne doit
+    pas apparaitre comme joue, et le sens du forfait est dit : un tour gagne sans
+    jouer et un tour abandonne ne decrivent pas le meme joueur au tour suivant."""
+    competition = _tournoi(
+        migrated,
+        [("A", "X", "2026-08-16T12:00:00Z"), ("A", "B", "2026-08-18T12:00:00Z")],
+    )
+    _profil_tournoi("A", [_match_source("A", "X", "2026-08-16", "w/o")], migrated)
+    _profil_tournoi("B", [], migrated)
+
+    valeur = serve_stats.here_lines(
+        "A", "B", "atp", competition, "2026-08-18T12:00:00Z", _avec_ligne(migrated)
+    )[0][1]
+
+    assert "16/08 forfait de X" in valeur
+    assert "bat" not in valeur
+    # Un tapis vert n'apporte aucun point : la statistique de service se tait.
+    assert "service ici" not in valeur
+
+
+def test_la_ligne_ici_porte_la_date_de_son_releve(migrated: Settings) -> None:
+    """Sans elle, une liste qui s'arrete la veille se lit comme un parcours
+    complet — constate sur le rendu reel du 19/08, ou un match joue apres le
+    releve manquait sans qu'un mot le dise."""
+    competition = _tournoi(
+        migrated,
+        [("A", "X", "2026-08-16T12:00:00Z"), ("A", "B", "2026-08-18T12:00:00Z")],
+    )
+    _profil_tournoi("A", [_match_source("A", "X", "2026-08-16", "6-3 6-4")], migrated)
+    _profil_tournoi("B", [], migrated)
+
+    valeur = serve_stats.here_lines(
+        "A", "B", "atp", competition, "2026-08-18T12:00:00Z", _avec_ligne(migrated)
+    )[0][1]
+
+    assert "[releve au 18/08]" in valeur
+
+
+def test_la_ligne_ici_ne_sort_pas_tant_que_le_drapeau_est_bas(migrated: Settings) -> None:
+    """Le drapeau est bas par defaut : la coupe budget/lignes de service est deja
+    jointe au 18/08, et une troisieme variable a la meme date rendrait les trois
+    effets indissociables."""
+    competition = _tournoi(
+        migrated,
+        [("A", "X", "2026-08-16T12:00:00Z"), ("A", "B", "2026-08-18T12:00:00Z")],
+    )
+    _profil_tournoi("A", [_match_source("A", "X", "2026-08-16", "6-3 6-4")], migrated)
+
+    assert (
+        serve_stats.here_lines("A", "B", "atp", competition, "2026-08-18T12:00:00Z", migrated) == []
+    )
+
+
+def test_la_ligne_ici_ne_demande_rien_au_reseau(migrated: Settings) -> None:
+    """Le contrat du module : ce bloc se rend a chaque prompt et a chaque
+    ouverture de fiche. **Aucune route n'est simulee** — le moindre appel ferait
+    echouer ce test."""
+    competition = _tournoi(
+        migrated,
+        [("A", "X", "2026-08-16T12:00:00Z"), ("A", "B", "2026-08-18T12:00:00Z")],
+    )
+    _profil_tournoi("A", [_match_source("A", "X", "2026-08-16", "6-3 6-4")], migrated)
+    _profil_tournoi("B", [], migrated)
+
+    lignes = serve_stats.here_lines(
+        "A", "B", "atp", competition, "2026-08-18T12:00:00Z", _avec_ligne(migrated)
+    )
+
+    assert lignes and "bat X" in lignes[0][1]
+
+
+def test_le_verbe_et_le_score_ne_peuvent_pas_se_contredire(migrated: Settings) -> None:
+    """**L'invariant, plutot qu'une valeur.** Une selection lue a l'envers est
+    l'erreur la plus couteuse qu'un bloc de tennis puisse produire : le test
+    verifie que le camp annonce par le verbe est celui qui mene au score, quel
+    que soit le cote depuis lequel la source ecrit."""
+    competition = _tournoi(
+        migrated,
+        [
+            ("A", "X", "2026-08-14T12:00:00Z"),
+            ("A", "Y", "2026-08-16T12:00:00Z"),
+            ("A", "B", "2026-08-18T12:00:00Z"),
+        ],
+    )
+    _profil_tournoi(
+        "A",
+        [
+            _match_source("A", "X", "2026-08-14", "6-3 6-4"),
+            _match_source("Y", "A", "2026-08-16", "7-6(5) 6-2"),
+        ],
+        migrated,
+    )
+    _profil_tournoi("B", [], migrated)
+
+    valeur = serve_stats.here_lines(
+        "A", "B", "atp", competition, "2026-08-18T12:00:00Z", _avec_ligne(migrated)
+    )[0][1]
+
+    for morceau in valeur.split(" | "):
+        if "bat" not in morceau and "perd contre" not in morceau:
+            continue
+        sets = [jeton for jeton in morceau.split() if serve_stats._SET.match(jeton) is not None]
+        gagnes = sum(
+            1
+            for jeton in sets
+            if int(serve_stats._SET.match(jeton).group(1))
+            > int(serve_stats._SET.match(jeton).group(2))
+        )
+        perdus = len(sets) - gagnes
+        if "perd contre" in morceau:
+            assert perdus > gagnes, f"« {morceau} » annonce une defaite sur un score gagnant"
+        else:
+            assert gagnes > perdus, f"« {morceau} » annonce une victoire sur un score perdant"

@@ -13,7 +13,16 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from ..db import connect
 from ..providers.oddsapi import DEFAULT_BOOKMAKER, SCAN_MARKETS
-from . import coverage, dossier, elo, tennis_history, tennis_load, tennis_round, weather
+from . import (
+    coverage,
+    dossier,
+    elo,
+    serve_stats,
+    tennis_history,
+    tennis_load,
+    tennis_round,
+    weather,
+)
 from .competitions import is_knockout
 from .context import (
     CAUSE_BLOCK_NOTES,
@@ -490,6 +499,22 @@ def context_block(
         # parcours, et le lecteur doit voir les deux d'un coup d'oeil.
         lines += tennis_load.unplayed_lines(
             home, away, competition_id, commence_time, oddsapi_key, settings
+        )
+        # **Ce que `Parcours` ne peut pas dire.** Il nomme les adversaires et
+        # jamais les resultats, parce qu'il sort de nos propres scans, qui
+        # programment sans rapporter ; la source, elle, rapporte. Aucun appel :
+        # la charge utile est deja archivee par la passe d'entretien.
+        #
+        # Posee **apres** `Non joue` et non entre lui et `Parcours` : ces deux-la
+        # se completent et doivent rester adjacents — un forfait retire un nom du
+        # parcours, et le lecteur doit voir les deux d'un coup d'oeil.
+        lines += serve_stats.here_lines(
+            home,
+            away,
+            serve_stats.circuit_of(oddsapi_key or ""),
+            competition_id,
+            commence_time,
+            settings,
         )
         # L'historique des matchs joues : confrontations directes, palmares dans
         # ce tournoi, forme, bilan de surface et abandons.

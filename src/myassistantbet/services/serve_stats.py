@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import unicodedata
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -2131,3 +2132,366 @@ async def collect_games(
     if total >= target:
         tally.reached = True
     return tuple(jeux), tally, rejets
+
+
+# -- Le tournoi en cours -----------------------------------------------------
+#
+# **La consigne de recherche que le gabarit appelle « la plus rentable du lot »
+# porte sur une information que l'application collecte deja.** Mesure du
+# 18/08/2026, reprise et affinee ici : sur les profils dont un match du tournoi
+# en cours figure au board, `matches-played` sert ce match dans 99 % des cas,
+# statistiques de service comprises (173 sur 180).
+#
+# Ce que la ligne `Ici` ajoute au bloc, et qu'aucune autre ne porte :
+#
+# - `Parcours` nomme les adversaires **et jamais les resultats**, parce qu'il
+#   sort de nos propres scans, qui programment sans rapporter. Ici la source
+#   rapporte : le score est un fait, pas une deduction ;
+# - `Service` et `Retour` sont des agregats sur **52 semaines**. Un joueur qui
+#   sert a 52 % de premieres depuis trois jours ne s'y voit pas ;
+# - `Fraicheur` decrit le retard de `tennis-data.co.uk`, une source hebdomadaire
+#   et **distincte**. La confusion entre les deux a deja coute une conclusion.
+
+#: Ce que la source **ne sert pas**, verifie le 19/08/2026 sur les 27 242 matchs
+#: archives : **aucun champ de duree**, sous aucun nom. Le lot 4 l'avait etabli
+#: pour `event/get`, c'est vrai aussi de `matches-played`. `best_of` est present
+#: dans le schema et nul sur 27 242 lignes ; `draw_size` aussi.
+#:
+#: `roundId` est servi a 100 %, mais c'est un **entier opaque** : seize valeurs
+#: observees, aucun libelle nulle part dans la charge utile, et `draw` est un
+#: numero de place dans le tour et non une taille de tableau. Il **ordonne** les
+#: tours a l'interieur d'un tournoi — verifie sur Cincinnati 2026, 1 → 3 → 4 → 5
+#: → 6 par date croissante — mais il ne les **nomme** pas. La ligne porte donc la
+#: date, qui est un fait, plutot qu'un « Q1 » qui serait une invention. Meme
+#: regle que partout : rien ne se deduit d'un libelle, et ici il n'y a meme pas
+#: de libelle a deduire.
+UNPLAYED_MARKS = {"w/o": "forfait", "ret.": "abandon"}
+
+#: Un set du champ `result`, tie-break compris : `6-4`, `7-6(5)`.
+_SET = re.compile(r"^(\d+)-(\d+)(\((\d+)\))?$")
+
+
+@dataclass(frozen=True)
+class TournamentMatch:
+    """Un match du tournoi en cours, du point de vue d'un joueur.
+
+    `won` vaut None quand la rencontre n'a pas ete disputee : un forfait n'a pas
+    de vainqueur sur le court, et le marquer « gagne » ferait entrer dans la
+    ligne un match que `Non joue` declare non joue. Les deux lignes doivent dire
+    la meme chose du meme fait.
+    """
+
+    played_on: str
+    opponent: str
+    score: str
+    won: bool | None
+    #: `forfait` ou `abandon`, vide sur une rencontre menee a son terme.
+    mark: str = ""
+    #: Sur un forfait, qui a passe le tour. **`won` reste None** — personne n'a
+    #: gagne sur le court — mais le sens du forfait est une information a part
+    #: entiere, et la position le donne : la source range le qualifie en
+    #: `player1`, forfait compris. Verifie sur un cas reel du 18/08, O'Connell —
+    #: Fonseca, ou `Non joue` dit « forfait adverse » depuis nos propres scans et
+    #: tombe sur la meme lecture.
+    advanced: bool | None = None
+    line: ServeLine | None = None
+
+    @property
+    def contested(self) -> bool:
+        """Un tapis vert n'est pas un match joue — meme regle qu'`Usure`."""
+        return self.mark != "forfait"
+
+
+def _reverse_score(score: str) -> str:
+    """`6-1 7-6(5)` vu de l'autre cote : `1-6 6-7(5)`.
+
+    **La source ecrit le score du point de vue du vainqueur**, et le bloc doit
+    l'ecrire du point de vue du joueur nomme : c'est la convention de `H2H` et
+    d'`Aller`, et deux conventions dans le meme bloc se liraient a l'envers. Le
+    nombre du tie-break reste attache a son set — il compte les points du perdant
+    du jeu decisif, quel que soit le cote depuis lequel on lit.
+    """
+    sortie = []
+    for jeton in str(score).split():
+        found = _SET.match(jeton)
+        if found is None:
+            sortie.append(jeton)
+            continue
+        sortie.append(f"{found.group(2)}-{found.group(1)}{found.group(3) or ''}")
+    return " ".join(sortie)
+
+
+def _instant(value: str) -> datetime | None:
+    """Un horodatage de l'une ou l'autre source, compare a l'autre.
+
+    **Deux ecritures du meme instant ne se comparent pas comme des chaines**, et
+    c'est un test qui l'a trouve : la source ecrit `2026-08-14T12:00:00.000Z`,
+    nos evenements `2026-08-14T12:00:00Z`, et le point trie avant le `Z`. Le
+    premier match d'un tournoi tombait donc juste avant le debut de sa propre
+    fenetre — silencieusement, et seulement pour lui.
+    """
+    try:
+        moment = datetime.fromisoformat(str(value or "").replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=UTC)
+
+
+def _tournament_matches(
+    payload: Any, name: str, tournament_id: int, until: str
+) -> list[TournamentMatch]:
+    """Les matchs d'un joueur dans **ce** tournoi, avant `until`, du plus ancien.
+
+    **Le vainqueur se lit sur la position et non sur le score**, et c'est la
+    mesure qui l'impose contre l'intuition. Les deux lectures ont ete recoupees
+    contre `tennis_matches` sur 12 049 rencontres :
+
+    - `player1` est le vainqueur sur **12 046, soit 99,98 %** ;
+    - le vainqueur deduit du nombre de sets gagnes n'est juste que sur 98,85 %,
+      et **15 de ses 16 erreurs sont des abandons** — sur un `4-6 3-6 3-1 ret.`,
+      celui qui menait au tableau d'affichage est celui qui a perdu.
+
+    Lire le fait dans la donnee plutot que dans une convention de position est la
+    regle du projet ; ici la mesure dit que la donnee est la moins fiable des
+    deux, precisement parce que `ret.` casse le sens du score sans toucher a la
+    position. Le reflexe reste juste, la mesure tranche autrement.
+    """
+    matchs: list[TournamentMatch] = []
+    for match in ((payload or {}).get("singles") or []) if isinstance(payload, dict) else []:
+        if not isinstance(match, dict) or match.get("tournamentId") != tournament_id:
+            continue
+        jour = str(match.get("date") or "")[:10]
+        quand, borne = _instant(match.get("date")), _instant(until)
+        if not jour or quand is None or borne is None or quand >= borne:
+            continue
+        cotes = _side(match, name)
+        if cotes is None:
+            continue
+        mine, _theirs = cotes
+        adversaire = str(
+            (match.get("player2" if mine == "player1" else "player1") or {}).get("name") or ""
+        )
+        brut = str(match.get("result") or "").strip()
+        marque = next((label for jeton, label in UNPLAYED_MARKS.items() if jeton in brut), "")
+        score = " ".join(jeton for jeton in brut.split() if jeton not in UNPLAYED_MARKS)
+        premier = mine == "player1"
+        gagne = None if marque == "forfait" else premier
+        lignes, _ = parse_matches_played(
+            {"singles": [match]}, name, _int(match.get("tournamentId"))
+        )
+        matchs.append(
+            TournamentMatch(
+                played_on=jour,
+                opponent=adversaire,
+                score=score if gagne is not False else _reverse_score(score),
+                won=gagne,
+                mark=marque,
+                advanced=premier if marque == "forfait" else None,
+                line=lignes[0] if lignes else None,
+            )
+        )
+    return sorted(matchs, key=lambda item: item.played_on)
+
+
+def archived_profile(canonical: str, settings: Settings) -> tuple[Any, str]:
+    """La derniere reponse `matches-played` archivee d'un joueur, et sa date.
+
+    **Aucun appel.** Meme idiome qu'`archived_timeline`, et pour la meme raison :
+    ce bloc se rend a chaque generation de prompt et a chaque ouverture d'une
+    fiche de match, donc il ne peut pas etre suspendu a un appel reseau.
+    """
+    chemin = f"{PREFIX}/profile/{canonical}/matches-played"
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT raw_json, fetched_at FROM api_responses "
+            " WHERE provider = ? AND path = ? ORDER BY id DESC LIMIT 1",
+            (PROVIDER, chemin),
+        ).fetchone()
+    if row is None:
+        return None, ""
+    try:
+        return json.loads(str(row["raw_json"])), str(row["fetched_at"] or "")
+    except (TypeError, ValueError):
+        return None, ""
+
+
+def _tournament_id(payload: Any, name: str, window: tuple[str, str]) -> int:
+    """L'identifiant source du tournoi en cours, lu sur les matchs du joueur.
+
+    **Il se lit dans la fenetre de notre edition, jamais sur le dernier match du
+    joueur.** Un joueur qui entre en lice n'a rien joue ici : son dernier tournoi
+    est celui de la semaine passee, et le prendre ferait rendre les matchs de
+    Toronto sous le titre « ici ». La fenetre vient de nos propres evenements —
+    `tennis_round.edition_for`, deja ecrit — et c'est notre board qui dit quel
+    tournoi se joue, pas le calendrier du joueur.
+
+    Une fois l'identifiant connu, **tous** les matchs qui le portent sont pris, y
+    compris ceux joues avant notre premier scan : c'est precisement ce que
+    `Parcours` ne peut pas faire, et la raison d'etre de cette ligne.
+    """
+    bas, haut = _instant(window[0]), _instant(window[1])
+    if bas is None or haut is None:
+        return 0
+    compte: dict[int, int] = {}
+    for match in ((payload or {}).get("singles") or []) if isinstance(payload, dict) else []:
+        if not isinstance(match, dict):
+            continue
+        quand = _instant(match.get("date"))
+        if quand is None or not (bas <= quand < haut) or _side(match, name) is None:
+            continue
+        identifiant = _int(match.get("tournamentId"))
+        if identifiant:
+            compte[identifiant] = compte.get(identifiant, 0) + 1
+    if not compte:
+        return 0
+    return max(compte, key=lambda cle: compte[cle])
+
+
+#: Le drapeau de la ligne `Ici`. **Bas par defaut**, meme raison que
+#: `SERVE_LINES_ENABLED` : la coupe budget/lignes de service est deja jointe au
+#: 18/08, et joindre une troisieme variable a la meme date rendrait les trois
+#: effets indissociables. Le `changelog_mesure` existe pour qu'ils se decoupent.
+CURRENT_EVENT_LINE_ENABLED = "current_event_line_enabled"
+
+
+def _here_result(match: TournamentMatch) -> str:
+    """`17/08 bat Sakkari 6-3 6-4`, ou ce qui n'a pas eu lieu.
+
+    Le verbe porte l'issue et le score est **toujours du point de vue du joueur
+    nomme** : les deux se contredisent si l'un des deux se retourne, et c'est
+    l'invariant que le test verifie plutot qu'une valeur.
+    """
+    quand = _short_day(match.played_on)
+    if match.won is None:
+        # **Le sens du forfait est dit, jamais tu.** « forfait Fonseca » laisse
+        # deviner qui est sorti, et c'est precisement le fait que la ligne
+        # apporte : un tour gagne sans jouer et un tour abandonne ne decrivent
+        # pas le meme joueur au tour suivant.
+        sens = "forfait de" if match.advanced else "forfait contre"
+        return f"{quand} {sens} {match.opponent}".strip()
+    verbe = "bat" if match.won else "perd contre"
+    fin = f" ({match.mark})" if match.mark else ""
+    return f"{quand} {verbe} {match.opponent} {match.score}{fin}".strip()
+
+
+def _here_serve(matches: list[TournamentMatch]) -> str:
+    """`service ici 58.2% 1re · 68.4% s/1re · 12 df (3 matchs, 249 pts)`.
+
+    **Somme des comptes, jamais moyenne de pourcentages** — la regle du module,
+    et elle compte double ici : trois matchs de longueurs tres differentes
+    donneraient une moyenne qui ne decrit aucun d'eux.
+
+    Le denominateur est en **points**, pas en matchs : c'est lui qui dit si le
+    chiffre tient. La date du relevé, elle, est **portee une seule fois par
+    joueur**, sur le fragment des resultats qui vient au-dessus : elle qualifie
+    les deux, et l'ecrire deux fois couterait une repetition par bloc.
+    """
+    lignes = [item.line for item in matches if item.line is not None]
+    if not lignes:
+        return ""
+    premieres = sum(ligne.first_serve for ligne in lignes)
+    points = sum(ligne.first_serve_of for ligne in lignes)
+    gagnes = sum(ligne.won_first for ligne in lignes)
+    sur_premiere = sum(ligne.won_first_of for ligne in lignes)
+    doubles = sum(ligne.double_faults for ligne in lignes)
+    if not points:
+        return ""
+    morceaux = [f"{_pct(_rate(premieres, points))} 1re"]
+    if sur_premiere:
+        morceaux.append(f"{_pct(_rate(gagnes, sur_premiere))} s/1re")
+    morceaux.append(f"{doubles} df")
+    compte = f"{len(lignes)} match{'s' if len(lignes) > 1 else ''}, {points} pts"
+    return f"service ici {' · '.join(morceaux)} ({compte})"
+
+
+def _here_for(
+    player: str,
+    circuit: str,
+    window: tuple[str, str],
+    until: str,
+    settings: Settings,
+    tournament_id: int = 0,
+) -> tuple[list[str], int]:
+    """Les fragments d'un joueur, et l'identifiant de tournoi qu'il a servi."""
+    identity = load_identity(player, circuit, settings)
+    canonical = identity.canonical if identity and identity.resolved else player
+    charge, releve = archived_profile(canonical, settings)
+    if charge is None:
+        return [], tournament_id
+    identifiant = tournament_id or _tournament_id(charge, canonical, window)
+    if not identifiant:
+        return [], 0
+    matchs = _tournament_matches(charge, canonical, identifiant, until)
+    if not matchs:
+        # **« aucun match dans ce tournoi » et jamais un silence.** Un joueur qui
+        # entre en lice est un fait sur le match — c'est meme le fait dominant
+        # quand l'autre sort de trois tours — et un blanc se lirait comme un
+        # defaut de collecte.
+        horodatage = f" [releve au {_short_day(releve)}]" if releve else ""
+        return [f"{player} aucun match dans ce tournoi{horodatage}"], identifiant
+    parcours = " | ".join(_here_result(item) for item in matchs)
+    # **La ligne porte la date de son releve, comme `Parcours` porte la fenetre
+    # de nos scans.** Sans elle, une liste s'arretant la veille se lit comme un
+    # parcours complet : constate sur le rendu reel du 19/08, ou le match de
+    # Jaime Faria contre Adam Walton, joue apres le releve, manquait sans qu'un
+    # mot le dise — et `Parcours`, lui, le portait.
+    #
+    # Elle est **par joueur** : deux profils se rafraichissent a deux instants
+    # differents, et une date de lot ferait affirmer sur l'un ce qui n'est vrai
+    # que de l'autre.
+    horodatage = f" [releve au {_short_day(releve)}]" if releve else ""
+    fragments = [f"{player} {parcours}{horodatage}"]
+    service = _here_serve([item for item in matchs if item.contested])
+    if service:
+        fragments.append(service)
+    return fragments, identifiant
+
+
+def here_lines(
+    home: str,
+    away: str,
+    circuit: str,
+    competition_id: int | None,
+    commence_time: str,
+    settings: Settings | None = None,
+) -> list[tuple[str, str]]:
+    """La ligne `Ici` : ce que chaque joueur a fait dans **ce** tournoi.
+
+    Aucun appel : la charge utile `matches-played` est deja archivee par la passe
+    d'entretien, et c'est elle qu'on relit. Rien n'est rendu tant que le drapeau
+    `CURRENT_EVENT_LINE_ENABLED` est bas.
+
+    **L'identifiant de tournoi se resout une fois pour les deux joueurs.** Celui
+    qui a joue le donne a celui qui entre en lice : sans ce partage, un entrant
+    n'aurait aucun tournoi de reference et sa ligne se tairait la ou elle a le
+    plus a dire.
+    """
+    settings = settings or get_settings()
+    if not getattr(settings, CURRENT_EVENT_LINE_ENABLED, False) or not circuit:
+        return []
+    from .tennis_round import _edition_in_base
+
+    edition = _edition_in_base(competition_id, commence_time, settings)
+    if not edition.matches:
+        return []
+    window = (edition.matches[0][0], commence_time)
+
+    fragments: list[str] = []
+    identifiant = 0
+    # Deux passes : la premiere resout le tournoi sur celui des deux qui a joue,
+    # la seconde rend les fragments dans l'ordre du bloc — domicile d'abord,
+    # comme partout.
+    rendus: dict[str, list[str]] = {}
+    for joueur in (home, away):
+        if joueur:
+            rendus[joueur], identifiant = _here_for(
+                joueur, circuit, window, commence_time, settings, identifiant
+            )
+    for joueur in (home, away):
+        if joueur and not rendus.get(joueur) and identifiant:
+            rendus[joueur], _ = _here_for(
+                joueur, circuit, window, commence_time, settings, identifiant
+            )
+    for joueur in (home, away):
+        fragments.extend(rendus.get(joueur) or [])
+    return [("Ici", "\n".join(fragments))] if fragments else []

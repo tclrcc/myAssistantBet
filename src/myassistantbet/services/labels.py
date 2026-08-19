@@ -140,6 +140,12 @@ CONTEXT_ICONS = {
     "Retour": "jauge",
     "Jeux": "relief",
     "Ecart": "relief",
+    # Ce que le joueur a fait dans **ce** tournoi. Meme echelon que `Parcours` et
+    # `Tour` — les trois situent un joueur dans un tableau — et c'est voulu : la
+    # ligne prolonge `Parcours` en lui ajoutant ce qu'il ne peut pas porter, le
+    # resultat. Elle entre ici **le jour ou elle est ecrite**, comme les quatre
+    # lignes de service : huit libelles ont deja sorti sans pictogramme.
+    "Ici": "echelons",
     "Historique": "horloge",
     # Ce que le retard de l'historique coute en matchs. Meme horloge que la ligne
     # dont elle tire la consequence : les deux parlent du temps, pas du match.
