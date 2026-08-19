@@ -1,38 +1,33 @@
-# ÉTAT AU 19/08/2026, 23h00 — à lire en premier
+# ÉTAT AU 19/08/2026, 23h45 — à lire en premier
 
 **En service** : schéma **64**, `SERVE_LINES_ENABLED=1`,
 `CURRENT_EVENT_LINE_ENABLED=1`.
 
-**Ce lot ne construit presque rien, et c'est son résultat.** Trois trous de
-contenu ont été mesurés avant d'être comblés ; **deux se ferment sur une branche
-« nulle part »**, et la mesure contredit le brief sur les deux.
+**Fin de journée. Trois points, aucun ajout de fonctionnalité.**
 
-| § | Question | Réponse mesurée |
-| --- | --- | --- |
-| §1 | l'heure de coup d'envoi tennis | la source ne sert **ni court ni rang** ; son seul champ d'heure est un **marqueur de session** — 77 matchs à 11:00 |
-| §2 | le bilan cartons de l'arbitre | **145 arbitres pour 147 matchs**, médiane 1, **zéro à 5 matchs**. Et aucun carton par match, aucun penalty |
-| §3 | les alertes météo officielles | la source existe, gratuite, CC BY — mais **le filtrage régional n'est pas atteignable** sans table tenue à la main |
-| §4 | la variante A | **appliquée**, +118 tokens |
-| §5 | la durée d'un match de tennis | **non**, définitivement. 153 clés inspectées |
+1. **Le bilan cartons de l'arbitre devient conditionnel** — il ne se cherche que
+   sur un marché de cartons. Mesure du lot 11 : huit arbitres, huit « non
+   trouvé ». **+72 tokens.**
+2. **L'heure d'un bloc tennis porte « (estimée) »** — aucune source accessible ne
+   sert le court ni le rang, donc elle est invérifiable. **+92 tokens**, plus ~3
+   par bloc tennis. **L'ancrage de session n'est pas rendu** : `timezone` et
+   `city` sont vides sur les quatre compétitions de tennis, et le déduire d'un
+   libellé est interdit.
+3. **La purge des artefacts temporaires tourne**, et la fuite qui les créait est
+   fermée — elle était dans `tests/helpers.migre_jusqu_a`.
 
-**Le seul changement de comportement** est la puce de recherche tennis
-(variante A). C'est la **troisième** variable de gabarit active, et sa coupe
-**n'est pas isolée** de celle de la ligne `Ici` : les deux portent le 19/08.
+**Quatre changements de gabarit portent le 19/08** — lignes de service, ligne
+`Ici`, variante A, et ces deux-ci. **Leurs effets ne sont pas isolables.** C'est
+la limite à connaître avant de lire un écart de résidu autour de cette date.
 
-**Le §1 a failli produire un faux résultat, et c'est la leçon du lot.** En
-confrontant notre `commence_time` au `startTimestamp` de `tennis-api`, 20
-sélections changeaient de camp — toutes vers « tardive », faisant passer la
-population du §5a de 52 à 72. **C'était un artefact** : `startTimestamp` est un
-marqueur de session, pas un coup d'envoi. **Zéro sélection change de camp sur une
-base défendable, et le verdict du §5a du lot 10 tient.**
+**Le cadre pèse 66 % d'un prompt de taille médiane** (12 390 tokens de cadre,
+810 par bloc, lot médian de 8 blocs). Il a été multiplié par **7,6 en quinze
+jours**. C'est une lecture, et le §2 du lot 12 ne conclut rien.
 
-**Ce qui reste ouvert** :
-
-- la **reformulation de la puce `Arbitre`**, qui demande une recherche
-  n'aboutissant jamais. C'est un arbitrage, pas une conséquence automatique ;
-- les **alertes météo**, si une table EMMA_ID ↔ ville est un jour jugée
-  soutenable — ou si une source sert des polygones ;
-- rien ne surveille le disque ; la convention est dans `CONTRIBUTING.md`.
+**Le seul chantier restant identifié** : la table `EMMA_ID` par pays, qui
+apporterait un fait de **niveau 1** aux blocs football via les alertes météo
+officielles. Elle mérite une session dédiée — de la saisie manuelle sur une
+quinzaine de pays, faite tard, est de la saisie à revérifier.
 
 **La passe de timelines tourne**, et se reprend sans état :
 
@@ -5068,3 +5063,213 @@ Le projet a une règle pour ça depuis le lot 8 (« cherchez l'identifiant ») e
 autre depuis le lot 9 (« un champ dont le nom évoque une date peut être un
 entier »). En voici la troisième face : **un champ dont la valeur est plausible
 peut décrire un autre objet que celui qu'on croit mesurer.**
+
+---
+
+# DIAGNOSTIC — lot 12 : clôture de soirée
+
+Relevé du **19/08/2026**. Lot court, trois points, aucun n'ajoute de
+fonctionnalité. Arbre propre au démarrage, aucune modification concurrente.
+
+---
+
+## §1 — Les deux reformulations du lot 11, appliquées
+
+### §1a — Le bilan de l'arbitre devient conditionnel
+
+La puce demandait, sur **tous** les blocs football, de chercher le bilan cartons
+et penaltys de l'arbitre. Le lot 11 a mesuré pourquoi elle n'aboutit jamais :
+**145 arbitres pour 147 matchs** en base (médiane 1, maximum 2, zéro à cinq
+matchs), et **zéro carton par match ou penalty** collecté. Huit arbitres sur deux
+sessions réelles, huit « bilan non trouvé ».
+
+Elle ne se cherche désormais que **si la sélection porte sur un marché de
+cartons**. Ailleurs, connaître les habitudes de l'arbitre ne débouche sur aucune
+sélection possible : la requête est dépensée pour rien, et une session en a peu.
+
+**La ligne `Arbitre` ne bouge pas.** Le nom reste une économie de recherche — il
+évite une requête pour savoir qui arbitre. C'est la consigne de creuser qui
+devient conditionnelle, pas la donnée.
+
+**Coût : +72 tokens.**
+
+### §1b — L'heure d'un bloc tennis est annoncée comme estimée
+
+Deux blocs d'une session du 16/08 affichaient une heure fausse de deux à trois
+heures. Le lot 11 a établi que ce n'est **pas** un défaut de collecte : aucune
+source accessible ne sert le court ni le rang dans le programme, et le seul champ
+d'heure de `tennis-api` est un **marqueur de session** — 77 matchs à 11:00.
+
+L'heure est donc **invérifiable**, et une heure au quart d'heure près se lit comme
+une heure ferme. Elle porte `(estimée)`, et le préambule cesse de conditionner
+l'imprécision à un tournoi perturbé : elle est structurelle, le tournoi perturbé
+ne fait que l'agrandir.
+
+**La mention ne vise que le tennis, et la différence est le point.** Un coup
+d'envoi de football est fixé à l'avance, et un report s'y dit déjà par
+`_shift_line`. Marquer les deux ferait de la mention un décor, et elle cesserait
+d'être lue.
+
+**Coût : +92 tokens de cadre, plus ~3 par bloc tennis.**
+
+### L'ancrage de session n'est pas rendu, et c'est mesuré
+
+La formulation rédigée au lot 11 proposait trois propriétés :
+`(estimée)`, l'ancrage de session (`à partir de 20:00 locales`), et
+`rang sur le court inconnu`. **Seule la première est appliquée.**
+
+| Compétition tennis | `timezone` | `city` | Matchs |
+| --- | --- | --- | ---: |
+| `tennis_atp_cincinnati_open` | **vide** | **vide** | 122 |
+| `tennis_wta_cincinnati_open` | **vide** | **vide** | 112 |
+| `tennis_atp_canadian_open` | **vide** | **vide** | 78 |
+| `tennis_wta_canadian_open` | **vide** | **vide** | 63 |
+
+Écrire « 20:00 **locales** » demanderait un fuseau, et le déduire de « Cincinnati
+Open » est exactement ce que `CLAUDE.md` interdit **nommément** pour cette
+colonne : *« rien ne se déduit d'un libellé, même règle que la surface et le
+niveau »*. Le brief prévoyait le cas — *« si l'ancrage n'est pas disponible, la
+mention `(estimée)` seule est déjà la correction »*.
+
+Quant à `rang sur le court inconnu` : c'est un **constat de lot**, vrai sur tous
+les blocs tennis. Le répéter par bloc reproduirait le défaut que
+`render.common_unplayable` a corrigé — *« le relevé commun au lot se dit une
+fois, pas vingt-quatre »*. Il vit donc dans le préambule.
+
+### §1c — Le coût, et le troisième écart d'estimation n'a pas eu lieu
+
+| | Tokens |
+| --- | ---: |
+| gabarit avant le lot | 21 224 |
+| après §1a | 21 296 (**+72**) |
+| après §1b | 21 388 (**+92**) |
+| **total du lot** | **+164** |
+
+Le brief demandait de mesurer chaque reformulation **séparément**, parce que la
+variante A avait coûté +118 là où le lot 8 annonçait « environ le même ». Les deux
+coûts sont ici mesurés avant d'être annoncés, et il n'y a pas de troisième écart.
+
+Une entrée `changelog_mesure` (#24) dit que **les deux arrivent le même jour** et
+ne sont donc isolables ni l'une de l'autre, ni de la variante A, ni de la ligne
+`Ici`.
+
+---
+
+## §2 — Le coût fixe du gabarit, relu
+
+**Lecture, pas chantier.** Rien n'est conclu, aucune coupe n'est proposée.
+
+| Jour | Prompts | Blocs | Cadre | / bloc | Changement de cadre |
+| --- | ---: | ---: | ---: | ---: | --- |
+| 04/08 | 16 | 138 | **1 621** | 62 | |
+| 05/08 | 16 | 92 | 3 159 | 97 | |
+| 06/08 | 20 | 324 | 3 605 | 240 | |
+| 07/08 | 5 | 37 | 5 501 | 369 | |
+| 08/08 | 7 | 54 | 6 398 | 419 | |
+| 09/08 | 16 | 99 | 5 996 | 483 | |
+| 10/08 | 6 | 23 | 8 140 | 576 | |
+| 11/08 | 4 | 26 | 7 943 | 579 | |
+| 12/08 | 10 | 75 | 8 279 | 573 | |
+| 13/08 | 10 | 119 | 10 230 | 741 | |
+| 14/08 | 17 | 168 | 11 620 | 556 | |
+| 15/08 | 19 | 215 | 12 037 | 678 | *lot 0 — état antérieur* |
+| 16/08 | 2 | 30 | **16 967** | 692 | |
+| 17/08 | 4 | 24 | 12 340 | 650 | *budget de recherche à 10* |
+| 18/08 | 6 | 36 | 12 426 | 840 | *coupe jointe : budget + lignes de service* |
+| 19/08 | 1 | 9 | 13 808 | 818 | *ligne `Ici`, variante A, et les deux de ce lot* |
+
+**La part du cadre.** Sur les quinze derniers prompts, le cadre pèse **12 390
+tokens** et un bloc **810**. Le lot médian des 154 prompts découpés fait **8
+blocs**. Un prompt médian pèse donc ~18 900 tokens, **dont 66 % de cadre**.
+
+Le cadre a été multiplié par **7,6** en quinze jours — de 1 621 à 12 390.
+
+Trois remarques de lecture, et aucune n'est une conclusion :
+
+- **le pic du 16/08 (16 967) porte sur deux prompts seulement.** La médiane
+  journalière suit un prompt aberrant quand la journée n'en compte que deux ;
+  c'est pourquoi le module la calcule en médiane et pourquoi cette ligne-ci ne se
+  lit pas comme une marche ;
+- **les marches ne s'alignent pas toutes sur une entrée du journal.** La montée de
+  1 621 à 8 279 court du 04 au 12/08, avant que `changelog_mesure` existe (première
+  entrée : 15/08). Cette partie de la courbe **n'est pas décomposable**, et rien ne
+  la rendra telle ;
+- **le coût par bloc a grossi aussi**, de 62 à 810 : le cadre n'explique pas tout.
+
+Le tableau du §15 du lot 5 — les cas décrits par le gabarit et jamais rencontrés —
+existe déjà pour arbitrer, et c'est un arbitrage.
+
+---
+
+## §3 — La purge des artefacts temporaires
+
+### La fuite était dans le dépôt
+
+**Le code applicatif ne crée presque rien dans `/tmp`** — un seul `mkdtemp()`,
+dans `selfcheck`, qui nettoie déjà derrière lui. Les **208 répertoires anonymes,
+63 Mo** mesurés ce jour venaient tous de `tests/helpers.migre_jusqu_a`, qui copie
+les migrations dans un `mkdtemp()` et **ne le retirait jamais**. Il le retire
+désormais dans un `finally`. Après une suite complète : **zéro répertoire du
+projet subsiste**.
+
+### Le préfixe, et pourquoi il a fallu le créer
+
+`tempfile.mkdtemp()` sans préfixe rend `/tmp/tmpXXXXXXXX`, **indiscernable de
+celui de n'importe quel autre programme**. Les 208 dossiers n'étaient donc pas
+réclamables par une règle sûre : rien dans leur nom ne les rattachait à ce dépôt.
+
+`selfcheck` et le helper portent maintenant `TEMP_PREFIX = "myassistantbet-"`, et
+la purge **ne connaît que lui**. Un `tmp*` aurait emporté `pytest`, `uv`, `ruff`
+et les copies de travail — ce répertoire est partagé par toute la machine.
+
+**Les répertoires de `pytest` ne sont pas touchés**, et ce n'est pas un oubli :
+il fait sa propre rotation (trois exécutions), et les retirer pendant qu'une suite
+tourne lui retirerait sa base sous les pieds.
+
+**Vingt-quatre heures et non une** : une suite dure quatre minutes, mais une
+session de travail garde ses copies ouvertes toute une journée.
+
+### Où elle tourne
+
+Dans le job des **sources gratuites**, une fois par jour — et non au démarrage :
+un service reste allumé des jours, et une purge qui ne tourne qu'au redémarrage
+ne tourne pas. Elle journalise son compte et l'espace libéré ; ce qu'elle ne sait
+pas retirer est **compté et laissé**, jamais tu.
+
+### Ce que le premier passage a libéré
+
+| | Mesure |
+| --- | ---: |
+| nettoyage ponctuel des 208 dossiers antérieurs au préfixe | **78 retirés, 8,5 Mo** |
+| laissés (contenu non reconnu, ou moins de 24 h) | 130 |
+| premier passage de la purge automatique | **0** — plus rien ne porte le préfixe |
+| `/tmp` | 78 % → **68 %** |
+
+Le nettoyage ponctuel s'est fait sur un critère **vérifié** et non sur un motif :
+un répertoire dont le contenu est *exactement* des fichiers de migration de ce
+dépôt, et vieux de plus de 24 h. Les 130 autres sont laissés.
+
+**La purge automatique a rendu 0 au premier passage, et c'est le résultat
+attendu** : elle ne connaît que le préfixe, et rien ne le portait encore.
+
+---
+
+## §4 — Ce que la mesure contredit dans le brief
+
+**Une seule affirmation, et deux précisions.**
+
+| Ce qui était affirmé | Ce que la mesure dit |
+| --- | --- |
+| §3 : *« essentiellement des copies de base et des runs de suite retenus par pytest »* | les copies de base étaient **hors `/tmp`** depuis le lot 10, et `pytest` fait sa rotation. Le consommateur non surveillé était **une fuite du dépôt** — 208 répertoires laissés par un helper de test — que personne n'avait attribuée |
+| §1b : appliquer la reformulation « telle qu'elle est écrite » | **une propriété sur trois est applicable.** L'ancrage de session demanderait un fuseau que les quatre compétitions de tennis n'ont pas, et `rang inconnu` est un constat de lot qui appartient au préambule |
+| §1c : *« il ne faut pas en découvrir un troisième »* | **il n'y en a pas** : +72 et +92, mesurés avant d'être annoncés |
+
+### La leçon de méthode du lot
+
+**Une convention écrite n'est pas un dispositif.** Celle de `/tmp` était dans
+`CONTRIBUTING.md` depuis le lot 10, exacte et complète — et la fuite qu'elle
+décrivait a continué de couler pendant deux lots, parce que rien ne l'appliquait.
+
+C'est la même leçon que celle du registre d'écriture au lot 3 : *« une règle de
+contribution ne se déclenche pas ; un test si. »* Ici, ni l'un ni l'autre — il
+fallait **le code qui nettoie**, et le préfixe qui rend le nettoyage possible.
