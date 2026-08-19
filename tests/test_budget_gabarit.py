@@ -117,3 +117,60 @@ def test_sur_un_lot_plus_court_le_budget_annonce_est_le_lot(migrated: Settings) 
     )
 
     assert "**6 dossiers** en recherche approfondie" in corps
+
+
+# -- La puce de recherche des matchs du tournoi (variante A, lot 11) ----------
+
+
+def _plat(texte: str) -> str:
+    """Le texte sans ses retours a la ligne.
+
+    **La coupe de ligne n'est pas la regle**, c'est une largeur de colonne : un
+    mot ajoute trois phrases plus haut la deplace et casserait un test qui ne
+    verifie pas ca. Meme idiome que le test de la section D.
+    """
+    return " ".join(texte.split())
+
+
+def test_la_puce_du_tournoi_nomme_ce_que_la_ligne_ici_ne_porte_pas() -> None:
+    """**Variante A, appliquée au lot 11.** La ligne `Ici` couvre 79 % des blocs,
+    donc la puce cesse de demander ce que le bloc porte déjà — mais elle doit
+    nommer ce qui reste à chercher, sans quoi l'allègement se paie en trous.
+
+    Les trois éléments sont ceux que la mesure a établis comme absents de la
+    source : `matches-played` ne sert **aucun** champ de durée (153 clés
+    inspectées), et ni les conditions de court ni le double n'y figurent.
+    """
+    texte = _plat(GABARIT.read_text(encoding="utf-8"))
+
+    assert "ne les cherche pas, et ne les refais pas de zéro" in texte
+    for manquant in ("la **durée** de", "conditions réelles du court", "le **double** s'il est"):
+        assert manquant in texte, f"la puce ne nomme plus : {manquant}"
+
+
+def test_la_puce_ne_s_applique_pas_systematiquement() -> None:
+    """**Sinon rien n'est allégé.** La puce doit dire qu'elle vaut quand la ligne
+    est absente ou partielle, et pas à chaque bloc.
+
+    « Partielle » a un sens précis et mesuré : `Ici` rend « aucun match dans ce
+    tournoi » pour un joueur qui entre en lice — 64 blocs sur 190 — et c'est un
+    fait sur le match, pas un trou. Mais le même libellé sort aussi quand la
+    source ne couvre pas le joueur, et là il faut chercher.
+    """
+    texte = _plat(GABARIT.read_text(encoding="utf-8"))
+
+    assert "Quand « Ici » est absente" in texte
+    assert "cherche aussi les scores" in texte
+    assert "quatre blocs sur cinq, pas tous" in texte, (
+        "la couverture mesurée doit être dite : sans elle, « absente » se lit comme un incident"
+    )
+
+
+def test_la_puce_ne_promet_plus_qu_aucune_source_ne_porte_les_scores() -> None:
+    """**La phrase du lot 8 est devenue fausse le jour où `Ici` s'est activée**,
+    et c'était le seul point non négociable des deux variantes : une affirmation
+    fausse dans la consigne qui commande la recherche la plus chère du lot est le
+    pire endroit du gabarit où en laisser une."""
+    texte = _plat(GABARIT.read_text(encoding="utf-8"))
+
+    assert "aucune de nos sources ne les porte" not in texte

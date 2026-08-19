@@ -177,16 +177,22 @@ Pour tout sport, et d'abord — c'est bloquant :
   · État de saison : championnat commencé ou non, forme lisible ou non
 
 {% endif %}{% if 'tennis' in sports %}TENNIS
-  · **Ses matchs déjà joués dans ce tournoi-ci** — la recherche la plus rentable
-    du lot, et la première à faire : aucune de nos sources ne les porte. Pour
-    chaque joueur et chaque tour déjà disputé — score set par set, durée, et si
-    le site du tournoi ou de l'ATP/WTA les publie, les statistiques de service
-    (aces, doubles fautes, % de première balle, balles de break sauvées et
-    converties) — elles vivent derrière l'onglet « Stats » de la feuille de match
-    sur atptour.com et wtatennis.com, et c'est l'instance qui les publie : **niveau
-    1**. Deux victoires en trois sets accrochés et deux victoires
+  · **Ce que la ligne « Ici » ne porte pas de ses matchs dans ce tournoi.**
+    Quand elle est là, elle donne pour chaque tour l'adversaire, le score set par
+    set, les abandons et forfaits nommés, et le service agrégé du tournoi avec la
+    date de son relevé — **ne les cherche pas, et ne les refais pas de zéro**.
+    Va chercher les trois choses qu'aucune source ne sert : la **durée** de
+    chaque match, les **conditions réelles du court** (session de jour ou de
+    nuit, chaleur, vent, court central ou annexe), et le **double** s'il est
+    engagé sur place. Deux victoires en trois sets accrochés et deux victoires
     expédiées ne laissent pas le même joueur ce soir, et « Repos » ne sait pas
-    les distinguer. Un tour non trouvé s'écrit « non trouvé ».
+    les distinguer.
+    **Quand « Ici » est absente, ou qu'elle dit « aucun match dans ce tournoi »
+    pour un joueur qui en a disputé, cherche aussi les scores** : elle couvre
+    quatre blocs sur cinq, pas tous. Ils vivent derrière l'onglet « Stats » de la
+    feuille de match sur atptour.com et wtatennis.com, et c'est l'instance qui
+    les publie : **niveau 1**. Un match postérieur à la date de relevé de la
+    ligne manque aussi. Un tour non trouvé s'écrit « non trouvé ».
   · Ordre du jeu réel : sur un tournoi perturbé (pluie, tours reportés), les
     horaires du bloc sont des estimations « à suivre », pas des heures fixes —
     et un match peut basculer de la session de nuit au plein jour
