@@ -35,7 +35,8 @@ from myassistantbet import db
 from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
-from myassistantbet.services import picks_import
+from myassistantbet.services import picks_import, sections
+from myassistantbet.services import prompt as prompt_service
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.render import ESTIMATED_MARK
 
@@ -527,3 +528,113 @@ def test_la_plage_des_titres_de_section_couvre_celles_du_gabarit() -> None:
             f"le gabarit écrit une section « {lettre}. » que le lecteur ne "
             "reconnaît pas comme un titre : elle ne fermerait aucune section"
         )
+
+
+# -- Un prompt portant des consignes permanentes -----------------------------
+
+#: Des consignes qui **ressemblent** a ce que le gabarit demande. Elles sont
+#: recopiees telles quelles dans le prompt, et c'est le seul texte libre qui y
+#: entre : la ligne `sets:` en debut de ligne, la mention `dossiers_ouverts`, un
+#: « C'est » en tete de phrase — chacune est un piege deja paye ailleurs dans ce
+#: depot, et aucun test ne les mettait dans un prompt.
+CONSIGNES_PIEGEUSES = (
+    "Betclic est le seul bookmaker où je pose.\n"
+    "C'est le cas de la quasi-totalité de mes sélections hors 1N2.\n"
+    "Exemple de ce que j'attends, à la fin :\n"
+    "sets: M1=2-0 | M2=PASSE\n"
+    "Et rappelle-moi la liste dossiers_ouverts.\n"
+    "Je ne joue jamais : cartons, corners"
+)
+
+
+def test_un_prompt_reel_porte_ses_consignes_sans_deplacer_ses_demandes(
+    migrated: Settings,
+) -> None:
+    """**Le seul texte libre qui entre dans un prompt**, et rien ne le testait
+    dans un rendu complet.
+
+    Deux risques distincts, et ils ne se recouvrent pas :
+
+    · les consignes doivent **arriver telles quelles** — ni échappées, ni
+      tronquées, ni rejointes ;
+    · elles ne doivent **rien demander**. `sections.survey()` lit `prompts.body`
+      pour savoir ce que le prompt réclamait, et une consigne dont une ligne
+      commence par `sets:` y déclarait la section demandée sur un lot de
+      football. Le relevé annonçait alors un manque qui n'existe pas, sur la
+      surface dont le seul rôle est de séparer une absence de collecte d'une
+      absence de demande.
+    """
+    event_id = save(
+        build(
+            "football",
+            "Amical",
+            "Lyon",
+            "Nice",
+            "2099-01-01",
+            "20:45",
+            "Lyon 1.30\nNul 3.40\nNice 3.20",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+    session_id = board_service.toggle_selection(event_id, True, migrated)
+
+    nu = prompt_service.build_prompt(session_id, settings=migrated)
+    prompt_service.save_preference(prompt_service.PREFERENCE_NOTES, CONSIGNES_PIEGEUSES, migrated)
+    charge = prompt_service.build_prompt(session_id, settings=migrated)
+
+    assert CONSIGNES_PIEGEUSES in charge.body, "recopiées telles quelles"
+    # Les demandes de section sont **exactement** les mêmes qu'avant.
+    assert sections.read("", charge.body)[0] == sections.read("", nu.body)[0]
+
+    # Et les titres de section du rendu attendu n'ont pas bougé non plus : une
+    # consigne ne peut pas ouvrir ni fermer une section.
+    def titres(corps: str) -> list[str]:
+        return sorted(
+            {
+                ligne.split(".")[0].strip()
+                for ligne in corps.splitlines()
+                if picks_import.SECTION_HEAD.match(ligne)
+            }
+        )
+
+    assert titres(charge.body) == titres(nu.body)
+
+
+def test_un_rendu_complet_s_importe_sous_des_consignes_permanentes(
+    client: TestClient, lot: int, migrated: Settings
+) -> None:
+    """**Le parcours entier, consignes en place.** Le collage est celui du
+    modèle et ne porte pas les consignes ; ce qui change est le **prompt**, donc
+    ce que `sections.survey()` croit avoir demandé et ce que l'appariement des
+    blocs `conf` compare.
+
+    Le compte en base doit être le même qu'avec un champ vide : une préférence
+    de placement n'a aucune raison de coûter une sélection.
+    """
+    prompt_service.save_preference(prompt_service.PREFERENCE_NOTES, CONSIGNES_PIEGEUSES, migrated)
+    apercu = client.post(f"/history/{lot}/picks/preview", data={"table": COLLAGE_G})
+    assert apercu.status_code == 200
+
+    valide = client.post(f"/history/{lot}/picks/import", data=_repost(apercu.text))
+    assert valide.status_code == 200
+
+    def compte(sql: str) -> int:
+        return int(db.query(sql, settings=migrated)[0]["n"])
+
+    obtenu = {
+        "section_c": compte("SELECT count(*) n FROM picks WHERE exploratoire = 0"),
+        "c_bis": compte("SELECT count(*) n FROM picks WHERE exploratoire = 1"),
+        "blocs_conf": compte("SELECT count(*) n FROM picks WHERE claim_raw_json IS NOT NULL"),
+        "crans_calcules": compte(
+            "SELECT count(*) n FROM picks WHERE confidence_computed IS NOT NULL"
+        ),
+        "combines": compte("SELECT count(*) n FROM combos"),
+        "jambes": compte("SELECT count(*) n FROM combo_legs"),
+        "sets": compte("SELECT count(*) n FROM set_scores"),
+        "mises": compte("SELECT count(*) n FROM mises"),
+    }
+
+    assert obtenu == ECRIT, "des consignes permanentes coûtent une sélection"

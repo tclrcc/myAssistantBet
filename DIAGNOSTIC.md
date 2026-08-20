@@ -9195,3 +9195,85 @@ Où la ligne est rendue :
 
 Coût en tokens de prompt : **zéro**. Aucune de ces trois surfaces n'entre dans un
 prompt.
+
+## §4 — Dettes de forme
+
+### Registre des chemins d'écriture : rien à déclarer, et c'est vérifié
+
+Ce lot n'ajoute **aucun `INSERT`** vers `picks`, `combos`, `combo_legs` ou
+`set_scores` — les quatre tables où se pose une prédiction. `changelog.add`, seul
+chemin d'écriture nouveau, insère dans `changelog_mesure`, qui n'en est pas une :
+elle date un changement de cadre, elle ne prédit rien.
+
+`tests/test_write_paths.py` lit la source et fait échouer la suite sur un `INSERT`
+non déclaré. Il est vert, et son critère est le SQL, pas un nommage.
+
+### `changelog_mesure` : trois entrées, dont une qui comble un trou
+
+**Le lot précédent n'a laissé aucune ligne au journal.** La dernière entrée de
+portée `gabarit` est du **20/08 à 09:05**, quand ses commits vont de 22:43 à
+23:52 le même soir — et il a modifié le gabarit sur six de ses dix points, pour
++405 tokens nets par prompt. Tout découpage traversant cette soirée était donc
+aveugle à un changement de cadre.
+
+Migration 070, trois entrées :
+
+| Jour | Portée | Ce qu'elle date |
+| --- | --- | --- |
+| 20/08 | gabarit | les six changements du lot précédent, **datés après coup** |
+| 21/08 | gabarit | le plancher de quota d'un palier présent, et la phrase C-bis |
+| 21/08 | restitution | l'avertissement, les comptes de marchés, le recul affiché, la série |
+
+Le retro-remplissage du 20/08 est **sûr**, et c'est le même argument que le seed
+de la migration 054 : la date d'activation se lit dans l'historique des commits,
+qui existe. C'est ce qui le sépare de `price_source` ou du cran calculé, qui
+auraient demandé de reconstituer une information jamais écrite. **Dater ce qui
+est daté n'est pas inventer.**
+
+**Aucune ligne n'est posée pour la bascule du retour d'expérience**, et c'est le
+point : elle s'écrit toute seule au premier prompt qui transmet. Une ligne posée
+ici daterait une bascule qui n'a pas eu lieu et ferait couper la population à une
+date où rien n'a bougé — exactement ce que la migration 062 refusait déjà pour
+les lignes de service.
+
+Non-régression vérifiée en SQL sur une copie migrée : `total=327,
+principale=244, exploratoire=31, tardive=52`, somme égale au total, `tranchées`,
+`combos`, `combo_legs`, `set_scores` et `prompts` inchangés. Seul
+`changelog_mesure` bouge, de 27 à 30 — le changement voulu.
+
+### Le test de bout en bout sous consignes permanentes, et le défaut qu'il a trouvé
+
+C'est **le seul texte libre qui entre dans un prompt**, et rien ne le mettait
+dans un rendu complet. Deux tests l'y mettent, et le second a trouvé ceci :
+
+> `sections.survey()` lit `prompts.body` pour savoir ce que le prompt réclamait.
+> Une consigne dont une ligne commence par `sets:` — « Exemple de ce que
+> j'attends : / sets: M1=2-0 » — faisait déclarer la ligne des scores en sets
+> **demandée** sur un lot de football, où le gabarit ne la demande jamais.
+
+Reproduit : `_ASKS_SETS` passe de `False` à `True` sur le même lot, du seul fait
+de la consigne. Le relevé aurait alors annoncé une section demandée et non
+rapportée — **un faux manque, sur la surface dont le seul rôle est de séparer une
+absence de collecte d'une absence de demande**. Elle se mettait à produire
+exactement la confusion qu'elle existe pour lever.
+
+`sections.gabarit_only()` retire le bloc des consignes avant de lire les
+demandes. Le découpage se fait sur le **titre** — `## CONSIGNES PERMANENTES`
+jusqu'au `## ` suivant — pas sur le texte : les consignes sont libres, et rien de
+ce qu'elles contiennent ne peut déplacer la borne. Un test le vérifie avec une
+consigne qui écrit « ## MÉTHODE » en plein milieu.
+
+Le garde-fou a été **testé contre sa propre panne** : `gabarit_only` neutralisée,
+trois tests tombent ; restaurée, ils passent.
+
+Ce que le brief attendait est couvert par ailleurs : les consignes arrivent
+verbatim, les titres de section du prompt sont identiques avec et sans elles, et
+le collage complet écrit exactement les mêmes objets en base — une préférence de
+placement ne coûte aucune sélection.
+
+### L'unité de mise : badge et échéance toujours visibles
+
+Vérifié sur le rendu réel de `/settings` : `mise_unite_bp = 25`, badge
+**provisoire**, « mesuré sur 4 journées d'analyse (17 – 20/08/2026) — **à
+re-mesurer le 2026-09-20** ». L'entrée d'échéance est au journal, datée du
+20/09. `tests/test_mises.py` la garde déjà, sur l'objet **et** sur la page.

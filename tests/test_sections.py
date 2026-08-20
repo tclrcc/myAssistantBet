@@ -255,3 +255,69 @@ def test_chaque_section_se_reconnait_dans_le_prompt_qui_la_demande(section: Any)
     assert section.asks(PROMPT_COMPLET), f"{section.key} n'est pas reconnue dans un prompt complet"
     assert section.finds(COLLAGE_COMPLET), f"{section.key} n'est pas reconnue dans un rendu complet"
     assert not section.finds(COLLAGE_NU), f"{section.key} est vue dans un collage qui ne l'a pas"
+
+
+# -- Les consignes permanentes ne demandent aucune section -------------------
+
+
+def test_une_consigne_permanente_ne_demande_aucune_section() -> None:
+    """**Trouve en ecrivant le test de bout en bout du §4.**
+
+    Les consignes permanentes sont recopiees telles quelles dans le prompt. Une
+    dont une ligne commence par `sets:` faisait declarer la ligne des scores en
+    sets **demandee** — sur un lot de football, ou le gabarit ne la demande
+    jamais. Le releve annoncait alors une section demandee et non rapportee.
+
+    C'est un faux manque, et il tombe sur la surface dont le seul role est de
+    separer une absence de collecte d'une absence de demande : elle se mettait a
+    produire exactement la confusion qu'elle existe pour lever.
+    """
+    prompt = (
+        "# SESSION\n\n"
+        "## CONSIGNES PERMANENTES\n"
+        "Exemple de ce que j'attends :\n"
+        "sets: M1=2-0 | M2=PASSE\n"
+        "Et rappelle les dossiers_ouverts.\n\n"
+        "## MÉTHODE\n"
+        "Deux temps, dans cet ordre.\n"
+    )
+
+    asked, _ = sections.read("", prompt)
+
+    assert "sets" not in asked
+    assert "opened" not in asked
+
+
+def test_le_gabarit_garde_ses_demandes_a_travers_les_consignes() -> None:
+    """Le retrait porte sur le **bloc des consignes**, jamais sur le prompt : une
+    demande ecrite par le gabarit reste lue, que des consignes la precedent ou
+    non. Sans cette moitie, la correction troquerait un faux manque contre un
+    silence."""
+    consignes = "## CONSIGNES PERMANENTES\nJe pose depuis mon téléphone.\n\n"
+    gabarit = "## SORTIE ATTENDUE\nDonne une ligne par match :\nsets: M1=2-0\n"
+
+    sans, _ = sections.read("", f"# SESSION\n\n{gabarit}")
+    avec, _ = sections.read("", f"# SESSION\n\n{consignes}{gabarit}")
+
+    assert "sets" in sans
+    assert avec == sans
+
+
+def test_le_decoupage_se_fait_sur_le_titre_et_non_sur_le_texte() -> None:
+    """Les consignes sont un texte **libre** : rien de ce qu'elles contiennent ne
+    doit pouvoir deplacer la borne. Une consigne qui ecrirait « ## MÉTHODE » ou
+    des lignes vides ne raccourcit ni n'allonge le bloc retire."""
+    prompt = (
+        "# SESSION\n\n"
+        "## CONSIGNES PERMANENTES\n"
+        "Ne me parle jamais de ## MÉTHODE.\n"
+        "\n"
+        "sets: M1=2-0\n\n"
+        "## SORTIE ATTENDUE\n"
+        "```conf\n"
+    )
+
+    asked, _ = sections.read("", prompt)
+
+    assert "sets" not in asked, "le bloc court jusqu'au vrai titre suivant"
+    assert "conf" in asked, "et il s'arrête là"

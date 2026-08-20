@@ -46,6 +46,31 @@ from .combos import read_combos
 from .confidence import OPEN_ABSENT, read_blocks, read_opened
 from .ingestion import unnumber
 
+#: Le bloc des consignes permanentes, tel que le gabarit l'ecrit. Il commence a
+#: son titre et court jusqu'au titre de niveau 2 suivant.
+_USER_NOTES = re.compile(r"^## CONSIGNES PERMANENTES$.*?(?=^## )", re.MULTILINE | re.DOTALL)
+
+
+def gabarit_only(prompt: str) -> str:
+    """Le prompt emis, **prive des consignes permanentes de l'utilisateur**.
+
+    Les motifs ci-dessous cherchent ce que **le gabarit** demande. Or le prompt
+    porte aussi un texte libre recopie tel quel, et celui-ci n'est pas une
+    demande de section : il decrit une preference.
+
+    Mesure du 21/08/2026 : une consigne dont une ligne commence par `sets:` —
+    « Exemple de ce que j'attends : / sets: M1=2-0 » — faisait declarer la ligne
+    des scores en sets **demandee** sur un lot de football, ou le gabarit ne la
+    demande jamais. Le relevé annoncait alors une section demandee et non
+    rapportee : un faux manque, sur la surface dont le seul role est de separer
+    une absence de collecte d'une absence de demande.
+
+    Le decoupage se fait sur le **titre**, pas sur le texte : les consignes sont
+    libres, et rien de ce qu'elles contiennent ne peut le deplacer.
+    """
+    return _USER_NOTES.sub("", prompt or "")
+
+
 #: Ce que le gabarit ecrit quand il demande une section. **Ces motifs se posent
 #: sur le prompt emis et non sur le gabarit** : une porte fermee (`{% if
 #: tier_scope.high %}`) fait qu'un lot n'a jamais demande sa section C-bis, et
@@ -254,7 +279,12 @@ def read(raw: str, prompt: str) -> tuple[frozenset[str], frozenset[str]]:
     # d'un meme collage qui ne voient pas la meme chose sont exactement ce que
     # ce module existe pour ne pas produire.
     lisible = unnumber(raw or "")
-    asked = {section.key for section in SECTIONS if section.asks(prompt or "")}
+    # **Les consignes permanentes sont retirees avant de lire les demandes.**
+    # Elles sont recopiees telles quelles dans le prompt et decrivent une
+    # preference, jamais une section : une ligne commencant par `sets:` y ferait
+    # declarer demandee une section que le gabarit n'a pas demandee.
+    demande = gabarit_only(prompt or "")
+    asked = {section.key for section in SECTIONS if section.asks(demande)}
     found = {section.key for section in SECTIONS if section.finds(lisible)}
     return frozenset(asked), frozenset(found)
 
