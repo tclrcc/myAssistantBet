@@ -5915,3 +5915,250 @@ consomme comme un élément de décor — et il se lit, dans les statistiques, c
 si la mesure fonctionnait. C'est la neuvième occurrence du motif du projet, sous
 sa forme la plus retorse : ici l'échec **était** signalé, et le signal n'a rien
 changé.
+
+---
+
+# DIAGNOSTIC — lot 15 : la répartition de mise, et le plafond qui n'en est pas un
+
+## §1a — La table proposée se contredit : le plafond est la règle, l'unité est du décor
+
+**Mesure du 20/08/2026, avant d'écrire une ligne de code.** Le brief propose une
+table de mises et un plafond de session, et demande de confirmer les valeurs.
+Elles ne peuvent pas être confirmées telles quelles : appliquées à l'historique,
+**16 sessions sur 16 atteignent ou dépassent le plafond**.
+
+Table proposée : unité = 1 % de la bankroll, sélection de section C = 1 unité,
+sélection de C-bis = 0,25 unité, plafond de session = 5 % de la bankroll.
+
+| Session | C | C-bis | Unités demandées | % de bankroll | Facteur de réduction |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 2 | 17 | 0 | 17,00 | 17,0 | 0,294 |
+| 3 | 28 | 0 | 28,00 | 28,0 | 0,179 |
+| 4 | 9 | 0 | 9,00 | 9,0 | 0,556 |
+| 5 | 18 | 0 | 18,00 | 18,0 | 0,278 |
+| 6 | 29 | 0 | 29,00 | 29,0 | 0,172 |
+| 7 | 5 | 0 | 5,00 | 5,0 | 1,000 |
+| 8 | 11 | 0 | 11,00 | 11,0 | 0,455 |
+| 9 | 12 | 0 | 12,00 | 12,0 | 0,417 |
+| 10 | 20 | 0 | 20,00 | 20,0 | 0,250 |
+| 11 | 29 | 0 | 29,00 | 29,0 | 0,172 |
+| 13 | 30 | 0 | 30,00 | 30,0 | 0,167 |
+| 14 | 27 | 0 | 27,00 | 27,0 | 0,185 |
+| 15 | 13 | 6 | 14,50 | 14,5 | 0,345 |
+| 16 | 10 | 5 | 11,25 | 11,25 | 0,444 |
+| 17 | 19 | 10 | 21,50 | 21,5 | 0,233 |
+| 18 | 19 | 10 | 21,50 | 21,5 | 0,233 |
+
+Unités demandées : **médiane 19,0**, min 5,0, max 30,0. **15 sessions sur 16
+dépassent strictement** le plafond ; la seizième (session 7, cinq sélections)
+tombe exactement dessus.
+
+**Conséquence, et c'est elle qui interdit de coder la table telle quelle** : la
+mise réellement appliquée à une sélection de section C ne vaut jamais 1 % de la
+bankroll. Elle vaut **0,167 % à 1,000 %, médiane 0,264 %**. Le nombre écrit dans
+la configuration et le nombre appliqué par le code diffèrent d'un facteur 4 en
+régime courant, et d'un facteur 6 sur le plus gros lot.
+
+- **Le plafond ne plafonne pas : il dimensionne.** Une règle qui s'applique 16
+  fois sur 16 n'est pas un garde-fou, c'est le calcul principal. La table
+  au-dessus n'est plus qu'un jeu de **poids relatifs** — le rapport 1 / 0,25
+  entre C et C-bis survit à la réduction, la valeur absolue non.
+- **C'est le défaut caractéristique du projet, déplacé sur l'argent.** « 1 unité
+  = 1 % » se lit comme un fait — *je mets un pour cent sur cette sélection* —
+  pendant que le code en met un quart. Rien ne casse, l'interface a l'air
+  normale, et l'écart ne se découvre qu'en relisant le journal des mises.
+  Dixième occurrence, et la première où le symptôme se compte en euros.
+- **Le brief l'annonce lui-même sans le mesurer** : « le lot 14 a montré ce que
+  vaut un avertissement qu'on peut valider : vingt fois sur vingt ». Un message
+  de réduction affiché à chaque session subirait exactement le même sort.
+
+### Ce que la mesure ne dit pas, et qui reste à trancher
+
+Elle dit que les quatre nombres ne sont pas mutuellement cohérents. Elle ne dit
+pas lequel bouge, parce que c'est une décision de l'utilisateur — combien il
+accepte d'exposer par session, et non ce que les données autorisent.
+
+Trois ancrages possibles, mesurés :
+
+| Ancrage | Unité | Plafond | Effet mesuré |
+| --- | --- | --- | --- |
+| **A — l'unité est fixe, le plafond est un vrai refus** | 0,15 % | 5 % | le plus gros lot mesuré (30 unités) pèse 4,5 % : **le plafond ne mord sur aucune session de la base**. Porte fermée, pas défaut réparé |
+| **B — le plafond est fixe, l'unité est dérivée** | budget ÷ unités demandées | 5 % | exact par construction, aucune réduction à annoncer. Mais une même sélection vaut 0,17 % un jour et 1 % un autre, selon le nombre de ses voisines |
+| **C — l'unité est fixe et le plafond suit le lot** | 1 % | ≥ 30 % | conserve le nombre du brief au prix d'un tiers de bankroll exposé par session. Ce n'est plus un plafond |
+
+**Deux faits qui pèsent sur le choix, et qu'aucune des trois options ne change :**
+
+- **le plafond est « par session », et quatre jours sur quatorze portent deux
+  sessions** (10/08, 14/08, 15/08, 18/08). Un plafond de session à 5 % vaut donc
+  10 % ces jours-là. Un plafond par **journée** dirait ce que le brief semble
+  vouloir dire ; un plafond par session dit autre chose ;
+- **le combiné pèse pour rien dans l'addition.** Deux combinés existent en base,
+  tous deux `court`, trois jambes, sur la même session. À 0,5 unité pièce ils
+  représentent 1 unité contre 19 à 30 pour les simples : régler leur mise ne
+  déplace pas le plafond.
+
+## §1a bis — L'unité se mesure, et elle tombe sous 0,20 %
+
+Arbitrage rendu le 20/08/2026 : **structure A** — unité fixe, plafond comme
+porte fermée — **plafond par journée** et non par session, **C-bis sans mise**.
+Les trois sont repris ci-dessous avec la mesure qui les accompagne.
+
+### Le changement de régime ne touche pas la grandeur qui compte
+
+La consigne demandait de ne retenir que le régime actuel — « des lots de 8 à
+12 matchs, soit environ 4 à 5 sélections de section C ». Mesuré, et **la prémisse
+ne tient pas dans les deux sens** :
+
+| | Lots par session | Taille des lots | Sélections C par lot |
+| --- | ---: | ---: | ---: |
+| Session 15 (17/08) | 4 | 5 à 8 | 3,25 |
+| Session 16 (18/08) | 4 | 4 à 8 | 2,50 |
+| Session 17 (18/08) | 5 | 6 à 9 | 3,80 |
+| Session 18 (19/08) | 5 | 4 à 10 | 3,80 |
+
+Les lots font **4 à 10 matchs**, pas 8 à 12, et rendent **2,50 à 3,80**
+sélections, pas 4 à 5. Mais surtout : il y en a **quatre à cinq par session**, et
+le plafond porte sur la journée.
+
+| Régime | Journées | Min | Médiane | Max |
+| --- | ---: | ---: | ---: | ---: |
+| ancien (05 – 15/08) | 10 | 9 | **19,0** | 57 |
+| nouveau (≥ 16/08) | 3 | 13 | **19,0** | 29 |
+
+**Les deux médianes sont identiques.** Les lots ont rétréci, la journée n'a pas
+bougé — le découpage a été absorbé par le nombre de prompts. Restreindre la
+mesure au nouveau régime ne retire donc que du volume : trois journées, sur
+lesquelles un 90e centile ne veut rien dire (il tombe entre la 2e et la 3e
+valeur). L'historique complet est la base honnête **parce que** la mesure montre
+que le régime n'affecte pas cette grandeur.
+
+### Le nombre, et il est sous le seuil que tu as posé
+
+Journées, section C seule, C-bis retirée : `9, 12, 13, 16, 17, 18, 19, 20, 28,
+29, 29, 29, 57`. **P90 = 29,0.**
+
+> Unité = 5 % ÷ 29 = **0,172 %** de la bankroll par sélection de section C.
+
+Sur le nouveau régime seul (n = 3, P90 = 27) : **0,185 %**. **Les deux sont sous
+0,20 %**, et c'est le signal que tu as demandé de faire remonter plutôt que
+d'absorber.
+
+**Ce qui marche, et qu'il faut noter avant de rediscuter le plafond** : à cette
+unité, le plafond de 5 % **ne mord qu'une journée sur treize** — le 15/08, ses
+deux sessions et ses 57 sélections. C'est exactement le comportement voulu d'une
+porte fermée : elle se déclenche sur l'anomalie, pas tous les jours. La structure
+A tient. Seule la valeur absolue est en question.
+
+| Plafond de journée | Unité dérivée du P90 | Journée médiane pèse | Le plafond mord |
+| ---: | ---: | ---: | ---: |
+| 5 % | **0,172 %** | 3,28 % | 1 journée / 13 |
+| 7,5 % | 0,259 % | 4,91 % | 1 journée / 13 |
+| 10 % | 0,345 % | 6,55 % | 1 journée / 13 |
+| 12,5 % | 0,431 % | 8,19 % | 1 journée / 13 |
+| 15 % | 0,517 % | 9,83 % | 1 journée / 13 |
+
+Le taux de déclenchement ne dépend pas du plafond : il est fixé par le choix du
+P90 comme ancrage. **Le plafond ne choisit donc pas la sécurité, il choisit
+l'échelle** — c'est-à-dire combien pèse une sélection, et rien d'autre.
+
+### La cause, et elle n'est pas dans les nombres
+
+Une unité minuscule n'est pas un défaut de calibrage : c'est l'arithmétique d'une
+méthode qui **produit dix-neuf sélections par jour**. Cinq pour cent répartis sur
+dix-neuf paris font 0,26 % chacun, quel que soit l'habillage. Les deux seules
+sorties sont d'exposer davantage, ou de produire moins.
+
+Et la seconde n'est pas de mon ressort : le nombre de sélections est réglé par
+les quotas de palier et le budget de recherche, qui ont été calibrés sur des
+critères d'analyse, jamais sur une exposition. Les coupler maintenant ferait
+exactement ce que l'arbitrage du plafond par journée vient d'écarter — lier le
+garde-fou d'argent à la discipline d'analyse.
+
+## §1a ter — La journée se compte sur `picks.created_at`, et l'unité vaut 0,25 %
+
+**La première mesure groupait sur `sessions.created_at`, et c'était faux.** Les
+deux dates divergent : la session 18 est datée du 19/08 et ses cinq prompts ont
+tourné le **20/08 à 09h40 – 10h38**. La session 14, datée du 15/08, a produit ses
+sélections jusqu'au 17/08. Grouper sur la date de session compte donc des
+sélections d'aujourd'hui dans le budget d'avant-hier.
+
+Le projet a déjà tranché cette question ailleurs, et dans le même sens : la
+fenêtre de `feedback()` se compte sur `picks.created_at`, « la journée de la
+**décision** et non celle du match ». C'est la même grandeur ici — le jour où
+l'argent s'engage.
+
+**La consigne demandait d'ancrer sur la date de session « et pas sur l'heure de
+coup d'envoi ». Les deux candidats la respectent** — ni l'un ni l'autre ne
+regarde un coup d'envoi. Ce qui les départage est mesuré :
+
+| | Découpage en plusieurs sessions le même jour | Session laissée ouverte |
+| --- | --- | --- |
+| `sessions.created_at` | couvert | **trou** : les sélections du 20/08 comptent sur le budget du 19/08 |
+| `picks.created_at` | couvert | couvert |
+
+Le seul reproche possible au second — couper une soirée à cheval sur minuit —
+**ne se produit sur aucune session de la base**. Trois sessions sur seize
+couvrent deux jours civils (4, 14, 17), et aucune n'est une soirée coupée : la
+17 va du 18/08 à 22h48 au 19/08 à 21h14, soit une session laissée ouverte une
+journée entière, que le plafond **doit** compter pour deux jours. La plus tardive
+s'arrête à 23h56 sans rien après.
+
+### Les deux distributions, côte à côte
+
+Journée d'analyse = `picks.created_at`, section C seule, C-bis retirée.
+
+| Journée | Sessions | C | C-bis | Régime |
+| --- | ---: | ---: | ---: | --- |
+| 05/08 | 1 | 17 | 0 | ancien |
+| 06/08 | 1 | 28 | 0 | ancien |
+| 07/08 | 1 | 7 | 0 | ancien |
+| 08/08 | 2 | 20 | 0 | ancien |
+| 09/08 | 1 | 29 | 0 | ancien |
+| 10/08 | 1 | 5 | 0 | ancien |
+| 11/08 | 1 | 11 | 0 | ancien |
+| 12/08 | 1 | 12 | 0 | ancien |
+| 13/08 | 1 | 20 | 0 | ancien |
+| 14/08 | 1 | 29 | 0 | ancien |
+| 15/08 | 2 | 49 | 0 | ancien |
+| 17/08 | 2 | 21 | 6 | **nouveau** |
+| 18/08 | 2 | 17 | 8 | **nouveau** |
+| 19/08 | 1 | 12 | 7 | **nouveau** |
+| 20/08 | 1 | 19 | 10 | **nouveau** |
+
+| Régime | n | P50 | P75 | P90 | max | Unité à 5 % |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| ancien (< 16/08) | 11 | 20,0 | 28,5 | 29,0 | 49 | 0,172 % |
+| **nouveau (≥ 16/08)** | **4** | **18,0** | **19,5** | **20,4** | **21** | **0,245 %** |
+
+**Le nouveau régime est plus resserré, et c'est ce qui sauve l'unité** : sa queue
+haute tombe de 29 à 20,4, et l'unité remonte **au-dessus de 0,20 %** sans
+toucher au plafond. La prémisse chiffrée qui accompagnait la consigne — « si le
+P90 du régime actuel est autour de 10 à 12 sélections » — n'est pas vérifiée :
+il vaut **20,4**. La direction était juste, l'ampleur non.
+
+### Le nombre retenu, et il est provisoire
+
+Quatre journées, quand la consigne fixait le seuil de défendabilité à une
+dizaine. **Le plafond reste donc à 5 %**, l'unité en découle, et le nombre est
+explicitement provisoire — à re-mesurer après un mois du nouveau régime, soit
+vers le **20/09/2026**.
+
+> **Unité = 0,25 % de la bankroll. Plafond de journée = 5 %, soit exactement
+> 20 unités.**
+
+L'arrondi de 0,245 à 0,25 n'est pas cosmétique : il fait tomber le plafond sur un
+**compte entier de sélections**, donc sur une règle qui se vérifie de tête —
+*au-delà de vingt sélections de section C dans la journée, la réduction
+s'applique*. Un plafond exprimé en pourcentage d'un pourcentage ne se vérifie pas.
+
+Ce que ça donne sur les journées mesurées : le plafond mord **une journée sur
+quatre** dans le régime actuel (le 17/08 et ses 21 sélections), et la réduction y
+vaut **5 %** — 21 unités demandées, 20 accordées. À comparer aux **83 %** de
+rabot qu'aurait produits la table du brief sur la même journée.
+
+### La garde demandée, et où elle se pose
+
+La réduction proportionnelle est **annoncée nommément** — unités demandées,
+unités accordées, facteur — dans la section de répartition du rendu comme dans le
+relevé d'import. Jamais absorbée en silence. C'est la règle du lot 14 appliquée
+d'avance : un rabot qui ne se nomme pas se lit comme une mise choisie.
