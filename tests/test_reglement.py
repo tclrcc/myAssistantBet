@@ -94,6 +94,30 @@ def _foot(domicile: int, exterieur: int) -> S.MatchResult:
     )
 
 
+def _tennis(score: str) -> S.MatchResult:
+    """Un résultat de tennis lu par le vrai lecteur, jamais construit à la main.
+
+    Les jeux se comptent dans le même champ que les sets, et c'est justement ce
+    qu'on veut vérifier : un `MatchResult` bâti de toutes pièces testerait la
+    fixture au lieu du lecteur.
+    """
+    lu = S.read_score(score)
+    assert lu is not None
+    gagnant = None
+    if lu.decisif:
+        gagnant = "home" if lu.sets_un > lu.sets_deux else "away"
+    return S.MatchResult(
+        sport="tennis",
+        source=S.SRC_TENNIS,
+        observed_at="2026-08-20T00:00:00Z",
+        detail=score,
+        winner=gagnant,
+        sets=(lu.sets_un, lu.sets_deux),
+        games=(lu.jeux_un, lu.jeux_deux),
+        unfinished=lu.incomplet,
+    )
+
+
 @pytest.mark.parametrize(
     ("selection", "attendu"),
     [("Lyon", S.WIN), ("Nice", S.LOSS), ("Nul", S.LOSS)],
@@ -124,9 +148,7 @@ def test_un_over_under_sans_sens_ni_ligne_ne_se_regle_pas() -> None:
     assert S.settle("totals", "O/U", "Over", "Lyon", "Nice", _foot(2, 1)) is None
 
 
-@pytest.mark.parametrize(
-    "cle", ["alternate_spreads", "btts", "double_chance", "correct_score", "to_qualify"]
-)
+@pytest.mark.parametrize("cle", ["correct_score", "to_qualify", "halftime_fulltime", "team_totals"])
 def test_un_marche_hors_regle_ne_se_regle_jamais(cle: str) -> None:
     """**Un marché dont la règle n'est pas écrite ne produit aucune ligne.**
 
@@ -134,7 +156,7 @@ def test_un_marche_hors_regle_ne_se_regle_jamais(cle: str) -> None:
     le distingue d'un marché couvert dont le résultat manque.
     """
     assert S.settle(cle, "peu importe", "Lyon", "Lyon", "Nice", _foot(2, 1)) is None
-    assert S.enabled_for(cle, "peu importe") is False
+    assert S.enabled_for(cle, "peu importe", "football") is False
 
 
 def test_un_match_inacheve_ne_se_regle_pas() -> None:
@@ -157,10 +179,170 @@ def test_les_familles_en_service_sont_celles_mesurees_a_cent_pour_cent() -> None
     2 % de règlements faux sur 293 sélections corrompent le résidu au prix, qui
     est la seule mesure que ce projet sache produire.
     """
-    assert S.ENABLED == ("issue", "total")
-    assert S.enabled_for("h2h", "1N2") is True
-    assert S.enabled_for("", "Vainqueur") is True
-    assert S.enabled_for("", "O/U 2.5") is True
+    assert S.ENABLED == ("issue", "total", "handicap_jeux", "btts", "double_chance")
+    assert S.enabled_for("h2h", "1N2", "football") is True
+    assert S.enabled_for("", "Vainqueur", "tennis") is True
+    assert S.enabled_for("", "O/U 2.5", "football") is True
+    assert S.enabled_for("btts", "BTTS", "football") is True
+    assert S.enabled_for("double_chance", "DC", "football") is True
+    assert S.enabled_for("alternate_spreads", "Hand. jeux", "tennis") is True
+
+
+def test_le_handicap_de_football_reste_a_la_main() -> None:
+    """**Une seule divergence sur 14 suffit à le laisser dehors.**
+
+    `Vålerenga +1` perdu 1-2 fait 2-2 après handicap, donc un remboursement sur
+    un marché à deux issues — le règlement manuel de la base dit `win`.
+    L'arithmétique n'est pas en cause : ce qui n'est pas établi est le nombre
+    d'issues du marché où le pari a été posé, et un remboursement compte pour un
+    `void` dans le résidu au prix.
+
+    Le sport se lit sur la compétition et **jamais sur le libellé** : les deux
+    graphies sont pourtant propres — `Hand. jeux` au tennis, `Handicap` au
+    football — mais une saisie à la main peut écrire l'une pour l'autre, et le
+    seul coût de cette faute serait de mettre en service la famille qu'on refuse.
+    """
+    assert S.rule_family("alternate_spreads", "Handicap", "football") == "handicap_buts"
+    assert S.rule_family("alternate_spreads", "Hand. jeux", "tennis") == "handicap_jeux"
+    assert S.rule_family("alternate_spreads", "Hand. jeux", "football") == "handicap_buts"
+    assert S.enabled_for("alternate_spreads", "Handicap", "football") is False
+    # Un appelant qui oublie le sport ne peut pas mettre une famille en service
+    # par omission : le défaut range le handicap du côté non servi.
+    assert S.enabled_for("alternate_spreads", "Hand. jeux") is False
+
+
+# -- Les quatre familles ajoutées, une à une ---------------------------------
+
+
+@pytest.mark.parametrize(
+    ("selection", "attendu"),
+    [
+        ("1X (Lyon ou nul)", S.WIN),
+        ("X2 (Nice ou nul)", S.LOSS),
+        ("Lyon ou nul", S.WIN),
+        ("Nul ou Nice", S.LOSS),
+        ("12", S.WIN),
+    ],
+)
+def test_la_double_chance_se_regle(selection: str, attendu: str) -> None:
+    """Lyon 2 – Nice 1 : la paire couvre l'issue, ou elle ne la couvre pas."""
+    assert S.settle("double_chance", "DC", selection, "Lyon", "Nice", _foot(2, 1)) == attendu
+
+
+def test_la_double_chance_lit_son_marqueur_sur_le_libelle_brut() -> None:
+    """**`1X` et `X2` sont deux paris opposés, et le repli les confond.**
+
+    `_fold` retire les chiffres : les deux s'y réduisent à `x`. Le marqueur se
+    cherche donc sur le libellé tel qu'il a été collé — même règle que les
+    titres de section, et pour la même raison.
+    """
+    nul = _foot(1, 1)
+    assert S.settle("double_chance", "DC", "1X", "Lyon", "Nice", nul) == S.WIN
+    assert S.settle("double_chance", "DC", "X2", "Lyon", "Nice", nul) == S.WIN
+    # `12` ne couvre pas le nul, et c'est le seul des trois à s'y perdre.
+    assert S.settle("double_chance", "DC", "12", "Lyon", "Nice", nul) == S.LOSS
+
+
+def test_une_double_chance_qui_ne_couvre_pas_deux_issues_ne_se_regle_pas() -> None:
+    """En cas de doute, rien : une paire se lit ou ne se lit pas."""
+    assert S.settle("double_chance", "DC", "Lyon", "Lyon", "Nice", _foot(2, 1)) is None
+    assert S.settle("double_chance", "DC", "peu importe", "Lyon", "Nice", _foot(2, 1)) is None
+
+
+@pytest.mark.parametrize(
+    ("selection", "buts", "attendu"),
+    [
+        ("Oui", (2, 1), S.WIN),
+        ("Oui", (2, 0), S.LOSS),
+        ("Non", (2, 0), S.WIN),
+        ("Non", (1, 1), S.LOSS),
+        ("Yes", (1, 1), S.WIN),
+        ("No", (0, 0), S.WIN),
+    ],
+)
+def test_le_btts_se_regle(selection: str, buts: tuple[int, int], attendu: str) -> None:
+    """Le rendu écrit `Oui` / `Non`, le fournisseur `Yes` / `No`."""
+    assert S.settle("btts", "BTTS", selection, "Lyon", "Nice", _foot(*buts)) == attendu
+
+
+def test_le_btts_n_existe_pas_au_tennis() -> None:
+    """Aucune règle sur un résultat qui n'a pas de buts."""
+    assert S.settle("btts", "BTTS", "Oui", "Sinner", "Alcaraz", _tennis("6-4,6-4")) is None
+
+
+@pytest.mark.parametrize(
+    ("selection", "attendu"),
+    [
+        ("Sinner -3.5", S.WIN),
+        ("Sinner -4.5", S.LOSS),
+        ("Alcaraz +4.5", S.WIN),
+        ("Alcaraz +3.5", S.LOSS),
+        ("Alcaraz +4", S.VOID),
+        ("Sinner -4", S.VOID),
+    ],
+)
+def test_le_handicap_jeux_se_regle_et_rembourse_la_ligne_entiere(
+    selection: str, attendu: str
+) -> None:
+    """Sinner gagne 6-4 6-4 : douze jeux à huit, écart de quatre.
+
+    **Le compte de jeux était déjà dans le score lu**, et le module affirmait le
+    contraire : `4-6,7-6,0-6` compte des jeux, pas des sets.
+    """
+    resultat = _tennis("6-4,6-4")
+    assert resultat.games == (12, 8)
+    assert (
+        S.settle("alternate_spreads", "Hand. jeux", selection, "Sinner", "Alcaraz", resultat)
+        == attendu
+    )
+
+
+def test_une_ligne_en_quart_n_a_pas_de_verdict() -> None:
+    """**Un pari asiatique scindé n'est ni gagné ni perdu.**
+
+    Une demi-mise sur chacune des deux lignes voisines : le gabarit interdit
+    déjà de le sélectionner, et celles qui restent en base sont antérieures à
+    cette règle. Elles se tranchent à la main.
+    """
+    for ligne in ("+0.75", "-0.25", "+1.25", "-1.75"):
+        assert (
+            S.settle(
+                "alternate_spreads",
+                "Hand. jeux",
+                f"Alcaraz {ligne}",
+                "Sinner",
+                "Alcaraz",
+                _tennis("6-4,6-4"),
+            )
+            is None
+        )
+
+
+def test_un_handicap_sans_signe_ne_se_regle_pas() -> None:
+    """« Alcaraz 4 » ne dit pas de quel côté les jeux sont donnés.
+
+    Un handicap lu à l'envers est l'erreur la plus coûteuse que ce module puisse
+    commettre — c'est la même raison qui fait porter son signe à chaque issue à
+    l'ingestion des cotes.
+    """
+    assert (
+        S.settle(
+            "alternate_spreads",
+            "Hand. jeux",
+            "Alcaraz 4",
+            "Sinner",
+            "Alcaraz",
+            _tennis("6-4,6-4"),
+        )
+        is None
+    )
+
+
+def test_le_total_de_jeux_se_regle_au_tennis() -> None:
+    """Vingt jeux joués : la ligne à 22.5 tombe sous, celle à 18.5 au-dessus."""
+    score = _tennis("6-4,6-4")
+    assert S.settle("totals", "Jeux O/U", "Plus de 22.5 jeux", "Sinner", "Alcaraz", score) == S.LOSS
+    assert S.settle("totals", "Jeux O/U", "Over 18.5 jeux", "Sinner", "Alcaraz", score) == S.WIN
 
 
 # -- Les états, et le refus d'écraser ----------------------------------------

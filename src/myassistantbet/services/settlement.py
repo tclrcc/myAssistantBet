@@ -125,6 +125,13 @@ class Score:
     sets_un: int
     sets_deux: int
     brut: str
+    #: Les **jeux**, tous sets confondus. Ils etaient deja dans la chaine lue —
+    #: `4-6,7-6,0-6` compte des jeux, pas des sets — et ce module affirmait le
+    #: contraire : « au tennis un total porte sur les jeux, que `event/get` ne
+    #: donne pas dans son champ `score` agrege ». Les compter ne coute aucun
+    #: appel et ouvre les deux plus gros marches non regles du projet.
+    jeux_un: int
+    jeux_deux: int
     #: Vrai des qu'un set n'est pas alle a son terme. **C'est la detection
     #: d'abandon**, et elle ne demande aucun champ de plus : compter les sets sur
     #: un match interrompu designe celui qui menait, donc le perdant.
@@ -141,9 +148,16 @@ def read_score(brut: str) -> Score | None:
     if not jeux:
         return None
     un = deux = 0
+    jeux_un = jeux_deux = 0
     incomplet = False
     for m in jeux:
         a, b = int(m.group(1)), int(m.group(2))
+        # **Les jeux d'un set inacheve comptent quand meme**, et c'est sans
+        # consequence : un match interrompu est refuse en bloc plus haut. Les
+        # ecarter ici ferait deux comptes differents du meme match selon le
+        # chemin de lecture, ce qui est le piege que ce depot paie ailleurs.
+        jeux_un += a
+        jeux_deux += b
         if not _set_complete(a, b):
             incomplet = True
             continue
@@ -151,7 +165,14 @@ def read_score(brut: str) -> Score | None:
             un += 1
         elif b > a:
             deux += 1
-    return Score(sets_un=un, sets_deux=deux, brut=str(brut), incomplet=incomplet)
+    return Score(
+        sets_un=un,
+        sets_deux=deux,
+        brut=str(brut),
+        incomplet=incomplet,
+        jeux_un=jeux_un,
+        jeux_deux=jeux_deux,
+    )
 
 
 @dataclass(frozen=True)
@@ -170,6 +191,10 @@ class MatchResult:
     goals: tuple[int, int] | None = None
     #: Tennis seulement : les sets, du point de vue du premier joueur nomme.
     sets: tuple[int, int] | None = None
+    #: Tennis seulement : les **jeux**, meme point de vue. C'est la grandeur du
+    #: handicap jeux et du total de jeux, les deux plus gros marches que ce
+    #: module laissait a la main.
+    games: tuple[int, int] | None = None
     #: Le match ne s'est pas termine normalement. **Aucune regle ne s'y
     #: applique** : c'est un cas non couvert, pas un resultat.
     unfinished: bool = False
@@ -315,6 +340,7 @@ def _tennis_result(index: dict, ligne, jour: str) -> MatchResult | None:
         # recoupement, pas suppose. On le ramene au point de vue de l'affiche.
         a_lendroit = nom_un == un
         sets = (score.sets_un, score.sets_deux) if a_lendroit else (score.sets_deux, score.sets_un)
+        jeux = (score.jeux_un, score.jeux_deux) if a_lendroit else (score.jeux_deux, score.jeux_un)
         vainqueur = None
         if score.decisif:
             vainqueur = "home" if sets[0] > sets[1] else "away"
@@ -325,6 +351,7 @@ def _tennis_result(index: dict, ligne, jour: str) -> MatchResult | None:
             detail=score.brut,
             winner=vainqueur,
             sets=sets,
+            games=jeux,
             unfinished=score.incomplet,
         )
     return None
@@ -367,15 +394,49 @@ def _football_result(index: dict, conn, ligne, jour: str) -> MatchResult | None:
 #: se relit sur le libelle.
 ISSUE_KEYS = ("h2h",)
 TOTAL_KEYS = ("totals", "alternate_totals")
+#: **Une seule cle pour les deux sports**, et deux regles derriere : au football
+#: un handicap porte sur les buts, au tennis sur les jeux. Le sport se lit sur
+#: le resultat — `goals` ou `games` — jamais sur le libelle.
+HANDICAP_KEYS = ("spreads", "alternate_spreads")
+DC_KEYS = ("double_chance",)
+BTTS_KEYS = ("btts",)
 
 #: Les libelles que le rendu ecrit pour ces memes marches, pour les selections
 #: sans cle. **Reconnaitre un mot qu'on a soi-meme imprime**, jamais deviner.
 ISSUE_LABELS = ("1n2", "vainqueur")
 TOTAL_LABELS = ("o/u", "jeux o/u", "total", "totals")
+HANDICAP_LABELS = ("handicap", "hand. jeux", "hand jeux")
+DC_LABELS = ("dc", "double chance")
+BTTS_LABELS = ("btts", "les 2 equipes marquent", "les deux equipes marquent")
 
 _LIGNE = re.compile(r"(\d+(?:[.,]\d+)?)")
 _OVER = re.compile(r"\b(over|plus de|\+)\b", re.IGNORECASE)
 _UNDER = re.compile(r"\b(under|moins de|-)\b", re.IGNORECASE)
+
+#: Le handicap signe, en fin de libelle : `Lyon -1`, `Tirante +3.5`, `Örgryte 0`.
+#: **Le signe est obligatoire des que la ligne n'est pas nulle** : sans lui,
+#: « Lyon 1 » ne dit pas de quel cote le but est donne, et un handicap lu a
+#: l'envers est l'erreur la plus couteuse que ce module puisse commettre.
+_HANDICAP = re.compile(r"(?:^|\s)([+-]\d+(?:[.,]\d+)?|0)(?=\s|$|\s*jeux|\s*\()", re.IGNORECASE)
+
+#: Les paires de la double chance, telles que le rendu les imprime — `1X`, `12`,
+#: `X2` — et les variantes francaises du nul (`N`) que l'analyse recopie.
+#: **Lues sur le libelle brut**, jamais replie : `_fold` mange les chiffres, et
+#: `1X` comme `X2` s'y reduisent tous deux a `x`.
+_DC_MARK = re.compile(r"(?:^|[\s(\[])([12XN]{2})(?=[\s)\]]|$)", re.IGNORECASE)
+_DC_SIDE = {"1": "home", "2": "away", "x": "draw", "n": "draw"}
+
+#: Les mots du nul, une fois le libelle replie.
+_DRAW_WORDS = frozenset({"nul", "draw", "x", "n"})
+
+
+def _plat(market: str) -> str:
+    """Le libelle d'un marche, casse et accents retires.
+
+    Les deux graphies `Eq. buts` et `Éq. buts` sont en base, et la comparaison
+    d'origine sur `.lower()` seul les separait.
+    """
+    return " ".join(_fold(market)) or (market or "").strip().lower()
 
 
 def _famille(market_key: str, market: str) -> str:
@@ -385,16 +446,50 @@ def _famille(market_key: str, market: str) -> str:
         return "issue"
     if cle in TOTAL_KEYS:
         return "total"
+    if cle in HANDICAP_KEYS:
+        return "handicap"
+    if cle in DC_KEYS:
+        return "double_chance"
+    if cle in BTTS_KEYS:
+        return "btts"
     if cle:
         # Une cle connue mais hors regle : elle reste manuelle, et le dire ici
         # evite qu'un libelle voisin la fasse entrer par la porte des libelles.
         return ""
-    plat = (market or "").strip().lower()
-    if plat in ISSUE_LABELS:
+    brut = (market or "").strip().lower()
+    if brut in ISSUE_LABELS:
         return "issue"
-    if any(plat.startswith(prefixe) for prefixe in TOTAL_LABELS):
+    if any(brut.startswith(prefixe) for prefixe in TOTAL_LABELS):
         return "total"
+    if any(brut.startswith(prefixe) for prefixe in HANDICAP_LABELS):
+        return "handicap"
+    if brut in DC_LABELS:
+        return "double_chance"
+    plat = _plat(market)
+    if any(plat.startswith(prefixe) for prefixe in BTTS_LABELS):
+        return "btts"
     return ""
+
+
+def rule_family(market_key: str, market: str, sport: str) -> str:
+    """La famille de regle, **sport compris**, et c'est ce qui se met en service.
+
+    Un handicap de football porte sur les buts et un handicap de tennis sur les
+    jeux : meme arithmetique, deux marches, et **deux taux d'accord**. Mesure du
+    20/08/2026 sur les selections tranchees a la main — 34 sur 34 au tennis,
+    13 sur 14 au football. Les fondre aurait interdit la famille sure a cause de
+    l'autre, ou mis en service une famille a 92,9 %.
+
+    **Le sport se lit sur la competition, jamais sur le libelle.** Les deux
+    graphies sont pourtant propres — `Hand. jeux` au tennis, `Handicap` au
+    football, exactement ce que `MARKET_ORDER_BY_SPORT` imprime — mais une
+    saisie a la main peut ecrire l'un pour l'autre, et le seul cout de cette
+    faute serait de mettre en service la famille qu'on refuse.
+    """
+    famille = _famille(market_key, market)
+    if famille == "handicap":
+        return "handicap_jeux" if str(sport or "").lower() == "tennis" else "handicap_buts"
+    return famille
 
 
 def _camp(selection: str, home: str, away: str) -> str | None:
@@ -443,6 +538,79 @@ def _total(selection: str, somme: int) -> str | None:
     return WIN if depasse == sens_over else LOSS
 
 
+def _double_chance(selection: str, home: str, away: str) -> frozenset[str] | None:
+    """Les deux issues couvertes par une double chance, ou `None` en cas de doute.
+
+    **Deux lectures, dans cet ordre, et la premiere est la bonne** : le rendu
+    imprime `1X / 12 / X2`, et l'analyse recopie ce marqueur dans neuf libelles
+    sur dix. A defaut, le camp se lit comme ailleurs et le nul a son mot.
+
+    Le marqueur se cherche sur le libelle **brut** : `_fold` retire les
+    chiffres, si bien que `1X` et `X2` s'y replient tous deux sur `x` — deux
+    paris opposes sous la meme forme.
+    """
+    marque = _DC_MARK.search(selection or "")
+    if marque is not None:
+        couvertes = {_DC_SIDE[lettre.lower()] for lettre in marque.group(1)}
+        return frozenset(couvertes) if len(couvertes) == 2 else None
+    mots = set(_fold(selection))
+    couvertes: set[str] = set()
+    if mots & _DRAW_WORDS:
+        couvertes.add("draw")
+    # Le camp se lit sur le libelle prive de ses mots de nul : « Nul ou Levski »
+    # ne doit pas voir « nul » compter comme un jeton d'equipe.
+    reste = " ".join(mot for mot in _fold(selection) if mot not in _DRAW_WORDS)
+    camp = _camp(reste, home, away)
+    if camp in ("home", "away"):
+        couvertes.add(camp)
+    return frozenset(couvertes) if len(couvertes) == 2 else None
+
+
+def _btts(selection: str) -> bool | None:
+    """Le sens d'un « les deux equipes marquent ». `None` s'il ne se lit pas.
+
+    Le rendu ecrit `Oui` et `Non` (`_render_btts`), le fournisseur `Yes` et
+    `No` : les quatre sont reconnus, et rien d'autre.
+    """
+    mots = set(_fold(selection))
+    oui = bool(mots & {"oui", "yes"})
+    non = bool(mots & {"non", "no"})
+    if oui == non:
+        return None
+    return oui
+
+
+def _handicap(selection: str, home: str, away: str, pour: int, contre: int) -> str | None:
+    """Le verdict d'un handicap europeen. `None` quand la regle ne s'ecrit pas.
+
+    **Les lignes en quart n'ont pas de regle, et c'est definitif** : `-0.25` et
+    `+0.75` sont des paris asiatiques **scindes**, une demi-mise sur chacune des
+    deux lignes voisines, donc un verdict qui n'est ni gagne ni perdu. Le
+    gabarit interdit deja de les selectionner ; celles qui restent en base sont
+    anterieures a cette regle et se tranchent a la main.
+
+    **Le remboursement sur ligne entiere touchee est un etat a part**, et c'est
+    tout l'objet de cette famille : `Örgryte 0` sur un nul n'est ni gagne ni
+    perdu, et le ranger avec l'un des deux fausserait le residu au prix.
+    """
+    camp = _camp(selection, home, away)
+    if camp not in ("home", "away"):
+        return None
+    trouve = _HANDICAP.search(selection or "")
+    if trouve is None:
+        return None
+    ligne = float(trouve.group(1).replace(",", "."))
+    if abs(ligne * 4) % 2 == 1:
+        # Ligne en quart : pari scinde, aucun verdict unique.
+        return None
+    marge = (pour - contre if camp == "home" else contre - pour) + ligne
+    if marge > 0:
+        return WIN
+    if marge < 0:
+        return LOSS
+    return VOID
+
+
 def settle(
     market_key: str, market: str, selection: str, home: str, away: str, result: MatchResult
 ) -> str | None:
@@ -466,9 +634,32 @@ def settle(
     if famille == "total":
         if result.goals is not None:
             return _total(selection, result.goals[0] + result.goals[1])
-        # Au tennis un total porte sur les **jeux**, que `event/get` ne donne pas
-        # dans son champ `score` agrege. La regle n'est donc pas ecrite ici.
+        if result.games is not None:
+            # Au tennis un total porte sur les **jeux**, et ils sont dans le
+            # meme champ `score` : `4-6,7-6,0-6` compte des jeux. Le module
+            # affirmait le contraire, et c'est ce qui laissait a la main le plus
+            # gros bloc de selections tranchees du projet.
+            return _total(selection, result.games[0] + result.games[1])
         return None
+    if famille == "double_chance":
+        couvertes = _double_chance(selection, home, away)
+        if couvertes is None or result.winner is None:
+            return None
+        return WIN if result.winner in couvertes else LOSS
+    if famille == "btts":
+        if result.goals is None:
+            # Il n'y a pas de « les deux marquent » au tennis.
+            return None
+        oui = _btts(selection)
+        if oui is None:
+            return None
+        marquent = result.goals[0] > 0 and result.goals[1] > 0
+        return WIN if marquent == oui else LOSS
+    if famille == "handicap":
+        cotes = result.goals or result.games
+        if cotes is None:
+            return None
+        return _handicap(selection, home, away, cotes[0], cotes[1])
     return None
 
 
@@ -487,16 +678,38 @@ def settle(
 #: a 98 % resterait manuel : 2 % de reglements faux sur 293 selections
 #: corrompent le residu au prix, qui est tout ce que ce projet sait produire.
 #:
-#: Ce qui reste dehors, deliberement : handicaps, scores exacts, mi-temps/fin de
-#: match, qualification, totaux d'equipe, deux-equipes-marquent, double chance,
-#: et **les totaux au tennis** — `event/get` ne sert pas le compte de jeux dans
-#: son score agrege, donc la regle ne s'ecrit pas.
-ENABLED = ("issue", "total")
+#: Mesure du 20/08/2026, meme rejeu, sur les 307 selections tranchees :
+#:
+#: | Famille | Regles | Accord | Taux |
+#: | --- | ---: | ---: | ---: |
+#: | `issue` (1N2, Vainqueur) | 79 | 79 | **100,00 %** |
+#: | `total` (O/U buts **et** jeux) | 26 | 26 | **100,00 %** |
+#: | `handicap_jeux` (Hand. jeux, tennis) | 34 | 34 | **100,00 %** |
+#: | `btts` | 7 | 7 | **100,00 %** |
+#: | `double_chance` | 5 | 5 | **100,00 %** |
+#: | `handicap_buts` (Handicap, football) | 14 | 13 | 92,86 % |
+#:
+#: **Le handicap de football reste dehors sur une seule divergence**, et c'est
+#: la regle : `Valerenga +1` perdu 1-2 fait 2-2 apres handicap, donc un
+#: remboursement sur un marche a deux issues — le reglement manuel dit `win`.
+#: L'arithmetique n'est pas en cause ; ce qui n'est pas etabli est le nombre
+#: d'issues du marche ou le pari a ete pose, et un remboursement compte pour un
+#: `void` dans le residu au prix. Une seule ligne fausse sur 307 suffit a le
+#: corrompre.
+#:
+#: Ce qui reste dehors, deliberement : le handicap de football, les scores
+#: exacts, les mi-temps/fin de match, la qualification, les totaux d'equipe.
+ENABLED = ("issue", "total", "handicap_jeux", "btts", "double_chance")
 
 
-def enabled_for(market_key: str, market: str) -> bool:
-    """Ce marche est-il en service ? Sinon il reste a la main."""
-    return _famille(market_key, market) in ENABLED
+def enabled_for(market_key: str, market: str, sport: str = "") -> bool:
+    """Ce marche est-il en service ? Sinon il reste a la main.
+
+    Le sport a un **defaut vide**, qui range un handicap du cote non servi : un
+    appelant qui ne le passe pas ne peut donc pas mettre en service une famille
+    par omission.
+    """
+    return rule_family(market_key, market, sport) in ENABLED
 
 
 @dataclass(frozen=True)
@@ -549,15 +762,17 @@ def compute(settings: Settings | None = None) -> Run:
     with connect(settings) as conn:
         lignes = conn.execute(
             "SELECT p.id, p.market_key, p.market, p.selection, p.result, p.event_id, "
-            "       e.home, e.away "
+            "       e.home, e.away, s.key AS sport "
             "  FROM picks p JOIN events e ON e.id = p.event_id "
+            "  JOIN competitions c ON c.id = e.competition_id "
+            "  JOIN sports s ON s.id = c.sport_id "
             " WHERE p.event_id IS NOT NULL"
         ).fetchall()
     if not lignes:
         return passe
     resultats = results_for([int(r["event_id"]) for r in lignes], settings)
     for ligne in lignes:
-        if not enabled_for(ligne["market_key"] or "", ligne["market"]):
+        if not enabled_for(ligne["market_key"] or "", ligne["market"], ligne["sport"]):
             passe.hors_regle += 1
             continue
         resultat = resultats.get(int(ligne["event_id"]))
@@ -726,13 +941,17 @@ def agreement(settings: Settings | None = None) -> dict[str, tuple[int, int]]:
     """
     with connect(settings) as conn:
         rows = conn.execute(
-            "SELECT r.etat, r.market_key, p.market FROM reglements r "
-            "  JOIN picks p ON p.id = r.pick_id WHERE r.etat IN (?, ?)",
+            "SELECT r.etat, r.market_key, p.market, s.key AS sport FROM reglements r "
+            "  JOIN picks p ON p.id = r.pick_id "
+            "  JOIN events e ON e.id = p.event_id "
+            "  JOIN competitions c ON c.id = e.competition_id "
+            "  JOIN sports s ON s.id = c.sport_id "
+            " WHERE r.etat IN (?, ?)",
             (APPLIQUE, DIVERGENT),
         ).fetchall()
     tally: dict[str, list[int]] = {}
     for row in rows:
-        famille = _famille(row["market_key"] or "", row["market"]) or "autre"
+        famille = rule_family(row["market_key"] or "", row["market"], row["sport"]) or "autre"
         seau = tally.setdefault(famille, [0, 0])
         seau[0] += 1
         if row["etat"] == APPLIQUE:
