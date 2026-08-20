@@ -9118,3 +9118,46 @@ des taux au prompt ». Écrit tel quel, ce serait un compte à rebours vers un
 événement qui ne peut pas se produire. La ligne dit donc les **deux** conditions
 et laquelle bloque, et elle nomme la suspension pour ce qu'elle est : une
 décision de code, pas un seuil.
+
+### La série posée par le §3b, et ce qu'elle montre déjà
+
+`history.scale_shift()` rend la distribution des crans et des paliers **session
+par session**, du plus ancien au plus récent, avec une colonne « lit ses taux » —
+au moins un prompt de la session transmettait des taux de réussite. Rendue sur
+`/stats` sous « Comment tu étiquettes » et dans l'export, repliée.
+
+Sortie sur la base servie au 21/08/2026, échelle de confiance :
+
+| Journée | Session | Sél. | Lit ses taux | conf 5 | conf 4 | conf 3 | conf 2 | conf 1 |
+| --- | ---: | ---: | :---: | ---: | ---: | ---: | ---: | ---: |
+| 05/08 | 2 | 17 | — | 0 | 5 | 11 | 1 | 0 |
+| 06/08 | 3 | 28 | **oui** | 0 | 10 | 18 | 0 | 0 |
+| 07/08 | 4 | 9 | **oui** | 0 | 6 | 3 | 0 | 0 |
+| 08/08 | 5 | 18 | **oui** | 0 | 7 | 11 | 0 | 0 |
+| 09/08 | 6 | 29 | — | 0 | 8 | 21 | 0 | 0 |
+| 10/08 | 7 | 5 | — | 0 | 4 | 1 | 0 | 0 |
+| 11/08 | 8 | 11 | — | 1 | 4 | 4 | 2 | 0 |
+| 12/08 | 9 | 12 | — | 0 | 5 | 2 | 5 | 0 |
+| 13/08 | 10 | 20 | — | 1 | 6 | 8 | 5 | 0 |
+| 14/08 | 11 | 29 | — | 1 | 6 | 16 | 5 | 1 |
+| 15/08 | 13 | 30 | — | 0 | 9 | 13 | 6 | 2 |
+| 15/08 | 14 | 27 | — | 2 | 6 | 12 | 7 | 0 |
+| 17/08 | 15 | 13 | — | 0 | 7 | 5 | 1 | 0 |
+| 18/08 | 16 | 10 | — | 1 | 4 | 4 | 1 | 0 |
+| 18/08 | 17 | 19 | — | 3 | 10 | 5 | 1 | 0 |
+| 20/08 | 18 | 19 | — | 2 | 9 | 7 | 1 | 0 |
+
+**La coupe existe déjà**, et l'instrument la montre au premier rendu : les
+sessions 3, 4 et 5 ont lu leurs propres taux — ce sont les 9 prompts de
+3 sessions que `CLAUDE.md` documente, quand les seuils valaient encore 10 et 4.
+`ScaleShift.cut` vaut donc **1**, le rang de la session 3.
+
+Ce qui se voit et **ne se conclut pas** : sur les trois sessions concernées, les
+crans 2 et 5 tombent à zéro et tout se concentre sur 3 et 4. Elles précèdent
+aussi la définition des cinq crans, la garde d'antériorité et le cran calculé —
+trois changements de cadre datés au journal. **Une série de seize points dont
+trois sont marqués n'établit rien**, et c'est précisément pourquoi l'instrument
+est posé maintenant : le jour où la suspension tombera, il y aura un avant.
+
+Aucun seuil, aucun test statistique, aucun verdict. `labelling()` garde les
+garde-fous qu'il a ; celui-ci n'en a aucun parce qu'il n'affirme rien.

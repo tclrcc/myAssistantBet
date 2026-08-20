@@ -1821,6 +1821,67 @@
     {% endfor %}
   </div>
 
+  {# **La déformation dans le temps, que la part globale ne peut pas montrer.**
+     Une échelle qui glisserait d'un cran d'un mois sur l'autre rendrait
+     exactement la même part ci-dessus et exactement la même vacance. Cet
+     instrument est posé **avant** que les taux entrent dans le prompt : une
+     série ne se reconstitue pas après coup — les crans sont en base, mais le
+     fait de les avoir regardés dans l'ordre, et donc de pouvoir dire qu'ils ne
+     bougeaient pas, ne s'invente pas.
+
+     Sous le pli : elle n'affirme rien, et une session est un petit échantillon. #}
+  {% set series = scale_shift | rejectattr('empty') | list %}
+  {% if series %}
+  {# Le titre est **hors du pli** : c'est une section du relevé, et l'export en
+     porte une du même nom — la parité se lit sur les deux rendus réels. Le
+     détail, lui, reste replié : il n'affirme rien. #}
+  <h3>Session par session</h3>
+  {% call why("Les mêmes échelles, dans l'ordre où elles ont servi") %}
+  <p>
+    Les mêmes échelles dans l'ordre où elles ont servi. La colonne
+    <strong>lit ses taux</strong> marque les sessions dont au moins un prompt
+    transmettait des taux de réussite : à partir de là, la notation n'est plus
+    indépendante de ce qui la mesure, et les deux moitiés de la série ne décrivent
+    plus le même geste.
+  </p>
+  <p>
+    <strong>Un instrument, jamais une mesure.</strong> Aucun verdict n'en sort et
+    aucun seuil ne s'y applique — c'est une série de petits échantillons, et elle
+    existe pour qu'une déformation soit <em>visible</em> le jour où elle se
+    produira, pas pour être conclue aujourd'hui.
+  </p>
+  {% for block in series %}
+  <h4>{{ block.label }}</h4>
+  {# **Aucun conteneur de défilement autour de cette table.** Un `overflow` sur
+     un ancêtre y ancrerait l'en-tête `position: sticky` de `table.board`, qui
+     glisserait alors sur la première ligne — le piège vérifié et documenté. Huit
+     colonnes tiennent sans. #}
+    <table class="board">
+      <thead>
+        <tr>
+          <th>Journée</th>
+          <th class="num">Sél.</th>
+          <th>Lit ses taux</th>
+          {% for key in block.levels %}<th class="num">{{ block.level_labels[key] }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in block.sessions %}
+        <tr>
+          <td class="affiche">{{ entry.day }}</td>
+          <td class="num">{{ entry.total }}</td>
+          <td>{% if entry.feedback %}<strong class="badge warn">oui</strong>{% else %}<span class="muted">—</span>{% endif %}</td>
+          {% for key in block.levels %}
+          <td class="num{% if not entry.counts.get(key) %} muted{% endif %}">{{ entry.counts.get(key, 0) }}</td>
+          {% endfor %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endfor %}
+  {% endcall %}
+  {% endif %}
+
   {# Écrite une fois pour les deux échelles : la phrase ne dépend ni du nom de
      l'échelle ni de son nombre de niveaux, et la recopier par bloc en faisait
      le plus gros du texte de la section. #}

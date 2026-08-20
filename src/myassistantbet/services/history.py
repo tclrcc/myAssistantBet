@@ -4112,6 +4112,159 @@ def labelling(settings: Settings | None = None) -> list[Mix]:
     return [confiance, palier]
 
 
+@dataclass
+class SessionMix:
+    """La distribution d'une echelle sur **une** session d'analyse."""
+
+    session_id: int
+    #: Journee d'analyse : la date de la premiere selection de la session. C'est
+    #: la journee de **decision**, jamais celle des matchs — meme regle que
+    #: partout ailleurs sur cette page.
+    day: str
+    counts: dict[str, int] = field(default_factory=dict)
+    total: int = 0
+    #: Au moins un prompt de cette session transmettait les taux. **C'est la
+    #: seule colonne qui rende la serie interpretable** : elle marque la
+    #: frontiere entre une notation aveugle a ses propres resultats et une
+    #: notation qui les lit.
+    feedback: bool = False
+
+    def share(self, key: str) -> float | None:
+        return None if self.total == 0 else self.counts.get(key, 0) / self.total
+
+
+@dataclass
+class ScaleShift:
+    """La serie d'une echelle d'etiquetage, session par session.
+
+    **Ce que `labelling()` ne peut pas dire.** Il rend la distribution agregee
+    sur toute la base et, par niveau, le nombre de sessions qui ne l'emploient
+    pas. Aucune des deux ne montre une **deformation dans le temps** : une
+    echelle qui glisserait d'un cran d'un mois sur l'autre y rendrait exactement
+    la meme part globale et la meme vacance.
+
+    Elle existe pour une question posee d'avance, et une seule : le jour ou les
+    taux entreront dans le prompt, la consigne de resserrement fera-t-elle
+    bouger la distribution des crans ? Sans releve d'avant, la reponse ne se
+    reconstituera pas — `picks` porte les crans, mais personne ne les aura
+    regardes dans l'ordre.
+
+    Aucun test n'y est attache et aucun verdict n'en sort : **c'est un
+    instrument, pas une mesure.** Il dit ou regarder, comme la fiche de
+    priorite de recherche.
+    """
+
+    key: str
+    label: str
+    #: Les niveaux dans l'ordre de l'echelle, jamais dans celui des effectifs :
+    #: une serie se lit en colonnes fixes, et un tri par volume les ferait
+    #: changer de place d'une lecture a l'autre.
+    levels: list[str] = field(default_factory=list)
+    level_labels: dict[str, str] = field(default_factory=dict)
+    #: Du plus ancien au plus recent. **Une serie se lit dans l'ordre ou elle
+    #: s'est produite** ; la page, elle, range partout du plus recent au plus
+    #: ancien, et suivre cette convention ici rendrait la deformation illisible.
+    sessions: list[SessionMix] = field(default_factory=list)
+
+    @property
+    def empty(self) -> bool:
+        return not self.sessions
+
+    @property
+    def cut(self) -> int | None:
+        """Rang de la premiere session qui a lu ses propres taux, ou `None`.
+
+        C'est le point de coupe de la serie. `None` veut dire qu'aucune n'en a
+        lu — l'etat au 21/08/2026, et l'etat souhaite tant que la suspension
+        tient.
+        """
+        for rank, entry in enumerate(self.sessions):
+            if entry.feedback:
+                return rank
+        return None
+
+
+def scale_shift(settings: Settings | None = None) -> list[ScaleShift]:
+    """La distribution des crans et des paliers, session par session.
+
+    Instrumentation posee **avant** que le regime change, parce qu'une serie ne
+    se reconstitue pas apres coup : ce qui manquerait n'est pas la donnee — les
+    crans sont en base — mais le fait de l'avoir regardee dans l'ordre, et donc
+    de pouvoir dire qu'elle ne bougeait pas.
+
+    Population principale seule, comme `labelling()` : une selection
+    exploratoire est produite par un autre circuit et sans exigence de fait
+    date, donc elle ne decrit pas la meme facon de noter.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        tier_labels = _tier_labels(conn)
+        tier_order = [row["key"] for row in conn.execute("SELECT key FROM tiers ORDER BY position")]
+        rows = conn.execute(
+            "SELECT session_id, tier, confidence, created_at FROM picks WHERE exploratoire = 0"
+        ).fetchall()
+        # Une session a lu ses propres taux des qu'**un** de ses prompts les
+        # transmettait : les selections suivantes en dependent toutes, quel que
+        # soit le prompt qui les a portees.
+        parlantes = {
+            int(row["session_id"])
+            for row in conn.execute(
+                "SELECT DISTINCT session_id FROM prompts WHERE feedback_active = 1"
+            )
+        }
+
+    if not rows:
+        return []
+
+    jours: dict[int, str] = {}
+    compte: dict[int, dict[str, dict[str, int]]] = {}
+    total: dict[int, dict[str, int]] = {}
+    for row in rows:
+        session_id = int(row["session_id"])
+        jour = str(row["created_at"] or "")[:10]
+        # La journee d'analyse d'une session est celle de sa **premiere**
+        # selection : une session a cheval sur minuit reste une seance.
+        if jour and (session_id not in jours or jour < jours[session_id]):
+            jours[session_id] = jour
+        seau = compte.setdefault(session_id, {"confidence": {}, "tier": {}})
+        somme = total.setdefault(session_id, {"confidence": 0, "tier": 0})
+        if row["confidence"] is not None:
+            cle = str(row["confidence"])
+            seau["confidence"][cle] = seau["confidence"].get(cle, 0) + 1
+            somme["confidence"] += 1
+        if row["tier"]:
+            seau["tier"][str(row["tier"])] = seau["tier"].get(str(row["tier"]), 0) + 1
+            somme["tier"] += 1
+
+    ordre = sorted(compte, key=lambda session_id: (jours.get(session_id, ""), session_id))
+    echelles = [
+        ScaleShift(
+            key="confidence",
+            label="confiance annoncée",
+            levels=[str(level) for level in CONFIDENCE_SCALE],
+            level_labels={str(level): f"conf {level}" for level in CONFIDENCE_SCALE},
+        ),
+        ScaleShift(
+            key="tier",
+            label="palier",
+            levels=list(tier_order),
+            level_labels={key: tier_labels.get(key, key) for key in tier_order},
+        ),
+    ]
+    for echelle in echelles:
+        echelle.sessions = [
+            SessionMix(
+                session_id=session_id,
+                day=jours.get(session_id, ""),
+                counts=dict(compte[session_id][echelle.key]),
+                total=total[session_id][echelle.key],
+                feedback=session_id in parlantes,
+            )
+            for session_id in ordre
+        ]
+    return echelles
+
+
 def _rate_tally(
     entries: list[tuple[str, str, str, Any]],
     minimum: int = 1,

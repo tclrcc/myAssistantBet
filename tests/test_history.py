@@ -3291,3 +3291,119 @@ def test_le_perimetre_du_releve_est_annonce(migrated: Settings) -> None:
     couvertes, total = tier_scope(migrated)
 
     assert couvertes < total, "l'écart entre les deux est ce que la page annonce"
+
+
+# -- La serie des echelles, session par session ------------------------------
+
+
+def test_la_serie_rend_une_ligne_par_session_dans_l_ordre(migrated: Settings) -> None:
+    """**Une serie se lit dans l'ordre ou elle s'est produite**, du plus ancien
+    au plus recent — la page range partout du plus recent au plus ancien, et
+    suivre cette convention ici rendrait la deformation illisible.
+
+    Ce que `labelling()` ne peut pas dire : il rend la part globale et, par
+    niveau, le nombre de sessions qui ne l'emploient pas. Une echelle qui
+    glisserait d'un cran d'un mois sur l'autre y rendrait exactement la meme
+    part et exactement la meme vacance.
+    """
+    _session_notee(migrated, "2026-07-01", {3: 4, 4: 1})
+    _session_notee(migrated, "2026-07-08", {3: 1, 4: 4})
+
+    confiance = next(entry for entry in history.scale_shift(migrated) if entry.key == "confidence")
+
+    assert [entry.day for entry in confiance.sessions] == ["2026-07-01", "2026-07-08"]
+    assert confiance.sessions[0].counts["3"] == 4
+    assert confiance.sessions[1].counts["3"] == 1
+    # Les niveaux sont ceux de l'echelle, dans son ordre, et **jamais** dans
+    # celui des effectifs : une serie se lit en colonnes fixes.
+    assert confiance.levels == [str(level) for level in history.CONFIDENCE_SCALE]
+
+
+def test_la_serie_marque_les_sessions_qui_ont_lu_leurs_taux(migrated: Settings) -> None:
+    """**La seule colonne qui rende la serie interpretable.** Elle marque la
+    frontiere entre une notation aveugle a ses propres resultats et une notation
+    qui les lit — a partir de la, les deux moities ne decrivent plus le meme
+    geste.
+
+    Une session compte des qu'**un** de ses prompts transmettait : les
+    selections suivantes en dependent toutes, quel que soit le prompt qui les a
+    portees.
+    """
+    muette = _session_notee(migrated, "2026-07-01", {3: 2})
+    parlante = _session_notee(migrated, "2026-07-08", {3: 2})
+    db.execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, "
+        "                     feedback_active, created_at) VALUES (?, '', '', 0, 1, ?)",
+        (parlante, "2026-07-08T12:00:00Z"),
+        settings=migrated,
+    )
+
+    confiance = next(entry for entry in history.scale_shift(migrated) if entry.key == "confidence")
+    etats = {entry.session_id: entry.feedback for entry in confiance.sessions}
+
+    assert etats[muette] is False
+    assert etats[parlante] is True
+    assert confiance.cut == 1, "le rang de la premiere session qui a lu ses taux"
+
+
+def test_la_serie_est_vide_sans_selection(migrated: Settings) -> None:
+    """Rien plutot que deux echelles a zero : une echelle sans selection ne dit
+    pas « je n'emploie aucun niveau », elle dit qu'il n'y a rien du tout. Meme
+    regle que `labelling()`."""
+    assert history.scale_shift(migrated) == []
+
+
+def _session_notee(settings: Settings, jour: str, crans: dict[int, int]) -> int:
+    """Une session dont les selections portent les crans demandes, datees du jour."""
+    from myassistantbet.services.manual import build, save
+
+    event_id = save(
+        build(
+            "football",
+            "Amical",
+            f"Lyon {jour}",
+            f"Nice {jour}",
+            "2099-01-01",
+            "20:45",
+            "Lyon 2.10",
+            "",
+            "",
+            settings=settings,
+        ),
+        settings,
+    )
+    # **Une session par journee**, et `board.current_session` en cree une par
+    # jour local : deux appels le meme jour rendraient la meme, donc la serie
+    # n'aurait qu'une ligne. Elle est donc creee explicitement.
+    db.execute(
+        "INSERT INTO sessions (label, created_at) VALUES (?, ?)",
+        (jour, f"{jour}T09:00:00Z"),
+        settings=settings,
+    )
+    session_id = int(
+        db.query_one("SELECT id FROM sessions WHERE label = ?", (jour,), settings=settings)["id"]
+    )
+    db.execute(
+        "INSERT INTO session_events (session_id, event_id) VALUES (?, ?)",
+        (session_id, event_id),
+        settings=settings,
+    )
+    for cran, nombre in crans.items():
+        for index in range(nombre):
+            pick_id = history.add_pick(
+                session_id,
+                tier="fun",
+                market="O/U 2.5",
+                selection=f"Over {cran}-{index}",
+                event_id=str(event_id),
+                price="2.10",
+                confidence=str(cran),
+                independence_note="angles indépendants (fixture)",
+                settings=settings,
+            )
+            db.execute(
+                "UPDATE picks SET created_at = ? WHERE id = ?",
+                (f"{jour}T12:00:00Z", pick_id),
+                settings=settings,
+            )
+    return session_id

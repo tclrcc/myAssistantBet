@@ -127,6 +127,7 @@ SECTIONS: tuple[Section, ...] = (
     Section("", LABELLING_BLOCK),
     Section(LABELLING_BLOCK, "Par confiance annoncée"),
     Section(LABELLING_BLOCK, "Par palier"),
+    Section(LABELLING_BLOCK, "Session par session"),
     Section("", BETS_BLOCK),
     Section(BETS_BLOCK, "Par palier"),
     Section(BETS_BLOCK, "Par sport"),
@@ -146,6 +147,12 @@ class StatsReport:
 
     analysis: history_service.Analysis
     labelling: list[history_service.Mix] = field(default_factory=list)
+    #: La distribution des echelles **session par session**, du plus ancien au
+    #: plus recent. `labelling` rend la part globale et la vacance ; ni l'une ni
+    #: l'autre ne montre une deformation dans le temps, et c'est justement ce
+    #: qu'il faudra lire le jour ou les taux entreront dans le prompt. Un
+    #: instrument, jamais une mesure : aucun verdict n'en sort.
+    scale_shift: list[history_service.ScaleShift] = field(default_factory=list)
     stats: history_service.Stats = field(default_factory=history_service.Stats)
     coupon_rates: list[history_service.RateRow] = field(default_factory=list)
     set_scores: set_scores_service.Report = field(default_factory=set_scores_service.Report)
@@ -222,6 +229,7 @@ class StatsReport:
             "margin_reference": self.margin_reference,
             "equivalence_margin": self.equivalence_margin,
             "labelling": self.labelling,
+            "scale_shift": self.scale_shift,
             "stats": self.stats,
             "coupon_rates": self.coupon_rates,
             "set_scores": self.set_scores,
@@ -349,6 +357,10 @@ class StatsReport:
             ),
             (Section("", LABELLING_BLOCK), bool(self.labelling)),
             *((Section(LABELLING_BLOCK, f"Par {block.label}"), True) for block in self.labelling),
+            (
+                Section(LABELLING_BLOCK, "Session par session"),
+                any(not block.empty for block in self.scale_shift),
+            ),
             # **Le bloc est rendu meme vide**, et ses cartes ne le sont pas :
             # l'absence de pari pose est une information, l'absence d'une carte
             # a l'interieur n'en est pas une.
@@ -569,6 +581,7 @@ def report(settings: Settings | None = None) -> StatsReport:
     return StatsReport(
         analysis=principale,
         labelling=history_service.labelling(settings),
+        scale_shift=history_service.scale_shift(settings),
         stats=history_service.stats(settings),
         coupon_rates=coupons_service.rates(settings),
         set_scores=sets,
@@ -679,6 +692,27 @@ def _session(row: history_service.SessionRate) -> dict[str, Any]:
         "feedback_active": row.feedback_active,
         "guarded": row.guarded,
         "rates": _rate(row.rates),
+    }
+
+
+def _shift(block: history_service.ScaleShift) -> dict[str, Any]:
+    """La serie d'une echelle, dans l'ordre ou elle s'est produite."""
+    return {
+        "key": block.key,
+        "label": block.label,
+        "levels": block.levels,
+        "level_labels": block.level_labels,
+        "cut": block.cut,
+        "sessions": [
+            {
+                "session_id": entry.session_id,
+                "day": entry.day,
+                "total": entry.total,
+                "feedback": entry.feedback,
+                "counts": {key: entry.counts.get(key, 0) for key in block.levels},
+            }
+            for entry in block.sessions
+        ],
     }
 
 
@@ -1007,6 +1041,7 @@ def as_json(found: StatsReport) -> dict[str, Any]:
             ],
         },
         "labelling": [_mix(block) for block in found.labelling],
+        "scale_shift": [_shift(block) for block in found.scale_shift],
         "bets": {
             "overall": _rate(found.stats.overall),
             "by_tier": [_rate(row) for row in found.stats.by_tier],
@@ -1662,6 +1697,39 @@ def as_markdown(found: StatsReport) -> str:
                     f"niveaux — {block.top_labels} — sur {block.levels}."
                 )
             out += ["", note]
+
+        series = [block for block in found.scale_shift if not block.empty]
+        if series:
+            out += [
+                "",
+                "### Session par session",
+                "",
+                "Les mêmes échelles dans l'ordre où elles ont servi. La part globale "
+                "ci-dessus ne montre pas une **déformation dans le temps** : une échelle "
+                "qui glisserait d'un cran d'un mois sur l'autre y rendrait exactement la "
+                "même part. La colonne « lit ses taux » marque les sessions dont au moins "
+                "un prompt transmettait des taux de réussite — à partir de là, la notation "
+                "n'est plus indépendante de ce qui la mesure.",
+                "",
+                "**Un instrument, jamais une mesure** : aucun verdict n'en sort, et une "
+                "session est un petit échantillon.",
+            ]
+            for block in series:
+                entetes = " | ".join(block.level_labels[key] for key in block.levels)
+                aligns = " | ".join("---:" for _ in block.levels)
+                out += [
+                    "",
+                    f"#### {block.label}",
+                    "",
+                    f"| Journée | Session | Sélections | Lit ses taux | {entetes} |",
+                    f"| --- | ---: | ---: | :---: | {aligns} |",
+                ]
+                for entry in block.sessions:
+                    cases = " | ".join(str(entry.counts.get(key, 0)) for key in block.levels)
+                    out.append(
+                        f"| {entry.day} | {entry.session_id} | {entry.total} | "
+                        f"{'oui' if entry.feedback else '—'} | {cases} |"
+                    )
 
     # **Le bloc n'est plus rendu quand le suivi est ferme**, et le pied de page
     # reste : il decrit la definition du taux, qui vaut pour tout le fichier.
