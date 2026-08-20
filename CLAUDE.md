@@ -1609,6 +1609,52 @@ blocs ne tombant plus sur le compte de lignes.
   « Lu » s'y mesure sur les lignes de la section C et non sur leur total — les
   compter toutes aurait rendu le banc vert pendant la panne.
 
+## Un test qui mesure un service ne dit rien de la surface qui le rend
+
+**Regle de revue, du 20/08/2026, et elle a coute cinq collages complets.** Le
+lecteur d'import lisait correctement un rendu entier — 5 a 7 selections, autant
+de blocs `conf`, la ligne `dossiers_ouverts` — et le formulaire d'import ne
+s'affichait pas. Sur les 35 collages archives, les cinq complets sont les
+**seuls** que l'application refusait ; les trente collages du seul tableau
+passaient tous. Le message affiche a la place envoyait recoller la section C
+seule, c'est-a-dire le geste qui coute les crans du lot entier.
+
+- **La cause tient en un nom** : `parse_table` employait `columns` pour deux
+  notions — l'entete du tableau **en cours**, remis a zero par chaque titre de
+  section, et le fait global « un tableau a-t-il ete reconnu ». Un rendu complet
+  finit par `F.`, donc `columns is None` y est vrai **par construction**. Le
+  refus se prononce desormais sur ce qui a ete lu, jamais sur un etat de
+  section.
+- **Le defaut est ne du correctif de l'autre moitie de la meme fonction**
+  (`a75da0d`, 19/08 18:11), celui qui empechait une mention de « C-bis » en
+  prose de faire basculer la lecture. L'import qui precede de douze minutes
+  passe, les deux suivants echouent. Corriger une fonction sans rejouer
+  **l'ensemble de son parcours** deplace le defaut au lieu de le retirer.
+- **Et le banc ecrit pour ce defaut-la est reste vert.**
+  `tests/test_collage_complet.py` tournait sur le collage reel, comptait chaque
+  objet exactement, et tous ses comptes etaient justes. Il n'assertait ni
+  `preview.ignored`, ni le rendu de la route. **Un banc qui mesure le lecteur ne
+  voit pas un defaut dans la porte.**
+- La regle generale, et `CONTRIBUTING.md` n'en portait que la moitie : « le
+  service et sa surface se livrent ensemble » visait un service qui **accepte**
+  une valeur que rien ne permet de saisir — le motif de saisie tardive, reste
+  sans surface deux jours. Ici c'est l'inverse : un service qui **produit** une
+  valeur que rien ne permet de valider. Les deux se testent d'une seule facon —
+  **poster le formulaire rendu et relire la base**.
+
+**Le garde-fou qui en sort, et il vaut au-dela de ce cas** : `ImportPreview.ignored`
+cache tout le formulaire, donc il n'a qu'un sens legitime — *il n'y a rien a
+montrer*. `_unreadable` est desormais le seul chemin vers lui, et une remarque
+posee sur un apercu qui porte des selections descend dans `notes`, qui affiche
+sans empecher d'importer. La regle « un collage complet ne peut pas etre plus
+difficile a importer qu'un collage partiel » tient par une fonction plutot que
+par la vigilance.
+
+**Corollaire de plage** : `SECTION_HEAD` s'arretait a `[A-F]` quand la section G
+etait produite depuis un lot. Un titre `G.` ne fermait donc aucune section. La
+plage suit le gabarit, et un test compare les deux — une section H ajoutee
+demain se solde par un test rouge et non par un silence.
+
 ## Un champ dont le nom evoque une date peut etre un entier
 
 **Regle de revue, meme jour, et c'est la soeur de « cherchez l'identifiant ».**
