@@ -1802,10 +1802,10 @@ def _settings_context(**overrides: object) -> dict[str, object]:
         # Les familles de marches : ce qui est deja classe, et ce qui reclame
         # une decision. Un marche inconnu n'est jamais range d'office dans
         # « Autre » — ce serait lire un oubli comme une decision.
-        "market_families": [
-            {"key": key, "family": family}
-            for key, family in sorted(market_families_service.load(settings).items())
-        ],
+        # **Avec leur compte**, et pas seulement leur famille : un tiret sur
+        # toutes les lignes classees faisait lire `vainqueur` et `cotes` a
+        # l'identique, quand l'un porte 76 selections et l'autre aucune.
+        "market_families": market_families_service.classified(settings),
         "market_todo": market_families_service.unclassified(settings),
         "market_family_options": market_families_service.FAMILIES,
         "families_saved": False,

@@ -52,10 +52,22 @@
         </td>
       </tr>
       {% endfor %}
+      {# **Le compte, jamais un tiret.** Il était rendu sur toutes les lignes
+         classées : `vainqueur` — 76 sélections — et `cotes` — aucune — s'y
+         lisaient à l'identique, et la page ne permettait pas de répondre à la
+         seule question qu'on lui pose devant un libellé qui surprend.
+
+         « Aucune » se dit en toutes lettres plutôt qu'en zéro : c'est un fait
+         sur le libellé — le catalogue seede des marchés que le bloc sait écrire
+         et qu'on n'a jamais joués — et non une case restée vide. #}
       {% for row in market_families %}
       <tr>
         <td class="muted">{{ row.key }}</td>
-        <td class="num muted">—</td>
+        <td class="num {% if row.unused %}muted{% endif %}">
+          {%- if row.unused %}aucune
+          {%- else %}{{ row.picks }}{% if row.settled %} <span class="muted small">dont {{ row.settled }} tranchée(s)</span>{% endif %}
+          {%- endif %}
+        </td>
         <td>
           <select name="family" aria-label="Famille de {{ row.key }}"
                   hx-trigger="change" hx-post="/settings/families"

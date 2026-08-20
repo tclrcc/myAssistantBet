@@ -259,6 +259,62 @@ class UnclassifiedMarket:
     settled: int = 0
 
 
+@dataclass
+class ClassifiedMarket:
+    """Un libelle deja range dans une famille, **et ce qu'il porte vraiment**.
+
+    L'ecran rendait un tiret dans la colonne « Selections » sur **toutes** les
+    lignes classees, si bien que `vainqueur` — 76 selections — et `cotes` —
+    aucune — s'y lisaient a l'identique. Le tiret etait cense distinguer une
+    entree seedee d'une entree vue en base ; il ne distinguait rien, et la page
+    ne permettait donc pas de repondre a la seule question qu'on lui pose devant
+    un libelle qui surprend : est-ce que quelque chose est range la-dedans ?
+
+    Meme forme que le defaut caracteristique du projet — la meme sortie pour
+    « jamais employe » et pour « employe soixante-seize fois ».
+    """
+
+    key: str
+    family: str
+    picks: int = 0
+    settled: int = 0
+
+    @property
+    def unused(self) -> bool:
+        """Aucune selection. **Un fait, pas un defaut** : le catalogue seede des
+        marches que le bloc sait ecrire et qu'on n'a jamais joues."""
+        return self.picks == 0
+
+
+def classified(settings: Settings | None = None) -> list[ClassifiedMarket]:
+    """Les marches ranges, avec le compte de ce qu'ils portent.
+
+    Le compte se fait sur la **cle de famille**, comme le classement lui-meme :
+    « O/U 2.5 » et « O/U 3.5 » comptent tous deux sous `o u`, sans quoi la
+    colonne dirait zero sur un marche que la table groupe bel et bien.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        rows = conn.execute("SELECT market, result FROM picks").fetchall()
+        known = {
+            row["market_key"]: row["family"]
+            for row in conn.execute("SELECT market_key, family FROM market_families")
+        }
+
+    compte: dict[str, list[int]] = {key: [0, 0] for key in known}
+    for row in rows:
+        cle = family_key(row["market"])
+        if cle in compte:
+            compte[cle][0] += 1
+            if row["result"] in ("win", "loss"):
+                compte[cle][1] += 1
+
+    return [
+        ClassifiedMarket(key=key, family=known[key], picks=compte[key][0], settled=compte[key][1])
+        for key in sorted(known)
+    ]
+
+
 def unclassified(settings: Settings | None = None) -> list[UnclassifiedMarket]:
     """Marches a classer : vus dans l'historique, absents de la table."""
     settings = settings or get_settings()

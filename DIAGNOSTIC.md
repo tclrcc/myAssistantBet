@@ -8823,3 +8823,90 @@ Un existant réaligné — `test_paliers_injectes_dans_le_prompt` recopiait
 bandes du seed. Il énonce désormais la propriété : les deux paliers sûrs gardent
 leur plancher, la borne réglée n'apparaît pas, et **un seul** palier haut est
 ouvert sur un lot d'un match — celui que le dossier unique permet de justifier.
+
+## §2b — Le marché « cotes » : ce que la mesure dit, et le vrai défaut de la page
+
+### L'hypothèse du brief est fausse, et il l'avait signalée comme telle
+
+> « C'est presque certainement un artefact de lecture : les blocs portent une
+> ligne d'en-tête `MARCHES (Betclic, releve 23:59 — …)`, et un découpage trop
+> large la prend pour un libellé. »
+
+**Non.** `cotes` est le libellé du marché `outright` dans
+`render.MARKET_ORDER` — « saisie manuelle : marché libre, sans forme imposée » —
+présent aussi dans l'ordre du tennis, et rangé dans `autre` par `FAMILY_SEED` et
+la migration 027. C'est une **entrée de catalogue**, décidée à la main.
+
+Quatre mesures qui ferment la question :
+
+| Question | Mesure |
+| --- | --- |
+| combien de sélections portent le libellé `cotes` ? | **0 sur 327**, toutes casses confondues |
+| le parsing peut-il le fabriquer ? | non — les 19 libellés distincts de `picks` sont tous des noms de marché |
+| un en-tête de bloc a-t-il jamais atterri dans `picks.market` ? | aucun |
+| le marché existe-t-il vraiment ? | **oui : 11 lignes dans `odds`**, clé `outright`, bookmaker `manual` |
+
+Le quatrième renverse la lecture qu'on aurait pu en tirer : ce n'est pas une
+entrée morte du catalogue, c'est un marché **relevé** qui n'a jamais produit de
+sélection. `outright` est ce que rend une saisie manuelle libre.
+
+### Le vrai défaut est sur la page, et c'est le motif du projet
+
+`_families.html` rendait `—` dans la colonne « Sélections » sur **toutes** les
+lignes classées. Donc :
+
+```
+vainqueur   —    issue        (76 sélections)
+cotes       —    autre        (0 sélection)
+```
+
+Les deux se lisent à l'identique. `CLAUDE.md` affirmait que « c'est ce tiret qui
+distingue une entrée seedée d'une entrée vue en base » : **c'est faux**, le tiret
+est rendu inconditionnellement. La page ne permettait donc pas de répondre à la
+seule question qu'on lui pose devant un libellé qui surprend — *est-ce que
+quelque chose est rangé là-dedans ?* — et c'est exactement ce qui a fait
+soupçonner un artefact.
+
+Sortie identique pour « jamais employé » et pour « employé soixante-seize fois ».
+Le compte réel est désormais rendu, et **« aucune » s'écrit en toutes lettres**
+plutôt qu'en zéro : c'est un fait sur le libellé — le catalogue seede des marchés
+que le bloc sait écrire et qu'on n'a jamais joués — et non une case restée vide.
+
+Le compte se fait sur la **clé de famille**, comme le classement lui-même :
+`O/U 2.5` et `O/U 3.5` comptent tous deux sous `o u`, sans quoi la colonne dirait
+zéro sur un marché que la table groupe bel et bien.
+
+### Le recensement demandé : trois libellés hors catalogue, et un quatrième ailleurs
+
+**Sur `picks`** — 3 libellés, 5 sélections, aucune depuis le 12/08 :
+
+| Libellé | Sélections | Ce que le bloc écrit |
+| --- | ---: | --- |
+| `Double chance` | 3 | `DC` |
+| `Nombre total de buts (t. rég)` | 1 | `O/U` |
+| `Les 2 équipes marquent (t. rég)` | 1 | `BTTS` |
+
+Les trois sont des libellés **de bookmaker**, tapés à la main aux sessions 2 à 9
+au lieu du vocabulaire du bloc. Ils sont classés en famille — le seed les porte —
+donc ils ne manquent à aucun regroupement ; c'est la clé fine qui reste NULL,
+comportement documenté et voulu (« un libellé hors vocabulaire reste NULL et se
+réclame »). Aucun depuis neuf jours : la consigne de recopier le libellé du bloc
+est suivie.
+
+**Sur `market_families`** — 14 clés sur 29 n'ont jamais servi, dont `cotes`. Une
+seule sort du catalogue de rendu : `total buts`, seedée sans qu'aucun
+`MARKET_ORDER` ne la produise. Elle ne coûte rien et ne masque rien.
+
+**Sur `odds`, et personne ne le signale** : `2jrs 1 set`, **20 lignes**,
+bookmaker `manual`, événements 2 à 11, saisies le 04/08. Ce n'est ni un marché du
+catalogue ni une famille : c'est une saisie libre, rendue par le repli générique
+de `render.py`. `unclassified()` ne la voit pas, et **c'est juste** — il ne lit
+que `picks`, une famille étant un regroupement de *sélections*, et cette clé n'en
+porte aucune. La signaler dans « à classer » ferait réclamer une décision sur un
+objet qu'aucun taux ne compte.
+
+### Ce que ça coûte
+
+Zéro token de prompt : la page Réglages n'entre dans aucun prompt. Une requête de
+plus au rendu de `/settings` — un `SELECT market, result FROM picks`, déjà fait
+par `unclassified()` juste à côté.

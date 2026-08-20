@@ -341,3 +341,100 @@ def test_le_marche_se_qualifie_est_une_issue() -> None:
     aurait coupe en deux un echantillon deja court."""
     assert market_families.family_key("Se qualifie") == "se qualifie"
     assert market_families.FAMILY_SEED["se qualifie"] == "issue"
+
+
+# -- Ce que porte un marche deja classe --------------------------------------
+
+
+def test_un_marche_classe_annonce_ce_qu_il_porte(migrated: Settings) -> None:
+    """**La meme sortie pour « jamais employe » et pour « employe soixante-seize
+    fois ».** L'ecran rendait un tiret dans la colonne « Selections » sur toutes
+    les lignes classees : `vainqueur` et `cotes` s'y lisaient a l'identique,
+    quand l'un porte 76 selections en base et l'autre aucune.
+
+    Le tiret etait cense distinguer une entree seedee d'une entree vue en base.
+    Il ne distinguait rien — c'est la forme caracteristique du defaut de ce
+    projet, sur la surface meme qui sert a repondre « est-ce que quelque chose
+    est range la-dedans ? »
+    """
+    session_id, event_id = _session(migrated)
+    _pick(migrated, session_id, event_id, "O/U 2.5", "win")
+    _pick(migrated, session_id, event_id, "O/U 3.5", "loss")
+    _pick(migrated, session_id, event_id, "O/U 1.5", "pending")
+
+    rendus = {entry.key: entry for entry in market_families.classified(migrated)}
+
+    # **Compte sur la cle de famille**, comme le classement : les trois lignes
+    # tombent sous `o u`, sans quoi la colonne dirait zero sur un marche que la
+    # table groupe bel et bien.
+    assert rendus["o u"].picks == 3
+    assert rendus["o u"].settled == 2
+    assert not rendus["o u"].unused
+
+
+def test_un_marche_seede_et_jamais_joue_le_dit(migrated: Settings) -> None:
+    """**Un fait sur le libelle, pas une case restee vide.** Le catalogue seede
+    des marches que le bloc sait ecrire et qu'on n'a jamais joues — `cotes`,
+    `corners`, `podium`. « Aucune » l'enonce ; un zero se lirait comme un
+    compte tombe a rien, et un tiret ne disait rien du tout."""
+    rendus = {entry.key: entry for entry in market_families.classified(migrated)}
+
+    assert rendus["cotes"].unused
+    assert rendus["cotes"].picks == 0
+    assert rendus["cotes"].family == "autre"
+
+
+def test_l_ecran_distingue_un_marche_employe_d_un_marche_seede(
+    client: TestClient, migrated: Settings
+) -> None:
+    """Le service et sa surface se livrent ensemble : un compte calcule qu'aucune
+    page ne rend ne repare rien."""
+    session_id, event_id = _session(migrated)
+    _pick(migrated, session_id, event_id, "O/U 2.5", "win")
+
+    page = " ".join(client.get("/settings").text.split())
+    familles = page.split('id="families"')[1]
+
+    assert "aucune" in familles, "un marche seede et jamais joue le dit"
+    assert "dont 1 tranchée(s)" in familles
+
+
+def test_le_marche_libre_de_la_saisie_manuelle_existe_vraiment(migrated: Settings) -> None:
+    """**`cotes` n'est pas un artefact, et il n'est pas mort non plus.**
+
+    La question a ete tranchee une premiere fois sur `picks` — zero selection —
+    ce qui laissait penser a une entree seedee sans usage. La base servie dit
+    autre chose : `odds` porte **11 lignes** de cle `outright`, toutes du
+    bookmaker `manual`. Le marche existe, il est releve, il n'a simplement
+    jamais produit de selection.
+
+    Ce test verrouille le chemin plutot que le chiffre : une cote saisie a la
+    main sans libelle de marche connu entre bien sous `outright`, donc sous
+    « Cotes ».
+    """
+    from myassistantbet import db
+
+    event_id = save(
+        build(
+            "cycling",
+            "Étape",
+            "Étape 3",
+            "",
+            "2099-01-01",
+            "14:00",
+            "Pogacar 2.10",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+    cles = {
+        row["market_key"]
+        for row in db.query(
+            "SELECT market_key FROM odds WHERE event_id = ?", (event_id,), settings=migrated
+        )
+    }
+
+    assert "outright" in cles
+    assert market_families.family_key("Cotes") in market_families.FAMILY_SEED
