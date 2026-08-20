@@ -7132,3 +7132,141 @@ installation neuve, une insertion manuelle n'existe que sur une machine.
 arbitrage de l'utilisateur, pas une grandeur observée. Seule l'unité dépend du
 volume, donc seule l'unité a une échéance. `Threshold.provisional` porte la
 distinction, et un test la vérifie sur les deux.
+
+## §2b — Le palmarès par catégorie, et la moitié qui ne peut pas être rendue
+
+### Ce qui est livré
+
+`Palmares` porte désormais le **meilleur résultat par catégorie de tournoi**,
+avec son dénominateur et la surface de ce résultat, sur l'historique **entier**
+d'un joueur — 2009 pour Pegula, 2013 pour Paul.
+
+Rendu réel sur les joueurs du dernier lot :
+
+| Avant (3 saisons, `tennis-data`) | Après (historique entier) |
+| --- | --- |
+| `Palmares : Iga Swiatek 3V-1D` | `Palmares : Iga Swiatek WTA 1000 vainqueur 2026 (43 éditions, dur)` |
+| — | `Elena Rybakina WTA 1000 finaliste 2026 (45 éditions, dur)` |
+| — | `Iga Swiatek Grand Slam vainqueur 2025 (30 éditions, gazon)` |
+
+**Et l'angle demandé, sur une affiche réelle du lot** — Tirante contre Fils, ATP
+Masters 1000 :
+
+> `Thiago Agustin Tirante ATP Masters 1000 1/8 2026 (7 éditions, dur)`
+> `Arthur Fils ATP Masters 1000 1/2 2026 (25 éditions, dur)`
+
+Sept éditions contre vingt-cinq : c'est exactement ce que « un joueur en finale
+de Masters 1000 qui n'y est jamais allé n'aborde pas le match comme un habitué »
+demandait de rendre visible, et le seul bilan sur trois saisons ne le disait pas.
+
+**La surface est celle du meilleur résultat, pas celle du lot** : une catégorie
+s'étale sur plusieurs surfaces, et en rendre une seule pour l'ensemble serait
+faux. Le `gazon` de Swiatek en Grand Chelem dit quelque chose qu'un « dur »
+majoritaire aurait effacé.
+
+### Ce qui n'est pas rendu, et pourquoi c'est un refus et non un oubli
+
+**Le meilleur résultat *dans ce tournoi-ci* n'est pas rendu par la source
+profonde**, parce que les deux sources ne nomment pas les tournois pareil :
+
+| Source | Nom de Cincinnati |
+| --- | --- |
+| `tennis-data.co.uk` | `Western & Southern Financial Group Women's Open` |
+| `matches-played` | `Cincinnati Open - Cincinnati` |
+
+`TENNISDATA_TOURNAMENTS` rattache les 43 compétitions à la **première** graphie.
+Elle ne dit rien de la seconde, et un rapprochement automatique par libellé est
+précisément ce que ce projet a essayé puis rejeté.
+
+Rendu tel quel, le fragment annonçait **« ici jamais joué »** pour Swiatek,
+Rybakina, Anisimova et Pegula à Cincinnati — quatre joueuses qui y ont toutes
+joué. **Une affirmation fausse est pire qu'une ligne absente**, donc la moitié
+« ici » n'est pas produite par cette source : `Bilan ici` garde sa ligne, servie
+par `tennis-data`, qui est rattachée.
+
+**Ce que ça corrige dans mon propre §2a** : j'y ai écrit qu'« un palmarès bâti
+sur cette source n'a besoin d'aucune table de correspondance ». C'est vrai pour
+la **catégorie** — servie par la source — et **faux pour le tournoi**. Ce qui
+rouvrira la moitié manquante est une seconde table de rattachement, vérifiée à
+la main comme la première, et rien d'autre.
+
+### La catégorie ne se déduit pas non plus, elle se lit sur la taxonomie saisie
+
+`TIER_BY_CATEGORY` traduit la taxonomie du projet vers celle du fournisseur —
+six entrées, vérifiées à la main :
+
+| Niveau saisi | ATP | WTA |
+| --- | --- | --- |
+| `grand_slam` | `Grand Slam` | `Grand Slam` |
+| `masters_1000` | `ATP Masters 1000` | `WTA 1000` |
+| `level_500` | `ATP 500` | `WTA 500` |
+
+Les 43 compétitions de tennis portent toutes un niveau, saisi à la main. **Rien
+n'est déduit d'un libellé**, ni côté projet ni côté fournisseur.
+
+### Le zéro qui a failli être rapporté
+
+La première collecte a rendu **0 édition sur 589 matchs**, pour les six joueurs.
+Un zéro parfaitement crédible.
+
+La cause : `matches-played` nomme le champ **`result`** et sépare les sets par
+des **espaces**, avec le détail du jeu décisif — `3-6 7-6(5) 6-0` — quand
+`event/get` nomme le champ `score` et sépare par des **virgules**. Le lecteur
+découpait sur la virgule : il lisait **un seul set** par match, jamais décisif,
+donc aucune édition.
+
+C'est la règle du §4a appliquée le jour même où elle est écrite, et sur une
+mesure de ce lot. Corrigé — le lecteur cherche les sets où qu'ils soient au lieu
+de découper — les six joueurs rendent **117 à 246 éditions**. Le règlement
+automatique du §1, qui partage ce lecteur, reste à **100 %**.
+
+## §5 — Ce que la mesure contredit dans ce brief
+
+| Affirmé | Mesuré |
+| --- | --- |
+| « les 4 divergences sont des défauts de lecture » | **confirmé, et c'était la clé** : elles venaient toutes d'un index sans date. Le taux réparé est **100,00 %**, pas « réparable jusqu'à 100 % » |
+| « re-mesure sur les 298 sélections » | **293** dans la base. 95 réglées, 136 hors règle, 94 sans résultat, 2 abandons |
+| « toute divergence restante se nomme » | **il n'en reste aucune.** La demande était juste, la liste est vide |
+| « les cas que je redoutais ne sont pas en cause » | **confirmé pour trois d'entre eux**, et l'abandon au tennis, lui, l'était : deux des 800 matchs recoupés ressortaient à l'envers, et ils portaient un set inachevé |
+| §2 : « les 43 tournois sur 43 sont rattachés » | **vrai, et sans effet pour ce chantier** : ils le sont pour `tennis-data`, qui nomme Cincinnati « Western & Southern Financial Group Women's Open ». `matches-played` l'appelle « Cincinnati Open - Cincinnati », et rien ne les rapproche |
+| §2a : « le lot 5 a mesuré ~2 appels par joueur ; à 509 matchs, c'est un autre ordre » | **ce n'est pas un autre ordre** : `pageSize=200` donne **médiane 3 pages, max 8**, soit +2 appels par joueur, ~60 par lot |
+| §2 : la catégorie est le point dur | **elle est servie**, et c'est le **nom du tournoi** qui manque. L'inverse de ce que le brief et mon propre §2a annonçaient |
+| §3 : « coût chiffré à ~1 350 appels par lot » | **~970** : le coût réel par rencontre est de **2,89 appels**, pas 4, et 52 % n'en coûtent qu'un |
+| §3 : « le filtre d'âge… est-il déjà pris en compte ? » | **oui** — `DAY_SHIFTS = (0, -1)` depuis le 18/08. Mais le chiffre reposait sur une estimation de 4 appels que la mesure corrige |
+| §3 : le blocage serait `collect_games` qui s'arrête à 300 toutes surfaces | **faux, et c'est le renversement du lot** : le blocage est arithmétique. À 20,7 % de couverture il faut **59 rencontres d'une surface**, et le joueur médian en dispute 27 sur dur, 14 sur terre, 6 sur gazon. Lever la limite d'implémentation ne changerait rien |
+| §0 : « le lot 15 annonce 592 tokens fixes » | **confirmé, et la mesure ajoute que c'est indépendant du lot** : 591 sur un lot vide, 592 sur trois blocs — c'est du cadre, pas du bloc |
+
+### Deux zéros dans ce lot, et la règle écrite le matin même
+
+Le §4a demandait d'écrire qu'un zéro sur un rapprochement de joueurs est un
+défaut d'appariement jusqu'à preuve du contraire. **Elle a servi deux fois le
+jour de sa rédaction**, sur des mesures de ce lot :
+
+- **0 édition de palmarès sur 589 matchs**, pour six joueurs. Cause : le champ
+  s'appelle `result` et non `score`, et sépare les sets par des **espaces** avec
+  le détail du jeu décisif. Corrigé : **117 à 246 éditions** ;
+- **« ici jamais joué » pour quatre joueuses de Cincinnati** qui y ont toutes
+  joué. Cause : deux sources qui nomment le tournoi différemment. Non
+  corrigeable sans une seconde table de rattachement — donc **la moitié « ici »
+  n'est pas rendue**, plutôt que rendue fausse.
+
+Le second est le plus instructif : la vérification n'a pas produit un correctif,
+elle a produit un **refus de rendre**. C'est le même résultat que si le zéro
+avait été vrai, mais pour une raison qu'on connaît — et qui dit ce qui rouvrira
+la question.
+
+### La leçon de méthode du lot
+
+**Les trois chantiers étaient annoncés comme « mesure faite, blocage nommé », et
+les trois blocages étaient mal nommés.**
+
+| Chantier | Blocage annoncé | Blocage réel |
+| --- | --- | --- |
+| règlement | des cas limites du sport à traiter | une **clé d'index** sans date |
+| palmarès | la profondeur de pagination | la profondeur, **puis** un nom de tournoi que rien ne rapproche |
+| `Jeux` | `collect_games` s'arrête trop tôt | **le calendrier** : la matière n'existe pas |
+
+Aucun des trois n'était faux par négligence : ce sont trois diagnostics
+plausibles, chacun tiré d'une mesure réelle du lot précédent. Ce qui les a
+corrigés est d'avoir **re-mesuré la cause** au lieu de partir du correctif — et
+dans deux cas sur trois, le correctif prévu n'aurait rien réparé.

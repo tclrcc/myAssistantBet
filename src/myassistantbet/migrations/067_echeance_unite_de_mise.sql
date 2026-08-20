@@ -25,11 +25,11 @@ INSERT INTO changelog_mesure (day, label, description, scope, created_at)
 SELECT
   '2026-09-20',
   'échéance — re-mesurer l''unité de mise',
-  'L''unité de 0,25 % de bankroll a été mesurée le 20/08/2026 sur le 90e centile '
-  || 'de quatre journées d''analyse seulement (17 au 20/08), quand un centile '
+  'L''unité de répartition a été calibrée le 20/08/2026 sur le 90e centile de '
+  || 'quatre journées d''analyse seulement (17 au 20/08), quand un centile '
   || 'défendable en demande une dizaine. Re-mesurer sur le régime accumulé depuis, '
   || 'section C seule, C-bis exclue. Si le P90 a bougé, l''unité bouge avec lui — '
-  || 'le plafond de 5 % par journée, lui, est un arbitrage et ne se re-mesure pas.',
+  || 'le plafond de journée, lui, est un arbitrage et ne se re-mesure pas.',
   'restitution',
   '2026-08-20T18:00:00Z'
 WHERE NOT EXISTS (

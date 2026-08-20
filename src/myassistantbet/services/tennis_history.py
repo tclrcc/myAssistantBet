@@ -32,7 +32,7 @@ from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.base import ProviderError
 from ..providers.tennisdata import TOURS, RawMatch, TennisDataClient
-from . import freshness, serve_stats, tennis_load, tennis_round
+from . import freshness, palmares, serve_stats, tennis_load, tennis_round
 from .ingestion import Reject
 
 logger = logging.getLogger(__name__)
@@ -1149,11 +1149,35 @@ def lines(
         here = _h2h_here_fragment(home, away, _here(meetings, names))
         if here:
             rendered.append(("H2H ici", here))
+        # **Une seule ligne `Palmares`, deux profondeurs, et chacune dit la
+        # sienne.** Le bilan sur place sort de `tennis_matches`, borne a trois
+        # saisons ; le palmares profond sort de `matches-played`, qui remonte a
+        # 2009 pour un joueur installe. Melanger les deux sans le dire ferait
+        # lire « 6 editions » sur dix-sept ans a cote d'un « 12V-2D » sur trois —
+        # exactement le genre d'incoherence silencieuse que ce projet traque.
+        #
+        # Le profond passe **en premier** parce que c'est lui qui repond a la
+        # question posee : ou ce joueur est-il deja alle, ici et a ce niveau.
+        niveau = palmares.tier_for(
+            _category_of(competition_id, settings),
+            serve_stats.circuit_of(oddsapi_key or _competition_key(competition_id, settings)),
+        )
+        deep = _pair(
+            palmares.fragment(home, palmares.load(home, settings), niveau),
+            palmares.fragment(away, palmares.load(away, settings), niveau),
+        )
         record = _pair(
             _record_here_fragment(home, _here(everything[home], names)),
             _record_here_fragment(away, _here(everything[away], names)),
         )
-        if record:
+        if deep:
+            rendered.append(("Palmares", deep))
+            if record:
+                # Le bilan de trois saisons garde sa ligne, sous son propre
+                # libelle : deux horizons dans une meme ligne se liraient comme
+                # un seul.
+                rendered.append(("Bilan ici", record))
+        elif record:
             rendered.append(("Palmares", record))
 
     form = _pair(_form_fragment(home, recent[home]), _form_fragment(away, recent[away]))
@@ -1306,6 +1330,22 @@ def _best_result(matches: list[Match]) -> str:
     if key == FINAL:
         return f"{'vainqueur' if won else 'finaliste'} {season}"
     return f"{ROUND_LABELS.get(key, key)} {season}"
+
+
+def _category_of(competition_id: int | None, settings: Settings) -> str:
+    """Le niveau **deja saisi** de la competition. Vide s'il ne l'est pas.
+
+    Rien ne se deduit d'un libelle, meme regle que partout : « Masters » vaut
+    pour Monte-Carlo comme pour le tournoi de fin d'annee. La taxonomie du projet
+    est saisie a la main, et c'est elle qui fait foi.
+    """
+    if not competition_id:
+        return ""
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT category FROM competitions WHERE id = ?", (competition_id,)
+        ).fetchone()
+    return str(row["category"] or "") if row else ""
 
 
 def _record_here_fragment(player: str, matches: list[Match]) -> str:

@@ -98,7 +98,13 @@ def surname(value: str) -> str:
     return mots[-1] if mots else ""
 
 
-_SET = re.compile(r"\s*\"?(\d+)\s*-\s*(\d+)")
+#: Un set, ou qu'il soit dans la chaine. **Une recherche et non un decoupage**,
+#: parce que les deux sources qui servent un score ne le separent pas de la meme
+#: facon : `event/get` ecrit `4-6,7-6,0-6` — virgules — et `matches-played`
+#: ecrit `3-6 7-6(5) 6-0` — espaces, avec le detail du jeu decisif. Decouper sur
+#: la virgule rendait **un seul set** sur la seconde, donc un palmares vide sur
+#: 589 matchs. Le score entre guillemets d'une troisieme graphie passe aussi.
+_SET = re.compile(r"(\d+)\s*-\s*(\d+)(?:\s*\(\d+\))?")
 
 
 def _set_complete(a: int, b: int) -> bool:
@@ -131,7 +137,7 @@ class Score:
 
 def read_score(brut: str) -> Score | None:
     """Le score d'`event/get`, en sets. `None` si rien ne s'y lit."""
-    jeux = [m for m in (_SET.match(part) for part in str(brut or "").split(",")) if m]
+    jeux = list(_SET.finditer(str(brut or "")))
     if not jeux:
         return None
     un = deux = 0

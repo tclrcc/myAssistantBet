@@ -68,6 +68,7 @@ CONTEXT_ICONS = {
     "Classement": "trophee",
     "Enjeu": "enjeu",
     "Palmares": "medaille",
+    "Bilan ici": "medaille",
     "Forme 5": "courbe",
     "Forme": "courbe",
     "Dom/Ext": "stade",

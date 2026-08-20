@@ -22,6 +22,7 @@ import httpx
 from .config import get_settings
 from .providers.tennisapi import TennisAPIClient
 from .services import ingestion as ingestion_service
+from .services import palmares as palmares_service
 from .services import serve_stats as serve_stats_service
 
 logger = logging.getLogger(__name__)
@@ -84,9 +85,23 @@ async def run(
         len(serve_stats_service.known_players(settings)),
     )
     async with httpx.AsyncClient() as http:
+        client = TennisAPIClient(http, settings)
         report = await serve_stats_service.sync(
-            TennisAPIClient(http, settings), file, settings, with_games=True, force=force
+            client, file, settings, with_games=True, force=force
         )
+        # **Le palmares profond passe dans la meme file**, et pour la meme
+        # raison qu'elle existe : il pagine l'historique entier d'un joueur, ce
+        # qui coute deux appels de plus (mediane 3 pages, maximum 8) et se perime
+        # a la semaine. Le poser ici lui donne les joueurs des lots a venir en
+        # premier, sans inventer une seconde file qui aurait diverge de
+        # celle-ci.
+        #
+        # **Sans ce branchement, `player_palmares` serait ecrite par personne** —
+        # la faute de `/players/squads`, collecte des mois sans lecteur.
+        repris = await palmares_service.refresh(
+            client, [(nom, circuit) for nom, circuit in file], settings
+        )
+        logger.info("Palmares : %d joueur(s) repris", repris)
 
     tentees = sum(item[2].attempted for item in report.timelines)
     obtenues = sum(item[2].obtained for item in report.timelines)
