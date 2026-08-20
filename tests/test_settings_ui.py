@@ -30,6 +30,11 @@ from myassistantbet.services.prompt import (
 
 from .helpers import lot_avec_recul
 
+#: Une date qu'aucune horloge ne rattrapera. Un match dont l'heure est passee
+#: quitte le prompt, donc un lot date du jour rend un test vert le matin et
+#: rouge le soir — sans qu'aucune regle ait bouge.
+LOIN = "2099-01-01"
+
 
 @pytest.fixture
 def client(isolated_settings: Settings) -> Iterator[TestClient]:
@@ -198,6 +203,12 @@ def test_les_bandes_modifiees_apparaissent_dans_le_prompt(migrated: Settings) ->
     detail depuis que le prompt n'annonce que les paliers atteignables : a 2.10
     le lot ne portait que du FUN, et le palier renomme disparaissait du rendu
     pour une raison parfaitement juste — aucune de ses cotes ne pouvait y tomber.
+
+    **La date des matchs est lointaine, et ce n'est pas une commodite.** Elle
+    valait `2026-08-20` a 20:45 : le test etait vert le matin et rouge le soir,
+    `session.has_started()` retirant du prompt tout evenement dont l'heure est
+    passee — donc un lot vide, donc des quotas a `0-0`, ce qui est **juste**.
+    L'assertion, elle, decrivait la sortie d'une journee et non une propriete.
     """
     session_id = 0
     for index in range(QUOTA_REFERENCE_LOT):
@@ -207,7 +218,7 @@ def test_les_bandes_modifiees_apparaissent_dans_le_prompt(migrated: Settings) ->
                 "Amical",
                 f"Lyon {index}",
                 f"Nice {index}",
-                "2026-08-20",
+                LOIN,
                 "20:45",
                 f"Lyon {index} 1.50",
                 "",
