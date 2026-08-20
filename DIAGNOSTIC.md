@@ -8797,6 +8797,32 @@ après   Paliers présents dans ce lot : SAFE, FUN, ULTRA FUN, GIGA FUN.
         Quotas **de ce lot** : 0-1 🟢, 0-1 🔵, 0-1 🟠, 0-1 🔴.
 ```
 
+### Vérifié sur un prompt régénéré depuis la base servie
+
+`build_prompt(18)` sur une copie migrée — aucun appel réseau, la seule façon de
+vérifier qu'une fixture n'a pas divergé. Le lot ne porte plus qu'**un** match, et
+c'est le cas le plus dur : un match n'ouvre qu'un dossier.
+
+```
+Paliers présents dans ce lot : SAFE, FUN, ULTRA FUN, GIGA FUN.
+Quotas **de ce lot** : 0-1 🟢, 0-1 🔵, 0-1 🟠, 0-0 🔴.
+
+### C-bis. Sélections exploratoires
+Les paliers ULTRA FUN, GIGA FUN restent soumis, en section C, à
+l'exigence d'un fait nommé et daté. Cette section-ci est le seul endroit où
+cette exigence tombe.
+
+GIGA FUN est à **zéro** en section C : ce lot
+n'ouvre pas assez de dossiers pour justifier autant de paliers hauts. C'est ici
+que ce prix se joue, ou nulle part.
+```
+
+GIGA FUN reste à zéro — **et le zéro a désormais une cause énoncée**. Le prorata
+ne l'y met plus ; c'est le budget de recherche, un dossier pour un match, déjà
+pris par ULTRA FUN. Le paragraphe qui suit les quotas l'explique en amont, et
+C-bis dit ce qu'il faut en faire. C'est exactement la partition voulue : le zéro
+arbitraire a disparu, le zéro justifié se nomme.
+
 ### Coût en tokens
 
 | Ce qui change | Coût |
