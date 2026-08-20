@@ -188,6 +188,23 @@
   </p>
   {% endif %}
 
+  {# **L'état de la journée : un état, jamais une projection.** Ni objectif, ni
+     courbe de tendance, ni solde attendu — une projection supposerait une
+     espérance de gain, et c'est l'interdit qui gouverne toute la répartition.
+
+     Le plafond porte sur la **journée** et non la session : un plafond de
+     session se contournerait en découpant, et le découpage doit rester gratuit.
+     Cette ligne est donc la seule qui dise ce que les autres rendus du jour ont
+     déjà engagé.
+
+     Rien quand rien n'est engagé — même règle que partout : ce qui n'a pas de
+     donnée est omis, jamais rendu vide. #}
+  {% if coupon_tracking and day_state.line %}
+  <p class="block-note">
+    <strong>Journée {{ day_state.journee }}</strong> — {{ day_state.line }}.
+  </p>
+  {% endif %}
+
   {# Deux blocs : ce qui attend encore un resultat, puis ce qui est tranche.
      Melanges, il fallait relire quinze lignes pour trouver les trois qui
      restent a saisir. #}

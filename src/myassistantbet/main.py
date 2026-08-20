@@ -1069,6 +1069,11 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         "stakes": {
             row.pick_id: row for row in stakes_service.rows_for_session(session_id, settings)
         },
+        # L'etat de la journee : engage, plafond, part de bankroll. **Un etat,
+        # jamais une projection** — ni objectif, ni courbe de tendance. Et c'est
+        # le seul lecteur de `bankroll_journee`, sans quoi la table serait
+        # ecrite et jamais relue.
+        "day_state": stakes_service.day_state(now.strftime("%Y-%m-%d"), settings),
         "coupon_tracking": thresholds_service.toggle_of(
             thresholds_service.COUPON_TRACKING, settings
         ),

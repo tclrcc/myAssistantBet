@@ -516,3 +516,123 @@ def test_les_unites_engagees_ferment_le_contournement_par_decoupage(
         "le second rendu de la journée croit disposer du plafond entier : "
         "le découpage redevient un multiplicateur d'exposition"
     )
+
+
+def test_la_section_g_se_paie_seulement_si_le_suivi_de_l_argent_est_ouvert(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """**La porte n'est pas cosmétique : elle vaut 592 tokens de coût fixe.**
+
+    Le préambule de ce projet ne paie que ce que le lot porte — les sports du
+    lot, les libellés de contexte réellement rendus. Une section de répartition
+    de mise rendue à qui ne mise pas serait exactement ce que ces portes
+    existent pour éviter.
+
+    Le nombre est écrit dans la note du réglage ; ce test vérifie que la porte
+    l'économise vraiment, plutôt que de croire la note sur parole.
+    """
+    from myassistantbet.services.prompt import build_prompt
+    from myassistantbet.services.thresholds import COUPON_TRACKING, save_toggle
+
+    session_id, _ = _lot(isolated_settings, ["Lyon", "Nice"])
+
+    ouvert = build_prompt(session_id, settings=isolated_settings).body
+    assert "### G. Répartition de mise" in ouvert
+    assert "BANKROLL DE SESSION" in ouvert
+
+    save_toggle(COUPON_TRACKING, "0", isolated_settings)
+    ferme = build_prompt(session_id, settings=isolated_settings).body
+
+    assert "### G. Répartition de mise" not in ferme
+    assert "BANKROLL DE SESSION" not in ferme
+    # Et la porte économise vraiment : le renvoi ne reste pas seul derrière elle.
+    assert "mises:" not in ferme
+    assert len(ouvert) > len(ferme) + 1500, (
+        "la porte ne retire presque rien : soit la section a fondu, soit elle "
+        "n'est plus gardée là où elle coûte"
+    )
+
+
+def test_l_etat_de_la_journee_lit_la_bankroll_et_ne_projette_rien(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """**Le lecteur de `bankroll_journee`.** Sans lui la table serait écrite et
+    jamais relue — la faute exacte de `/players/squads`, collecté des mois sans
+    lecteur et retiré par la migration 022.
+
+    Et il rend un **état**, jamais une projection : aucun solde attendu, aucun
+    objectif, aucune tendance. Une projection supposerait une espérance de gain.
+    """
+    from myassistantbet.services import stakes as service
+    from myassistantbet.services.history import add_pick
+
+    session_id, events = _lot(isolated_settings, ["Lyon"])
+    pick_id = add_pick(
+        session_id,
+        tier="safe",
+        market="1N2",
+        selection="Lyon",
+        event_id=str(events[0]),
+        price="1.45",
+        settings=isolated_settings,
+    )
+
+    # Rien engagé : rien à dire.
+    assert service.day_state("2026-08-20", isolated_settings).line == ""
+
+    service.set_bankroll("2026-08-20", 200.0, settings=isolated_settings)
+    service.record(
+        "2026-08-20",
+        session_id,
+        [service.Entry(unites=4.0, montant=2.0, pick_id=pick_id)],
+        isolated_settings,
+    )
+    etat = service.day_state("2026-08-20", isolated_settings)
+
+    assert etat.bankroll == 200.0, "la bankroll enregistrée n'est jamais relue"
+    assert etat.unites == 4.0
+    assert etat.restantes == 16.0
+    assert etat.part_bankroll == pytest.approx(1.0)
+    assert "4 unité(s) engagée(s) sur 20" in etat.line
+
+    # **Aucun mot de projection.** Le vocabulaire est celui d'un relevé.
+    plat = etat.line.lower()
+    for interdit in ("attendu", "objectif", "espérance", "gain", "tendance", "prévu"):
+        assert interdit not in plat
+
+
+def test_aucune_fonction_du_module_de_mise_n_est_sans_lecteur() -> None:
+    """**Une donnée sans lecteur ne se collecte pas**, et une fonction sans
+    appelant non plus.
+
+    `/players/squads` a été collecté des mois sans que rien ne le lise, et son
+    retrait a coûté une migration. Ce test ferme la porte du même côté : toute
+    fonction publique de `stakes` doit être appelée quelque part.
+    """
+    import ast
+
+    source = (SRC / "services" / "stakes.py").read_text(encoding="utf-8")
+    publiques = {
+        n.name
+        for n in ast.parse(source).body
+        if isinstance(n, ast.FunctionDef) and not n.name.startswith("_")
+    }
+    appels: set[str] = set()
+    for chemin in list(SRC.rglob("*.py")):
+        texte = chemin.read_text(encoding="utf-8")
+        arbre = ast.parse(texte)
+        interne = chemin.name == "stakes.py"
+        for noeud in ast.walk(arbre):
+            if not isinstance(noeud, ast.Call):
+                continue
+            cible = noeud.func
+            if isinstance(cible, ast.Attribute):
+                appels.add(cible.attr)
+            elif isinstance(cible, ast.Name) and interne:
+                appels.add(cible.id)
+    orphelines = sorted(publiques - appels)
+    assert not orphelines, (
+        f"Ces fonctions de `stakes` n'ont aucun appelant : {orphelines}. "
+        "Une fonction sans lecteur se retire ou reçoit sa surface — c'est la "
+        "leçon de `/players/squads`, retiré par la migration 022."
+    )

@@ -731,3 +731,72 @@ def rows_for_session(session_id: int, settings: Settings | None = None) -> list[
         )
         for row in rows
     ]
+
+
+@dataclass(frozen=True)
+class DayState:
+    """Ou en est la journee. **Un etat, jamais une projection.**
+
+    Ni objectif, ni courbe de tendance, ni solde attendu : ce bloc dit ce qui a
+    ete engage et ce qu'il reste sous le plafond, rien de plus. Une projection
+    supposerait une esperance de gain, et c'est l'interdit qui gouverne tout ce
+    module.
+    """
+
+    journee: str
+    table: Table
+    bankroll: float | None
+    unites: float
+    montant: float
+    joue: float | None
+    lignes: int
+
+    @property
+    def restantes(self) -> float:
+        return max(0.0, self.table.plafond_unites - self.unites)
+
+    @property
+    def part_bankroll(self) -> float | None:
+        """Ce que la journee pese. `None` sans bankroll — jamais zero, qui se
+        lirait comme une journee sans engagement."""
+        if not self.bankroll:
+            return None
+        return 100.0 * self.montant / self.bankroll
+
+    @property
+    def line(self) -> str:
+        """L'etat en une ligne. Vide quand rien n'est engage — **rien quand il
+        n'y a rien a dire**, comme partout ailleurs."""
+        if not self.lignes:
+            return ""
+        morceaux = [
+            f"{self.lignes} mise(s) · {_nombre(self.unites)} unité(s) engagée(s) "
+            f"sur {_nombre(self.table.plafond_unites)}"
+        ]
+        if self.bankroll:
+            part = self.part_bankroll or 0.0
+            morceaux.append(f"{self.montant:.2f} sur {self.bankroll:.2f} ({part:.2f} %)")
+        if self.joue is not None:
+            morceaux.append(f"{self.joue:.2f} réellement posé")
+        return " · ".join(morceaux)
+
+
+def day_state(journee: str, settings: Settings | None = None) -> DayState:
+    """L'etat d'une journee, lu depuis le journal et la bankroll saisie.
+
+    **C'est le lecteur de `bankroll_journee`**, sans quoi la table serait ecrite
+    et jamais relue — la faute exacte de `/players/squads`, collecte des mois
+    sans que rien ne la lise, et retiree par la migration 022.
+    """
+    settings = settings or get_settings()
+    lignes = journal(journee, settings)
+    joues = [row.montant_joue for row in lignes if row.montant_joue is not None]
+    return DayState(
+        journee=journee,
+        table=table(settings),
+        bankroll=bankroll_of(journee, settings),
+        unites=sum(row.unites for row in lignes),
+        montant=round(sum(row.montant or 0.0 for row in lignes), DECIMALES),
+        joue=round(sum(joues), DECIMALES) if joues else None,
+        lignes=len(lignes),
+    )

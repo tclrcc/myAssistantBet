@@ -6745,3 +6745,53 @@ quatre nombres du brief n'étaient pas mutuellement cohérents, et les coder tel
 quels aurait produit un écran affichant « 1 unité » pendant que le code en
 mettait un quart : le défaut caractéristique du projet, pour la première fois
 libellé en euros.
+
+## §1c — Le journal, et les trois fonctions qui n'avaient pas de lecteur
+
+**Trouvé en relisant le module livré, pas par un test.** Trois fonctions
+publiques de `stakes` n'avaient aucun appelant : `bankroll_of`, `journal` et —
+en apparence — `engaged_units`. La troisième était un faux positif, appelée
+depuis `brief()` dans le même module ; les deux premières ne l'étaient pas.
+
+Conséquence concrète : **`bankroll_journee` était écrite à chaque import et
+jamais relue.** C'est exactement la faute de `/players/squads`, collecté des mois
+sans lecteur et retiré par la migration 022 — et son propre commentaire
+annonçait déjà sa sortie.
+
+Deux issues possibles, et la règle du projet tranche : *ce qui n'a pas de lecteur
+se retire, ou reçoit sa surface.* Ici la surface manquait, et le §1c la
+demandait explicitement — « un état de bankroll par session, et son évolution ».
+
+`day_state()` la fournit, sur la feuille de session :
+
+> **Journée 2026-08-20** — 4 mise(s) · 4 unité(s) engagée(s) sur 20 ·
+> 2.00 sur 200.00 (1,00 %) · 1.50 réellement posé.
+
+- **Un état, jamais une projection.** Ni objectif, ni solde attendu, ni courbe de
+  tendance : une projection supposerait une espérance de gain, c'est-à-dire
+  l'interdit qui gouverne tout ce module. Un test vérifie qu'aucun des mots
+  `attendu`, `objectif`, `espérance`, `gain`, `tendance`, `prévu` n'entre dans la
+  ligne rendue.
+- **Rien quand rien n'est engagé**, même règle que partout.
+- C'est aussi la seule surface qui dise ce que **les autres rendus du même jour**
+  ont déjà engagé — le plafond portant sur la journée et non sur la session.
+
+**Et la porte se ferme par un test plutôt que par une relecture** :
+`test_aucune_fonction_du_module_de_mise_n_est_sans_lecteur` lit la source, liste
+les **13** fonctions publiques du module et vérifie que chacune est appelée
+quelque part. Une fonction ajoutée demain sans surface fera tomber la suite —
+c'est la même forme que le registre des chemins d'écriture, et pour la même
+raison : une règle de contribution ne se déclenche pas, un test si.
+
+### Deux limites du §1 à connaître avant de s'en servir
+
+- **Le montant réellement posé ne se saisit que sur une sélection qui a reçu une
+  proposition.** Le champ vit sur la ligne de `mises`, donc une sélection
+  importée sans ligne `mises:` n'en a pas. C'est cohérent — le journal compare un
+  proposé à un posé, et sans proposé il n'y a rien à comparer — mais cela veut
+  dire qu'une mise décidée entièrement à la main n'a pas de surface aujourd'hui.
+- **La bankroll n'a pas d'écran de réglage, et c'est voulu** : le montant se tape
+  en tête de prompt, au collage, et l'application le relit sur la ligne rendue.
+  Un champ de réglage en ferait une seconde source, qui divergerait de la
+  première au premier oubli — le piège déjà payé sur la liste des marchés
+  demandés.
