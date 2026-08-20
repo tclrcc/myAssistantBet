@@ -365,3 +365,107 @@ def test_la_migration_ne_deplace_aucune_population(isolated_settings: Settings) 
         ligne["gabarit_version"] is None and ligne["gabarit_sha"] is None
         for ligne in db.query("SELECT * FROM sessions", settings=isolated_settings)
     )
+
+
+# -- La mise en service du retour d'experience -------------------------------
+
+
+def test_le_premier_prompt_qui_transmet_les_taux_se_date(migrated: Settings) -> None:
+    """**Le regime change sans qu'aucune date de code ne le decrive.**
+
+    La bascule demande deux choses qui ne tombent pas le meme jour : assez de
+    recul, et le retrait de `FEEDBACK_SUSPENDED`, qui est une modification de
+    source. Ni la date de livraison ni celle du franchissement de seuil ne
+    disent donc quand le regime a change — seul le premier prompt qui **part**
+    avec des taux le dit, et sans cette ligne les taux d'apres se compareraient
+    a ceux d'avant sans que rien ne le signale.
+    """
+    from .helpers import lot_avec_recul
+
+    session_id = lot_avec_recul(migrated)
+    rendu = build_prompt(session_id, settings=migrated)
+    assert rendu.feedback_active, "la fixture doit franchir les deux seuils"
+
+    save_prompt(session_id, rendu, migrated)
+
+    entrees = [
+        entry
+        for entry in changelog.journal(migrated).entries
+        if entry.label == changelog.FEEDBACK_LABEL
+    ]
+    assert len(entrees) == 1
+    assert entrees[0].scope == changelog.GABARIT
+
+
+def test_la_bascule_ne_se_date_qu_une_fois(migrated: Settings) -> None:
+    """`save_prompt` est appele a chaque generation, et une session reelle en
+    produit jusqu'a vingt. La garde se lit sur le **journal lui-meme** : un
+    compteur en memoire ne survivrait pas au redemarrage, et un drapeau de plus
+    en base serait une seconde ecriture de ce que le journal dit deja."""
+    from .helpers import lot_avec_recul
+
+    session_id = lot_avec_recul(migrated)
+    for _ in range(3):
+        save_prompt(session_id, build_prompt(session_id, settings=migrated), migrated)
+
+    entrees = [
+        entry
+        for entry in changelog.journal(migrated).entries
+        if entry.label == changelog.FEEDBACK_LABEL
+    ]
+    assert len(entrees) == 1
+
+
+def test_aucune_entree_tant_que_les_taux_ne_partent_pas(migrated: Settings) -> None:
+    """**Le declencheur est ce qui part, jamais ce qui est regle.** Un lot sans
+    recul rend la branche « recul insuffisant » ; une suspension rend « retenus
+    volontairement ». Dans les deux cas rien n'a bascule, et dater une bascule
+    qui n'a pas eu lieu poserait un point de coupe faux — pire qu'aucun point,
+    puisqu'il se lirait comme une mesure."""
+    session_id = board_service.toggle_selection(_match(migrated), True, migrated)
+
+    rendu = build_prompt(session_id, settings=migrated)
+    assert not rendu.feedback_active
+    save_prompt(session_id, rendu, migrated)
+
+    assert all(
+        entry.label != changelog.FEEDBACK_LABEL for entry in changelog.journal(migrated).entries
+    )
+
+
+def test_une_suspension_empeche_la_datation(
+    migrated: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Le recul peut etre franchi sans que rien ne parte : `enough` exige
+    `not suspended`, et la constante prime sur les deux seuils. La ligne de
+    journal suit `feedback_active`, donc elle suit la meme regle — c'est ce qui
+    garantit qu'elle datera la **vraie** bascule et non le jour ou le dixieme
+    jour d'analyse est tombe."""
+    monkeypatch.setattr("myassistantbet.services.history.FEEDBACK_SUSPENDED", True)
+    from .helpers import lot_avec_recul
+
+    session_id = lot_avec_recul(migrated)
+    rendu = build_prompt(session_id, settings=migrated)
+
+    assert not rendu.feedback_active
+    save_prompt(session_id, rendu, migrated)
+    assert all(
+        entry.label != changelog.FEEDBACK_LABEL for entry in changelog.journal(migrated).entries
+    )
+
+
+def test_la_bascule_fournit_un_point_de_coupe(migrated: Settings) -> None:
+    """**Le decoupage avant / apres doit pouvoir isoler cette coupe**, sans quoi
+    la ligne ne serait qu'un commentaire. `Journal.days` fournit les points de
+    coupe et `split()` les applique a la population principale."""
+    from .helpers import lot_avec_recul
+
+    session_id = lot_avec_recul(migrated)
+    save_prompt(session_id, build_prompt(session_id, settings=migrated), migrated)
+
+    carnet = changelog.journal(migrated)
+    jour = next(entry.day for entry in carnet.entries if entry.label == changelog.FEEDBACK_LABEL)
+
+    assert jour in carnet.days
+    decoupe = changelog.split(jour, migrated)
+    assert decoupe.before.settled + decoupe.after.settled > 0

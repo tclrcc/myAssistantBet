@@ -9004,3 +9004,117 @@ passe pas, et `recherche_dossiers` alimente un nombre qui serait écrit de toute
 façon. Le coût d'un réglage inerte est ici un coût **d'écran** — une ligne de
 plus à lire dans la table des seuils — et deux lignes ne justifient pas de
 fermer une porte que la mesure dit encore utilisable.
+
+## §3 — La bascule n'arrivera pas toute seule, et c'est le fait central du lot
+
+### La prémisse, et ce que le code dit
+
+> « Six journées d'analyse et le gabarit basculera sur la branche
+> `feedback.enough` […] Cette bascule se produira **sans intervention humaine**,
+> le jour où le dixième jour d'analyse tombe. »
+
+**Faux.** `history.FEEDBACK_SUSPENDED = True` est une constante, et
+`Feedback.enough` s'écrit :
+
+```python
+return not self.suspended and self.settled >= self.minimum and self.days >= self.minimum_days
+```
+
+La suspension prime sur les deux seuils. Le gabarit rend alors la branche
+`feedback.suspended` — « Taux par palier et par confiance : **retenus
+volontairement** » — celle-là même que le prompt 170 porte encore hier soir.
+
+Ce n'est pas un oubli : son commentaire dit **une constante et non un réglage**,
+« un seuil se baisse par inadvertance ; le garde-fou d'origine était justement un
+couple de seuils, et il a cédé sans que personne le décide. Rouvrir le bloc
+demande donc de modifier le code. »
+
+Le dixième jour d'analyse ne changera donc **rien**. La bascule demande deux
+gestes distincts : atteindre le recul, **et** retourner la constante.
+
+### Le défaut latent que ça révèle, et il fire exactement ce jour-là
+
+`Feedback.missing_line` compose la liste de ce qui manque puis la joint. Recul
+atteint **sous suspension**, la liste est vide :
+
+```
+>>> Feedback(settled=80, days=12, minimum=40, minimum_days=10, suspended=True).missing_line
+'Il manque . Les taux ne sont pas transmis au prompt.'
+```
+
+Une phrase cassée, rendue sur la page Réglages sous le titre « Recul actuel ». Et
+elle ne peut apparaître qu'au moment précis où le §3 se produit : les deux seuils
+franchis, la suspension encore posée. **Sixième forme du défaut caractéristique
+du projet, et la première sur une phrase** — jusque-là c'était toujours une
+valeur, jamais une syntaxe.
+
+La page dit par ailleurs, au-dessus, que « les taux attendent le recul réglé plus
+bas dans Seuils », ce qui est faux depuis que la suspension existe : ils
+attendent le recul **et** une décision de code. Le compteur promet une
+transmission qui n'aura pas lieu — exactement ce que §3c demande de rendre
+visible, sauf que le nombre à afficher n'est pas celui que le brief croit.
+
+### §3a — L'entrée de journal reste juste, et devient plus juste
+
+Le brief la justifie par « cette bascule se produira sans intervention
+humaine ». La justification tombe, **le besoin est plus fort** : la bascule
+dépend maintenant de deux choses dont une est un déploiement, et la **date
+d'activation** d'un changement de code n'est pas sa date de livraison. C'est
+exactement ce que `changelog_mesure` existe pour porter — « une entrée par
+changement livré, **à sa date d'activation** ».
+
+Le point d'écriture est `save_prompt`, qui archive déjà `feedback_active` —
+`retour.enough`, donc vrai seulement quand les taux partent vraiment. Écrire à ce
+moment-là date la bascule au **premier prompt qui transmet**, jamais au jour où
+la constante a été retournée ni au jour où le seuil a été franchi.
+
+- **portée `gabarit`** : ce qui bouge est ce que le modèle reçoit ;
+- **une fois et une seule**, gardée par une lecture de `changelog_mesure` sur son
+  libellé. Un `INSERT` par prompt donnerait vingt lignes pour une session ;
+- **la date est celle du prompt**, prise sur son horloge d'archivage et non sur
+  une date de code.
+
+### §3b — L'hypothèse sur la monotonie, datée pour être vérifiable
+
+Mesure du 21/08/2026, population principale, `exploratoire = 0` :
+
+| Cran | Sélections | Tranchées | Taux |
+| ---: | ---: | ---: | ---: |
+| 1 | 3 | 1/3 | 33 % |
+| 2 | 35 | 21/35 | **60 %** |
+| 3 | 141 | 64/137 | **47 %** |
+| 4 | 106 | 61/104 | 59 % |
+| 5 | 11 | 7/10 | 70 % |
+
+Le brief donne 54 % et 40 % : la base a bougé — c'est la règle « une analyse est
+datée » — et le fait tient dans les deux lectures. **Le cran 2 bat le cran 3**,
+donc la monotonie que les bandes supposent n'est pas établie.
+
+**L'hypothèse, écrite et datée pour ne pas être redécouverte** :
+
+> Si le cran 3 sort sous sa bande, la consigne de resserrement fera passer des
+> sélections de 3 vers 2. Or les crans 1 et 2 n'ont **aucune cible** — ils sont
+> fixés par ce que la recherche a trouvé, `lecture` impose 1, une source de
+> niveau 3-4 plafonne à 2 — donc le mouvement demandé pousse vers une catégorie
+> qu'aucune bande ne mesure. La correction viderait le cran qu'on corrige sans
+> qu'aucun indicateur ne le montre.
+
+Elle est **plausible et non mesurée**, et elle ne le sera pas avant la bascule :
+la consigne de resserrement ne part que dans la branche `feedback.enough`.
+
+Ce qu'il faut pour la trancher : la **distribution des crans par session**, avant
+et après. Elle n'existe nulle part. `labelling()` rend la distribution agrégée
+sur toute la base et la vacance par session — combien de sessions n'emploient pas
+un niveau — mais jamais la série. Or c'est une déformation dans le temps qu'il
+faut voir, pas une part globale.
+
+Ni les bandes ni la consigne ne sont touchées. **Ce lot pose l'instrument, pas le
+verdict.**
+
+### §3c — Le compte restant, et l'honnêteté du message
+
+Le brief demande d'afficher « il manque N journées d'analyse avant transmission
+des taux au prompt ». Écrit tel quel, ce serait un compte à rebours vers un
+événement qui ne peut pas se produire. La ligne dit donc les **deux** conditions
+et laquelle bloque, et elle nomme la suspension pour ce qu'elle est : une
+décision de code, pas un seuil.

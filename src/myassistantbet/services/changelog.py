@@ -180,6 +180,54 @@ def add(
     return int(cursor.lastrowid)
 
 
+#: Libelle de l'entree qui date la mise en service du retour d'experience.
+#:
+#: **Ce n'est pas un lot livre, c'est un regime qui commence.** Tout ce qui suit
+#: cette date est produit par une analyse qui lit ses propres taux ; tout ce qui
+#: precede ne l'est pas, et les deux populations ne mesurent pas la meme chose.
+#: Sans elle, les taux d'apres se compareraient a ceux d'avant sans que rien ne
+#: le signale — la forme exacte du defaut que ce journal existe pour fermer.
+FEEDBACK_LABEL = "retour d'expérience — mise en service"
+
+
+def note_feedback(day: str, settings: Settings | None = None) -> int | None:
+    """Date le premier prompt qui transmet des taux. Rend son id, ou `None`.
+
+    **La date est celle du prompt, jamais celle du code.** La bascule demande
+    deux choses qui ne tombent pas le meme jour — assez de recul, et le retrait
+    de la suspension, qui est une modification de source. Ni la date de
+    livraison ni celle du franchissement de seuil ne decrivent donc le moment ou
+    le regime change : seul le premier prompt qui **part** avec des taux le fait.
+
+    **Une fois et une seule**, et la garde se lit sur le journal lui-meme :
+    `save_prompt` est appele a chaque generation, et une session reelle en
+    produit jusqu'a vingt. Un compteur en memoire ne survivrait pas au
+    redemarrage ; un drapeau de plus en base serait une seconde ecriture de ce
+    que le journal dit deja.
+
+    Portee `gabarit` : ce qui bouge est **ce que le modele recoit**, et c'est de
+    la que decoule tout le reste.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        deja = conn.execute(
+            "SELECT 1 FROM changelog_mesure WHERE label = ? LIMIT 1", (FEEDBACK_LABEL,)
+        ).fetchone()
+        if deja is not None:
+            return None
+    return add(
+        day,
+        FEEDBACK_LABEL,
+        "Premier prompt transmettant les taux par palier, par confiance, par sport, "
+        "par competition et par marche. A partir d'ici, les selections produites ne "
+        "sont plus independantes de ce qui les mesure : une categorie annoncee faible "
+        "cesse d'etre produite, donc cesse d'etre mesurable. Point de coupe obligatoire "
+        "pour toute lecture qui traverse cette date.",
+        scope=GABARIT,
+        settings=settings,
+    )
+
+
 @dataclass(frozen=True)
 class Side:
     """Une moitie du decoupage : son effectif, ce qu'elle a gagne, son residu."""

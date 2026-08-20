@@ -1255,6 +1255,7 @@ def save_prompt(session_id: int, prompt: RenderedPrompt, settings: Settings | No
     mesure en lecture seule, faute de pouvoir toucher ce chemin.
     """
     cout = split_cost(prompt.body)
+    moment = utcnow()
     with connect(settings) as conn:
         cursor = conn.execute(
             "INSERT INTO prompts (session_id, template_name, body, token_estimate, "
@@ -1267,7 +1268,7 @@ def save_prompt(session_id: int, prompt: RenderedPrompt, settings: Settings | No
                 prompt.body,
                 prompt.token_estimate,
                 1 if prompt.feedback_active else 0,
-                utcnow(),
+                moment,
                 cout.blocks,
                 cout.fixed,
                 cout.block_tokens,
@@ -1302,6 +1303,18 @@ def save_prompt(session_id: int, prompt: RenderedPrompt, settings: Settings | No
             "                    gabarit_sha = COALESCE(gabarit_sha, ?) WHERE id = ?",
             (changelog.FRAME_VERSION, template_fingerprint(), session_id),
         )
+    # **La bascule du retour d'experience se date toute seule.** Elle demande
+    # deux choses qui ne tombent pas le meme jour — assez de recul, et le retrait
+    # d'une suspension qui est une modification de source — donc ni la date de
+    # livraison ni celle du franchissement de seuil ne decrivent le moment ou le
+    # regime change. Seul le premier prompt qui **part** avec des taux le fait,
+    # et c'est ici qu'on le sait.
+    #
+    # Hors de la transaction : une entree de journal n'a rien a voir avec
+    # l'archivage du prompt, et la faire echouer avec lui ferait perdre le prompt
+    # pour une ligne de journal.
+    if prompt.feedback_active:
+        changelog.note_feedback(moment[:10], settings)
     logger.info(
         "Marche fige pour la session %d : %d cotes sur %d matchs",
         session_id,
