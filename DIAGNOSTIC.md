@@ -7919,3 +7919,85 @@ joueurs feraient 768 appels pour rafraîchir des profils qui ne jouent pas.
 service, et la passe n'était testée nulle part. C'est la règle du 20/08 : un banc
 qui mesure le lecteur ne voit pas un défaut dans la porte. Le test ajouté **lance
 la passe et relit ce qu'elle a demandé**.
+
+## §4 — `Ecart` comparait qui sert ainsi, pas qui en tire quelque chose
+
+### Le fait
+
+Sur M6, la ligne rend `service +0.1 pts sur la 1re balle pour Sara Bejlek` —
+les deux joueuses sont à 63,2 % de premières balles — pendant que la ligne
+`Service` juste au-dessus porte **6,1 points** d'écart sur les points gagnés
+derrière la première et **7,5 points** sur les doubles fautes.
+
+### Ce que la mesure contredit dans le brief
+
+Le brief appelle le taux de mise en jeu « la grandeur la moins discriminante ».
+**C'est la plus dispersée des cinq**, mesurée sur les 174 paires de joueurs des
+blocs soumis :
+
+| Grandeur | médiane | q90 | > 5 pts |
+| --- | ---: | ---: | ---: |
+| 1re balle **mise en jeu** | **4,3** | 9,2 | 48 % |
+| points gagnés s/1re | 3,5 | 8,4 | 37 % |
+| doubles fautes | 2,9 | 7,4 | 28 % |
+| points gagnés s/2e | 2,2 | 5,5 | 19 % |
+| retour | 2,4 | 5,9 | 20 % |
+
+Le `+0,1` de M6 est donc un tirage bas d'une distribution large, pas une
+propriété de la grandeur. Ce qui la disqualifie n'est pas son étalement mais
+**ce qu'elle mesure** : un joueur qui rentre 76 % de premières n'en tire pas
+forcément plus qu'un joueur à 55 %. Le brief a raison sur le fond et faux sur la
+raison — et la raison compte, parce qu'un seuil posé sur l'étalement aurait
+gardé la mauvaise grandeur.
+
+### Le seuil ne s'invente pas, il se lit sur les dénominateurs
+
+`+0,1 pts` sur 1 400 points de service n'est pas un petit avantage : c'est
+**rien**. Le nommer en tête de ligne est une affirmation que la donnée ne porte
+pas — même famille que `HANDICAP_ALERT_MARGIN`, où l'on se tait quand l'écart
+tombe sous le bruit.
+
+Un écart n'est nommé que si son **intervalle de Newcombe exclut zéro** —
+`inference.difference_interval`, déjà écrit pour la différence de deux
+proportions. Le seuil s'adapte donc au volume de chaque joueur au lieu d'être un
+nombre choisi. Sur M6 :
+
+| Grandeur | Écart | Intervalle | Nommée |
+| --- | ---: | --- | --- |
+| 1re balle en jeu | +0,1 | `[-3,5 ; +3,6]` | non |
+| points s/1re | −6,1 | `[-10,4 ; -1,7]` | **oui** |
+| doubles fautes | −7,5 | `[-11,8 ; -3,2]` | **oui** |
+| retour | +5,3 | `[+1,7 ; +8,9]` | **oui** |
+
+### Rendu avant / après — M6
+
+    Ecart       service +0.1 pts sur la 1re balle pour Sara Bejlek | retour +5.3 pts pour Sara Bejlek · taux non ajustes du niveau d'adversaire
+
+    Ecart       s/1re +6.1 pts pour Madison Keys | df +7.5 pts pour Sara Bejlek | retour +5.3 pts pour Sara Bejlek · taux non ajustes du niveau d'adversaire
+
+**Sur les doubles fautes, l'avantage est au plus bas taux** — Bejlek 11,3 %
+contre 18,8 %. L'inversion est portée une seule fois, par un booléen de la table
+des grandeurs : deux écritures auraient divergé, et un écart lu à l'envers est
+l'erreur la plus coûteuse que ce bloc puisse produire.
+
+### Portée mesurée
+
+Sur les 174 paires : la ligne sort sur **141 (81 %)**, avec un fragment sur 41 %
+des blocs, deux sur 26 %, trois sur 14 %, et **aucune ligne sur 19 %**. Par
+grandeur : points s/1re 49 %, doubles fautes 49 %, retour 36 %. Longueur moyenne
+100 caractères, maximum 168.
+
+### Gabarit
+
+L'entrée « Ecart » du chapitre COMMENT LIRE LES BLOCS : **+126 tokens**
+(181 → 634 caractères).
+
+### Deux tests réalignés sur la décision
+
+`test_l_ecart_est_calcule_par_l_application` et
+`test_les_quatre_lignes_sortent_quand_le_drapeau_est_haut` construisaient deux
+joueurs ne différant que par leur taux de **mise en jeu** — ils ne produisent
+plus de ligne, et c'est le comportement voulu. Leurs fixtures portent désormais
+un écart sur les points gagnés. Ce n'est pas une assertion affaiblie : c'est un
+changement de fond, et le test suit la décision.
+

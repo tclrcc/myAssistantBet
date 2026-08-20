@@ -945,7 +945,10 @@ def test_les_quatre_lignes_sortent_quand_le_drapeau_est_haut(
 ) -> None:
     reglages = _drapeau(monkeypatch, True)
     serve_stats.store_aggregate(_agg("Taylor Fritz"), reglages)
-    serve_stats.store_aggregate(_agg("Alex Michelsen", first_serve=610), reglages)
+    # L'ecart porte sur les points **gagnes** derriere la premiere balle depuis
+    # le lot 18 : deux joueurs qui ne different que par leur taux de mise en jeu
+    # ne produisent plus de ligne, et c'est le comportement voulu.
+    serve_stats.store_aggregate(_agg("Alex Michelsen", won_first=400), reglages)
 
     lignes = serve_stats.serve_lines("Taylor Fritz", "Alex Michelsen", "atp", "hard", reglages)
 
@@ -997,14 +1000,19 @@ def test_l_ecart_est_calcule_par_l_application(
     migrated: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """**Ce que l'application peut trancher ne se delegue pas au modele** —
-    meme regle que le cran de confiance et le comptage de la section C."""
+    meme regle que le cran de confiance et le comptage de la section C.
+
+    La grandeur confrontee a change au lot 18 : le taux de premieres balles
+    **mises en jeu** disait qui sert ainsi, pas qui en tire quelque chose. Le
+    test suit la decision, pas la sortie — c'est un changement de fond.
+    """
     reglages = _drapeau(monkeypatch, True)
-    serve_stats.store_aggregate(_agg("Taylor Fritz", first_serve=648), reglages)
-    serve_stats.store_aggregate(_agg("Alex Michelsen", first_serve=610), reglages)
+    serve_stats.store_aggregate(_agg("Taylor Fritz", won_first=648), reglages)
+    serve_stats.store_aggregate(_agg("Alex Michelsen", won_first=400), reglages)
 
     rendu = dict(serve_stats.serve_lines("Taylor Fritz", "Alex Michelsen", "atp", "hard", reglages))
 
-    assert "service +3.8 pts sur la 1re balle pour Taylor Fritz" in rendu["Ecart"]
+    assert "s/1re " in rendu["Ecart"] and "pour Taylor Fritz" in rendu["Ecart"]
     assert "taux non ajustes du niveau d'adversaire" in rendu["Ecart"]
 
 
@@ -2455,3 +2463,60 @@ async def test_le_palmares_ne_se_borne_pas_sur_le_temps_de_mur_des_timelines(
     # Les 40 joueurs a venir, et non les `BATCH` premiers.
     assert len(demandes[0]) == 40
     assert len(timelines.players(migrated)) == timelines.BATCH
+
+
+def _paire_agg(nom: str, **champs: int) -> serve_stats.ServeAggregate:
+    """Un agregat de volume realiste, pour comparer deux joueurs a la main."""
+    base = dict(
+        matches=30,
+        first_serve=900,
+        first_serve_of=1400,
+        won_first=900,
+        won_first_of=1400,
+        won_second=250,
+        won_second_of=500,
+        double_faults=60,
+        return_points=1400,
+        return_won=600,
+    )
+    base.update(champs)
+    return serve_stats.ServeAggregate(player=nom, circuit="wta", **base)
+
+
+def test_l_ecart_se_tait_sur_une_difference_qui_tient_dans_le_bruit() -> None:
+    """`+0.1 pts` sur 1 400 points n'est pas un petit avantage, c'est **rien**.
+
+    Le bloc du 20/08 nommait « service +0.1 pts sur la 1re balle » pendant que
+    la ligne juste au-dessus portait 6,1 points sur les points gagnes et 7,5 sur
+    les doubles fautes. Le seuil ne s'invente pas : il se lit sur les
+    denominateurs, par l'intervalle de Newcombe.
+    """
+    identiques = _gap = serve_stats._gap_fragment("A", "B", _paire_agg("A"), _paire_agg("B"))
+    assert identiques == "", f"une difference nulle ne se nomme pas : {_gap!r}"
+
+
+def test_l_ecart_nomme_les_points_gagnes_et_non_la_mise_en_jeu() -> None:
+    """**Le taux de premieres balles dit qui sert ainsi, pas qui en tire quelque
+    chose.** Deux joueurs peuvent rentrer la meme part de premieres et n'en tirer
+    pas du tout la meme chose."""
+    # A rentre bien plus de premieres, B en gagne bien plus.
+    a = _paire_agg("A", first_serve=1200, won_first=800)
+    b = _paire_agg("B", first_serve=700, won_first=1000)
+
+    valeur = serve_stats._gap_fragment("A", "B", a, b)
+
+    assert valeur.startswith("s/1re "), valeur
+    assert "pour B" in valeur, "l'avantage va a celui qui gagne les points"
+    assert "1re balle" not in valeur, "la mise en jeu reste sur « Service »"
+
+
+def test_sur_les_doubles_fautes_l_avantage_est_au_plus_bas() -> None:
+    """Le seul piege de la ligne, et il designerait le mauvais joueur."""
+    a = _paire_agg("A", double_faults=40)
+    b = _paire_agg("B", double_faults=140)
+
+    valeur = serve_stats._gap_fragment("A", "B", a, b)
+
+    fragment = next(part for part in valeur.split(" | ") if part.startswith("df "))
+    assert "pour A" in fragment, fragment
+    assert "pour B" not in fragment, fragment

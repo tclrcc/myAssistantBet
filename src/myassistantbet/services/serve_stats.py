@@ -1447,6 +1447,29 @@ def _short_day(iso: str) -> str:
     return f"{parts[2]}/{parts[1]}" if len(parts) == 3 else str(iso)[:10]
 
 
+#: Les grandeurs que la ligne `Ecart` confronte, **dans cet ordre**, avec leurs
+#: comptes et le sens de l'avantage.
+#:
+#: `moins_vaut_mieux` porte le seul piege de la ligne : sur les doubles fautes,
+#: l'avantage est au **plus bas taux**. Un booleen le dit une fois ; l'oublier
+#: designerait le mauvais joueur, et un ecart lu a l'envers est l'erreur la plus
+#: couteuse que ce bloc puisse produire.
+GAP_MEASURES: tuple[tuple[str, str, bool], ...] = (
+    ("s/1re", "won_first", False),
+    ("df", "double_faults", True),
+    ("retour", "retour", False),
+)
+
+#: Comment lire les comptes d'une grandeur sur un agregat. Ecrit ici plutot qu'en
+#: propriete : la ligne a besoin du **numerateur et du denominateur**, la ou les
+#: proprietes de `ServeAggregate` ne rendent que le taux.
+_GAP_COUNTS = {
+    "won_first": lambda agg: (agg.won_first, agg.won_first_of),
+    "double_faults": lambda agg: (agg.double_faults, agg.second_serves),
+    "retour": lambda agg: (agg.return_won, agg.return_points),
+}
+
+
 def _gap_fragment(
     home: str,
     away: str,
@@ -1462,20 +1485,70 @@ def _gap_fragment(
     ajustes du niveau d'adversaire » n'est pas une precaution de style : un
     pourcentage obtenu contre des qualifies ne vaut pas le meme contre le haut
     du tableau, et c'est `Niveau adv.` qui le dit deux lignes plus haut.
+
+    ## Le taux de premieres balles disait qui sert, pas qui en tire quelque chose
+
+    La ligne confrontait `first_serve_pct` — la part de premieres balles **mises
+    en jeu**. Sur le bloc du 20/08 elle rendait `service +0.1 pts sur la 1re
+    balle pour Sara Bejlek`, les deux joueuses etant a 63,2 %, pendant que la
+    ligne `Service` juste au-dessus portait **6,1 points** d'ecart sur les points
+    gagnes derriere la premiere et **7,5 points** sur les doubles fautes.
+
+    La grandeur confrontee est donc celle de l'**efficacite** et non celle du
+    style : un joueur qui rentre 76 % de premieres n'en tire pas forcement plus
+    qu'un joueur a 55 %, et c'est cette seconde question que la ligne pose. Le
+    taux de mise en jeu reste rendu par `Service`, ou il decrit.
+
+    **Contre-mesure a connaitre : ce n'est pas la grandeur la moins dispersee.**
+    Sur les 174 paires de joueurs des blocs soumis, l'ecart absolu median vaut
+    **4,3 points** sur la mise en jeu contre **3,5** sur les points gagnes. Le
+    brief l'annoncait « la moins discriminante » ; elle est la **plus** dispersee
+    des cinq. Ce qui la disqualifie est ce qu'elle mesure, pas son etalement.
+
+    ## Un ecart doit sortir du bruit de sa propre mesure
+
+    `+0.1 pts` sur 1 400 points de service n'est pas un petit avantage : c'est
+    **rien**, et le nommer en tete de ligne est une affirmation que la donnee ne
+    porte pas — meme regle que `HANDICAP_ALERT_MARGIN`, ou l'on se tait quand
+    l'ecart tombe sous le bruit.
+
+    Le seuil ne s'invente pas : il se lit sur les **denominateurs de la ligne
+    elle-meme**, par l'intervalle de Newcombe deja ecrit pour la difference de
+    deux proportions. Un ecart n'est nomme que si son intervalle **exclut zero**.
+    Sur le bloc du 20/08, il rend exactement ce qu'il faut :
+
+    | Grandeur | Ecart | Intervalle | Nommee |
+    | --- | ---: | --- | --- |
+    | 1re balle en jeu | +0,1 | `[-3,5 ; +3,6]` | non |
+    | points s/1re | -6,1 | `[-10,4 ; -1,7]` | **oui** |
+    | doubles fautes | -7,5 | `[-11,8 ; -3,2]` | **oui** |
+    | retour | +5,3 | `[+1,7 ; +8,9]` | **oui** |
+
+    Taux de declenchement sur les 174 paires : **49 %** pour les points gagnes,
+    **49 %** pour les doubles fautes, **36 %** pour le retour. Aucune ligne quand
+    rien ne passe — une ligne qui nomme du bruit vaut moins qu'une ligne absente.
     """
     if home_agg is None or away_agg is None:
         return ""
+    from .inference import difference_interval
+
     lignes = []
-    for etiquette, gauche, droite in (
-        ("service", home_agg.first_serve_pct, away_agg.first_serve_pct),
-        ("retour", home_agg.return_pct, away_agg.return_pct),
-    ):
-        if gauche is None or droite is None:
+    for etiquette, cle, moins_vaut_mieux in GAP_MEASURES:
+        gauche, total_gauche = _GAP_COUNTS[cle](home_agg)
+        droite, total_droite = _GAP_COUNTS[cle](away_agg)
+        if not total_gauche or not total_droite:
             continue
-        ecart = 100 * (gauche - droite)
-        gagnant = home if ecart >= 0 else away
-        detail = " sur la 1re balle" if etiquette == "service" else ""
-        lignes.append(f"{etiquette} {abs(ecart):+.{_PCT}f} pts{detail} pour {gagnant}")
+        intervalle = difference_interval(gauche, total_gauche, droite, total_droite)
+        if intervalle is None or not (intervalle[0] > 0 or intervalle[1] < 0):
+            continue
+        ecart = 100 * (gauche / total_gauche - droite / total_droite)
+        # **Sur les doubles fautes, l'avantage est au plus bas.** Le `!=` porte
+        # l'inversion une seule fois : deux ecritures de cette regle auraient
+        # diverge, et la ligne aurait designe le mauvais joueur.
+        lignes.append(
+            f"{etiquette} {abs(ecart):+.{_PCT}f} pts pour "
+            f"{home if (ecart >= 0) != moins_vaut_mieux else away}"
+        )
     if not lignes:
         return ""
     lignes[-1] += " · taux non ajustes du niveau d'adversaire"
