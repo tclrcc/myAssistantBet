@@ -5598,6 +5598,42 @@ fichier autoportant — Markdown pour un lecteur humain ou un modele, JSON pour 
 - Le registre `SECTIONS` est le contrat, et `StatsReport.sections` dit ce que **ce** releve
   rend : le fichier ne peut donc pas porter une section que la page tait, ni l'inverse.
 
+## Mesurer l'existant avant de construire le demande rapporte plus que la demande
+
+**Regle de methode, du 20/08/2026, et c'est la deuxieme fois en trois lots.** Le
+lot 18 a livre ses dix points ; les trois defauts les plus graves qu'il corrige
+n'etaient **dans aucun** d'eux, et tous trois sont sortis de la mesure faite
+**avant** d'ecrire la ligne demandee :
+
+| Trouve en mesurant | Ce qu'on mesurait | Ce qu'on cherchait |
+| --- | --- | --- |
+| `Ici` rendait le tournoi de la semaine passee | la couverture de `Ici` sur les blocs archives | de quoi soustraire les matchs non couverts |
+| un handicap posable etait jete 94 fois sur 94 | la part des lignes en quart | de quoi choisir un signe de marquage |
+| le palmares plafonnait a 12 joueurs par jour | pourquoi une ligne ne sortait pas | une cause de couverture |
+
+Les trois ont la forme caracteristique du projet — l'echec et le cas ordinaire
+rendaient la meme chose — et **aucun n'etait visible depuis le rendu**. Ils l'ont
+ete depuis la **distribution** : un compte par bloc, un taux par sport, une
+mediane par journee.
+
+- **La mesure preliminaire n'est pas une verification de la premisse**, c'est
+  cela qui la rend rentable. On mesure la premisse pour savoir si la demande
+  tient ; on mesure l'**existant** pour savoir ce qu'on va modifier — et c'est la
+  seconde qui trouve ce que personne n'a demande.
+- **Elle ne coute presque rien** : les trois mesures ci-dessus sont trois
+  requetes sur `prompt_odds`, `prompt_events` et `api_responses`, toutes deja
+  peuplees.
+- **Le corollaire pour un brief** : dix points formules depuis un rendu decrivent
+  ce qui se voit. Ce qui ne se voit pas ne peut pas y figurer, et c'est
+  precisement ce que ce projet paie le plus cher.
+
+**Et il vaut pour les chiffres qu'on rapporte.** Une mesure de defaut faite par
+re-rendu de l'archive dit ce qu'un defaut **aurait pu** produire, jamais ce qu'il
+a produit : les « 14 fragments sur 223 » du tournoi croise portaient sur des blocs
+hypothetiques, quand la ligne n'a vecu qu'une soiree et n'a servi **aucun**
+fragment faux. La distinction entre surface latente et exposition reelle se porte
+dans la phrase, sinon elle se perd.
+
 ## La ligne `Ici` : un tournoi se corrobore, une couverture se soustrait
 
 Deux defauts du meme lot, tous deux invisibles, tous deux dans la ligne livree la
@@ -5645,6 +5681,19 @@ la rencontre. La ligne nomme desormais ce qu'elle ne couvre pas.
   strictesse a ete essayee cote corroboration et elle etait inutile, les 14
   fragments fautifs portant des adversaires jamais scannes ici. C'est le jour
   exact qui les ecarte.
+- **Un troisieme critere, et il se lit ailleurs que sur nos scans** : le **nom du
+  tournoi** que la source porte dans chaque match, compare a
+  `profile_tournament_names` — la table verifiee a la main du lot 17, qui
+  existait et n'etait branchee que sur le palmares. Les deux gardes sont
+  **cumulatives** : la corroboration par les scans peut tomber sur un joueur qui
+  a croise le meme adversaire dans les deux tournois de la quinzaine, le nom du
+  tournoi ne le peut pas. Une competition non rattachee la rend **muette et
+  jamais negative** — un ensemble declare vide n'affirme rien.
+- **Portee reelle du defaut : nulle, et il faut le dire.** Deux prompts archives
+  sur 167 portent une ligne `Ici`, pour 5 blocs et 10 fragments ; les 22 matchs
+  qu'ils listent sont tous corroborés, et les trois selections posees dessus
+  reposent sur des fragments justes. Le defaut a vecu vingt-six heures en code et
+  n'a servi aucun bloc faux.
 - La ligne reste **rare** : 7 blocs sur 195, 12 fragments. Une ligne qui sortirait
   partout cesserait d'informer.
 - **`Fraicheur` ne bouge pas, et le brief demandait qu'elle bouge.** Elle ne dit

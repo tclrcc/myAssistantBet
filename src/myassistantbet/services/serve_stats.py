@@ -2531,6 +2531,14 @@ def _same_player(left: str, right: str) -> bool:
     )
 
 
+def _tournament_name(match: Any) -> str:
+    """Le nom du tournoi porte par un match de la source, replie."""
+    from .tennis_history import _flat
+
+    tournoi = (match or {}).get("tournament") or {}
+    return _flat(str(tournoi.get("name") or ""))
+
+
 def _scanned_here(
     player: str, competition_id: int | None, until: str, settings: Settings
 ) -> tuple[set[str], set[str]]:
@@ -2574,11 +2582,26 @@ def _scanned_here(
     return noms, jours
 
 
+def declared_tournaments(competition_id: int | None, settings: Settings) -> set[str]:
+    """Les noms du tournoi **chez le fournisseur de profils**, replies.
+
+    Lecture unique, celle de `tennis_history.profile_tournament_names` : c'est la
+    table verifiee a la main du lot 17, et la recopier en SQL l'aurait fait
+    diverger au premier tournoi rattache.
+
+    Import tardif — `tennis_history` importe ce module au chargement.
+    """
+    from .tennis_history import _flat, profile_tournament_names
+
+    return {_flat(nom) for nom in profile_tournament_names(competition_id, settings)}
+
+
 def _tournament_id(
     payload: Any,
     name: str,
     window: tuple[str, str],
     scanned: tuple[set[str], set[str]] = (set(), set()),
+    declared: set[str] | None = None,
 ) -> int:
     """L'identifiant source du tournoi en cours, lu sur les matchs du joueur.
 
@@ -2620,6 +2643,23 @@ def _tournament_id(
     toujours pareil, Hijikata — Monfils vaut 13/08 23h05 chez nous et 14/08
     02h00 chez elle — et **14 par le jour seul**, la source ecrivant « Bianca
     Vanessa Andreescu » ou nos scans disent « Bianca Andreescu ».
+
+    ## Et le tournoi du fragment se corrobore contre celui du bloc
+
+    Les deux criteres ci-dessus se lisent sur nos **scans** ; celui-ci se lit sur
+    le **nom du tournoi** que la source porte dans chaque match, compare a la
+    table de rattachement du lot 17 (`profile_tournament_names`). Elle existait
+    et n'etait branchee que sur le palmares : le fournisseur ecrit
+    `Cincinnati Open - Cincinnati` et `National Bank Open - Toronto`, et rien
+    d'autre n'a besoin d'etre devine.
+
+    Les deux gardes sont **cumulatives et non alternatives** : la corroboration
+    par les scans peut tomber sur un joueur qui a croise le meme adversaire dans
+    les deux tournois de la quinzaine, le nom du tournoi ne le peut pas.
+
+    **Une competition non rattachee ne rend pas la garde negative**, elle la rend
+    muette : un ensemble declare vide n'affirme rien, meme regle que partout — la
+    moitie « ici » du palmares se tait plutot que d'ecrire « jamais joue ».
     """
     bas, haut = _instant(window[0]), _instant(window[1])
     if bas is None or haut is None:
@@ -2641,6 +2681,8 @@ def _tournament_id(
         )
         vu = any(_same_player(adversaire, autre) for autre in noms)
         if not vu and str(match.get("date") or "")[:10] not in jours:
+            continue
+        if declared and _tournament_name(match) not in declared:
             continue
         identifiant = _int(match.get("tournamentId"))
         if identifiant:
@@ -2830,7 +2872,11 @@ def _here_for(
     if charge is None:
         return [], tournament_id
     identifiant = tournament_id or _tournament_id(
-        charge, canonical, window, _scanned_here(player, competition_id, until, settings)
+        charge,
+        canonical,
+        window,
+        _scanned_here(player, competition_id, until, settings),
+        declared_tournaments(competition_id, settings),
     )
     if not identifiant:
         return [], 0
@@ -2939,6 +2985,7 @@ def contested_days(
         canonical,
         (edition.matches[0][0], commence_time),
         _scanned_here(player, competition_id, commence_time, settings),
+        declared_tournaments(competition_id, settings),
     )
     if not identifiant:
         return {}

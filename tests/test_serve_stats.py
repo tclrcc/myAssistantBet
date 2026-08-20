@@ -1697,6 +1697,12 @@ _STATS_2 = {
 }
 
 
+#: Le nom du tournoi chez le fournisseur de profils pour `tennis_atp_us_open`,
+#: seede par la migration 069. Les fragments `Ici` ne se rendent que si le nom
+#: porte par le match tombe dessus.
+TOURNOI_DECLARE = "U.S. Open - New York"
+
+
 def _match_source(gagnant: str, perdant: str, jour: str, score: str, tournoi: int = 900) -> dict:
     """Un match tel que la source le rend : **`player1` est le vainqueur**.
 
@@ -1710,7 +1716,11 @@ def _match_source(gagnant: str, perdant: str, jour: str, score: str, tournoi: in
         "result": score,
         "player1": {"name": gagnant, "stats": dict(_STATS_1)},
         "player2": {"name": perdant, "stats": dict(_STATS_2)},
-        "tournament": {"id": tournoi, "name": "Tournoi", "court": {"name": "Hard"}},
+        # **Le nom du tournoi est celui que la table du lot 17 declare** pour
+        # `tennis_atp_us_open`. Un libelle de fantaisie ferait tomber la garde de
+        # corroboration et taire toute la ligne — ce qui est le comportement
+        # voulu, mais pas ce que ces bancs mesurent.
+        "tournament": {"id": tournoi, "name": TOURNOI_DECLARE, "court": {"name": "Hard"}},
     }
 
 
@@ -2547,3 +2557,57 @@ def test_les_doubles_fautes_du_tournoi_se_rendent_en_taux(migrated: Settings) ->
     # Les trois grandeurs sont des taux : plus un seul compte nu dans le
     # fragment, la parenthese portant deja le denominateur.
     assert service.count("%") == 3, service
+
+
+def test_le_tournoi_du_fragment_se_corrobore_contre_celui_du_bloc(migrated: Settings) -> None:
+    """**La table du lot 17 existait et n'etait branchee que sur le palmares.**
+
+    La corroboration par nos scans peut tomber sur un joueur qui a croise le meme
+    adversaire dans les deux tournois de la quinzaine ; le **nom du tournoi**,
+    lui, ne le peut pas. Les deux gardes sont cumulatives.
+    """
+    competition = _tournoi(
+        migrated,
+        [("A", "X", "2026-08-14T12:00:00Z"), ("A", "B", "2026-08-18T12:00:00Z")],
+    )
+    ailleurs = _match_source("A", "X", "2026-08-14", "7-5 6-4", tournoi=901)
+    ailleurs["tournament"] = {"id": 901, "name": "Ailleurs Open - Ailleurs"}
+    _profil_tournoi("A", [ailleurs], migrated)
+    _profil_tournoi("B", [], migrated)
+
+    # Nos scans corroborent — meme adversaire, meme jour — et pourtant le tournoi
+    # n'est pas celui du bloc : rien ne se rend.
+    assert (
+        serve_stats.here_lines(
+            "A", "B", "atp", competition, "2026-08-18T12:00:00Z", _avec_ligne(migrated)
+        )
+        == []
+    )
+
+
+def test_une_competition_non_rattachee_ne_rend_pas_la_garde_negative(
+    migrated: Settings,
+) -> None:
+    """**Un ensemble declare vide n'affirme rien.** Meme regle que la moitie
+    « ici » du palmares, qui se tait plutot que d'ecrire « jamais joue »."""
+    from myassistantbet import db
+
+    competition = _tournoi(
+        migrated,
+        [("A", "X", "2026-08-14T12:00:00Z"), ("A", "B", "2026-08-18T12:00:00Z")],
+    )
+    db.execute(
+        "UPDATE competitions SET matchesplayed_tournaments = '' WHERE id = ?",
+        (competition,),
+        settings=migrated,
+    )
+    inconnu = _match_source("A", "X", "2026-08-14", "7-5 6-4")
+    inconnu["tournament"] = {"id": 900, "name": "Tournoi jamais declare"}
+    _profil_tournoi("A", [inconnu], migrated)
+    _profil_tournoi("B", [], migrated)
+
+    valeur = serve_stats.here_lines(
+        "A", "B", "atp", competition, "2026-08-18T12:00:00Z", _avec_ligne(migrated)
+    )[0][1]
+
+    assert "bat X 7-5 6-4" in valeur

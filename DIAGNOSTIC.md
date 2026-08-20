@@ -8442,3 +8442,62 @@ dépassait jamais douze joueurs par jour quand la médiane est de trente-deux.
 - la **borne de `BATCH`** pour les timelines (§3) : elle reste à 12, et c'est
   juste — une timeline coûte quatre à six appels par rencontre. Seul le palmarès
   en sort.
+
+## §1 bis — Le tournoi croisé : portée réelle, et la garde qui manquait
+
+### Trois réponses, mesurées sur les corps archivés
+
+**Depuis quand.** La ligne `Ici` est arrivée par `319f5f6` le **19/08 à 18h30
+locales**, derrière son drapeau, et a été activée par `0239664` le **19/08 à
+21h20**. Le défaut est né avec elle et a été corrigé le 20/08 : **environ vingt-six
+heures d'exposition en code**.
+
+**Combien de blocs rendus le portent : zéro.** Sur les 167 prompts archivés,
+**deux seulement** contiennent une ligne `Ici` — les prompts **166 et 167**, tous
+deux de la session 18 du 20/08 — pour **5 blocs de tennis et 10 fragments de
+joueur**. Passés au critère de corroboration, **22 matchs sur 22 sont corroborés
+par nos propres scans** : aucun fragment servi ne décrit un autre tournoi.
+
+**Aucune sélection ne repose dessus.** Trois sélections portent sur ces blocs —
+`pick 337` Anisimova +1.5 Hand. jeux (gagnée), `pick 336` Over 23.5 Jeux O/U,
+`pick 338` Tirante Vainqueur — et les trois reposent sur des fragments justes.
+**Rien à signaler dans l'historique.**
+
+### Je dois corriger ce que j'ai écrit hier
+
+Les « **14 fragments sur 223** » du §1 ne sont pas un compte de blocs servis :
+c'est le résultat d'un **re-rendu** des 195 blocs de tennis archivés avec le code
+et les charges utiles d'aujourd'hui — donc des blocs hypothétiques, dont la
+plupart datent d'avant l'activation de la ligne. C'est une mesure de **surface
+latente**, pas d'exposition.
+
+Le chiffre reste juste comme mesure du défaut ; la phrase « elle a donc été fausse
+pendant plusieurs sessions » ne l'est pas. La ligne n'a vécu qu'une soirée, sur
+un tournoi où tous les joueurs avaient déjà des matchs corroborables. **La
+distinction entre ce qu'un défaut aurait pu produire et ce qu'il a produit doit
+être portée par le chiffre**, et le mien ne l'était pas.
+
+### La garde de corroboration, branchée sur la table du lot 17
+
+Les deux critères existants se lisent sur **nos scans** ; celui-ci se lit sur le
+**nom du tournoi** que la source porte dans chaque match — `Cincinnati Open -
+Cincinnati`, `National Bank Open - Toronto` — comparé à
+`profile_tournament_names`, la table vérifiée à la main du lot 17. Elle existait
+et n'était branchée que sur le palmarès.
+
+**Cumulatives et non alternatives** : la corroboration par les scans peut tomber
+sur un joueur ayant croisé le même adversaire dans les deux tournois de la
+quinzaine ; le nom du tournoi ne le peut pas.
+
+**Une compétition non rattachée rend la garde muette, jamais négative** : un
+ensemble déclaré vide n'affirme rien — même règle que la moitié « ici » du
+palmarès, qui se tait plutôt que d'écrire « jamais joué ».
+
+Rejeu sur les 195 blocs : **223 identifiants corroborés justes, 0 faux**, et
+**146 blocs (75 %) portent toujours une ligne** — la garde ne coûte aucune
+couverture.
+
+Effet de bord sur les bancs : les fixtures nommaient le tournoi « Tournoi », un
+libellé de fantaisie qui fait désormais taire la ligne. Elles portent le nom
+déclaré par la migration 069 pour leur compétition — quinze tests l'ont appris en
+cassant, ce qui est le comportement voulu.

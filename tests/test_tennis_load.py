@@ -610,6 +610,13 @@ def _profil_source(joueur: str, matchs: list[dict], settings: Settings) -> None:
     )
 
 
+#: Le nom du tournoi chez le fournisseur de profils, seede par la migration 069
+#: pour la competition de ces bancs. Le tournoi d'un fragment se corrobore contre
+#: cette table : un libelle de fantaisie fait taire la lecture, ce qui est le
+#: comportement voulu mais pas ce qu'on mesure ici.
+TOURNOI_DECLARE = "U.S. Open - New York"
+
+
 def _match_joue(gagnant: str, perdant: str, jour: str, score: str, tournoi: int = 900) -> dict:
     stats = {
         "firstServe": {"value": "20/30"},
@@ -622,7 +629,7 @@ def _match_joue(gagnant: str, perdant: str, jour: str, score: str, tournoi: int 
         "result": score,
         "player1": {"name": gagnant, "stats": dict(stats)},
         "player2": {"name": perdant, "stats": dict(stats)},
-        "tournament": {"id": tournoi, "name": "Tournoi", "court": {"name": "Hard"}},
+        "tournament": {"id": tournoi, "name": TOURNOI_DECLARE, "court": {"name": "Hard"}},
     }
 
 
