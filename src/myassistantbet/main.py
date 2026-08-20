@@ -1169,6 +1169,29 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
     _require_session(session_id)
     form = {key: str(value) for key, value in (await request.form()).items()}
     settings = get_settings()
+    # **Troisieme controle bloquant du module**, apres la note d'independance et
+    # l'anteriorite — et le premier qui porte sur le lot entier plutot que sur
+    # une ligne. Un collage sans `dossiers_ouverts` ramene **toutes** ses
+    # selections en lecture, cran 1 : ce n'est pas une ligne qui manque, c'est
+    # la mesure du lot qui disparait.
+    #
+    # L'avertissement d'apercu existait depuis le 17/08 et il a parle les
+    # 20 fois ou la ligne manquait ; les 20 imports ont ete valides quand meme.
+    # **Un signal qui n'arrete rien ne se distingue pas d'un signal absent** —
+    # d'ou une confirmation explicite, et un refus tant qu'elle n'est pas donnee.
+    #
+    # La condition se **recalcule** depuis le collage conserve, jamais depuis un
+    # champ cache : ce qui garde l'import ne peut pas voyager par le formulaire
+    # qu'il garde. Sans collage relisable, on ne bloque pas — se taire vaut
+    # mieux qu'accuser un import dont on n'a pas le texte.
+    if form.get("confirm_partial") != "1":
+        garde = sections_service.for_import(session_id, form.get("import_id", ""), settings)
+        if garde is not None and garde.blocking:
+            return templates.TemplateResponse(
+                request,
+                "picks.html",
+                _picks_context(session_id, sections_service.BLOCKED_NOTE),
+            )
     # La liste entiere se garde a **l'import** et non a l'apercu, qui n'ecrit
     # rien : elle inclut les dossiers ouverts qui n'ont produit aucune
     # selection, et c'est elle qui se compare a l'ordre de passage propose.

@@ -5700,3 +5700,218 @@ savoir si l'erreur, quand elle survient, **se voit**. Un polygone qui se trompe
 n'existe pas ; un `EMMA_ID` mal saisi et un `geo_country` qui dit « Colombia »
 pour Séville se taisent tous les deux — et disent, en se taisant, l'inverse de
 la vérité.
+
+---
+
+# DIAGNOSTIC — lot 14 : la ligne `dossiers_ouverts`, collage par collage
+
+Relevé du 20/08/2026 sur une copie de la base servie. **Un seul sujet.**
+
+## §1 — Où en est la ligne, collage par collage
+
+Les 24 collages archivés, passés au lecteur réel (`confidence.read_opened`) et
+non à une réimplémentation :
+
+| id | date | sess. | car. | clé présente ? | état lu | repères |
+| ---: | --- | ---: | ---: | --- | --- | --- |
+| 1–7 | 17/08 14:08 → 16:14 | 15 | 702 – 1 313 | non | `absente` | — |
+| 8–13 | 18/08 08:01 → 08:20 | 16 | 567 – 1 314 | non | `absente` | — |
+| **14** | **18/08 22:48** | 17 | **16 559** | **oui** | **`renseignee`** | M1–M6 |
+| 15 | 18/08 22:49 | 17 | 1 022 | non | `absente` | — |
+| **16** | **18/08 22:50** | 17 | **17 780** | **oui** | **`renseignee`** | M1–M7 |
+| 17 | 18/08 22:50 | 17 | 1 155 | non | `absente` | — |
+| **18** | **19/08 15:59** | 17 | **21 559** | **oui** | **`renseignee`** | M1–M9 |
+| 19 | 19/08 16:00 | 17 | 1 426 | non | `absente` | — |
+| **20** | **19/08 21:09** | 17 | **25 128** | **oui** | **`renseignee`** | M1, M3–M8 |
+| 21–24 | 19/08 21:09 → 21:13 | 17 | 674 – 1 432 | non | `absente` | — |
+
+**La distribution est parfaitement bimodale** : quatre collages de 16 559 à
+25 128 caractères, vingt de 567 à 1 432. Aucun intermédiaire.
+
+### Les quatre cas, comptés et non supposés
+
+| Cas | Collages | Sélections |
+| --- | ---: | ---: |
+| absente d'un collage **tronqué** | **20 / 24** | 89 |
+| absente d'un collage complet (le modèle ne l'a pas produite) | **0** | 0 |
+| présente et **non lue** | **0** | 0 |
+| lue et **sans effet sur la sélection** | **0** | 0 |
+
+**Et la troncature n'est pas accidentelle.** Les vingt collages courts
+commencent tous exactement par `C. Tableau des sélections` suivi de l'en-tête de
+colonnes : ce sont des collages **du seul tableau**, pas des réponses coupées.
+
+**Deux conclusions que ça ferme :**
+
+- **le modèle produit bien la ligne** — les quatre collages complets la portent
+  tous, avec 6 à 9 repères. Ni le gabarit ni l'extracteur ne sont en cause ;
+- **le lecteur la lit bien** — quatre `renseignee` sur quatre, zéro `illisible`.
+  Le correctif de libellé du lot 12 n'avait rien à rattraper ici.
+
+### Le défaut annexe que le tableau révèle
+
+`sessions.open_dossiers_state` vaut **`absente` pour la session 17**, alors que
+quatre de ses collages portaient la ligne correctement lue. Cause :
+`set_open_dossiers` **écrase à chaque import** — *« le dernier rendu collé décrit
+l'analyse en cours »*, ce qui est juste pour un import ordinaire. Ici le dernier
+collage de la session est un tableau seul, et il efface la déclaration des
+quatre bons. Les crans déjà posés, eux, ne bougent pas : l'écrasement est décidé
+par import.
+
+## §2 — Les deux filets ont parlé, les vingt fois
+
+`sections.for_paste()` rejoué sur les 24 collages, avec le prompt archivé de
+leur session :
+
+| | |
+| --- | ---: |
+| collages où le prompt **demandait** la ligne | **24 / 24** |
+| collages où elle a été **trouvée** | 4 |
+| **collages où l'avertissement se déclenchait** | **20 / 20** |
+| imports validés malgré l'avertissement | **20** |
+
+**Le filet n'a pas de trou** — et son `asked` se lit dans le **corps du prompt**,
+pas dans le collage, donc un collage tronqué ne peut pas emporter avec lui la
+question qu'on lui pose. Ce point-là était le piège possible, et il est fermé.
+
+**Correction de datation, et elle change l'analyse.** Le brief attribue ce
+branchement au lot 12 : il date du **17/08 à 14:04** (`421afa8`), et la section
+`dossiers_ouverts` y figurait dès l'origine. Le premier collage archivé est de
+14:08 — **quatre minutes plus tard**. Il n'existe donc aucun collage antérieur au
+filet : l'avertissement était affiché sur **la totalité** des vingt.
+
+**Le problème n'est donc plus technique.** C'est la formulation exacte du brief,
+et la mesure la confirme : *un signal qui existe et que rien n'arrête*. Vingt
+avertissements lus, vingt imports validés, 89 sélections en lecture.
+
+## §3 — Le correctif : un refus, pas un avertissement de plus
+
+La branche est celle que le brief prévoit pour le collage tronqué — **bloquer
+plutôt qu'avertir**. Un vingt-et-unième avertissement aurait le même effet que
+les vingt premiers.
+
+**`sections.SessionSections.blocking`** isole la seule section dont l'absence
+coûte les crans du **lot entier** et non d'une ligne : un bloc `conf` manquant
+coûte son cran à sa sélection, `dossiers_ouverts` fait basculer tout l'import en
+lecture, cran 1. Les quatre autres sections restent des avertissements.
+
+**Trois propriétés du garde-fou, et chacune vient d'un défaut déjà payé :**
+
+- **il se recalcule depuis `imports_raw`** (`sections.for_import`), jamais depuis
+  un champ caché. Ce qui garde l'import ne peut pas voyager par le formulaire
+  qu'il garde ;
+- **il ne bloque pas ce qu'il n'a pas vu.** Sans identifiant de collage — saisie
+  à la main, rejeu — il se tait. Refuser là fermerait deux chemins pour en garder
+  un ;
+- **le service et sa surface sont livrés ensemble.** La case `confirm_partial`
+  est émise par l'aperçu avec `required`, et le serveur refuse sans elle. Un
+  refus serveur sans case serait un blocage sans issue — le défaut exact du motif
+  de saisie tardive, resté sans surface pendant deux jours.
+
+Le refus **nomme d'abord le geste qui répare** — recoller la réponse entière — et
+seulement ensuite celui qui passe outre : la mesure dit que le collage du seul
+tableau est une habitude, et un refus qui ne proposerait que de la confirmer
+l'installerait.
+
+Cinq tests, dont deux qui gardent le garde-fou contre sa propre panne : un
+collage complet passe sans rien cocher, et un import sans identifiant passe aussi.
+
+## §4 — Le rejeu, et ce qu'il ne peut pas rattraper
+
+Simulation puis écriture sur les **quatre** collages qui portent la ligne
+(14, 16, 18, 20), sauvegarde prise avant
+(`myassistantbet-20260820-091747.db`).
+
+| | Avant | Après |
+| --- | ---: | ---: |
+| sélections en `ligne_absente` | 89 | **82** |
+| accord cran déclaré / recalculé | 16 / 147 — **11 %** | 19 / 147 — **13 %** |
+| `sessions.open_dossiers` (s17) | `NULL`, état `absente` | `M1 M3 M4 M5 M6 M7 M8`, état `renseignee` |
+
+**Sept sélections récupèrent leur cran**, toutes venues du collage 20 ; les
+trois autres collages complets avaient déjà posé leurs blocs. La déclaration de
+la session 17 est réparée — et elle ne l'aurait pas été par un import ordinaire,
+`attach` refusant explicitement de poser `absente`.
+
+**Sept sur quatre-vingt-neuf, et le brief se trompe sur la raison.** Il écrit
+*« sans lui, ces 89 sélections seraient perdues »* : `imports_raw` n'en sauve que
+sept, et les 82 autres ne sont pas perdues faute d'outil mais **faute de texte à
+relire**.
+
+| Sélections en `ligne_absente` | Session | Collage complet disponible ? |
+| ---: | --- | --- |
+| 16 | s11 | **aucun collage archivé** — antérieure à `imports_raw` |
+| 27 | s14 | **aucun collage archivé** — idem |
+| 19 | s15 | 0 sur 7 collages : la réponse entière n'a jamais été collée |
+| 15 | s16 | 0 sur 6 collages : idem |
+| 12 | s17 | 4 collages complets → **7 récupérées** |
+
+Les 43 de s11 et s14 précèdent la migration 052. Les 34 de s15 et s16 ont bien
+leur collage conservé — **et il ne contient que le tableau**. Aucun rejeu ne peut
+faire apparaître un texte qui n'a jamais été collé.
+
+**C'est l'argument le plus net pour le garde-fou du §3** : ce qui se répare en
+dix secondes au moment du collage ne se répare plus du tout ensuite.
+
+## §5 — L'arbitrage du lot 13 : rendre visibles les échecs de rapprochement météo
+
+**Proposition écrite, non construite.**
+
+Le constat du lot 13 tient : `ingestion_rejects` porte `session_id`, `import_id`
+et des bornes de position dans un collage, dont un relevé météo n'a aucun. L'y
+forcer fausserait le dénominateur de `selfcheck-ingestion`.
+
+**La forme minimale retenue : un état sur la ligne `Météo` elle-même, et rien
+d'autre.** Pas de table sœur.
+
+- **Pourquoi pas une table sœur.** Une table `source_rejects` demanderait sa
+  migration, sa page, son compteur et son entretien — pour un fait qui a déjà un
+  porteur naturel. Et surtout, le projet a déjà payé une fois le prix d'une
+  donnée collectée sans lecteur : `/players/squads`, des mois d'appels retirés
+  par la migration 022. Un compteur d'échecs météo que personne ne consulte
+  serait le même piège.
+- **Ce qui existe déjà et suffit.** `payload["alerts_unresolved"]` porte le
+  nombre d'aires non résolues, il est persisté dans `context`, et il décide déjà
+  du libellé rendu. **La donnée est là ; ce qui manque est qu'elle se voie.**
+- **La forme proposée, en une ligne de rendu.** Faire dire à la ligne *combien*
+  d'aires n'ont pas été résolues, au lieu de retomber sur le libellé générique :
+  `alertes officielles non interrogées (Norway — 3 aires sans polygone)`. Même
+  idiome que la fenêtre de `Parcours`, que le compte de `Tour — phase non
+  renseignée`, et que `Effectif` et sa fenêtre lue : **le compte est dans la
+  valeur**, ce qui rend l'affirmation vérifiable d'un coup d'œil.
+- **Ce que ça change, et ce que ça ne change pas.** L'état rendu reste
+  `non interrogées` — le comportement du lecteur ne bouge pas, et c'est
+  volontaire. Ce qui change est qu'un pays servi dont les aires cessent de porter
+  leurs polygones **se voit dans le bloc**, au lieu de se confondre avec les
+  dix-sept pays qu'on n'interroge pas du tout.
+- **Coût.** Quelques tokens sur les seuls blocs concernés, aucune migration,
+  aucune table, aucun seuil. La ligne `Météo` est déjà gardée par
+  `'Meteo' in context_labels`.
+
+**À arbitrer, et non retenu d'office** : si la distinction entre « pays non
+interrogé » et « pays interrogé dont l'aire n'est pas résolue » ne change aucun
+comportement, alors elle n'a pas sa place dans le bloc et le log applicatif
+suffit. C'est la question à trancher, et elle ne se tranche pas depuis ici.
+
+## §6 — Ce que la mesure contredit dans ce brief
+
+| Affirmé | Mesuré |
+| --- | --- |
+| « Le lot 12 a branché `sections.for_paste()` sur l'aperçu » | branché le **17/08 à 14:04** (`421afa8`), avec `dossiers_ouverts` dès l'origine — quatre minutes avant le premier collage archivé |
+| « Pour chaque collage **postérieur** au correctif… » | **les 24 sont postérieurs.** Le filet a parlé les 20 fois où la ligne manquait |
+| « sans lui, ces 89 sélections seraient perdues » | `imports_raw` en sauve **7**. Les 82 autres n'ont pas de texte complet à relire — 43 sont antérieures à la table, 34 n'ont vu qu'un collage du tableau |
+| le lot 8 concluait « ni le modèle, ni l'extracteur : le collage » | **confirmé, et c'est la seule des trois affirmations qui tienne** : 4 collages complets sur 4 portent la ligne, 4 sur 4 se lisent |
+
+### La leçon de méthode du lot
+
+**On a cru le sujet réglé deux fois parce qu'on a corrigé deux fois le lecteur,
+et jamais le geste.** Le lot 8 a nommé la cause — le collage — et livré un
+avertissement ; le lot 9 a livré `--rattacher`, qui répare après coup ; le lot 12
+a corrigé un libellé. Les trois sont justes et aucun n'arrête quoi que ce soit.
+
+Le relevé du §2 est le vrai enseignement : **vingt avertissements affichés,
+vingt imports validés**. Un signal qui n'a pas le pouvoir de refuser se
+consomme comme un élément de décor — et il se lit, dans les statistiques, comme
+si la mesure fonctionnait. C'est la neuvième occurrence du motif du projet, sous
+sa forme la plus retorse : ici l'échec **était** signalé, et le signal n'a rien
+changé.

@@ -115,6 +115,11 @@ def _finds_combo(raw: str) -> bool:
     return bool(read_combos(raw).combos)
 
 
+#: La cle de la ligne des dossiers ouverts. **Nommee et non recopiee** : elle
+#: est lue par le garde-fou d'import autant que par le releve, et deux ecritures
+#: du meme litteral auraient fini par ne plus designer la meme section.
+OPENED = "dossiers_ouverts"
+
 #: Les cinq sections structurees que le rendu porte. L'ordre est celui du
 #: gabarit — on relit un compte-rendu dans l'ordre ou on a colle.
 SECTIONS: tuple[Section, ...] = (
@@ -123,7 +128,7 @@ SECTIONS: tuple[Section, ...] = (
     Section("combo", "blocs combo", lambda raw: bool(_ASKS_COMBO.search(raw)), _finds_combo),
     Section("sets", "ligne sets:", lambda raw: bool(_ASKS_SETS.search(raw)), _finds_sets),
     Section(
-        "dossiers_ouverts",
+        OPENED,
         "ligne dossiers_ouverts",
         lambda raw: bool(_ASKS_OPENED.search(raw)),
         _finds_opened,
@@ -154,6 +159,25 @@ class SessionSections:
     def missing(self) -> tuple[str, ...]:
         """Demandees et jamais revenues. C'est la seule liste actionnable."""
         return tuple(s.key for s in SECTIONS if s.key in self.asked and s.key not in self.found)
+
+    @property
+    def blocking(self) -> bool:
+        """Le collage a-t-il laisse derriere lui la ligne des dossiers ouverts ?
+
+        **C'est la seule section dont l'absence coute les crans de tout le
+        lot**, et non une ligne. Les quatre autres se rattrapent ligne par
+        ligne — un bloc `conf` manquant coute son cran a sa selection — quand
+        celle-ci fait basculer l'import entier en lecture, cran 1.
+
+        Mesure du 20/08/2026 qui justifie de la traiter a part : sur les
+        24 collages archives, **20 sont un collage du seul tableau de la
+        section C** — 567 a 1 432 caracteres contre 16 559 a 25 128 pour les
+        quatre collages complets. L'avertissement d'apercu existe depuis le
+        17/08 14:04 et il a parle **les 20 fois** ; les 20 imports ont ete
+        valides quand meme, et 89 selections y ont perdu leur cran. Un signal
+        qui n'arrete rien ne se distingue pas d'un signal absent.
+        """
+        return OPENED in self.asked and OPENED not in self.found
 
     @property
     def missing_labels(self) -> tuple[str, ...]:
@@ -252,6 +276,48 @@ def for_paste(session_id: int, raw: str, settings: Settings | None = None) -> Se
         ).fetchone()
     asked, found = read(raw, str(row["body"]) if row else "")
     return SessionSections(session_id=session_id, has_paste=True, asked=asked, found=found)
+
+
+#: Ce que le refus dit, la ou il est prononce. **Il nomme le geste qui repare**
+#: — recoller la reponse entiere — avant de nommer celui qui passe outre : la
+#: mesure dit que le collage du seul tableau est une habitude, pas un choix, et
+#: un refus qui ne propose que de le confirmer l'installerait.
+BLOCKED_NOTE = (
+    "Import refusé : la ligne « dossiers_ouverts » n'est pas dans ce collage, "
+    "et sans elle les crans de tout le lot retombent en lecture. Recolle la "
+    "réponse entière — la ligne suit le tableau dans le rendu. Si tu veux "
+    "vraiment n'importer que le tableau, coche la case de confirmation sous "
+    "l'aperçu."
+)
+
+
+def for_import(
+    session_id: int, import_id: str | int | None, settings: Settings | None = None
+) -> SessionSections | None:
+    """Le releve d'un collage **deja conserve**, relu par son identifiant.
+
+    C'est la lecture dont se sert le garde-fou d'import, et elle ne peut pas
+    passer par le formulaire : un champ cache qui porterait la condition serait
+    fourni par la page que la condition garde. `imports_raw` fait foi.
+
+    Rend `None` quand il n'y a rien a relire — identifiant absent, illisible, ou
+    collage d'une autre session. **On ne bloque pas sur ce qu'on n'a pas vu** :
+    la saisie a la main et le rejeu n'ont pas d'identifiant d'import, et les
+    refuser serait fermer deux chemins pour garder le troisieme.
+    """
+    settings = settings or get_settings()
+    try:
+        numero = int(str(import_id or "").strip())
+    except ValueError:
+        return None
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT raw_text FROM imports_raw WHERE id = ? AND session_id = ?",
+            (numero, session_id),
+        ).fetchone()
+    if row is None:
+        return None
+    return for_paste(session_id, str(row["raw_text"] or ""), settings)
 
 
 def survey(settings: Settings | None = None) -> Survey:

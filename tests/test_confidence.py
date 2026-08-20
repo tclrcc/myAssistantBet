@@ -1786,3 +1786,128 @@ def test_un_tableau_qu_aucun_prompt_ne_porte_reste_en_lecture(migrated: Settings
         OVERRIDE_REPERES,
     ]
     assert is_collection_fault(OVERRIDE_REPERES), "un rattachement raté n'est pas une observation"
+
+
+# --- Lot 14 : le collage du seul tableau ne passe plus sans confirmation ----
+
+
+def _lot_qui_reclame(settings: Settings) -> int:
+    """Un lot dont le prompt archive **demande** la ligne des dossiers ouverts.
+
+    Sans cette demande, rien ne manque : le releve se tait plutot que d'accuser
+    un collage d'apres un gabarit qu'on n'a pas.
+    """
+    session_id, corps = _lot_de_deux(settings)
+    db.execute(
+        "UPDATE prompts SET body = ? WHERE session_id = ?",
+        (corps + "\ndossiers_ouverts: [M1, M2]\n", session_id),
+        settings=settings,
+    )
+    return session_id
+
+
+def _dernier_import(settings: Settings) -> str:
+    return str(db.query_one("SELECT MAX(id) AS id FROM imports_raw", settings=settings)["id"])
+
+
+def test_un_collage_du_seul_tableau_est_refuse_sans_confirmation(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """**Le defaut mesure le 20/08/2026.** Sur 24 collages archives, 20 sont un
+    collage du seul tableau de la section C ; l'avertissement d'apercu existait
+    depuis le 17/08 et il a parle les 20 fois. Les 20 imports ont ete valides
+    quand meme, et 89 selections y ont perdu leur cran.
+    """
+    session_id = _lot_qui_reclame(isolated_settings)
+    client.post(f"/history/{session_id}/picks/preview", data={"table": TABLEAU_DEUX})
+
+    reponse = client.post(
+        f"/history/{session_id}/picks/import",
+        data={
+            "keep_1": "1",
+            "market_1": "1N2",
+            "selection_1": "Lyon",
+            "tier_1": "safe",
+            "import_id": _dernier_import(isolated_settings),
+        },
+    )
+
+    assert reponse.status_code == 200
+    assert "Import refusé" in reponse.text
+    assert db.query_one("SELECT COUNT(*) AS n FROM picks", settings=isolated_settings)["n"] == 0
+
+
+def test_la_confirmation_explicite_laisse_passer(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Le refus n'est pas absolu : il reclame un geste, sur un chemin qu'on veut
+    rare. Un blocage sans issue ferait contourner l'outil."""
+    session_id = _lot_qui_reclame(isolated_settings)
+    client.post(f"/history/{session_id}/picks/preview", data={"table": TABLEAU_DEUX})
+
+    client.post(
+        f"/history/{session_id}/picks/import",
+        data={
+            "keep_1": "1",
+            "market_1": "1N2",
+            "selection_1": "Lyon",
+            "tier_1": "safe",
+            "import_id": _dernier_import(isolated_settings),
+            "confirm_partial": "1",
+        },
+    )
+
+    assert db.query_one("SELECT COUNT(*) AS n FROM picks", settings=isolated_settings)["n"] == 1
+
+
+def test_un_collage_qui_porte_la_ligne_passe_sans_rien_cocher(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """**Le test du test.** Un garde-fou qui crie sur tout passerait pour un
+    garde-fou qui marche : celui-ci verifie le cas sain."""
+    session_id = _lot_qui_reclame(isolated_settings)
+    complet = _avec_dossiers(_avec_blocs("M1", "M2"), "dossiers_ouverts: [M1, M2]")
+    client.post(f"/history/{session_id}/picks/preview", data={"table": complet})
+
+    client.post(
+        f"/history/{session_id}/picks/import",
+        data={
+            "keep_1": "1",
+            "market_1": "1N2",
+            "selection_1": "Lyon",
+            "tier_1": "safe",
+            "import_id": _dernier_import(isolated_settings),
+        },
+    )
+
+    assert db.query_one("SELECT COUNT(*) AS n FROM picks", settings=isolated_settings)["n"] == 1
+
+
+def test_sans_identifiant_de_collage_on_ne_bloque_pas(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """La saisie a la main et le rejeu n'ont pas d'identifiant d'import :
+    refuser sur ce qu'on n'a pas vu fermerait deux chemins pour en garder un."""
+    session_id = _lot_qui_reclame(isolated_settings)
+
+    client.post(
+        f"/history/{session_id}/picks/import",
+        data={"keep_1": "1", "market_1": "1N2", "selection_1": "Lyon", "tier_1": "safe"},
+    )
+
+    assert db.query_one("SELECT COUNT(*) AS n FROM picks", settings=isolated_settings)["n"] == 1
+
+
+def test_l_apercu_emet_la_case_quand_la_ligne_manque(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """**Le service et sa surface se livrent ensemble.** Un refus serveur sans
+    case a cocher serait un blocage sans issue — le defaut exact du motif de
+    saisie tardive, reste sans surface pendant deux jours."""
+    session_id = _lot_qui_reclame(isolated_settings)
+
+    apercu = client.post(f"/history/{session_id}/picks/preview", data={"table": TABLEAU_DEUX})
+    rendu = " ".join(apercu.text.split())
+
+    assert 'name="confirm_partial"' in rendu
+    assert "required" in rendu

@@ -300,6 +300,23 @@
       </tbody>
     </table>
     <div class="grid-foot">
+      {# **La ligne « dossiers_ouverts » coûte les crans du lot entier, pas d'une
+         ligne** : sans elle tout l'import retombe en lecture, cran 1. L'aperçu
+         l'avertissait déjà, et sur les 24 collages archivés il l'a fait les
+         20 fois où elle manquait — les 20 imports ont été validés quand même.
+         Un signal qui n'arrête rien ne se distingue pas d'un signal absent :
+         la case est donc obligatoire, et le serveur refuse sans elle. #}
+      {% if missing_sections and missing_sections.blocking %}
+      <p class="notice notice-warn">
+        <label>
+          <input type="checkbox" name="confirm_partial" value="1" required>
+          La ligne « dossiers_ouverts » n'est pas dans ce collage. Recoller la réponse
+          entière la récupère ; importer sans elle ramène les
+          {{ preview.picks | length }} ligne(s) de ce lot en lecture, cran 1.
+          Je confirme n'importer que le tableau.
+        </label>
+      </p>
+      {% endif %}
       <button type="submit" class="primary">Importer les lignes cochées</button>
     </div>
   </form>
