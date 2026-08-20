@@ -523,6 +523,23 @@ class Brief:
         return _nombre(self.table.plafond_unites)
 
     @property
+    def engagees_unites(self) -> str:
+        """Les unites deja engagees, **toujours rendues, zero compris**.
+
+        La ligne ne paraissait qu'a partir de la premiere mise enregistree, si
+        bien que le prompt annoncait le plafond nu tout le reste du temps — alors
+        que le docstring de cette classe promet depuis le lot 17 que « chaque
+        prompt annonce ce qu'il **reste**, pas le plafond nu ». Un docstring faux
+        coute plus qu'un docstring absent : il fait re-deriver la meme conclusion
+        fausse au lecteur suivant.
+
+        Un plafond sans son etat ne contraint rien — meme regle que les bornes de
+        palier et les quotas du lot, qui se calculent au lieu de se faire
+        recalculer de tete.
+        """
+        return _nombre(self.engagees)
+
+    @property
     def restantes(self) -> str:
         return _nombre(max(0.0, self.table.plafond_unites - self.engagees))
 

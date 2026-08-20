@@ -898,11 +898,9 @@ autre nom.
   · une sélection de section C : **1 unité**
   · une sélection de section C-bis : **aucune mise**
   · un combiné : **{{ mise.combine_unites }} unité**
-{% if mise.engagees %}  · plafond de la journée : **{{ mise.plafond_unites }} unités**, dont
-    **{{ mise.engagees }} déjà engagées** par les rendus précédents de cette
-    journée — **il t'en reste {{ mise.restantes }}**
-{% else %}  · plafond de la journée : **{{ mise.plafond_unites }} unités**, soit {{ mise.plafond_pct }} % de la bankroll
-{% endif %}
+  · plafond de la journée : **{{ mise.plafond_unites }} unités**, soit {{ mise.plafond_pct }} % de la bankroll
+  · engagé aujourd'hui, tous rendus confondus : **{{ mise.engagees_unites }} sur {{ mise.plafond_unites }}** — il t'en reste **{{ mise.restantes }}**
+
 Les sélections de C-bis ne reçoivent aucune mise **parce qu'elles sont produites
 sans fait daté, sur lecture seule des blocs**. Ce n'est pas un jugement sur leur
 qualité : elles sont enregistrées et tranchées comme les autres, et c'est ce qui

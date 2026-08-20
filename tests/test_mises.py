@@ -679,3 +679,31 @@ def test_l_echeance_entre_au_journal_des_mesures(
     entrees = {e.day: e.label for e in journal(isolated_settings).entries}
     assert "2026-09-20" in entrees
     assert "re-mesurer l'unité de mise" in entrees["2026-09-20"]
+
+
+def test_l_etat_de_la_journee_se_rend_meme_a_zero(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """**Un plafond sans son état ne contraint rien.**
+
+    La ligne ne paraissait qu'à partir de la première mise enregistrée, si bien
+    que le prompt annonçait le plafond nu tout le reste du temps — alors que le
+    docstring de `Brief` promet depuis le lot 17 que « chaque prompt annonce ce
+    qu'il **reste**, pas le plafond nu ». Le service et son docstring se
+    contredisaient, et c'est le docstring qui avait raison.
+
+    Le test lit le **prompt rendu**, jamais la seule propriété : le défaut vivait
+    dans la porte, et un `Brief` correct n'aurait rien montré.
+    """
+    from myassistantbet.services.prompt import build_prompt
+    from myassistantbet.services import stakes
+
+    session_id, _ = _lot(isolated_settings, ["Lyon", "Nice"])
+    brief = stakes.brief("2026-08-20", isolated_settings)
+    assert brief.engagees == 0.0, "aucune mise enregistree : c'est le cas a couvrir"
+
+    corps = build_prompt(session_id, settings=isolated_settings).body
+
+    ligne = next(row for row in corps.splitlines() if "engagé aujourd'hui" in row)
+    assert f"**0 sur {brief.plafond_unites}**" in ligne
+    assert f"il t'en reste **{brief.restantes}**" in ligne

@@ -8210,3 +8210,37 @@ réordonnancement n'est donc pas mesurable rétroactivement.
 La section BUDGET DE RECHERCHE, où la règle « la fiche ne regarde aucune cote »
 est énoncée : **+71 tokens** (316 → 573 caractères). La distinction y est
 explicite, comme le brief le demande.
+
+## §9 — L'état de la journée manquait, et le docstring promettait le contraire
+
+### Établi
+
+La mention n'était pas conditionnée à un **montant saisi** : elle l'était à
+`{% if mise.engagees %}`, donc à une mise **déjà enregistrée**. Sur la base
+servie, `mises` porte **0 ligne** et `bankroll_journee` **0 ligne** ; `engagees`
+vaut 0,0 et la branche `else` rendait le plafond nu.
+
+Le docstring de `stakes.Brief` promet pourtant depuis le lot 17 que « chaque
+prompt annonce ce qu'il **reste**, pas le plafond nu — sans cela, quatre rendus
+dans la journée auraient chacun cru disposer du plafond entier, c'est-à-dire le
+contournement par découpage que le plafond par journée existe pour fermer ». Le
+service et son docstring se contredisaient, et **c'est le docstring qui avait
+raison**.
+
+### La branche disparaît
+
+Une ligne unique, sans condition, qui porte toujours les trois nombres :
+
+    · plafond de la journée : **20 unités**, soit 5 % de la bankroll
+    · engagé aujourd'hui, tous rendus confondus : **0 sur 20** — il t'en reste **20**
+
+Un plafond sans son état ne contraint rien — même règle que les bornes de palier
+et les quotas du lot, qui se calculent au lieu de se faire recalculer de tête.
+
+### Gabarit
+
+**−27 tokens** (356 → 261 caractères) : la condition supprimée coûtait plus que
+la ligne qu'elle gardait.
+
+Le test lit le **prompt rendu** et non la propriété : le défaut vivait dans la
+porte, et un `Brief` correct n'aurait rien montré.
