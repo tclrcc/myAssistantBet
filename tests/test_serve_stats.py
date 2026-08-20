@@ -2374,3 +2374,42 @@ def test_deux_freres_ne_se_confondent_pas(migrated: Settings) -> None:
     assert serve_stats._same_player("Bianca Andreescu", "Bianca Vanessa Andreescu")
     assert not serve_stats._same_player("Alexander Zverev", "Mischa Zverev")
     assert not serve_stats._same_player("Alexander Zverev", "Alexander Bublik")
+
+
+def test_la_phase_inconnue_dit_quand_meme_le_nombre_de_tours(migrated: Settings) -> None:
+    """**Le tour ne se devine pas, le compte des tours s'etablit.**
+
+    Sur le bloc du 20/08, `Tour` disait « phase non renseignee (118 joueurs
+    vus) » quand `Parcours` et `Ici` etablissaient quatre tours d'un cote et
+    trois de l'autre. Le gabarit fait de l'enjeu asymetrique une condition
+    d'acces aux paliers hauts : entre une joueuse jamais allee au-dela du 3e
+    tour ici et une lauréate de Grand Chelem en demie, il existe.
+    """
+    from myassistantbet.services import tennis_round
+
+    competition = _tournoi(
+        migrated,
+        [
+            ("A", "X", "2026-08-14T12:00:00Z"),
+            ("A", "Y", "2026-08-16T12:00:00Z"),
+            ("B", "Z", "2026-08-16T14:00:00Z"),
+            ("A", "B", "2026-08-18T12:00:00Z"),
+        ],
+    )
+    valeur = tennis_round.lines(competition, "2026-08-18T12:00:00Z", migrated, "A", "B")[0][1]
+
+    assert tennis_round.UNSET_ROUND in valeur, "la phase reste inconnue"
+    assert f"{tennis_round.ROUNDS_PLAYED} 2 tours disputes par A, 1 par B" in valeur
+
+
+def test_un_tour_nomme_ne_repete_pas_le_compte(migrated: Settings) -> None:
+    """`quart de finale` situe deja le joueur : le compte n'ajouterait rien, et
+    une ligne qui sort partout cesse d'informer."""
+    from myassistantbet.services import tennis_round
+
+    jours = [(f"J{i}", f"K{i}", "2026-08-14T12:00:00Z") for i in range(8)]
+    competition = _tournoi(migrated, [*jours, ("J0", "J1", "2026-08-18T12:00:00Z")])
+    valeur = tennis_round.lines(competition, "2026-08-18T12:00:00Z", migrated, "J0", "J1")[0][1]
+
+    assert tennis_round.UNSET_ROUND not in valeur
+    assert tennis_round.ROUNDS_PLAYED not in valeur

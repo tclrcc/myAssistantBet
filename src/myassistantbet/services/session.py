@@ -483,7 +483,7 @@ def context_block(
         # propres scans : aucune source ne le publie a temps. Il vient en tete
         # du bloc parce qu'il situe tout le reste — une forme moyenne ne se lit
         # pas pareil en finale et au premier tour.
-        lines += tennis_round.lines(competition_id, commence_time, settings)
+        lines += tennis_round.lines(competition_id, commence_time, settings, home, away)
         lines += elo.lines(home, away, oddsapi_key, surface, settings)
         # Repos et charge sortent de nos propres lignes : les tours precedents
         # du meme tournoi ont ete scannes les jours d'avant. Aucun appel, aucune

@@ -7799,3 +7799,58 @@ porte les résultats.
 Un seul passage touché, la consigne TENNIS de « CE QU'IL FAUT VÉRIFIER » :
 elle demandait de repérer soi-même qu'« un match postérieur à la date de relevé
 manque aussi ». **−1 token** (463 → 462 caractères).
+
+## §2 — `Tour` reste inconnu, le nombre de tours ne l'est pas
+
+Sur M6, `Tour` écrit `phase non renseignée (118 joueurs vus ne forment aucun
+tableau)` quand `Parcours` établit quatre tours pour Bejlek et trois pour Keys.
+Ça décide de quelque chose : le gabarit fait de l'enjeu asymétrique une condition
+d'accès aux paliers hauts, et l'écarte en précisant que « l'enjeu asymétrique
+n'existe pas en quart d'un Masters 1000 ». En demie, entre une joueuse jamais
+allée au-delà du 3e tour ici et une lauréate de Grand Chelem, il existe.
+
+**Rien n'est deviné.** La phase n'est servie par personne — vérifié au lot 11 —
+et un tableau de qualification ne finit pas par une finale : compter depuis la
+fin y produirait un nombre qui ne désigne rien. La mention **complète**
+`phase non renseignée`, elle ne la remplace pas.
+
+Rendu :
+
+    Tour        phase non renseignee (118 joueurs vus ne forment aucun tableau)
+                au moins 4 tours disputes par Sara Bejlek, 3 par Madison Keys
+
+**« au moins »**, parce que le début d'un tableau peut précéder notre fenêtre de
+scans — la limite que `truncated()` nomme déjà.
+
+### Nos scans seuls, et c'est un arbitrage mesuré
+
+La source de profils rapporte parfois un tour que nos scans n'ont pas vu.
+Mesure du 20/08/2026 sur les 195 blocs : **11 joueurs sur 192 (5,7 %)**, et
+toujours d'un seul tour. La borne serait donc un peu meilleure en la lisant ;
+elle coûterait une dépendance de plus, une question de drapeau, et le mot
+« au moins » reste vrai dans les deux cas. Le jour où ce taux monte, c'est là
+que ça se reprend.
+
+### Portée
+
+Sur les 195 blocs tennis : 99 nomment leur tour et ne portent pas la mention —
+« quart de finale » situe déjà, et une ligne qui sort partout cesse d'informer ;
+**70 la portent** ; 26 gardent la phase inconnue sans aucun tour établi.
+
+### Gabarit
+
+Une puce ajoutée sous l'entrée « Tour » du chapitre COMMENT LIRE LES BLOCS.
+**+99 tokens** (227 → 585 caractères). Marge relevée au même moment : le lot
+football pèse **15 831** pour une alarme à 23 000, le lot mixte **13 506** pour
+20 000 — la règle « tout ajout budgète sa propre coupe » a été écrite quand le
+socle tenait à 7 tokens de son plafond ; elle ne mord plus ici, et la mesure est
+écrite pour qu'on n'ait pas à la redécouvrir.
+
+### Une assertion réalignée sur sa substance
+
+`test_la_puce_ne_s_applique_pas_systematiquement` recopiait la formulation
+exacte de la consigne TENNIS (§1). Ce qu'elle protège est que la consigne soit
+**conditionnelle** — elle l'est toujours, et davantage. Les ancres ont été
+reprises et **deux assertions ajoutées** sur ce que la ligne nomme désormais :
+une assertion qui casse sur une reformulation décrit au lieu de contraindre,
+mais l'affaiblir sans rien mettre à la place serait pire.

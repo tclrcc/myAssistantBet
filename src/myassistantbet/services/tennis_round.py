@@ -263,10 +263,62 @@ def truncated(
     return players > 1 and not is_bracket(players)
 
 
+#: Ce que la ligne ajoute quand la phase n'est pas etablie mais que le nombre de
+#: tours l'est. **Une constante et non un litteral recopie** — le chapitre du
+#: gabarit la definit, et deux ecritures auraient diverge.
+ROUNDS_PLAYED = "au moins"
+
+
+def _rounds_played(
+    home: str, away: str, competition_id: int | None, commence_time: str, settings: Settings
+) -> str:
+    """`au moins 4 tours disputes par Sara Bejlek, 3 par Madison Keys`.
+
+    **Ce qui est etabli, et rien de plus.** La phase n'est servie par personne et
+    ne se devine pas ; le nombre de tours deja disputes, lui, se compte sur nos
+    propres scans, et il decide de quelque chose — le gabarit fait de l'enjeu
+    asymetrique une condition d'acces aux paliers hauts, et l'ecarte en precisant
+    qu'il « n'existe pas en quart d'un Masters 1000 ». Entre une joueuse qui n'a
+    jamais depasse le 3e tour ici et une lauréate de Grand Chelem en demie, il
+    existe.
+
+    **« au moins », parce que le debut d'un tableau peut preceder notre
+    fenetre.** C'est la meme limite que `truncated()` nomme deja, et c'est
+    pourquoi la mention **complete** `phase non renseignee` au lieu de la
+    remplacer : le nombre de tours est etabli, la phase ne l'est toujours pas.
+
+    **Nos scans seuls, et c'est un arbitrage mesure.** La source de profils
+    rapporte parfois un tour que nos scans n'ont pas vu — mesure du 20/08/2026 :
+    **11 joueurs sur 192**, soit 5,7 %, et toujours d'un seul tour. Le borne
+    inferieure serait donc un peu meilleure en la lisant ; elle couterait une
+    dependance de plus et une question de drapeau, pour un mot qui reste vrai
+    dans les deux cas. Le jour ou ce taux monte, c'est ici que ca se reprend.
+    """
+    from . import tennis_load
+
+    comptes = []
+    for joueur in (home, away):
+        if not joueur:
+            continue
+        tours = len(tennis_load.load_for(joueur, competition_id, commence_time, settings).faced)
+        if tours:
+            comptes.append((tours, joueur))
+    if not comptes:
+        return ""
+    # « disputes » ne s'ecrit qu'une fois : le second compte se lit dessus, et
+    # le repeter allongerait la ligne sans rien ajouter.
+    tete, premier = comptes[0]
+    fragments = [f"{tete} tour{'s' if tete > 1 else ''} disputes par {premier}"]
+    fragments += [f"{tours} par {joueur}" for tours, joueur in comptes[1:]]
+    return f"{ROUNDS_PLAYED} " + ", ".join(fragments)
+
+
 def lines(
     competition_id: int | None,
     commence_time: str,
     settings: Settings | None = None,
+    home: str = "",
+    away: str = "",
 ) -> list[tuple[str, str]]:
     """Ligne « Tour », et **deux etats plutot qu'un silence**.
 
@@ -285,5 +337,11 @@ def lines(
     if label:
         return [("Tour", label)]
     if edition.players > 1:
-        return [("Tour", f"{UNSET_ROUND} ({edition.players} joueurs vus ne forment aucun tableau)")]
+        valeur = f"{UNSET_ROUND} ({edition.players} joueurs vus ne forment aucun tableau)"
+        # **Le nombre de tours se pose sur la seconde ligne, jamais a la suite.**
+        # La valeur porte deja son compte de joueurs entre parentheses, et deux
+        # parentheses bout a bout se lisent comme un seul propos — le defaut
+        # corrige sur `Classement` et sa reserve de debut de saison.
+        tours = _rounds_played(home, away, competition_id, commence_time, settings)
+        return [("Tour", f"{valeur}\n{tours}" if tours else valeur)]
     return []

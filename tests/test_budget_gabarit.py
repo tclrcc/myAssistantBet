@@ -159,11 +159,16 @@ def test_la_puce_ne_s_applique_pas_systematiquement() -> None:
     """
     texte = _plat(GABARIT.read_text(encoding="utf-8"))
 
-    assert "Quand « Ici » est absente" in texte
-    assert "cherche aussi les scores" in texte
+    assert "ou qu'elle est absente" in texte
+    assert "cherche ces scores-là" in texte
     assert "quatre blocs sur cinq, pas tous" in texte, (
         "la couverture mesurée doit être dite : sans elle, « absente » se lit comme un incident"
     )
+    # Depuis le lot 18, la ligne **nomme** les matchs dont elle ne dit pas
+    # l'issue : la consigne pointe dessus au lieu de faire refaire le
+    # rapprochement de tête. C'est ce qui la rend conditionnelle pour de bon.
+    assert "nomme des matchs « non couverts »" in texte
+    assert "Le rapprochement est fait" in texte
 
 
 def test_la_puce_ne_promet_plus_qu_aucune_source_ne_porte_les_scores() -> None:
