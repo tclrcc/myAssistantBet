@@ -382,30 +382,44 @@ def tier_for(category: str, circuit: str) -> str:
     return TIER_BY_CATEGORY.get((str(category or ""), str(circuit or "").lower()), "")
 
 
-def fragment(player: str, entry: Palmares | None, tier: str) -> str:
+def fragment(player: str, entry: Palmares | None, tier: str, names: tuple[str, ...] = ()) -> str:
     """`Swiatek WTA 1000 vainqueur 2024 (21 éditions, dur)`.
 
     **Le denominateur accompagne toujours le resultat**, et c'est tout l'objet de
     la ligne : « demi-finale 2019, 6 participations » et « demi-finale 2019, 2
     participations » ne decrivent pas le meme joueur.
 
-    ## Pourquoi la ligne ne dit rien du tournoi lui-meme
+    ## La moitie « ici », et pourquoi elle revient
 
-    Elle le devrait, et elle ne le peut pas encore. Les deux sources **ne
-    nomment pas les tournois pareil** : `tennis-data` ecrit « Western & Southern
-    Financial Group Women's Open », `matches-played` ecrit « Cincinnati Open -
-    Cincinnati ». La table `TENNISDATA_TOURNAMENTS` rattache les 43 competitions
-    a la **premiere** graphie ; elle ne dit rien de la seconde.
+    Le lot precedent l'a refusee, et le refus etait juste : les deux sources ne
+    nomment pas les tournois pareil — `tennis-data` ecrit « Western & Southern
+    Financial Group Women's Open », `matches-played` « Cincinnati Open -
+    Cincinnati » — et rendue au juge, elle annoncait « ici jamais joue » a quatre
+    joueuses qui y avaient toutes joue.
 
-    Rendre « ici jamais joue » sur ce rapprochement-la annoncerait qu'une
-    joueuse n'est jamais venue a Cincinnati alors qu'elle y a joue huit fois.
-    **Une affirmation fausse est pire qu'une ligne absente**, et le bilan sur
-    place garde donc sa ligne `Bilan ici`, servie par la source qui, elle, est
-    rattachee.
+    Ce qui a change n'est pas la regle mais la table : `names` porte la graphie
+    du fournisseur de profils, declaree a la main et verifiee contre l'archive.
+    **Sans elle, aucune moitie « ici »** — jamais une affirmation par defaut.
 
-    La categorie, en revanche, ne demande aucun rattachement de tournoi : elle se
-    lit sur la taxonomie deja saisie de la competition.
+    Le preambule, lui, promettait deja « le meilleur resultat atteint **ici** et
+    l'annee » : c'est le rendu qui s'en etait ecarte, pas le mode d'emploi.
+
+    La categorie ne demande aucun rattachement de tournoi : elle se lit sur la
+    taxonomie deja saisie de la competition.
     """
+    profond = _tier_fragment(player, entry, tier)
+    ici = here_fragment(player, entry, names)
+    if not profond:
+        return ici
+    if not ici:
+        return profond
+    # Le joueur est deja nomme par la premiere moitie : la seconde ne le repete
+    # pas, elle se pose a la suite.
+    return f"{profond} · {ici.removeprefix(player + ' ')}"
+
+
+def _tier_fragment(player: str, entry: Palmares | None, tier: str) -> str:
+    """La moitie « a ce niveau » : `Swiatek WTA 1000 vainqueur 2024 (21 éditions, dur)`."""
     if entry is None or not entry.editions or not tier:
         return ""
     meme = [e for e in entry.editions if e.tier == tier]
@@ -427,6 +441,69 @@ def fragment(player: str, entry: Palmares | None, tier: str) -> str:
     libelle = SURFACE_LABELS.get(surface.strip().lower(), surface.lower())
     detail = ", ".join(part for part in (editions, libelle) if part)
     return f"{player} {tier} {tour} {annee} ({detail})"
+
+
+def _fold_name(value: str) -> str:
+    """Un nom de tournoi, casse et espaces normalises. **Rien de flou.**
+
+    L'egalite porte sur la graphie canonique de la source, declaree a la main :
+    ce repli ne rattrape qu'un espace en trop ou une majuscule, jamais un nom
+    voisin. Rapprocher deux tournois par similarite de libelle est exactement ce
+    que ce projet refuse — et ce que le lot precedent a refuse de livrer.
+    """
+    return " ".join(str(value or "").split()).casefold()
+
+
+def here_fragment(player: str, entry: Palmares | None, names: tuple[str, ...]) -> str:
+    """`Swiatek ici vainqueur 2025 (8 éditions)` — le meilleur resultat **ici**.
+
+    ## Le mode d'echec commande le dessin
+
+    **Sans rattachement, aucune ligne** : ni « ici jamais joue », ni rien. Le lot
+    precedent a refuse de livrer cette moitie pour cette raison exacte — rendue
+    au juge, elle annoncait « ici jamais joue » a quatre joueuses qui avaient
+    toutes joue a Cincinnati. Une affirmation fausse est pire qu'une ligne
+    absente, et c'est la meme regle que les alertes meteo non interrogees et que
+    le repli par pays du lieu.
+
+    **Avec rattachement, en revanche, « jamais joue » est un fait** — et c'est
+    l'angle meme de la ligne : un joueur en quart ici qui n'y est jamais passe
+    ne l'aborde pas comme un habitue. La difference entre les deux cas n'est pas
+    de degre : dans le premier on ignore le nom du tournoi chez la source, dans
+    le second on le connait et on ne le trouve pas dans son historique.
+
+    L'annee n'accompagne pas le compte comme dans `fragment` : le palmares
+    profond dit deja jusqu'ou remonte l'historique lu.
+    """
+    if entry is None or not names:
+        return ""
+    if not entry.editions:
+        return ""
+    voulus = {_fold_name(nom) for nom in names}
+    ici = [e for e in entry.editions if _fold_name(e.tournament) in voulus]
+    if not ici:
+        return f"{player} ici jamais joué"
+    meilleur = _best(ici)
+    if meilleur is None:
+        return ""
+    tour, annee, _ = meilleur
+    editions = f"{len(ici)} édition" + ("s" if len(ici) > 1 else "")
+    return f"{player} ici {tour} {annee} ({editions})"
+
+
+def unmatched(entry: Palmares | None, names: tuple[str, ...]) -> list[str]:
+    """Les noms declares que l'historique de ce joueur ne porte pas.
+
+    **Ce n'est pas une erreur** : un joueur peut n'avoir jamais joue ici, et une
+    graphie ancienne ne figure dans l'historique de personne. C'est une mesure —
+    un nom declare qui ne sert jamais est soit une faute de frappe, soit une
+    edition sortie de la fenetre, et le seul moyen de les distinguer est de les
+    compter dans le temps. Le journal les nomme des **deux** cotes.
+    """
+    if entry is None or not names:
+        return []
+    presents = {_fold_name(e.tournament) for e in entry.editions}
+    return [nom for nom in names if _fold_name(nom) not in presents]
 
 
 #: Peremption d'un palmares. **Long, et c'est justifie** : une edition de plus

@@ -561,6 +561,135 @@ def test_la_table_de_correspondance_couvre_nos_tournois(migrated: Settings) -> N
         assert row["noms"] == attendu, row["oddsapi_key"]
 
 
+def test_la_seconde_table_de_correspondance_couvre_nos_tournois(migrated: Settings) -> None:
+    """La migration 069 et la table appliquée à la synchronisation disent la même
+    chose. **Deux tables et non une** : les deux fournisseurs ne nomment pas les
+    tournois pareil, et aucun des deux noms ne se déduit de l'autre."""
+    from myassistantbet.services.competitions import MATCHESPLAYED_TOURNAMENTS
+
+    rows = db.query(
+        "SELECT c.oddsapi_key, c.matchesplayed_tournaments AS noms FROM competitions c "
+        "JOIN sports s ON s.id = c.sport_id WHERE s.key = 'tennis'",
+        settings=migrated,
+    )
+    assert rows, "le seed crée bien des compétitions de tennis"
+    for row in rows:
+        assert row["noms"] == MATCHESPLAYED_TOURNAMENTS.get(row["oddsapi_key"]), row["oddsapi_key"]
+    # **Une propriété, jamais le compte du jour.** Le seed ne crée que huit
+    # compétitions de tennis ; les autres arrivent par la synchronisation, et
+    # écrire « 43 » ici recopierait l'état de la base servie. Ce qui doit être
+    # vrai est que les deux tables couvrent exactement les mêmes clés — sans
+    # quoi un tournoi serait rattaché d'un côté et muet de l'autre.
+    from myassistantbet.services.competitions import TENNISDATA_TOURNAMENTS
+
+    assert set(MATCHESPLAYED_TOURNAMENTS) == set(TENNISDATA_TOURNAMENTS)
+    for cle in MATCHESPLAYED_TOURNAMENTS:
+        assert cle.startswith("tennis_"), cle
+
+
+def test_un_tournoi_non_rattache_ne_rend_jamais_ici_jamais_joue() -> None:
+    """**Le mode d'échec commande le dessin, et c'est tout le chantier.**
+
+    Rendu au juge, le rapprochement annonçait « ici jamais joué » à quatre
+    joueuses qui avaient toutes joué à Cincinnati — les deux sources nomment le
+    tournoi différemment. Sans rattachement, la moitié « ici » n'existe donc
+    pas : ni ligne, ni affirmation. Même règle que les alertes météo non
+    interrogées et que le repli par pays du lieu.
+    """
+    from myassistantbet.services import palmares
+
+    entree = palmares.Palmares(
+        player="Iga Swiatek",
+        circuit="wta",
+        editions=[
+            palmares.Edition(
+                tournament="Cincinnati Open - Cincinnati",
+                tier="WTA 1000",
+                surface="Hard",
+                year="2025",
+                round="the final",
+                won=True,
+            )
+        ],
+    )
+
+    # Aucun nom déclaré : rien, jamais une affirmation par défaut.
+    assert palmares.here_fragment("Iga Swiatek", entree, ()) == ""
+    assert palmares.fragment("Iga Swiatek", entree, "WTA 1000", ()) == (
+        "Iga Swiatek WTA 1000 vainqueur 2025 (1 édition, dur)"
+    )
+
+    # Le nom déclaré : la moitié « ici » se pose à la suite, sans répéter le nom.
+    assert palmares.fragment(
+        "Iga Swiatek", entree, "WTA 1000", ("Cincinnati Open - Cincinnati",)
+    ) == ("Iga Swiatek WTA 1000 vainqueur 2025 (1 édition, dur) · ici vainqueur 2025 (1 édition)")
+
+    # Un tournoi rattaché où le joueur n'a rien joué : là, « jamais joué » est un
+    # fait, et c'est l'angle même de la ligne.
+    assert (
+        palmares.here_fragment("Iga Swiatek", entree, ("Wimbledon - London",))
+        == "Iga Swiatek ici jamais joué"
+    )
+
+
+def test_un_nom_declare_qui_ne_sert_jamais_se_dit() -> None:
+    """La table se complète **par la mesure** et non par supposition.
+
+    Un nom absent de l'historique d'un joueur est le cas ordinaire — il n'y a
+    peut-être jamais joué. Un nom absent de tous les historiques est une graphie
+    à reprendre, et seul le compte dans le temps les distingue.
+    """
+    from myassistantbet.services import palmares
+
+    entree = palmares.Palmares(
+        player="Iga Swiatek",
+        editions=[
+            palmares.Edition(
+                tournament="Cincinnati Open - Cincinnati",
+                tier="WTA 1000",
+                surface="Hard",
+                year="2025",
+                round="the final",
+                won=True,
+            )
+        ],
+    )
+    noms = ("Cincinnati Open - Cincinnati", "Western & Southern Open - Cincinnati")
+
+    assert palmares.unmatched(entree, noms) == ["Western & Southern Open - Cincinnati"]
+    # Sans rattachement, il n'y a rien à signaler : ce n'est pas un manque.
+    assert palmares.unmatched(entree, ()) == []
+
+
+def test_le_rapprochement_de_tournoi_ne_devine_jamais() -> None:
+    """**Égalité sur la graphie canonique, jamais similarité de libellé.**
+
+    Le repli ne rattrape qu'un espace en trop ou une majuscule. « Cincinnati
+    Open » seul ne désigne pas « Cincinnati Open - Cincinnati » : la ville fait
+    partie du nom du fournisseur, et l'accepter ouvrirait la porte à un voisin.
+    """
+    from myassistantbet.services import palmares
+
+    entree = palmares.Palmares(
+        player="X",
+        editions=[
+            palmares.Edition(
+                tournament="Cincinnati Open - Cincinnati",
+                tier="WTA 1000",
+                surface="Hard",
+                year="2025",
+                round="the final",
+                won=True,
+            )
+        ],
+    )
+    assert (
+        palmares.here_fragment("X", entree, ("cincinnati open  -  Cincinnati",))
+        != "X ici jamais joué"
+    )
+    assert palmares.here_fragment("X", entree, ("Cincinnati Open",)) == "X ici jamais joué"
+
+
 def test_le_prompt_dit_ce_que_l_absence_des_lignes_ici_signifie(migrated: Settings) -> None:
     """Leur absence ne dit rien du passe des joueurs sur place : elle dit que le
     rattachement du tournoi manque. Confondre les deux ferait conclure d'un

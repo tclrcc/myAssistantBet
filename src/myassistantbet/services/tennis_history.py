@@ -1162,10 +1162,29 @@ def lines(
             _category_of(competition_id, settings),
             serve_stats.circuit_of(oddsapi_key or _competition_key(competition_id, settings)),
         )
+        profils = profile_tournament_names(competition_id, settings)
+        palmares_home = palmares.load(home, settings)
+        palmares_away = palmares.load(away, settings)
         deep = _pair(
-            palmares.fragment(home, palmares.load(home, settings), niveau),
-            palmares.fragment(away, palmares.load(away, settings), niveau),
+            palmares.fragment(home, palmares_home, niveau, profils),
+            palmares.fragment(away, palmares_away, niveau, profils),
         )
+        # **Chaque nom declare qui ne sert jamais se dit**, des deux cotes. Un
+        # nom absent de l'historique d'un joueur est le cas ordinaire — il n'y a
+        # peut-etre jamais joue — mais un nom absent de **tous** les historiques
+        # est une graphie a reprendre, et le seul moyen de les distinguer est de
+        # les compter dans le temps. C'est ainsi que la table se complete par la
+        # mesure et non par supposition.
+        for joueur, entree in ((home, palmares_home), (away, palmares_away)):
+            manquants = palmares.unmatched(entree, profils)
+            if manquants and entree is not None and entree.editions:
+                logger.info(
+                    "Palmares : %s n'a aucune edition sous %s — competition %s (%s)",
+                    joueur,
+                    ", ".join(f"« {nom} »" for nom in manquants),
+                    competition_id,
+                    ", ".join(f"« {nom} »" for nom in names) or "sans nom tennis-data",
+                )
         record = _pair(
             _record_here_fragment(home, _here(everything[home], names)),
             _record_here_fragment(away, _here(everything[away], names)),
@@ -1295,6 +1314,25 @@ def tournament_names(competition_id: int | None, settings: Settings) -> tuple[st
     with connect(settings) as conn:
         row = conn.execute(
             "SELECT tennisdata_tournaments AS names FROM competitions WHERE id = ?",
+            (competition_id,),
+        ).fetchone()
+    raw = (row["names"] if row else None) or ""
+    return tuple(name.strip() for name in raw.split("|") if name.strip())
+
+
+def profile_tournament_names(competition_id: int | None, settings: Settings) -> tuple[str, ...]:
+    """Noms du tournoi chez le fournisseur de **profils**, pour cette competition.
+
+    Une seconde table, parce que les deux sources ne nomment pas les tournois
+    pareil et qu'aucun des deux noms ne se deduit de l'autre. Vide quand le
+    rattachement manque : la moitie « ici » du palmares ne se rend alors pas du
+    tout — **jamais « ici jamais joue »**, qui serait une affirmation fausse.
+    """
+    if not competition_id:
+        return ()
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT matchesplayed_tournaments AS names FROM competitions WHERE id = ?",
             (competition_id,),
         ).fetchone()
     raw = (row["names"] if row else None) or ""

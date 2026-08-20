@@ -895,6 +895,94 @@ TENNISDATA_TOURNAMENTS: dict[str, str] = {
 }
 
 
+#: Le nom d'un tournoi chez le fournisseur de **profils** (`matches-played`),
+#: qui n'est pas celui du jeu de donnees de resultats.
+#:
+#: **Double de la migration 069, exactement comme `TENNISDATA_TOURNAMENTS`**, et
+#: pour la meme raison : une migration ne classe que ce qui est deja en base
+#: quand elle tourne, et la synchronisation decouvre en permanence. Un test relit
+#: le fichier de migration et le compare a cette table plutot que d'en recopier
+#: la regle.
+#:
+#: **Plusieurs noms par tournoi, et c'est la regle et non l'exception.** Mesure
+#: du 20/08/2026 sur les 798 reponses archivees : le fournisseur renomme au
+#: sponsor sans retro-corriger. Cincinnati porte trois graphies — dont une
+#: « - New York », l'edition 2020 deplacee — le Canadian Open quatre sur deux
+#: villes et deux langues, Queen's cinq. La ville est **dans** le nom, elle bouge
+#: par calendrier : ce n'est pas une cle de rapprochement.
+MATCHESPLAYED_TOURNAMENTS: dict[str, str] = {
+    "tennis_atp_aus_open_singles": "Australian Open - Melbourne",
+    "tennis_atp_barcelona_open": "Barcelona Open Banc Sabadell - Barcelona",
+    "tennis_atp_canadian_open": (
+        "National Bank Open - Toronto|National Bank Open - Montreal|Rogers Cup - Toronto|"
+        "Rogers Cup - Montreal|Coupe Rogers - Montreal"
+    ),
+    "tennis_atp_china_open": "China Open - Beijing",
+    "tennis_atp_cincinnati_open": (
+        "Cincinnati Open - Cincinnati|Western & Southern Open - Cincinnati|"
+        "Western & Southern Open - New York"
+    ),
+    "tennis_atp_dubai": "Dubai Duty Free Tennis Championships - Dubai",
+    "tennis_atp_french_open": "French Open - Paris",
+    "tennis_atp_halle_open": "Terra Wortmann Open - Halle",
+    "tennis_atp_hamburg_open": "Hamburg Open - Hamburg|Hamburg European Open - Hamburg",
+    "tennis_atp_indian_wells": "BNP Paribas Open - Indian Wells",
+    "tennis_atp_italian_open": "Internazionali BNL d'Italia - Rome",
+    "tennis_atp_madrid_open": "Mutua Madrid Open - Madrid",
+    "tennis_atp_miami_open": "Miami Open - Miami",
+    "tennis_atp_monte_carlo_masters": "Monte-Carlo Rolex Masters - Monte-Carlo",
+    "tennis_atp_munich": "BMW Open - Munich",
+    "tennis_atp_paris_masters": "Rolex Paris Masters - Paris",
+    "tennis_atp_qatar_open": "Qatar ExxonMobil Open - Doha",
+    "tennis_atp_queens_club_champ": (
+        "HSBC Championships - London|cinch Championships - London|Fever-Tree Championships - London"
+    ),
+    "tennis_atp_shanghai_masters": "Shanghai Rolex Masters - Shanghai",
+    "tennis_atp_us_open": "U.S. Open - New York",
+    "tennis_atp_washington_open": (
+        "Citi Open - Washington|Mubadala Citi DC Open - Washington|Mubadala DC Open - Washington"
+    ),
+    "tennis_atp_wimbledon": "Wimbledon - London",
+    "tennis_wta_aus_open_singles": "Australian Open - Melbourne",
+    "tennis_wta_bad_homburg_open": "Bad Homburg Open - Bad Homburg",
+    "tennis_wta_canadian_open": (
+        "National Bank Open - Toronto|Omnium Banque Nationale - Montreal|"
+        "Rogers Cup - Toronto|Rogers Cup - Montreal"
+    ),
+    "tennis_wta_charleston_open": (
+        "Credit One Charleston Open - Charleston|Volvo Car Open - Charleston|"
+        "Family Circle Cup - Charleston"
+    ),
+    "tennis_wta_china_open": "China Open - Beijing",
+    "tennis_wta_cincinnati_open": (
+        "Cincinnati Open - Cincinnati|Western & Southern Open - Cincinnati|"
+        "Western & Southern Open - New York"
+    ),
+    "tennis_wta_dubai": "Dubai Duty Free Championships - Dubai",
+    "tennis_wta_french_open": "French Open - Paris",
+    "tennis_wta_german_open": (
+        "Berlin Tennis Open - Berlin|Berlin Ladies Open - Berlin|bett1open - Berlin|"
+        "Betti Open - Berlin"
+    ),
+    "tennis_wta_indian_wells": "BNP Paribas Open - Indian Wells",
+    "tennis_wta_italian_open": "Internazionali BNL d'Italia - Rome",
+    "tennis_wta_madrid_open": "Mutua Madrid Open - Madrid",
+    "tennis_wta_miami_open": "Miami Open - Miami",
+    "tennis_wta_qatar_open": "Qatar TotalEnergies Open - Doha|Qatar Total Open - Doha",
+    "tennis_wta_queens_club_champ": (
+        "The HSBC Championships - London|LTA London Championships - London"
+    ),
+    "tennis_wta_strasbourg": "Internationaux de Strasbourg - Strasbourg",
+    "tennis_wta_stuttgart_open": "Porsche Tennis Grand Prix - Stuttgart",
+    "tennis_wta_us_open": "U.S. Open - New York",
+    "tennis_wta_washington_open": (
+        "Mubadala Citi DC Open - Washington|Mubadala DC Open - Washington|Citi Open - Washington"
+    ),
+    "tennis_wta_wimbledon": "Wimbledon - London",
+    "tennis_wta_wuhan_open": "Wuhan Open - Wuhan|Wuhan Tennis Open - Wuhan",
+}
+
+
 def set_apifootball_league(
     competition_id: int, league_id: str, settings: Settings | None = None
 ) -> None:
@@ -1059,19 +1147,22 @@ async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None)
 
             league_id = APIFOOTBALL_LEAGUES.get(oddsapi_key)
             tournaments = TENNISDATA_TOURNAMENTS.get(oddsapi_key)
+            profils = MATCHESPLAYED_TOURNAMENTS.get(oddsapi_key)
             category = COMPETITION_CATEGORIES.get(oddsapi_key)
             note = COMPETITION_NOTES.get(oddsapi_key)
             existing = conn.execute(
                 "SELECT id, label, api_active, apifootball_league_id, tennisdata_tournaments, "
-                "       category, notes FROM competitions WHERE oddsapi_key = ?",
+                "       matchesplayed_tournaments, category, notes "
+                "  FROM competitions WHERE oddsapi_key = ?",
                 (oddsapi_key,),
             ).fetchone()
             if existing is None:
                 conn.execute(
                     "INSERT INTO competitions (sport_id, oddsapi_key, label, priority, active, "
                     "                          api_active, apifootball_league_id, "
-                    "                          tennisdata_tournaments, category, notes) "
-                    "VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?, ?)",
+                    "                          tennisdata_tournaments, matchesplayed_tournaments, "
+                    "                          category, notes) "
+                    "VALUES (?, ?, ?, 0, 0, ?, ?, ?, ?, ?, ?)",
                     (
                         sport_ids[sport_key],
                         oddsapi_key,
@@ -1079,6 +1170,7 @@ async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None)
                         served,
                         league_id,
                         tournaments,
+                        profils,
                         category,
                         note,
                     ),
@@ -1100,6 +1192,15 @@ async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None)
                 conn.execute(
                     "UPDATE competitions SET tennisdata_tournaments = ? WHERE id = ?",
                     (tournaments, existing["id"]),
+                )
+
+            if profils is not None and existing["matchesplayed_tournaments"] is None:
+                # Le second rattachement, meme regle : les deux fournisseurs ne
+                # nomment pas les tournois pareil, et aucun des deux noms ne se
+                # deduit de l'autre.
+                conn.execute(
+                    "UPDATE competitions SET matchesplayed_tournaments = ? WHERE id = ?",
+                    (profils, existing["id"]),
                 )
 
             if note is not None and not (existing["notes"] or "").strip():
