@@ -6114,3 +6114,41 @@ C'est aussi ce qui explique que le lint ci-dessus ne dispose que de 21
 observations : sur 237 selections tranchees, **114 portent un cran calcule a 1** —
 l'etat force quand `dossiers_ouverts` manque — et **20 seulement un cran reel**.
 La cause n'est ni le modele ni l'extraction.
+
+## Le gabarit se relit sur le disque, le code non
+
+**Mode de panne nomme le 21/08/2026, et il appartient a la famille du projet.**
+`prompt._environment()` construit un `FileSystemLoader` a chaque appel : le
+gabarit est relu sur le disque a chaque generation. Le code Python, lui, est
+charge au demarrage. Un `git pull` sans redemarrage laisse donc **gabarit du lot,
+code d'avant**.
+
+Ce que ca produit : une variable ajoutee au gabarit rend `Undefined`, donc une
+chaine vide et un `{% if %}` faux ; un bloc entier peut ne pas se rendre. **Rien
+ne leve.** L'application n'emploie pas `StrictUndefined` et ne le peut pas —
+plusieurs variables sont legitimement absentes selon le lot.
+
+Constate en reel : une heure durant, le gabarit portait le bloc C-bis du lot 19
+quand le code en memoire ne passait pas `tiers_sans_dossier`. Aucun prompt n'a
+ete genere dans cette fenetre — c'est ce qui a rendu l'episode inoffensif, pas
+une propriete du dispositif.
+
+**Proposition ecrite dans `DIAGNOSTIC.md`, non construite.** Deux moities qui
+n'attrapent pas la meme chose : l'empreinte des gabarits figee au demarrage et
+exposee par `/health` attrape le deploiement sans redemarrage ; un test comparant
+les variables referencees par le gabarit aux cles passees a `.render()` attrape
+le renommage.
+
+**Le piege qui decide de la forme de la premiere** : l'ecran des reglages permet
+d'editer un gabarit (`save_template`, `delete_template`), qui ecrivent sur le
+disque. Une comparaison naive crierait sur le **chemin d'edition supporte**,
+c'est-a-dire le cas ou le code en memoire est le bon. L'empreinte de reference
+doit donc etre mise a jour par ces deux fonctions et par elles seules : un ecart
+veut alors dire « le disque a change **sans passer par moi** », le seul cas a
+signaler.
+
+Ce qui n'est **pas** propose : refuser de demarrer sur un ecart — un board du
+matin vaut mieux qu'un refus, meme arbitrage qu'un seuil illisible qui revient au
+defaut ; recharger le code a chaud ; mettre le gabarit en cache — c'est la
+relecture disque qui rend l'edition immediate, et c'est voulu. Le probleme n'est
+pas qu'on relise le disque, c'est qu'on ne dise pas quand il a bouge.

@@ -9706,3 +9706,131 @@ automatique » devient « date-la parce qu'elle dépendra d'un geste dont la dat
 d'activation n'est pas la date de livraison » — la même livraison, une
 justification plus forte. C'est pour ça que la vérification passe avant le code
 et non à sa place.
+
+## La divergence gabarit / code : proposition, non construite
+
+### Le mode de panne, nommé le 21/08/2026
+
+`prompt._environment()` construit un `FileSystemLoader` **à chaque appel** : le
+gabarit est relu sur le disque à chaque génération. Le code Python, lui, est
+chargé au démarrage du processus. Un `git pull` sans redémarrage laisse donc
+l'application dans un état mixte — **gabarit du lot, code d'avant** — et c'est
+exactement l'état dans lequel elle a passé une heure ce soir.
+
+Ce que ça produit, et pourquoi ça appartient à la famille de ce projet :
+
+| Ce qui change | Ce qui se passe | Ce qui le signale |
+| --- | --- | --- |
+| une variable **ajoutée** au gabarit | `Undefined` — un `{% if %}` faux, une valeur vide | **rien** |
+| une variable **renommée** | la moitié qui la lit se tait | **rien** |
+| une variable **retirée** du gabarit | le code la passe, elle n'est pas lue | rien, et sans conséquence |
+| un **bloc entier** ajouté | il ne se rend pas | **rien** |
+
+Jinja rend `Undefined` comme une chaîne vide et le tait ; l'application n'utilise
+pas `StrictUndefined`, et ne le peut pas — plusieurs variables sont
+légitimement absentes selon le lot. **Une incohérence qui ne lève rien, produit
+un prompt d'apparence normale, et se découvre en cherchant autre chose.**
+
+Constaté en réel : entre 00:27 et 01:29 ce soir, le gabarit sur disque portait le
+bloc C-bis du §2a et le code en mémoire ne passait pas `tiers_sans_dossier`.
+Aucun prompt n'a été généré dans cette fenêtre — c'est ce qui a rendu l'épisode
+inoffensif, pas une propriété du dispositif.
+
+### La proposition : deux moitiés qui n'attrapent pas la même chose
+
+**Moitié 1 — l'empreinte de démarrage, exposée par `/health`.** C'est celle qui
+attrape le déploiement sans redémarrage.
+
+`prompt.template_fingerprint()` existe déjà et calcule le SHA des gabarits
+présents sur le disque. Il suffit de le figer au démarrage et de comparer :
+
+```
+"gabarit": {
+    "au_demarrage": "a3f9…",   # figé au lancement du processus
+    "sur_disque":   "a3f9…",   # recalculé à chaque appel de /health
+    "coherent":     true
+}
+```
+
+**Le piège, et c'est lui qui décide de la forme** : l'application permet
+d'éditer un gabarit depuis l'écran des réglages (`save_template`,
+`delete_template`), qui écrivent sur le disque. Une comparaison naïve crierait
+donc sur **le chemin d'édition supporté**, c'est-à-dire exactement le cas où le
+code en mémoire est le bon.
+
+La garde doit donc suivre ce que le processus a lui-même écrit : l'empreinte de
+référence est mise à jour par `save_template` et `delete_template`, et par eux
+seuls. Un écart veut alors dire « le disque a changé **sans passer par moi** » —
+un `git pull`, un `git checkout`, un déploiement — ce qui est précisément le cas
+à signaler, et le seul.
+
+**Moitié 2 — le contrat des variables, en test et non à l'exécution.** C'est
+celle qui attrape le renommage, y compris quand tout est correctement déployé.
+
+`jinja2.meta.find_undeclared_variables` donne les variables qu'un gabarit
+référence. Comparé à l'ensemble des clés que `build_prompt` passe à `.render()`,
+un écart nomme la variable perdue. Ça vit dans `tests/`, pas dans
+l'application : ce n'est pas un état d'exploitation mais une **erreur de
+rédaction**, et elle doit tomber en CI plutôt qu'après le déploiement.
+
+Réserve à connaître : la liste des clés passées est écrite dans un appel unique,
+donc l'extraire statiquement demande de lire l'AST du `.render(` — faisable,
+fragile. L'alternative est de rendre le gabarit avec un dictionnaire
+instrumenté, qui note les clés réellement demandées ; c'est plus sûr, et ça ne
+voit que les variables que le lot du jour atteint. **La seconde moitié est donc
+la moins évidente des deux, et c'est la première qu'il faut livrer.**
+
+### Ce qui n'est pas proposé, et pourquoi
+
+- **Pas de refus de démarrer** sur une incohérence : un déploiement qui laisse
+  un écart d'empreinte est un état à corriger, pas une raison de ne plus servir
+  le board du matin. Même arbitrage qu'un seuil illisible, qui revient au défaut
+  plutôt que de casser une page ;
+- **pas de rechargement automatique du code** : l'application tient sur un
+  processus, et un rechargement à chaud serait un mécanisme de plus pour un cas
+  que `systemctl restart` règle ;
+- **pas de cache Jinja** pour supprimer la relecture disque : c'est elle qui
+  rend l'édition depuis l'écran des réglages immédiate, et c'est une propriété
+  voulue. Le problème n'est pas qu'on relise le disque, c'est qu'on ne dise pas
+  quand il a bougé.
+
+**Non construit ce soir**, et ça ne bloque rien : la fenêtre de risque est celle
+qui sépare un `git pull` d'un `systemctl restart`, et elle est refermée.
+
+## Mise en service du lot 19 — vérifiée depuis le serveur
+
+| Contrôle | Résultat |
+| --- | --- |
+| sauvegarde avant migration | `myassistantbet-20260820-232903.db`, 314 736 640 octets |
+| migration | `070_journal_du_lot_19.sql` appliquée au démarrage, seule |
+| `/health` | `status: ok`, `db.ok: true`, **`schema_version: 70`**, `journal_mode: wal` |
+| redémarrage | propre — `NRestarts=0`, `Application startup complete`, planificateur reparti |
+| populations | 329 picks (245 / 32 / 52), 3 combinés, 9 jambes, 27 scores en sets — **inchangées** |
+| journal des mesures | 27 → **30**, les trois entrées présentes |
+| `FEEDBACK_SUSPENDED` | **True** — le prompt servi rend « Taux par palier et par confiance : **retenus volontairement** » |
+| entrées de bascule | **0** — `note_feedback` n'a pas tiré, et ne devait pas |
+
+**Le correctif de quota, sur un prompt réel rendu par l'instance servie**
+(`GET /session/18/prompt.md`, 55 450 octets, aucune écriture — cette route ne
+sauvegarde pas) :
+
+```
+Paliers présents dans ce lot : SAFE, FUN, ULTRA FUN, GIGA FUN.
+Quotas **de ce lot** : 0-1 🟢, 0-1 🔵, 0-1 🟠, 0-0 🔴.
+
+GIGA FUN est à **zéro** en section C : ce lot
+n'ouvre pas assez de dossiers pour justifier autant de paliers hauts. C'est ici
+que ce prix se joue, ou nulle part.
+```
+
+La phrase C-bis **est la preuve que le nouveau code tourne** : elle est gardée
+par `tiers_sans_dossier`, que seul le `prompt.py` du lot passe au gabarit. Avant
+le redémarrage, la variable était indéfinie et le bloc ne se rendait pas.
+
+Le `0-0 🔴` qui subsiste est le comportement voulu : ce lot ne porte plus qu'un
+match, donc un seul dossier ouvrable, déjà pris par ULTRA FUN. **Le zéro
+arbitraire du prorata a disparu ; le zéro justifié par le budget se nomme.**
+
+Et ce prompt est **le premier de l'histoire de la base à porter les consignes
+permanentes** — 0 sur les 170 archivés, la saisie datant du 20/08 à 22:06, sept
+minutes après le dernier prompt rendu.
