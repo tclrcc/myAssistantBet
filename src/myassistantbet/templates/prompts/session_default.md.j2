@@ -774,10 +774,12 @@ indépendantes existent. Ce lot porte {{ event_blocks | length }} match(s) : une
 seule sélection par match, et une partie du lot passera. Si les trois n'y sont
 pas, écris en une ligne que le lot ne portait pas de quoi en construire un — et
 n'ajoute aucune jambe pour faire le compte.
-{% else %}**Aucun combiné sur ce lot.** {{ event_blocks | length }} match(s), une seule
-sélection par match et une partie du lot qui passera : trois jambes
-indépendantes ne peuvent pas en sortir. N'en propose pas, et n'écris pas non
-plus que tu n'as pas pu — la question n'est pas posée.
+{% else %}**Aucun combiné n'est demandé sur ce lot.** Il porte
+{{ event_blocks | length }} match(s), sous le seuil de {{ combo_solo_min_lot }} :
+à une sélection par match et une partie du lot qui passe, trois jambes
+indépendantes y seraient serrées. Ce n'est pas une impossibilité — c'est une
+demande qu'on ne pose pas ici. N'en propose pas, et n'écris pas non plus que tu
+n'as pas pu : la question n'est pas posée.
 {% endif %}{% if exact_scores %}- Optionnel : un multichoix scores exacts sur le match le plus lisible
 {% endif %}{% if event_blocks | length >= combo_solo_min_lot %}Contrainte : une seule sélection par match dans un combiné.
 {% endif %}{% if 'tennis' in sports %}

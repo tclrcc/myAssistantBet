@@ -8244,3 +8244,58 @@ la ligne qu'elle gardait.
 
 Le test lit le **prompt rendu** et non la propriété : le défaut vivait dans la
 porte, et un `Brief` correct n'aurait rien montré.
+
+## §10 — La suppression du combiné affirmait une impossibilité
+
+### Le seuil, et ce qu'il est
+
+`combo_solo_min_lot` vaut **9** sur la base servie, pour un défaut de **5** — c'est
+un réglage utilisateur, resserré à la main. Le lot de référence porte 7 blocs,
+donc sous le seuil.
+
+### Ce que la mesure dit de l'impossibilité affirmée
+
+**Structurellement, elle est fausse.** `safe_legs_available` sur les réglages
+servis :
+
+| lot | 3 | 4 | 5 | 6 | **7** | 8 | 9 | 10 | 11 | 12 |
+| --- | --: | --: | --: | --: | --: | --: | --: | --: | --: | --: |
+| jambes sûres autorisées | 3 | 4 | 5 | 6 | **7** | 8 | 9 | 10 | 10 | 10 |
+
+Un lot de sept autorise **sept** jambes, pas trois. Le plafond ne mord qu'à partir
+de onze.
+
+**Empiriquement, c'est serré et pas impossible.** Sélections en bande sûre à
+confiance ≥ 3, par prompt et non par session — le plafond de jambes vaut par
+prompt :
+
+| Taille du lot | Prompts | Dont ≥ 3 jambes éligibles |
+| --- | ---: | ---: |
+| 7 blocs | 7 | **1** |
+| 8 blocs | 6 | 2 |
+| 9 blocs | 17 | 11 |
+| **≤ 9 blocs** | **55** | **25 (45 %)** |
+
+**Réserve, et elle est sérieuse** : ce vivier a été mesuré en régime cassé. Sans
+la ligne `dossiers_ouverts`, aucune sélection ne peut dépasser le cran 1, donc
+aucune jambe n'existe — `CLAUDE.md` l'écrit déjà à propos des cibles de combiné.
+Les 45 % sont un **plancher**, pas une estimation.
+
+### Le seuil est conservé, la formulation change
+
+Il n'est pas à moi de bouger un réglage que l'utilisateur a resserré de 5 à 9, et
+la mesure ne le tranche pas — elle dit seulement que la phrase qui l'accompagnait
+était fausse. La section dit désormais que le combiné n'est **pas demandé** sur ce
+lot, avec le seuil qui l'explique :
+
+    **Aucun combiné n'est demandé sur ce lot.** Il porte 7 match(s), sous le
+    seuil de 9 : à une sélection par match et une partie du lot qui passe, trois
+    jambes indépendantes y seraient serrées. Ce n'est pas une impossibilité —
+    c'est une demande qu'on ne pose pas ici.
+
+**+36 tokens** (300 → 428 caractères). Le seuil est écrit plutôt que sous-entendu,
+même règle que les quotas et les bornes de palier — une règle qu'il faut deviner
+ne contraint rien.
+
+Trois tests recopiaient la formulation. Leurs ancres suivent, et l'un d'eux gagne
+l'assertion qui manquait : **la phrase d'impossibilité ne doit plus y être**.

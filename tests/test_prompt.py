@@ -1477,8 +1477,15 @@ def test_un_lot_trop_court_ne_demande_aucun_combine(migrated: Settings) -> None:
     reclamer, puis faire ecrire que c'etait impossible, coute deux fois."""
     corps = build_prompt(_lot_de(migrated, 4), settings=migrated, now=NOW).body
 
-    assert "**Aucun combiné sur ce lot.**" in corps
+    assert "**Aucun combiné n'est demandé sur ce lot.**" in corps
     assert "la question n'est pas posée" in corps
+    # **Une demande qu'on ne pose pas, jamais une impossibilité.** Le texte
+    # affirmait que « trois jambes indépendantes ne peuvent pas en sortir » ;
+    # structurellement, un lot de sept en autorise sept, et 45 % des prompts de
+    # neuf blocs ou moins en ont produit trois. Affirmer une impossibilité qui
+    # n'en est pas une est la fausse précision que ce projet a corrigée trois
+    # fois.
+    assert "ne peuvent pas en sortir" not in corps
     assert "Un seul combiné" not in corps
     assert "N'ajoute\njamais une jambe" not in corps, "la consigne de jambe tombe avec la demande"
     assert "maillon le plus fragile" not in corps
@@ -1493,7 +1500,7 @@ def test_le_seuil_d_un_combine_se_regle(migrated: Settings) -> None:
     corps = build_prompt(_lot_de(migrated, 4), settings=migrated, now=NOW).body
 
     assert "**Un seul combiné**" in corps
-    assert "Aucun combiné sur ce lot" not in corps
+    assert "Aucun combiné n'est demandé sur ce lot" not in corps
 
 
 def test_le_score_exact_en_sets_survit_a_l_absence_de_combine(migrated: Settings) -> None:
@@ -1520,7 +1527,7 @@ def test_le_score_exact_en_sets_survit_a_l_absence_de_combine(migrated: Settings
 
     corps = build_prompt(session_id, settings=migrated, now=NOW).body
 
-    assert "Aucun combiné sur ce lot" in corps
+    assert "Aucun combiné n'est demandé sur ce lot" in corps
     assert "**Score exact en sets**" in corps
     assert "ne le mets dans aucun combiné" in corps
 
@@ -1570,7 +1577,7 @@ def test_la_section_des_combines_se_rend_proprement(
     assert section.strip(), "aucune section vide"
 
     if attendu == "aucun":
-        assert "**Aucun combiné sur ce lot.**" in plat
+        assert "**Aucun combiné n'est demandé sur ce lot.**" in plat
         assert "la question n'est pas posée" in plat
         # Les trois paragraphes qui n'ont plus d'objet tombent avec la demande.
         assert "une seule sélection par match dans un combiné" not in plat
@@ -1854,7 +1861,7 @@ def test_le_score_en_sets_survit_a_toutes_les_tailles(migrated: Settings) -> Non
 
     corps = build_prompt(session_id, settings=migrated, now=NOW).body
 
-    assert "Aucun combiné sur ce lot" in corps
+    assert "Aucun combiné n'est demandé sur ce lot" in corps
     assert "**Score exact en sets**" in corps
 
 
