@@ -7552,8 +7552,11 @@ compte des jeux, pas des sets. Les additionner ouvre d'un coup les deux plus
 gros marchés non réglés du projet — 34 handicaps jeux et 10 totaux de jeux,
 soit 44 des 56 sélections gagnées.
 
-Douzième occurrence du motif : une affirmation de commentaire prise pour une
-mesure, et jamais vérifiée contre la charge utile.
+**Ce n'est pas le motif du projet mais l'autre règle, celle de « cherchez
+l'identifiant »** : une affirmation de commentaire prise pour une mesure, et
+jamais rouverte contre la charge utile. Elle a coûté un lot entier de silence
+sur les deux marchés les plus joués du tennis, et le seul geste qui l'aurait
+évitée est d'ouvrir une réponse réelle — ce qui prend dix secondes.
 
 ### Le handicap de football sort sur une seule ligne, et c'est la règle
 
