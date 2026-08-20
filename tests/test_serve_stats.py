@@ -2413,3 +2413,45 @@ def test_un_tour_nomme_ne_repete_pas_le_compte(migrated: Settings) -> None:
 
     assert tennis_round.UNSET_ROUND not in valeur
     assert tennis_round.ROUNDS_PLAYED not in valeur
+
+
+async def test_le_palmares_ne_se_borne_pas_sur_le_temps_de_mur_des_timelines(
+    migrated: Settings, monkeypatch: Any
+) -> None:
+    """**Deux couts, deux bornes.** Une timeline coute quatre a six appels **par
+    rencontre**, un palmares une mediane de trois **par joueur** : `BATCH` borne
+    le temps de mur de la premiere, et l'appliquer au second le rendait invisible
+    sur la majorite des lots.
+
+    Mesure du 20/08/2026 sur les 18 journees de board archivees : mediane 32
+    joueurs de tennis par journee, maximum 99, et `BATCH` (12) ne couvre la
+    journee que **4 fois sur 18**.
+
+    **Ce test poste la passe et relit ce qu'elle a demande**, jamais le service
+    seul : le defaut vivait dans la porte, pas dans le lecteur — un palmares
+    correct n'aurait rien montre.
+    """
+    from myassistantbet import timelines
+    from myassistantbet.services import palmares as palmares_service
+
+    for index in range(20):
+        _event(migrated, "tennis_atp_us_open", f"J{index}", f"K{index}", "2099-01-01T12:00:00Z")
+
+    demandes: list[list[tuple[str, str]]] = []
+
+    async def _faux_palmares(_client: Any, joueurs: Any, _settings: Any = None) -> int:
+        demandes.append(list(joueurs))
+        return 0
+
+    async def _faux_sync(*_args: Any, **_kwargs: Any) -> serve_stats.SyncReport:
+        return serve_stats.SyncReport()
+
+    monkeypatch.setattr(palmares_service, "refresh", _faux_palmares)
+    monkeypatch.setattr(serve_stats, "sync", _faux_sync)
+
+    await timelines.run(settings=migrated)
+
+    assert len(demandes) == 1
+    # Les 40 joueurs a venir, et non les `BATCH` premiers.
+    assert len(demandes[0]) == 40
+    assert len(timelines.players(migrated)) == timelines.BATCH

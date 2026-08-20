@@ -7854,3 +7854,68 @@ exacte de la consigne TENNIS (§1). Ce qu'elle protège est que la consigne soit
 reprises et **deux assertions ajoutées** sur ce que la ligne nomme désormais :
 une assertion qui casse sur une reformulation décrit au lieu de contraindre,
 mais l'affaiblir sans rien mettre à la place serait pire.
+
+## §3 — Le palmarès par catégorie : la collecte n'avait jamais tourné
+
+### Les trois hypothèses du brief sont fausses
+
+| Supposé | Mesuré |
+| --- | --- |
+| la construction du lot 16 est ATP seulement | fausse — `TIER_BY_CATEGORY` porte `("masters_1000", "wta") → "WTA 1000"`, et il se résout : `tier_for('masters_1000', 'wta')` rend bien `WTA 1000` |
+| la couverture WTA est vide | fausse — les deux profils sont archivés, 281 et 719 matchs annoncés |
+| le rattachement de ce tournoi manque | fausse — `profile_tournament_names(99)` rend les **trois** graphies `Cincinnati Open - Cincinnati`, `Western & Southern Open - Cincinnati`, `Western & Southern Open - New York` |
+
+### La cause
+
+**`player_palmares` est vide : 0 ligne.** Le module est arrivé par le commit
+`ee49211` du **20/08 à 18h37 UTC** ; la passe qui remplit la table
+(`myassistantbet-timelines`, planifiée à `scan_hour + 30 min`, soit 07h30) n'avait
+pas tourné une seule fois depuis. Le prompt 167 a été rendu à **19h56 UTC**, une
+heure vingt après le commit.
+
+Toutes les réponses `matches-played` archivées portent d'ailleurs
+`{"page":1,"pageSize":100}` — la pagination d'avant le lot 16.
+
+### Preuve : la passe a été lancée sur la copie
+
+Deux joueuses, **6 appels** (quota 139 417 → 139 411). La table se remplit et la
+ligne sort :
+
+    Palmares    Sara Bejlek WTA 1000 1/8 2026 (6 éditions, dur) · ici 1/8 2026 (1 édition)
+                | Madison Keys WTA 1000 1/2 2025 (38 éditions, dur) · ici vainqueur 2019 (11 éditions)
+    Bilan ici   Madison Keys 1/8 2025, 2V-1D
+
+C'est exactement l'angle demandé : **6 éditions contre 38**, la meilleure
+performance de Bejlek en WTA 1000 est un huitième, et Keys a **gagné ici en
+2019**. Aucun correctif de rendu n'était nécessaire.
+
+### Le trou de couverture, lui, est réel — et il est structurel
+
+Une fois la passe lancée, elle n'aurait servi que **douze joueurs**. `BATCH`
+vaut 12, et c'est une borne de **temps de mur** posée pour les timelines, qui
+coûtent quatre à six appels **par rencontre**. Le palmarès, lui, coûte une
+médiane de **trois appels par joueur**, et il héritait de la même borne.
+
+Mesure du 20/08/2026 sur les **18 journées de board archivées** :
+
+| | |
+| --- | ---: |
+| joueurs de tennis distincts, médiane par journée | **32** |
+| maximum | **99** |
+| journées où `BATCH = 12` suffit | **4 sur 18** |
+
+Sur quatorze journées sur dix-huit, la majorité des joueurs dont le bloc se rend
+le lendemain n'aurait donc pas de palmarès. Le docstring d'`upcoming_players` le
+disait déjà sans que personne l'oppose à `BATCH` — « un lot tennis porte
+trente-cinq joueurs en moyenne » — deux sorties du même module qui ne se
+parlaient pas.
+
+**Correctif : le palmarès prend tous les joueurs à venir, le reste garde
+`BATCH`.** Coût aux mêmes chiffres : ~96 appels par jour, ~3 000 par mois, contre
+**139 411 restants sur 150 000** — 2 % du quota. Jamais tout le catalogue : 256
+joueurs feraient 768 appels pour rafraîchir des profils qui ne jouent pas.
+
+**Aucun test ne couvrait ce branchement** — `tests/test_palmares.py` mesure le
+service, et la passe n'était testée nulle part. C'est la règle du 20/08 : un banc
+qui mesure le lecteur ne voit pas un défaut dans la porte. Le test ajouté **lance
+la passe et relit ce qu'elle a demandé**.

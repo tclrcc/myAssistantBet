@@ -89,17 +89,27 @@ async def run(
         report = await serve_stats_service.sync(
             client, file, settings, with_games=True, force=force
         )
-        # **Le palmares profond passe dans la meme file**, et pour la meme
-        # raison qu'elle existe : il pagine l'historique entier d'un joueur, ce
-        # qui coute deux appels de plus (mediane 3 pages, maximum 8) et se perime
-        # a la semaine. Le poser ici lui donne les joueurs des lots a venir en
-        # premier, sans inventer une seconde file qui aurait diverge de
-        # celle-ci.
+        # **Le palmares profond passe par la meme file, et pas par la meme
+        # borne.** Il pagine l'historique entier d'un joueur, ce qui coute une
+        # mediane de 3 appels et se perime a la semaine ; une timeline en coute
+        # quatre a six **par rencontre**. `BATCH` borne le temps de mur de la
+        # seconde, et l'appliquer au premier le rendait invisible sur la
+        # majorite des lots.
+        #
+        # Mesure du 20/08/2026 sur les 18 journees de board archivees :
+        # **mediane 32 joueurs de tennis par journee, maximum 99**, et `BATCH`
+        # (12) ne couvre la journee que **4 fois sur 18**. Le palmares ne sortait
+        # donc que sur les douze premiers joueurs a venir. Cout de la levee, aux
+        # memes chiffres : ~96 appels par jour, ~3 000 par mois, contre 139 411
+        # restants sur 150 000 — 2 % du quota.
+        #
+        # **Les joueurs a venir, jamais tout le catalogue** : 256 joueurs y
+        # feraient 768 appels pour rafraichir des profils qui ne jouent pas.
         #
         # **Sans ce branchement, `player_palmares` serait ecrite par personne** —
         # la faute de `/players/squads`, collecte des mois sans lecteur.
         repris = await palmares_service.refresh(
-            client, [(nom, circuit) for nom, circuit in file], settings
+            client, serve_stats_service.upcoming_players(settings), settings
         )
         logger.info("Palmares : %d joueur(s) repris", repris)
 
