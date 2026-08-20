@@ -368,18 +368,28 @@ def test_chaque_dossier_porte_une_requete_de_recherche(migrated: Settings) -> No
 def test_aucun_critere_ne_regarde_une_cote(migrated: Settings) -> None:
     """Trier sur le prix rendrait le tri circulaire : on ne chercherait jamais la
     ou le marche est confiant, donc on ne trouverait jamais l'information qui le
-    contredit. Le module ne lit donc aucun marche — un lot dont les cotes
-    changent du tout au tout rend la meme fiche."""
+    contredit. Un lot dont les **cotes** changent du tout au tout rend la meme
+    fiche.
+
+    **Ce que le lot 18 a change, et ce qu'il n'a pas change.** La fiche compte
+    desormais les marches **presents** sur un bloc — un bloc qui n'en porte qu'un
+    ne peut produire qu'une selection de 1N2 — mais elle ne lit toujours aucune
+    **valeur**. Le test porte donc sur ce qui etait vraiment en jeu : deux blocs
+    portant les memes marches a des prix opposes rendent la meme fiche.
+    """
     from myassistantbet.services.render import Outcome
 
     _en_base(migrated, 801, 1)
     _aller(migrated, 801, buts_adversaire=1)
     autres = [_event(i) for i in range(2, 22)]
 
-    nu = research.sheet([_event(1, 801)] + autres, migrated)
-    cote = _event(1, 801)
-    cote.markets = {"h2h": [Outcome("Club 1", 1.02), Outcome("Adv 1", 40.0)]}
-    charge = research.sheet([cote] + autres, migrated)
+    serre = _event(1, 801)
+    serre.markets = {"h2h": [Outcome("Club 1", 2.05), Outcome("Adv 1", 1.85)]}
+    ecrase = _event(1, 801)
+    ecrase.markets = {"h2h": [Outcome("Club 1", 1.02), Outcome("Adv 1", 40.0)]}
+
+    nu = research.sheet([serre] + autres, migrated)
+    charge = research.sheet([ecrase] + autres, migrated)
 
     assert [item.motifs for item in nu.dossiers] == [item.motifs for item in charge.dossiers]
     assert [item.score for item in nu.dossiers] == [item.score for item in charge.dossiers]
@@ -694,3 +704,59 @@ def test_un_bloc_de_tennis_vide_n_est_pas_un_cinquieme_cas(migrated: Settings) -
 
     motifs = " ".join(item.motifs for item in fiche.dossiers)
     assert "cause inconnue" not in motifs
+
+
+def test_un_bloc_a_un_seul_marche_descend_d_un_cran(migrated: Settings) -> None:
+    """**Un dossier plafonne d'avance ne vaut pas le meme rang.**
+
+    Mesure du 20/08/2026 : M1 et M2 du lot de reference etaient classes 2e et
+    3e sur leur densite (42 %), et ces blocs ne portent que le 1N2 — tout le
+    reste est « non servi » **sur toute la competition**, donc definitivement.
+    Quelle que soit la qualite de la recherche, ils ne peuvent produire qu'une
+    selection de 1N2, le marche que le releve mesure a -3,4 de residu.
+    """
+    from myassistantbet.services.render import Outcome
+
+    _en_base(migrated, 801, 1)
+    _aller(migrated, 801, buts_adversaire=1)
+
+    maigre = _event(1, 801)
+    maigre.markets = {"h2h": [Outcome("Club 1", 2.05), Outcome("Adv 1", 1.85)]}
+    large = _event(1, 801)
+    large.markets = {
+        "h2h": [Outcome("Club 1", 2.05), Outcome("Adv 1", 1.85)],
+        "totals": [Outcome("Over", 1.90, 2.5), Outcome("Under", 1.90, 2.5)],
+    }
+    autres = [_event(index) for index in range(2, 22)]
+
+    etroit = research.sheet([maigre] + autres, migrated).dossiers[0]
+    fourni = research.sheet([large] + autres, migrated).dossiers[0]
+
+    assert etroit.score == fourni.score + research.DEMOTION
+    # Le motif est **rendu** : une retrogradation que le lecteur ne voit pas est
+    # un garde-fou muet.
+    assert "1 seul marche servi" in etroit.motifs
+    assert "marche servi" not in fourni.motifs
+
+
+def test_la_retrogradation_ne_fait_pas_disparaitre_un_dossier(migrated: Settings) -> None:
+    """**Elle ordonne, elle n'ecarte pas.** Comptee dans le filtre, elle faisait
+    disparaitre de la fiche un dossier a un seul critere — le brief l'interdit
+    en toutes lettres : *il descend au rang que sa densite lui donne, il ne
+    descend pas en dernier pour autant*.
+
+    Mesure sur le lot de reference : M4 sortait des dossiers proposes, alors que
+    son critere de rotation tenait.
+    """
+    from myassistantbet.services.render import Outcome
+
+    faible = _event(1)
+    faible.markets = {"h2h": [Outcome("Club 1", 2.05), Outcome("Adv 1", 1.85)]}
+    faible.context_lines = [("Calendrier", "Club 1 prochain match dans 2j")]
+    autres = [_event(index) for index in range(2, 22)]
+
+    fiche = research.sheet([faible] + autres, migrated)
+    retenu = next((item for item in fiche.dossiers if item.index == 1), None)
+
+    assert retenu is not None, "un dossier a un seul critere reste propose"
+    assert retenu.merit > 0 and retenu.score < retenu.merit

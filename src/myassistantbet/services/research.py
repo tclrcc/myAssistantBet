@@ -37,7 +37,7 @@ from ..db import connect
 from . import context as context_service
 from .context import CAUSE_LABELS, CAUSE_NOT_COVERED, COLLECTION_FAULTS, NEUTRAL_MARK
 from .labels import affiche, context_family, expected_context
-from .render import RenderableEvent
+from .render import MERGED_MARKETS, RenderableEvent
 from .session import context_density
 from .thresholds import value_of as threshold
 
@@ -52,6 +52,29 @@ STRONG = 3
 MEDIUM = 2
 WEAK = 1
 PENALTY = -3
+
+#: Un cran de retrogradation, et **pas un veto**. `PENALTY` en est un en
+#: pratique : `sheet()` ecarte tout dossier dont le score n'est pas positif, donc
+#: -3 pose sur un bloc pauvre (+2) le fait disparaitre. Un critere qui ferait
+#: disparaitre un match a lui seul serait un filtre, quand cette fiche est un
+#: **ordre de passage**.
+DEMOTION = -1
+
+#: En dessous de combien de marches rendus un dossier ne peut plus produire
+#: qu'une selection de 1N2 — le marche que le releve mesure a -3,4 de residu, et
+#: que le gabarit demande precisement de depasser.
+#:
+#: **Un seul, et c'est mesure.** Sur les 462 blocs archives, marches fusionnes :
+#: 3 blocs de football sur 271 et 1 de tennis sur 191 n'en portent qu'un, soit
+#: **1 % de part et d'autre**. Le palier suivant est a trois — 99 blocs de
+#: football et 190 de tennis — et trois marches suffisent a traduire un angle de
+#: maniere. Un critere qui se declencherait sur 38 % des blocs ne classerait plus
+#: rien : c'est la regle appliquee avant d'ecrire celui-la.
+#:
+#: Le seuil ne se decline pas par sport, et c'est la mesure qui l'autorise : la
+#: norme est de 12 marches au football et de 3 au tennis, mais « un seul » y
+#: designe la meme part infime.
+NARROW_MARKETS = 1
 
 #: En dessous de combien de matchs les lignes de forme d'un joueur ne decrivent
 #: plus rien. **Mesure sur les 406 blocs de tennis archives** : ce seuil designe
@@ -135,7 +158,24 @@ class Dossier:
 
     @property
     def score(self) -> int:
+        """Ce qui **ordonne** le dossier : tous les criteres, retrogradations
+        comprises."""
         return sum(reason.weight for reason in self.reasons)
+
+    @property
+    def merit(self) -> int:
+        """Ce qui decide si le dossier **se propose** : tout sauf `DEMOTION`.
+
+        **Les deux questions ne sont pas la meme, et les confondre fait un
+        veto.** Un score nul ne se propose pas — la fiche dirait « cherche ici »
+        sur un dossier dont les criteres disent l'inverse. Mais une
+        retrogradation ne dit pas « ne cherche pas » : elle dit « ce que tu
+        trouveras vaudra moins ». Comptee dans le filtre, elle faisait
+        disparaitre un dossier a un seul critere — exactement ce que le brief
+        interdit : *il descend au rang que sa densite lui donne, il ne descend
+        pas en dernier pour autant*.
+        """
+        return sum(reason.weight for reason in self.reasons if reason.weight != DEMOTION)
 
     @property
     def rank_key(self) -> tuple[int, int, int, int]:
@@ -169,8 +209,14 @@ class Dossier:
 
     @property
     def motifs(self) -> str:
-        """`tie ouvert : ecart 1 · l'equipe menee recoit`."""
-        return " · ".join(reason.motif for reason in self.reasons if reason.weight > 0)
+        """`tie ouvert : ecart 1 · l'equipe menee recoit`.
+
+        **Les motifs negatifs y figurent aussi.** Une retrogradation que le
+        lecteur ne voit pas est un garde-fou muet — le defaut que ce projet
+        nomme partout ailleurs. Seul un poids nul reste tu : il ne decide de
+        rien.
+        """
+        return " · ".join(reason.motif for reason in self.reasons if reason.weight)
 
     @property
     def questions(self) -> list[str]:
@@ -234,8 +280,9 @@ def sheet(events: list[RenderableEvent], settings: Settings | None = None) -> Sh
 
     dossiers = [_dossier(event, settings) for event in events]
     # Un score nul ou negatif ne se propose pas : la fiche dirait « cherche
-    # ici » sur un dossier dont tous les criteres disent l'inverse.
-    retenus = [item for item in dossiers if item.score > 0]
+    # ici » sur un dossier dont tous les criteres disent l'inverse. Le filtre lit
+    # `merit` et non `score` : une retrogradation ordonne, elle n'ecarte pas.
+    retenus = [item for item in dossiers if item.merit > 0]
     retenus.sort(key=lambda item: item.rank_key)
     # `min(budget, lot)` par construction : `retenus` ne peut pas depasser le lot.
     resultat.dossiers = retenus[:budget]
@@ -263,8 +310,45 @@ def _dossier(event: RenderableEvent, settings: Settings) -> Dossier:
     item.reasons += _squad_reasons(lignes)
     item.reasons += _rotation_reasons(lignes)
     item.reasons += _tennis_reasons(event, lignes)
+    item.reasons += _market_reasons(event)
     item.links = _links(event)
     return item
+
+
+def _market_reasons(event: RenderableEvent) -> list[Reason]:
+    """Un bloc qui ne porte qu'un marche plafonne ce qu'une recherche peut y faire.
+
+    **Ce n'est pas regarder une cote.** Compter les marches servis n'est pas
+    comparer un prix, et la regle « la fiche ne regarde aucune cote » tient
+    entiere : aucune **valeur** n'est lue, seulement le nombre de familles
+    presentes. Le tri reste donc non circulaire — c'est ce que le prix vaut qui
+    est interdit, pas le fait qu'un marche existe.
+
+    Mesure du 20/08/2026 sur le lot de reference : M1 et M2 etaient classes
+    **2e et 3e** a chercher sur leur densite (42 %), et ces deux blocs ne portent
+    que le 1N2, tout le reste etant « non servi » **sur toute la competition**,
+    donc definitivement. Quelle que soit la qualite de la recherche, ces dossiers
+    ne peuvent produire qu'une selection de 1N2 — le marche que le releve mesure
+    a -3,4 de residu, et que le gabarit demande de depasser.
+
+    **Un cran, jamais un veto** : le dossier descend au rang que sa densite lui
+    donne, corrige de ce qu'une decouverte peut s'y traduire. Un match sur lequel
+    il n'y a qu'un marche reste un match sur lequel chercher peut valoir la
+    peine ; c'est son rang qui change.
+
+    Les variantes « alternate » sont fusionnees comme au rendu : c'est ce que
+    l'analyse **voit** qu'on compte, pas ce que l'API a servi.
+    """
+    familles = {MERGED_MARKETS.get(cle, cle) for cle, prix in event.markets.items() if prix}
+    if not familles or len(familles) > NARROW_MARKETS:
+        return []
+    return [
+        Reason(
+            DEMOTION,
+            f"{len(familles)} seul marche servi — toute selection y sera un 1N2",
+            "",
+        )
+    ]
 
 
 def _tie_reasons(event: RenderableEvent, settings: Settings) -> list[Reason]:

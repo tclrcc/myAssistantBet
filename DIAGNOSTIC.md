@@ -8126,3 +8126,87 @@ la section entière est de toute façon fermée par sa porte de sport.
 Tout repère cité dans `dossiers_ouverts:`, `sets:` ou `mises:` doit exister parmi
 les blocs rendus. Jamais la liste du jour, qui dépend de la taille du lot — même
 règle que les paliers hauts et le nombre de jambes sûres.
+
+## §8 — La fiche de priorité ignorait la surface de marché
+
+### Le fait, confirmé — et il est pire que ce que le brief dit
+
+M1 et M2 sont classés **2e et 3e**, sur leur densité (42 %). Ces deux blocs ne
+portent que le 1N2, tout le reste étant « non servi » **sur toute la
+compétition**. Le brief écrit « deux des trois premiers dossiers » : **M4 aussi**
+est dans ce cas — trois des quatre dossiers proposés sont plafonnés d'avance.
+
+### Le seuil, mesuré avant d'être écrit
+
+Marchés **fusionnés**, c'est-à-dire ce que l'analyse voit, sur les 462 blocs
+archivés :
+
+| Sport | 1 marché | ≤ 3 marchés | distribution |
+| --- | ---: | ---: | --- |
+| football | **3 / 271 (1 %)** | 102 (38 %) | 1 : 3 · 3 : 99 · 11-13 : 169 |
+| tennis | **1 / 191 (1 %)** | 191 (100 %) | 1 : 1 · 3 : 190 |
+
+« Un seul marché » désigne **1 % des blocs de part et d'autre** — une minorité
+stricte, ce qu'un critère de priorité doit être. Le palier suivant est à trois, et
+trois marchés suffisent à traduire un angle de manière ; un critère qui se
+déclencherait sur 38 % des blocs ne classerait plus rien.
+
+**Le seuil ne se décline pas par sport, et c'est la mesure qui l'autorise** : la
+norme est de 12 marchés au football et de 3 au tennis, mais « un seul » y désigne
+la même part infime.
+
+### Ce n'est pas regarder une cote
+
+Aucune **valeur** n'est lue, seulement le nombre de familles présentes. Le tri
+reste non circulaire : c'est ce que le prix vaut qui est interdit, pas le fait
+qu'un marché existe. Le test qui gardait cette règle comparait un bloc **sans**
+marché à un bloc **avec** — il testait donc la présence, pas le prix. Il porte
+maintenant sur ce qui était vraiment en jeu : deux blocs aux mêmes marchés à des
+prix opposés rendent la même fiche.
+
+### Une rétrogradation n'est pas un veto, et le filtre en faisait un
+
+`sheet()` écarte tout dossier dont le score n'est pas positif. Un malus posé dans
+le score faisait donc **disparaître** M4 de la fiche — son unique critère de
+rotation valait +1, et −1 le mettait à zéro. C'est exactement ce que le brief
+interdit : *il descend au rang que sa densité lui donne, il ne descend pas en
+dernier pour autant*.
+
+D'où deux propriétés, et elles répondent à deux questions différentes :
+`score` **ordonne** (rétrogradations comprises), `merit` décide si le dossier
+**se propose** (tout sauf les rétrogradations). Une rétrogradation ne dit pas
+« ne cherche pas », elle dit « ce que tu trouveras vaudra moins ».
+
+### Le classement avant / après, sur le lot de référence
+
+| | avant | après |
+| --- | --- | --- |
+| 1 | M6 (score 3) | M6 (3) |
+| 2 | M1 (2) | M1 (1) — `1 seul marché servi` |
+| 3 | M2 (2) | M2 (1) — `1 seul marché servi` |
+| 4 | M4 (1) | M4 (0) — `1 seul marché servi` |
+
+**L'ordre ne change pas, et il faut le dire plutôt que de régler le poids pour
+qu'il change.** Sur ce lot rien de plus riche ne concourt : M6 est le seul bloc
+de tennis et porte un critère plus fort, les trois blocs de football qui ont un
+critère sont précisément les trois blocs étroits. Ce que le lot gagne est que le
+plafond est **nommé** sur les trois dossiers — le fait que le brief a dû établir
+à la main.
+
+**Le poids vaut un cran, et c'est un choix conservateur assumé.** Deux crans
+feraient basculer l'ordre de ce lot, et ce serait régler le poids sur l'exemple
+qui l'a fait naître — la faute que ce projet a corrigée deux fois. Les autres
+poids du module sont « le rendement mesuré de chaque piste » ; celui-ci n'a pas
+encore de rendement mesuré, et il se relèvera sur des sessions qui l'auront
+donné.
+
+**Ce que la mesure n'a pas pu faire** : rejouer les fiches de l'historique. Une
+fiche se construit sur la shortlist **courante**, et les sessions passées ont la
+leur vide — une seule des 18 sessions archivées rend encore une fiche. Le taux de
+réordonnancement n'est donc pas mesurable rétroactivement.
+
+### Gabarit
+
+La section BUDGET DE RECHERCHE, où la règle « la fiche ne regarde aucune cote »
+est énoncée : **+71 tokens** (316 → 573 caractères). La distinction y est
+explicite, comme le brief le demande.
