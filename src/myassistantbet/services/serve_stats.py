@@ -2424,7 +2424,89 @@ def archived_profile(
     return found
 
 
-def _tournament_id(payload: Any, name: str, window: tuple[str, str]) -> int:
+def _same_player(left: str, right: str) -> bool:
+    """Deux ecritures du meme joueur ? **Genereux a dessein.**
+
+    Les deux sources n'ecrivent pas les noms pareil, et c'est mesure : nos scans
+    disent « Leylah Fernandez » et « Bianca Andreescu », la source « Leylah Annie
+    Fernandez » et « Bianca Vanessa Andreescu ». L'egalite stricte de `sort_key`
+    les separe, et le fragment « non couvert » nommait alors un match dont le
+    score figure sur la ligne juste au-dessus.
+
+    **Le sens de l'erreur commande la tolerance.** Un faux positif envoie
+    chercher un score deja rendu — une place de dossier perdue ; un faux negatif
+    ne fait que taire un fragment qui n'existait pas hier. En cas de doute on
+    declare donc **couvert**.
+
+    **Une seule regle de nom dans ce module**, et elle sert aussi a corroborer
+    un tournoi (`_tournament_id`). La strictesse y a ete essayee et elle etait
+    inutile : les 14 fragments qui rendaient un autre tournoi portaient des
+    adversaires que nous n'avions **jamais** scannes ici, donc c'est le jour
+    exact qui les ecarte, pas le nom. Deux reglages pour la meme question
+    auraient diverge.
+
+    La regle est celle de `tennis_history.resolve` : **meme nom de famille, et
+    prenoms en chaine de prefixes**. Elle reunit « Leylah » et « Leylah Annie »,
+    elle separe les freres Zverev — `alexander` et `mischa` ne se prefixent pas.
+    """
+    gauche, droite = sort_key(left).split(), sort_key(right).split()
+    if not gauche or not droite or gauche[-1] != droite[-1]:
+        return False
+    court, long = sorted((gauche[:-1], droite[:-1]), key=len)
+    return all(
+        any(autre.startswith(mot) or mot.startswith(autre) for autre in long) for mot in court
+    )
+
+
+def _scanned_here(
+    player: str, competition_id: int | None, until: str, settings: Settings
+) -> tuple[set[str], set[str]]:
+    """Ce que **nos propres scans** savent du parcours d'un joueur ici.
+
+    Rend `(adversaires, jours)` — les noms **tels que scannes**, compares par
+    `_same_player`, et les dates civiles de coup d'envoi. C'est la piece qui
+    corrobore un identifiant de tournoi source : voir `_tournament_id`.
+
+    **Le jour se compare a l'exact, jamais a un jour pres.** La tolerance parait
+    prudente et elle ouvre precisement le trou qu'on ferme : pendant la semaine
+    de chevauchement, un match du tournoi precedent tombe la veille d'un match
+    d'ici et corroborerait. Un joueur ne dispute qu'une rencontre par jour — la
+    meme premisse que `_resolve_duplicates` — donc l'egalite stricte ne peut pas
+    se tromper de tournoi. Ce qu'elle rate, un fuseau qui fait basculer minuit,
+    le nom le rattrape.
+
+    **Lecture directe de `events`, jamais `tennis_load.load_for`.** Celui-ci
+    appelle `contested_days`, qui appelle `_tournament_id` : passer par lui
+    ferait une recursion. La date civile suffit ici — on ne date rien, on
+    corrobore.
+    """
+    if not player or not competition_id or not until:
+        return set(), set()
+    cle = sort_key(player)
+    noms: set[str] = set()
+    jours: set[str] = set()
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT home, away, commence_time FROM events "
+            " WHERE competition_id = ? AND commence_time < ?",
+            (competition_id, until),
+        ).fetchall()
+    for row in rows:
+        if cle not in (sort_key(row["home"]), sort_key(row["away"])):
+            continue
+        autre = row["away"] if cle == sort_key(row["home"]) else row["home"]
+        if autre:
+            noms.add(str(autre))
+        jours.add(str(row["commence_time"])[:10])
+    return noms, jours
+
+
+def _tournament_id(
+    payload: Any,
+    name: str,
+    window: tuple[str, str],
+    scanned: tuple[set[str], set[str]] = (set(), set()),
+) -> int:
     """L'identifiant source du tournoi en cours, lu sur les matchs du joueur.
 
     **Il se lit dans la fenetre de notre edition, jamais sur le dernier match du
@@ -2437,16 +2519,55 @@ def _tournament_id(payload: Any, name: str, window: tuple[str, str]) -> int:
     Une fois l'identifiant connu, **tous** les matchs qui le portent sont pris, y
     compris ceux joues avant notre premier scan : c'est precisement ce que
     `Parcours` ne peut pas faire, et la raison d'etre de cette ligne.
+
+    ## La fenetre ne suffit pas, et le mode sur la fenetre rendait un autre tournoi
+
+    Deux tournois se chevauchent une semaine sur deux : le Canadien finit le
+    lundi ou Cincinnati commence, et **notre fenetre d'edition contient la fin du
+    precedent**. Le mode y designait donc le tournoi de la semaine passee des que
+    le joueur y avait joue plus de matchs qu'ici — cas ordinaire d'un
+    demi-finaliste qui entre en lice.
+
+    Mesure du 20/08/2026 sur les 195 blocs de tennis soumis : **14 fragments sur
+    223** rendaient un autre tournoi sous le titre « ici ». Le plus net est
+    Darderi — Hijikata du 15/08, ou la ligne servait les quatre matchs du
+    Canadien de l'un et le Washington de l'autre, sans qu'un mot le signale.
+    C'est le defaut caracteristique du projet : l'echec et le cas ordinaire
+    rendaient la meme chose.
+
+    **La fenetre est donc corroboree par nos propres scans** : un match de la
+    source ne compte pour l'identification que s'il porte un adversaire ou un
+    jour que nous avons scannes ici. Sans corroboration possible — un joueur qui
+    entre en lice — l'identifiant est **0**, et c'est son partenaire qui le
+    donne : `here_lines` fait deja ce partage.
+
+    **Les deux criteres sont necessaires, et c'est mesure des deux cotes.** Sur
+    les 409 rencontres scannees de ces blocs, 258 se rapprochent par le nom
+    **et** par le jour, **109 par le nom seul** — les deux sources ne datent pas
+    toujours pareil, Hijikata — Monfils vaut 13/08 23h05 chez nous et 14/08
+    02h00 chez elle — et **14 par le jour seul**, la source ecrivant « Bianca
+    Vanessa Andreescu » ou nos scans disent « Bianca Andreescu ».
     """
     bas, haut = _instant(window[0]), _instant(window[1])
     if bas is None or haut is None:
+        return 0
+    noms, jours = scanned
+    if not noms and not jours:
         return 0
     compte: dict[int, int] = {}
     for match in ((payload or {}).get("singles") or []) if isinstance(payload, dict) else []:
         if not isinstance(match, dict):
             continue
         quand = _instant(match.get("date"))
-        if quand is None or not (bas <= quand < haut) or _side(match, name) is None:
+        cotes = _side(match, name)
+        if quand is None or not (bas <= quand < haut) or cotes is None:
+            continue
+        mine, _theirs = cotes
+        adversaire = str(
+            (match.get("player2" if mine == "player1" else "player1") or {}).get("name") or ""
+        )
+        vu = any(_same_player(adversaire, autre) for autre in noms)
+        if not vu and str(match.get("date") or "")[:10] not in jours:
             continue
         identifiant = _int(match.get("tournamentId"))
         if identifiant:
@@ -2513,6 +2634,90 @@ def _here_serve(matches: list[TournamentMatch]) -> str:
     return f"service ici {' · '.join(morceaux)} ({compte})"
 
 
+#: Ce que rend la ligne quand nos scans placent ici un match que la source ne
+#: rapporte pas. **Une constante et non un litteral recopie**, meme regle que
+#: `HERE_NO_MATCH` et `NEUTRAL_MARK` : la mesure de couverture la relit.
+HERE_UNCOVERED = "non couvert"
+
+#: Ce que `Fraicheur` ecrit deja quand tout le parcours manque. **Repris mot pour
+#: mot** : deux formulations pour le meme fait se liraient comme deux faits, et
+#: le lecteur connait deja celle-la.
+WHOLE_PATH = "(tout le Parcours)"
+
+
+def _uncovered(
+    player: str,
+    competition_id: int | None,
+    until: str,
+    matches: list[TournamentMatch],
+    oddsapi_key: str | None,
+    settings: Settings,
+) -> str:
+    """`1 match non couvert : Aryna Sabalenka (2194)`, ou rien.
+
+    **La soustraction est deterministe, donc elle ne se delegue pas.**
+    `Parcours` nomme les rencontres que nos scans placent ici ; cette ligne-ci
+    rapporte celles dont la source connait le resultat. Ce qui reste est ce dont
+    le bloc **ne dit pas** l'issue — et c'etait a l'analyse de le trouver en
+    croisant trois lignes de tete.
+
+    Mesure du 20/08/2026 qui l'impose, sur le bloc Bejlek — Keys : `Parcours`
+    nommait quatre adversaires, `Ici` en couvrait trois, et le quatrieme etait
+    **Aryna Sabalenka**, jouee la veille. Le fait le plus determinant de la
+    rencontre etait celui que le bloc taisait.
+
+    ## Ce que la borne n'est pas
+
+    « Posterieur au releve » est la borne evidente et elle est fausse **deux
+    fois**, mesure a l'appui sur les 409 rencontres scannees des blocs soumis :
+
+    - comparee au **jour**, elle n'attrape rien — la journee de tournoi du match
+      Sabalenka vaut `2026-08-19` comme le jour du releve, alors que le coup
+      d'envoi est a `00:30` le 20 ;
+    - comparee a l'**instant**, elle n'attrape que **6 des 28** non couverts. Un
+      match commence trente minutes avant le releve n'est pas fini quand il
+      passe : Pegula — Cirstea part a 16:30, le releve est a 16:40, et la source
+      n'en dit rien. Il faudrait la duree du match, qu'aucune source ne publie.
+
+    La soustraction, elle, n'a pas de borne a choisir : elle compare deux listes
+    que l'application possede.
+
+    Le rapprochement se fait sur le **nom ou le jour**, jamais sur un seul des
+    deux : les deux sources ne datent pas toujours pareil — nos scans placent
+    Hijikata — Monfils le 13/08 a 23h05, la source le 14/08 a 02h00 — et ne
+    nomment pas toujours pareil. Le nom passe par `_same_player`, genereux :
+    voir la raison la-bas.
+    """
+    from . import tennis_load
+
+    faced = tennis_load.load_for(player, competition_id, until, settings).faced
+    if not faced:
+        return ""
+    adversaires = [item.opponent for item in matches]
+    # **Le jour se compare a l'exact, sans la tolerance de `_DAY_SLACK`**, et les
+    # deux usages ne sont pas le meme : corroborer un *tournoi* accepte n'importe
+    # lequel de ses matchs, donc un jour voisin ; couvrir *cette* rencontre-ci
+    # n'accepte qu'elle. Trouve en rendant le bloc — a `+/-1`, la journee du
+    # 18/08 couvrait celle du 19 et Sabalenka disparaissait, ce que ce fragment
+    # existe precisement pour empecher.
+    jours = {str(item.played_on)[:10] for item in matches}
+    manquants = [
+        adversaire
+        for jour, adversaire in faced
+        if jour not in jours and not any(_same_player(adversaire, autre) for autre in adversaires)
+    ]
+    if not manquants:
+        return ""
+    compte = f"{len(manquants)} match{'s' if len(manquants) > 1 else ''} {HERE_UNCOVERED}"
+    if len(manquants) == len(faced):
+        # Les nommer recopierait `Parcours` mot pour mot : trois mots suffisent,
+        # et ce sont ceux que `Fraicheur` emploie deja pour le meme fait.
+        return f"{compte} {WHOLE_PATH}"
+    from .tennis_load import _with_elo
+
+    return f"{compte} : " + ", ".join(_with_elo(nom, oddsapi_key, settings) for nom in manquants)
+
+
 def _here_for(
     player: str,
     circuit: str,
@@ -2521,6 +2726,8 @@ def _here_for(
     settings: Settings,
     tournament_id: int = 0,
     cache: dict[str, tuple[Any, str]] | None = None,
+    competition_id: int | None = None,
+    oddsapi_key: str | None = None,
 ) -> tuple[list[str], int]:
     """Les fragments d'un joueur, et l'identifiant de tournoi qu'il a servi."""
     identity = load_identity(player, circuit, settings)
@@ -2528,17 +2735,27 @@ def _here_for(
     charge, releve = archived_profile(canonical, settings, cache)
     if charge is None:
         return [], tournament_id
-    identifiant = tournament_id or _tournament_id(charge, canonical, window)
+    identifiant = tournament_id or _tournament_id(
+        charge, canonical, window, _scanned_here(player, competition_id, until, settings)
+    )
     if not identifiant:
         return [], 0
     matchs = _tournament_matches(charge, canonical, identifiant, until)
+    horodatage = f" [releve au {_short_day(releve)}]" if releve else ""
+    # **Ce que la source ne rapporte pas se compte ici aussi.** Un joueur que la
+    # source croit entrant alors que nos scans lui donnent trois tours est le cas
+    # ou la ligne a le plus a dire : le taire ferait lire « aucun match » comme
+    # un fait sur le joueur.
+    manquants = _uncovered(player, competition_id, until, matchs, oddsapi_key, settings)
     if not matchs:
         # **« aucun match dans ce tournoi » et jamais un silence.** Un joueur qui
         # entre en lice est un fait sur le match — c'est meme le fait dominant
         # quand l'autre sort de trois tours — et un blanc se lirait comme un
         # defaut de collecte.
-        horodatage = f" [releve au {_short_day(releve)}]" if releve else ""
-        return [f"{player} {HERE_NO_MATCH}{horodatage}"], identifiant
+        fragments = [f"{player} {HERE_NO_MATCH}{horodatage}"]
+        if manquants:
+            fragments.append(manquants)
+        return fragments, identifiant
     parcours = " | ".join(_here_result(item) for item in matchs)
     # **La ligne porte la date de son releve, comme `Parcours` porte la fenetre
     # de nos scans.** Sans elle, une liste s'arretant la veille se lit comme un
@@ -2549,8 +2766,9 @@ def _here_for(
     # Elle est **par joueur** : deux profils se rafraichissent a deux instants
     # differents, et une date de lot ferait affirmer sur l'un ce qui n'est vrai
     # que de l'autre.
-    horodatage = f" [releve au {_short_day(releve)}]" if releve else ""
     fragments = [f"{player} {parcours}{horodatage}"]
+    if manquants:
+        fragments.append(manquants)
     service = _here_serve([item for item in matchs if item.contested])
     if service:
         fragments.append(service)
@@ -2622,7 +2840,12 @@ def contested_days(
     charge, _ = archived_profile(canonical, settings)
     if charge is None:
         return {}
-    identifiant = _tournament_id(charge, canonical, (edition.matches[0][0], commence_time))
+    identifiant = _tournament_id(
+        charge,
+        canonical,
+        (edition.matches[0][0], commence_time),
+        _scanned_here(player, competition_id, commence_time, settings),
+    )
     if not identifiant:
         return {}
     compte: dict[str, int] = {}
@@ -2738,6 +2961,7 @@ def here_lines(
     commence_time: str,
     settings: Settings | None = None,
     cache: dict[str, tuple[Any, str]] | None = None,
+    oddsapi_key: str | None = None,
 ) -> list[tuple[str, str]]:
     """La ligne `Ici` : ce que chaque joueur a fait dans **ce** tournoi.
 
@@ -2769,12 +2993,28 @@ def here_lines(
     for joueur in (home, away):
         if joueur:
             rendus[joueur], identifiant = _here_for(
-                joueur, circuit, window, commence_time, settings, identifiant, cache
+                joueur,
+                circuit,
+                window,
+                commence_time,
+                settings,
+                identifiant,
+                cache,
+                competition_id,
+                oddsapi_key,
             )
     for joueur in (home, away):
         if joueur and not rendus.get(joueur) and identifiant:
             rendus[joueur], _ = _here_for(
-                joueur, circuit, window, commence_time, settings, identifiant, cache
+                joueur,
+                circuit,
+                window,
+                commence_time,
+                settings,
+                identifiant,
+                cache,
+                competition_id,
+                oddsapi_key,
             )
     for joueur in (home, away):
         fragments.extend(rendus.get(joueur) or [])

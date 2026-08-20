@@ -515,6 +515,8 @@ def context_block(
             competition_id,
             commence_time,
             settings,
+            None,
+            oddsapi_key,
         )
         # L'historique des matchs joues : confrontations directes, palmares dans
         # ce tournoi, forme, bilan de surface et abandons.

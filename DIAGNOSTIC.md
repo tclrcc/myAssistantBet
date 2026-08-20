@@ -7632,3 +7632,170 @@ service qui accepte une valeur que rien ne permet de saisir. Ici c'est
 l'inverse : un service qui produit une valeur que rien ne permet de valider.
 Les deux se testent de la même façon, et d'une seule : **poster le formulaire et
 relire la base**.
+
+---
+
+# LOT 18 — dix corrections tirées d'un prompt réellement rendu
+
+Prompt de référence : **167**, session 18, `2026-08-20T19:56:58Z`, 7 blocs
+(6 football, 1 tennis), 22 179 tokens. Toutes les mesures ci-dessous portent sur
+une **copie** de la base servie (`VACUUM INTO`), prise au début du lot.
+
+## §1 — `Ici` s'arrêtait avant le match qui compte
+
+### Le fait, reproduit
+
+Sur M6, `Parcours` nomme quatre adversaires pour Bejlek et trois pour Keys ;
+`Ici` en couvre trois et deux. Le quatrième de Bejlek est **Aryna Sabalenka
+(2194)**, jouée le 20/08 à 00h30 UTC — le fait le plus déterminant de la
+rencontre, et le bloc ne disait pas si elle avait gagné.
+
+La cause est nette : la charge utile `matches-played` archivée pour les deux
+joueuses date du **19/08 16h40 UTC**, et le match Sabalenka a commencé après.
+`[releve au 19/08]` le disait déjà ; il restait à faire la soustraction de tête,
+sur trois lignes distantes de deux cents caractères.
+
+### La borne évidente est fausse, et deux fois
+
+Le brief demande « la liste nommée des matchs **postérieurs au relevé** ».
+Mesure sur les **409 rencontres scannées** des 195 blocs tennis soumis, dont 28
+ne sont couvertes par aucun résultat de la source :
+
+| Borne essayée | Non couverts attrapés |
+| --- | ---: |
+| jour du match > jour du relevé | **0 sur 28** |
+| instant du coup d'envoi > instant du relevé | **6 sur 28** |
+
+Le premier échoue parce que la **journée de tournoi** du match Sabalenka vaut
+`2026-08-19`, comme le jour du relevé, alors que le coup d'envoi est à 00h30 le
+20. Le second échoue parce qu'un match **commencé** avant le relevé n'est pas
+**fini** : Pegula – Cirstea part à 16h30, le relevé passe à 16h40, et la source
+n'en dit rien. Il faudrait la durée d'un match, qu'aucune source ne publie —
+question close au lot 3.
+
+**La soustraction, elle, n'a aucune borne à choisir** : elle compare deux listes
+que l'application possède déjà.
+
+### Le rapprochement se fait sur le nom **ou** le jour
+
+Mesure sur les mêmes 409 rencontres :
+
+| Critère qui rapproche | Rencontres |
+| --- | ---: |
+| le nom **et** le jour | 258 |
+| le **nom** seul | 109 |
+| le **jour** seul | 14 |
+| aucun des deux | 28 |
+
+Les deux filets sont nécessaires. Le nom seul rattrape un décalage de date —
+Hijikata – Monfils vaut `13/08 23h05` chez nous et `14/08 02h00` chez la
+source ; le jour seul rattrape une graphie — « Bianca Vanessa Andreescu » contre
+« Bianca Andreescu ». **Les deux ne se contredisent jamais.**
+
+Le jour se compare **à l'exact**. La tolérance d'un jour paraît prudente et
+ouvre exactement le trou qu'on ferme : à `±1`, la journée du 18/08 couvrait celle
+du 19 et Sabalenka disparaissait. Trouvé en rendant le bloc.
+
+**Et le nom se compare généreusement, ce qui est l'arbitrage inverse.** Rendu
+tel quel, le fragment nommait trois matchs « non couverts » dont le score
+figurait sur la ligne juste au-dessus : nos scans écrivent « Leylah Fernandez »
+et « Bianca Andreescu », la source « Leylah **Annie** Fernandez » et « Bianca
+**Vanessa** Andreescu », et le jour différait d'un cran sur le premier. C'est la
+sixième occurrence du motif du lot 15 — *chaque source a sa fonction de nom*.
+
+Le sens de l'erreur commande la tolérance : un faux positif envoie chercher un
+score déjà rendu, donc dépense une place de dossier ; un faux négatif ne fait que
+taire un fragment qui n'existait pas hier. La règle est celle de
+`tennis_history.resolve` — **même nom de famille, prénoms en chaîne de
+préfixes** — qui réunit « Leylah » et « Leylah Annie » et sépare les frères
+Zverev. Mesure : **15 fragments → 12**, les trois retirés étant les trois faux.
+
+**Une seule règle de nom dans le module**, et elle sert aussi à corroborer le
+tournoi. La stricte y a été essayée et elle était inutile : les 14 fragments qui
+rendaient un autre tournoi portaient des adversaires que nous n'avions **jamais**
+scannés ici, donc c'est le jour exact qui les écarte, pas le nom. Rejeu après
+unification : **223 justes, 0 faux**, inchangé.
+
+### Le défaut trouvé sous celui-ci : `Ici` rendait le tournoi de la semaine passée
+
+`_tournament_id` prenait le **mode** des matchs de la source tombant dans la
+fenêtre de notre édition. Or deux tournois se chevauchent une semaine sur deux :
+notre fenêtre contient la fin du précédent. Un joueur qui entre en lice ici après
+un bon parcours ailleurs voyait donc **l'autre tournoi** rendu sous le titre
+« ici ».
+
+Mesure du 20/08/2026 sur les 195 blocs : **14 fragments sur 223** dans ce cas.
+Le plus net est Darderi – Hijikata du 15/08 à Cincinnati, où la ligne servait :
+
+    Ici   Luciano Darderi 05/08 bat Gabriel Diallo 6-4 2-3 (abandon)
+          | 06/08 bat Juncheng Shang 4-6 6-1 6-4 | 08/08 bat Nuno Borges 4-6 6-3 7-5
+          | 11/08 perd contre Brandon Nakashima 2-6 3-6 [releve au 19/08]
+          Rinky Hijikata 02/08 perd contre Jaume Antoni Munar Clar 6-7(3) 3-6
+
+— soit **quatre matchs du Canadien** et **un de Washington**, sur un bloc de
+Cincinnati, sans qu'un mot le signale. Défaut caractéristique du projet : l'échec
+et le cas ordinaire rendaient la même chose.
+
+**La fenêtre est donc corroborée par nos propres scans** : un match de la source
+ne compte pour identifier le tournoi que s'il porte un adversaire ou un jour que
+nous avons scannés ici. Un joueur sans corroboration possible — il entre en
+lice — rend `0`, et c'est son partenaire qui donne l'identifiant : `here_lines`
+faisait déjà ce partage.
+
+Rejeu sur les 195 blocs : **223 identifiants corroborés justes, 0 faux**, contre
+209 / 14 avant. Un seul joueur sur 224 ne se corrobore ni par le nom ni par le
+jour.
+
+### Rendu avant / après — bloc M6 du 20/08
+
+Avant :
+
+    Ici         Sara Bejlek 14/08 bat Karolina Pliskova 6-0 6-2 | 16/08 bat Barbora Krejcikova 7-6(5) 6-4 | 18/08 bat Ekaterina Alexandrova 4-6 6-1 6-2 [releve au 19/08]
+                service ici 61.8% 1re · 71.0% s/1re · 12 df (3 matchs, 212 pts)
+                Madison Keys 16/08 bat Daria Snigur 4-6 6-3 6-3 | 18/08 bat Katerina Siniakova 6-1 6-3 [releve au 19/08]
+                service ici 56.8% 1re · 74.7% s/1re · 9 df (2 matchs, 139 pts)
+
+Après :
+
+    Ici         Sara Bejlek 14/08 bat Karolina Pliskova 6-0 6-2 | 16/08 bat Barbora Krejcikova 7-6(5) 6-4 | 18/08 bat Ekaterina Alexandrova 4-6 6-1 6-2 [releve au 19/08]
+                1 match non couvert : Aryna Sabalenka (2194)
+                service ici 61.8% 1re · 71.0% s/1re · 12 df (3 matchs, 212 pts)
+                Madison Keys 16/08 bat Daria Snigur 4-6 6-3 6-3 | 18/08 bat Katerina Siniakova 6-1 6-3 [releve au 19/08]
+                1 match non couvert : Xiyu Wang (1741)
+                service ici 56.8% 1re · 74.7% s/1re · 9 df (2 matchs, 139 pts)
+
+L'Elo accompagne le nom, comme sur `Parcours` : il ne coûte rien, le classement
+étant déjà en base, et c'est lui qui dit si le match manquant compte.
+
+### La ligne reste rare, et c'est mesuré
+
+Sur les 195 blocs tennis soumis : **7 blocs porteurs (4 %)**, 12 fragments, dont
+un seul `(tout le Parcours)`. Une ligne qui sortirait partout cesserait
+d'informer — même règle que `A relever` et les deux seuils égaux de l'arbitre.
+
+Quand **tout** le parcours est non couvert, la ligne écrit `(tout le Parcours)`
+plutôt que de recopier `Parcours` mot pour mot : c'est le vocabulaire que
+`Fraicheur` emploie déjà pour le même fait, et deux formulations se liraient
+comme deux faits.
+
+### Ce que la mesure refuse dans le brief : `Fraicheur` ne bouge pas
+
+Le brief demande de faire descendre le compte de `Fraicheur` — « trois de ces
+quatre matchs ont désormais leur score ». **Ce serait écrire une affirmation
+fausse.** `Fraicheur` ne dit pas « on ignore ce qui s'est passé » : elle dit,
+et sa première ligne l'écrit en toutes lettres, que
+`Forme/Usure/Profil/Marge/Niveau adv.` sont **arrêtées au 13/08**. Ces cinq
+lignes sortent de `tennis-data.co.uk`, une source hebdomadaire distincte, et
+elles ignorent bien les **quatre** matchs, y compris les trois dont `Ici` donne
+le score. Ramener le compte à 1 ferait lire « Usure » comme comptant trois
+matchs de plus qu'elle n'en compte.
+
+Le besoin légitime — *lequel n'a de score nulle part* — est exactement ce que le
+nouveau fragment d'`Ici` sert, et il le sert au bon endroit : sur la ligne qui
+porte les résultats.
+
+### Gabarit
+
+Un seul passage touché, la consigne TENNIS de « CE QU'IL FAUT VÉRIFIER » :
+elle demandait de repérer soi-même qu'« un match postérieur à la date de relevé
+manque aussi ». **−1 token** (463 → 462 caractères).

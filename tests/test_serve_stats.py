@@ -2229,3 +2229,148 @@ def test_la_couverture_se_mesure_hors_du_drapeau(migrated: Settings) -> None:
     )
     # ...et la couverture le mesure quand même.
     assert serve_stats.here_coverage(migrated)[0].served == 1
+
+
+def test_la_ligne_ici_nomme_ce_que_la_source_ne_couvre_pas(migrated: Settings) -> None:
+    """**La soustraction est deterministe, donc elle ne se delegue pas.**
+
+    `Parcours` nomme quatre adversaires, `Ici` en rapporte trois : le quatrieme
+    est celui dont le bloc ne dit pas l'issue, et c'etait a l'analyse de le
+    trouver en croisant trois lignes de tete. Mesure du 20/08/2026 sur le bloc
+    Bejlek — Keys : le match manquant etait **Sabalenka**, jouee la veille.
+    """
+    competition = _tournoi(
+        migrated,
+        [
+            ("A", "X", "2026-08-14T12:00:00Z"),
+            ("A", "Y", "2026-08-16T12:00:00Z"),
+            ("A", "Z", "2026-08-17T12:00:00Z"),
+            ("A", "B", "2026-08-18T12:00:00Z"),
+        ],
+    )
+    _profil_tournoi(
+        "A",
+        [
+            _match_source("A", "X", "2026-08-14", "6-3 6-4"),
+            _match_source("A", "Y", "2026-08-16", "6-1 6-2"),
+        ],
+        migrated,
+    )
+    _profil_tournoi("B", [], migrated)
+
+    valeur = serve_stats.here_lines(
+        "A", "B", "atp", competition, "2026-08-18T12:00:00Z", _avec_ligne(migrated)
+    )[0][1]
+
+    assert f"1 match {serve_stats.HERE_UNCOVERED} : Z" in valeur
+    # Ce que la source **couvre** n'y figure pas : la ligne dit ce qui manque,
+    # elle ne recopie pas ce qui est juste au-dessus.
+    assert "couvert : X" not in valeur and "couvert : Y" not in valeur
+
+
+def test_un_parcours_entierement_non_couvert_ne_recopie_pas_parcours(migrated: Settings) -> None:
+    """`(tout le Parcours)` — **le vocabulaire de `Fraicheur`, mot pour mot**.
+
+    Deux formulations du meme fait se liraient comme deux faits, et le lecteur
+    connait deja celle-la.
+    """
+    competition = _tournoi(
+        migrated,
+        [("A", "X", "2026-08-14T12:00:00Z"), ("A", "B", "2026-08-18T12:00:00Z")],
+    )
+    _profil_tournoi("A", [], migrated)
+    _profil_tournoi("B", [_match_source("B", "W", "2026-08-15", "6-0 6-0")], migrated)
+    _event(migrated, "tennis_atp_us_open", "B", "W", "2026-08-15T12:00:00Z")
+
+    valeur = serve_stats.here_lines(
+        "A", "B", "atp", competition, "2026-08-18T12:00:00Z", _avec_ligne(migrated)
+    )[0][1]
+
+    assert f"1 match {serve_stats.HERE_UNCOVERED} {serve_stats.WHOLE_PATH}" in valeur
+    # Le joueur reste annonce comme entrant chez la source : les deux faits se
+    # disent, ils ne se remplacent pas.
+    assert serve_stats.HERE_NO_MATCH in valeur
+
+
+def test_ici_ne_rend_pas_le_tournoi_de_la_semaine_passee(migrated: Settings) -> None:
+    """**Le mode sur la fenetre designait un autre tournoi.**
+
+    Deux tournois se chevauchent une semaine sur deux, et notre fenetre
+    d'edition contient la fin du precedent : un joueur qui entre en lice ici
+    apres une demi-finale ailleurs voyait ses matchs de l'autre tournoi rendus
+    sous le titre « ici ». Mesure du 20/08/2026 : **14 fragments sur 223**.
+
+    La corroboration par nos propres scans ferme la porte — aucun match de
+    l'autre tournoi ne porte un adversaire ni un jour que nous avons vus ici.
+    """
+    competition = _tournoi(
+        migrated,
+        [
+            # Notre edition ouvre le 11 : la fin du tournoi precedent y tombe.
+            ("C", "D", "2026-08-11T12:00:00Z"),
+            ("A", "X", "2026-08-14T12:00:00Z"),
+            ("A", "B", "2026-08-18T12:00:00Z"),
+        ],
+    )
+    _profil_tournoi(
+        "A",
+        [
+            # La semaine passee, ailleurs : trois matchs, donc le mode. Ils
+            # tombent dans la fenetre de notre edition — c'est exactement ce que
+            # la fenetre seule ne sait pas ecarter.
+            _match_source("A", "P", "2026-08-11", "6-1 6-1", tournoi=901),
+            _match_source("A", "Q", "2026-08-12", "6-2 6-2", tournoi=901),
+            _match_source("A", "R", "2026-08-13", "6-3 6-3", tournoi=901),
+            # Ici : un seul, et c'est celui-la qu'il faut.
+            _match_source("A", "X", "2026-08-14", "7-5 6-4", tournoi=900),
+        ],
+        migrated,
+    )
+    _profil_tournoi("B", [], migrated)
+
+    valeur = serve_stats.here_lines(
+        "A", "B", "atp", competition, "2026-08-18T12:00:00Z", _avec_ligne(migrated)
+    )[0][1]
+
+    assert "bat X 7-5 6-4" in valeur
+    for etranger in ("P", "Q", "R"):
+        assert f"bat {etranger}" not in valeur
+
+
+def test_deux_ecritures_du_meme_adversaire_ne_font_pas_un_match_non_couvert(
+    migrated: Settings,
+) -> None:
+    """**Le sens de l'erreur commande la tolerance.**
+
+    Nos scans ecrivent « Leylah Fernandez », la source « Leylah Annie
+    Fernandez », et le jour differe d'un cran. L'egalite stricte declarait le
+    match non couvert alors que son score figure sur la ligne juste au-dessus —
+    une place de dossier envoyee chercher ce que le bloc rend deja. Mesure du
+    20/08/2026 : trois fragments sur quinze etaient dans ce cas.
+    """
+    competition = _tournoi(
+        migrated,
+        [
+            ("A", "Leylah Fernandez", "2026-08-16T12:00:00Z"),
+            ("A", "B", "2026-08-18T12:00:00Z"),
+        ],
+    )
+    _profil_tournoi(
+        "A", [_match_source("A", "Leylah Annie Fernandez", "2026-08-17", "6-3 6-4")], migrated
+    )
+    _profil_tournoi("B", [], migrated)
+
+    valeur = serve_stats.here_lines(
+        "A", "B", "atp", competition, "2026-08-18T12:00:00Z", _avec_ligne(migrated)
+    )[0][1]
+
+    assert serve_stats.HERE_UNCOVERED not in valeur
+
+
+def test_deux_freres_ne_se_confondent_pas(migrated: Settings) -> None:
+    """La generosite s'arrete aux prenoms : `alexander` et `mischa` ne se
+    prefixent pas, donc les Zverev restent deux joueurs."""
+    assert serve_stats._same_player("Leylah Fernandez", "Leylah Annie Fernandez")
+    assert serve_stats._same_player("Bianca Andreescu", "Bianca Vanessa Andreescu")
+    assert not serve_stats._same_player("Alexander Zverev", "Mischa Zverev")
+    assert not serve_stats._same_player("Alexander Zverev", "Alexander Bublik")
