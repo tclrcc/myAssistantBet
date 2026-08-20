@@ -8091,3 +8091,38 @@ exactement le défaut que `render.common_unplayable` a corrigé.
 
 Le paragraphe « lignes en quart », déjà gardé par le sport : **+99 tokens**
 (539 → 896 caractères).
+
+## §7 — Trois exemples de format qui contredisaient le lot rendu
+
+Les trois sont confirmés sur le prompt 167 :
+
+| Exemple | Ce qu'il nommait | Le lot |
+| --- | --- | --- |
+| `dossiers_ouverts: [M1, M4, M7, M8]` | **M8** | 7 blocs |
+| `sets: M3=… \| M4=… \| M8=PASSE \| …` | M3 et M4 | **football** ; un seul bloc de tennis, M6 |
+| `mises: … \| combine_court=0.25` | un combiné | la section D venait d'écrire « Aucun combiné sur ce lot » |
+
+Les trois se génèrent désormais depuis les repères réels du lot. Sur le
+prompt 167 régénéré :
+
+    dossiers_ouverts: [M1, M3, M5, M7]
+    sets: M6=2-0/2-1
+    mises: bankroll=200 | M1=0.50 | M3=0.50
+
+### Deux besoins, deux règles
+
+`dossiers_ouverts` liste un **sous-ensemble choisi** : l'échantillon est donc
+**dispersé du premier au dernier**, jamais un préfixe — `M1, M2, M3` se lirait
+comme « ouvre-les tous » — et jamais tout le lot. `sets` reprend **chaque** match
+de tennis, donc l'exemple les prend tous, plafonné à quatre pour rester lisible.
+La phrase qui l'introduit dit déjà « chaque match de tennis dans l'ordre des
+blocs ».
+
+Un lot sans tennis rend une liste vide, et la ligne s'omet avec son exemple — mais
+la section entière est de toute façon fermée par sa porte de sport.
+
+### Le critère de test est une propriété
+
+Tout repère cité dans `dossiers_ouverts:`, `sets:` ou `mises:` doit exister parmi
+les blocs rendus. Jamais la liste du jour, qui dépend de la taille du lot — même
+règle que les paliers hauts et le nombre de jambes sûres.

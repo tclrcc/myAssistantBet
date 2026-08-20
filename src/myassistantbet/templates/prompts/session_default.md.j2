@@ -603,7 +603,7 @@ fait passeraient pour deux origines qui peuvent se tromper séparément.
 bloc de code** — la liste des matchs sur lesquels tu as réellement ouvert un
 dossier de recherche, par leur repère de bloc :
 
-    dossiers_ouverts: [M1, M4, M7, M8]
+    dossiers_ouverts: [{{ exemple_reperes | join(', ') }}]
 
 Écris-la même vide (`dossiers_ouverts: []`). Toute sélection portant sur un match absent de cette liste
 est enregistrée en `lecture`, quel que soit le niveau de source annoncé — et
@@ -792,7 +792,7 @@ et ne le mets dans aucun combiné — c'est une proposition à tarifer sur place
 Après ta prose, une ligne unique pour tout le lot, hors de tout bloc de code,
 reprenant chaque match de tennis dans l'ordre des blocs :
 
-    sets: M3=2-0/2-1 | M4=0-2 | M8=PASSE | M9=2-0/2-1 | M10=2-0 | M11=1-2/2-1
+    sets: {% for repere in exemple_tennis %}{{ repere }}={{ ['2-0/2-1', 'PASSE', '0-2', '2-0'][loop.index0 % 4] }}{% if not loop.last %} | {% endif %}{% endfor %}
 
 Le score est donné du point de vue du premier joueur nommé dans le titre du bloc.
 Le second scénario est optionnel et se sépare par une barre oblique. `PASSE` est
@@ -912,7 +912,7 @@ pas en silence.
 
 Après ta prose, une ligne unique pour tout le lot, hors de tout bloc de code :
 
-    mises: bankroll=200 | M3=0.50 | M7=0.50 | combine_court=0.25
+    mises: bankroll=200{% for repere in exemple_reperes[:2] %} | {{ repere }}=0.50{% endfor %}{% if event_blocks | length >= combo_solo_min_lot %} | combine_court=0.25{% endif %}
 
 `bankroll` recopie le montant donné en tête de prompt. Puis un repère de bloc par
 sélection de section C, et `combine_court` / `combine_long` s'ils existent, chacun

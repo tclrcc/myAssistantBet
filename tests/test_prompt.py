@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -2270,3 +2271,63 @@ def test_le_preambule_ne_presente_pas_un_constat_comme_une_absence_de_marche(
     # la comparaison de cotes entre bookmakers que SPEC.md interdit.
     assert "ça ne change rien ici puisqu'il n'y a aucun prix à recopier" in corps
     assert "N'imagine donc aucune sélection dessus" in corps
+
+
+def _reperes(body: str) -> set[str]:
+    """Les reperes de bloc reellement rendus."""
+    return set(re.findall(r"^### (M\d+) · ", body, re.M))
+
+
+@respx.mock
+async def test_les_exemples_de_format_ne_nomment_que_des_blocs_du_lot(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """**Un exemple qui nomme un bloc absent seme un doute au moment precis ou le
+    format doit etre sans ambiguite.**
+
+    Le gabarit ecrivait `dossiers_ouverts: [M1, M4, M7, M8]` sur un lot de sept
+    matchs, et `sets: M3=... | M4=... | M8=PASSE` sur un lot dont M3 et M4 sont
+    du football. Le critere est une **propriete** — tout repere cite existe —
+    jamais la liste du jour, qui depend de la taille du lot.
+    """
+    await _session_enrichie(odds_client, migrated, load_fixture, enrich=False)
+    second = db.query_one("SELECT id FROM events WHERE home = 'IFK Norrkoping'", settings=migrated)
+    session_id = board_service.toggle_selection(int(second["id"]), True, migrated)
+
+    body = build_prompt(session_id, settings=migrated, now=NOW).body
+    rendus = _reperes(body)
+    assert rendus, "le lot doit porter des blocs"
+
+    for ligne in body.splitlines():
+        depouille = ligne.strip()
+        if not depouille.startswith(("dossiers_ouverts:", "sets:", "mises:")):
+            continue
+        cites = set(re.findall(r"M\d+", depouille))
+        assert cites <= rendus, f"repere inconnu dans « {depouille} »"
+
+
+@respx.mock
+async def test_l_exemple_de_sets_ne_nomme_que_des_blocs_de_tennis(
+    odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """La ligne porte les **matchs de tennis** du lot ; sur un lot sans tennis,
+    la section entiere est deja fermee par sa porte de sport."""
+    from myassistantbet.services.prompt import sample_markers
+    from myassistantbet.services.render import RenderableEvent
+
+    def bloc(index: int, sport: str) -> RenderableEvent:
+        return RenderableEvent(
+            index=index,
+            sport_key=sport,
+            competition="",
+            home="a",
+            away="b",
+            commence_local=NOW,
+        )
+
+    lot = [bloc(1, "football"), bloc(2, "tennis"), bloc(3, "football"), bloc(4, "tennis")]
+
+    assert sample_markers(lot, "tennis", whole=True) == ["M2", "M4"]
+    assert sample_markers(lot, "cycling", whole=True) == []
+    # Jamais tout le lot : « M1, M2, M3 » se lirait comme « ouvre-les tous ».
+    assert len(sample_markers(lot)) < len(lot)

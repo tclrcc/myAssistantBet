@@ -660,6 +660,53 @@ class RenderedPrompt:
         return estimate_tokens(self.body)
 
 
+#: Combien de reperes au plus dans un exemple de format. **Quatre**, comme le
+#: litteral qu'ils remplacent : au-dela l'exemple cesse d'etre lisible.
+SAMPLE_MARKERS = 4
+
+
+def sample_markers(
+    blocks: list[RenderableEvent], sport: str = "", whole: bool = False
+) -> list[str]:
+    """Des reperes de bloc **qui existent dans ce lot**, pour un exemple de format.
+
+    Le gabarit ecrivait `dossiers_ouverts: [M1, M4, M7, M8]` sur un lot de sept
+    matchs, et `sets: M3=... | M4=... | M8=PASSE` sur un lot dont M3 et M4 sont du
+    **football** et qui ne porte qu'un seul match de tennis. Aucun des deux
+    n'induit vraiment en erreur, et les deux sement un doute au moment precis ou
+    le format doit etre sans ambiguite.
+
+    **Espaces reguliers plutot qu'un prefixe**, et jamais tout le lot : `M1, M2,
+    M3` se lirait comme « ouvre-les tous », quand un echantillon disperse se lit
+    comme un exemple. Le compte plafonne donc a la moitie du lot, et a
+    `SAMPLE_MARKERS`.
+
+    **Deux besoins, deux regles, et il faut les deux.** `dossiers_ouverts` liste
+    un **sous-ensemble** choisi, donc un echantillon disperse le decrit bien ;
+    `sets` reprend **chaque** match de tennis du lot, donc en montrer la moitie
+    contredirait la phrase qui l'introduit. `whole` porte la difference.
+
+    Un lot sans bloc du sport demande rend une liste vide : la ligne et son
+    exemple s'omettent alors ensemble, meme regle que partout — ce qui n'a pas de
+    donnee est omis, jamais rendu vide.
+    """
+    reperes = [item.index for item in blocks if not sport or item.sport_key == sport]
+    if not reperes:
+        return []
+    if whole:
+        # Plafonne quand meme : au-dela de quatre l'exemple cesse d'etre lisible,
+        # et la phrase qui l'introduit dit deja « chaque match ».
+        return [f"M{index}" for index in reperes[:SAMPLE_MARKERS]]
+    combien = max(1, min(SAMPLE_MARKERS, (len(reperes) + 1) // 2))
+    if combien == 1:
+        return [f"M{reperes[0]}"]
+    # Etales du premier au dernier, et non pris en tete : un prefixe se lirait
+    # comme « les quatre premiers », ce qui est une consigne et pas un exemple.
+    dernier = len(reperes) - 1
+    choisis = sorted({round(rang * dernier / (combien - 1)) for rang in range(combien)})
+    return [f"M{reperes[position]}" for position in choisis]
+
+
 def _environment() -> Environment:
     return Environment(
         loader=FileSystemLoader(TEMPLATES_DIR),
@@ -1070,6 +1117,13 @@ def build_prompt(
             exact_scores=any(
                 key.startswith("correct_score") for event in events for key in event.markets
             ),
+            # **Les exemples de format se batissent sur les reperes du lot.** Un
+            # `M8` sur un lot de sept, ou un `sets: M3=...` sur un M3 de
+            # football, ne trompent pas vraiment mais sement un doute a l'endroit
+            # precis ou le format doit etre sans ambiguite — et ils occupent de
+            # la place dans un cadre qui pese la moitie d'un prompt median.
+            exemple_reperes=sample_markers(events),
+            exemple_tennis=sample_markers(events, "tennis", whole=True),
         )
     )
     return RenderedPrompt(
