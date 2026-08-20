@@ -2520,3 +2520,30 @@ def test_sur_les_doubles_fautes_l_avantage_est_au_plus_bas() -> None:
     fragment = next(part for part in valeur.split(" | ") if part.startswith("df "))
     assert "pour A" in fragment, fragment
     assert "pour B" not in fragment, fragment
+
+
+def test_les_doubles_fautes_du_tournoi_se_rendent_en_taux(migrated: Settings) -> None:
+    """**Deux unites dans la meme famille de lignes ne se comparent pas.**
+
+    `Ici` rendait `12 df` — un compte brut — a cote de `61.8% 1re`, quand
+    `Service` rend `11.3% df` sur les **secondes balles**. Les deux lignes
+    decrivent le meme joueur a deux profondeurs, et le rapprochement demandait un
+    calcul intermediaire : 12 doubles fautes sur ~81 secondes balles font 14,8 %
+    sur ce tournoi contre 11,3 % sur 52 semaines.
+    """
+    competition = _tournoi(
+        migrated,
+        [("A", "X", "2026-08-14T12:00:00Z"), ("A", "B", "2026-08-18T12:00:00Z")],
+    )
+    _profil_tournoi("A", [_match_source("A", "X", "2026-08-14", "6-3 6-4")], migrated)
+    _profil_tournoi("B", [], migrated)
+
+    valeur = serve_stats.here_lines(
+        "A", "B", "atp", competition, "2026-08-18T12:00:00Z", _avec_ligne(migrated)
+    )[0][1]
+
+    service = next(part for part in valeur.split("\n") if part.startswith("service ici"))
+    assert "% df" in service, service
+    # Les trois grandeurs sont des taux : plus un seul compte nu dans le
+    # fragment, la parenthese portant deja le denominateur.
+    assert service.count("%") == 3, service

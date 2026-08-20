@@ -2688,6 +2688,20 @@ def _here_serve(matches: list[TournamentMatch]) -> str:
     chiffre tient. La date du relevé, elle, est **portee une seule fois par
     joueur**, sur le fragment des resultats qui vient au-dessus : elle qualifie
     les deux, et l'ecrire deux fois couterait une repetition par bloc.
+
+    **Les trois grandeurs sont des taux, et les doubles fautes ne faisaient pas
+    exception par choix.** La ligne rendait `12 df` — un compte brut — a cote de
+    `61.8% 1re` et `71.0% s/1re`, quand `Service` rend `11.3% df` sur les
+    **secondes balles**. Les deux lignes decrivent la meme joueuse a deux
+    profondeurs, et rien ne les rapprochait sans un calcul intermediaire : 12
+    doubles fautes sur environ 81 secondes balles font 14,8 % sur ce tournoi
+    contre 11,3 % sur 52 semaines, soit une degradation nette que le bloc ne
+    donnait pas a lire.
+
+    **Le compte brut n'est pas garde a cote**, contrairement a ce que le brief
+    propose. Il faudrait un seuil de « petit denominateur » qui s'inventerait, et
+    la parenthese borne deja le fragment entier — `(3 matchs, 212 pts)` dit
+    exactement ce que le compte disait de la solidite.
     """
     lignes = [item.line for item in matches if item.line is not None]
     if not lignes:
@@ -2697,12 +2711,19 @@ def _here_serve(matches: list[TournamentMatch]) -> str:
     gagnes = sum(ligne.won_first for ligne in lignes)
     sur_premiere = sum(ligne.won_first_of for ligne in lignes)
     doubles = sum(ligne.double_faults for ligne in lignes)
+    secondes = sum(ligne.second_serves for ligne in lignes)
     if not points:
         return ""
     morceaux = [f"{_pct(_rate(premieres, points))} 1re"]
     if sur_premiere:
         morceaux.append(f"{_pct(_rate(gagnes, sur_premiere))} s/1re")
-    morceaux.append(f"{doubles} df")
+    # **Un taux, sur le denominateur de `Service`.** Les deux lignes decrivent le
+    # meme joueur a deux profondeurs et doivent se comparer d'un coup d'oeil ; un
+    # compte brut en face d'un taux demande un calcul intermediaire que personne
+    # ne fait. Rien quand aucune seconde balle n'a ete servie — un taux sans
+    # denominateur n'existe pas, et zero se lirait comme « aucune double faute ».
+    if secondes:
+        morceaux.append(f"{_pct(_rate(doubles, secondes))} df")
     compte = f"{len(lignes)} match{'s' if len(lignes) > 1 else ''}, {points} pts"
     return f"service ici {' · '.join(morceaux)} ({compte})"
 

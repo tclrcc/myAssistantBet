@@ -8001,3 +8001,30 @@ plus de ligne, et c'est le comportement voulu. Leurs fixtures portent désormais
 un écart sur les points gagnés. Ce n'est pas une assertion affaiblie : c'est un
 changement de fond, et le test suit la décision.
 
+## §5 — Deux unités incompatibles dans la même famille de lignes
+
+`Ici` écrivait `12 df` — un **compte brut** — à côté de `61.8% 1re` et
+`71.0% s/1re`, quand `Service` écrit `11.3% df` sur les **secondes balles**. Les
+deux lignes décrivent la même joueuse à deux profondeurs et ne se rapprochaient
+pas sans un calcul intermédiaire : 12 doubles fautes sur ~81 secondes balles font
+**14,8 %** sur ce tournoi contre 11,3 % sur 52 semaines, soit une dégradation
+nette que le bloc ne donnait pas à lire.
+
+Après :
+
+    service ici 61.8% 1re · 71.0% s/1re · 14.8% df (3 matchs, 212 pts)
+    service ici 56.8% 1re · 74.7% s/1re · 15.0% df (2 matchs, 139 pts)
+
+**Le compte brut n'est pas gardé à côté**, contrairement à ce que le brief
+propose. Il faudrait un seuil de « petit dénominateur » qui s'inventerait, et la
+parenthèse borne déjà le fragment entier — `(3 matchs, 212 pts)` dit exactement
+ce que le compte disait de la solidité. Rien du tout quand aucune seconde balle
+n'a été servie : zéro se lirait comme « aucune double faute ».
+
+### L'audit demandé : aucune autre ligne n'est dans ce cas
+
+Les blocs CONTEXTE des 40 derniers matchs de tennis soumis ont été rendus et
+passés au motif « un fragment en pourcentage à côté d'un entier nu ». **Aucune
+autre ligne ne le porte.** Les comptes qui subsistent ailleurs sont tous des
+**dénominateurs** entre parenthèses — `(1515 pts recus)`, `(317 jeux servis)` —
+ou des fractions que le projet impose — `TB 3/10`, `2 sets 7/10`, `+5.2 en V/6`.
