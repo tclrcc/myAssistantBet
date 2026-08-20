@@ -6953,3 +6953,182 @@ que l'enrichissement repasse sur leurs équipes.
 
 C'est aussi pourquoi la tâche passe **trois fois par jour** et ne coûte rien :
 aucun appel réseau, uniquement une relecture.
+
+## §2a — La pagination coûte trois fois rien, et l'historique remonte à 2009
+
+**Sondage en direct du 20/08/2026, six joueurs du dernier lot, 21 appels.**
+
+| Joueur | Pages | Matchs | Historique |
+| --- | ---: | ---: | --- |
+| Amanda Anisimova | 2 | 390 | 2015-09-07 → 2026-08-19 |
+| Jessica Pegula | 5 | 824 | **2009-04-04** → 2026-08-19 |
+| Tommy Paul | 4 | 788 | 2013-01-07 → 2026-08-19 |
+| Flavio Cobolli | 3 | 462 | 2017-12-11 → 2026-08-19 |
+| Iga Swiatek | 3 | 589 | 2016-05-29 → 2026-08-19 |
+| Elena Rybakina | 4 | 644 | 2014-12-08 → 2026-08-20 |
+
+`pageSize=200` est **honoré** — la page pleine rend bien 190 à 200 lignes — et
+`singlesCount` dit quand s'arrêter sans demander une page de plus.
+
+| | Aujourd'hui | Pagination complète (`pageSize=200`) |
+| --- | ---: | ---: |
+| appels par joueur | 1 | **médiane 3, max 8** |
+| lot de 24 joueurs de tennis | 24 | **~84, soit +60** |
+| quota RapidAPI restant | 139 480 | inchangé à l'échelle |
+
+**Le coût n'est pas l'obstacle**, et la prémisse du brief — « à 509 matchs
+médians, c'est un autre ordre » — est mesurée à la baisse : c'est +2 appels par
+joueur, pas un ordre de grandeur.
+
+### Ce que la profondeur change au `H2H`
+
+Mesuré sur trois affiches réelles du dernier lot, en comparant l'historique
+complet à la fenêtre de trois saisons de `tennis-data.co.uk` :
+
+| Affiche | H2H complet | Dans 3 saisons | Gain |
+| --- | ---: | ---: | ---: |
+| Anisimova – Pegula | 5 | 4 | **+1** |
+| Paul – Cobolli | 1 | 1 | 0 |
+| Swiatek – Rybakina | **13** | 9 | **+4** |
+
+Le gain n'est pas uniforme : nul sur une paire jeune, **+44 %** sur une paire
+installée. C'est cohérent avec ce que la profondeur apporte — elle ne crée pas
+de rencontres, elle retrouve celles d'avant 2024.
+
+### Ce que la mesure a trouvé au passage, et qui décide de la forme du §2b
+
+| Champ | Couverture sur 1 767 matchs d'historique profond |
+| --- | ---: |
+| `roundId` | **100,0 %** |
+| `tournament.tier` | 85,0 % |
+| `draw` | **31,2 %** |
+
+**`roundId` est servi partout**, et son ordre se lit sans le deviner : en
+comptant les matchs par `(tournoi, roundId)` sur l'archive entière, le nombre
+**maximal** de matchs d'un tour dans une édition donne sa profondeur.
+
+| `roundId` | Matchs max dans une édition | Ce que c'est |
+| ---: | ---: | --- |
+| 12 | **1** | finale |
+| 10 | 2 | demi-finale |
+| 9 | 4 | quart de finale |
+| 7 | 8 | huitième |
+| 6 | 16 | seizième |
+| 5 | 32 | trente-deuxième |
+| 4 | 64 | premier tour d'un tableau de 128 |
+| 1 – 3 | 33, 23, 16 | qualifications |
+
+Ce n'est **pas** une déduction depuis un libellé : c'est un comptage sur la
+structure d'un tableau à élimination directe, la même arithmétique que
+`tennis_round`. `draw`, lui, ne porte pas la taille du tableau — ses valeurs
+vont de 1 à 64 sans structure — et il est absent de 69 % des lignes : il ne sert
+à rien ici.
+
+**Le `tier` tombe à 85 % sur l'historique profond**, contre 99,1 % mesuré au
+lot 15 sur la fenêtre de 52 semaines. La différence est le passé : les éditions
+anciennes et les petits tournois n'en portent pas. Un palmarès par catégorie doit
+donc **ignorer les éditions sans catégorie plutôt que les ranger ailleurs**, et
+son dénominateur ne compte que les éditions catégorisées.
+
+## §3 — Le seuil de 300 jeux est inatteignable par surface, et ce n'est pas le budget
+
+### Le coût par timeline, re-mesuré
+
+Le brief demande si le chiffre de ~1 350 appels par lot précède le retrait de
+`J+1`. **Il le suit** — `DAY_SHIFTS = (0, -1)` depuis le 18/08 — mais il repose
+sur une estimation de 4 appels par rencontre que la mesure corrige :
+
+> **2 936 rencontres tentées, 2,89 appels chacune en moyenne** — et **52 %
+> n'en coûtent qu'un seul**.
+
+Le coût par lot tombe donc de ~1 350 à **~970**. Ce n'est pas ce qui bloque.
+
+### Ce qui bloque : la couverture de la timeline, et l'arithmétique
+
+| | Mesuré |
+| --- | ---: |
+| réponses `event/get` archivées | 8 511 |
+| **portant une timeline exploitable** | **1 762 — 20,7 %** |
+| jeux par timeline (servis + retournés) | 24,6 |
+| timelines nécessaires pour 300 jeux | **12,2** |
+| **rencontres à tenter pour les obtenir** | **59** |
+
+Et un joueur ne dispute pas 59 matchs sur une même surface en un an. Sur les
+250 joueurs profilés, fenêtre de 52 semaines :
+
+| Surface | Joueurs | Matchs médians | Timelines espérées | Jeux espérés | Atteindraient 300 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Hard | 250 | 27 | 5,6 | **137** | **5 / 250** |
+| Clay | 245 | 14 | 2,9 | **71** | **5 / 245** |
+| Grass | 239 | 6 | 1,2 | **31** | **0 / 239** |
+| **toutes surfaces** | 250 | **59** | 12,2 | **300** | **126 / 250** |
+
+**Même en tentant toutes les rencontres d'une surface, le joueur médian
+plafonne à 137 jeux sur dur, 71 sur terre, 31 sur gazon.** Le seuil de 300 n'est
+pas hors d'atteinte faute de budget : il l'est parce que la matière n'existe pas.
+
+**Le repli toutes surfaces est donc conservé**, et il porte déjà sa mention
+explicite — *« (toutes surfaces, arrêtées au JJ/MM — le seuil de jeux ne
+s'atteint pas par surface) »*. Aucun code ne change : la ligne dit déjà
+exactement ce que la mesure vient d'établir.
+
+### La prémisse du lot 15, corrigée
+
+Le lot 15 attribuait le blocage à `collect_games`, qui s'arrête à 300 jeux
+**toutes surfaces confondues** — donc à un choix d'implémentation, réparable.
+**C'est faux.** Le blocage est arithmétique : à 20,7 % de couverture, il faudrait
+59 rencontres d'une surface, et le calendrier n'en offre que 27 au mieux. Lever
+la limite d'implémentation ne changerait rien.
+
+### Ce que la mesure désigne à la place, et qui n'était pas demandé
+
+La même arithmétique dit que **126 joueurs sur 250 devraient franchir 300 jeux
+toutes surfaces**, alors que **14 seulement** y parviennent — parce que la passe
+lit 7 timelines par joueur là où 12,2 seraient nécessaires, et s'arrête avant.
+
+C'est un facteur **9** sur la seule portée où la ligne fonctionne, pour ~72
+appels de plus par joueur — soit ~1 730 par lot de 24. **Ce n'est pas construit
+ici** : le §3 demandait la passe par surface, la mesure la ferme, et ouvrir un
+chantier voisin en fin de lot serait prendre une décision de coût sans qu'elle
+ait été posée.
+
+## §4 — Deux dettes de forme
+
+### §4a — Un zéro sur un appariement de noms se vérifie avant d'être rapporté
+
+Écrite dans `CLAUDE.md`, avec les trois occurrences qui la fondent : Fernandez au
+lot 5 (un **doublon** portait les 452 matchs), Andreescu au lot 9 (la source
+écrit « Bianca Vanessa Andreescu »), et la récupérabilité tennis au lot 15 —
+**0 sur 127**, corrigé à **65,8 %**, parce que `tennis_matches` écrit
+« Mensik J. » là où `events` écrit « Alex Michelsen ».
+
+Deux points que la rédaction ajoute, et que la demande n'avait pas :
+
+- **le zéro ne se rapporte qu'après**, et il se rapporte avec le repli tenté.
+  « 0 sur 127 » ne dit rien ; « 0 sur 127, replis casse, accents et ordre des
+  noms épuisés » est un résultat ;
+- **chaque source a sa fonction de nom, et elles ne se partagent pas.** Le nom de
+  famille est le **dernier** mot chez `events`, le **premier** chez
+  `tennis_matches`. Une fonction unique compare « alex » à « mensik ».
+
+Le corollaire s'est vérifié dans ce lot même : le taux de 94,1 % contre 99,75 %
+du §1 vient d'une clé qui omettait la **date**. Un taux qui surprend se
+re-vérifie sur sa clé avant d'être écrit.
+
+### §4b — L'échéance de l'unité, rendue visible
+
+L'unité de 0,25 % a été mesurée sur **quatre journées d'analyse**, quand un 90e
+centile défendable en demande une dizaine. Elle porte donc désormais, **à côté du
+champ et non noyé dans sa note** :
+
+> **provisoire** — mesuré sur 4 journées d'analyse (17 – 20/08/2026) — **à
+> re-mesurer le 2026-09-20**.
+
+Et une entrée au journal des mesures, portée par la **migration 067** plutôt que
+par une insertion à la main : une donnée seedée se rejoue à l'identique sur une
+installation neuve, une insertion manuelle n'existe que sur une machine.
+
+**Le plafond de 5 % n'est pas marqué provisoire, et c'est délibéré** : c'est un
+arbitrage de l'utilisateur, pas une grandeur observée. Seule l'unité dépend du
+volume, donc seule l'unité a une échéance. `Threshold.provisional` porte la
+distinction, et un test la vérifie sur les deux.

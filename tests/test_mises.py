@@ -636,3 +636,46 @@ def test_aucune_fonction_du_module_de_mise_n_est_sans_lecteur() -> None:
         "Une fonction sans lecteur se retire ou reçoit sa surface — c'est la "
         "leçon de `/players/squads`, retiré par la migration 022."
     )
+
+
+def test_l_unite_de_mise_porte_son_caractere_provisoire_et_son_echeance() -> None:
+    """**Un « provisoire » non daté devient permanent par oubli.**
+
+    L'unité de 0,25 % a été mesurée sur quatre journées d'analyse, quand un 90e
+    centile défendable en demande une dizaine. Elle doit donc porter, à côté du
+    champ et non noyé dans sa note, sur quoi elle a été mesurée et quand elle
+    doit l'être à nouveau.
+    """
+    from myassistantbet.services.thresholds import THRESHOLDS
+
+    unite = THRESHOLDS["mise_unite_bp"]
+    assert unite.provisional, "l'unité est mesurée sur quatre journées : elle est provisoire"
+    assert "4 journées" in unite.measured_on
+    assert unite.remeasure_on == "2026-09-20"
+
+    # Le plafond, lui, est un arbitrage et non une grandeur observée.
+    assert not THRESHOLDS["mise_plafond_bp"].provisional
+
+
+def test_l_echeance_est_visible_sur_la_page_des_reglages(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Elle ne vaut que si elle se voit : une échéance dans un commentaire de
+    code n'a jamais rappelé personne."""
+    page = client.get("/settings").text
+    assert "provisoire" in page
+    assert "2026-09-20" in page
+    assert "4 journées" in page
+
+
+def test_l_echeance_entre_au_journal_des_mesures(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Le journal des mesures est le seul endroit du produit qui porte des
+    **dates** plutôt que des états — donc le seul où une échéance ne se perd
+    pas."""
+    from myassistantbet.services.changelog import journal
+
+    entrees = {e.day: e.label for e in journal(isolated_settings).entries}
+    assert "2026-09-20" in entrees
+    assert "re-mesurer l'unité de mise" in entrees["2026-09-20"]

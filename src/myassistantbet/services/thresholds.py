@@ -40,6 +40,20 @@ class Threshold:
     #: Ce que le seuil change, en une phrase. Rendu sous le champ : un nombre
     #: sans son effet ne se regle pas, il se subit.
     note: str
+    #: Sur combien d'observations la valeur a ete mesuree, et la date a laquelle
+    #: elle doit l'etre a nouveau. **Un « provisoire » non date devient permanent
+    #: par oubli** : la valeur reste, la raison de la revoir s'efface, et
+    #: personne ne sait plus qu'elle attendait du volume.
+    #:
+    #: Rendus en clair a cote du champ, jamais noyes dans la note : un nombre
+    #: mesure sur quatre journees et un nombre mesure sur quarante ne se reglent
+    #: pas de la meme main.
+    measured_on: str = ""
+    remeasure_on: str = ""
+
+    @property
+    def provisional(self) -> bool:
+        return bool(self.remeasure_on)
 
 
 #: Cle de preference : le prefixe evite qu'un seuil et une consigne de texte se
@@ -218,6 +232,8 @@ THRESHOLDS: dict[str, Threshold] = {
             "quand un 90e centile défendable en demande une dizaine — à re-mesurer vers le "
             "20/09/2026."
         ),
+        measured_on="4 journées d'analyse (17 – 20/08/2026)",
+        remeasure_on="2026-09-20",
     ),
     "mise_plafond_bp": Threshold(
         key="mise_plafond_bp",

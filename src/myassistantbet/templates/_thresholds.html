@@ -29,6 +29,18 @@
           </form>
         </td>
         <td class="small muted">
+          {# **Un « provisoire » non daté devient permanent par oubli.** La
+             valeur reste, la raison de la revoir s'efface, et personne ne sait
+             plus qu'elle attendait du volume. L'échéance se rend donc en clair
+             à côté du champ, jamais noyée dans la note : un nombre mesuré sur
+             quatre journées et un nombre mesuré sur quarante ne se règlent pas
+             de la même main. #}
+          {% if threshold.provisional %}
+          <strong class="badge warn">provisoire</strong>
+          mesuré sur {{ threshold.measured_on }} —
+          <strong>à re-mesurer le {{ threshold.remeasure_on }}</strong>.
+          <br>
+          {% endif %}
           {{ threshold.note }}
           <br>Entre {{ threshold.low }} et {{ threshold.high }}, défaut {{ threshold.default }}.
         </td>
