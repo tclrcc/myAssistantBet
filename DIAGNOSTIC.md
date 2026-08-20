@@ -6654,3 +6654,94 @@ comparait « mensik » à « alex ».
 Corrigé, le même relevé rend **65,8 %**. Un « 0 % » se serait lu comme une source
 inexploitable et aurait fermé le tennis pour de bon — la neuvième occurrence du
 motif du projet, sur la mesure censée décider du chantier.
+
+## §2b — Le seuil par surface est structurellement hors d'atteinte, et le chiffre le dit
+
+**Mesure sur `player_serve_agg`, 1 167 agrégats, 250 joueurs.** La prémisse du
+brief — « `Jeux` ne sort que sur 14 joueurs sur 250 » — est **confirmée au
+chiffre près**, et l'explication est celle déjà écrite au lot 8.
+
+| Portée | Joueurs | Au seuil de 300 | Maximum atteint | Moyenne |
+| --- | ---: | ---: | ---: | ---: |
+| toutes surfaces | 250 | **14** | 322 | 172 |
+| Hard | 250 | **0** | 257 | 72 |
+| Clay | 245 | **0** | 222 | 29 |
+| Grass | 239 | **0** | 237 | 74 |
+| I.hard | 183 | **0** | 89 | 0 |
+
+**Aucune surface n'atteint jamais 300, et ce n'est pas une question de volume :**
+`collect_games` s'arrête à 300 jeux **toutes surfaces confondues**, donc un
+agrégat de surface ne peut par construction pas les atteindre. Le maximum
+observé, 257, est le plafond mécanique de cette règle.
+
+### Ce qu'il faudrait, et ce que ça coûterait
+
+Mesuré sur les mêmes agrégats : **~22 jeux par match**, **8 timelines lues** par
+joueur en moyenne, et la répartition des jeux collectés par surface —
+**Hard 41,9 %, Grass 41,2 %, Clay 16,6 %, I.hard 0,3 %**.
+
+- 300 jeux sur une surface demandent **~14 matchs de cette surface** ;
+- **la surface est connue avant l'appel** (`court.name`, servi à 100 % — voir
+  §3a), donc la passe peut ne lire que les timelines utiles au lieu d'en scanner
+  33 pour en retenir 14 ;
+- au coût par timeline que le brief donne (~4 appels après le filtre d'âge et le
+  retrait de J+1), cela fait **~56 appels par joueur et par surface**, contre
+  ~32 aujourd'hui — soit **~1 350 appels pour un lot de 24 joueurs**, sur la
+  seule surface du tournoi en cours.
+
+Rapporté au quota RapidAPI restant — **139 480 appels**, pour 3 304 et 6 191
+consommés sur les deux journées mesurées — c'est finançable, mais ce n'est pas
+marginal : cela **double à peu près** le coût d'un enrichissement de tennis.
+
+**Le seuil de 300 n'est pas touché**, comme le brief l'exige : ce qui change
+serait la **portée** de la collecte, pas la barre. Le chantier n'est pas livré
+ici — il change le coût de chaque enrichissement de tennis, et cela se décide
+avec la mesure sous les yeux plutôt qu'en fin de lot.
+
+## §6 — Ce que la mesure contredit dans ce brief
+
+| Affirmé | Mesuré |
+| --- | --- |
+| table de mises : unité 1 %, plafond de session 5 % | **16 sessions sur 16** l'atteignent ou le dépassent. La mise réelle vaut 0,167 à 1,000 %, médiane 0,264 % : le plafond ne plafonne pas, **il dimensionne** |
+| « lots de 8 à 12 matchs » (régime actuel) | **4 à 10 blocs**, moyenne 5,8 à 8,4 sur les quatre dernières sessions |
+| « soit environ 4 à 5 sélections de section C » | **2,50 à 3,80** par lot |
+| « si le P90 du régime actuel est autour de 10 à 12 sélections » | **20,4** par journée. La direction était juste, l'ampleur non |
+| le régime actuel serait plus resserré que l'ancien | **médianes identiques : 19,0 contre 19,0.** Les lots ont rétréci, la journée n'a pas bougé — le découpage a été absorbé par le nombre de prompts |
+| plafond « par session » | la date de session **n'est pas** celle des sélections : la session 18 est datée du 19/08 et a produit ses cinq prompts le 20/08. Grouper dessus compte les sélections d'aujourd'hui dans le budget d'avant-hier |
+| C-bis à 0,25 unité | **contredit par l'utilisateur lui-même**, et à raison : miser sur une population produite sans fait daté paie une information qu'on obtient sans payer |
+| §2 : « coups gagnants et fautes directes » à ajouter | servis **au Grand Chelem seul** — 99,4 % là, **0,0 % partout ailleurs**, sans une exception sur 9 010 matchs. Les lots de ce projet sont des Masters 1000 |
+| §2 : « `Jeux` ne sort que sur 14 joueurs sur 250 » | **confirmé au chiffre près**, et la cause est structurelle : 0 sur 250 par surface, maximum mécanique 257 |
+| §3 : « la source le nomme par son sponsor », d'où le rattachement manuel | **43 compétitions tennis sur 43 sont rattachées**, 0 analysée sans. Et `matches-played` nomme le tournoi lui-même : un palmarès bâti dessus n'a besoin d'aucune table |
+| §3 : « faut-il déduire la catégorie d'un libellé ? » | **elle est servie**, `tournament.tier` à 99,1 % — surface à 100 %, tour à 100 % |
+| §3 : « la description commerciale annonce 1930 » | invérifiable d'ici, et **sans objet** : la source annonce **509 matchs médians** par joueur et nous n'en prenons **100**. 99,2 % des profils sont tronqués par notre propre pagination |
+| §4 : « ils ressortent en non servis » | **zéro ligne de props en base**, jamais, sur 58 611 cotes. Mais un prix **existe** — William Hill, sur EPL, La Liga et Serie A, les deux marchés, 3 matchs sur 3 |
+| §4 : la porte serait fermée ou ouverte | **entrouverte** : le prix existe sur trois compétitions qui pèsent **7 matchs sur 445** analysés, jamais chez le book principal |
+| §5 : « 298 sélections tranchées » | **293** dans la base au moment du relevé |
+| §5 : un cron 2-3 fois par jour remplirait l'historique | pas avec `tennis-data`, qui s'arrête au 14/08 quand les matchs vont au 20/08 — **43 % du tennis lui est postérieur**. `event/get` le peut, il est en direct et déjà appelé |
+| §5 : la validation dirait si le règlement est sûr | **93,3 % d'accord** sur le marché le plus simple. Les 4 divergences ne sont pas des cas limites du sport, ce sont **des défauts de lecture** — c'est exactement ce que la validation devait attraper |
+| « le lot 14 a montré ce que vaut un avertissement qu'on peut valider » | **confirmé**, et appliqué d'avance : le plafond de mise s'applique à l'écriture, il ne s'affiche pas |
+
+### Ma propre mesure, reprise en cours de route
+
+**Le relevé de récupérabilité tennis a d'abord rendu 0 sur 127.** C'était un
+artefact de ma lecture : `tennis_matches` écrit « Mensik J. », `events` écrit
+« Alex Michelsen », et ma fonction prenait le premier mot long des deux côtés.
+Corrigé, le même relevé rend **65,8 %**.
+
+Un « 0 % » se serait lu comme une source inexploitable et aurait fermé le tennis
+pour de bon. C'est le motif du projet appliqué à l'outil de mesure lui-même — et
+la raison pour laquelle une mesure surprenante se re-vérifie avant d'être écrite.
+
+### La leçon de méthode du lot
+
+**Trois des cinq chantiers ont été tranchés par une mesure qui n'a coûté aucun
+appel.** Le recensement des clés de tennis, la profondeur d'historique et la
+récupérabilité des résultats dorment tous dans `api_responses`, archivé depuis la
+migration 058 ; le sondage des prix de buteurs a coûté **18 crédits** sur 14 466.
+
+Et le seul chantier construit — la répartition de mise — est celui dont la
+mesure a **renversé la spécification avant la première ligne de code**. Les
+quatre nombres du brief n'étaient pas mutuellement cohérents, et les coder tels
+quels aurait produit un écran affichant « 1 unité » pendant que le code en
+mettait un quart : le défaut caractéristique du projet, pour la première fois
+libellé en euros.
