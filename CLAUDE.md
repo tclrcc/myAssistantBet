@@ -5597,3 +5597,215 @@ fichier autoportant — Markdown pour un lecteur humain ou un modele, JSON pour 
   l'apostrophe echappee par Jinja ne s'appariait pas.
 - Le registre `SECTIONS` est le contrat, et `StatsReport.sections` dit ce que **ce** releve
   rend : le fichier ne peut donc pas porter une section que la page tait, ni l'inverse.
+
+## La ligne `Ici` : un tournoi se corrobore, une couverture se soustrait
+
+Deux defauts du meme lot, tous deux invisibles, tous deux dans la ligne livree la
+veille.
+
+**`_tournament_id` prenait le mode sur la fenetre d'edition, et rendait le
+tournoi de la semaine passee.** Deux tournois se chevauchent une semaine sur
+deux — le Canadien finit le lundi ou Cincinnati commence — donc notre fenetre
+contient la fin du precedent. Un joueur qui entre en lice ici apres un bon
+parcours ailleurs y voyait **l'autre tournoi** rendu sous le titre « ici ».
+Mesure du 20/08/2026 : **14 fragments sur 223**, dont un bloc de Cincinnati
+servant quatre matchs du Canadien d'un cote et un Washington de l'autre.
+
+- La fenetre est donc **corroboree par nos propres scans** : un match de la
+  source ne compte pour identifier le tournoi que s'il porte un adversaire ou un
+  jour que nous avons scannes ici. Sans corroboration possible — un entrant —
+  l'identifiant vaut **0**, et c'est son partenaire qui le donne, ce que
+  `here_lines` faisait deja. Rejeu : **223 justes, 0 faux**.
+- **Le jour se compare a l'exact pour corroborer**, jamais a un jour pres : la
+  tolerance parait prudente et ouvre precisement le trou qu'on ferme, un match du
+  tournoi precedent tombant la veille d'un match d'ici. Un joueur ne dispute
+  qu'une rencontre par jour — la premisse de `_resolve_duplicates`.
+
+**`Ici` s'arretait avant le match qui compte**, et la soustraction etait laissee
+a l'analyse. `Parcours` nommait quatre adversaires de Bejlek, `Ici` en couvrait
+trois, et le quatrieme etait **Sabalenka**, jouee la veille — le fait dominant de
+la rencontre. La ligne nomme desormais ce qu'elle ne couvre pas.
+
+- **La borne « posterieur au releve » est fausse deux fois**, et c'etait la
+  premisse du brief. Comparee au **jour** elle n'attrape **rien** — la journee de
+  tournoi du match vaut le jour du releve alors que le coup d'envoi est a 00h30
+  le lendemain ; comparee a l'**instant** elle n'attrape que **6 des 28** — un
+  match commence trente minutes avant le releve n'est pas fini quand il passe, et
+  il faudrait la duree, qu'aucune source ne publie. **La soustraction, elle, n'a
+  aucune borne a choisir.**
+- **Le nom se compare genereusement, le jour strictement, et c'est l'arbitrage
+  inverse de la corroboration.** Rendu strict, le fragment nommait trois matchs
+  « non couverts » dont le score figurait sur la ligne juste au-dessus — nos
+  scans ecrivent « Leylah Fernandez », la source « Leylah **Annie** Fernandez ».
+  Un faux positif depense une place de dossier, un faux negatif ne fait que taire
+  un fragment qui n'existait pas hier : en cas de doute on declare **couvert**.
+  `_same_player` applique la regle de `tennis_history.resolve` — meme nom de
+  famille, prenoms en chaine de prefixes — qui separe les freres Zverev.
+- **Une seule regle de nom dans le module**, et elle sert aux deux usages : la
+  strictesse a ete essayee cote corroboration et elle etait inutile, les 14
+  fragments fautifs portant des adversaires jamais scannes ici. C'est le jour
+  exact qui les ecarte.
+- La ligne reste **rare** : 7 blocs sur 195, 12 fragments. Une ligne qui sortirait
+  partout cesserait d'informer.
+- **`Fraicheur` ne bouge pas, et le brief demandait qu'elle bouge.** Elle ne dit
+  pas « on ignore ce qui s'est passe » : elle dit que
+  `Forme/Usure/Profil/Marge/Niveau adv.` sont arretees a la date de
+  `tennis-data.co.uk`, une source hebdomadaire **distincte**, et les quatre
+  matchs y manquent — y compris les trois dont `Ici` donne le score. Ramener le
+  compte ferait lire « Usure » comme comptant trois matchs de plus qu'elle n'en
+  compte.
+
+**Le nombre de tours, lui, s'etablit** quand la phase reste inconnue :
+`au moins 4 tours disputes par X, 3 par Y`. Il decide de quelque chose — le
+gabarit conditionne les paliers hauts a un enjeu asymetrique — et il se compte
+sur nos propres scans. « au moins », le debut d'un tableau pouvant preceder notre
+fenetre. La source de profils n'ajouterait un tour que sur **11 joueurs sur
+192**, toujours un seul : la dependance ne se paie pas pour un mot qui reste vrai
+des deux cotes.
+
+## Un ecart se nomme sur ce qui se gagne, et se tait sous le bruit
+
+`Ecart` confrontait le taux de premieres balles **mises en jeu**. Sur un bloc
+reel il rendait `+0.1 pts` — les deux joueuses a 63,2 % — quand la ligne
+`Service` juste au-dessus portait **6,1 points** sur les points gagnes derriere
+la premiere et **7,5** sur les doubles fautes.
+
+- **Ce n'est pas la grandeur la moins dispersee, c'est la plus**, et la nuance
+  decide de l'implementation : ecart absolu median **4,3 points** contre 3,5 sur
+  les points gagnes, mesure sur 174 paires. Un seuil pose sur l'etalement aurait
+  garde la grandeur qu'on voulait retirer. Ce qui la disqualifie est **ce qu'elle
+  mesure** — qui rentre sa premiere balle, pas qui en tire quelque chose.
+- **Le seuil se lit sur les denominateurs de la ligne**, jamais sur un nombre
+  choisi : un ecart n'est nomme que si son intervalle de **Newcombe exclut
+  zero** (`inference.difference_interval`, deja ecrit). Il s'adapte donc au
+  volume de chaque joueur. Meme famille que `HANDICAP_ALERT_MARGIN` : un silence
+  vaut mieux qu'une affirmation que la donnee ne porte pas.
+- Taux de declenchement : 49 % pour les points gagnes, 49 % pour les doubles
+  fautes, 36 % pour le retour ; **aucune ligne sur 19 % des blocs**.
+- **Sur les doubles fautes, l'avantage est au plus bas taux.** L'inversion est
+  portee une seule fois, par un booleen de la table des grandeurs — deux
+  ecritures auraient diverge, et un ecart lu a l'envers est l'erreur la plus
+  couteuse que ce bloc puisse produire.
+
+**Et les unites d'une meme famille de lignes doivent se comparer.** `Ici` rendait
+`12 df`, un compte brut, quand `Service` rend `11.3% df` sur les secondes
+balles : 12 doubles fautes sur ~81 secondes balles font 14,8 % sur ce tournoi
+contre 11,3 % sur 52 semaines, degradation nette que rien ne donnait a lire. Le
+compte brut n'est pas garde a cote — il faudrait un seuil de « petit
+denominateur » qui s'inventerait, et la parenthese `(3 matchs, 212 pts)` borne
+deja le fragment.
+
+## Les lignes en quart, et le handicap posable qui etait jete
+
+La regle « au football, les lignes en quart ne se posent pas » vivait dans le
+preambule et se re-derivait bloc par bloc. Elles portent desormais `†` **la ou
+elles sont ecrites** : 412 des 1 414 lignes d'echelle affichees, soit **29 %**.
+
+- **Au football seulement, et c'est mesure** : zero point en quart sur les 4 944
+  issues de tennis archivees. Le marquer la-bas serait du decor.
+- **Aucune legende par bloc** : elle se dit une fois dans le preambule, ou la
+  regle vivait deja et ou la porte de sport la garde. Vingt-quatre legendes pour
+  vingt-quatre blocs, c'est le defaut que `common_unplayable` a corrige.
+
+**Le defaut trouve sous celui-la est plus grave.** Le total rend cinq lignes,
+dont une ou deux en quart ; le handicap n'en rend qu'**une**, donc un palier
+d'equilibre en quart laisse le bloc sans aucun handicap posable — **94 des 268
+paliers principaux, soit 35 %**. Et sur **94 cas sur 94**, un palier entier servi
+des deux cotes existait dans l'echelle et etait **jete** : un tiers des blocs de
+football montrait la seule ligne impossible a poser et cachait les quatre autres.
+
+Une seconde ligne `posable` rend ce palier, choisi par `_main_handicap` sur
+l'echelle restreinte — **la meme fonction**, jamais un second departage qui
+aurait diverge. L'equilibre reste rendu, marque : il situe le match mieux
+qu'aucun autre.
+
+## Une retrogradation ordonne, elle n'ecarte pas (`research.merit`)
+
+La fiche de priorite compte desormais les marches **presents** sur un bloc : un
+bloc qui n'en porte qu'un plafonne toute selection au 1N2, quelle que soit la
+qualite de la recherche. Sur le lot du 20/08, **trois des quatre** dossiers
+proposes etaient dans ce cas.
+
+- **Ce n'est pas regarder une cote**, et la regle « la fiche ne regarde aucun
+  prix » tient entiere : aucune **valeur** n'est lue, seulement le nombre de
+  familles presentes. Le test qui gardait cette regle comparait un bloc **sans**
+  marche a un bloc **avec** — il testait donc la presence ; il porte maintenant
+  sur deux blocs aux memes marches a des prix opposes.
+- **Le seuil est « un seul », et il designe 1 % des blocs** au football comme au
+  tennis, marches fusionnes. Le palier suivant est a trois — 38 % au football,
+  100 % au tennis — et un critere qui se declencherait la ne classerait plus
+  rien. Il ne se decline pas par sport, la norme etant de 12 marches d'un cote et
+  de 3 de l'autre : « un seul » y designe la meme part infime.
+- **`sheet()` ecarte tout dossier dont le score n'est pas positif**, donc un
+  malus pose dans le score est un **veto** : -1 sur un dossier a un seul critere
+  le faisait disparaitre. D'ou `merit` a cote de `score` — l'un decide si le
+  dossier **se propose**, l'autre son **rang**. Une retrogradation ne dit pas
+  « ne cherche pas », elle dit « ce que tu trouveras vaudra moins ».
+- **Le poids vaut un cran, et c'est conservateur a dessein.** Deux crans feraient
+  basculer l'ordre du lot qui a fait naitre le critere — regler un poids sur son
+  propre exemple est la faute deja payee deux fois. Les autres poids du module
+  sont « le rendement mesure de chaque piste » ; celui-ci n'en a pas encore.
+- **Les motifs negatifs se rendent.** Une retrogradation que le lecteur ne voit
+  pas est un garde-fou muet.
+
+## Un exemple de format se batit sur le lot, jamais sur un litteral
+
+Le gabarit ecrivait `dossiers_ouverts: [M1, M4, M7, M8]` sur un lot de **sept**
+matchs, `sets: M3=… | M4=… | M8=PASSE` sur un lot dont M3 et M4 sont du
+**football** et qui ne porte qu'un match de tennis, et `combine_court=0.25` juste
+apres que la section D a ecrit « Aucun combine sur ce lot ». Aucun n'induit
+vraiment en erreur, et les trois sement un doute au moment precis ou le format
+doit etre sans ambiguite.
+
+- **Deux besoins, deux regles.** `dossiers_ouverts` decrit un **sous-ensemble
+  choisi** : l'echantillon est disperse du premier au dernier, jamais un prefixe
+  — `M1, M2, M3` se lirait « ouvre-les tous » — et jamais tout le lot. `sets`
+  reprend **chaque** match de tennis : l'exemple les prend tous, plafonne a
+  quatre pour rester lisible.
+- **Le critere de test est une propriete** : tout repere cite existe parmi les
+  blocs rendus. Jamais la liste du jour, qui depend de la taille du lot.
+
+## Un plafond sans son etat ne contraint rien
+
+La ligne qui annonce ce qu'il reste de la journee n'etait rendue que si une mise
+etait **deja enregistree** — donc jamais, `mises` portant zero ligne. Le
+docstring de `stakes.Brief` promettait pourtant depuis le lot 17 que « chaque
+prompt annonce ce qu'il **reste**, pas le plafond nu », et c'est lui qui avait
+raison.
+
+La branche disparait au profit d'une ligne unique qui porte toujours les trois
+nombres, pour **27 tokens de moins** : la condition coutait plus que la ligne
+qu'elle gardait. Meme regle que les quotas et les bornes de palier — une regle
+qu'il faut appliquer de tete ne contraint rien.
+
+**Et le corollaire de test** : le defaut vivait dans la porte, pas dans le
+service. Un `Brief` correct n'aurait rien montre ; le test lit le **prompt
+rendu**.
+
+## Ne pas affirmer une impossibilite qui n'en est pas une
+
+La section D ecrivait « trois jambes independantes ne peuvent pas en sortir » sur
+un lot de sept matchs. **Structurellement faux** : `safe_legs_available` en
+autorise sept, le plafond ne mordant qu'a partir de onze. **Empiriquement
+serre** : 45 % des prompts de neuf blocs ou moins ont produit trois jambes en
+bande sure a confiance >= 3 — et ce chiffre est un **plancher**, mesure dans le
+regime ou l'absence de `dossiers_ouverts` forcait tout au cran 1.
+
+Le seuil `combo_solo_min_lot` n'a pas bouge : il vaut **9** pour un defaut de 5,
+c'est un reglage resserre a la main, et la mesure ne le tranche pas. C'est la
+phrase qui etait fausse. Le combine est desormais « **pas demande** sur ce lot »,
+avec le seuil ecrit plutot que sous-entendu.
+
+## Une mesure qui contredit une premisse ne dispense pas d'expliquer la premisse
+
+**Regle de revue, du 20/08/2026.** Le brief demandait de changer la grandeur de
+la ligne `Ecart` au motif qu'elle comparait « la moins discriminante » ; la
+mesure dit que c'est la **plus dispersee** des cinq. La conclusion etait juste et
+la premisse fausse — et s'en tenir a « il a raison » aurait conduit a poser un
+seuil sur l'etalement, c'est-a-dire a **garder la grandeur qu'on voulait
+retirer**.
+
+La premisse fausse et la conclusion juste coexistent, et c'est la premisse qui
+decide de l'implementation. Le corollaire de la premiere lecon du projet — *une
+premisse enoncee par le decideur se mesure comme une autre* — est donc qu'on la
+mesure **meme quand on est d'accord avec ce qu'elle demande**.

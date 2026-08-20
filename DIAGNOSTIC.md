@@ -8299,3 +8299,146 @@ ne contraint rien.
 
 Trois tests recopiaient la formulation. Leurs ancres suivent, et l'un d'eux gagne
 l'assertion qui manquait : **la phrase d'impossibilité ne doit plus y être**.
+
+## Le coût du lot, par modification de gabarit
+
+| § | Passage | Avant | Après | Delta |
+| --- | --- | ---: | ---: | ---: |
+| §1 | consigne TENNIS de « CE QU'IL FAUT VÉRIFIER » | 129 | 128 | **−1** |
+| §2 | puce « Tour » du chapitre COMMENT LIRE LES BLOCS | 63 | 162 | **+99** |
+| §4 | entrée « Ecart » du même chapitre | 50 | 176 | **+126** |
+| §6 | paragraphe « lignes en quart », gardé par le sport | 150 | 249 | **+99** |
+| §8 | section BUDGET DE RECHERCHE | 88 | 159 | **+71** |
+| §9 | table de mise, section G | 99 | 72 | **−27** |
+| §10 | suppression du combiné, section D | 83 | 119 | **+36** |
+| | **total gabarit** | | | **+403** |
+
+§3, §5 et §7 ne touchent pas le gabarit — §7 remplace des littéraux par des
+expressions, à longueur comparable.
+
+### Sur le prompt de référence, régénéré
+
+| | total | cadre | blocs | par bloc |
+| --- | ---: | ---: | ---: | ---: |
+| avant (prompt 167) | 22 179 | 17 613 | 4 566 | 652 |
+| après | 22 776 | 18 085 | 4 691 | 670 |
+| **delta** | **+597** | **+472** | **+125** | **+18** |
+
+Les 472 tokens de cadre valent les 403 mesurés passage par passage, plus les
+exemples de format générés (§7) et la ligne de motif ajoutée à trois dossiers de
+la fiche (§8). Les 125 tokens de bloc sont les lignes de §1, §2 et §6 —
+**18 tokens par bloc**, sur sept blocs dont un seul de tennis.
+
+Les deux alarmes ne bougent pas : lot football **15 831 / 23 000**, lot mixte
+**13 506 / 20 000**. La règle « tout ajout budgète sa propre coupe » a été écrite
+quand le socle tenait à 7 tokens de son plafond ; elle ne mord plus ici, et la
+mesure est écrite pour qu'on n'ait pas à la redécouvrir.
+
+## Le bloc M6, avant et après
+
+**Avant** — les cinq lignes que §1 à §5 touchent :
+
+    Tour        phase non renseignee (118 joueurs vus ne forment aucun tableau)
+    Ici         Sara Bejlek 14/08 bat Karolina Pliskova 6-0 6-2 | 16/08 bat Barbora Krejcikova 7-6(5) 6-4 | 18/08 bat Ekaterina Alexandrova 4-6 6-1 6-2 [releve au 19/08]
+                service ici 61.8% 1re · 71.0% s/1re · 12 df (3 matchs, 212 pts)
+                Madison Keys 16/08 bat Daria Snigur 4-6 6-3 6-3 | 18/08 bat Katerina Siniakova 6-1 6-3 [releve au 19/08]
+                service ici 56.8% 1re · 74.7% s/1re · 9 df (2 matchs, 139 pts)
+    Palmares    Madison Keys 1/8 2025, 2V-1D
+    Ecart       service +0.1 pts sur la 1re balle pour Sara Bejlek | retour +5.3 pts pour Sara Bejlek · taux non ajustes du niveau d'adversaire
+
+**Après** :
+
+    Tour        phase non renseignee (118 joueurs vus ne forment aucun tableau)
+                au moins 4 tours disputes par Sara Bejlek, 3 par Madison Keys
+    Ici         Sara Bejlek 14/08 bat Karolina Pliskova 6-0 6-2 | 16/08 bat Barbora Krejcikova 7-6(5) 6-4 | 18/08 bat Ekaterina Alexandrova 4-6 6-1 6-2 [releve au 19/08]
+                1 match non couvert : Aryna Sabalenka (2194)
+                service ici 61.8% 1re · 71.0% s/1re · 14.8% df (3 matchs, 212 pts)
+                Madison Keys 16/08 bat Daria Snigur 4-6 6-3 6-3 | 18/08 bat Katerina Siniakova 6-1 6-3 [releve au 19/08]
+                1 match non couvert : Xiyu Wang (1741)
+                service ici 56.8% 1re · 74.7% s/1re · 15.0% df (2 matchs, 139 pts)
+    Palmares    Sara Bejlek WTA 1000 1/8 2026 (6 éditions, dur) · ici 1/8 2026 (1 édition) | Madison Keys WTA 1000 1/2 2025 (38 éditions, dur) · ici vainqueur 2019 (11 éditions)
+    Bilan ici   Madison Keys 1/8 2025, 2V-1D
+    Ecart       s/1re +6.1 pts pour Madison Keys | df +7.5 pts pour Sara Bejlek | retour +5.3 pts pour Sara Bejlek · taux non ajustes du niveau d'adversaire
+
+Les cinq se lisent ensemble : la demi-finaliste a battu Sabalenka la veille — le
+bloc le dit maintenant qu'il ne le dit **pas**, et nomme qui chercher — elle en
+est à quatre tours contre trois, elle n'était jamais allée au-delà d'un huitième
+en WTA 1000 quand son adversaire a gagné ici, et l'écart de service est de six
+points sur les points gagnés et non de zéro sur la mise en jeu.
+
+La ligne `Palmares` de la colonne « après » suppose la passe de collecte lancée
+— c'est le §3, et elle a été jouée sur la copie pour l'établir.
+
+## Ce que la mesure contredit dans ce brief
+
+| Affirmé | Mesuré |
+| --- | --- |
+| §1 — nommer « les matchs **postérieurs au relevé** » | **la borne est fausse deux fois** : nulle au jour (la journée de tournoi de Sabalenka vaut le jour du relevé), 6 sur 28 à l'instant (un match commencé 30 min avant n'est pas fini). La soustraction n'a aucune borne à choisir |
+| §1 — « corriger `Fraicheur` du même coup, le compte doit descendre » | **refusé, ce serait faux.** `Fraicheur` compte ce qui manque à `Forme/Usure/Profil/Marge/Niveau adv.`, arrêtées au 13/08 : les **quatre** matchs y manquent, y compris les trois dont `Ici` donne le score |
+| §3 — « la construction du lot 16 est ATP seulement / la couverture WTA est vide / le tournoi n'est pas rattaché » | **les trois sont fausses**, vérifiées une par une. `player_palmares` était simplement **vide** : le module a été livré le 20/08 à 18h37 UTC et la passe qui la remplit tourne à 07h30 |
+| §4 — « `Ecart` compare la grandeur **la moins discriminante** » | **c'est la plus dispersée des cinq** : médiane 4,3 points contre 3,5 sur les points gagnés, sur 174 paires. Le `+0,1` de M6 est un tirage bas, pas une propriété. Ce qui la disqualifie est ce qu'elle **mesure** — et la nuance compte, un seuil posé sur l'étalement aurait gardé la mauvaise grandeur |
+| §5 — « conserver le compte brut à côté si le dénominateur est petit » | **non fait** : il faudrait un seuil de « petit » qui s'inventerait, et la parenthèse `(3 matchs, 212 pts)` borne déjà le fragment |
+| §6 — « quand un marché est **entièrement** en quart, le signaler » | **jamais le cas pour l'O/U** — 0 échelle sur 271 blocs — et **toujours** le cas pour le handicap, qui ne rend qu'une ligne, sur 94 blocs sur 268. Et sur **94 sur 94**, un palier posable existait dans l'échelle et était jeté |
+| §8 — « deux des trois premiers dossiers sont plafonnés d'avance » | **trois des quatre** : M4 aussi ne porte que le 1N2 |
+| §8 — « pondérer le classement » | le classement du lot **ne change pas**, et il ne faut pas régler le poids pour qu'il change : rien de plus riche n'y concourt. Ce qui change est que le plafond est **nommé** |
+| §10 — « trois jambes indépendantes ne peuvent pas en sortir » (texte du gabarit) | **faux** : un lot de sept en autorise sept, le plafond ne mord qu'à onze. Empiriquement 45 % des prompts de ≤ 9 blocs en ont produit trois — et ce chiffre est un plancher, mesuré en régime cassé |
+
+### Trois défauts que le brief ne demandait pas et que la lecture a trouvés
+
+1. **`Ici` rendait le tournoi de la semaine passée** — 14 fragments sur 223, dont
+   un bloc de Cincinnati servant quatre matchs du Canadien et un de Washington.
+   Le mode sur la fenêtre d'édition ne sait pas écarter la fin du tournoi
+   précédent. **§1.**
+2. **Le handicap posable était jeté** — 94 fois sur 94. Le bloc montrait la seule
+   ligne impossible à poser. **§6.**
+3. **Le palmarès ne dépassait jamais douze joueurs** — `BATCH` borne le temps de
+   mur des timelines, qui coûtent 4 à 6 appels par rencontre, et le palmarès en
+   héritait pour 3 appels par joueur. Médiane 32 joueurs de tennis par journée de
+   board, maximum 99, et 12 ne couvre la journée que **4 fois sur 18**. **§3.**
+
+### Une règle de revue que ce lot ajoute
+
+**Une mesure qui contredit une prémisse ne dispense pas d'expliquer la
+prémisse.** Le §4 en est le cas net : le brief a raison de vouloir changer de
+grandeur et tort sur la raison, et si l'on s'était contenté de constater qu'il a
+raison, on aurait pu poser un seuil sur l'étalement — qui aurait gardé la
+grandeur qu'on voulait retirer. La prémisse fausse et la conclusion juste
+coexistent, et c'est la prémisse qui décide de l'implémentation.
+
+## Récapitulatif du lot 18
+
+**Dix points, dix commits, schéma inchangé à 69** — aucune migration, donc aucune
+sauvegarde requise. Toutes les mesures portent sur une copie de la base servie
+(`VACUUM INTO`), et la base servie n'a pas été touchée : mtime inchangé,
+`player_palmares` toujours à 0, `picks` à 327.
+
+| § | Ce qui a changé | Ce que ça coûte |
+| --- | --- | --- |
+| 1 | `Ici` nomme les matchs dont la source ne dit pas l'issue ; le tournoi se corrobore | −1 token, +1 ligne sur 7 blocs / 195 |
+| 2 | `Tour` dit le nombre de tours établis quand la phase est inconnue | +99 tokens, +1 ligne sur 70 blocs / 195 |
+| 3 | Le palmarès n'hérite plus de la borne des timelines | 0 token, ~96 appels/jour (2 % du quota mensuel) |
+| 4 | `Ecart` confronte l'efficacité, et se tait sous le bruit | +126 tokens |
+| 5 | Les doubles fautes du tournoi passent en taux | 0 token |
+| 6 | Les lignes en quart portent `†` ; le handicap posable est rendu | +99 tokens, +1 ligne sur 35 % des blocs football |
+| 7 | Les exemples de format se bâtissent sur le lot | ≈ 0 |
+| 8 | La fiche de priorité pèse la surface de marché | +71 tokens |
+| 9 | L'état de la journée est toujours annoncé | **−27 tokens** |
+| 10 | Le combiné n'est plus déclaré impossible | +36 tokens |
+
+**Ce que ce lot corrige et que personne n'avait demandé** : trois défauts,
+chacun de la forme caractéristique du projet — l'échec et le cas ordinaire
+rendaient la même chose. `Ici` servait le tournoi de la semaine passée sur 14
+fragments ; le rendu jetait un handicap posable 94 fois sur 94 ; le palmarès ne
+dépassait jamais douze joueurs par jour quand la médiane est de trente-deux.
+
+**Ce qui reste ouvert, et pourquoi ça ne se ferme pas ici** :
+
+- le **poids** de la rétrogradation par surface de marché (§8) : un cran, faute
+  de rendement mesuré. Il se relèvera sur des sessions qui l'auront donné ;
+- le **seuil** `combo_solo_min_lot` (§10) : réglage utilisateur à 9 pour un
+  défaut de 5, et le vivier qui le justifierait a été mesuré en régime cassé.
+  `CLAUDE.md` a déjà daté cette décision d'attente pour les cibles de combiné —
+  elle vaut aussi pour ce seuil ;
+- la **borne de `BATCH`** pour les timelines (§3) : elle reste à 12, et c'est
+  juste — une timeline coûte quatre à six appels par rencontre. Seul le palmarès
+  en sort.

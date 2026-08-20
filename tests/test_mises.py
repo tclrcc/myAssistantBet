@@ -695,8 +695,8 @@ def test_l_etat_de_la_journee_se_rend_meme_a_zero(
     Le test lit le **prompt rendu**, jamais la seule propriété : le défaut vivait
     dans la porte, et un `Brief` correct n'aurait rien montré.
     """
-    from myassistantbet.services.prompt import build_prompt
     from myassistantbet.services import stakes
+    from myassistantbet.services.prompt import build_prompt
 
     session_id, _ = _lot(isolated_settings, ["Lyon", "Nice"])
     brief = stakes.brief("2026-08-20", isolated_settings)

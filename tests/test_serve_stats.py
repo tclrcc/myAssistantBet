@@ -2467,18 +2467,18 @@ async def test_le_palmares_ne_se_borne_pas_sur_le_temps_de_mur_des_timelines(
 
 def _paire_agg(nom: str, **champs: int) -> serve_stats.ServeAggregate:
     """Un agregat de volume realiste, pour comparer deux joueurs a la main."""
-    base = dict(
-        matches=30,
-        first_serve=900,
-        first_serve_of=1400,
-        won_first=900,
-        won_first_of=1400,
-        won_second=250,
-        won_second_of=500,
-        double_faults=60,
-        return_points=1400,
-        return_won=600,
-    )
+    base: dict[str, int] = {
+        "matches": 30,
+        "first_serve": 900,
+        "first_serve_of": 1400,
+        "won_first": 900,
+        "won_first_of": 1400,
+        "won_second": 250,
+        "won_second_of": 500,
+        "double_faults": 60,
+        "return_points": 1400,
+        "return_won": 600,
+    }
     base.update(champs)
     return serve_stats.ServeAggregate(player=nom, circuit="wta", **base)
 
