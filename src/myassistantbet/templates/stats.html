@@ -1836,6 +1836,18 @@
      porte une du même nom — la parité se lit sur les deux rendus réels. Le
      détail, lui, reste replié : il n'affirme rien. #}
   <h3>Session par session</h3>
+  {# **Le compte restant vit ici**, et pas seulement sur l'écran des réglages :
+     c'est le jour de la bascule que cette série devra montrer, et un lecteur qui
+     ignore à quelle distance on en est ne peut pas la lire.
+
+     La phrase dit **laquelle des deux conditions bloque**. Annoncer « il manque N
+     journées » sans nommer la suspension serait un compte à rebours vers un
+     événement qui ne peut pas se produire : `FEEDBACK_SUSPENDED` est une
+     constante, et la retourner demande de modifier le code. #}
+  <p class="report{% if not feedback.enough %} report-warn{% endif %}">
+    <strong>Recul actuel : {{ feedback.reach_line }}.</strong>
+    {{ feedback.missing_line }}
+  </p>
   {% call why("Les mêmes échelles, dans l'ordre où elles ont servi") %}
   <p>
     Les mêmes échelles dans l'ordre où elles ont servi. La colonne

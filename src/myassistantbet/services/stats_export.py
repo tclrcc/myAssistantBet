@@ -153,6 +153,11 @@ class StatsReport:
     #: qu'il faudra lire le jour ou les taux entreront dans le prompt. Un
     #: instrument, jamais une mesure : aucun verdict n'en sort.
     scale_shift: list[history_service.ScaleShift] = field(default_factory=list)
+    #: Ou en est le recul, et ce qui bloque la transmission des taux au prompt.
+    #: **Il vit a cote de la serie**, seul endroit ou il decide de quelque chose :
+    #: c'est le jour de la bascule que la serie devra montrer, et un lecteur qui
+    #: ne sait pas a quelle distance on en est ne peut pas la lire.
+    feedback: history_service.Feedback = field(default_factory=history_service.Feedback)
     stats: history_service.Stats = field(default_factory=history_service.Stats)
     coupon_rates: list[history_service.RateRow] = field(default_factory=list)
     set_scores: set_scores_service.Report = field(default_factory=set_scores_service.Report)
@@ -230,6 +235,7 @@ class StatsReport:
             "equivalence_margin": self.equivalence_margin,
             "labelling": self.labelling,
             "scale_shift": self.scale_shift,
+            "feedback": self.feedback,
             "stats": self.stats,
             "coupon_rates": self.coupon_rates,
             "set_scores": self.set_scores,
@@ -582,6 +588,7 @@ def report(settings: Settings | None = None) -> StatsReport:
         analysis=principale,
         labelling=history_service.labelling(settings),
         scale_shift=history_service.scale_shift(settings),
+        feedback=history_service.feedback(settings),
         stats=history_service.stats(settings),
         coupon_rates=coupons_service.rates(settings),
         set_scores=sets,
@@ -1042,6 +1049,15 @@ def as_json(found: StatsReport) -> dict[str, Any]:
         },
         "labelling": [_mix(block) for block in found.labelling],
         "scale_shift": [_shift(block) for block in found.scale_shift],
+        "feedback_gate": {
+            "settled": found.feedback.settled,
+            "minimum": found.feedback.minimum,
+            "days": found.feedback.days,
+            "minimum_days": found.feedback.minimum_days,
+            "suspended": found.feedback.suspended,
+            "enough": found.feedback.enough,
+            "line": found.feedback.missing_line,
+        },
         "bets": {
             "overall": _rate(found.stats.overall),
             "by_tier": [_rate(row) for row in found.stats.by_tier],
@@ -1713,6 +1729,8 @@ def as_markdown(found: StatsReport) -> str:
                 "",
                 "**Un instrument, jamais une mesure** : aucun verdict n'en sort, et une "
                 "session est un petit échantillon.",
+                "",
+                f"Recul actuel : {found.feedback.reach_line}. {found.feedback.missing_line}",
             ]
             for block in series:
                 entetes = " | ".join(block.level_labels[key] for key in block.levels)

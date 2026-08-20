@@ -3407,3 +3407,56 @@ def _session_notee(settings: Settings, jour: str, crans: dict[int, int]) -> int:
                 settings=settings,
             )
     return session_id
+
+
+# -- Ce que le compte a rebours promet ---------------------------------------
+
+
+def test_le_recul_atteint_sous_suspension_ne_rend_pas_une_phrase_cassee() -> None:
+    """**Le defaut ne pouvait paraitre qu'au jour qu'on attend.** `missing_line`
+    composait la liste de ce qui manque puis la joignait ; recul atteint sous
+    suspension, la liste est vide et la page rendait :
+
+        « Il manque . Les taux ne sont pas transmis au prompt. »
+
+    Sixieme forme du defaut caracteristique du projet, et la premiere sur une
+    **syntaxe** — jusque-la c'etait toujours une valeur.
+    """
+    recul = history.Feedback(settled=80, days=12, minimum=40, minimum_days=10, suspended=True)
+
+    ligne = recul.missing_line
+
+    assert "Il manque ." not in ligne
+    assert "Le recul est atteint" in ligne
+    assert "modifier le code" in ligne
+
+
+def test_le_compte_a_rebours_nomme_la_suspension() -> None:
+    """**Un compte a rebours vers un evenement qui ne peut pas se produire.**
+    Sous suspension, franchir les deux seuils ne transmet rien : `enough` exige
+    `not suspended`, et la constante ne se retourne que par une modification de
+    source. Promettre la transmission « au franchissement » serait faux."""
+    recul = history.Feedback(settled=60, days=4, minimum=40, minimum_days=10, suspended=True)
+
+    ligne = recul.missing_line
+
+    assert "Il manque 6 journée(s) d'analyse" in ligne
+    assert "retenue volontairement" in ligne
+
+
+def test_sans_suspension_la_ligne_ne_parle_que_des_seuils() -> None:
+    """Ce qui n'a pas de donnee est omis, jamais rendu vide : mentionner une
+    suspension levee ferait chercher un blocage absent."""
+    recul = history.Feedback(settled=20, days=4, minimum=40, minimum_days=10, suspended=False)
+
+    ligne = recul.missing_line
+
+    assert "20 sélection(s) tranchée(s) et 6 journée(s) d'analyse" in ligne
+    assert "retenue volontairement" not in ligne
+
+
+def test_les_taux_transmis_le_disent_sans_reserve() -> None:
+    recul = history.Feedback(settled=80, days=12, minimum=40, minimum_days=10, suspended=False)
+
+    assert recul.enough
+    assert recul.missing_line == "Les taux sont transmis au prompt."

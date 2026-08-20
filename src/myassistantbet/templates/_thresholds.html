@@ -42,6 +42,15 @@
           <br>
           {% endif %}
           {{ threshold.note }}
+          {# **Le seul réglage dont l'effet est différé se lit à côté de son
+             champ.** Le recul était affiché sous les bandes de confiance, à un
+             écran de là : régler un seuil sans savoir où en est le compte,
+             c'est le régler à l'aveugle. Le nombre vient du même relevé que le
+             bandeau des bandes, lu une fois par `_settings_context`. #}
+          {% if threshold.key in ('feedback_min_total', 'feedback_min_days') %}
+          <br><strong>Où on en est : {{ feedback.reach_line }}.</strong>
+          {{ feedback.missing_line }}
+          {% endif %}
           <br>Entre {{ threshold.low }} et {{ threshold.high }}, défaut {{ threshold.default }}.
         </td>
       </tr>

@@ -5658,7 +5658,21 @@ class Feedback:
 
     @property
     def missing_line(self) -> str:
-        """Ce qu'il reste a franchir, ou l'annonce que les taux passent."""
+        """Ce qu'il reste a franchir, ou ce qui bloque quand plus rien ne manque.
+
+        **Le recul franchi ne suffit pas, et la phrase le disait mal.** Elle
+        composait la liste de ce qui manque puis la joignait ; recul atteint sous
+        suspension, la liste est **vide** et elle rendait « Il manque . Les taux
+        ne sont pas transmis au prompt. » Une phrase cassee, et qui ne pouvait
+        paraitre qu'au moment precis ou les deux seuils tombent — c'est-a-dire
+        exactement le jour qu'on attend.
+
+        Le compte a rebours doit donc dire **laquelle des deux conditions
+        bloque**. Annoncer « il manque N journees » sans nommer la suspension
+        serait un compte a rebours vers un evenement qui ne peut pas se produire :
+        `FEEDBACK_SUSPENDED` est une constante, et la retourner demande de
+        modifier le code.
+        """
         if self.enough:
             return "Les taux sont transmis au prompt."
         manque = []
@@ -5666,7 +5680,27 @@ class Feedback:
             manque.append(f"{self.minimum - self.settled} sélection(s) tranchée(s)")
         if self.days < self.minimum_days:
             manque.append(f"{self.minimum_days - self.days} journée(s) d'analyse")
-        return f"Il manque {' et '.join(manque)}. Les taux ne sont pas transmis au prompt."
+        if not manque:
+            # Le recul est atteint : il ne manque plus rien, et rien ne part
+            # quand meme. C'est le seul etat ou la cause est **entierement** une
+            # decision, et il faut le dire comme tel.
+            return (
+                "Le recul est atteint. Les taux ne partent pas pour autant : leur "
+                "transmission est retenue volontairement, et la rouvrir demande de "
+                "modifier le code, pas un réglage."
+            )
+        reste = f"Il manque {' et '.join(manque)}."
+        if self.suspended:
+            # **Et ce n'est pas une note de bas de page.** Sans elle, la ligne
+            # promet une transmission au franchissement du seuil, ce qui est
+            # faux depuis que la suspension existe : elle ferait attendre un
+            # evenement qui n'arrivera pas.
+            return (
+                f"{reste} Les taux ne sont pas transmis au prompt — et ils ne le "
+                "seront pas au franchissement : leur transmission est en plus "
+                "retenue volontairement."
+            )
+        return f"{reste} Les taux ne sont pas transmis au prompt."
 
     @property
     def any_band(self) -> bool:

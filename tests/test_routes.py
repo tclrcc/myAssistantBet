@@ -583,3 +583,38 @@ def test_le_choix_n_est_propose_qu_au_tennis(
 
     assert "Rencontre disputée ?" not in client.get(f"/events/{foot}").text
     assert "Rencontre disputée ?" in client.get(f"/events/{tennis}").text
+
+
+def test_l_ecran_des_seuils_dit_ou_en_est_le_recul(client: TestClient, migrated: Settings) -> None:
+    """**Le seul reglage dont l'effet est differe se lit a cote de son champ.**
+
+    Le recul etait affiche sous les bandes de confiance, a un ecran de la : regler
+    « journees d'analyse distinctes avant transmission » sans savoir ou en est le
+    compte, c'est le regler a l'aveugle.
+    """
+    page = " ".join(client.get("/settings").text.split())
+    seuils = page.split('id="thresholds"')[1]
+
+    assert "Où on en est :" in seuils
+    assert "journée(s) distincte(s)" in seuils
+
+
+def test_la_page_de_stats_annonce_le_compte_restant(client: TestClient, migrated: Settings) -> None:
+    """**§3c.** Le jour de la bascule est celui que la serie « session par
+    session » devra montrer : un lecteur qui ignore a quelle distance on en est
+    ne peut pas la lire. La phrase dit laquelle des deux conditions bloque —
+    annoncer « il manque N journees » sans nommer la suspension serait un compte
+    a rebours vers un evenement qui ne peut pas se produire.
+
+    Le lot porte de vraies selections : la ligne vit dans le bloc « Comment tu
+    etiquettes », qui ne se rend pas sur une base sans selection — et c'est
+    juste, un compte a rebours n'a rien a dire tant que rien n'a ete note.
+    """
+    from .helpers import lot_avec_recul
+
+    lot_avec_recul(migrated)
+
+    page = " ".join(client.get("/stats").text.split())
+
+    assert "Recul actuel :" in page
+    assert "Session par session" in page

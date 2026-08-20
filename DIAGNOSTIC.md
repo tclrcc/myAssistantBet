@@ -9161,3 +9161,37 @@ est posé maintenant : le jour où la suspension tombera, il y aura un avant.
 
 Aucun seuil, aucun test statistique, aucun verdict. `labelling()` garde les
 garde-fous qu'il a ; celui-ci n'en a aucun parce qu'il n'affirme rien.
+
+### §3c livré, et le défaut latent corrigé au passage
+
+Trois surfaces, une seule phrase (`Feedback.missing_line`), quatre états :
+
+| État | Ce que la ligne dit |
+| --- | --- |
+| recul incomplet, suspension levée | « Il manque 20 sélection(s) et 6 journée(s). Les taux ne sont pas transmis. » |
+| recul incomplet, **suspension posée** — l'état actuel | « … — et ils ne le seront pas au franchissement : leur transmission est en plus retenue volontairement. » |
+| **recul atteint, suspension posée** | « Le recul est atteint. Les taux ne partent pas pour autant : … la rouvrir demande de modifier le code, pas un réglage. » |
+| recul atteint, suspension levée | « Les taux sont transmis au prompt. » |
+
+Le troisième état est celui qui rendait `Il manque . Les taux ne sont pas
+transmis au prompt.` — et **c'est exactement celui que six journées d'analyse
+produiront**. Il n'existait aucun test dessus.
+
+Le deuxième est celui qui promettait une transmission au franchissement du seuil,
+ce qui est faux depuis que la suspension existe.
+
+Où la ligne est rendue :
+
+- **écran des réglages, à côté de ses deux seuils** (`feedback_min_total`,
+  `feedback_min_days`). Elle vivait sous les bandes de confiance, à un écran de
+  là : régler « journées d'analyse distinctes avant transmission » sans savoir où
+  en est le compte, c'est le régler à l'aveugle ;
+- **page Statistiques**, dans le bloc « Comment tu étiquettes », juste au-dessus
+  de la série session par session. C'est le jour de la bascule que cette série
+  devra montrer, et un lecteur qui ignore la distance ne peut pas la lire. Le
+  bloc ne se rend pas sur une base sans sélection — et c'est juste, un compte à
+  rebours n'a rien à dire tant que rien n'a été noté ;
+- **export**, sous la même série, plus `feedback_gate` en JSON.
+
+Coût en tokens de prompt : **zéro**. Aucune de ces trois surfaces n'entre dans un
+prompt.
