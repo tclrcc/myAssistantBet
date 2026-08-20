@@ -8501,3 +8501,145 @@ Effet de bord sur les bancs : les fixtures nommaient le tournoi « Tournoi », u
 libellé de fantaisie qui fait désormais taire la ligne. Elles portent le nom
 déclaré par la migration 069 pour leur compétition — quinze tests l'ont appris en
 cassant, ce qui est le comportement voulu.
+
+---
+
+# LOT 19 — les réglages, et le régime qui n'arrivera pas tout seul
+
+Brief du 21/08/2026. Toutes les mesures portent sur une copie de la base servie
+(`VACUUM INTO ~/lot19/copie.db`, 21/08 00:10), jamais sur `data/myassistantbet.db`.
+
+## §1 — Les consignes permanentes : la porte dérobée, et l'état réel du champ
+
+### Le mécanisme est réel, et il est déjà branché
+
+`prompt.PREFERENCE_NOTES` (`session_notes`) est recopié en tête de chaque prompt,
+sous `## CONSIGNES PERMANENTES`, avec cette phrase :
+
+> Elles priment sur tes habitudes et sur les préférences générales de ce prompt.
+> Elles ne priment **jamais** sur les interdits ci-dessus, ni sur les cotes des blocs.
+
+Rien n'y interdit une règle tirée de `/stats`. Et le gabarit retient les taux
+par palier et par confiance dans sa branche `feedback.suspended`, en disant
+pourquoi — « les sélections que tu produis ensuite cessent d'être indépendantes
+de ce qui les mesure, et une catégorie annoncée faible cesse d'être produite —
+donc cesse d'être mesurable ». Une consigne permanente contourne ce dispositif
+sans le violer : le texte du gabarit n'est pas touché, c'est le lecteur qui est
+contaminé un cran en amont. **Même forme que la règle du lot 17 sur
+`odds_history`** — « la contamination passe par le lecteur, pas par le texte ».
+
+### Ce que la mesure contredit dans le brief : le champ n'est pas vide
+
+> « Le champ est aujourd'hui vide, avec un exemple en filigrane. »
+
+**Faux.** `preferences.session_notes` porte **1 103 caractères**, enregistrés le
+**20/08/2026 à 22:06:52 UTC** — soit sept minutes après le dernier prompt de la
+session 18. Le contenu est celui que le §1b propose, à trois différences près,
+toutes de l'utilisateur :
+
+| Le brief propose | Ce qui est en base |
+| --- | --- |
+| « Sur toute sélection portant « (ref.) » … » | + « C'est le cas de la quasi-totalité de mes sélections hors 1N2. » |
+| « … si l'angle survit à un report de deux heures. » | + « Ce n'est pas une hypothèse : deux blocs d'une session réelle étaient faux de deux à trois heures. » |
+| §1c : « L'utilisateur ajoutera **probablement** une ligne de marchés qu'il ne joue jamais » | déjà là : « Je ne joue jamais : cartons, corners » |
+
+**Aucun prompt archivé ne les porte** : 0 sur 170. Le dernier prompt (170) date
+du 20/08 à 21:59, la saisie de 22:06. Le premier prompt qui les portera est
+celui de la prochaine session — et c'est aussi le premier qui pourra être relu
+pour vérifier qu'elles ne rendent aucune section insatisfiable.
+
+Conséquence pour le §1b : **il n'y a rien à appliquer**, et il ne fallait de
+toute façon pas l'appliquer. La formulation reste écrite ci-dessous, telle que
+proposée, pour que la décision soit datée.
+
+### §1a — La formulation de l'avertissement
+
+Rendue sous le champ, sur la page Réglages. **Coût en tokens de prompt : zéro** —
+c'est une surface de réglage, elle n'entre dans aucun prompt.
+
+> **Aucune règle tirée de la page Statistiques.** Ni un marché, ni un palier, ni
+> un cran, ni un type d'angle écarté sur la foi d'un taux. Le prompt retient
+> délibérément ces taux, et il dit pourquoi ; une consigne les y ferait entrer
+> par la porte de service.
+>
+> Ce qui se passe alors est sans retour : une catégorie qu'on cesse de produire
+> cesse d'être mesurable, et plus rien ne dira jamais si le chiffre qui l'a fait
+> écarter décrivait quelque chose ou tirait sur cinquante sélections.
+>
+> Ce qui a sa place ici contraint le **placement et la forme** — où tu poses, ce
+> qu'une colonne doit nommer, ce que tu ne joues jamais par principe. Aucune de
+> ces consignes ne dépend d'un résultat, et c'est le test à leur appliquer.
+>
+> Rien ne le vérifie : l'application ne peut pas lire l'intention derrière une
+> phrase, et un contrôle automatique refuserait des consignes légitimes.
+
+Trois choix, à connaître :
+
+- **le test est donné, pas seulement l'interdit** — « aucune de ces consignes ne
+  dépend d'un résultat » se vérifie sur une phrase qu'on vient d'écrire, quand
+  « ne tire rien de la page Statistiques » demande de se souvenir d'où vient une
+  idée. Les cinq consignes en base passent le test, la sixième (« cartons,
+  corners ») aussi : c'est un principe, pas un taux ;
+- **l'irréversibilité est nommée**, parce que c'est elle qui distingue cette
+  contamination d'une simple erreur d'analyse. Une mauvaise sélection se solde ;
+  une catégorie qui cesse d'être produite ne laisse pas de trace ;
+- **l'aveu qu'aucun contrôle ne garde la règle** est dans l'avertissement. Un
+  garde-fou qu'on croit automatique et qui ne l'est pas est pire que pas de
+  garde-fou : c'est le défaut que ce dépôt a payé sur `mise_unite_bp` avant que
+  l'échéance soit rendue en clair.
+
+### §1b — La valeur de départ, telle que proposée, non appliquée
+
+Elle est **déjà en base**, saisie par l'utilisateur le 20/08 (voir plus haut).
+Le texte proposé par le brief est recopié ici pour que la proposition soit datée
+et que l'écart avec ce qui est servi se lise :
+
+```
+Betclic est le seul bookmaker où je pose. Une sélection que je ne peux pas y
+placer ne me sert à rien : si tu doutes qu'un marché y existe, dis-le en
+section F plutôt que de le sélectionner.
+
+Sur toute sélection portant « (ref.) », écris sous le tableau C le libellé
+exact à chercher chez Betclic — nom du marché et ligne — pour que je la
+retrouve sans reconstituer ton raisonnement.
+
+La colonne « Ce qui la tue » doit nommer une chose vérifiable AVANT le coup
+d'envoi, pas une explication d'après-match. Si le facteur n'est vérifiable
+qu'après, dis-le explicitement.
+
+Je pose depuis mon téléphone, souvent moins d'une heure avant le coup d'envoi.
+Une sélection qui demande trois vérifications préalables n'est pas posable.
+
+Sur un bloc tennis dont l'heure estimée dépasse 01h00, écris en une ligne si
+l'angle survit à un report de deux heures.
+```
+
+**La propriété commune, et c'est elle le livrable** : aucune des cinq ne dépend
+d'un résultat. Elles contraignent le **placement** (Betclic, le téléphone,
+l'heure), la **forme** (le libellé à chercher, ce que « Ce qui la tue » doit
+nommer) et le **périmètre** (les marchés jamais joués). Aucune ne dit à
+l'analyse quoi conclure, aucune n'écarte une catégorie sur la foi d'un taux.
+C'est exactement le test que l'avertissement du §1a énonce.
+
+Deux réserves qui ne s'annulent pas :
+
+- « si tu doutes qu'un marché y existe, dis-le en section F » **consomme du
+  budget de section F**, plafonnée à trois lignes et qui doit déjà porter les
+  marchés manquants. La consigne est juste et son coût est réel ;
+- la sixième ligne saisie — « Je ne joue jamais : cartons, corners » — rend
+  `corners` et `cartons` inatteignables. Ce sont deux familles rangées dans
+  `autre`, qui portent **0 sélection sur 327** : la consigne ne retire rien qui
+  existait, elle rend explicite un fait déjà constaté.
+
+### §1c — Une consigne qui rend une section impossible
+
+Le gabarit porte déjà la phrase, et elle est juste :
+
+> Si l'une d'elles rend une section impossible à remplir, dis-le en une ligne
+> plutôt que de la contourner.
+
+Elle n'avait **aucun test**. Trois en sont ajoutés (`tests/test_consignes.py`) :
+la phrase est présente ; le bloc entier disparaît quand le champ est vide ; et
+un prompt rendu avec des consignes non vides les porte **telles quelles**, à
+l'endroit prévu, sans échappement ni troncature — ce dernier point étant le
+seul qui échouerait si l'injection cassait, et il n'existait nulle part.

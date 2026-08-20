@@ -9,4 +9,40 @@
               placeholder="Exemple : je ne joue jamais les marchés cartons ni corners.&#10;Pas de combiné sur deux matchs de la même compétition.&#10;En tennis, jamais de pari sur un joueur qui revient de blessure.">{{ preferences }}</textarea>
     <button type="submit" class="primary">Enregistrer les consignes</button>
   </form>
+
+  {# **La porte dérobée du dispositif de mesure.** Le gabarit retient les taux
+     par palier et par confiance, et il dit pourquoi. Une consigne permanente
+     les y ferait entrer sans toucher une ligne du gabarit : la contamination
+     passe par le lecteur, pas par le texte — même forme que la règle qui
+     interdit à l'historique des cotes toute surface avant que le lot soit
+     figé.
+
+     **Un avertissement, jamais un refus.** L'application ne peut pas lire
+     l'intention derrière une phrase, et un contrôle automatique refuserait des
+     consignes légitimes. L'aveu qu'aucun contrôle ne garde la règle fait partie
+     de l'avertissement : un garde-fou qu'on croit automatique et qui ne l'est
+     pas est pire que pas de garde-fou. #}
+  <div class="report report-warn">
+    <p>
+      <strong>Aucune règle tirée de la page Statistiques.</strong> Ni un marché, ni un
+      palier, ni un cran, ni un type d'angle écarté sur la foi d'un taux. Le prompt
+      retient délibérément ces taux, et il dit pourquoi ; une consigne les y ferait
+      entrer par la porte de service.
+    </p>
+    <p>
+      Ce qui se passe alors est sans retour : une catégorie qu'on cesse de produire
+      cesse d'être mesurable, et plus rien ne dira jamais si le chiffre qui l'a fait
+      écarter décrivait quelque chose ou tirait sur cinquante sélections.
+    </p>
+    <p>
+      Ce qui a sa place ici contraint le <strong>placement et la forme</strong> — où tu
+      poses, ce qu'une colonne doit nommer, ce que tu ne joues jamais par principe.
+      Aucune de ces consignes ne dépend d'un résultat, et c'est le test à leur
+      appliquer.
+    </p>
+    <p class="small">
+      Rien ne le vérifie : l'application ne peut pas lire l'intention derrière une
+      phrase, et un contrôle automatique refuserait des consignes légitimes.
+    </p>
+  </div>
 </div>
