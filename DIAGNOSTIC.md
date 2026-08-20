@@ -6795,3 +6795,61 @@ raison : une règle de contribution ne se déclenche pas, un test si.
   Un champ de réglage en ferait une seconde source, qui divergerait de la
   première au premier oubli — le piège déjà payé sur la liste des marchés
   demandés.
+
+---
+
+# DIAGNOSTIC — lot 16 : finir les trois chantiers ouverts
+
+## §0 — L'état servi après redémarrage, et le coût réel de la section G
+
+**Migration 065 appliquée le 20/08/2026 à 19h49**, sur sauvegarde fraîche prise
+juste avant (`myassistantbet-20260820-174946.db`, 279 Mo). Relevé depuis le
+serveur, pas depuis une copie :
+
+| | Avant | Après |
+| --- | ---: | ---: |
+| `schema_version` (`/health`) | 64 | **65** |
+| tables | 38 | **40** |
+| `mises` | absente | **présente** |
+| `bankroll_journee` | absente | **présente** |
+
+Journal du démarrage : `Migration appliquee : 065_journal_des_mises.sql`, une
+seule, sans erreur. `status: ok`, `journal_mode: wal`.
+
+**Les réglages résolvent tous à leur défaut** — aucune ligne dans `preferences` :
+`suivi_coupons` **vrai**, `mise_unite_bp` 25, `mise_plafond_bp` 500,
+`mise_combine_pct` 50. Le rallumage du suivi de l'argent est donc effectif sur
+l'instance servie sans qu'aucune saisie soit nécessaire.
+
+### Le coût de la section G : 592 tokens, et c'est un coût de **cadre**
+
+Mesuré sur trois sessions réelles, en rendant chacune deux fois :
+
+| Session | Blocs | Avec section G | Sans | Écart |
+| ---: | ---: | ---: | ---: | ---: |
+| 18 | 3 | 16 368 | 15 776 | **592** |
+| 17 | 0 | 6 887 | 6 296 | **591** |
+| 16 | 0 | 6 887 | 6 296 | **591** |
+
+**Le chiffre du lot 15 est confirmé, et la mesure ajoute ce qu'il ne disait
+pas : le coût ne dépend pas de la taille du lot.** 591 sur un lot vide, 592 sur
+trois blocs — c'est du cadre, pas du bloc.
+
+`split_cost` le confirme et dit où il se range :
+
+| | Cadre fixe | Par bloc |
+| --- | ---: | ---: |
+| suivi ouvert | **13 453** | 972 |
+| suivi éteint | **12 861** | 972 |
+
+L'écart est **entièrement dans le cadre**, le coût par bloc ne bouge pas d'un
+token. La série du coût du gabarit l'enregistrera donc toute seule au prochain
+prompt réel : `save_prompt` écrit `fixed_tokens` depuis `split_cost`, et rien
+n'est à ajouter. Dernier point de la série avant ce lot — 20/08, 5 prompts,
+cadre 13 312 ; les prompts suivants porteront ~13 900.
+
+**Ce que l'extinction rend** : 592 tokens sur un prompt qui en pèse 16 800 à
+20 800 pour un lot de 6 à 10 blocs, soit **2,8 % à 3,5 %**. C'est peu, et c'est
+la raison pour laquelle la porte se justifie quand même : le cadre commun est ce
+qui se paie à **chaque** prompt d'une session, et une session en génère quatre à
+cinq.
