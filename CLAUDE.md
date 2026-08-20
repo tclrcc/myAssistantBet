@@ -1640,7 +1640,7 @@ projet.
 
 ## Un zero sur un rapprochement de joueurs est un defaut d'appariement
 
-**Regle de revue, du 20/08/2026, et elle a ete apprise trois fois en une
+**Regle de revue, du 20/08/2026, et elle a ete apprise cinq fois en une
 semaine.** Un taux de 0 % sur un rapprochement de noms est **parfaitement
 credible** — la source ne couvre pas ce joueur, l'historique ne remonte pas
 assez loin — et c'est exactement ce qui le rend dangereux : il se rapporte sans
@@ -1651,6 +1651,8 @@ qu'on le verifie, et il ferme un chantier.
 | Fernandez, lot 5 | profil vide chez le fournisseur | un **doublon** portait les 452 matchs |
 | Andreescu, lot 9 | joueuse absente de la source | la source ecrit « Bianca Vanessa Andreescu » |
 | recuperabilite tennis, lot 15 | **0 sur 127**, source inexploitable | `tennis_matches` ecrit « Mensik J. », `events` ecrit « Alex Michelsen » — corrige a **65,8 %** |
+| palmares par edition, lot 16 | **0 edition sur 589 matchs** | le **champ** ne s'appelle pas pareil : `result` chez `matches-played`, `score` chez `event/get`, et les sets s'y separent par des espaces |
+| tournois rattaches, lot 17 | **0 joueur sur 261** avec un passe ici | le nom du joueur est l'**avant-dernier** segment du chemin, pas le dernier |
 
 Le troisieme aurait **ferme le tennis pour de bon** : un « 0 % » sur la
 recuperabilite des resultats se serait lu comme l'absence de toute source, et le
@@ -1674,6 +1676,20 @@ famille devant chez l'autre), initiales, decoupages multiples.
   y avait 99,75 %, parce que la cle de rapprochement omettait la **date**. Deux
   rencontres du meme couple s'ecrasaient. Un taux qui surprend se re-verifie sur
   sa cle avant d'etre ecrit.
+- **Et il vaut au-dela des noms : ce n'est pas une regle d'appariement, c'est une
+  regle de lecture.** Les deux dernieres occurrences ne portent sur aucun nom.
+  Le lot 16 lisait le mauvais **champ** — `score` la ou la source ecrit
+  `result`, avec des espaces au lieu de virgules — et rendait un palmares vide
+  sur 589 matchs. Le lot 17 lisait le mauvais **segment** d'un chemin,
+  `/profile/<nom>/matches-played` : il prenait le dernier, donc
+  « matches-played » pour tout le monde, et rendait 0 joueur sur 261. Les trois
+  causes — nom, champ, indice — produisent le meme zero credible, et il n'existe
+  aucun moyen de les distinguer **du zero lui-meme**.
+- **Ce qui les distingue est le denominateur.** « 0 sur 261 » n'est pas
+  suspect ; « 0 sur 261 alors qu'une seule cle a ete construite » l'est. Compter
+  ce qui **entre** dans le rapprochement, et pas seulement ce qui en sort, est ce
+  qui a fait tomber la derniere occurrence en dix secondes : « 261 profils
+  archives » contre « 1 profil » dans le premier jet.
 
 ## Avant de coder une heuristique sur des libelles, cherchez l'identifiant
 
