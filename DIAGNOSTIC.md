@@ -7270,3 +7270,362 @@ Aucun des trois n'était faux par négligence : ce sont trois diagnostics
 plausibles, chacun tiré d'une mesure réelle du lot précédent. Ce qui les a
 corrigés est d'avoir **re-mesuré la cause** au lieu de partir du correctif — et
 dans deux cas sur trois, le correctif prévu n'aurait rien réparé.
+
+---
+
+# DIAGNOSTIC — lot 17 : le collage complet était refusé par l'application elle-même
+
+## §1a — La cause, reproduite avant d'être cherchée
+
+**Le collage complet ne « provoque pas parfois des erreurs » : il est refusé,
+toujours, depuis le 19/08 à 18h11.** Aucune erreur HTTP, aucune exception,
+aucun rejet — le formulaire d'import ne s'affiche simplement pas, et le message
+qui le remplace envoie recoller la seule section C.
+
+### La trace, avant le code
+
+`imports_raw` porte 35 collages. Passés au lecteur réel :
+
+| id | session | car. | sélections lues | blocs `conf` | `ignored` | **picks écrits** |
+| ---: | ---: | ---: | ---: | ---: | --- | ---: |
+| 14 | 17 | 16 559 | 5 | 5 | **oui** | 2 |
+| 16 | 17 | 17 780 | 5 | 5 | **oui** | 1 |
+| 18 | 17 | 21 559 | 7 | 5 | **oui** | 2 |
+| **20** | 17 | **25 128** | **7** | **7** | **oui** | **0** |
+| **25** | 18 | **26 567** | **6** | **6** | **oui** | **0** |
+| les 30 autres | 15–18 | 567 – 2 119 | 1 – 5 | 0 | non | 1 – 5 |
+
+**Les cinq collages complets sont les seuls dont `preview.ignored` n'est pas
+vide, et ce sont exactement ceux qui portent les blocs de confiance.** Les
+trente collages du seul tableau passent tous.
+
+Le journal de l'instance servie ferme la question du « parfois » :
+
+```
+12:10:04  Collage conserve : import 25, session 18, 26567 caracteres
+12:10:05  POST /history/18/picks/preview  200 OK
+12:10:24  Collage conserve : import 26, session 18, 1490 caracteres
+12:10:24  POST /history/18/picks/preview  200 OK
+12:10:37  POST /history/18/picks/import   200 OK
+```
+
+**Vingt secondes séparent l'aperçu du collage complet du collage du seul
+tableau, et il n'y a aucun `POST /picks/import` entre les deux.** Même forme au
+19/08 à 23:09 pour l'import 20. Les deux rejets d'ingestion attribués à
+l'import 20 datent du 20/08 à 09:18 — ils viennent du rejeu du lot 14, pas d'un
+import.
+
+### La cause exacte
+
+`picks_import.parse_table` servait **un seul nom pour deux notions** :
+
+- `columns` est l'en-tête du tableau **en cours de lecture**, et tout titre de
+  section le remet à zéro — c'est ce qui permet à la section C-bis de porter le
+  sien ;
+- `if columns is None:` en fin de boucle prétend dire « aucun tableau n'a été
+  reconnu », qui est un fait sur **tout le collage**.
+
+Un rendu complet se termine par `F. Ce qui aurait changé mon analyse`. Trace sur
+les cinq collages : `columns` vaut `None` à la fin des cinq, et le dernier
+événement est le titre `F.` dans les cinq cas — 5, 5, 7, 7 et 6 lignes de
+tableau ayant pourtant été lues juste avant.
+
+Le gabarit `picks.html` porte `{% if preview and not preview.ignored %}` : le
+formulaire entier disparaît, avec ses six lignes cochées, ses six blocs `conf`
+et sa ligne `dossiers_ouverts`.
+
+**Le défaut est né du correctif de l'autre moitié de la même fonction.**
+`SECTION_HEAD` a été introduit par `a75da0d`, le 19/08 à 18:11:45, pour que la
+bascule vers C-bis ne se déclenche plus sur une mention en prose. L'import 18 a
+réussi à 17:59 — douze minutes avant. Les imports 20 et 25 sont postérieurs.
+
+### Les six pistes, une par une
+
+| Piste | Verdict |
+| --- | --- |
+| garde du lot 14 (`dossiers_ouverts`) | **écartée, mesurée** : `blocking=False` sur les cinq collages complets, `True` sur les trente partiels, `None` sur la saisie à la main et le rejeu. Elle fait exactement ce pour quoi elle a été écrite |
+| section G | **écartée** : aucun des cinq collages n'en porte — ils vont de A à F. Elle a néanmoins révélé un défaut **latent** : `SECTION_HEAD` s'arrêtait à `[A-F]`, donc un titre `G.` ne fermait aucune section. Corrigé, avec un test qui compare la plage aux titres du gabarit |
+| taille de la charge | **écartée, mesurée** : le formulaire d'import d'un collage de 26 567 caractères pèse **111 champs et ~4,9 ko urlencodés**, contre `client_max_body_size 6m` chez nginx et aucun plafond de champs sur un formulaire urlencodé dans Starlette 0.46. Trois ordres de grandeur de marge |
+| doublons / indépendance | **écartée comme cause** : les deux collages qui échouent arrivent **avant** tout collage partiel de leur session. Elles mordent bien sur un repost, et c'est leur rôle |
+| découpage en sections | **retenue, et c'est la cause** — voir ci-dessus |
+| appariement (`_affiche_of`) | **écartée, mesurée** : 5, 5, 5, 7 et 6 blocs appariés sur les cinq collages, mention `(estimée)` comprise. Le contrat d'en-tête a déjà son test |
+
+## §1b — Le correctif : le refus se prononce sur ce qui a été lu
+
+Deux changements, et le second est le garde-fou.
+
+- **`parse_table` distingue les deux notions.** Un fait global, `entete_vu`, à
+  côté de l'état par section. Le refus ne se prononce que si **aucune sélection
+  n'a été lue**, et il porte alors deux messages distincts : « aucun tableau
+  reconnu » quand aucun en-tête n'a été vu, « tableau reconnu mais aucune ligne
+  retenue » quand il l'a été. Le second nomme la section et le geste.
+- **`_unreadable` devient le seul chemin vers `ignored`, et il ne peut pas
+  fermer un aperçu lisible.** Une remarque posée sur un aperçu qui porte des
+  sélections descend dans `notes`, le second canal ouvert au lot précédent —
+  qui affiche sans empêcher d'importer. C'est la règle du brief tenue par une
+  fonction plutôt que par la vigilance : *un collage complet ne peut plus être
+  plus difficile à importer qu'un collage partiel*.
+
+Mesure après correctif : `ignored` est vide sur les **35** collages, et les
+comptes de sélections et de blocs ne bougent pas d'une unité.
+
+## §1c — Le test, et pourquoi celui qui existait n'a rien vu
+
+**`tests/test_collage_complet.py` existait déjà, tournait sur le collage réel de
+21 559 caractères, comptait chaque objet exactement — et il est resté vert
+pendant toute la panne.**
+
+Il assertait `len(preview.picks)`, `preview.claims_attached`, `len(preview.combos)` :
+tous justes. Il n'assertait ni `preview.ignored`, ni le rendu de la route. **Un
+banc qui mesure le lecteur ne voit pas un défaut dans la porte** — c'est la
+onzième occurrence du motif du projet, et la première où elle frappe le
+garde-fou lui-même.
+
+Trois tests ajoutés, et les trois tombent sur le code d'avant :
+
+- `test_un_rendu_complet_de_a_a_g_s_importe_et_ecrit_chaque_objet` — **par la
+  vraie route** : coller, relire le formulaire rendu, le renvoyer tel quel comme
+  un navigateur, puis compter **en base**. Il exige 5 sélections de section C,
+  2 de C-bis, 7 blocs `conf`, 7 crans calculés, 1 combiné, 3 jambes, 8 scores en
+  sets et 5 mises. Un compte, pas une présence ;
+- `test_un_collage_complet_n_est_jamais_refuse_a_l_apercu` — la porte, et non ce
+  qu'elle laisse passer ;
+- `test_une_remarque_sur_un_apercu_lisible_descend_dans_les_notes` — le
+  garde-fou contre sa propre panne, dans les deux positions.
+
+La fixture est le collage réel prolongé de ce que le gabarit produit aujourd'hui
+et qu'aucun collage archivé ne porte : les deux blocs `conf` du côté
+exploratoire, et **la section G**.
+
+**Trouvé en l'écrivant** : la fixture posait un prompt sans son lot, si bien que
+`combos.record` refusait toutes les jambes — « elles n'ont jamais été comparées
+à celles-ci ». Aucun test d'aperçu ne pouvait le voir, la lecture ne lisant
+jamais `prompt_events`.
+
+## §1d — Le rejeu
+
+Sauvegarde `myassistantbet-20260820-191300.db`, puis `--rattacher --ecrire` sur
+les cinq collages complets.
+
+| | Avant | Après |
+| --- | ---: | ---: |
+| sélections portant leur bloc `conf` | 22 | **26** |
+| accord cran déclaré / recalculé | 20 / 176 — **11,4 %** | 23 / 176 — **13,1 %** |
+| `research_override_cause = ligne_absente` | 111 | **107** |
+| combinés enregistrés | 2 | 3 |
+
+**Quatre sélections récupèrent leur cran**, toutes de l'import 25. Deux blocs de
+plus ont été lus et **non posés** : deux sélections de la session 18 portent le
+même marché et le même libellé (`BTTS Non`), et le rapprochement refuse plutôt
+que de deviner. C'est le comportement voulu.
+
+Les imports 14, 16, 18 et 20 avaient déjà été rattachés au lot 14 ; le rejeu
+d'aujourd'hui ne leur ajoute que le combiné de l'import 18.
+
+**Ce qui se répare ici est l'avenir**, comme le brief le dit : les 82 sélections
+sans texte complet à relire le restent.
+
+## §2 — Le rapprochement des tournois : dimensionné, puis construit
+
+### Le dimensionnement, et il décide de la branche
+
+Relevé sur les **798 réponses `profile/matches-played` archivées**, 84 266
+matchs de simple — aucun appel :
+
+| | Mesuré |
+| --- | ---: |
+| noms de tournoi distincts côté source | **1 179** |
+| dont portant un niveau de tableau principal ATP/WTA | **143** |
+| compétitions de tennis côté projet | **43** |
+| dont déjà analysées | **4** |
+
+**La table se compte par compétition, pas par catalogue.** On ne demande jamais
+« quels tournois ce joueur a-t-il joués » mais « a-t-il joué celui-ci » : 43
+lignes au plus, exactement la forme de `TENNISDATA_TOURNAMENTS`. C'est « une
+trentaine » au sens du brief, donc la branche est de construire.
+
+### Ce qui interdit toute heuristique, et c'est mesuré
+
+Sondage par jetons partagés entre notre libellé et celui de la source, à niveau
+égal : **32 compétitions sur 43 ont un candidat unique, 4 en ont plusieurs, et
+7 n'en ont aucun**. Les sept sans candidat ne partagent **aucun mot** avec leur
+nom de source :
+
+| Notre libellé | Chez `matches-played` |
+| --- | --- |
+| ATP / WTA Canadian Open | `National Bank Open`, `Omnium Banque Nationale`, `Rogers Cup`, `Coupe Rogers` |
+| ATP / WTA Queen's Club | `HSBC Championships`, `cinch Championships`, `Fever-Tree Championships`, `The HSBC Championships`, `LTA London Championships` |
+| ATP / WTA US Open | `U.S. Open - New York` |
+| WTA German Open | `Berlin Tennis Open`, `Berlin Ladies Open`, `bett1open`, `Betti Open` |
+
+Le fournisseur **renomme au sponsor et ne rétro-corrige pas** : Cincinnati vaut
+`Cincinnati Open` depuis 2025 et `Western & Southern Open` avant. D'où une
+**liste** par tournoi, `|`-séparée, jusqu'à cinq noms.
+
+### La ville n'est pas une clé, et le brief le supposait
+
+Le brief propose « un appariement par ville et par dates de tournoi ». Trois
+mesures s'y opposent :
+
+- **`competitions.city` est vide sur les 43 compétitions de tennis** — et sur
+  les 70 de football. La colonne existe depuis la migration 038 et n'a jamais
+  été remplie ;
+- **la ville bouge par calendrier** : le Canadian Open alterne Toronto et
+  Montréal chaque année, sous quatre noms ;
+- **et une fois par pandémie** : l'archive porte
+  `Western & Southern Open - New York`, `Premier 5`, 2020 — l'édition de
+  Cincinnati déplacée. Un contrôle par la ville l'aurait rejetée.
+
+Ce qui **se contrôle**, en revanche, et que le fournisseur sert à 100 % : le
+niveau (`tier`) et la surface (`court.name`). Ils se confrontent à la taxonomie
+et à la surface déjà saisies chez nous — c'est ainsi que les 43 lignes ont été
+vérifiées, et c'est ce qui a tranché `WTA German Open` (WTA 500 sur gazon en
+Allemagne : Berlin, pas Hambourg).
+
+### Aucun identifiant, et cette fois les huit champs ont été regardés
+
+Le lot 16 l'avait établi pour `tournamentId` et `link`. Sur les **385 noms vus
+sur plusieurs années** :
+
+| Champ | Stable d'une année sur l'autre | Valeurs partagées par plusieurs tournois |
+| --- | ---: | ---: |
+| `id` | 0 / 385 | 52 |
+| `link` | 7 / 385 | 55 |
+| `reserveChar` | 262 / 385 | 27 |
+| `site` | 334 / 385 | 77 |
+| `url` | 237 / 385 | 55 |
+| `coord` (lat/lon) | 376 / 385 | **232** |
+
+Aucun n'est à la fois stable et sans collision. Les coordonnées échouent pour
+une raison structurelle : deux tournois d'une même ville ont les mêmes.
+
+### Le mode d'échec, et la vérification en réel
+
+**Sans rattachement, aucune ligne** — jamais « ici jamais joué ». Avec
+rattachement, « jamais joué » redevient un fait, et c'est l'angle de la ligne.
+Chaque nom déclaré qu'un historique ne porte pas est journalisé des deux côtés,
+pour que la table se complète par la mesure.
+
+Rejeu sur les 261 profils archivés : **221 rendent un passé à Cincinnati**, 169
+au Canadian Open, 44 à Queen's. Et les quatre joueuses que le lot 16 refusait de
+faire mentir :
+
+```
+Iga Swiatek      ici vainqueur 2025 (2 éditions)
+Elena Rybakina   ici 1/2 2025 (2 éditions)
+Amanda Anisimova ici 3e tour 2026 (2 éditions)
+Jessica Pegula   ici 3e tour 2026 (2 éditions)
+```
+
+Le journal signale déjà que `Western & Southern Open - Cincinnati` ne sert chez
+personne : c'est attendu, les profils archivés étant tronqués à 100 matchs tant
+que la pagination profonde du lot 16 n'a pas tourné en production. La boucle
+« la table se complète par la mesure » fonctionne dès le premier jour.
+
+**La ligne se pose dans `Palmares`, qui la promettait déjà** : le préambule dit
+« le meilleur résultat atteint **ici** et l'année » depuis toujours, et c'est le
+rendu qui s'en était écarté au lot 16. Aucun nouveau libellé, donc aucune entrée
+de préambule — ce que ce lot s'interdit.
+
+## §3 — Le règlement automatique : de 95 à 151 sélections, sans une divergence
+
+Rejeu sur les **307 sélections tranchées à la main**, une famille à la fois :
+
+| Famille | Réglées | Accord | Taux | En service |
+| --- | ---: | ---: | ---: | --- |
+| `issue` (1N2, Vainqueur) | 79 | 79 | **100,00 %** | oui, déjà |
+| `total` (O/U buts **et jeux**) | 26 | 26 | **100,00 %** | oui, +10 |
+| `handicap_jeux` (tennis) | 34 | 34 | **100,00 %** | **oui** |
+| `btts` | 7 | 7 | **100,00 %** | **oui** |
+| `double_chance` | 5 | 5 | **100,00 %** | **oui** |
+| `handicap_buts` (football) | 14 | 13 | 92,86 % | **non** |
+
+Passe sur l'instance servie après mise en service : **151 propositions, 0
+divergence, 0 nouvelle** — les 151 réglables portaient déjà leur résultat manuel,
+et le calcul retombe sur chacun.
+
+### Le total au tennis ne demandait aucune source
+
+Le module affirmait qu'`event/get` « ne sert pas le compte de jeux dans son
+score agrégé, donc la règle ne s'écrit pas ». **C'est faux** : `4-6,7-6,0-6`
+compte des jeux, pas des sets. Les additionner ouvre d'un coup les deux plus
+gros marchés non réglés du projet — 34 handicaps jeux et 10 totaux de jeux,
+soit 44 des 56 sélections gagnées.
+
+Douzième occurrence du motif : une affirmation de commentaire prise pour une
+mesure, et jamais vérifiée contre la charge utile.
+
+### Le handicap de football sort sur une seule ligne, et c'est la règle
+
+`Vålerenga +1`, perdu 1-2, fait 2-2 après handicap : un remboursement sur un
+marché à deux issues. Le règlement manuel dit `win`. **L'arithmétique n'est pas
+en cause** — ce qui n'est pas établi est le nombre d'issues du marché où le pari
+a été posé, et un `void` mal rangé corrompt le résidu au prix. 92,86 % n'est pas
+100 %.
+
+### Le sport se lit sur la compétition, jamais sur le libellé
+
+Les deux graphies sont pourtant propres — `Hand. jeux` au tennis, `Handicap` au
+football, 45 et 37 lignes sans un mélange. Mais une saisie à la main peut écrire
+l'une pour l'autre, et le seul coût de cette faute serait de **mettre en service
+la famille qu'on refuse**. `enabled_for` prend donc un sport dont le défaut vide
+range le handicap du côté non servi : on ne peut pas ouvrir une famille par
+omission.
+
+## §4 — Dettes de forme
+
+- **Unité de mise** : rien à faire, vérifié. `/settings` affiche le badge
+  `provisoire` et « à re-mesurer le 2026-09-20 » ; `changelog_mesure` porte
+  l'entrée 27, `day = 2026-09-20`, avec sa méthode de re-mesure.
+- **Registre des chemins d'écriture** : ce lot n'ajoute aucun `INSERT` vers
+  `picks`, `combos`, `combo_legs` ou `set_scores`. `tests/test_write_paths.py`
+  lit la source et reste vert (14 tests).
+- **Règle du zéro d'appariement** : étendue, et il le fallait — voir ci-dessous.
+
+### Le zéro d'appariement n'est pas une règle de noms
+
+La règle du lot 16 portait sur les noms de joueurs. Les deux occurrences
+suivantes n'en portent aucun :
+
+| Lot | Le zéro disait | Ce qu'il était |
+| --- | --- | --- |
+| 16 | 0 édition sur 589 matchs | le **champ** : `result` chez `matches-played`, `score` chez `event/get` |
+| 17 | 0 joueur sur 261 | l'**indice** : le nom est l'avant-dernier segment de `/profile/<nom>/matches-played` |
+
+Nom, champ, indice : les trois produisent le même zéro crédible, et rien ne les
+distingue **du zéro lui-même**. Ce qui les distingue est le **dénominateur** —
+compter ce qui *entre* dans le rapprochement et pas seulement ce qui en sort.
+C'est ce qui a fait tomber l'occurrence d'aujourd'hui en dix secondes : « 261
+profils archivés » contre « 1 profil » dans le premier jet.
+
+## §5 — Ce que la mesure contredit dans ce brief
+
+| Affirmé | Mesuré |
+| --- | --- |
+| « coller la réponse entière **provoque parfois** des erreurs » | **jamais « parfois », et jamais une erreur** : les cinq collages complets sont refusés, les trente partiels passent. Le refus est un message d'aperçu, pas un code HTTP — 200 OK des deux côtés |
+| « la conclusion du lot 14 est au moins partiellement fausse » | **confirmé, et pire que ça** : le lot 14 mesurait au bon endroit, mais son remède a été livré le 20/08 alors que la panne datait du 19/08 18:11. Les vingt collages du seul tableau **précèdent** la panne : c'était bien un geste jusqu'au 19/08 au soir, et c'est un contournement depuis |
+| « les 89 sélections en sont la conséquence directe » | **non, et le partage se compte** : la base porte aujourd'hui **107** sélections en `ligne_absente`, dont **77 antérieures au 19/08 18:11** — donc au défaut — et 30 postérieures. Le geste et la panne ont chacun leur part, et elles ne se recouvrent pas |
+| « la section G contient des montants, un lecteur qui ne l'attend pas… » | **écartée** : aucun collage archivé ne porte de section G. Elle a néanmoins révélé un défaut latent — `SECTION_HEAD` ignorait `G.` |
+| « une limite de champ, de requête ou de délai » | **écartée** : 111 champs, ~4,9 ko, contre 6 Mo autorisés |
+| « le banc de transport couvre six formats » | **sept** depuis le lot 15 (`mises:`), et le septième n'était pas le problème : la lacune est qu'aucun format n'est testé **par la route** |
+| « un appariement par ville et par dates de tournoi se contrôle » | **non** : `competitions.city` est vide sur les 113 compétitions, la ville alterne chaque année au Canadian Open et l'archive porte une édition de Cincinnati jouée à New York. Ce qui se contrôle est le **niveau et la surface** |
+| « handicap européen ±1 et handicap 0 » comme étape 3 | l'étape 3 **ne passe pas** (92,86 %) et l'étape 4, réputée la plus difficile à cause des abandons, passe à **100 %** sur 34 lignes. L'ordre de difficulté annoncé est inversé |
+| « 2 352 tests verts » à la fin du lot 16 | **2 351** : un test portait une date de match au 20/08 20h45, donc vert le matin et rouge le soir. Corrigé en premier |
+
+### La leçon de méthode du lot
+
+**Le correctif d'un défaut de lecture en a créé un autre dans la même fonction,
+et le banc écrit pour ce défaut-là est resté vert.**
+
+`a75da0d` répare la bascule vers C-bis, introduit `SECTION_HEAD`, et lui fait
+remettre `columns` à zéro — ce qui est juste. Le test de bout en bout écrit le
+même jour compte les objets lus, et ils sont tous justes. Ce qu'aucun des deux
+ne regarde, c'est si le résultat de cette lecture **peut être importé**.
+
+La règle générale : **un test qui mesure la sortie d'un service ne dit rien de
+la surface qui la rend.** `CONTRIBUTING.md` porte déjà la moitié de cette leçon
+— « le service et sa surface se livrent ensemble » — mais elle y visait un
+service qui accepte une valeur que rien ne permet de saisir. Ici c'est
+l'inverse : un service qui produit une valeur que rien ne permet de valider.
+Les deux se testent de la même façon, et d'une seule : **poster le formulaire et
+relire la base**.
