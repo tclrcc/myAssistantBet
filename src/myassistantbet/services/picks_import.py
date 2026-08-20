@@ -96,7 +96,14 @@ EXPLORATORY_HEAD = re.compile(r"^(?:section )?(?:c bis\b|selections? exploratoir
 #: separateur (`.`, `)`, `:`) est ce qui distingue un titre d'un debut de phrase
 #: francaise, et il est **obligatoire** ici — la ou « C-bis » se passe du sien,
 #: aucun mot francais ne commencant ainsi.
-SECTION_HEAD = re.compile(r"^[\s#*>_-]*(?:[Ss]ection\s+)?[A-F]\s*[.):]\s")
+#:
+#: **La plage suit le gabarit et rien d'autre.** Elle s'arretait a `F` quand la
+#: section G — la repartition de mise — etait deja produite : un titre `G.` ne
+#: fermait donc aucune section, et une section C-bis laissee ouverte aurait lu
+#: la suite sous les regles du mauvais tableau. Un test compare cette plage aux
+#: titres que le gabarit ecrit reellement, pour que l'ajout d'une section H se
+#: solde par un test rouge et non par un silence.
+SECTION_HEAD = re.compile(r"^[\s#*>_-]*(?:[Ss]ection\s+)?[A-G]\s*[.):]\s")
 
 #: En dessous, un collage est presque surement partiel. **Mesure, pas invente** :
 #: les treize collages tronques de la base pesent 567 a 1 314 caracteres, un
@@ -829,7 +836,13 @@ def parse_table(
     designait seule. Le voisinage ne sert qu'a ce qu'elle ne contient pas.
     """
     preview = ImportPreview()
+    #: L'entete du tableau **en cours de lecture**. Il se remet a zero a chaque
+    #: titre de section, parce que le second tableau porte le sien.
     columns: dict[str, int] | None = None
+    #: Un en-tete de tableau de selections a-t-il ete reconnu, **une fois,
+    #: n'importe ou** ? C'est un fait sur tout le collage, et il ne se deduit pas
+    #: de `columns` : voir le refus en fin de boucle.
+    entete_vu = False
     index = 0
     # Les doublons se cherchent contre la session **et** contre le tableau
     # lui-meme : un rendu recopie deux fois se repete a l'interieur.
@@ -874,6 +887,7 @@ def parse_table(
 
         if columns is None:
             columns = _map_columns(cells)
+            entete_vu = entete_vu or columns is not None
             continue
 
         values = {name: _at(cells, columns.get(name)) for name in HEADERS}
@@ -946,11 +960,26 @@ def parse_table(
             if not exploratoire:
                 principaux.add(event_id)
 
-    if columns is None:
-        preview.ignored.append(
-            "Aucun tableau de sélections reconnu : colle la section C, "
-            "en-tête compris (« Match | Marché | Sélection | … »)."
-        )
+    # **Le refus se prononce sur ce qui a ete lu, jamais sur l'etat de la
+    # derniere section.** `columns` est l'entete du tableau **en cours** : tout
+    # titre de section le remet a zero, et un rendu complet finit par `F.` — donc
+    # `columns is None` y est vrai **par construction**, meme quand la section C
+    # a ete lue en entier. Un seul nom pour deux notions, et le collage complet
+    # etait le seul que l'application refusait.
+    if not preview.picks:
+        if entete_vu:
+            _unreadable(
+                preview,
+                "Tableau des sélections reconnu, mais aucune de ses lignes n'a pu être "
+                "retenue. Le détail des refus est ci-dessous — corrige la section C "
+                "et recolle la réponse entière.",
+            )
+        else:
+            _unreadable(
+                preview,
+                "Aucun tableau de sélections reconnu : colle la section C, "
+                "en-tête compris (« Match | Marché | Sélection | … »).",
+            )
     valide = _attach_claims(preview, raw, headers)
     _apply_research(preview, raw, headers or [], valide)
     _attach_combos(preview, raw, valide, headers)
@@ -1023,6 +1052,30 @@ def _attach_scores(
                 "du lot.",
                 payload=f"{parsed.mark} {parsed.match_text} {parsed.predicted}",
             )
+
+
+def _unreadable(preview: ImportPreview, message: str) -> None:
+    """Le **seul** chemin vers `ignored`, et il ne peut pas fermer un apercu lisible.
+
+    `ignored` non vide cache **tout** le formulaire d'import : c'est la porte du
+    gabarit, et elle n'a qu'un sens legitime — il n'y a rien a montrer. Une
+    remarque posee sur un apercu qui porte des selections descend donc dans
+    `notes`, le second canal, plutot que de couter la possibilite d'importer.
+
+    **La regle vient d'une mesure.** Sur les 35 collages archives, les cinq
+    collages complets — 16 559 a 26 567 caracteres, 5 a 7 selections et 5 a 7
+    blocs de confiance chacun — etaient les **seuls** dont le formulaire ne
+    s'affichait pas, et le message leur disait de recoller la seule section C.
+    L'application dictait le geste qui coute les crans du lot entier.
+
+    Le meme partage a deja ete fait un cran plus haut au lot precedent, pour les
+    combines et les blocs illisibles ; il manquait ici, sur le seul appelant qui
+    pouvait se declencher avec des selections deja lues.
+    """
+    if preview.picks:
+        preview.notes.append(message)
+        return
+    preview.ignored.append(message)
 
 
 def _lost(preview: ImportPreview, kind: str, reason: str, detail: str, payload: str = "") -> None:

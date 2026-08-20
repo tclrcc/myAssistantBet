@@ -23,12 +23,17 @@ diagnostic est alors de vérifier que le nouveau compte est celui qu'on voulait.
 
 from __future__ import annotations
 
+import html
+import re
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from starlette.testclient import TestClient
 
 from myassistantbet import db
 from myassistantbet.config import Settings
+from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services import picks_import
 from myassistantbet.services.manual import build, save
@@ -117,6 +122,27 @@ def lot(migrated: Settings) -> int:
         (session_id, ENTETES, db.utcnow()),
         settings=migrated,
     )
+    # **Le lot du prompt, et pas seulement son corps.** `combos.record` refuse
+    # une jambe absente de `prompt_events` — « elles n'ont jamais été comparées
+    # à celles-ci » — donc une fixture qui pose le prompt sans son lot fait
+    # tomber tous les combinés pour une raison qui n'existe pas en production.
+    # Trouvé en écrivant le test de bout en bout : la lecture, elle, ne lit
+    # jamais cette table, si bien qu'aucun test d'aperçu ne pouvait le voir.
+    prompt_id = db.query(
+        "SELECT id FROM prompts WHERE session_id = ? ORDER BY id DESC LIMIT 1",
+        (session_id,),
+        settings=migrated,
+    )[0]["id"]
+    for row in db.query(
+        "SELECT event_id FROM session_events WHERE session_id = ?",
+        (session_id,),
+        settings=migrated,
+    ):
+        db.execute(
+            "INSERT OR IGNORE INTO prompt_events (prompt_id, event_id) VALUES (?, ?)",
+            (prompt_id, row["event_id"]),
+            settings=migrated,
+        )
     return session_id
 
 
@@ -290,3 +316,214 @@ def test_la_marque_d_estimation_ne_deplace_pas_l_affiche() -> None:
     nu = "TENNIS · ATP Cincinnati Open · Fritz – O'Connell · 20/08 01:00"
 
     assert _affiche_of(f"{nu} {ESTIMATED_MARK}") == _affiche_of(nu) == "Fritz – O'Connell"
+
+
+# -- Le rendu entier, par la vraie route -------------------------------------
+#
+# **Ce fichier mesurait le lecteur, jamais l'importabilite, et c'est par la
+# qu'un second defaut est passe.** Les tests ci-dessus comptent ce que
+# `build_preview` produit ; ils sont restes verts pendant que les cinq collages
+# complets de la base — les seuls a porter leurs blocs `conf` — ne pouvaient
+# **pas** etre importes du tout. Le gabarit cache tout le formulaire des que
+# `preview.ignored` n'est pas vide, et `parse_table` l'y remplissait sur tout
+# rendu complet : `columns` est l'entete du tableau *en cours*, remis a zero par
+# chaque titre de section, et un rendu complet finit par `F.`.
+#
+# La lecon tient en une phrase : **un banc qui mesure le lecteur ne voit pas un
+# defaut dans la porte.** D'ou ce qui suit — le vrai chemin, de bout en bout,
+# et un compte par objet ecrit **en base**.
+
+#: Le collage archive, prolonge de ce que le gabarit produit aujourd'hui et que
+#: le texte recu ne portait pas encore : les deux blocs `conf` du cote
+#: exploratoire, et la **section G** — la repartition de mise, servie depuis le
+#: lot precedent et qu'aucun collage de la base ne porte. Le prolongement est
+#: nomme ici plutot que fondu dans la fixture d'origine : celle-ci est un texte
+#: reellement recu, et la completer lui retirerait ce qui fait sa valeur.
+COLLAGE_G = (Path(__file__).parent / "fixtures" / "collage_complet_g.md").read_text(
+    encoding="utf-8"
+)
+
+#: Ce que ce rendu doit **ecrire**, objet par objet. Chaque nombre se lit sur le
+#: texte : cinq lignes de section C et deux de C-bis, sept blocs `conf` (cinq
+#: d'origine, deux exploratoires), un combine de trois jambes, neuf reperes de
+#: scores dont `M2=PASSE` qui n'en est pas un, neuf dossiers ouverts, et cinq
+#: mises pour les cinq lignes de section C.
+ECRIT = {
+    "section_c": 5,
+    "c_bis": 2,
+    "blocs_conf": 7,
+    "crans_calcules": 7,
+    "combines": 1,
+    "jambes": 3,
+    "sets": 8,
+    "mises": 5,
+}
+
+_IMPORT_FORM = re.compile(
+    r'<form method="post" action="/history/\d+/picks/import">(.*?)</form>', re.S
+)
+
+
+def _repost(page: str) -> dict[str, object]:
+    """Le formulaire d'apercu, renvoye comme un navigateur le ferait.
+
+    **Rien n'est fabrique ici** : les champs sont ceux que le gabarit a rendus,
+    avec leurs valeurs et leurs cases deja cochees. Un test qui construirait le
+    corps a la main testerait sa propre idee du formulaire, et c'est exactement
+    ce qui a permis a la porte de se fermer sans que rien ne tombe.
+    """
+    corps = _IMPORT_FORM.search(page)
+    assert corps is not None, (
+        "aucun formulaire d'import dans l'aperçu — un collage complet doit être "
+        "importable, et il ne l'est plus"
+    )
+    corps = corps.group(1)
+    champs: list[tuple[str, str]] = []
+    for balise in re.finditer(r"<input\b([^>]*)>", corps):
+        attributs = balise.group(1)
+        nom = re.search(r'name="([^"]*)"', attributs)
+        if nom is None:
+            continue
+        genre = (re.search(r'type="([^"]*)"', attributs) or [None, "text"])[1]
+        if genre == "checkbox" and "checked" not in attributs:
+            continue
+        valeur = re.search(r"value=(?:\"([^\"]*)\"|'([^']*)')", attributs)
+        brut = ""
+        if valeur is not None:
+            brut = valeur.group(1) if valeur.group(1) is not None else (valeur.group(2) or "")
+        champs.append((html.unescape(nom.group(1)), html.unescape(brut)))
+    for menu in re.finditer(r'<select\s+name="([^"]*)"[^>]*>(.*?)</select>', corps, re.S):
+        options = menu.group(2)
+        choisie = re.search(r'<option value="([^"]*)"[^>]*\bselected\b', options) or re.search(
+            r'<option value="([^"]*)"', options
+        )
+        champs.append((html.unescape(menu.group(1)), html.unescape(choisie.group(1))))
+    envoi: dict[str, object] = {}
+    for nom, valeur in champs:
+        if nom in envoi:
+            deja = envoi[nom]
+            envoi[nom] = (deja if isinstance(deja, list) else [deja]) + [valeur]
+        else:
+            envoi[nom] = valeur
+    return envoi
+
+
+@pytest.fixture
+def client(migrated: Settings) -> Iterator[TestClient]:
+    with TestClient(app) as test_client:
+        yield test_client
+
+
+def test_un_rendu_complet_de_a_a_g_s_importe_et_ecrit_chaque_objet(
+    client: TestClient, lot: int, migrated: Settings
+) -> None:
+    """**Le collage complet doit être plus facile à importer que le partiel.**
+
+    Il ne l'était pas : sur les 35 collages archivés, les cinq complets — 16 559
+    à 26 567 caractères, 5 à 7 sélections et autant de blocs `conf` chacun —
+    étaient les **seuls** dont le formulaire ne s'affichait pas, et le message
+    envoyait recoller la seule section C. L'application dictait le geste qui
+    coûte les crans du lot entier.
+
+    Ce test refait le parcours d'un navigateur : coller, relire le formulaire
+    rendu, le renvoyer tel quel. Il compte ensuite **en base**, objet par objet.
+    """
+    apercu = client.post(f"/history/{lot}/picks/preview", data={"table": COLLAGE_G})
+    assert apercu.status_code == 200
+
+    envoi = _repost(apercu.text)
+    assert sum(1 for nom in envoi if nom.startswith("keep_")) == 7, (
+        "les sept lignes du rendu arrivent cochées : une ligne décochée d'office "
+        "coûterait sa sélection sans qu'aucun rejet ne le dise"
+    )
+
+    valide = client.post(f"/history/{lot}/picks/import", data=envoi)
+    assert valide.status_code == 200
+
+    def compte(sql: str) -> int:
+        return int(db.query(sql, settings=migrated)[0]["n"])
+
+    obtenu = {
+        "section_c": compte("SELECT count(*) n FROM picks WHERE exploratoire = 0"),
+        "c_bis": compte("SELECT count(*) n FROM picks WHERE exploratoire = 1"),
+        "blocs_conf": compte("SELECT count(*) n FROM picks WHERE claim_raw_json IS NOT NULL"),
+        "crans_calcules": compte(
+            "SELECT count(*) n FROM picks WHERE confidence_computed IS NOT NULL"
+        ),
+        "combines": compte("SELECT count(*) n FROM combos"),
+        "jambes": compte("SELECT count(*) n FROM combo_legs"),
+        "sets": compte("SELECT count(*) n FROM set_scores"),
+        "mises": compte("SELECT count(*) n FROM mises"),
+    }
+
+    assert obtenu == ECRIT, (
+        "un objet du rendu complet n'arrive plus en base — vérifie que le "
+        "nouveau compte est celui qu'on voulait avant de mettre ce test à jour"
+    )
+
+
+def test_un_collage_complet_n_est_jamais_refuse_a_l_apercu(lot: int, migrated: Settings) -> None:
+    """**La porte, et non ce qu'elle laisse passer.**
+
+    `ignored` non vide cache tout le formulaire : c'est le seul champ de
+    l'aperçu qui ait ce pouvoir, et il n'a qu'un sens légitime — il n'y a rien
+    à montrer. Un aperçu qui porte des sélections n'est donc jamais refusé, quoi
+    qu'il ait par ailleurs à dire.
+    """
+    preview = picks_import.build_preview(lot, COLLAGE_G, migrated)
+
+    assert preview.picks, "le rendu porte bien des sélections"
+    assert preview.ignored == [], (
+        "un aperçu qui porte des sélections ne se refuse pas : la remarque "
+        "descend dans `notes`, qui n'empêche pas d'importer"
+    )
+
+
+def test_une_remarque_sur_un_apercu_lisible_descend_dans_les_notes() -> None:
+    """Le garde-fou testé **contre sa propre panne**, dans les deux positions.
+
+    Sans sélection, le message est un refus et doit le rester : c'est le cas
+    pour lequel il a été écrit — un collage qui n'est pas un tableau.
+    """
+    vide = picks_import.ImportPreview()
+    picks_import._unreadable(vide, "rien à lire")
+    assert vide.ignored == ["rien à lire"] and vide.notes == []
+
+    lisible = picks_import.ImportPreview(picks=[picks_import.ParsedPick(index=1)])
+    picks_import._unreadable(lisible, "une remarque")
+    assert lisible.ignored == [] and lisible.notes == ["une remarque"]
+
+
+def test_la_plage_des_titres_de_section_couvre_celles_du_gabarit() -> None:
+    """**Le lecteur de sections suit le gabarit, et rien ne le garantissait.**
+
+    `SECTION_HEAD` s'arrêtait à `F` quand la section G était déjà produite : un
+    titre `G.` ne fermait donc aucune section, et une section C-bis laissée
+    ouverte aurait lu la suite sous les règles du mauvais tableau. Ce test lit
+    les titres que le gabarit écrit vraiment et les passe au motif — une section
+    H ajoutée demain sans toucher au lecteur se solde par un test rouge.
+    """
+    gabarit = (
+        Path(__file__).resolve().parents[1]
+        / "src"
+        / "myassistantbet"
+        / "templates"
+        / "prompts"
+        / "session_default.md.j2"
+    ).read_text(encoding="utf-8")
+
+    # Deux des titres sont derriere une porte Jinja — C-bis et G ne sont pas
+    # produites sur tous les lots — donc le motif les accepte en tete de ligne.
+    titres = re.findall(r"^(?:\{%.*?%\})?#{2,4} ([A-Z](?:-bis)?)\. .+$", gabarit, re.MULTILINE)
+    assert titres == ["A", "B", "C", "C-bis", "D", "E", "F", "G"], (
+        "le gabarit a changé de sections : le lecteur les découpe sur une plage "
+        "de lettres, et une section ajoutée sans lui ne fermerait rien"
+    )
+
+    for lettre in titres:
+        if lettre.endswith("-bis"):
+            continue
+        assert picks_import.SECTION_HEAD.match(f"{lettre}. Titre"), (
+            f"le gabarit écrit une section « {lettre}. » que le lecteur ne "
+            "reconnaît pas comme un titre : elle ne fermerait aucune section"
+        )
