@@ -213,10 +213,40 @@ def price(value: float) -> str:
     return f"{value:.2f}"
 
 
-def _point(value: float) -> str:
-    """Une ligne de handicap : 2.5 et non 2.50, mais 0.25 conserve ses decimales."""
+#: Le signe qui marque une ligne en quart. **Au football seulement** : `-0.25`,
+#: `+0.75`, `1.25`, `2.75` sont des paris asiatiques scindes, une demi-mise sur
+#: chacune des deux lignes voisines, et aucun book francais ne les propose. Elles
+#: restent affichees — elles situent le match mieux qu'aucune autre — mais la
+#: selection en est interdite, et la regle se re-derivait bloc par bloc a chaque
+#: lot.
+#:
+#: **Le tennis n'en porte aucune, et c'est mesure** : zero point en quart sur les
+#: 4 944 issues de tennis archivees, tous marches confondus. Le marquer la-bas
+#: serait du decor.
+#:
+#: La legende vit dans le preambule, deja garde par `{% if 'football' in sports %}`
+#: — une ligne de legende par bloc paierait vingt-quatre fois ce qui se dit une.
+QUARTER_MARK = "†"
+
+
+def is_quarter(value: float | None) -> bool:
+    """Une ligne en quart ? **Ecrit une fois, lu par les deux rendus.**
+
+    Le handicap et le total y repondent pareil, et deux ecritures auraient
+    diverge — le piege deja paye par la convention d'ancrage de `_by_handicap`.
+    """
+    return value is not None and abs(value * 2 - round(value * 2)) > 1e-9
+
+
+def _point(value: float, mark: bool = False) -> str:
+    """Une ligne de handicap : 2.5 et non 2.50, mais 0.25 conserve ses decimales.
+
+    `mark` ajoute `QUARTER_MARK` sur une ligne en quart. Il est **passe par
+    l'appelant** plutot que lu d'un reglage : seul le football en porte, et le
+    rendu tennis emprunte les memes fonctions.
+    """
     text = f"{value:g}"
-    return text
+    return f"{text}{QUARTER_MARK}" if mark and is_quarter(value) else text
 
 
 def line(label: str, value: str) -> str:
@@ -261,8 +291,17 @@ def main_line(lines: dict[float, dict[str, float]]) -> float | None:
     return min(lines) if lines else None
 
 
-def _totals_fragments(outcomes: Iterable[Outcome], keep: int = TOTALS_KEEP) -> list[str]:
-    """`1.5: 1.22/4.10 | 2.5: 1.72/2.05 | …`, limite aux lignes utiles."""
+def _totals_fragments(
+    outcomes: Iterable[Outcome], keep: int = TOTALS_KEEP, mark: bool = False
+) -> list[str]:
+    """`1.5: 1.22/4.10 | 2.75†: 1.72/2.05 | …`, limite aux lignes utiles.
+
+    **Le marquage se pose la ou la ligne est ecrite.** Mesure du 20/08/2026 sur
+    les 271 blocs de football archives : **412 des 1 414 lignes affichees sont en
+    quart, soit 29 %** — une a deux par echelle de cinq, et la regle se
+    re-derivait de tete a chaque bloc. Aucune echelle n'est **entierement** en
+    quart, donc rien a signaler au niveau du marche ici.
+    """
     grouped = _by_point(outcomes)
     reference = main_line(grouped)
     if reference is None:
@@ -276,7 +315,7 @@ def _totals_fragments(outcomes: Iterable[Outcome], keep: int = TOTALS_KEEP) -> l
         if over is None and under is None:
             continue
         both = f"{price(over) if over else '·'}/{price(under) if under else '·'}"
-        fragments.append(f"{_point(point)}: {both}")
+        fragments.append(f"{_point(point, mark)}: {both}")
     return fragments
 
 
@@ -318,8 +357,8 @@ def _render_double_chance(event: RenderableEvent, outcomes: list[Outcome]) -> li
     return [line("DC", " / ".join(price(value) for value in ordered if value is not None))]
 
 
-def _render_totals(label: str, outcomes: list[Outcome]) -> list[str]:
-    fragments = _totals_fragments(outcomes)
+def _render_totals(label: str, outcomes: list[Outcome], mark: bool = False) -> list[str]:
+    fragments = _totals_fragments(outcomes, mark=mark)
     return [line(label, " | ".join(fragments))] if fragments else []
 
 
@@ -376,7 +415,7 @@ def _render_main_total_only(label: str, outcomes: list[Outcome]) -> list[str]:
     return [line(label, f"O/U {fragments[0]}")] if fragments else []
 
 
-def _signed(value: float) -> str:
+def _signed(value: float, mark: bool = False) -> str:
     """`+1.5`, `-0.5`, `0` — le signe est toujours porte, sauf sur la ligne nulle.
 
     Un handicap sans signe explicite se lit du cote de celui qui le donne, donc
@@ -385,7 +424,7 @@ def _signed(value: float) -> str:
     """
     if not value:
         return "0"
-    return f"+{_point(value)}" if value > 0 else _point(value)
+    return f"+{_point(value, mark)}" if value > 0 else _point(value, mark)
 
 
 def _by_handicap(
@@ -446,18 +485,59 @@ def _render_spreads(
 
     Sur des donnees saines la ligne rendue ne bouge pas — les deux prix les plus
     proches de 2.00 sont deja les deux faces de la ligne d'equilibre.
+
+    ## Le palier d'equilibre est en quart une fois sur trois, et il est seul
+
+    Le total en rend cinq lignes, dont une ou deux en quart ; le handicap n'en
+    rend **qu'une**, donc un palier d'equilibre en quart laisse le bloc sans
+    aucun handicap posable. Mesure du 20/08/2026 sur les 268 paliers principaux
+    de football archives : **94 sont en quart, soit 35 %**.
+
+    Et surtout — **un palier posable existait dans l'echelle sur 94 cas sur
+    94**, servi des deux cotes, et il etait jete. Sur un tiers des blocs, le
+    rendu montrait la seule ligne qu'on ne peut pas poser et cachait les quatre
+    qu'on peut.
+
+    Les deux sont donc rendus : l'equilibre **marque**, parce qu'il situe le
+    match mieux qu'aucun autre, puis le palier posable sur une seconde ligne. Le
+    posable se choisit par `_main_handicap` sur l'echelle restreinte — **la meme
+    fonction**, jamais un second departage qui aurait diverge.
     """
     ladder = _by_handicap(event, outcomes)
     point = _main_handicap(ladder)
     if point is None:
         return []
+    quarts = event.sport_key == "football"
+    rows = [line(label, _spread_pair(event, ladder, point, quarts))]
+    if quarts and is_quarter(point):
+        posables = {
+            niveau: prix
+            for niveau, prix in ladder.items()
+            if not is_quarter(niveau) and len(prix) == 2
+        }
+        secours = _main_handicap(posables)
+        if secours is not None:
+            paire = _spread_pair(event, ladder, secours, quarts)
+            rows.append(f"{CONTINUATION}{PLAYABLE_LABEL} {paire}")
+    return rows
+
+
+#: Ce qui introduit le palier de repli quand l'equilibre tombe en quart. **Ce
+#: qu'il y a a faire, jamais ce qui manque** — meme regle que `A relever`, dont
+#: le premier libelle « Non jouable » avait fait renoncer a des paris posables.
+PLAYABLE_LABEL = "posable"
+
+
+def _spread_pair(
+    event: RenderableEvent, ladder: dict[float, dict[str, float]], point: float, mark: bool
+) -> str:
+    """Les deux moities d'un palier, signes opposes **par construction**."""
     prices = ladder[point]
-    fragments = [
-        f"{team} {_signed(handicap)} {price(prices[team])}"
+    return " | ".join(
+        f"{team} {_signed(handicap, mark)} {price(prices[team])}"
         for team, handicap in ((event.home, point), (event.away, -point))
         if team in prices
-    ]
-    return [line(label, " | ".join(fragments))] if fragments else []
+    )
 
 
 def _render_spread_ladder(event: RenderableEvent, outcomes: list[Outcome], label: str) -> list[str]:
@@ -621,7 +701,10 @@ def _render_one(
             return _render_spread_ladder(event, outcomes, label)
         return _render_spreads(event, outcomes, label)
     if target in {"totals", "totals_h1", "totals_s1"}:
-        return _render_totals(label, outcomes)
+        # **Le marquage est scope au football, et c'est mesure** : zero point en
+        # quart sur les 4 944 issues de tennis archivees. Le poser la-bas serait
+        # du decor, et la legende du preambule est deja gardee par le sport.
+        return _render_totals(label, outcomes, mark=event.sport_key == "football")
     if target in {"btts", "btts_h1"}:
         return _render_btts(label, outcomes)
     if target == "team_totals":

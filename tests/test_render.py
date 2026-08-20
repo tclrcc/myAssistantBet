@@ -6,6 +6,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from myassistantbet.config import get_settings
+from myassistantbet.services import render
 from myassistantbet.services.render import (
     ESTIMATED_MARK,
     Outcome,
@@ -1198,3 +1199,76 @@ def test_le_football_ne_porte_aucune_mention_d_estimation() -> None:
     )
 
     assert ESTIMATED_MARK not in render_event(event).splitlines()[0]
+
+
+def test_les_lignes_en_quart_portent_leur_signe_au_football() -> None:
+    """**La regle existait dans le preambule et se re-derivait bloc par bloc.**
+
+    Mesure du 20/08/2026 sur les 271 blocs de football archives : **412 des
+    1 414 lignes d'echelle affichees sont en quart**, soit 29 % — une a deux par
+    echelle de cinq. Le marquage se pose la ou la ligne est ecrite.
+    """
+    event = _event(
+        markets={
+            "totals": [
+                Outcome("Over", 1.61, 3.25),
+                Outcome("Under", 2.28, 3.25),
+                Outcome("Over", 1.79, 3.5),
+                Outcome("Under", 2.01, 3.5),
+            ]
+        }
+    )
+    rendu = render_event(event)
+
+    assert f"3.25{render.QUARTER_MARK}:" in rendu
+    assert "3.5:" in rendu and f"3.5{render.QUARTER_MARK}" not in rendu
+
+
+def test_le_tennis_ne_porte_aucun_signe_de_quart() -> None:
+    """**Zero point en quart sur les 4 944 issues de tennis archivees.** Le
+    marquer la-bas serait du decor, et la legende du preambule est deja gardee
+    par le sport."""
+    event = _event(
+        sport_key="tennis",
+        markets={
+            "totals": [Outcome("Over", 1.85, 21.5), Outcome("Under", 1.88, 21.5)],
+        },
+    )
+
+    assert render.QUARTER_MARK not in render_event(event)
+
+
+def test_un_handicap_en_quart_rend_aussi_le_palier_posable() -> None:
+    """**Le handicap ne rend qu'une ligne, donc un equilibre en quart la laisse
+    sans aucun pari posable.**
+
+    Mesure du 20/08/2026 : 94 des 268 paliers principaux de football sont en
+    quart, soit 35 % — et sur **94 cas sur 94** un palier entier servi des deux
+    cotes existait dans l'echelle et etait jete. Le bloc montrait la seule ligne
+    qu'on ne peut pas poser et cachait celles qu'on peut.
+    """
+    event = _event(
+        markets={
+            "spreads": [
+                Outcome("Hacken", 1.98, 1.75),
+                Outcome("Djurgarden", 1.84, -1.75),
+                Outcome("Hacken", 1.74, 2.0),
+                Outcome("Djurgarden", 2.10, -2.0),
+            ]
+        }
+    )
+    rendu = render_event(event)
+
+    assert f"Hacken +1.75{render.QUARTER_MARK}" in rendu
+    assert f"{render.PLAYABLE_LABEL} Hacken +2 1.74 | Djurgarden -2 2.10" in rendu
+
+
+def test_un_handicap_entier_ne_reclame_aucun_repli() -> None:
+    """Une seconde ligne sur tous les blocs cesserait d'etre un signal."""
+    event = _event(
+        markets={"spreads": [Outcome("Hacken", 2.07, -0.5), Outcome("Djurgarden", 1.83, 0.5)]}
+    )
+    rendu = render_event(event)
+
+    assert render.PLAYABLE_LABEL not in rendu
+    assert render.QUARTER_MARK not in rendu

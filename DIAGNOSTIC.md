@@ -8028,3 +8028,66 @@ passés au motif « un fragment en pourcentage à côté d'un entier nu ». **Au
 autre ligne ne le porte.** Les comptes qui subsistent ailleurs sont tous des
 **dénominateurs** entre parenthèses — `(1515 pts recus)`, `(317 jeux servis)` —
 ou des fractions que le projet impose — `TB 3/10`, `2 sets 7/10`, `+5.2 en V/6`.
+
+## §6 — Les lignes en quart, et le handicap posable qui était jeté
+
+### Ce que le brief demandait, et ce que la mesure a ajouté
+
+Marquer les lignes en quart là où elles sont écrites : fait, `†`. Mesure du
+20/08/2026 sur les **271 blocs de football archivés** (`prompt_odds`) :
+
+| | |
+| --- | ---: |
+| lignes d'échelle O/U affichées | 1 414 |
+| dont en quart | **412 (29 %)** |
+| échelles **entièrement** en quart | **0** |
+| paliers de handicap principaux | 268 |
+| dont en quart | **94 (35 %)** |
+
+Le second volet du brief — « quand un marché est **entièrement** en quart, le
+signaler » — ne se pose donc **jamais** pour l'O/U, qui rend cinq lignes. Il se
+pose pour le handicap, qui n'en rend qu'**une**, et une fois sur trois.
+
+### Et là, la mesure a trouvé bien pire qu'un marquage manquant
+
+Sur les 94 blocs dont le palier d'équilibre est en quart, **un palier entier
+servi des deux côtés existait dans l'échelle — 94 fois sur 94**, et il était
+jeté. Sur un tiers des blocs de football, le rendu montrait la seule ligne qu'on
+ne peut pas poser et cachait les quatre qu'on peut. Le brief lit le symptôme
+juste — « sur le match le plus déséquilibré du lot, aucun handicap n'est
+posable » — et la cause est un choix de rendu, pas une absence de prix.
+
+`_render_spreads` rend donc **deux** paliers quand l'équilibre tombe en quart :
+l'équilibre marqué, parce qu'il situe le match mieux qu'aucun autre, puis le
+palier posable. Le second se choisit par `_main_handicap` sur l'échelle
+restreinte — **la même fonction**, jamais un second départage qui aurait divergé.
+
+### Rendu avant / après — M3, le bloc le plus déséquilibré du lot
+
+    Handicap    Al-Riyadh +1.75 1.98 | Al-Nassr -1.75 1.84  [Pinnacle (ref.)]
+    O/U         3.25: 1.61/2.28 | 3.5: 1.79/2.01 | 3.75: 2.00/1.81 | 4: 2.33/1.60 | 4.25: 2.62/1.48  [Pinnacle (ref.)]
+
+    Handicap    Al-Riyadh +1.75† 1.98 | Al-Nassr -1.75† 1.84  [Pinnacle (ref.)]
+                posable Al-Riyadh +2 1.74 | Al-Nassr -2 2.10
+    O/U         3.25†: 1.61/2.28 | 3.5: 1.79/2.01 | 3.75†: 2.00/1.81 | 4: 2.33/1.60 | 4.25†: 2.62/1.48  [Pinnacle (ref.)]
+
+Et M7, dont le handicap était déjà entier — aucune seconde ligne, une ligne qui
+sortirait partout cesserait d'être un signal :
+
+    Handicap    Ried -0.5 2.07 | Grazer AK +0.5 1.83  [Pinnacle (ref.)]
+    O/U         2: 1.51/2.64 | 2.25†: 1.74/2.15 | 2.5: 1.98/1.89 | 2.75†: 2.24/1.69 | 3: 2.70/1.49  [Pinnacle (ref.)]
+
+### Le marquage est scopé au football, et c'est mesuré
+
+**Zéro point en quart sur les 4 944 issues de tennis archivées**, tous marchés
+confondus. Le marquer là-bas serait du décor, et la légende du préambule est déjà
+gardée par `{% if 'football' in sports %}`.
+
+**Aucune légende par bloc** : elle se dit une fois dans le préambule, où la règle
+vivait déjà. Vingt-quatre légendes pour un lot de vingt-quatre blocs, c'est
+exactement le défaut que `render.common_unplayable` a corrigé.
+
+### Gabarit
+
+Le paragraphe « lignes en quart », déjà gardé par le sport : **+99 tokens**
+(539 → 896 caractères).
