@@ -5085,10 +5085,20 @@ seuil** — Issue 24/49, Handicap 11/23, Total 10/21 — la ou aucun libelle ne 
     libelles enregistres sont `Vainqueur`, `1N2`, `Handicap`, `O/U`… Il vient de
     `FAMILY_SEED` et de la migration 027, et le libelle lui-meme de
     `render.MARKET_ORDER`, ou `("outright", "Cotes")` nomme le marche libre de la saisie
-    manuelle. L'ecran des reglages liste **toutes** les cles classees, y compris celles
-    que rien n'a encore employees : il affiche « — » dans la colonne des selections, et
-    c'est ce tiret qui distingue une entree seedee d'une entree vue en base. Rien a
-    purger, rien a corriger cote parsing.
+    manuelle. Et ce n'est pas une entree morte : `odds` porte **11 lignes** de cle
+    `outright`, toutes du bookmaker `manual`. Le marche est releve, il n'a
+    simplement jamais produit de selection. Rien a purger, rien a corriger cote
+    parsing.
+    - **Le tiret ne distinguait rien, et cette page a porte le defaut
+      caracteristique du projet pendant tout ce temps.** Il etait rendu sur
+      **toutes** les lignes classees : `vainqueur`, 76 selections, et `cotes`,
+      aucune, s'y lisaient a l'identique — donc la page ne repondait pas a la
+      seule question qu'on lui pose devant un libelle qui surprend, et c'est ce
+      qui a fait soupconner un artefact une seconde fois. Le compte reel est
+      desormais rendu, sur la **cle de famille** comme le classement lui-meme, et
+      « aucune » s'ecrit en toutes lettres : c'est un fait sur le libelle, le
+      catalogue seedant des marches que le bloc sait ecrire et qu'on n'a jamais
+      joues, et non une case restee vide.
   - `equipe` est la seule famille rangee par **sujet** et non par forme : un total
     d'equipe est un total, mais « plus de 1.5 but pour Lyon » et « plus de 2.5 buts dans
     le match » ne se gagnent pas dans les memes scenarios.
@@ -5858,3 +5868,143 @@ La premisse fausse et la conclusion juste coexistent, et c'est la premisse qui
 decide de l'implementation. Le corollaire de la premiere lecon du projet — *une
 premisse enoncee par le decideur se mesure comme une autre* — est donc qu'on la
 mesure **meme quand on est d'accord avec ce qu'elle demande**.
+
+## Le seul texte libre qui entre dans un prompt
+
+`preferences.session_notes` est recopie en tete de chaque prompt et prime sur les
+preferences du gabarit. C'est la **seule** surface de l'application qui puisse
+faire entrer dans un prompt une regle que le gabarit retient volontairement, sans
+qu'une ligne du gabarit soit touchee.
+
+- **La porte derobee du dispositif de mesure.** Le gabarit retient les taux par
+  palier et par confiance, et il dit pourquoi : « les selections que tu produis
+  ensuite cessent d'etre independantes de ce qui les mesure, et une categorie
+  annoncee faible cesse d'etre produite — donc cesse d'etre mesurable ». Une
+  consigne tiree de `/stats` defait ce dispositif par le lecteur, pas par le
+  texte — **meme forme que la regle qui interdit a l'historique des cotes toute
+  surface avant que le lot soit fige**.
+- **Un avertissement, jamais un refus**, et l'aveu en fait partie : l'application
+  ne peut pas lire l'intention derriere une phrase, un controle produirait des
+  faux positifs, et un garde-fou qu'on croit automatique et qui ne l'est pas est
+  pire que pas de garde-fou. Il porte trois moities — l'interdit, l'irreversibilite,
+  et surtout le **test** a appliquer a une consigne : *aucune ne depend d'un
+  resultat*. C'est le seul des trois qu'on puisse suivre en ecrivant une phrase.
+- **Ce qui a sa place la contraint le placement et la forme** : ou l'on pose, ce
+  qu'une colonne doit nommer, ce qu'on ne joue jamais par principe. Les six
+  consignes servies au 21/08/2026 passent toutes le test.
+- **Et il ne demande aucune section.** `sections.survey()` lit `prompts.body` pour
+  savoir ce que le prompt reclamait : une consigne dont une ligne commence par
+  `sets:` y declarait la section demandee **sur un lot de football**, ou le
+  gabarit ne la demande jamais — un faux manque, sur la surface dont le seul role
+  est de separer une absence de collecte d'une absence de demande.
+  `sections.gabarit_only()` retire le bloc avant de lire les demandes, sur son
+  **titre** et jamais sur son texte : les consignes sont libres, et rien de ce
+  qu'elles contiennent ne peut deplacer la borne.
+
+## Un palier present ne peut pas etre interdit par son quota
+
+`reachable()` declare present un palier qu'une cote du lot atteint ; `quota_for()`
+reduisait sa borne a proportion du lot, jusqu'a zero. Les deux se contredisaient
+sur **6 prompts archives**, dont le dernier rendu — `Paliers presents … GIGA FUN`
+puis `0-0 🔴` sur une cote a 3.80, et le paragraphe des paliers vides ordonnant de
+commenter un vide venu d'un arrondi.
+
+- **Le plancher est celui de `QUOTA_FLOOR_TIERS`, applique un cran plus haut et
+  plus strictement** : les deux paliers surs l'ont sans condition, un palier haut
+  ne l'a que si un prix y tombe vraiment. Le total reste borne par le lot, et
+  l'exigence de fait date ne bouge pas — le plancher rend le palier *proposable*,
+  jamais *justifiable*.
+- **Retirer le palier de `present` aurait contredit le prompt de l'interieur** :
+  il faudrait le retirer aussi d'`absent`, dont la ligne affirme « aucune cote du
+  lot n'y tombe », et la ligne `Paliers` de chaque bloc — calculee par
+  `reachable()` sur les cotes du bloc — continuerait de le nommer.
+- **Le budget garde son veto, et son zero est un zero explique** : le paragraphe
+  qui suit les quotas dit qu'un palier haut reclame un dossier ouvert. C-bis le
+  nomme alors, ce qui rend l'asymetrie **voulue** au lieu de subie — c'est
+  exactement ce que la section existe pour porter.
+- **Un palier absent du lot ne consomme aucun dossier.** Il ne peut recevoir
+  aucune selection et affamait pourtant ceux que le lot offre : le zero se lisait
+  « plus de dossier disponible » quand la cause etait « un palier hors du lot a
+  pris la place ». Trouve en ecrivant le test du plancher, qui refusait de passer
+  pour une raison qui n'etait pas la sienne.
+- Mesure a connaitre : `research_capped` **ne mord sur aucun prompt archive**, ni
+  a 10 ni a 7, les trois paliers hauts n'offrant que 6 places. La note du seuil
+  affirmait le contraire — un docstring faux coute plus qu'un docstring absent, il
+  fait re-deriver la meme conclusion fausse au lecteur suivant.
+
+## La bascule du retour d'experience ne se produira pas toute seule
+
+`FEEDBACK_SUSPENDED` est une **constante**, et `Feedback.enough` s'ecrit
+`not self.suspended and …`. Franchir les deux seuils de recul ne transmet donc
+rien : la rouvrir demande de modifier le code, ce que son propre commentaire dit
+depuis le debut. Le dixieme jour d'analyse ne changera rien.
+
+- **Le compte a rebours doit dire laquelle des deux conditions bloque.** Annoncer
+  « il manque N journees » sans nommer la suspension serait un compte a rebours
+  vers un evenement qui ne peut pas se produire. Quatre etats, une seule phrase
+  (`Feedback.missing_line`), rendue a cote de ses deux seuils, sur `/stats` et
+  dans l'export.
+- **Le defaut latent ne pouvait paraitre qu'au jour qu'on attend** : recul atteint
+  sous suspension, la liste de ce qui manque est vide et la phrase rendait
+  « Il manque . Les taux ne sont pas transmis au prompt. » Sixieme forme du defaut
+  caracteristique du projet, et la premiere sur une **syntaxe**.
+- **La bascule se date toute seule** (`changelog.note_feedback`, appele par
+  `save_prompt` quand `feedback_active`). Ni la date de livraison ni celle du
+  franchissement de seuil ne decrivent le moment ou le regime change : seul le
+  **premier prompt qui part** avec des taux le fait. Une fois et une seule, la
+  garde se lisant sur le journal lui-meme.
+- **L'instrument est pose avant, pas apres** (`history.scale_shift`) : la
+  distribution des crans et des paliers session par session, avec une colonne
+  « lit ses taux ». `labelling()` rend la part globale et la vacance — **une
+  echelle qui glisserait d'un cran d'un mois sur l'autre y rendrait exactement la
+  meme part**. Une serie ne se reconstitue pas apres coup : les crans sont en
+  base, mais le fait de les avoir regardes dans l'ordre ne s'invente pas.
+  - Elle montre une coupe qui existe deja : les sessions 3, 4 et 5 ont lu leurs
+    propres taux. Ce qui s'y voit ne se conclut pas — trois points marques sur
+    seize, et trois changements de cadre les traversent.
+  - **Hypothese datee du 21/08/2026, a verifier apres la bascule** : si le cran 3
+    sort sous sa bande, la consigne de resserrement poussera des selections vers
+    le cran 2, qui n'a **aucune cible** — il est fixe par ce que la recherche a
+    trouve. Le mouvement demande irait donc vers une categorie qu'aucune bande ne
+    mesure. Plausible et non mesuree ; elle ne le sera pas avant la bascule, la
+    consigne ne partant que dans la branche `feedback.enough`.
+  - Etat au 21/08 : conf 1 a 33 %, conf 2 a **60 %**, conf 3 a **47 %**, conf 4 a
+    59 %, conf 5 a 70 %. **Le cran 2 bat le cran 3** : la monotonie que les bandes
+    supposent n'est pas etablie.
+
+## Un parametre qui ne mord plus n'est pas un parametre inerte
+
+Deux reglages ont ete soupconnes d'etre morts le 21/08/2026 ; **aucun ne l'est**,
+et la difference tient a ce qu'on mesure.
+
+- `combo_min_lot` = 20 : la branche des deux combines s'est declenchee **4 fois
+  sur les 85 prompts** rendus depuis son reglage, la derniere le 15/08. Les lots
+  n'ont jamais fait « 2 a 12 matchs » — ils vont de 0 a **37**.
+- `recherche_dossiers` = 10 : il a borne **47 prompts sur 170**, et borne encore
+  tout lot de 11 blocs ou plus (`safe_legs_available` passe de 11 jambes a 10). Ce
+  qui l'a rendu inerte est la conjonction de son passage de 7 a 10 le 17/08 **et**
+  de lots retombes a 10 blocs au plus depuis six jours. Au reglage precedent, il
+  aurait borne 8 des 22 prompts recents.
+
+**La regle** : un parametre inactif depuis quelques jours et un parametre
+structurellement mort se ressemblent, et seule la mesure les separe. Le second se
+retire ; le premier est un plafond dimensionne au-dessus du regime courant, et un
+plafond qui ne mord pas fait son travail. Ce qu'il faut mesurer n'est pas « se
+declenche-t-il aujourd'hui » mais « s'est-il declenche, et qu'est-ce qui a change
+depuis ».
+
+## Mesurer l'existant avant de construire, troisieme fois
+
+Le lot 19 a livre ses points ; **trois des defauts qu'il corrige n'etaient dans
+aucun d'eux**, et les trois sont sortis d'une mesure faite avant d'ecrire la ligne
+demandee :
+
+| Trouve en mesurant | Ce qu'on mesurait | Ce qu'on cherchait |
+| --- | --- | --- |
+| un palier absent du lot mangeait un dossier | le plancher de quota, en ecrivant son test | de quoi isoler prorata et budget |
+| `Il manque .` une fois le recul atteint | les quatre etats du compte a rebours | ou afficher le compte restant |
+| une consigne `sets:` demandait une section | le rendu complet sous consignes | un test de bout en bout |
+
+Et **deux premisses du brief ont ete dementies**, dont une qui change tout le
+sens du chantier : la bascule des taux ne se produira pas sans intervention
+humaine, et le champ des consignes permanentes n'etait pas vide.

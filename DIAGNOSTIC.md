@@ -9277,3 +9277,114 @@ Vérifié sur le rendu réel de `/settings` : `mise_unite_bp = 25`, badge
 **provisoire**, « mesuré sur 4 journées d'analyse (17 – 20/08/2026) — **à
 re-mesurer le 2026-09-20** ». L'entrée d'échéance est au journal, datée du
 20/09. `tests/test_mises.py` la garde déjà, sur l'objet **et** sur la page.
+
+## Le coût du lot, par modification de gabarit
+
+**Une seule modification de gabarit dans tout le lot**, et elle est gardée.
+
+| § | Ce qui change dans le gabarit | Coût rendu |
+| --- | --- | ---: |
+| 2a | phrase C-bis nommant le palier haut que le budget interdit | **+45 tokens** (49 à deux paliers) |
+| — | tout le reste du lot | **0** |
+
+Le fichier grossit de **418 caractères**, dont 373 de garde (`{% if %}`,
+accords, conditionnels de pluriel) qui ne sont jamais rendus. Le delta « si tout
+était rendu » vaut +116 tokens, et il ne décrit aucun prompt réel : la phrase ne
+paraît que sur un lot où un palier haut offert reste à zéro après le plancher —
+donc, au réglage servi, sur un lot d'un ou deux matchs offrant trois paliers
+hauts. Sur les 22 prompts du régime récent, **elle se serait payée sur un seul**.
+
+Les autres livraisons ne touchent aucun prompt :
+
+| § | Surface | Coût de prompt |
+| --- | --- | ---: |
+| 1a | avertissement sous les consignes permanentes (`/settings`) | 0 |
+| 2a | plancher de quota, budget non consommé par un palier absent | 0 |
+| 2b | comptes des marchés classés (`/settings`) | 0 |
+| 2c | note d'un seuil corrigée (`/settings`) | 0 |
+| 3a | entrée de journal automatique | 0 |
+| 3b | série session par session (`/stats`, export) | 0 |
+| 3c | recul affiché, phrase corrigée (`/settings`, `/stats`, export) | 0 |
+| 4 | `gabarit_only` sur la lecture des sections | 0 |
+
+Le gain net sur un prompt de football ordinaire est donc **nul** : la seule ligne
+ajoutée est conditionnée à un cas qui ne se produit presque jamais, et c'est
+voulu — elle décrit une contrainte réelle et se tait partout ailleurs.
+
+## Ce que la mesure contredit dans ce brief
+
+| Affirmé | Mesuré |
+| --- | --- |
+| §1b — « le champ est aujourd'hui **vide**, avec un exemple en filigrane » | **1 103 caractères**, enregistrés le 20/08 à 22:06 UTC — la valeur proposée, plus la ligne d'interdits que le §1c annonçait comme probable |
+| §1c — « l'utilisateur ajoutera **probablement** une ligne de marchés qu'il ne joue jamais » | déjà là : « Je ne joue jamais : cartons, corners » |
+| §2b — « c'est presque certainement un **artefact de lecture** » (signalé comme supposition) | entrée de catalogue : `("outright", "Cotes")` dans `render.MARKET_ORDER`, seedée par la 027 — et **11 lignes réelles** dans `odds` |
+| §2c — « les lots font 2 à 12 matchs » | de **0 à 37**, et 15 prompts à 20 blocs ou plus |
+| §2c — `combo_min_lot` : « cette branche ne s'est **jamais** déclenchée » | **4 fois** sur les 85 prompts rendus depuis son réglage, la dernière le 15/08 |
+| §2c — `recherche_dossiers` : « il ne borne plus rien, les lots étant plus petits que le budget » | **conclusion juste, raison fausse** : il a borné 47 prompts sur 170, et borne encore tout lot de 11 blocs ou plus. Ce qui l'a rendu inerte est son passage de 7 à 10 **plus** des lots retombés à 10 depuis six jours |
+| §2c — sa note : « il borne aussi les paliers hauts » | **0 prompt sur 170**, ni à 10 ni à 7 |
+| §3 — « six journées et le gabarit basculera […] **sans intervention humaine** » | **`FEEDBACK_SUSPENDED = True`** est une constante et prime sur les deux seuils. La bascule demande deux gestes, dont un déploiement |
+| §3b — « confiance 2 à 54 % contre confiance 3 à 40 % » | 60 % contre 47 % — la base a bougé, **le fait tient** : le cran 2 bat le cran 3 |
+| §4 — « le registre des chemins d'écriture : couvre-t-il les chemins ajoutés ? » | aucun chemin ajouté vers les quatre tables gardées ; `changelog_mesure` n'est pas une prédiction |
+
+Le §3 est celui qui compte : **la question posée par le brief n'a pas la réponse
+qu'il suppose**, et sa conclusion en devient plus forte plutôt que caduque. La
+bascule dépend maintenant d'un geste humain dont la *date d'activation* n'est pas
+la date de livraison — donc dater automatiquement le premier prompt qui transmet
+est plus nécessaire, pas moins.
+
+### Trois défauts que le brief ne demandait pas et que la mesure a trouvés
+
+1. **Un palier absent du lot consommait un dossier de recherche** — il ne peut
+   recevoir aucune sélection et affamait ceux que le lot offre. Trouvé en
+   écrivant le test du plancher, qui refusait de passer pour une raison qui
+   n'était pas la sienne. **§2a.**
+2. **`Il manque . Les taux ne sont pas transmis au prompt.`** — une phrase
+   cassée, et qui ne peut paraître qu'au moment précis où les deux seuils
+   tombent, c'est-à-dire exactement le jour que le §3 attend. Aucun test dessus.
+   **§3c.**
+3. **Une consigne permanente pouvait demander une section.** Une ligne commençant
+   par `sets:` faisait déclarer la ligne des scores en sets demandée sur un lot
+   de football — un faux manque, sur la surface dont le seul rôle est de séparer
+   une absence de collecte d'une absence de demande. **§4.**
+
+Les trois ont la forme caractéristique du projet, et **aucun n'était visible
+depuis un rendu** : le premier depuis un test qui refusait de passer, le second
+depuis une table d'états écrite à la main, le troisième depuis une sonde sur un
+prompt réel.
+
+Et le lot précédent n'avait laissé **aucune entrée au journal des mesures** pour
+six changements de gabarit livrés le 20/08 au soir — trouvé en vérifiant le §4.
+
+## Récapitulatif du lot 19
+
+**Sept commits, une migration (070), schéma de 69 à 70.** Sauvegarde de la base
+servie prise avant l'écriture de la migration
+(`myassistantbet-20260820-225659.db`, 314 Mo). Toutes les mesures portent sur une
+copie (`VACUUM INTO`), la base servie n'a pas été touchée.
+
+| § | Ce qui a changé | Ce que ça coûte |
+| --- | --- | --- |
+| 1a | avertissement sous les consignes permanentes | 0 token |
+| 1b | valeur de départ écrite, **non appliquée** — elle l'était déjà | — |
+| 1c | la phrase du gabarit gagne ses trois tests | 0 token |
+| 2a | un palier présent garde un quota ; un palier absent ne prend plus de dossier | **+45 tokens** sur un lot sur vingt-deux |
+| 2b | les marchés classés annoncent ce qu'ils portent | 0 token, une requête de plus sur `/settings` |
+| 2c | note d'un seuil corrigée ; **aucun seuil modifié** | 0 token |
+| 3a | le premier prompt qui transmet se date tout seul | 0 token |
+| 3b | distribution des crans session par session, sur les deux surfaces | 0 token |
+| 3c | le compte à rebours dit ce qui bloque, sur trois surfaces | 0 token |
+| 4 | une consigne ne demande plus de section ; journal du lot 18 comblé | 0 token |
+
+**Ce qui reste ouvert, et pourquoi ça ne se ferme pas ici** :
+
+- **la bascule elle-même.** Elle demande de retourner `FEEDBACK_SUSPENDED`, et
+  c'est une décision, pas une dette. L'outillage est en place : la date s'écrira
+  seule, la série d'avant existe, le compte à rebours dit la vérité ;
+- **l'hypothèse du §3b** — elle ne se tranchera qu'après, la consigne de
+  resserrement ne partant que dans la branche `feedback.enough` ;
+- **`combo_min_lot` et `recherche_dossiers`** : mesurés, non modifiés. Le vivier
+  qui justifierait de les recalibrer a été mesuré en régime cassé, et
+  `CLAUDE.md` a déjà daté cette décision d'attente ;
+- **le poids et le seuil du §2a ne sont pas réglables**, et c'est voulu : un
+  plancher à un n'est pas une préférence, c'est la borne en dessous de laquelle
+  un palier annoncé cesse d'être proposable.
