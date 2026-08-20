@@ -713,7 +713,11 @@ lot ; seules les exceptions sont listées ci-dessous.
 Les paliers {% for tier in tier_scope.high %}{{ tier.label }}{% if not loop.last %}, {% endif %}{% endfor %} restent soumis, en section C, à
 l'exigence d'un fait nommé et daté. Cette section-ci est le seul endroit où
 cette exigence tombe.
-
+{% if tiers_sans_dossier %}
+{% for tier in tiers_sans_dossier %}{{ tier.label }}{% if not loop.last %}, {% endif %}{% endfor %} {{ 'est' if tiers_sans_dossier | length == 1 else 'sont' }} à **zéro** en section C : ce lot
+n'ouvre pas assez de dossiers pour justifier autant de paliers hauts. C'est ici
+que {{ 'ce prix se joue' if tiers_sans_dossier | length == 1 else 'ces prix se jouent' }}, ou nulle part.
+{% endif %}
 Produis ici **au plus une sélection par palier haut** — au plus une {% for tier in tier_scope.high %}{{ tier.label }}{% if not loop.last %}, une {% endif %}{% endfor %} —
 uniquement parmi les paliers que ce lot propose, sur les matchs que tu n'as pas
 retenus en section C. Une lecture des blocs seuls suffit : c'est l'objet de

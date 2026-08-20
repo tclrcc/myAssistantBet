@@ -8643,3 +8643,183 @@ la phrase est présente ; le bloc entier disparaît quand le champ est vide ; et
 un prompt rendu avec des consignes non vides les porte **telles quelles**, à
 l'endroit prévu, sans échappement ni troncature — ce dernier point étant le
 seul qui échouerait si l'injection cassait, et il n'existait nulle part.
+
+## §2a — Un palier présent et interdit par le quota
+
+### Le fait, reproduit sur les prompts archivés
+
+Le brief le décrit sur un lot de 2 matchs. Il est dans la base, et c'est le
+**dernier prompt rendu** — `prompts.id = 170`, session 18, 20/08 à 21:59 :
+
+```
+Cote max du lot : 3.80 (M2 · Vainqueur Thiago Agustin Tirante).
+Paliers présents dans ce lot : SAFE, FUN, ULTRA FUN, GIGA FUN.
+Quotas **de ce lot** : 0-1 🟢, 0-1 🔵, 0-1 🟠, 0-0 🔴.
+```
+
+GIGA FUN est déclaré présent — 3.80 tombe bien dans `[3.60 ; 8.00)` — et son
+quota vaut zéro. Le paragraphe des paliers vides ordonne alors de commenter un
+vide dont la cause n'a rien à voir avec la recherche.
+
+### Fréquence : rare, et concentrée exactement là où les lots sont courts
+
+Balayage des **170 prompts archivés**, sur les deux lignes rendues (donc sur les
+réglages du jour, pas sur ceux d'aujourd'hui). Les deux lignes existent depuis le
+10/08 : **86 prompts** les portent tous les deux.
+
+| Mesure | Valeur |
+| --- | ---: |
+| prompts portant les deux lignes | 86 |
+| dont **un palier présent à quota nul** | **6** (7 %) |
+
+| Prompt | Session | Lot | Palier présent à 0 |
+| ---: | ---: | ---: | --- |
+| 91 | 9 | 1 | GIGA+ |
+| 92 | 9 | 3 | GIGA+ |
+| 112 | 11 | 3 | GIGA+ |
+| 153 | 16 | 4 | GIGA+ |
+| 154 | 16 | 4 | GIGA+ |
+| 170 | 18 | 2 | GIGA FUN |
+
+**7 % est un chiffre trompeur, et c'est le second temps de la mesure.** Le défaut
+ne peut se produire que sur un lot de **4 matchs ou moins** — au-delà, aucun
+quota réglé ne tombe à zéro. Sur les 22 prompts du régime récent (depuis le
+17/08), **4 lots de 4 ou moins**, dont **3 ont déclenché** le défaut. Rapporté à
+sa population, il touche **trois petits lots sur quatre**.
+
+### La cause est le prorata seul, et le budget n'y est pour rien
+
+Table complète, au réglage servi (6-5-3-2-1, budget 10) :
+
+| Lot | SAFE | FUN | ULTRA FUN | GIGA FUN | GIGA+ |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 1 | 1 | **0** | **0** | **0** |
+| 2 | 1 | 1 | 1 | **0** | **0** |
+| 3 | 2 | 2 | 1 | 1 | **0** |
+| 4 | 2 | 2 | 1 | 1 | **0** |
+| 5 | 3 | 3 | 2 | 1 | 1 |
+| 10 | 6 | 5 | 3 | 2 | 1 |
+
+Les valeurs sont **identiques avant et après `research_capped`** : le budget de
+recherche ne retire rien à aucune taille de lot, ce que la mesure du 14/08 disait
+déjà et que ce balayage confirme sur les 170 prompts — **0 prompt sur 170** où le
+budget déplace une borne. La seule cause est l'arrondi du prorata :
+`2 × 2/10 = 0.4`, qui tombe à 0.
+
+### La correction retenue, et pourquoi l'autre est fausse
+
+Le brief propose deux corrections. **La seconde produirait une contradiction
+interne au prompt, et c'est ce qui tranche.**
+
+Retirer un palier de `present` obligerait à le retirer aussi d'`absent`, dont la
+ligne affirme « aucune cote du lot n'y tombe » — faux d'une cote à 3.80. Il
+n'apparaîtrait donc plus nulle part en tête de section C. Mais la ligne
+`Paliers` qui ferme **chaque bloc** est calculée par `reachable()` sur les cotes
+du bloc, et elle continuerait de le nommer : le bloc M2 du prompt 170
+annoncerait `SAFE, FUN, ULTRA FUN, GIGA FUN` sous une section qui n'en dit rien.
+Deux sorties du même calcul qui ne se parlent plus — le défaut que
+`tennis_round.truncated()` avait déjà coûté.
+
+**Retenu : un palier que les cotes du lot atteignent garde un quota d'au moins
+un.** C'est exactement l'argument qui a donné son plancher à `QUOTA_FLOOR_TIERS`
+— « sinon la réduction interdirait de rendre quoi que ce soit » — appliqué à un
+palier haut, et il y est **plus strict** : les deux plus sûrs ont leur plancher
+sans condition, celui-ci ne l'a que si une cote y tombe vraiment.
+
+Ce que ça ne change pas :
+
+- **le total reste borné par le lot** — « une seule sélection par match, donc le
+  total ne peut pas dépasser N » est déjà écrit et n'a pas bougé. Sur un lot de
+  2, les quotas passent de `0-1, 0-1, 0-1, 0-0` à `0-1, 0-1, 0-1, 0-1`, et le
+  total possible reste **2** ;
+- **l'exigence de fait daté ne bouge pas.** Un GIGA FUN reste soumis en section C
+  à un fait nommé et daté de la section A. Le plancher rend le palier
+  *proposable*, il ne rend rien *justifiable* ;
+- **le budget de recherche garde son veto.** Il s'applique après le plancher :
+  sur un lot de 1, un seul dossier est ouvrable, donc un seul palier haut peut
+  être justifié et les autres retombent à zéro. Un zéro **causé par le budget**
+  est un zéro expliqué — le paragraphe qui suit les quotas le dit déjà en toutes
+  lettres — quand un zéro causé par le prorata n'avait aucune cause énonçable.
+
+### C-bis : l'asymétrie devient voulue au lieu d'être subie
+
+C-bis propose « au plus une sélection par palier haut, uniquement parmi les
+paliers que ce lot propose », et `tier_scope.high` dérive de `present`. Avant la
+correction, une cote à 3.80 était donc **interdite en C** (quota 0) et
+**autorisée en C-bis** — sans qu'aucune décision ait produit cet écart.
+
+Après, les deux cas se séparent proprement :
+
+- **zéro par prorata** : il n'existe plus. C et C-bis proposent le même
+  ensemble ;
+- **zéro par budget** : C l'interdit faute de dossier ouvrable, C-bis l'autorise
+  — et c'est précisément sa raison d'être, « le seul endroit où l'exigence d'un
+  fait daté tombe ». L'asymétrie subsistante est celle que la section existe
+  pour porter.
+
+Une phrase l'écrit dans C-bis plutôt que de la laisser déduire, gardée par le
+cas : elle ne paraît que si un palier haut est présent et sans quota.
+
+### Le défaut trouvé sous celui-ci : un palier absent du lot mangeait le budget
+
+Trouvé en écrivant le test du plancher, qui refusait de passer pour une raison
+qui n'était pas la sienne. `research_capped` décrémentait `dossiers` pour
+**tous** les paliers hauts, y compris ceux qu'aucune cote du lot n'atteint.
+
+Or un palier absent ne peut recevoir aucune sélection : le rendu le retire de la
+ligne des quotas, `TierScope` le déclare absent, et le gabarit ordonne de ne pas
+le commenter. Il prenait pourtant sa part d'un budget fini, et affamait les
+paliers réellement offerts.
+
+Mesuré sur les bandes du seed, lot de 2 (donc 2 dossiers) :
+
+| Paliers hauts offerts par le lot | Quota du plus haut |
+| --- | ---: |
+| lui seul | **1** |
+| les trois | 0 |
+
+Le zéro se lisait « plus de dossier disponible » alors que la cause était « un
+palier hors du lot a pris la place ». **Encore une sortie identique pour deux
+causes qui n'appellent pas le même comportement** — la première ne se répare
+pas, la seconde était un bug.
+
+Un palier non offert garde sa borne de prorata plutôt que zéro : elle n'est lue
+nulle part, et la mettre à zéro ferait passer une absence de cote pour une
+absence de dossier.
+
+### Rendu avant / après, sur le lot du prompt 170 (réglages servis)
+
+```
+avant   Paliers présents dans ce lot : SAFE, FUN, ULTRA FUN, GIGA FUN.
+        Quotas **de ce lot** : 0-1 🟢, 0-1 🔵, 0-1 🟠, 0-0 🔴.
+
+après   Paliers présents dans ce lot : SAFE, FUN, ULTRA FUN, GIGA FUN.
+        Quotas **de ce lot** : 0-1 🟢, 0-1 🔵, 0-1 🟠, 0-1 🔴.
+```
+
+### Coût en tokens
+
+| Ce qui change | Coût |
+| --- | ---: |
+| plancher sur un palier offert (`research_capped`) | **0** — aucun texte |
+| budget non consommé par un palier absent | **0** — aucun texte |
+| phrase C-bis nommant le palier sans dossier | **+45 tokens**, et seulement sur un lot où un palier haut offert reste à zéro |
+
+Le gabarit grossit de 418 caractères, dont **373 de garde** (`{% if %}`,
+accords) qui ne sont jamais rendus. Sur les 22 prompts du régime récent, la
+phrase se serait payée sur **1** — le prompt 170 n'en avait pas besoin après
+correction, et seuls les lots d'un ou deux matchs offrant trois paliers hauts la
+déclenchent.
+
+### Six tests
+
+Cinq nouveaux (`test_prompt.py`) : le plancher sur un palier offert ; le
+plancher **absent** sur un palier non offert ; le veto du budget conservé ; la
+phrase C-bis rendue quand elle décrit quelque chose et **tue** sinon ; un palier
+absent ne consomme aucun dossier.
+
+Un existant réaligné — `test_paliers_injectes_dans_le_prompt` recopiait
+`1-1 🟢, 1-1 🔵, 0-0 🟠, 0-0 🔴, 0-0 💥`, c'est-à-dire la sortie du jour sous les
+bandes du seed. Il énonce désormais la propriété : les deux paliers sûrs gardent
+leur plancher, la borne réglée n'apparaît pas, et **un seul** palier haut est
+ouvert sur un lot d'un match — celui que le dossier unique permet de justifier.

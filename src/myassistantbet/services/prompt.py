@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 import re
 from collections import Counter
-from collections.abc import Sequence
+from collections.abc import Container, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -162,7 +162,12 @@ class Tier:
         return f"{low}-{high} {self.emoji}"
 
 
-def research_capped(tiers: Sequence[Tier], lot: int, budget: int) -> list[tuple[Tier, int, int]]:
+def research_capped(
+    tiers: Sequence[Tier],
+    lot: int,
+    budget: int,
+    offered: Container[str] | None = None,
+) -> list[tuple[Tier, int, int]]:
     """Les bornes de chaque palier, **le budget de recherche deduit**.
 
     Tout palier au-dela des deux plus surs reclame un fait nomme et date de la
@@ -189,7 +194,28 @@ def research_capped(tiers: Sequence[Tier], lot: int, budget: int) -> list[tuple[
     plus par construction, quand `recherche_dossiers` en ouvre 7. Elle mord des
     que le seuil descend a 5 — sa borne basse est 2 — ou qu'un quota_max
     augmente. C'est une porte fermee, pas un defaut repare : les deux nombres ne
-    peuvent plus deriver l'un de l'autre en silence.
+    peuvent plus deriver l'un de l'autre en silence. Reverifie le 21/08/2026 sur
+    les 170 prompts archives : **zero prompt** ou le budget deplace une borne.
+
+    `offered` porte les cles des paliers qu'une cote du lot atteint vraiment.
+    **Un palier que le lot offre garde un quota d'au moins un**, et c'est
+    exactement l'argument qui a donne son plancher aux deux paliers les plus
+    surs — « sinon la reduction interdirait de rendre quoi que ce soit » —
+    applique un cran plus haut, et plus strictement : eux l'ont sans condition,
+    celui-ci ne l'a que si un prix y tombe.
+
+    Sans lui, le prorata seul rendait un palier **declare present et interdit** :
+    sur un lot de 2, `2 x 2/10 = 0.4` arrondit a 0, et le prompt 170 annoncait
+    `Paliers presents … GIGA FUN` puis `0-0 🔴` sur une cote a 3.80 — donc un
+    palier vide a commenter dont la cause n'a rien a voir avec la recherche.
+    Mesure : 6 prompts sur les 86 qui portent les deux lignes, et **3 des 4
+    petits lots** du regime recent.
+
+    **Le plancher passe avant le budget, jamais apres.** Un zero cause par le
+    budget est un zero explique — le paragraphe qui suit les quotas dit qu'un
+    palier haut reclame un dossier ouvert, et ce prompt en ouvre N — quand un
+    zero cause par le prorata n'avait aucune cause enoncable. Les deux ne se
+    confondent donc pas, et seul le second disparait.
     """
     dossiers = max(0, min(budget, lot))
     rendus: list[tuple[Tier, int, int]] = []
@@ -197,6 +223,18 @@ def research_capped(tiers: Sequence[Tier], lot: int, budget: int) -> list[tuple[
         safest = rank < QUOTA_FLOOR_TIERS
         low, high = tier.quota_for(lot, safest=safest)
         if not safest:
+            if offered is not None and tier.key not in offered:
+                # **Un palier qu'aucune cote du lot n'atteint ne consomme aucun
+                # dossier.** Il ne peut recevoir aucune selection — le rendu le
+                # retire, et `TierScope` le declare absent — donc lui laisser
+                # prendre sa part du budget affamait les paliers reellement
+                # offerts. Sa borne reste celle du prorata : elle n'est lue
+                # nulle part, et la mettre a zero ferait passer une absence de
+                # cote pour une absence de dossier.
+                rendus.append((tier, low, high))
+                continue
+            if offered is not None:
+                high = max(high, 1)
             high = min(high, dossiers)
             dossiers -= high
             low = min(low, high)
@@ -942,6 +980,12 @@ def build_prompt(
     # ligne d'excuse pour une case que le lot rendait impossible.
     tiers = load_tiers(settings)
     scope = tier_scope(tiers, events)
+    # Les paliers qu'une cote du lot atteint vraiment. Ils servent deux fois — a
+    # filtrer la ligne des quotas, et a lui donner son plancher — et c'est **le
+    # meme ensemble** : un palier annonce present et un palier autorise ne
+    # peuvent pas se separer sans que le prompt se contredise. Un lot sans cote
+    # n'en offre aucun, et rien ne se planche alors.
+    offered_keys = {tier.key for tier in scope.present}
     for event in events:
         event.tiers_line = block_tiers_line(tiers, event, scope)
 
@@ -962,6 +1006,16 @@ def build_prompt(
     # prompt, elle ne se relit pas dans son corps des mois apres.
     retour = feedback(settings)
 
+    # Les bornes de ce lot, calculees **une fois** : la ligne des quotas les
+    # rend, et la section C-bis a besoin de savoir lesquelles valent zero. Deux
+    # appels auraient fini par decrire deux lots differents — le piege deja paye
+    # deux fois par l'assembleur de contexte.
+    bornes = research_capped(
+        tiers,
+        len(blocks),
+        threshold("recherche_dossiers", settings),
+        offered=offered_keys,
+    )
     body = (
         _environment()
         .get_template(template_name)
@@ -1091,12 +1145,24 @@ def build_prompt(
             # reclame un fait date, donc un dossier ouvert, et une session n'en
             # ouvre qu'un nombre fini. Calcule et annonce comme tel — jamais
             # formule en consigne, qui laisserait le calcul a faire.
+            # `scope.present` descend dans le calcul et ne sert plus seulement
+            # a filtrer l'affichage : un palier que les cotes du lot atteignent
+            # garde un quota d'au moins un. Sans lui, le prorata declarait un
+            # palier **present et interdit** — 6 prompts archives, dont le
+            # dernier rendu.
             quotas=[
                 f"{low}-{high} {tier.emoji}"
-                for tier, low, high in research_capped(
-                    tiers, len(blocks), threshold("recherche_dossiers", settings)
-                )
+                for tier, low, high in bornes
                 if tier in (scope.present or tiers)
+            ],
+            # Les paliers hauts que le lot offre et que la section C interdit
+            # quand meme. **Il ne reste qu'une cause possible** : le budget de
+            # recherche, le prorata ayant desormais son plancher. C'est
+            # exactement le cas que C-bis existe pour porter — le seul endroit
+            # ou l'exigence d'un fait date tombe — et la phrase ne se paie que
+            # la ou elle decrit quelque chose.
+            tiers_sans_dossier=[
+                tier for tier, _, high in bornes if high == 0 and tier in scope.high
             ],
             research_budget=min(threshold("recherche_dossiers", settings), len(blocks)),
             # La table de mises, **en unites et jamais en monnaie** : le montant

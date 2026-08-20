@@ -331,7 +331,23 @@ async def test_paliers_injectes_dans_le_prompt(
     # « 2-4 🟢, 3-5 🔵… » sur un lot d'un match, puis expliquait en prose que
     # ces quotas « se reduisent a proportion » — une borne qu'il faut recalculer
     # soi-meme ne contraint rien.
-    assert "Quotas **de ce lot** : 1-1 🟢, 1-1 🔵, 0-0 🟠, 0-0 🔴, 0-0 💥." in body
+    #
+    # L'assertion enonce la **propriete** et non les valeurs du jour : le seed des
+    # tests et la base servie n'ont ni les memes bandes ni les memes quotas, et
+    # recopier la sortie ferait casser ce test sur un reglage change sans qu'une
+    # regle ait bouge.
+    ligne = re.search(r"Quotas \*\*de ce lot\*\* : ([^.]*)\.", body)
+    assert ligne is not None
+    quotas = ligne.group(1)
+    tiers = load_tiers(migrated)
+    for tier in tiers[:QUOTA_FLOOR_TIERS]:
+        assert f"1-1 {tier.emoji}" in quotas, "un palier sur garde son plancher"
+        assert tier.quota_label not in quotas, "la borne reglee n'est pas celle du lot"
+    # Un lot d'un match n'ouvre qu'un dossier : **un seul** palier haut peut etre
+    # justifie, et c'est le plus sur des trois. Avant le plancher, aucun ne
+    # l'etait — le prorata les zerotait tous les trois.
+    hauts = [tier for tier in tiers[QUOTA_FLOOR_TIERS:] if f"0-0 {tier.emoji}" not in quotas]
+    assert [tier.key for tier in hauts] == [tiers[QUOTA_FLOOR_TIERS].key]
     assert "se réduisent" not in body, "le paragraphe explicatif n'a plus lieu d'etre"
 
 
@@ -1279,6 +1295,152 @@ def test_seuls_les_paliers_atteignables_sont_injectes(migrated: Settings) -> Non
     for emoji in ("🔵", "🟠", "🔴", "💥"):
         assert emoji not in corps.split("Quotas")[1], f"{emoji} n'est pas dans le lot"
     assert "Absents du lot : FUN, ULTRA FUN, GIGA FUN, GIGA+" in corps
+
+
+def test_un_palier_present_garde_un_quota(migrated: Settings) -> None:
+    """**Un palier declare present et interdit par le quota.** Le prorata rendait
+    `0-0` sur un palier qu'une cote du lot atteint : le prompt 170, dernier rendu
+    avant ce lot, annoncait « Paliers presents … GIGA FUN » sur une cote a 3.80,
+    puis `0-0 🔴`. Le paragraphe des paliers vides ordonnait alors de commenter un
+    vide dont la cause n'a rien a voir avec la recherche — elle vient de
+    `2 x 2/10 = 0.4`, qui arrondit a zero.
+
+    Mesure : 6 prompts sur les 86 qui portent les deux lignes, et **3 des 4
+    petits lots** du regime recent. Le defaut ne peut naitre qu'a quatre matchs
+    ou moins.
+    """
+    tiers = load_tiers(migrated)
+    # Le palier que le prorata zerote le premier est le plus haut : son quota
+    # regle est le plus petit. Il se **derive des bandes** et jamais de la valeur
+    # du jour — le seed des tests et la base servie n'ont ni les memes bornes ni
+    # les memes quotas.
+    haut = tiers[-1]
+    lot = 2
+    assert haut.quota_for(lot, safest=False)[1] == 0, "le prorata doit mordre a ce lot"
+
+    session_id = _lot_aux_cotes(
+        migrated, f"Lyon 0 {tiers[0].min_price:.2f}\nNice 0 {haut.min_price + 0.5:.2f}"
+    )
+
+    corps = build_prompt(session_id, settings=migrated, now=NOW).body
+    quotas = corps.split("Quotas **de ce lot** :")[1].split(".")[0]
+
+    assert haut.label in corps.split("Paliers présents dans ce lot :")[1].split(".")[0]
+    assert f"0-0 {haut.emoji}" not in quotas
+    assert f"1 {haut.emoji}" in quotas
+
+
+def test_le_plancher_ne_se_pose_que_sur_un_palier_offert(migrated: Settings) -> None:
+    """**Plus strict que le plancher des deux paliers surs, et c'est voulu** :
+    eux l'ont sans condition, celui-ci ne l'a que si une cote y tombe vraiment.
+
+    Sans cette condition, le prompt proposerait un GIGA+ sur un lot dont la cote
+    la plus haute vaut 3.80 — exactement la case impossible que `TierScope` a ete
+    ecrit pour supprimer.
+    """
+    tiers = load_tiers(migrated)
+    haut = tiers[-1]
+    lot = 2
+    assert haut.quota_for(lot, safest=False)[1] == 0, "le prorata doit mordre a ce lot"
+
+    sans = {tier.key: high for tier, _, high in research_capped(tiers, lot, 10)}
+    avec = {tier.key: high for tier, _, high in research_capped(tiers, lot, 10, offered={haut.key})}
+
+    assert sans[haut.key] == 0, "sans le lot, le prorata l'interdit"
+    assert avec[haut.key] == 1, "offert par le lot, il garde une place"
+    # Et rien d'autre ne bouge : le plancher ne se pose que sur ce qui est offert.
+    assert {key: high for key, high in sans.items() if key != haut.key} == {
+        key: high for key, high in avec.items() if key != haut.key
+    }
+
+
+def test_un_palier_absent_du_lot_ne_consomme_aucun_dossier(migrated: Settings) -> None:
+    """**Second defaut, trouve en ecrivant le test du plancher.** Le budget de
+    recherche etait consomme par des paliers qu'aucune cote du lot n'atteint : ils
+    ne peuvent recevoir aucune selection — le rendu les retire, `TierScope` les
+    declare absents — et ils affamaient pourtant ceux que le lot offre vraiment.
+
+    Le zero qui en resultait se lisait comme « plus de dossier disponible », alors
+    que la cause etait « un palier hors du lot a pris la place ». Encore une
+    sortie identique pour deux causes qui n'appellent pas le meme comportement.
+    """
+    tiers = load_tiers(migrated)
+    haut = tiers[-1]
+    lot = 2
+
+    seul = {
+        tier.key: high
+        for tier, _, high in research_capped(tiers, lot, 10, offered={tiers[0].key, haut.key})
+    }
+    encombre = {
+        tier.key: high
+        for tier, _, high in research_capped(tiers, lot, 10, offered={t.key for t in tiers})
+    }
+
+    assert seul[haut.key] == 1, "seul palier haut offert, il prend le dossier"
+    assert encombre[haut.key] == 0, "trois paliers hauts offerts pour deux dossiers"
+
+
+def test_le_budget_garde_son_veto_sur_un_palier_offert(migrated: Settings) -> None:
+    """**Le plancher passe avant le budget, jamais apres.** Un zero cause par le
+    budget est un zero **explique** — le paragraphe qui suit les quotas dit qu'un
+    palier haut reclame un dossier ouvert, et ce prompt en ouvre N — quand un
+    zero cause par le prorata n'avait aucune cause enoncable.
+
+    Sur un lot d'un match, un seul dossier est ouvrable : un seul palier haut
+    peut etre justifie, quel que soit le nombre de bandes que les cotes
+    atteignent.
+    """
+    tiers = load_tiers(migrated)
+
+    bornes = research_capped(tiers, 1, 10, offered={t.key for t in tiers})
+
+    hauts = [high for _, _, high in bornes[QUOTA_FLOOR_TIERS:]]
+    assert sum(hauts) == 1, "le budget d'un lot d'un match n'ouvre qu'un dossier"
+
+
+def test_c_bis_nomme_le_palier_que_le_budget_interdit(migrated: Settings) -> None:
+    """**L'asymetrie entre C et C-bis devient voulue au lieu d'etre subie.**
+
+    Avant, une cote a 3.80 etait interdite en section C par un arrondi et
+    autorisee en C-bis sans qu'aucune decision ait produit l'ecart. Le prorata a
+    desormais son plancher : le seul zero qui subsiste vient du budget de
+    recherche, c'est-a-dire de l'absence de dossier ouvrable — et c'est
+    exactement ce que C-bis existe pour porter, « le seul endroit ou l'exigence
+    d'un fait date tombe ».
+
+    La phrase ne se paie **que la ou elle decrit quelque chose** : sur un lot
+    d'un match, ou le budget mord vraiment.
+    """
+    corps = build_prompt(
+        _lot_aux_cotes(migrated, "Lyon 0 1.35\nNul 0 3.80\nNice 0 9.00"),
+        settings=migrated,
+        now=NOW,
+    ).body
+    plat = " ".join(corps.split())
+
+    assert "à **zéro** en section C" in plat
+    assert "n'ouvre pas assez de dossiers pour justifier autant de paliers hauts" in plat
+
+
+def test_c_bis_ne_paie_pas_la_phrase_quand_aucun_palier_n_est_a_zero(
+    migrated: Settings,
+) -> None:
+    """Meme regle que partout : ce qui n'a pas de donnee est omis, jamais rendu
+    vide. Un lot de trois matchs ouvre trois dossiers, donc aucun palier haut
+    offert ne retombe a zero."""
+    corps = build_prompt(
+        _lot_aux_cotes(
+            migrated,
+            "Lyon 0 1.35\nNice 0 3.80",
+            "Lyon 1 1.40\nNice 1 3.90",
+            "Lyon 2 1.45\nNice 2 4.00",
+        ),
+        settings=migrated,
+        now=NOW,
+    ).body
+
+    assert "à **zéro** en section C" not in corps
 
 
 def test_une_cote_sur_la_borne_ouvre_le_palier(migrated: Settings) -> None:
