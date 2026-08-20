@@ -6008,3 +6008,109 @@ demandee :
 Et **deux premisses du brief ont ete dementies**, dont une qui change tout le
 sens du chantier : la bascule des taux ne se produira pas sans intervention
 humaine, et le champ des consignes permanentes n'etait pas vide.
+
+## Une affirmation sur l'etat de l'application se verifie avant d'etre posee
+
+**Regle de revue, du 21/08/2026, a lire a cote de celle du zero d'appariement.**
+Quatre affirmations sur cinq d'un brief ont ete renversees, et **deux decrivaient
+l'etat actuel de l'application** :
+
+| Pose en premisse | Verifiable en | Ce qu'il fallait lire |
+| --- | --- | --- |
+| « le champ des consignes est vide » | une requete | `preferences.session_notes` — 1 103 caracteres |
+| « la bascule se produira sans intervention humaine » | une lecture | `FEEDBACK_SUSPENDED = True`, et `enough` s'ecrit `not self.suspended and …` |
+
+Les deux prenaient trente secondes, et les deux venaient de quelqu'un qui avait lu
+le code la veille — c'est ce qui les rend dangereuses. Une affirmation d'etat
+vieillit sans prevenir, et celui qui l'enonce n'a aucune raison de la reverifier
+puisqu'il se souvient de l'avoir sue. Contrairement a une hypothese sur les
+donnees, **elle ne se signale pas comme incertaine**.
+
+**Le corollaire, et c'est lui le plus utile** : une premisse d'etat fausse ne rend
+pas la demande caduque, elle en **change la raison**. « Date la bascule parce
+qu'elle sera automatique » est devenu « date-la parce qu'elle dependra d'un geste
+dont la date d'activation n'est pas la date de livraison » — la meme livraison,
+une justification plus forte. La verification passe donc **avant** le code, jamais
+a sa place.
+
+## Le deficit du projet tient dans un seul cran
+
+Releve du 21/08/2026, population principale tranchee, 237 selections sur 15
+journees. **Quatre crans sur cinq sont a parite avec leurs prix**, a moins d'une
+victoire pres chacun ; le cinquieme porte tout.
+
+| Cran | Tranchees | Taux | Ecart au prix |
+| --- | ---: | ---: | ---: |
+| confiance 5 | 7/10 | 70 % | +1,16 |
+| confiance 4 | 52/87 | 60 % | −0,63 |
+| **confiance 3** | **45/107** | **42 %** | **−14,56** |
+| confiance 2 | 17/30 | 57 % | −0,57 |
+| *global* | 122/237 | 51 % | **−15,39** |
+
+C'est ce qui rend le retournement de `FEEDBACK_SUSPENDED` delicat, et ce n'est pas
+une opinion : le jour ou les bandes entreront dans le prompt, `conf 3` sortira
+sous la sienne et la consigne dira de resserrer — donc de pousser vers `conf 2`,
+**un cran sans cible**, deja a parite avec ses prix. Le mouvement demande irait
+vers la categorie qu'aucune bande ne mesure.
+
+**La condition d'observation, a tenir des le retournement** : regarder les deux ou
+trois sessions qui suivent et elles seules — au-dela, d'autres changements de cadre
+s'y melent, le journal en compte treize en quinze jours. Le signe a chercher est
+un **transfert de 3 vers 2**, pas une baisse du volume de 3 ; vers 4 serait le
+comportement voulu. La serie des crans par session (`history.scale_shift`) est ce
+qui les rendra lisibles, et la date de coupe s'ecrit toute seule.
+
+## « Facteur » ne veut pas dire la meme chose dans la table des crans et dans le code
+
+**Six desaccords sur six entre le cran annonce et le cran calcule sont le meme
+passage** — `transitions = [(4, 5, 6)]` sur 21 paires comparables. Le lint sur la
+redaction du gabarit ne peut pas produire de signal plus net.
+
+- **Le sens est l'inverse de celui qu'on craint** : `drift = −0,29`. Le modele se
+  note **en dessous** de ce que la table autorise. Ce n'est pas de l'inflation.
+- **La cause evidente est exclue par les donnees.** « Aucun manque ne touche ce
+  facteur » lu comme « aucun manque » produirait des **3** — le bloc declarerait
+  `manque_touche_facteur: true`. Les six declarent `false` : le paragraphe qui
+  ferme cette lecture est suivi, et il doit rester mot pour mot.
+- **La cause reelle est le mot « facteur ».** `Claim.rung()` departage 4 et 5 sur
+  `distinct_publishers >= 2`, donc sur des **editeurs** ; la table dit « 1 facteur
+  dominant … le reste neutre », donc un **role**. Les six blocs portent 2 a 4
+  editeurs distincts et le modele a lu « un argument dominant plus du detail ». Le
+  cas pur est deux resultats du meme joueur chez deux editeurs : editorialement
+  deux facteurs, sportivement un seul.
+- La regle de comptage **existe** mais sous la table, et son titre l'annonce comme
+  un contraste avec la section C. Rien dans les deux lignes qui se disputent ne
+  dit **ou compter**. Correction proposee et datee dans `DIAGNOSTIC.md`, non
+  appliquee : elle part avec le retournement du drapeau, pas seule.
+
+## Les blocs de confiance sont produits, ils ne sont pas colles
+
+**60 rejets `conf` / `fence_not_found` sur 4 sessions**, et `imports_raw` tranche
+la question sans ambiguite : la coupure est de **taille**.
+
+- au-dessus de 13 000 caracteres, un collage porte ses blocs — 6 collages, 30
+  blocs, `claim_raw_json` ecrit sur 22 des 29 selections de la session 17 ;
+- en dessous de 2 200, jamais — 30 collages du **seul tableau de la section C**.
+
+**L'extraction fonctionne**, il n'y a pas de defaut de lecture. Piege ecarte au
+passage : la chaine ` ```conf ` vaut **zero dans les 36 collages**, y compris les
+six complets — les clotures sont consommees par le rendu, et les blocs se
+reconnaissent sur leur forme (`"faits"`). Une sonde qui chercherait la cloture
+conclurait a un defaut de production.
+
+**Deux gestes, et un seul est une perte** :
+
+| Sessions | Rendus complets colles | Rejets | Selections avec bloc |
+| --- | ---: | ---: | --- |
+| 15 et 16 | **0** | 26 | **0 sur 34** |
+| 17 et 18 | 6 | 34 | 28 sur 60 |
+
+Les 34 rejets des sessions 17 et 18 sont leves sur des collages **partiels
+posterieurs** a un collage complet : ils ne decrivent aucune perte, les blocs
+etant deja arrives. **Le compte de 60 sur-etat donc le probleme d'un facteur
+deux**, dans le sens qui inquiete.
+
+C'est aussi ce qui explique que le lint ci-dessus ne dispose que de 21
+observations : sur 237 selections tranchees, **114 portent un cran calcule a 1** —
+l'etat force quand `dossiers_ouverts` manque — et **20 seulement un cran reel**.
+La cause n'est ni le modele ni l'extraction.

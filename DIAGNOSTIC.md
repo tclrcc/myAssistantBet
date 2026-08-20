@@ -9137,6 +9137,57 @@ faut voir, pas une part globale.
 Ni les bandes ni la consigne ne sont touchées. **Ce lot pose l'instrument, pas le
 verdict.**
 
+#### Les trois nombres qui rendent le retournement délicat — relevé du 21/08/2026
+
+Mesure sur la population principale tranchée (`analysis()`, `as_of`
+2026-08-20T23:22Z, **237 sélections sur 15 journées**) :
+
+| Cran | Tranchées | Taux | Attendu par les prix | Écart |
+| --- | ---: | ---: | ---: | ---: |
+| confiance 5 | 7/10 | 70 % | 5,84 | **+1,16** |
+| confiance 4 | 52/87 | 60 % | 52,63 | **−0,63** |
+| **confiance 3** | **45/107** | **42 %** | **59,56** | **−14,56** |
+| confiance 2 | 17/30 | 57 % | 17,57 | **−0,57** |
+| *global* | 122/237 | 51 % | 137,39 | **−15,39** |
+
+**Le cran 3 porte −14,6 du déficit global de −15,4, sur 107 sélections**, et
+`conf 2` (57 %) bat `conf 3` (42 %). Le fait est plus fort que « la monotonie
+n'est pas établie » : les quatre autres crans sont **à parité avec leurs prix**,
+à moins d'une victoire près chacun. Tout le déficit du projet tient dans un seul
+cran, et c'est le plus fourni.
+
+C'est ce qui rend le retournement délicat, et c'est l'hypothèse du §3b avec ses
+chiffres :
+
+> Le jour où les bandes entreront dans le prompt, `conf 3` sortira sous sa bande
+> — il est à 42 % pour un global de 51 %. La consigne dira de resserrer, donc de
+> pousser des sélections de 3 vers 2 : **un cran sans cible**, fixé par ce que la
+> recherche a trouvé, et qui est déjà à parité avec ses prix. Le mouvement
+> demandé irait vers la catégorie qu'aucune bande ne mesure, et il déplacerait
+> vers elle des sélections dont le déficit ne vient peut-être pas de leur
+> notation.
+
+#### La condition d'observation, à tenir dès le retournement
+
+L'hypothèse ne se tranchera pas avant, la consigne ne partant que dans la branche
+`feedback.enough`. Ce qu'il faut faire quand elle partira :
+
+- **regarder les deux ou trois sessions qui suivent le retournement**, et elles
+  seules. Au-delà, d'autres changements de cadre s'y mêleront — le journal en
+  compte déjà treize sur quinze jours ;
+- **lire la déformation sur la série des crans par session** (`scale_shift`),
+  qui est exactement ce pour quoi elle est posée : la part globale ne montrerait
+  rien, une échelle qui glisse d'un cran rendant la même part ;
+- **le signe à chercher est un transfert de 3 vers 2**, pas une baisse du volume
+  de 3. Un cran 3 qui se vide vers 4 serait le comportement voulu ; vers 2, c'est
+  l'hypothèse qui se réalise ;
+- **la date de la coupe est écrite toute seule** au journal des mesures, par
+  `changelog.note_feedback`, donc les deux moitiés se découpent sans qu'aucune
+  date soit choisie après coup.
+
+**Ce lot ne retourne pas `FEEDBACK_SUSPENDED`** : c'est une décision de
+l'utilisateur, et elle ne se prend pas le soir où ces chiffres sont écrits.
+
 ### §3c — Le compte restant, et l'honnêteté du message
 
 Le brief demande d'afficher « il manque N journées d'analyse avant transmission
@@ -9414,3 +9465,244 @@ copie (`VACUUM INTO`), la base servie n'a pas été touchée.
 - **le poids et le seuil du §2a ne sont pas réglables**, et c'est voulu : un
   plancher à un n'est pas une préférence, c'est la borne en dessous de laquelle
   un palier annoncé cesse d'être proposable.
+
+---
+
+# LOT 19 bis — trois réponses, aucune application
+
+Relevé du 21/08/2026, sur une copie `VACUUM INTO` de la base servie. Aucun
+gabarit modifié, aucun drapeau retourné.
+
+## La clause qui produit 6 désaccords sur 6
+
+### Le fait, mesuré
+
+`Analysis.notation` sur la population principale : **21 paires comparables, 15
+d'accord, 6 en désaccord — et les 6 sont le même passage**, `transitions =
+[(4, 5, 6)]`. Cent pour cent dans le même sens.
+
+**Et le sens est l'inverse de celui qu'on craint** : `drift = −0,29`. Le modèle
+annonce **4** là où la table calcule **5** — il se note **en dessous** de ce
+qu'elle autorise, pas au-dessus. Ce n'est pas de l'inflation, c'est une retenue.
+
+### La cause proposée est exclue par les données
+
+> « la clause dit « aucun manque ne touche ce facteur » et se lit trop
+> facilement comme « aucun manque » »
+
+**Le gabarit ferme déjà cette lecture, en toutes lettres**, et le paragraphe est
+gardé par un test depuis le lot précédent :
+
+> Les crans 4 et 5 se lisent bien « aucun manque **ne touche ce facteur** », et
+> non « aucun manque » : la section A demande de nommer tout ce qu'on n'a pas
+> trouvé, si bien qu'une colonne « Ce qui manque » vide n'existe pratiquement
+> jamais. Exiger le vide rendrait le cran 5 inatteignable.
+
+Et surtout, **ce mécanisme produirait des 3, pas des 4**. Un modèle qui lirait
+« aucun manque » déclarerait `manque_touche_facteur: true`, et `rung()` rendrait
+3. Or les six blocs déclarent tous `false` — ils ont donc appliqué correctement
+la lecture « ne touche ce facteur ». Le désaccord naît **après** ce test, au
+départage 4 / 5.
+
+### La cause réelle : « facteur » ne veut pas dire la même chose dans la table et dans le code
+
+Les six blocs, relus dans `picks.claim_raw_json` :
+
+| Pick | Éditeurs distincts | `manque_touche` | Ce que portent les faits |
+| ---: | ---: | :---: | --- |
+| 283 | 3 | false | forfait Sørloth · quatre retours d'entraînement · absents de Málaga |
+| 287 | 2 | false | Swiatek 12 des 14 derniers jeux contre Sakkari · Parry 3 matchs dont deux en 3 sets |
+| 290 | 2 | false | Zverev bat Norrie en 2h45 · Zverev bat Atmane en 2h09 |
+| 302 | 2 | false | New England 5 points en 8 déplacements · Campana déclaré *Out* |
+| 304 | 2 | false | deux suspendus à Sporting KC · St. Louis 10 matchs sans défaite |
+| 339 | 4 | false | trois résultats de Tirante et Fils · horaire du quart |
+
+Tous portent **2 à 4 éditeurs distincts**, tous en niveau 1-2, tous
+`manque_touche_facteur: false`. `Claim.rung()` compte `distinct_publishers >= 2`
+et rend **5**. Le modèle a annoncé **4** six fois sur six.
+
+**Il n'a pas compté des éditeurs, il a compté des arguments.** Le pick 290 est le
+cas pur : deux résultats du même joueur, chez deux éditeurs. Éditorialement ce
+sont deux facteurs — deux origines qui peuvent se tromper séparément ;
+sportivement c'est **un seul** argument, la forme de Zverev. Le modèle a lu le
+second.
+
+Et la table l'y invite, parce qu'elle parle sa langue :
+
+```
+  5  ≥ 2 facteurs indépendants, tous vérifiés sur une source de niveau 1-2,
+     et aucun manque de la section A ne touche ces facteurs
+  4  1 facteur dominant vérifié en niveau 1-2, le reste neutre, et aucun
+     manque de la section A ne touche ce facteur
+```
+
+- **« facteur dominant » et « le reste neutre » sont un vocabulaire de rôle**,
+  pas de comptage. Un second fait qui appuie le premier s'y range naturellement
+  sous « le reste neutre » — donc en cran 4 — alors que le code le compte comme
+  un second facteur ;
+- la règle de comptage existe, mais **sous** la table, et son titre l'annonce
+  comme un contraste avec la section C — « **« Facteurs indépendants » ne se lit
+  pas ici comme « même cause » en section C** ». Elle se lit comme une précaution
+  contre une confusion voisine, pas comme la définition opératoire du 4 / 5 ;
+- rien dans les deux lignes de la table ne dit **où compter** : ni « éditeurs »,
+  ni « origines ». Le mot qui décide est absent de l'endroit où la décision se
+  prend.
+
+### La correction proposée — non appliquée
+
+Faire dire à la table ce que le code compte, dans ses lignes mêmes :
+
+```
+  5  des faits venant d'au moins 2 éditeurs distincts, tous vérifiés en
+     niveau 1-2, et aucun manque de la section A ne touche ces faits
+  4  des faits venant d'un seul éditeur, vérifiés en niveau 1-2, et aucun
+     manque de la section A ne touche ce facteur
+  3  un fait vérifié, mais un manque de la section A le touche
+```
+
+Et une phrase sous la table, à la place du renvoi actuel :
+
+> **Le départage 4 / 5 se compte sur les éditeurs, jamais sur les arguments.**
+> Deux résultats du même joueur relevés chez deux éditeurs sont **deux** facteurs
+> — deux origines qui peuvent se tromper séparément. Deux articles rapportant la
+> même conférence de presse sont **un seul**, l'éditeur d'origine étant le club.
+> Un fait qui n'appuie qu'accessoirement le premier compte quand même : ce cran
+> mesure la solidité du faisceau d'information, pas le poids sportif de chaque
+> argument.
+
+Trois choix à connaître :
+
+- **« des faits » remplace « facteurs »** dans les deux lignes qui se disputent.
+  Le mot « facteur » est gardé là où il désigne bien un argument — le cran 3, et
+  `manque_touche_facteur`, qui pose une question sportive et à laquelle le modèle
+  répond juste six fois sur six ;
+- **la dernière phrase est la seule qui ajoute quelque chose**, et elle vise
+  exactement le pick 290 : sans elle, un lecteur qui compte les éditeurs peut
+  encore écarter un fait « accessoire » ;
+- **le paragraphe « aucun manque ne touche ce facteur » reste**, mot pour mot.
+  Il est gardé par un test, il est juste, et les six blocs prouvent qu'il est
+  suivi. Le retirer serait la coupe qui casse un test de contenu — une
+  régression, pas une coupe.
+
+### Portée, et pourquoi ça n'est pas appliqué ce soir
+
+- **21 observations**, dont 6 en désaccord. Le seuil de nommage d'une clause
+  (`Notation.minimum` = 8, celui de la page) est franchi sur les 21 comparables,
+  et la concentration est totale — c'est le cas le plus net que ce lint puisse
+  produire ;
+- **l'effet attendu est de faire monter des 4 en 5**, donc de peupler un cran qui
+  ne porte que 10 sélections tranchées sur 237. Il ne corrige aucun déficit :
+  `conf 4` est déjà à parité (−0,63) et `conf 5` au-dessus (+1,16) ;
+- **c'est un changement de gabarit**, et il vaut mieux qu'il parte avec le
+  retournement du drapeau plutôt que seul. Deux changements de cadre livrés
+  séparément se découpent ; livré seul, celui-ci poserait un point de coupe de
+  plus sur une base qui en compte déjà treize en quinze jours, pour un effet qui
+  ne se mesurera qu'après la bascule.
+
+## Les 60 blocs de confiance introuvables : produits, pas collés
+
+### Ce que `imports_raw` répond
+
+**La question se tranche, et la réponse est le second cas** — mais elle se scinde
+en deux, et la moitié qui compte n'est pas celle que le compte laisse croire.
+
+Les 36 collages archivés, avec le nombre de blocs de confiance qu'ils portent :
+
+| Collage | Session | Caractères | Blocs portés | Rejets `conf` |
+| ---: | ---: | ---: | ---: | ---: |
+| 14 | 17 | 16 559 | **5** | 0 |
+| 16 | 17 | 17 780 | **5** | 0 |
+| 18 | 17 | 21 559 | **5** | 0 |
+| 20 | 17 | 25 128 | **7** | 0 |
+| 25 | 18 | 26 567 | **6** | 0 |
+| 36 | 18 | 13 463 | **2** | 0 |
+| les 30 autres | 15, 16, 17, 18 | **567 à 2 119** | **0** | 2 chacun |
+
+La coupure est nette et elle est de **taille** : au-dessus de 13 000 caractères,
+un collage porte ses blocs ; en dessous de 2 200, jamais. Les seconds sont des
+collages du **seul tableau de la section C**.
+
+**Donc l'extraction fonctionne.** Sur les six rendus complets, elle a lu 30 blocs
+et écrit `claim_raw_json` sur 22 des 29 sélections de la session 17. Ce n'est pas
+un défaut de lecture, et il n'y a rien à passer devant le reste au prochain lot.
+
+**Piège écarté au passage** : la chaîne ` ```conf ` est absente de **tous** les
+collages, y compris les six complets. Les clôtures sont consommées par le rendu,
+exactement comme `CONTRIBUTING.md` le documente pour les barres de tableau ; les
+blocs sont reconnus sur leur forme (`"faits"`, `"source_level"`). Chercher la
+clôture aurait donné « 0 sur 36 » et fait conclure à un défaut de production.
+
+### Les deux gestes, et un seul est une perte
+
+| Sessions | Rendus complets collés | Rejets `conf` | Sélections avec bloc |
+| --- | ---: | ---: | --- |
+| **15 et 16** | **0** | 26 | **0 sur 34** |
+| 17 et 18 | 6 | 34 | 28 sur 60 |
+
+- **Sessions 15 et 16 : le rendu complet n'a jamais été collé.** Treize collages,
+  tous entre 567 et 1 314 caractères, aucun bloc. Les 34 sélections de ces deux
+  sessions n'ont aucun cran calculé, et rien ne les rattrapera — c'est la perte,
+  et elle vaut 26 des 60 rejets ;
+- **Sessions 17 et 18 : le rendu complet a été collé**, puis des collages
+  partiels ont suivi — une ligne ajoutée, une ligne reprise. Chacun lève 2
+  rejets, et ces 34 rejets-là **ne décrivent aucune perte** : les blocs étaient
+  déjà arrivés par le collage complet.
+
+**Le compte de 60 sur-état donc le problème d'un facteur deux**, et il le fait
+dans le sens qui inquiète. Un rejet levé sur un collage partiel postérieur à un
+collage complet dit une chose vraie de ce collage-là et fausse de la session.
+
+### Ce que ça dit à l'utilisateur
+
+Le geste à tenir est celui que le message de rejet nomme déjà : **coller la
+réponse entière plutôt que les seules lignes du tableau**. Il a été tenu six fois
+sur trente-six, et jamais sur les sessions 15 et 16.
+
+C'est aussi ce qui explique les 21 observations du chantier précédent : sur
+237 sélections tranchées, **114 portent un cran calculé à 1** — l'état forcé
+quand `dossiers_ouverts` manque — et **20 seulement un cran réel** (5 en cran 3,
+8 en cran 4, 7 en cran 5). Le lint sur la rédaction du gabarit ne mesure donc
+qu'un dixième de ce qu'il pourrait mesurer, et la cause n'est ni le modèle ni
+l'extraction.
+
+### Rien n'est corrigé ici, et deux choses sont notées
+
+- **le compte de 60 mériterait d'être scindé** — rejets levés sur une session
+  qui n'a jamais reçu de rendu complet, contre rejets levés sur un collage
+  partiel postérieur à un complet. Le second n'est pas une perte, et les fondre
+  fait lire un chiffre deux fois trop grand. Ce n'est pas fait ici : c'est un
+  chantier, pas une réponse ;
+- **la sonde ne doit pas chercher la clôture.** Toute mesure future de « les
+  blocs sont-ils arrivés » se lit sur la **forme** (`"faits"`), jamais sur
+  ` ```conf `, qui vaut zéro partout y compris là où les blocs sont bien là.
+
+## Note de méthode : une affirmation sur l'état de l'application se vérifie avant d'être posée
+
+**Quatre affirmations sur cinq du brief du 21/08 ont été renversées**, et deux
+d'entre elles décrivaient l'**état actuel de l'application** :
+
+| Posé en prémisse | Vérifiable en | Ce qu'il fallait lire |
+| --- | --- | --- |
+| « le champ des consignes est vide » | une requête | `SELECT value FROM preferences WHERE key='session_notes'` — 1 103 caractères |
+| « la bascule se produira sans intervention humaine » | une lecture | `FEEDBACK_SUSPENDED = True`, et `enough` s'écrit `not self.suspended and …` |
+
+Les deux prenaient **trente secondes**. Les deux venaient de quelqu'un qui avait
+lu le code la veille — c'est précisément ce qui les rend dangereuses : une
+affirmation d'état vieillit sans prévenir, et celui qui l'énonce n'a aucune
+raison de la re-vérifier puisqu'il se souvient de l'avoir sue.
+
+**La règle**, à côté de celle du zéro d'appariement :
+
+> Une affirmation sur l'**état** de l'application — un champ est vide, un
+> comportement est automatique, un paramètre ne se déclenche jamais — se vérifie
+> avant d'être posée en prémisse d'un brief, **même quand elle vient de
+> quelqu'un qui a lu le code la veille**. Ce sont les moins chères à vérifier et
+> les plus coûteuses à croire : contrairement à une hypothèse sur les données,
+> elles ne se signalent pas comme incertaines.
+
+Le corollaire tient au cas du §3 : **une prémisse d'état fausse ne rend pas la
+demande caduque, elle en change la raison.** « Date la bascule parce qu'elle sera
+automatique » devient « date-la parce qu'elle dépendra d'un geste dont la date
+d'activation n'est pas la date de livraison » — la même livraison, une
+justification plus forte. C'est pour ça que la vérification passe avant le code
+et non à sa place.
