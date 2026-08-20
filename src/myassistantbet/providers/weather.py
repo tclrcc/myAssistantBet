@@ -50,6 +50,26 @@ PROVIDER = "weather"
 GEOCODING_URL = "https://geocoding-api.open-meteo.com"
 FORECAST_URL = "https://api.open-meteo.com"
 NWS_URL = "https://api.weather.gov"
+METEOALARM_URL = "https://feeds.meteoalarm.org/api/v1/warnings"
+
+#: Pays dont le flux MeteoAlarm **porte des polygones**, par nom de pays tel que
+#: le geocodage l'ecrit. La liste ne se devine pas d'un libelle : elle est le
+#: resultat d'un sondage des flux, pays par pays, du 20/08/2026.
+#:
+#: **Le polygone est la seule forme exploitable, et c'est mesure.** Sept schemas
+#: de geocode coexistent dans les flux — `EMMA_ID`, `NUTS3`, `NUTS2`, `FIPS`,
+#: `WARNCELLID`, un flux vide, et le polygone — et aucun des six premiers ne se
+#: rapproche d'une coordonnee sans une table saisie a la main dont **aucune
+#: entree ne se verifie**. Un code mal tape rendrait « aucune alerte en
+#: vigueur », c'est-a-dire l'affirmation qu'on a regarde : le mode d'echec que
+#: cette ligne existe pour eviter. Le polygone, lui, se verifie tout seul — le
+#: point y est ou il n'y est pas.
+METEOALARM_FEEDS = {
+    "norway": ("Norway",),
+    "sweden": ("Sweden",),
+    "switzerland": ("Switzerland",),
+    "united-kingdom": ("United Kingdom",),
+}
 
 #: Grandeurs demandees a la prevision horaire. Quatre et pas dix : ce qui change
 #: la lecture d'un match est la pluie, le vent et la chaleur — l'humidite et la
@@ -166,9 +186,30 @@ class WeatherClient(BaseHTTPClient):
         features = (response.data or {}).get("features") or []
         return [feature.get("properties") or {} for feature in features]
 
+    async def meteoalarm(self, feed: str) -> list[dict[str, Any]]:
+        """Alertes CAP d'un pays, chez MeteoAlarm. Sans compte et sans quota.
+
+        Rend les enveloppes brutes : le filtrage geographique appartient au
+        service, qui seul connait les coordonnees du stade. La licence est
+        equivalente a CC BY 4.0, d'ou le nom rendu dans la ligne — meme
+        obligation qu'Open-Meteo.
+        """
+        response = await self._get(
+            f"{METEOALARM_URL}/feeds-{feed}",
+            headers=self._headers(),
+        )
+        return (response.data or {}).get("warnings") or []
+
 
 def _code(row: dict[str, Any]) -> str:
     return str(row.get("country_code") or "").casefold()
 
 
-__all__ = ["NWS_URL", "PROVIDER", "ProviderError", "WeatherClient"]
+__all__ = [
+    "METEOALARM_FEEDS",
+    "METEOALARM_URL",
+    "NWS_URL",
+    "PROVIDER",
+    "ProviderError",
+    "WeatherClient",
+]

@@ -18,6 +18,7 @@ from myassistantbet.config import Settings
 from myassistantbet.providers.weather import (
     FORECAST_URL,
     GEOCODING_URL,
+    METEOALARM_URL,
     NWS_URL,
     WeatherClient,
 )
@@ -347,3 +348,175 @@ async def test_un_releve_frais_garde_son_heure(
 
     assert "releve 13/08 11:00 local" in ligne
     assert "il y a" not in ligne
+
+
+# --- Lot 13 : les alertes MeteoAlarm, resolues par polygone ---------------
+
+
+def test_ring_lit_le_couple_lat_lon_de_cap():
+    """CAP ecrit « lat,lon » ; le module raisonne en (lon, lat).
+
+    Inverser les deux fait tomber le point dans la mer, donc rendre « aucune
+    alerte en vigueur » : le seul mode d'echec que ce chantier ferme.
+    """
+    assert weather._ring("59.91,10.75 60.0,11.0") == [(10.75, 59.91), (11.0, 60.0)]
+    assert weather._ring("pas un couple") == []
+
+
+def test_inside_tranche_dedans_et_dehors():
+    carre = weather._ring("0,0 0,10 10,10 10,0 0,0")
+    assert weather._inside(5.0, 5.0, carre) is True
+    assert weather._inside(20.0, 5.0, carre) is False
+    assert weather._inside(5.0, 5.0, weather._ring("0,0 1,1")) is False
+
+
+def _cap(polygone, evenement="Mye lyn", langue="en"):
+    aire = {"areaDesc": "Ostlandet"}
+    if polygone is not None:
+        aire["polygon"] = polygone
+    return {
+        "alert": {
+            "info": [
+                {
+                    "event": evenement,
+                    "senderName": "Meteorologisk Institutt",
+                    "severity": "Moderate",
+                    "language": langue,
+                    "onset": "2026-08-13T18:00:00+00:00",
+                    "expires": "2026-08-14T06:00:00+00:00",
+                    "area": [aire],
+                }
+            ]
+        }
+    }
+
+
+def test_meteoalarm_retient_le_point_couvert_et_ecarte_l_autre():
+    warnings = [_cap(["0,0 0,10 10,10 10,0 0,0"])]
+    retenues, orphelines = weather._meteoalarm(warnings, 5.0, 5.0)
+    assert orphelines == 0
+    assert [row["event"] for row in retenues] == ["Mye lyn"]
+    assert retenues[0]["ends"] == "2026-08-14T06:00:00+00:00"
+    assert weather._meteoalarm(warnings, 50.0, 50.0) == ([], 0)
+
+
+def test_une_aire_sans_polygone_se_compte_au_lieu_de_se_taire():
+    """Sans polygone on ne sait pas : ce n'est pas une absence d'alerte."""
+    retenues, orphelines = weather._meteoalarm([_cap(None)], 5.0, 5.0)
+    assert retenues == []
+    assert orphelines == 1
+
+
+def test_infos_ne_compte_pas_deux_fois_la_meme_alerte_en_deux_langues():
+    alerte = {
+        "info": [
+            {"event": "Mye lyn", "language": "no"},
+            {"event": "Much lightning", "language": "en-GB"},
+        ]
+    }
+    assert [bloc["event"] for bloc in weather._infos(alerte)] == ["Much lightning"]
+
+
+def _norvege(load_fixture: Any, warnings: list[dict[str, Any]]) -> dict[str, respx.Route]:
+    """Un match a Oslo : geocodage norvegien, et le flux MeteoAlarm en face."""
+    routes = _routes(load_fixture)
+    geo = load_fixture("openmeteo_geocoding.json")
+    geo["results"] = [
+        {
+            **geo["results"][0],
+            "country": "Norway",
+            "country_code": "NO",
+            "latitude": 59.91,
+            "longitude": 10.75,
+            "timezone": "Europe/Oslo",
+        }
+    ]
+    routes["geocoding"].mock(return_value=httpx.Response(200, json=geo))
+    routes["meteoalarm"] = respx.get(f"{METEOALARM_URL}/feeds-norway").mock(
+        return_value=httpx.Response(200, json={"warnings": warnings})
+    )
+    return routes
+
+
+@respx.mock
+async def test_une_alerte_meteoalarm_sort_avec_son_emetteur_reel(
+    client: WeatherClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Le polygone couvre le stade : l'alerte est rendue, et l'emetteur recopie.
+
+    C'est ce qui fait tenir le niveau 1 : la ligne cite « Meteorologisk
+    Institutt », l'instance, jamais l'agregateur qui la relaie.
+    """
+    _seed(migrated)
+    routes = _norvege(load_fixture, [_cap(["59.0,10.0 59.0,11.5 60.5,11.5 60.5,10.0 59.0,10.0"])])
+
+    await weather.refresh_event(client, EVENT, "Oslo", "Norway", COMMENCE, migrated, NOW)
+
+    ligne = _line(migrated)
+    assert weather.ALERT_MARK in ligne
+    assert "Meteorologisk Institutt" in ligne
+    assert routes["meteoalarm"].called
+    assert not routes["alerts"].called, "le NWS ne couvre pas la Norvege"
+
+
+@respx.mock
+async def test_un_polygone_qui_ne_couvre_pas_le_stade_rend_aucune_alerte(
+    client: WeatherClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """Le point n'y est pas : on a regarde, et il n'y a rien. C'est le seul
+    cas ou ce libelle est vrai."""
+    _seed(migrated)
+    _norvege(load_fixture, [_cap(["0,0 0,1 1,1 1,0 0,0"])])
+
+    await weather.refresh_event(client, EVENT, "Oslo", "Norway", COMMENCE, migrated, NOW)
+
+    ligne = _line(migrated)
+    assert "aucune alerte" in ligne
+    assert weather.ALERT_MARK not in ligne
+
+
+@respx.mock
+async def test_une_aire_sans_polygone_rend_non_interrogees_jamais_aucune_alerte(
+    client: WeatherClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """**Le mode d'echec que ce chantier ferme.** Une aire non resolue ne dit
+    pas qu'il n'y a pas d'alerte : elle dit qu'on ne sait pas. Rendre « aucune
+    alerte » serait affirmer qu'on a regarde."""
+    _seed(migrated)
+    _norvege(load_fixture, [_cap(None)])
+
+    await weather.refresh_event(client, EVENT, "Oslo", "Norway", COMMENCE, migrated, NOW)
+
+    ligne = _line(migrated)
+    assert "non interrogees" in ligne
+    assert "aucune alerte" not in ligne
+
+
+@respx.mock
+async def test_un_flux_meteoalarm_injoignable_ne_se_lit_pas_comme_une_absence(
+    client: WeatherClient, migrated: Settings, load_fixture: Any
+) -> None:
+    _seed(migrated)
+    routes = _norvege(load_fixture, [])
+    routes["meteoalarm"].mock(return_value=httpx.Response(503))
+
+    await weather.refresh_event(client, EVENT, "Oslo", "Norway", COMMENCE, migrated, NOW)
+
+    assert "injoignables" in _line(migrated)
+
+
+@respx.mock
+async def test_un_pays_servi_sans_polygone_reste_non_interroge(
+    client: WeatherClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """L'Espagne a bien un flux, et il n'expose qu'un `EMMA_ID`. Aucune table
+    n'est saisie, donc aucun appel n'est emis et la ligne le dit."""
+    _seed(migrated)
+    routes = _routes(load_fixture)
+    geo = load_fixture("openmeteo_geocoding.json")
+    geo["results"] = [{**geo["results"][0], "country": "Spain", "country_code": "ES"}]
+    routes["geocoding"].mock(return_value=httpx.Response(200, json=geo))
+
+    await weather.refresh_event(client, EVENT, "Sevilla", "Spain", COMMENCE, migrated, NOW)
+
+    assert "alertes officielles non interrogees (Spain)" in _line(migrated)

@@ -26,7 +26,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..config import Settings, get_settings
 from ..providers.base import ProviderError
-from ..providers.weather import WeatherClient
+from ..providers.weather import METEOALARM_FEEDS, WeatherClient
 from .context import load, store
 
 logger = logging.getLogger(__name__)
@@ -45,6 +45,23 @@ TTL_HOURS = 3
 #: MeteoAlarm agrege l'Europe mais n'emet rien. Le nom de l'emetteur reel est
 #: recopie de la charge utile, jamais devine.
 ALERT_SOURCES = {"US": "NWS"}
+
+#: Pays servis par MeteoAlarm **avec des polygones**, par nom de pays. Ils
+#: s'ajoutent au NWS et n'ont aucune table de rapprochement : le polygone
+#: voyage dans l'alerte, et le point y est ou il n'y est pas.
+#:
+#: Sondage du 20/08/2026 sur les 31 pays de stade de la base : 21 ont un flux,
+#: mais **4 seulement portent des polygones**. Les 17 autres n'exposent qu'un
+#: code d'aire — sept schemas differents — dont aucun ne se rapproche d'une
+#: coordonnee sans une saisie manuelle invérifiable. Voir `METEOALARM_FEEDS`.
+METEOALARM_COUNTRIES = {
+    nom.casefold(): feed for feed, noms in METEOALARM_FEEDS.items() for nom in noms
+}
+
+#: Nom rendu dans la ligne. La licence MeteoAlarm impose l'attribution, comme
+#: Open-Meteo — et l'emetteur reel (« Meteorologisk Institutt ») est recopie de
+#: la charge utile par `_alert`, jamais devine : c'est lui la source de niveau 1.
+METEOALARM_SOURCE = "MeteoAlarm"
 
 #: Marqueur d'une alerte en vigueur, en tete de la ligne. **Constante et non
 #: litteral** : le prompt croise l'alerte avec le deplacement des horaires, et
@@ -140,17 +157,37 @@ async def refresh_event(
         return False
 
     code = _alert_country(country)
-    payload["alert_source"] = ALERT_SOURCES.get(code or "", "")
+    feed = METEOALARM_COUNTRIES.get((country or "").strip().casefold())
+    payload["alert_source"] = ALERT_SOURCES.get(code or "", "") or (
+        METEOALARM_SOURCE if feed else ""
+    )
     if payload["alert_source"]:
         try:
-            brutes = await client.alerts(*_coords(point))
-            payload["alerts"] = [_alert(row) for row in brutes if _covers(row, commence_time)]
+            if feed:
+                brutes, orphelines = _meteoalarm(await client.meteoalarm(feed), *_coords(point))
+            else:
+                brutes, orphelines = await client.alerts(*_coords(point)), 0
         except ProviderError as exc:
             # L'absence d'alerte et une source injoignable ne se disent pas
             # pareil : la seconde laisse le champ absent, et la ligne le dira.
             logger.warning("meteo : alertes %s indisponibles — %s", payload["alert_source"], exc)
         else:
-            payload["alerts_checked"] = True
+            payload["alerts"] = [_alert(row) for row in brutes if _covers(row, commence_time)]
+            if orphelines:
+                # **Une aire non resolue interdit de conclure.** Sans polygone,
+                # on ne sait pas si elle couvre le stade : rendre « aucune
+                # alerte » affirmerait qu'on a regarde, ce qui est exactement
+                # le defaut de `Absents : donnees non disponibles`. Le champ
+                # reste absent, donc la ligne dit « non interrogees ».
+                payload["alerts_unresolved"] = orphelines
+                logger.warning(
+                    "meteo : %d aire(s) sans polygone chez %s (%s) — alertes non concluantes",
+                    orphelines,
+                    payload["alert_source"],
+                    country or "pays inconnu",
+                )
+            else:
+                payload["alerts_checked"] = True
 
     store(event_id, KIND_WEATHER, payload, settings)
     return True
@@ -158,6 +195,88 @@ async def refresh_event(
 
 def _coords(point: dict[str, Any]) -> tuple[float, float]:
     return float(point["latitude"]), float(point["longitude"])
+
+
+def _ring(chaine: str) -> list[tuple[float, float]]:
+    """Un anneau CAP — « lat,lon lat,lon … » — en couples (lon, lat).
+
+    L'ordre est inverse a dessein : tout le reste du module raisonne en
+    (latitude, longitude), et melanger les deux conventions dans une meme
+    fonction geometrique est l'erreur qu'on ne voit pas — le point tombe alors
+    dans la mer et la ligne dit « aucune alerte ».
+    """
+    points: list[tuple[float, float]] = []
+    for jeton in chaine.split():
+        lat, _, lon = jeton.partition(",")
+        try:
+            points.append((float(lon), float(lat)))
+        except ValueError:
+            return []
+    return points
+
+
+def _inside(lon: float, lat: float, ring: list[tuple[float, float]]) -> bool:
+    """Lancer de rayon. Aucune dependance : quinze lignes contre une
+    bibliotheque geometrique entiere, pour un polygone convexe ou non.
+    """
+    if len(ring) < 3:
+        return False
+    dedans = False
+    for index in range(len(ring)):
+        x1, y1 = ring[index]
+        x2, y2 = ring[(index + 1) % len(ring)]
+        if (y1 > lat) != (y2 > lat) and lon < x1 + (lat - y1) * (x2 - x1) / (y2 - y1):
+            dedans = not dedans
+    return dedans
+
+
+def _meteoalarm(
+    warnings: list[dict[str, Any]], latitude: float, longitude: float
+) -> tuple[list[dict[str, Any]], int]:
+    """Les alertes CAP qui couvrent ce point, et le nombre d'aires non resolues.
+
+    **Une aire sans polygone n'est pas une aire sans alerte.** Elle est une aire
+    dont on ne sait pas si elle nous concerne, et les deux ne se disent pas
+    pareil : l'appelant refuse alors de conclure et la ligne rend « non
+    interrogees ». C'est le mode d'echec que ce chantier existe pour fermer.
+    """
+    retenues: list[dict[str, Any]] = []
+    orphelines = 0
+    for enveloppe in warnings:
+        for info in _infos(enveloppe.get("alert") or {}):
+            touche = False
+            for aire in info.get("area") or []:
+                brut = aire.get("polygon")
+                anneaux = brut if isinstance(brut, list) else [brut] if brut else []
+                if not anneaux:
+                    orphelines += 1
+                    continue
+                for anneau in anneaux:
+                    if _inside(longitude, latitude, _ring(str(anneau))):
+                        touche = True
+                        break
+                if touche:
+                    break
+            if touche:
+                retenues.append({**info, "ends": info.get("expires") or ""})
+    return retenues, orphelines
+
+
+def _infos(alerte: dict[str, Any]) -> list[dict[str, Any]]:
+    """Les blocs `info` d'une alerte, en preferant l'anglais.
+
+    Le CAP se repete langue par langue : garder les deux ferait compter une
+    alerte deux fois. L'anglais d'abord parce qu'il est le seul commun aux
+    quatre pays ; a defaut, le premier bloc, qui est la version nationale.
+    """
+    blocs = [bloc for bloc in (alerte.get("info") or []) if isinstance(bloc, dict)]
+    anglais = [bloc for bloc in blocs if str(bloc.get("language") or "").lower().startswith("en")]
+    if anglais:
+        return anglais
+    par_evenement: dict[str, dict[str, Any]] = {}
+    for bloc in blocs:
+        par_evenement.setdefault(str(bloc.get("identifier") or bloc.get("event") or ""), bloc)
+    return list(par_evenement.values())
 
 
 def _alert_country(country: str | None) -> str | None:
@@ -340,6 +459,14 @@ def _source_mention(payload: dict[str, Any]) -> str:
     """
     source = payload.get("alert_source")
     if not source:
+        pays = (payload.get("country") or "").strip() or "pays inconnu"
+        return f"alertes officielles non interrogees ({pays}) — a verifier"
+    if payload.get("alerts_unresolved"):
+        # **Le rapprochement a echoue, pas la source.** Une aire sans polygone
+        # ne se resout pas contre une coordonnee : on n'a donc pas regarde ce
+        # stade-la, et c'est le libelle « non interrogees » qui le dit. Le
+        # ranger dans « injoignables » enverrait reessayer un flux qui a
+        # parfaitement repondu.
         pays = (payload.get("country") or "").strip() or "pays inconnu"
         return f"alertes officielles non interrogees ({pays}) — a verifier"
     if not payload.get("alerts_checked"):
