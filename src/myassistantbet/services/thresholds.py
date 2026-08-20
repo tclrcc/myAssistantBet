@@ -211,9 +211,13 @@ THRESHOLDS: dict[str, Threshold] = {
             "manches retour : 3 dossiers ont été traités, choisis au jugé, et 18 sélections "
             "sont retombées en « lecture » donc à confiance 1. Le budget de requêtes d'une "
             "session est fini — ce seuil dit combien il en couvre, et c'est une propriété "
-            "du lecteur, pas des données. **C'est un plafond, jamais un objectif** : il "
-            "borne aussi les paliers hauts et le nombre de jambes d'un combiné, qui "
-            "réclament chacun un fait daté donc un dossier ouvert."
+            "du lecteur, pas des données. **C'est un plafond, jamais un objectif.** Il "
+            "borne aussi le nombre de jambes d'un combiné, qui réclament chacune un fait "
+            "daté donc un dossier ouvert : sur 170 prompts archivés, il l'a fait 47 fois, "
+            "soit sur tout lot de 11 blocs ou plus. Il ne borne en revanche **jamais** les "
+            "paliers hauts — les trois n'offrent que 6 places quand ce seuil en ouvre 10, "
+            "mesuré 0 fois sur 170 — et le §2a du lot 19 éloigne encore ce cas, un palier "
+            "haut offert prenant désormais au moins une place."
         ),
     ),
     "mise_unite_bp": Threshold(

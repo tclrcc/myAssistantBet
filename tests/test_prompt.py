@@ -2500,3 +2500,35 @@ async def test_l_exemple_de_sets_ne_nomme_que_des_blocs_de_tennis(
     assert sample_markers(lot, "cycling", whole=True) == []
     # Jamais tout le lot : « M1, M2, M3 » se lirait comme « ouvre-les tous ».
     assert len(sample_markers(lot)) < len(lot)
+
+
+def test_le_budget_ne_borne_jamais_les_paliers_hauts(migrated: Settings) -> None:
+    """**La note du seuil affirmait le contraire, et c'etait faux.**
+
+    « Il borne aussi les paliers hauts » : mesure du 21/08/2026 sur les 170
+    prompts archives, **zero** — et pas davantage au reglage precedent de 7.
+    Les trois paliers hauts n'offrent que 6 places quand le budget en ouvre 10,
+    donc la contrainte ne peut pas mordre ; le §2a l'eloigne encore, un palier
+    haut offert prenant desormais au moins une place.
+
+    Un docstring faux coute plus qu'un docstring absent : il fait re-deriver la
+    meme conclusion fausse au lecteur suivant. Le test enonce la **propriete**
+    — la somme des places hautes reglees contre le budget — et non le chiffre du
+    jour, qui depend des quotas seedes.
+    """
+    tiers = load_tiers(migrated)
+    budget = threshold_value("recherche_dossiers", migrated)
+    places = sum(tier.quota_max for tier in tiers[QUOTA_FLOOR_TIERS:])
+
+    assert places <= budget, (
+        "tant que les paliers hauts offrent moins de places que le budget, "
+        "`research_capped` ne peut pas mordre — et la note du seuil ne doit pas "
+        "affirmer qu'il le fait"
+    )
+    # Et il borne bel et bien les jambes d'un combine : c'est la moitie vraie de
+    # la note. Le nombre annonce est `min(quotas surs, lot, budget)` — la
+    # propriete, et non la valeur du jour : le seed des tests donne 9 jambes de
+    # quota sur, la base servie 11, et le budget ne mord que sur la seconde.
+    quotas_surs = sum(tier.quota_max for tier in tiers[:QUOTA_FLOOR_TIERS])
+    for lot in (budget - 1, budget, budget + 5):
+        assert safe_legs_available(tiers, lot, budget) == min(quotas_surs, lot, budget)

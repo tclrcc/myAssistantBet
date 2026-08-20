@@ -8910,3 +8910,97 @@ objet qu'aucun taux ne compte.
 Zéro token de prompt : la page Réglages n'entre dans aucun prompt. Une requête de
 plus au rendu de `/settings` — un `SELECT market, result FROM picks`, déjà fait
 par `unclassified()` juste à côté.
+
+## §2c — Deux paramètres « qui ne se déclenchent jamais » : un seul l'est
+
+### `combo_min_lot` = 20 : la branche s'est déclenchée quatre fois
+
+> « Les lots font 2 à 12 matchs. Cette branche ne s'est jamais déclenchée et ne
+> se déclenchera pas au régime actuel. »
+
+**Les lots ne font pas 2 à 12.** Distribution des 170 prompts archivés : de 0 à
+**37 blocs**, dont 15 prompts à 20 blocs ou plus. Le réglage à 20 date du
+**10/08 à 23:39** ; depuis, 85 prompts ont été rendus, et **4 ont déclenché la
+branche des deux combinés** :
+
+| Prompt | Session | Lot | Date |
+| ---: | ---: | ---: | --- |
+| 97 | 9 | 21 | 12/08 |
+| 111 | 11 | 28 | 14/08 |
+| 118 | 11 | 26 | 14/08 |
+| 141 | 13 | 20 | 15/08 |
+
+Vérifié sur les corps : les quatre portent bien « combiné solide » **et**
+« combiné frisson ». Le seuil n'est donc pas inerte — il est **inactif depuis le
+15/08**, ce qui n'est pas la même chose.
+
+La seconde moitié du brief est juste : sur les 22 prompts du régime récent
+(17/08 → 20/08), lots de **2 à 10**, aucun n'atteint 20. Trois sessions, six
+jours.
+
+**Proposition — ne rien changer, et surtout pas maintenant.** Le seuil vaut 20
+pour un défaut de 6, c'est un réglage resserré à la main, et la mesure qui le
+justifierait est celle du vivier de jambes — mesurée en **régime cassé**, sans la
+ligne `dossiers_ouverts`, donc avec toutes les sélections au cran 1. `CLAUDE.md`
+a déjà daté cette décision d'attente pour les cibles de combiné et pour
+`combo_solo_min_lot` ; elle vaut identiquement ici. La différence entre « 4 fois
+sur 85 » et « jamais » suffit à ne pas le retirer : une branche qui a servi
+quatre fois en dix jours sert encore le jour où une soirée de coupe d'Europe
+revient.
+
+### `recherche_dossiers` = 10 : trois usages, et le brief se trompe de raison
+
+> « Mesuré au lot 9 : il ne borne plus rien, les lots étant plus petits que le
+> budget. Sa description lui prête deux usages secondaires — borner les paliers
+> hauts et le nombre de jambes d'un combiné. Vérifie que ces deux-là tiennent
+> toujours. »
+
+Les trois usages, mesurés sur les 170 prompts, au réglage servi et à son
+prédécesseur :
+
+| Usage | budget 10 | budget 7 (le réglage d'avant le 17/08) |
+| --- | ---: | ---: |
+| `min(budget, lot)` annoncé dans le prompt | **47 / 170** | 92 / 170 |
+| `safe_legs_available` — jambes du combiné long | **47 / 170** | 92 / 170 |
+| `research_capped` — bornes des paliers hauts | **0 / 170** | 0 / 170 |
+
+**La conclusion du brief est juste, sa raison ne l'est pas.** Le paramètre n'est
+pas structurellement inerte : il a borné le prompt sur **47 prompts sur 170**, et
+il le fait sur tout lot de 11 blocs ou plus — `safe_legs_available` passe alors
+de 11 jambes à 10. Ce qui l'a rendu inerte est la **conjonction de deux
+mouvements** : le passage de 7 à 10 le 17/08, et des lots retombés à 10 blocs au
+plus depuis. Sur les 22 prompts du régime récent, il ne borne rien ; au réglage
+précédent, il aurait borné **8** d'entre eux.
+
+Le troisième usage, en revanche, est **mort au sens fort**, et c'était déjà
+documenté : les trois paliers hauts totalisent 6 places quand le budget en ouvre
+10, donc `research_capped` ne peut pas mordre. Il ne mordait pas davantage à 7.
+La porte ouverte le 14/08 reste ouverte, et ce lot y ajoute une raison de plus de
+ne pas s'y fier : depuis le §2a, un palier haut offert prend au moins une place,
+donc la somme des paliers hauts **ne peut que monter**.
+
+**Proposition — abaisser à 7, ou ne rien changer.** Deux lectures, et la seconde
+l'emporte de peu :
+
+- **abaisser** ramènerait le paramètre à un rôle actif : à 7, il bornerait 8 des
+  22 prompts récents, et le nombre de dossiers annoncé cesserait d'être une
+  simple recopie de la taille du lot. Mais le passage de 7 à 10 le 17/08 était
+  une **décision datée et argumentée** — « effet assumé et voulu : le relever
+  desserre mécaniquement ULTRA FUN, GIGA FUN et GIGA+ » — et rien de ce qui la
+  fondait n'a été mesuré à nouveau ;
+- **ne rien changer** : le paramètre est un **plafond**, et un plafond qui ne
+  mord pas fait son travail. `min(budget, lot)` reste calculé et annoncé, donc
+  aucun nombre fantôme n'entre dans le prompt.
+
+Ce n'est donc pas un paramètre inerte : c'est un plafond dimensionné au-dessus du
+régime courant, et le régime courant date de six jours. **Rien n'est retiré.**
+
+### Ce qu'un paramètre réellement inerte coûterait, et pourquoi la question est bien posée
+
+Le brief a raison sur le principe — « un réglage inerte est du coût fixe dans un
+cadre qui pèse déjà 53 % d'un prompt médian ». Mais aucun des deux ne coûte de
+token : `combo_min_lot` est un `{% if %}` qui **économise** du texte quand il ne
+passe pas, et `recherche_dossiers` alimente un nombre qui serait écrit de toute
+façon. Le coût d'un réglage inerte est ici un coût **d'écran** — une ligne de
+plus à lire dans la table des seuils — et deux lignes ne justifient pas de
+fermer une porte que la mesure dit encore utilisable.
