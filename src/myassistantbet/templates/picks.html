@@ -134,6 +134,11 @@
        tennis à chaque session, et aucun lecteur n'existait : les cinq scores de
        la base ont été tapés à la main, une ligne à la fois. #}
     <input type="hidden" name="set_scores" value="{{ preview.scores_payload }}">
+    {# La répartition de mise, recalculée depuis la table et confrontée à la
+       ligne `mises:` du collage. Elle voyage comme le reste — l'aperçu n'écrit
+       rien — et part dans **ses propres tables** : aucun montant n'entre dans
+       la mesure d'analyse, et un test lit la source pour le garantir. #}
+    <input type="hidden" name="stakes" value="{{ preview.stakes.payload }}">
     {# **La provenance voyage avec le formulaire.** Le collage brut est déjà en
        base — c'est la seule écriture que l'aperçu fasse — mais l'identifiant et
        les bornes doivent rejoindre chaque ligne créée : c'est ce qui rendra un

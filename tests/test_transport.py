@@ -37,6 +37,7 @@ from myassistantbet.services import (
     ingestion,
     picks_import,
     set_scores,
+    stakes,
     write_paths,
 )
 from myassistantbet.services.manual import build, save
@@ -185,6 +186,13 @@ DOSSIERS = "dossiers_ouverts: [M1, M2]\n"
 #: La prose de la section B qui renvoie a C-bis est **dans le format teste**, et
 #: pas a cote : c'est elle le degat, et un banc qui l'omettrait testerait un
 #: rendu que le modele ne produit pas.
+#: **Le septieme format**, entre au banc le jour meme ou il est mis en service —
+#: c'est exactement ce que `CONTRIBUTING.md` demande, et ce que les blocs `conf`
+#: n'ont pas eu. Il est ecrit a plat pour la meme raison : une ligne n'a pas de
+#: cloture a perdre, et les deux formats qui n'ont jamais pose de probleme de
+#: transport sont precisement les deux qui vivent hors de tout bloc de code.
+MISES = "mises: bankroll=200 | M1=0.50 | M2=0.50\n"
+
 SECTIONS = (
     "### B. Analyse par match\n\n"
     "Aucun fait daté ne porte Nice au-dessus de 2.30, il part en C-bis.\n\n"
@@ -253,6 +261,12 @@ ATTENDU = {
     # ligne de tableau se perd. Un rendu dont l'en-tete de tableau n'a pas
     # survecu passe par `preview.ignored`, comme le format « tableau ».
     "sections": ingestion.SELECTION,
+    # La ligne des mises est lue par le meme geste que le tableau : ses reperes
+    # viennent des blocs de confiance, et son echec sort donc la ou une ligne de
+    # tableau se perd. **Une ligne `mises:` abimee ne coute jamais l'import** —
+    # elle ne porte aucune prediction, seulement de l'argent, et le releve
+    # d'apercu la nomme.
+    "mises": ingestion.SELECTION,
 }
 
 FORMATS = {
@@ -271,6 +285,11 @@ FORMATS = {
     # toutes passer pour exploratoires. Compter `len(preview.picks)` aurait rendu
     # ce banc vert pendant la panne.
     "sections": (SECTIONS, lambda preview: sum(not p.exploratory for p in preview.picks)),
+    # **« Lu » se mesure sur la presence de la ligne, pas sur ses montants.** Une
+    # ligne dont les montants ont ete abimes reste une ligne lue, et c'est le
+    # recalcul qui fait autorite sur le montant de toute facon : ce qui se
+    # perdrait vraiment est la ligne elle-meme.
+    "mises": (TABLEAU + "\n" + CONF + "\n" + MISES, lambda preview: preview.stakes.present),
 }
 
 
@@ -279,7 +298,7 @@ FORMATS = {
 def test_aucune_alteration_ne_produit_de_perte_silencieuse(
     format_name: str, alteration: str, migrated: Settings
 ) -> None:
-    """**Le banc, 6 formats × 11 altérations.**
+    """**Le banc, 7 formats × 11 altérations.**
 
     Un seul résultat est acceptable : soit le format est lu, soit son échec
     laisse une trace. La troisième issue — lu à moitié, ou pas lu du tout, sans
@@ -311,11 +330,11 @@ def test_aucune_alteration_ne_produit_de_perte_silencieuse(
     )
 
 
-def test_le_banc_couvre_bien_six_formats_et_onze_alterations() -> None:
+def test_le_banc_couvre_bien_sept_formats_et_onze_alterations() -> None:
     """**Le compte, ecrit pour qu'il ne derive pas en silence.** Un format ajoute
     a `FORMATS` sans entree dans `ATTENDU` tomberait sur une cle manquante ; une
     alteration retiree ferait baisser ce produit sans que personne le voie."""
-    assert len(FORMATS) == 6
+    assert len(FORMATS) == 7
     assert len(ALTERATIONS) == 11
     assert set(FORMATS) == set(ATTENDU), "tout format testé sait quel rejet le prouve"
 
@@ -523,3 +542,30 @@ def test_une_numerotation_incomplete_ou_desordonnee_n_est_pas_retiree() -> None:
 
     assert ingestion.unnumber(partielle) == partielle
     assert ingestion.unnumber(desordonnee) == desordonnee
+
+
+def test_la_ligne_des_mises_survit_aux_onze_alterations() -> None:
+    """**La propriete que le format revendique, affirmee plutot que supposee.**
+
+    Le banc general se contente de « lu, ou tracé ». Pour ce format-ci `lu` est
+    vrai partout, donc l'assertion generale ne distinguerait pas un format
+    robuste d'un banc qui ne mesure rien — le piege du test qui change de cause
+    en gardant son resultat.
+
+    Ce que la ligne a plat revendique est plus fort : **elle n'a pas de cloture
+    a perdre**, donc aucune des onze alterations connues ne l'atteint. C'est
+    exactement la propriete que les blocs ```conf n'avaient pas, et qui leur a
+    coute 235 selections sur 235.
+    """
+    rendu = TABLEAU + "\n" + CONF + "\n" + MISES
+    perdues = []
+    for nom, abimer in sorted(ALTERATIONS.items()):
+        lu = stakes.read(abimer(rendu))
+        if not lu.present or lu.montants != {"M1": 0.50, "M2": 0.50}:
+            perdues.append(nom)
+    assert not perdues, (
+        "La ligne `mises:` ne survit plus à : "
+        + ", ".join(perdues)
+        + ". Une ligne à plat n'a pas de clôture à perdre — si elle se perd, "
+        "c'est que le format a cessé d'en être une."
+    )

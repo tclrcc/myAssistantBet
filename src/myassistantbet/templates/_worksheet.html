@@ -92,6 +92,22 @@
                  aria-label="Cote obtenue — {{ pick.selection }}"
                  title="Cote obtenue chez le bookmaker principal">
         </form>
+        {# Le montant **réellement posé**. Il ne se relève jamais tout seul —
+           intégration transactionnelle, interdit n°7 — et il va dans `mises`,
+           jamais dans `picks` : le résidu au prix ne connaît aucun montant.
+           La mise proposée est affichée à côté, en gris : c'est l'écart entre
+           les deux qui se lit, comme la cote déclarée d'un combiné. #}
+        {% set mise = stakes.get(pick.pick_id) %}
+        {% if coupon_tracking and mise %}
+        <form hx-post="/picks/{{ pick.pick_id }}/stake"
+              hx-target="#worksheet" hx-swap="outerHTML">
+          <input class="tiny" type="text" name="montant" inputmode="decimal"
+                 value="{{ '%.2f'|format(mise.montant_joue) if mise.montant_joue is not none else '' }}"
+                 placeholder="{{ '%.2f'|format(mise.montant) if mise.montant is not none else 'misé' }}"
+                 aria-label="Montant réellement posé — {{ pick.selection }}"
+                 title="Montant posé chez le bookmaker. Proposé : {{ '%.2f'|format(mise.montant) if mise.montant is not none else '—' }}">
+        </form>
+        {% endif %}
         {% if pick.tier_real and pick.tier_real != pick.tier %}
         <span class="badge warn" title="Le palier a changé une fois le prix relevé">
           palier revu

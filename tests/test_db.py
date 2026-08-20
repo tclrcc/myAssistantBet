@@ -17,6 +17,7 @@ LATEST_VERSION = len(ALL_MIGRATIONS)
 EXPECTED_TABLES = {
     "api_responses",
     "api_usage",
+    "bankroll_journee",
     "changelog_mesure",
     "combo_legs",
     "combos",
@@ -31,6 +32,7 @@ EXPECTED_TABLES = {
     "league_context",
     "market_coverage",
     "market_families",
+    "mises",
     "odds",
     "odds_history",
     "picks",

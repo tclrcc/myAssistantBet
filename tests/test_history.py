@@ -6,6 +6,7 @@ from dataclasses import fields
 
 import pytest
 from fastapi.testclient import TestClient
+from markupsafe import escape
 
 from myassistantbet import db
 from myassistantbet.config import Settings
@@ -487,19 +488,20 @@ def test_le_bloc_des_paris_poses_se_dit_vide_quand_le_suivi_est_ouvert(
     assert "elles répondent" in page or "ils répondent" in page
 
 
-def test_le_suivi_des_paris_est_ferme_par_defaut(
+def test_le_suivi_de_l_argent_se_ferme_par_le_reglage(
     client: TestClient, isolated_settings: Settings
 ) -> None:
-    """**Un constat plutot qu'une preference** : aucun pari n'est pose — zero
-    coupon sur douze sessions. L'application n'est pas un carnet de mises, c'est
-    un banc de mesure de predictions.
+    """**Le constat qui fermait ce suivi a change, et l'interrupteur suit.**
 
-    Le bloc annoncait cette absence comme un manque — « ce n'est pas une collecte
-    qui manque, c'est un geste qui n'a pas eu lieu » — ce qui est vrai et se lit
-    comme un reproche. Un usage assume n'a pas a s'excuser.
+    Il avait ete pose sur une mesure — aucun pari pose, `coupons` vide, `played`
+    faux sur 235 selections — et cette mesure decrivait un **usage**, pas une
+    regle. L'usage a change le 20/08/2026 : l'application produit desormais une
+    repartition de mise, donc l'argent se suit.
 
-    **Rien n'est supprime** : le reglage rallume l'ensemble, et c'est lui qui
-    distingue maintenant les deux etats que le bloc vide distinguait.
+    Ce que ce test garde n'a pas bouge d'un mot : **c'est l'interrupteur qui
+    gouverne la surface**, et lui seul. Seule la valeur par defaut a change de
+    cote, et l'eteindre restitue exactement l'etat d'avant — rien n'a ete
+    supprime.
     """
     session_id, event_id = _session_avec_match(isolated_settings, "football")
     pick_id = add_pick(
@@ -513,12 +515,20 @@ def test_le_suivi_des_paris_est_ferme_par_defaut(
     )
     set_result(pick_id, "win", settings=isolated_settings)
 
+    # Ouvert par defaut depuis le 20/08 : c'est le nouvel etat ordinaire.
+    assert "Ce que valent tes paris" in client.get("/stats").text
+
+    save_toggle(COUPON_TRACKING, "0", isolated_settings)
     page = client.get("/stats").text
     reglages = client.get("/settings").text
 
     assert "Ce que valent tes paris" not in page
     assert "un geste qui n'a pas eu lieu" not in page
-    assert "Suivi des paris posés" in reglages, "le réglage dit où le rouvrir"
+    # **Par `escape` et non en retirant l'apostrophe.** Jinja rend `l&#39;argent`,
+    # et comparer le texte brut ferait echouer l'assertion pour une raison
+    # typographique — le piege deja paye sur la parite fiche/prompt. Affaiblir
+    # l'assertion la ferait passer sans plus rien verifier.
+    assert str(escape("Suivi de l'argent")) in reglages, "le réglage dit où le rouvrir"
 
 
 # -- Selecteur de match : sport et competition ------------------------------
@@ -2786,16 +2796,15 @@ def test_la_feuille_reclame_la_cote_obtenue_sur_une_cote_de_reference(
         price_source="reference",
         settings=migrated,
     )
-    # **Seulement si le suivi des paris est ouvert** : cette cote ne peut venir
-    # que d'une mise, et sans mise la case demanderait une valeur qui n'existera
-    # jamais.
-    assert 'placeholder="obtenue"' not in client.get(f"/history/{session_id}").text
-    save_toggle(COUPON_TRACKING, "1", migrated)
-
+    # **Gouvernee par le suivi de l'argent**, ouvert par defaut depuis le
+    # 20/08 : cette cote ne peut venir que d'une mise, et l'eteindre retire la
+    # case plutot que de demander une valeur qui n'existera jamais.
     page = client.get(f"/history/{session_id}").text
-
     assert "real-price" in page
     assert 'placeholder="obtenue"' in page
+
+    save_toggle(COUPON_TRACKING, "0", migrated)
+    assert 'placeholder="obtenue"' not in client.get(f"/history/{session_id}").text
 
 
 def test_la_saisie_de_la_cote_obtenue_rend_le_fragment(

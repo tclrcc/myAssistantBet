@@ -202,6 +202,57 @@ THRESHOLDS: dict[str, Threshold] = {
             "réclament chacun un fait daté donc un dossier ouvert."
         ),
     ),
+    "mise_unite_bp": Threshold(
+        key="mise_unite_bp",
+        label="Unité de mise (centièmes de % de bankroll)",
+        default=25,
+        low=1,
+        high=1000,
+        note=(
+            "L'unité de référence d'une sélection de section C, en centièmes de pour-cent "
+            "de la bankroll : 25 vaut 0,25 %. **Elle se mesure, elle ne se choisit pas** — "
+            "c'est le plafond divisé par le 90e centile des journées d'analyse. Mesure du "
+            "20/08/2026 sur le régime actuel (4 journées, section C seule) : P90 = 20,4 "
+            "sélections, donc 5 % / 20,4 = 0,245 %, arrondi à 0,25 % pour que le plafond "
+            "tombe sur un compte entier de sélections. **Provisoire** : quatre journées, "
+            "quand un 90e centile défendable en demande une dizaine — à re-mesurer vers le "
+            "20/09/2026."
+        ),
+    ),
+    "mise_plafond_bp": Threshold(
+        key="mise_plafond_bp",
+        label="Plafond de journée (centièmes de % de bankroll)",
+        default=500,
+        low=10,
+        high=5000,
+        note=(
+            "Ce qu'une **journée** engage au plus, tous paris confondus : 500 vaut 5 %. "
+            "Divisé par l'unité, il donne le nombre de sélections au-delà duquel la "
+            "réduction s'applique — vingt au réglage servi, et c'est ce compte-là qui se "
+            "vérifie de tête. **Par journée et non par session** : un plafond de session se "
+            "contournerait en découpant, et le découpage doit rester gratuit — c'est une "
+            "bonne pratique d'analyse, la coupler au garde-fou d'argent en ferait un "
+            "multiplicateur d'exposition. La journée se compte sur la date de la sélection, "
+            "jamais sur l'heure de coup d'envoi. **Le plafond ne choisit pas la sécurité, il "
+            "choisit l'échelle** : le taux de déclenchement est fixé par l'ancrage au 90e "
+            "centile, pas par sa valeur."
+        ),
+    ),
+    "mise_combine_pct": Threshold(
+        key="mise_combine_pct",
+        label="Mise d'un combiné (% d'une unité)",
+        default=50,
+        low=0,
+        high=200,
+        note=(
+            "Ce qu'un combiné porte, en pour-cent d'une unité : 50 vaut une demi-unité. "
+            "Il pèse pour rien dans l'addition — deux combinés existent en base, à une "
+            "demi-unité pièce contre 12 à 21 pour les simples — donc ce réglage ne déplace "
+            "pas le plafond. **Les sélections de section C-bis ne sont pas réglables ici** : "
+            "elles ne reçoivent aucune mise, et c'est un arbitrage de principe et non de "
+            "calibrage — en faire un seuil inviterait à le rouvrir."
+        ),
+    ),
 }
 
 
@@ -277,30 +328,37 @@ class Toggle:
     note: str
 
 
-#: Le suivi des paris poses. **Desactive par defaut, et c'est un constat plutot
-#: qu'une preference** : aucun pari n'est pose — `coupons` vide, `played` faux
-#: sur les 235 selections, douze sessions. L'application n'est pas un carnet de
-#: mises, c'est un banc de mesure de predictions.
+#: Le suivi de l'argent. **Rallume le 20/08/2026, et le constat qui l'avait
+#: eteint a change** : il avait ete pose sur une mesure — aucun pari pose,
+#: `coupons` vide, `played` faux sur 235 selections — et cette mesure decrivait
+#: un usage, pas une regle. L'usage a change, l'interrupteur suit.
 #:
-#: La page presentait cette absence comme un manque — « ce n'est pas une collecte
-#: qui manque, c'est un geste qui n'a pas eu lieu » — ce qui est vrai et se lit
-#: comme un reproche. Un usage assume n'a pas a s'excuser.
+#: **Ce qu'il ouvre desormais**, en plus du bloc de paris poses : la section G du
+#: gabarit et le journal des mises. Le gate n'est pas cosmetique — la section
+#: pese **592 tokens de cout fixe** sur chaque prompt, et la faire payer a qui ne
+#: mise pas serait exactement ce que les portes du preambule existent pour
+#: eviter.
 #:
-#: **Rien n'est supprime** : l'interrupteur reactive l'ensemble si l'usage change,
-#: et les tables, les routes et les calculs restent en place.
+#: **Ce qu'il n'ouvre pas, et ne doit jamais ouvrir** : la mesure d'analyse. Le
+#: residu au prix, les crans et les intervalles ne connaissent aucun montant,
+#: quel que soit l'etat de cet interrupteur — c'est une separation de tables,
+#: gardee par un test qui lit la source, pas un reglage.
 COUPON_TRACKING = "suivi_coupons"
 
 TOGGLES: dict[str, Toggle] = {
     COUPON_TRACKING: Toggle(
         key=COUPON_TRACKING,
-        label="Suivi des paris posés",
-        default=False,
+        label="Suivi de l'argent",
+        default=True,
         note=(
             "Ouvre le bloc « Ce que valent tes paris » de la page de statistiques, la "
-            "colonne « cote obtenue » et le bouton « jouer » de la feuille de session. "
-            "Désactivé, l'application ne mesure que les prédictions — ce qu'elle fait "
-            "depuis douze sessions, aucun coupon n'ayant jamais été saisi. Rien n'est "
-            "supprimé : le rallumer restitue l'ensemble."
+            "colonne « cote obtenue », le bouton « jouer » de la feuille de session, la "
+            "**section G du gabarit** (répartition de mise) et le journal des mises. "
+            "Désactivé, l'application ne mesure que les prédictions et le prompt "
+            "économise 592 tokens de coût fixe. **La mesure d'analyse ne dépend pas de "
+            "cet interrupteur** : le résidu au prix, les crans et les intervalles "
+            "ignorent les montants dans les deux états, et c'est une séparation de "
+            "tables, pas un réglage."
         ),
     ),
 }

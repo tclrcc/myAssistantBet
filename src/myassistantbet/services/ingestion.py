@@ -476,6 +476,11 @@ class Report:
     claims_read: int = 0
     combos_recorded: int = 0
     set_scores_read: int = 0
+    #: Les mises enregistrees au journal. **Comptees ici mais absentes de
+    #: `rejected`** : une mise perdue n'est pas une prediction perdue, elle se
+    #: ressaisit, et la faire entrer dans le compte des pertes melangerait les
+    #: deux journaux que la migration 065 separe.
+    stakes_recorded: int = 0
     #: Les matchs dont le coup d'envoi etait passe, nommes avec leur ecart.
     #: **Rien ne le signalait au moment ou ca se produit**, et c'est le seul
     #: instant ou l'information arrive assez tot pour changer quelque chose.

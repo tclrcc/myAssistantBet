@@ -50,6 +50,7 @@ from .services import prompt as prompt_service
 from .services import sections as sections_service
 from .services import session as session_service
 from .services import set_scores as set_scores_service
+from .services import stakes as stakes_service
 from .services import stats_export as stats_export_service
 from .services import tennis_history as tennis_history_service
 from .services import tennis_load as tennis_load_service
@@ -1060,6 +1061,14 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         # defaut, et le corriger reste possible.
         # Le suivi des paris poses, desactive par defaut : c'est lui qui ouvre
         # la colonne « cote obtenue » et le bouton « jouer ».
+        # **Le journal des mises est attache ici et non dans `worksheet()`.**
+        # `history.py` produit la mesure d'analyse — residu au prix, crans,
+        # intervalles — et un test lit sa source pour verifier qu'il ne connait
+        # aucun montant. La jointure se fait donc au bord, dans la couche qui
+        # assemble une page, jamais dans celle qui calcule un taux.
+        "stakes": {
+            row.pick_id: row for row in stakes_service.rows_for_session(session_id, settings)
+        },
         "coupon_tracking": thresholds_service.toggle_of(
             thresholds_service.COUPON_TRACKING, settings
         ),
@@ -1306,6 +1315,11 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
     )
     report.picks_created = created
     report.combos_recorded = _combo_count(form) - len(combo_failures)
+    # **Le journal des mises, dans ses propres tables.** Il s'ecrit apres les
+    # selections parce qu'il a besoin de leurs identifiants, et il n'entre dans
+    # aucun compte-rendu d'ingestion : une mise perdue n'est pas une prediction
+    # perdue, elle se ressaisit. Un echec ici ne doit rien couter a l'import.
+    report.stakes_recorded = _record_stakes(session_id, form, par_ligne, settings)
     ingestion_service.record(
         session_id,
         report.rejects,
@@ -1323,6 +1337,53 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
             import_report=report,
         ),
     )
+
+
+def _record_stakes(
+    session_id: int,
+    form: dict[str, str],
+    par_ligne: dict[str, int],
+    settings: Settings,
+) -> int:
+    """Enregistre la repartition de mise du collage. Rend le nombre de lignes.
+
+    **Les montants ne touchent jamais `picks`.** Ils vivent dans `mises`, une
+    table que la mesure d'analyse ne lit pas — separation gardee par un test qui
+    lit la source, pas par une convention.
+
+    Une ligne decochee ou en echec n'a pas d'identifiant : sa mise est
+    simplement absente, et c'est juste — on ne mise pas sur une selection qu'on
+    n'a pas enregistree.
+    """
+    brut = form.get("stakes", "") or ""
+    if not brut.strip():
+        return 0
+    try:
+        charge = json.loads(brut)
+    except json.JSONDecodeError:
+        logger.warning("Repartition de mise illisible dans le formulaire, aucune enregistree.")
+        return 0
+    if not isinstance(charge, dict):
+        return 0
+    journee = str(charge.get("journee") or "")
+    entrees = [
+        stakes_service.Entry(
+            unites=float(ligne.get("unites") or 0.0),
+            montant=ligne.get("montant"),
+            montant_declare=ligne.get("declare"),
+            pick_id=par_ligne[str(ligne.get("index"))],
+        )
+        for ligne in charge.get("lignes", [])
+        if isinstance(ligne, dict) and str(ligne.get("index")) in par_ligne
+    ]
+    if not entrees or not journee:
+        return 0
+    # La bankroll de la journee est memorisee au passage : c'est elle qui dit
+    # contre quoi le plafond se compte pour les rendus suivants du meme jour.
+    bankroll = charge.get("bankroll")
+    if isinstance(bankroll, int | float) and bankroll > 0:
+        stakes_service.set_bankroll(journee, float(bankroll), settings=settings)
+    return stakes_service.record(journee, session_id, entrees, settings)
 
 
 def _combo_count(form: dict[str, str]) -> int:
@@ -1573,6 +1634,34 @@ def set_pick_real_price(
         history_service.set_real_price(pick_id, price, settings)
     except history_service.HistoryError as exc:
         logger.warning("Cote obtenue refusee : %s", exc)
+    return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
+
+
+@app.post("/picks/{pick_id}/stake", response_class=HTMLResponse)
+def set_pick_stake(request: Request, pick_id: int, montant: str = Form(default="")) -> HTMLResponse:
+    """Enregistre le montant **reellement pose** chez le bookmaker.
+
+    Il ne se releve jamais tout seul : ce serait une integration
+    transactionnelle avec un bookmaker, interdit n 7 de SPEC.md. Un champ vide
+    **efface** la saisie plutot que d'etre refuse — se tromper doit pouvoir
+    s'annuler, sinon on hesite a saisir et la colonne meurt.
+
+    L'ecriture va dans `mises` et **jamais dans `picks`** : le residu au prix ne
+    doit connaitre aucun montant, et c'est une separation de tables.
+    """
+    settings = get_settings()
+    session_id = _pick_session(pick_id)
+    brut = (montant or "").strip().replace(",", ".")
+    valeur: float | None = None
+    if brut:
+        try:
+            valeur = float(brut)
+        except ValueError:
+            logger.warning("Montant joue illisible (%r) : ignore", montant)
+            return templates.TemplateResponse(
+                request, "_worksheet.html", _picks_context(session_id)
+            )
+    stakes_service.set_played(pick_id, valeur, settings)
     return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
 
 

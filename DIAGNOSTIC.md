@@ -6162,3 +6162,495 @@ La réduction proportionnelle est **annoncée nommément** — unités demandée
 unités accordées, facteur — dans la section de répartition du rendu comme dans le
 relevé d'import. Jamais absorbée en silence. C'est la règle du lot 14 appliquée
 d'avance : un rabot qui ne se nomme pas se lit comme une mise choisie.
+
+## §1b — La formulation de gabarit, écrite avant d'être appliquée
+
+Le brief impose d'écrire ici la formulation exacte avant de toucher au gabarit.
+La voici, avec ce qui la justifie ligne par ligne.
+
+### Où elle se pose, et sous quelle forme
+
+**Section G, après la section F**, et une ligne dans l'en-tête pour la bankroll.
+Le format de sortie est une **ligne à plat**, jamais un bloc clôturé — c'est la
+règle la plus chère du dépôt, apprise trois fois, et la mesure qui la fonde est
+sans appel : `picks.claim_raw_json` était NULL sur 235 sélections sur 235 parce
+que les blocs ```conf perdaient leur clôture au collage. Une ligne `mises:` n'a
+pas de clôture à perdre, exactement comme `sets:` et `dossiers_ouverts:`, les
+deux formats qui n'ont jamais posé de problème.
+
+Elle entre au banc de transport (`tests/test_transport.py`) comme **septième
+format**, avec son entrée dans `ATTENDU`.
+
+### Le texte
+
+> ### G. Répartition de mise
+>
+> Cette section n'est produite **que si une bankroll de session est donnée** en
+> tête de ce prompt. Sans montant, saute-la entièrement et n'écris pas non plus
+> que tu ne l'as pas produite — la question n'est pas posée.
+>
+> Tu **appliques une table**, tu n'exerces aucun jugement. La mise ne dépend ni
+> de la cote, ni du palier, ni de ton cran de confiance, ni d'aucun résultat
+> antérieur : ces quatre-là servent à classer et à mesurer, jamais à doser.
+> N'écris **aucune justification de mise** — pas de « je mets davantage ici parce
+> que ». Ce serait le calcul d'espérance interdit en tête de ce prompt, sous un
+> autre nom.
+>
+> La table de ce lot :
+>
+>   · unité de référence : **{{ mise_unite_pct }} % de la bankroll**
+>   · une sélection de section C : **1 unité**
+>   · une sélection de section C-bis : **aucune mise**
+>   · un combiné : **{{ mise_combine_unites }} unité**
+>   · plafond de la journée : **{{ mise_plafond_pct }} % de la bankroll**, soit
+>     **{{ mise_plafond_unites }} unités**
+>
+> Les sélections de C-bis ne reçoivent aucune mise **parce qu'elles sont
+> produites sans fait daté, sur lecture seule des blocs**. Ce n'est pas un
+> jugement sur leur qualité : elles sont enregistrées et tranchées comme les
+> autres, et c'est ce qui les mesure. Leur mettre un montant paierait une
+> information qu'on obtient sans payer.
+>
+> Si le total des unités dépasse le plafond, réduis **proportionnellement** et
+> dis-le nommément : combien d'unités demandées, combien accordées. Ne l'absorbe
+> pas en silence.
+>
+> Après ta prose, une ligne unique pour tout le lot, hors de tout bloc de code :
+>
+>     mises: bankroll=200 | M3=0.50 | M7=0.50 | combine_court=0.25
+>
+> Un repère de bloc par sélection de section C, puis `combine_court` et
+> `combine_long` s'ils existent, chacun avec son montant dans la monnaie de la
+> bankroll, deux décimales. L'application recalcule la répartition depuis la
+> même table : ne l'ajuste pas pour qu'elle tombe juste, l'écart est ce qui se
+> lit.
+
+### Les quatre points que le brief exige, et où ils sont
+
+| Exigé | Où |
+| --- | --- |
+| le montant vient de l'utilisateur, et sans lui la section n'est pas produite | premier paragraphe, avec l'interdiction d'écrire qu'on ne l'a pas produite |
+| la répartition applique la table, sans jugement | deuxième paragraphe, avec les quatre axes nommés — cote, palier, confiance, résultat antérieur |
+| aucune justification de mise attendue | même paragraphe, rattaché à l'interdit d'espérance de la tête du prompt |
+| C-bis réduite parce que produite sans fait daté, non parce que moins bonne | paragraphe dédié — et la réduction va jusqu'à zéro, arbitrage du 20/08 |
+
+### Ce que le gabarit ne dit pas, et pourquoi
+
+- **Il n'énonce pas la règle de non-progression.** Elle ne se tient pas par une
+  consigne : elle se tient parce que la fonction qui calcule une mise **ne reçoit
+  aucun résultat en paramètre**. Une contrainte de signature ne se contourne pas,
+  une phrase si. Le gabarit dit seulement que la mise ne dépend d'aucun résultat
+  antérieur, ce qui suffit à empêcher le modèle d'en inventer une.
+- **Il ne fait pas calculer le plafond au modèle.** Les deux nombres — pour-cent
+  et unités — descendent résolus, comme les quotas de palier et le budget de
+  recherche. Une borne qu'il faut recalculer soi-même ne contraint rien.
+
+## §2a — Le recensement des clés : tout est là, et presque rien n'est servi
+
+**Mesure du 20/08/2026, sans un seul appel.** Les 735 réponses
+`profile/matches-played` déjà archivées portent 73 027 matchs et 146 054 fiches
+de joueur — de quoi recenser exhaustivement ce que la source sert, et à quelle
+couverture. Aucun crédit dépensé.
+
+### Les dix-huit clés de `stats`, et leur couverture
+
+| Clé | ATP | WTA |
+| --- | ---: | ---: |
+| `firstServe` / `firstServeOf` | 97,7 % | 97,6 % |
+| `aces` | 97,7 % | 97,5 % |
+| `doubleFaults` | 97,7 % | 97,6 % |
+| `winningOnFirstServe` / `Of` | 97,7 % | 97,6 % |
+| `winningOnSecondServe` / `Of` | 97,7 % | 97,6 % |
+| `breakPointsConverted` / `Of` | 97,7 % | 97,6 % |
+| `totalPointsWon` | 97,7 % | 97,6 % |
+| **`winners`** | **13,8 %** | **15,4 %** |
+| **`unforcedErrors`** | **13,8 %** | **15,4 %** |
+| `netApproaches` / `Of` | 13,4 % | 15,1 % |
+| `fastestServe` | 9,8 % | 11,2 % |
+| `averageFirstServeSpeed` | 9,5 % | 10,9 % |
+| `averageSecondServeSpeed` | 9,5 % | 10,9 % |
+
+Les deux clés que le brief demande **existent**. C'est leur couverture qui
+tranche, et elle n'est pas ce que 14 % laisse croire.
+
+### La couverture n'est pas partielle, elle est binaire : Grand Chelem, ou rien
+
+Ventilé par niveau de tournoi, sur la fenêtre de 52 semaines que les agrégats
+emploient — 10 345 matchs distincts :
+
+| Niveau | Matchs | Avec `winners` |
+| --- | ---: | ---: |
+| **Grand Slam** | 1 335 | **99,4 %** |
+| WTA 1000 | 1 057 | 0,0 % |
+| WTA 125 | 1 021 | 0,0 % |
+| ATP Masters 1000 | 983 | 0,0 % |
+| ATP 250 | 930 | 0,0 % |
+| WTA 250 | 735 | 0,0 % |
+| ITF Event | 730 | 0,0 % |
+| WTA 500 | 670 | 0,0 % |
+| ATP 500 | 646 | 0,0 % |
+| Challenger 75 / 125 / 100 / 175 | 1 817 | 0,0 % |
+| Future, Fed Cup, Finals, autres | 372 | 0,0 % |
+
+**Pas une seule exception hors Grand Chelem**, et le même mur pour toutes les
+clés riches :
+
+| Clé | Grand Chelem | Hors Grand Chelem |
+| --- | ---: | ---: |
+| `winners` | 99,4 % | **0,0 %** |
+| `unforcedErrors` | 99,4 % | **0,0 %** |
+| `netApproaches` | 98,3 % | **0,0 %** |
+| `fastestServe` | 76,6 % | **0,0 %** |
+| `averageFirstServeSpeed` | 72,3 % | **0,0 %** |
+| `breakPointsConverted` | 99,4 % | 96,8 % |
+| `totalPointsWon` | 99,4 % | 96,8 % |
+
+Le contrôle par surface le confirme sans le chercher : Grass 35,1 % (Wimbledon
+pèse lourd dans le peu de gazon joué), Hard 12,9 % (Open d'Australie et US
+Open), Clay 10,7 % (Roland-Garros), **`I.hard` 0,0 %** — la salle, où aucun
+Grand Chelem ne se joue.
+
+### Ce que ça donne sur les joueurs des cinq derniers lots
+
+79 joueurs, dont 72 rapprochés dans l'archive, fenêtre 52 semaines :
+
+| | ATP (36 joueurs) | WTA (36 joueurs) |
+| --- | ---: | ---: |
+| matchs dans la fenêtre — médiane / Q1 | 63,0 / 56,8 | 56,0 / 48,8 |
+| dont stats de service | 60,5 / 54,0 | 54,0 / 47,8 |
+| **dont `winners`** | **8,5 / 6,0** | **10,0 / 7,8** |
+| points de service — médiane / Q1 | 4 802 / 4 370 | 3 795 / 3 368 |
+| au-dessus du seuil de 400 points | **36 / 36** | **36 / 36** |
+
+Les huit à dix matchs ne sont pas un échantillon maigre : ce sont **exactement
+les matchs de Grand Chelem** du joueur. Quatre tournois par an.
+
+### Conclusion : `Coups gagnants` et `Fautes directes` ne se construisent pas
+
+Trois raisons qui se cumulent, et chacune suffirait :
+
+- **Les lots de ce projet sont des tableaux de Masters 1000**, où la couverture
+  est de **0,0 %**. La ligne serait vide sur la totalité des blocs qu'on analyse,
+  et pleine seulement pendant les quinze jours d'un Grand Chelem ;
+- **le sous-échantillon est un format, pas un tirage.** Côté ATP, ces matchs sont
+  au meilleur des cinq sets — le format que `Profil` et `Marge` **écartent déjà**
+  parce qu'il fait lire un joueur de trois sets comme un marathonien. Un compte
+  de coups gagnants y est mécaniquement plus élevé ;
+- **un joueur battu au premier tour porte un match, un finaliste sept.** La ligne
+  serait la plus fournie pour ceux dont on sait déjà le plus.
+
+C'est le **même résultat négatif que le Match Charting Project** du 17/08, sous
+une forme plus nette : là-bas la couverture décroissait avec le rang, et une
+mesure de médiane suffisait à trancher ; ici elle est **binaire et
+structurelle** — le fournisseur ne sert ces colonnes que pour quatre tournois,
+et aucun volume de collecte n'y changera rien.
+
+**Ce qui rouvrirait la question, et rien d'autre** : un lot de Grand Chelem,
+seconde semaine. Ce n'est pas le régime de ce projet.
+
+### Ce qui, en revanche, se construit : les balles de break sauvées
+
+Le brief demande si elles sont servies côté joueur ou seulement déductibles de
+l'adversaire. **Déductibles, et c'est sans conséquence** : les deux joueurs
+figurent dans la **même** fiche `matches-played`, donc
+
+    balles de break affrontées = breakPointsConvertedOf de l'adversaire
+    balles de break sauvées    = Of − Converted de l'adversaire
+
+à **97 % de couverture**, sur tous les niveaux de tournoi, et sans un appel de
+plus. Le chemin existe déjà et il est éprouvé : `return_points` et `return_won`
+se dérivent exactement ainsi — « les colonnes adverses de la même réponse ».
+
+C'est le complément naturel de `Retour`, qui rend déjà « BP converties » :
+`Service` gagnerait « BP sauvées », et les deux moitiés d'une même question
+seraient enfin dans le bloc. Deux colonnes sommées de plus dans
+`player_serve_agg`, aucun coût de collecte.
+
+## §4a — La porte des prix : entrouverte, sur 1,6 % du board
+
+**La question passe avant toute donnée joueur, et c'est elle qui décide.** Deux
+mesures, l'une sur la base servie, l'autre en direct.
+
+### Ce que la base dit : jamais un seul prix
+
+`odds` porte **32 570 lignes**, `prompt_odds` **26 041**. Lignes de props
+buteurs, dans l'une comme dans l'autre : **zéro**. Sur toute l'histoire du
+projet, aucun prix de buteur n'est jamais entré en base.
+
+`market_coverage` dit pourquoi il ne s'agit pas d'un oubli de collecte — les
+marchés **ont été demandés** :
+
+| Compétition | Marché | Books interrogés | Servi | Constats |
+| --- | --- | --- | ---: | ---: |
+| La Liga | `player_first_goal_scorer` | betclic_fr, pinnacle, unibet_nl | **0** | 2 |
+| La Liga | `player_goal_scorer_anytime` | betclic_fr, pinnacle, unibet_nl | **0** | 2 |
+| MLS | `player_first_goal_scorer` | betclic_fr, pinnacle, unibet_nl | **0** | 11 |
+| MLS | `player_goal_scorer_anytime` | betclic_fr, pinnacle, unibet_nl | **0** | 11 |
+
+Treize constats, aucun prix. Les quatre autres compétitions de la liste blanche
+(`PLAYER_PROPS_LEAGUES` : EPL, Ligue 1, Bundesliga, Serie A) n'ont jamais été
+sondées — elles entrent tout juste en saison.
+
+### Le sondage en direct : 18 matchs, 8 books, 6 compétitions
+
+Sondage du 20/08/2026, trois matchs par compétition, huit bookmakers —
+`betclic_fr`, `pinnacle`, `unibet_nl`, `williamhill`, `bet365`, `888sport`,
+`superbet`, `10bet`. **Coût total : 18 crédits** (les réponses vides ne sont pas
+facturées, donc les compétitions sans prix coûtent zéro).
+
+| Compétition | Matchs sondés | Qui sert |
+| --- | ---: | --- |
+| EPL | 3 / 10 | **William Hill**, les 2 marchés |
+| La Liga | 3 / 14 | **William Hill**, les 2 marchés |
+| Serie A | 3 / 10 | **William Hill**, les 2 marchés |
+| Ligue 1 | 3 / 9 | **aucun book** |
+| Bundesliga | 3 / 9 | **aucun book** |
+| MLS | 3 / 29 | **aucun book** |
+
+Résultat parfaitement homogène — 3 matchs sur 3 dans chaque sens, jamais un cas
+partiel. **Betclic ne sert ces marchés sur aucune compétition**, ce qui prolonge
+exactement le constat déjà établi : un marché sur 364 matchs.
+
+### La mesure qui tranche : 7 matchs sur 445
+
+Un prix existe donc, sur trois compétitions. Reste à savoir ce qu'elles pèsent
+dans ce qui est réellement analysé.
+
+| | Matchs analysés | Dont EPL / La Liga / Serie A |
+| --- | ---: | ---: |
+| toute l'histoire (`prompt_events`) | 445 | **7 — soit 1,6 %** |
+| cinq derniers lots | 163 | **4 — soit 2,5 %** |
+
+Les lots vivent ailleurs : Cincinnati ATP 92 matchs, Cincinnati WTA 88,
+Conference League 49, MLS 26, Europa League 24, qualifications de Champions
+League 16, Championship 12, La Liga 2 11.
+
+**Réserve honnête, et elle joue contre la conclusion** : ces trois championnats
+ouvrent leur saison au moment de la mesure — la base ne porte qu'**1 match
+d'EPL, 8 de La Liga, 0 de Serie A**. Le 1,6 % sous-estime donc le régime de
+saison pleine. Borne haute raisonnable : trois championnats à une dizaine de
+matchs par semaine font ~30 rencontres contre ~280 analysées sur la même période,
+soit **de l'ordre de 10 %** — et seulement si les trois sont scannés en entier.
+
+### Conclusion : la porte est entrouverte, et ce n'est pas assez
+
+Ce qu'une section buteurs produirait, tel que mesuré :
+
+- elle serait **vide sur 90 à 98 % des blocs**, et le gabarit paierait son mode
+  d'emploi sur chaque prompt — le coût est fixe, le rendement non ;
+- **chaque ligne porterait une cote de référence**, jamais un prix jouable :
+  William Hill n'est pas le book principal, donc toute sélection sortirait avec
+  sa mention `(ref.)` et sa consigne de relever le prix avant de miser ;
+- **l'écart de ce book sur ce marché n'est pas mesuré.** Les 3,4 % d'écart moyen
+  connus pour William Hill l'ont été sur les marchés principaux, via
+  API-Football. Un marché de buteur porte une marge bien supérieure, et rien ne
+  dit que la proximité tienne — l'affirmer serait exactement la généralisation
+  déjà payée sur « le bookmaker les propose bien sur son site ».
+
+**Recommandation : ne rien construire, et le §4b n'est pas mesuré.** Ce n'est pas
+un refus de principe — le marché existe, il est servi, il est modélisable. C'est
+un arbitrage de rendement, et il se rouvrira tout seul le jour où les trois
+championnats pèseront vraiment dans les lots. **Ce qui le rouvrirait, et rien
+d'autre** : une part d'EPL / La Liga / Serie A durablement au-dessus de 20 % du
+board, ou Betclic servant ces marchés via The Odds API — les deux se constatent
+sans rien coder, la première dans `prompt_events`, la seconde dans
+`market_coverage`.
+
+**Ce qui a été retiré de ce lot par cette mesure** : le §4b (recensement des
+données joueur d'API-Football) et le §4c (la section dédiée). Mesurer la
+couverture joueur avant de savoir s'il existe un prix aurait été l'ordre inverse
+de celui que le brief impose lui-même.
+
+## §3a — La catégorie est servie, la profondeur est bridée par notre propre pagination
+
+**Mesure du 20/08/2026, sans un appel**, sur les 735 réponses archivées —
+18 757 matchs distincts, du 17/05/2018 au 19/08/2026.
+
+### Les trois champs que §3 demande sont servis
+
+| Champ | Couverture | Ce qu'il porte |
+| --- | ---: | --- |
+| `tournament.tier` | **99,1 %** | `Grand Slam`, `WTA 1000`, `ATP Masters 1000`, `Challenger 125`… |
+| `tournament.court.name` | **100,0 %** | `Hard`, `Clay`, `Grass`, `I.hard`, `Carpet` |
+| `roundId` | **100,0 %** | le tour, donc le résultat atteint |
+
+**La catégorie n'a donc pas à se déduire d'un libellé**, ce que le brief
+interdisait à juste titre : elle est un champ. Trente valeurs distinctes, dont
+quelques **alias historiques** à réunir — `ATP World Tour Masters 1000` (196) est
+`ATP Masters 1000` (1 694), `ATP World Tour 250` (182) est `ATP 250` (1 531).
+Réunir deux graphies du même niveau chez le même fournisseur est un fait de
+renommage, pas une déduction ; le projet le fait déjà pour les tournois avec ses
+alias séparés par `|`.
+
+### Le rattachement manuel n'est pas la contrainte, et c'était la prémisse à vérifier
+
+Le gabarit dit que `Palmarès` *« n'existe que si le tournoi a été rattaché à la
+main au jeu de données — la source le nomme par son sponsor »*. Mesuré :
+
+| | Compétitions tennis | Rattachées | Analysées sans rattachement |
+| --- | ---: | ---: | ---: |
+| base servie | 43 | **43** | **0** |
+
+**Le rattachement est complet.** Ce n'est donc pas lui qui manque — et surtout,
+il ne concerne que `tennisdata.co.uk`. `matches-played` nomme le tournoi
+lui-même (`tournament.name`), donc un palmarès bâti sur cette source **n'a besoin
+d'aucune table de correspondance**.
+
+### En revanche, aucun identifiant ne porte l'identité d'un tournoi d'une année sur l'autre
+
+C'est la réponse à « cherchez l'identifiant » pour ce cas-ci, et elle est
+négative :
+
+- **`tournamentId` est par édition.** 261 noms apparaissent sur plusieurs années,
+  et **0** conserve son identifiant. « Cincinnati Open - Cincinnati » vaut
+  `[15980, 20357]` en 2025 et `[16740, 21347]` en 2026 ;
+- **`link` ne le porte pas non plus, et il collisionne.** 18 valeurs regroupent
+  des tournois **différents** : `15649` réunit « Citi Open - Washington » et
+  « UniCredit Iasi Open - Iasi », `0` réunit toutes les rencontres de Coupe
+  Davis. S'en servir attribuerait à un joueur le palmarès d'un autre tournoi.
+
+Reste le **nom servi par le fournisseur**, stable d'une année sur l'autre. Ce
+n'est pas une déduction depuis un libellé — c'est une égalité sur la graphie
+canonique de la source — mais le changement de sponsor reste le risque connu, et
+il se traite comme ailleurs : par des alias déclarés, jamais devinés.
+
+### La profondeur : la source en annonce cinq fois plus que ce qu'on prend
+
+C'est le résultat qui commande le §3b.
+
+| | Mesuré |
+| --- | ---: |
+| `singlesCount` annoncé — médiane | **509 matchs** |
+| `singlesCount` — maximum | **1 593** |
+| matchs réellement rendus — médiane et maximum | **100** |
+| réponses tronquées par notre pagination | **729 / 735 = 99,2 %** |
+| `(page, pageSize, limit)` observés | **(1, 100, 100)**, sans exception |
+
+**La fenêtre 2018–2026 que l'archive montre est un artefact de notre collecte**,
+pas la profondeur de la source : elle vient de ce qu'on prend les 100 matchs les
+plus récents de 735 profils. À ~60 matchs par an pour un joueur actif, 509 matchs
+représentent environ huit ans et demi — de quoi porter un « demi-finale 2019 ».
+
+Le volume par année de l'archive le confirme et l'explique : 13 matchs en 2018,
+35 en 2019, 25 en 2021, puis 1 592 en 2024, **9 591 en 2025**, 7 311 en 2026.
+Ce n'est pas une source qui s'appauvrit en remontant, c'est une fenêtre de
+100 matchs qui ne remonte loin que pour les joueurs qui jouent peu.
+
+### Le coût, et il n'est pas l'obstacle
+
+Le client **sait déjà paginer** — `matches_played(name, page)` — et `singlesCount`
+dit quand s'arrêter **sans demander une page de plus**. `PAGE_SIZE` vaut 100
+quand le plafond mesuré est **200**.
+
+- historique complet à `pageSize=200` : **~3 pages** pour la médiane, 8 pour le
+  maximum, contre 1 aujourd'hui ;
+- un lot de 8 à 12 matchs de tennis porte 16 à 24 joueurs, soit **~50 à 70 appels
+  de plus par lot** ;
+- quota RapidAPI restant au 19/08 : **139 480 appels**, pour une consommation
+  observée de 3 304 et 6 191 appels sur les deux journées mesurées.
+
+**Le §3b est donc constructible, et rien dans la mesure ne s'y oppose.** Ce qu'il
+demande est une décision de pagination — aller chercher l'historique complet d'un
+joueur au lieu de sa dernière centaine de matchs — et un choix d'identité de
+tournoi par le nom, avec ses alias déclarés. Il n'a pas été construit dans ce
+lot : le §1 a consommé la session, et une pagination profonde change le coût de
+chaque enrichissement de tennis, ce qui se décide avec sa mesure sous les yeux
+plutôt qu'en fin de lot.
+
+## §5 — Le règlement automatique : 93,3 % d'accord, et il en faut 100
+
+**Mesure du 20/08/2026**, sur les 293 sélections tranchées de la base — 166 au
+football, 127 au tennis, toutes rattachées à un match. Le brief en annonce 298 ;
+la base en porte 293 au moment du relevé.
+
+### Existe-t-il seulement une source de résultat ?
+
+Oui, deux, et **elles dorment déjà en base** :
+
+| Sport | Source | Ce qu'elle porte | Récupérable sur les tranchées |
+| --- | --- | --- | ---: |
+| football | `team_context` (`kind='season'`) | `goals`, `halftime`, `status: FT`, `at_home` | **72 / 166 = 43,4 %** |
+| tennis | `api_responses` (`event/get`) | `score` set par set, `status: Ended` | **104 / 127 = 81,9 %** |
+| | | **total** | **176 / 293 = 60,1 %** |
+
+Ce sont les taux sur les **archives**, pas sur ce qu'un cron obtiendrait : les
+deux endpoints se rappellent, et un règlement quotidien irait les chercher.
+
+**Ce que `tennis-data.co.uk` ne peut pas faire, et c'est mesuré** : son fichier
+s'arrête au **14/08** quand les matchs analysés vont jusqu'au **20/08**. 54 des
+127 sélections tennis lui sont postérieures — 43 % du sport. Un cron passant deux
+ou trois fois par jour ne réglerait rien avec cette source. `event/get`, lui, est
+en direct et **déjà appelé** par l'enrichissement courant.
+
+Réserve à connaître : sur 8 511 réponses `event/get` archivées, **6 558 sont
+vides** — c'est le `SOURCE_VIDE` déjà documenté. Les 1 809 qui portent un statut
+`Ended` suffisent pourtant à couvrir 81,9 % des sélections tennis.
+
+### Le rejeu, et son taux de divergence
+
+Règle appliquée : le **vainqueur** seul, la plus simple des trois que le brief
+autorise à commencer. Un marché dont la règle n'est pas écrite part en
+`non tranchable` et attend une main — c'est la consigne, et c'est ce que fait le
+rejeu.
+
+| Marché | n | Accord | Divergence | Non tranchable |
+| --- | ---: | ---: | ---: | ---: |
+| `h2h` | 41 | 32 | **1** | 8 |
+| `Vainqueur` (sans clé) | 31 | 24 | **3** | 4 |
+| `alternate_spreads` | 33 | 0 | 0 | 33 |
+| `Hand. jeux` (sans clé) | 10 | 0 | 0 | 10 |
+| `totals` | 7 | 0 | 0 | 7 |
+| `Jeux O/U` (sans clé) | 5 | 0 | 0 | 5 |
+
+> **60 règlements tentés, 56 d'accord, 4 divergences — 93,3 % d'accord.**
+
+### Les quatre divergences, nommées
+
+| Sélection | À la main | Automatique | Score lu |
+| --- | --- | --- | --- |
+| Collignon | perdu | **gagné** | `4-6,2-6` |
+| Nuno Borges | perdu | **gagné** | `6-7,4-6` |
+| Jessica Pegula | perdu | **gagné** | `7-5,6-4` |
+| Maja Chwalinska | perdu | **gagné** | `"6-7,4-6"` |
+
+**Les quatre vont dans le même sens, et c'est le plus instructif.** Trois portent
+un score que le rejeu lit comme une victoire de `participant1` alors que la
+sélection désignait l'autre camp : l'attribution du vainqueur repose sur un
+rapprochement de **nom de famille** entre l'affiche (`Jessica Pegula`) et le
+champ `participant1`, et rien ne garantit que les deux se correspondent dans le
+même ordre. Le quatrième porte en plus un score **entre guillemets** dans la
+charge utile, donc une seconde forme à lire.
+
+Ce ne sont donc pas quatre cas limites du sport — pas de `0` remboursé, pas
+d'abandon, pas de report. **Ce sont quatre défauts de la lecture**, et c'est
+exactement ce que la validation devait attraper.
+
+### Ce que ça décide
+
+- **Rien ne se met en service.** Le brief pose la barre à 100 % d'accord ; le
+  rejeu rend 93,3 % sur le marché le plus simple, avec les données les plus
+  riches. Un règlement à 93 % appliqué à 293 sélections en corromprait une
+  vingtaine, **silencieusement** — et c'est tout ce que ce projet sait produire.
+- **La cause est identifiée et elle est réparable** : il faut un rapprochement
+  camp par camp, sur l'ordre des participants et non sur un nom de famille isolé.
+  Le projet a déjà l'outillage — `serve_stats.resolve()` refuse une identité
+  ambiguë au lieu de deviner.
+- **Le rejeu lui-même est le livrable de ce §**, et il doit rester : c'est lui
+  qui fera la différence entre « 93,3 % » et « 100 % », et sans lui la mise en
+  service se déciderait au jugé.
+- **Ordre des marchés** : `Vainqueur` d'abord, une fois l'attribution réparée,
+  puis O/U — dont la règle est arithmétique sur un score déjà lu. Les handicaps
+  en quarts, les abandons et les reports restent manuels : leur règle n'est pas
+  écrite, et un marché dont la règle n'est pas écrite ne se règle pas.
+
+### La mesure qui a failli être fausse, et ce qu'elle rappelle
+
+Le premier relevé de récupérabilité tennis a rendu **0 sur 127**. C'était un
+**artefact de ma lecture, pas une absence de donnée** : `tennis_matches` écrit
+« Mensik J. » — nom de famille en tête — quand `events` écrit « Alex
+Michelsen ». Ma fonction prenait le premier mot long des deux côtés, donc
+comparait « mensik » à « alex ».
+
+Corrigé, le même relevé rend **65,8 %**. Un « 0 % » se serait lu comme une source
+inexploitable et aurait fermé le tennis pour de bon — la neuvième occurrence du
+motif du projet, sur la mesure censée décider du chantier.

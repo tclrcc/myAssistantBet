@@ -28,7 +28,7 @@ from jinja2 import (
 from ..config import PACKAGE_DIR, Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.oddsapi import SCAN_MARKETS
-from . import changelog
+from . import changelog, stakes
 from .competitions import is_knockout, reads_domestic_aggregates
 from .enrich import markets_for
 from .history import SCALE_VERSION, feedback
@@ -48,6 +48,7 @@ from .render import (
 )
 from .research import sheet as research_sheet
 from .session import has_started, renderable_events, session_label, started_labels
+from .thresholds import COUPON_TRACKING, toggle_of
 from .thresholds import value_of as threshold
 from .weather import ALERT_MARK
 
@@ -1051,6 +1052,21 @@ def build_prompt(
                 if tier in (scope.present or tiers)
             ],
             research_budget=min(threshold("recherche_dossiers", settings), len(blocks)),
+            # La table de mises, **en unites et jamais en monnaie** : le montant
+            # est saisi au collage, donc l'application ne le connait pas ici.
+            # Elle annonce ce qu'il **reste** pour la journee et non le plafond
+            # nu — sans quoi quatre rendus du meme jour auraient chacun cru
+            # disposer du plafond entier, c'est-a-dire le contournement par
+            # decoupage que le plafond par journee existe pour fermer.
+            # **Garde par l'interrupteur du suivi d'argent**, et ce n'est pas
+            # cosmetique : la section pese 592 tokens de cout fixe, et la faire
+            # payer a qui ne mise pas serait exactement ce que les portes du
+            # preambule existent pour eviter.
+            mise=(
+                stakes.brief(moment.strftime("%Y-%m-%d"), settings)
+                if toggle_of(COUPON_TRACKING, settings)
+                else None
+            ),
             exact_scores=any(
                 key.startswith("correct_score") for event in events for key in event.markets
             ),

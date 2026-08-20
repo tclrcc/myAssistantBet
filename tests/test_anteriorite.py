@@ -313,16 +313,17 @@ def test_le_compteur_annonce_les_deux_couvertures(migrated: Settings) -> None:
     quelque chose.
     """
     session_id = _lot(migrated, [("2.00", "win", True)] + [("2.00", "win", False)] * 2)
-    # **La cote obtenue n'est reclamee que si le suivi des paris est ouvert** :
-    # elle ne peut venir que d'une mise, et sans mise l'annoncer comme un manque
-    # reclamerait une valeur qui n'existera jamais.
-    assert "cote obtenue" not in worksheet(session_id, migrated).coverage_line
-    save_toggle(COUPON_TRACKING, "1", migrated)
-
+    # **La cote obtenue n'est reclamee que si le suivi de l'argent est ouvert** :
+    # elle ne peut venir que d'une mise. Il l'est par defaut depuis le 20/08 —
+    # l'usage a change — et l'eteindre retire la reclamation plutot que de
+    # demander une valeur qui n'existera jamais.
     ligne = worksheet(session_id, migrated).coverage_line
 
     assert "1 sur 3 sans antériorité établie" in ligne
     assert "3 sur 3 sans cote obtenue" in ligne
+
+    save_toggle(COUPON_TRACKING, "0", migrated)
+    assert "cote obtenue" not in worksheet(session_id, migrated).coverage_line
 
 
 def test_le_compteur_se_tait_quand_tout_est_couvert(migrated: Settings) -> None:

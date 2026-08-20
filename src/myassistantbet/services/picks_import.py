@@ -19,8 +19,10 @@ import unicodedata
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
+from . import stakes
 from .combos import PRICE_GAP, ParsedCombo, read_combos
 from .confidence import (
     OPEN_ABSENT,
@@ -311,6 +313,92 @@ class AttachedScore:
 
 
 @dataclass
+class AttachedStakes:
+    """La ligne `mises:` d'un collage, confrontee a ce que la table accorde.
+
+    **Ni l'un ni l'autre ne fait autorite sur le montant** : le recalcul
+    s'ecrit, la declaration se garde a cote, et l'ecart est ce qui se lit —
+    exactement comme la cote declaree d'un combine et le cran annonce d'une
+    selection.
+    """
+
+    declared: stakes.ParsedStakes = field(default_factory=stakes.ParsedStakes)
+    plan: stakes.Plan | None = None
+    gaps: list[stakes.Gap] = field(default_factory=list)
+    #: Le repere sous lequel chaque ligne du tableau recoit sa mise, range par
+    #: **numero de ligne du formulaire** — le seul identifiant qui traverse le
+    #: POST, comme les jambes d'un combine.
+    par_ligne: dict[int, str] = field(default_factory=dict)
+    #: Le repere de chaque combine, range par sa position dans `combos`.
+    par_combine: dict[int, str] = field(default_factory=dict)
+    #: La journee d'analyse a laquelle ces mises se rattachent.
+    journee: str = ""
+
+    @property
+    def payload(self) -> str:
+        """Pret a voyager dans un champ cache. **L'apercu n'ecrit rien** : c'est
+        l'import qui enregistre, meme transport que les rejets, les scores en
+        sets et le bloc de confiance."""
+        if self.plan is None:
+            return ""
+        montants = {line.mark: line for line in self.plan.lines}
+        return json.dumps(
+            {
+                "journee": self.journee,
+                # Memorisee pour la journee : c'est elle qui dit contre quoi le
+                # plafond se compte pour les rendus suivants du meme jour.
+                "bankroll": self.plan.bankroll,
+                "lignes": [
+                    {
+                        "index": index,
+                        "unites": montants[mark].unites,
+                        "montant": montants[mark].montant,
+                        "declare": self.declared.montants.get(mark),
+                    }
+                    for index, mark in sorted(self.par_ligne.items())
+                    if mark in montants
+                ],
+                "combines": [
+                    {
+                        "rang": rang,
+                        "unites": montants[mark].unites,
+                        "montant": montants[mark].montant,
+                        "declare": self.declared.montants.get(mark),
+                    }
+                    for rang, mark in sorted(self.par_combine.items())
+                    if mark in montants
+                ],
+            }
+        )
+
+    @property
+    def present(self) -> bool:
+        """La ligne etait-elle la ? **Distinct d'une ligne vide.**"""
+        return self.declared.present
+
+    @property
+    def note(self) -> str:
+        """Ce que le releve d'apercu en dit. Vide quand il n'y a rien a dire.
+
+        **Une bankroll absente n'est pas un defaut** : le gabarit ne produit la
+        section que si un montant est donne, et la plupart des sessions n'en
+        donneront pas. C'est une reponse, pas un manque.
+        """
+        if not self.present:
+            return ""
+        if self.plan is None:
+            return "ligne mises lue, sans montant de bankroll — rien à recalculer"
+        parts = [f"{len(self.plan.lines)} mise(s) proposée(s) pour {self.plan.total:.2f}"]
+        if self.plan.reduction_line:
+            parts.append(self.plan.reduction_line)
+        if self.gaps:
+            parts.append(f"{len(self.gaps)} écart(s) avec la ligne collée")
+        if self.plan.sous_le_centime:
+            parts.append(f"{len(self.plan.sous_le_centime)} mise(s) sous le centime")
+        return " · ".join(parts)
+
+
+@dataclass
 class ImportPreview:
     """Proposition d'import. Rien n'est ecrit avant validation."""
 
@@ -354,6 +442,10 @@ class ImportPreview:
     #: collage une section laissee derriere se reprend en dix secondes, une
     #: semaine plus tard elle ne se repare plus.
     sections_note: str = ""
+    #: La repartition de mise lue et recalculee. **Aucun montant n'entre dans la
+    #: mesure d'analyse** : ce champ ne sert qu'au journal des mises, qui vit
+    #: dans ses propres tables, et un test lit la source pour le garantir.
+    stakes: AttachedStakes = field(default_factory=AttachedStakes)
     #: La taille du collage, pour l'avertissement de troncature.
     char_count: int = 0
 
@@ -492,7 +584,9 @@ class ImportPreview:
         # s'est perdu quand les compteurs ci-dessus ne disent que des zeros. Un
         # zero de bloc `conf` se lit « le modele n'en a pas produit » ; « blocs
         # conf demandes et absents du collage » se lit « recolle ».
-        return " · ".join(part for part in (releve, self.short_note, self.sections_note) if part)
+        return " · ".join(
+            part for part in (releve, self.stakes.note, self.short_note, self.sections_note) if part
+        )
 
     @property
     def short_note(self) -> str:
@@ -1430,6 +1524,84 @@ def _pairs(pick: ParsedPick, claim: Claim, blocks: PromptBlocks) -> bool:
     return bool(cell) and bool(header) and cell == header
 
 
+def _stake_mark(pick: ParsedPick) -> str:
+    """Sous quel repere une selection recoit sa mise.
+
+    **Le bloc de confiance porte le repere en propre**, donc il tranche des
+    qu'il est la — meme cle primaire que `_rows_by_mark`. A defaut, la ligne se
+    designe par son numero de tableau (`L4`), qui ne se confond avec aucun
+    repere de bloc.
+
+    Ce repli **degrade visiblement** : les reperes de la ligne `mises:` ne
+    tomberont sur rien, donc chaque ligne ressortira comme un ecart, et le
+    releve d'apercu le dira. C'est le comportement voulu — un collage sans blocs
+    de confiance ne permet pas de verifier une repartition repere par repere, et
+    le taire ferait passer une comparaison impossible pour une comparaison
+    reussie.
+
+    **La mise, elle, ne change pas** : elle est la meme pour toute selection de
+    section C, donc le total et le plafond restent exacts sans aucun repere.
+    """
+    if pick.claim and pick.claim.match:
+        return pick.claim.match.upper()
+    return f"L{pick.index}"
+
+
+def _attach_stakes(
+    session_id: int,
+    raw: str,
+    preview: ImportPreview,
+    settings: Settings | None = None,
+) -> AttachedStakes:
+    """La ligne `mises:`, lue puis confrontee au recalcul.
+
+    **La repartition se recalcule depuis la table, jamais depuis la ligne.** Le
+    montant ecrit par le rendu est une affirmation ; celui-ci est une
+    consequence des reglages et du nombre de selections. Les deux se gardent, et
+    l'ecart est ce qui se lit.
+
+    **Les selections exploratoires n'entrent pas dans le calcul** : elles ne
+    recoivent aucune mise, et les faire figurer a 0,00 se lirait comme une mise
+    oubliee plutot que comme une decision.
+    """
+    declared = stakes.read(raw)
+    if not declared.present:
+        return AttachedStakes()
+
+    # La journee **d'analyse**, jamais la session : un plafond par session se
+    # contournerait en decoupant, et le decoupage doit rester gratuit.
+    journee = datetime.now(ZoneInfo(settings.tz if settings else "Europe/Paris")).strftime(
+        "%Y-%m-%d"
+    )
+    # **La bankroll vient de la ligne collee**, parce que le montant est saisi
+    # au collage : l'application ne le connait pas quand elle rend le prompt.
+    # Elle la memorise pour la journee, ce qui permet aux rendus suivants de
+    # savoir contre quoi le plafond se compte.
+    montant = declared.bankroll
+    if montant is None or montant <= 0:
+        # Une ligne sans bankroll n'est pas un defaut de lecture : le gabarit
+        # n'attend la section que si un montant a ete donne. Le releve le dit,
+        # et rien ne se recalcule.
+        return AttachedStakes(declared=declared, journee=journee)
+
+    par_ligne = {pick.index: _stake_mark(pick) for pick in preview.picks if not pick.exploratory}
+    par_combine = {rang: f"combine_{c.combo.kind}" for rang, c in enumerate(preview.combos)}
+    plan = stakes.plan(
+        montant,
+        list(par_ligne.values()),
+        list(par_combine.values()),
+        stakes.table(settings),
+    )
+    return AttachedStakes(
+        declared=declared,
+        plan=plan,
+        gaps=stakes.gaps(declared, plan),
+        par_ligne=par_ligne,
+        par_combine=par_combine,
+        journee=journee,
+    )
+
+
 def build_preview(
     session_id: int,
     raw: str,
@@ -1476,6 +1648,7 @@ def build_preview(
     )
     preview.import_id = import_id
     preview.char_count = len(raw or "")
+    preview.stakes = _attach_stakes(session_id, raw, preview, settings)
     # **Le releve de sections vient d'un module qui existait deja et que rien
     # n'appelait ici.** Il compare le prompt emis au collage recu, donc il
     # distingue « jamais demandee » de « demandee et perdue » — la seule des deux
