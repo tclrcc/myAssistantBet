@@ -5273,3 +5273,430 @@ décrivait a continué de couler pendant deux lots, parce que rien ne l'appliqua
 C'est la même leçon que celle du registre d'écriture au lot 3 : *« une règle de
 contribution ne se déclenche pas ; un test si. »* Ici, ni l'un ni l'autre — il
 fallait **le code qui nettoie**, et le préfixe qui rend le nettoyage possible.
+
+---
+
+# DIAGNOSTIC — lot 13 : ce qui reste accessible au football, et le coût du cadre
+
+Relevé du 20/08/2026, sur une copie de la base servie (`VACUUM INTO`, 298
+sélections, schéma 64). Aucune migration appliquée.
+
+## §1 — Le coût réel de la carte régionale
+
+### §1a — Le dimensionnement, et il renverse l'estimation du brief
+
+Le brief annonçait *« une quinzaine de lignes de saisie »* et sept pays. **Les
+deux chiffres sont faux, et pas du même facteur.**
+
+**Ce dont on dispose côté stade est meilleur qu'annoncé.** Le lot 12 avait
+constaté `timezone` et `city` vides sur les quatre compétitions tennis ; côté
+football la situation est inverse :
+
+| Champ | Couverture |
+| --- | ---: |
+| coordonnées (`latitude` / `longitude`) | **142 / 142 relevés météo** |
+| fuseau du lieu | 142 / 142 |
+| ville + pays | 142 / 142 |
+
+Le géocodage est déjà fait et déjà persisté. **Il n'y a donc rien à saisir du
+côté du stade** — la question porte entièrement sur ce que MeteoAlarm expose en
+face.
+
+**Et là, il n'y a pas un schéma d'aire mais sept.** Sondage des flux pour les
+31 pays de stade présents en base, et non pour les sept du brief :
+
+| Schéma exposé | Pays | Villes de stade | Relevés |
+| --- | ---: | ---: | ---: |
+| **polygone** (NO, SE, CH, UK) | 4 | 14 | 16 (11,3 %) |
+| `EMMA_ID` (ES, PT, AT, PL, CY, HR, DK, NL, SK…) | 10 | — | — |
+| `NUTS3` (FR, RO, BG) | 3 | — | — |
+| `NUTS2` (HU), `EMMA_ID`+`NUTS2` (BE) | 2 | — | — |
+| `WARNCELLID` (DE) | 1 | — | — |
+| `FIPS` (IE) | 1 | — | — |
+| flux vide (IS) | 1 | — | — |
+| **sous-total « code »** | **17** | **76** | **79 (55,6 %)** |
+| déjà couvert par le NWS (US) | 1 | 13 | 15 (10,6 %) |
+| **aucun flux** (CN, TR, CA, MX, BR, SA, LI, AL, CO) | 9 | 23 | 32 (22,5 %) |
+
+Trois corrections au brief sortent de ce tableau :
+
+- **la granularité est départementale, pas régionale** : 96 zones en France (les
+  départements), 116 en Autriche (les districts), **233 en Espagne** ;
+- **la Turquie n'est pas couverte du tout** — `HTTP 404` sur quatre graphies du
+  slug, alors que le brief la comptait parmi les sept pays cibles. Elle porte
+  4 villes de stade ;
+- **le périmètre n'est pas de sept pays mais de trente et un.** Les lots de
+  football tirent sur les qualifications européennes, qui balaient le continent :
+  126 villes de stade distinctes sont déjà en base, et chaque compétition
+  nouvelle en ajoute.
+
+### §1b — La branche retenue : construire là où le polygone décide, refuser ailleurs
+
+**Le critère du brief est un nombre d'entrées ; le critère qui tranche est le
+mode d'échec.** Les 76 villes du groupe « code » passeraient la règle des ~100
+entrées — et il ne faut pas les construire pour autant :
+
+- une table `ville → EMMA_ID` **ne se vérifie contre rien**. `EMMA_ID` est un
+  schéma interne à MeteoAlarm, sans registre public ; une entrée mal saisie
+  pointe sur un district voisin et **rend `aucune alerte en vigueur`**,
+  c'est-à-dire l'affirmation qu'on a regardé. C'est exactement le mode d'échec
+  que le §1c du brief interdit, et sur la seule ligne du bloc dont le projet a
+  mesuré qu'elle a changé une analyse deux fois ;
+- il faudrait **sept tables**, une par schéma, et non une ;
+- l'ensemble **croît avec chaque compétition ajoutée**, sans que rien ne signale
+  qu'une entrée manque.
+
+**Le polygone est d'une autre nature, et c'est pourquoi il est construit.** Il
+voyage dans l'alerte elle-même : aucune table, aucun rapprochement par libellé,
+aucune saisie, et le résultat se vérifie tout seul — le point est dans le
+polygone ou il n'y est pas. Testé sur les coordonnées réelles de la base :
+
+| Ville | Résultat |
+| --- | --- |
+| Oslo, Fredrikstad, Trondheim | **3 / 3 dans une alerte en vigueur** (`Mye lyn`, `Mye regn`) |
+| Sion | dans une alerte `Strong rainfall` |
+| St. Gallen, Göteborg, Glasgow, Edinburgh… | aucune alerte les couvrant — et c'est la réponse juste |
+
+Livré : `providers.weather.meteoalarm()`, `services.weather.METEOALARM_COUNTRIES`,
+et la résolution point-dans-polygone (`_ring`, `_inside`, `_meteoalarm`). Aucune
+dépendance ajoutée — un lancer de rayon tient en quinze lignes.
+
+### §1c — Le mode d'échec est fermé, et il a fallu le dire trois fois
+
+- **une aire sans polygone se compte** (`alerts_unresolved`) et fait rendre
+  **`non interrogées`**, jamais `aucune alerte`. Le champ `alerts_checked` reste
+  absent : sans polygone on ne sait pas si l'aire couvre le stade, et ne pas
+  savoir n'est pas une absence d'alerte ;
+- **elle ne se range pas non plus dans `injoignables`** — le flux a parfaitement
+  répondu, et y envoyer le cas ferait réessayer une source qui n'a rien à
+  réessayer. C'est le rapprochement qui a échoué, pas la source ;
+- **les dix-sept pays à code ne sont pas appelés du tout**, donc leur ligne dit
+  `alertes officielles non interrogées (Spain)` — ce qui est vrai ;
+- chaque échec est journalisé (`logger.warning`, pays et compte d'aires).
+
+Réserve tenue : le journal passe par le log applicatif et **non par
+`ingestion_rejects`**, contrairement à la lettre du brief. Cette table porte
+`session_id`, `import_id` et des bornes de position dans un collage ; un relevé
+météo n'a aucun des trois, et l'y forcer aurait dénaturé la table dont
+`selfcheck-ingestion` tire son dénominateur. **Écart assumé, à arbitrer.**
+
+Cinq tests couvrent les quatre états : alerte rendue avec son émetteur recopié
+(`Meteorologisk Institutt`, la source de niveau 1), polygone qui ne couvre pas,
+aire non résolue, flux injoignable, pays servi sans polygone.
+
+## §2 — `venue.id` : la cause est mesurée, et le drapeau reste hors de portée
+
+### La cause : le fournisseur ne le sert pas, et notre collecte le demande bien
+
+| | |
+| --- | ---: |
+| relevés `venue` en base | 336 |
+| portant le champ `venue_id` (donc collectés depuis le lot 10) | 194 |
+| **`venue_id` réellement servi** | **40 / 194 — 21 %** |
+| nuls renvoyés par le fournisseur | 154 |
+
+**Le brief et le lot 10 sous-estiment la portée.** Ce n'est pas un défaut UEFA :
+
+| Compétition | servi / demandé |
+| --- | ---: |
+| MLS | **0 / 26** |
+| UEFA Europa Conference League | 0 / 22 |
+| UEFA Europa League | 0 / 12 |
+| Primeira Liga, La Liga, Leagues Cup, Ekstraklasa | 0 partout |
+| Championship | 8 / 12 |
+| Bundesliga 2, Eredivisie | 5 / 9 |
+| Ligue 2 | 4 / 9 |
+
+Fait nouveau : **la distribution n'est pas binaire par compétition.** Le lot 12
+avait établi que l'arbitre l'était (une compétition désigne sur toutes ses
+rencontres ou sur aucune) ; ici Championship sort 8 sur 12 et Ligue 2 4 sur 9.
+C'est donc **par match**, et aucun constat de compétition ne peut être mémorisé.
+
+### Le pays est disponible autrement — et il ne suffit pas
+
+Les deux moitiés existent déjà en base : `home_country` (le pays du club, servi
+par `/teams`, 194 relevés) et `geo_country` (le pays de la ville, géocodé,
+131 relevés). **113 relevés portent les deux**, et leur comparaison donne :
+
+| | |
+| --- | ---: |
+| accord — même pays | 73 |
+| désaccord | 40 |
+| — dont **désaccords de vocabulaire** | **37** |
+| — dont vraies délocalisations | **2** |
+| — dont **faux positif** | **1** |
+
+Les 37 sont le motif déjà payé par l'entraîneur : « Republic of Türkiye » contre
+« Turkey », « United Kingdom » contre « Scotland » et « England », « The
+Netherlands » contre « Netherlands », « Saudi Arabia » contre « Saudi-Arabia »,
+« United States » contre « USA ». Ils se réduiraient par une table de synonymes
+d'une dizaine d'entrées.
+
+**Mais ce qui reste après ce nettoyage tranche la question, et dans le mauvais
+sens :**
+
+| Cas | `geo_country` | pays du club | Verdict |
+| --- | --- | --- | --- |
+| Dinamo Minsk au Stadion Beroe, Stara Zagora | Bulgaria | Belarus | **vraie délocalisation** |
+| Hapoel Be'er Sheva à la Superbet Arena, Bucarest | Romania | Israel | **vraie délocalisation** |
+| **Sevilla, à Séville** | **Colombia** | Spain | **faux positif** |
+
+**Un faux positif sur trois, et c'est le pire des trois.** Séville reçoit chez
+elle, dans sa propre ville ; un drapeau calculé là-dessus écrirait
+`TERRAIN NEUTRE` avec autorité sur un match parfaitement ordinaire, et l'analyse
+retirerait l'avantage du terrain sans que rien ne le contredise. C'est
+littéralement la règle de revue du dossier de projet — *« un drapeau booléen ne
+se construit pas sur un champ dont on a mesuré qu'il ment »* — désormais chiffrée.
+
+**Rien n'est construit, et la mention reste mot pour mot.** `pas d'identifiant
+de stade ici, terrain neutre non vérifiable` porte 188 blocs sur 1 405 et fait
+tout le travail : elle expose le nom du stade, la ville et le pays, et laisse
+l'arbitrage au lecteur. C'est la moitié qui marche d'un mécanisme dont l'autre
+moitié n'a jamais pu se déclencher.
+
+**Conséquence pour le §3, comme le brief le demande : `Lieu — TERRAIN NEUTRE`
+sort de la liste des candidats à la coupe.** Ce n'est pas une règle inutile,
+c'est une règle en attente de sa donnée — et la donnée qui manque n'est ni le
+pays du club ni la ville, qui sont là, mais une source de lieu qu'on puisse
+gager.
+
+## §3 — L'arbitrage du gabarit : proposition écrite, non appliquée
+
+### La mesure qui déplace la question
+
+Le tableau du §15 du lot 10 comptait les déclenchements ; il manquait le coût.
+Une fois les deux mis côte à côte, **la prémisse de l'arbitrage tombe** :
+
+**Les quinze cas du tableau du §15 sont déjà gardés, tous les quinze**, chacun
+par sa porte `context_labels` — vérifié ligne à ligne dans le gabarit :
+
+| Cas | Porte | Coût sur un lot qui ne le porte pas |
+| --- | --- | ---: |
+| `Statut` | `'Statut' in context_labels` | **0** |
+| `Météo` — les trois états | `'Meteo' in context_labels` | **0** |
+| `Lieu` — non vérifiable / `TERRAIN NEUTRE` | `'Lieu' in context_labels` | **0** |
+| `Absents` — les trois états | `'Absents' in context_labels` | **0** |
+| `Entraîneur` — divergence / initiale | `'Entraineur' in context_labels` | **0** |
+| `Arbitre` — les trois états | `'Arbitre' in context_labels` | **0** |
+| `Effectif`, `Aller`, `Scénario`, `Tour`, `Elo`, `Densité` | idem | **0** |
+
+**Couper un cas rare ne rapporterait donc rien** : il ne se paie déjà que sur
+les lots qui le portent. Le brief supposait un coût fixe dû aux cas rares ; il
+n'existe pas.
+
+### Où le coût est réellement
+
+| Section du gabarit | ~tokens | Part |
+| --- | ---: | ---: |
+| **COMMENT LIRE LES BLOCS** | **7 343** | **38 %** |
+| ### C. Tableau des sélections | 3 429 | 18 % |
+| ## TON RÔLE | 2 336 | 12 % |
+| ### BUDGET DE RECHERCHE | 1 870 | 10 % |
+| ## CE QU'IL FAUT VÉRIFIER | 1 577 | 8 % |
+| ### D. Combinés | 1 583 | 8 % |
+| B, E, F, MATCHS, A | ~1 100 | 6 % |
+| **gabarit entier, toutes portes ouvertes** | **19 249** | |
+
+Coût fixe **réellement facturé** en production, colonne `fixed_tokens` :
+**12 217 à 13 808 tokens** sur les trois prompts du 19/08 — donc environ 6 000
+tokens du chapitre sont payés sur un lot ordinaire, le reste étant fermé par les
+portes.
+
+**Et la part est passée la barre de la moitié** : sur le lot médian mesuré
+(**8 blocs**, sur 156 prompts archivés), le cadre pèse **12 217 tokens contre
+10 810 de blocs, soit 53 %**. Le gabarit coûte désormais plus que ce qu'il décrit.
+
+### Ce que je propose de couper — trois entrées, ~740 tokens
+
+Le critère appliqué : **couper là où le déclenchement est fréquent mais où la
+description dépasse ce que le lecteur en fait**, jamais là où il est rare.
+
+| Entrée | Coût | Blocs | Proposition | Ce qu'on perdrait |
+| --- | ---: | ---: | --- | --- |
+| `Scénario` | **380** | manches retour | **raccourcir à ~180** — l'arithmétique des deux seuils reste, les trois paragraphes de règlement UEFA descendent dans `CLAUDE.md` | la nuance « égaliser » / « passer » si la coupe mord trop bas ; à relire ligne à ligne |
+| `Entraîneur` — `divergence` | **208** | 67 (4,8 %) | **raccourcir à ~110** — les trois mentions restent définies, la mesure des « 20 paires dont 10 le même homme » descend ici | rien, si les trois libellés gardent leur comportement |
+| `Palmarès` | **295** | tennis rattaché | **raccourcir à ~150** | la distinction vainqueur / finaliste doit rester : c'est l'erreur la plus visible de la ligne |
+
+### Ce que je propose de garder tel quel, et pourquoi
+
+- **`Statut` (87 tokens, 1 bloc) et `Météo — ALERTE` (86 tokens, 4 blocs).** Les
+  deux plus rares du relevé, et les deux qui ont changé une analyse. Ils sont
+  déjà gardés : leur coût sur un lot qui ne les porte pas est **nul**. Les
+  couper économiserait zéro et perdrait les deux cas décisifs — la mauvaise
+  affaire que le troisième garde-fou du brief décrit exactement ;
+- **`Lieu — TERRAIN NEUTRE` (49 tokens, 0 bloc)** — retiré des candidats par le
+  §2 : cas empêché, pas cas inutile ;
+- **`Alerte` — handicap suspect (0 bloc)** — coût fixe déjà nul (`handicap_alerts`) ;
+- **`Absents — source injoignable` (99 tokens, 0 bloc)** — c'est un résultat sur
+  le fournisseur, et les trois états perdent leur sens dès qu'il en manque un ;
+- **les trois états de `Météo` ensemble.** La porte est sur la famille, pas sur
+  l'état : un lot qui rend `Météo` paie les trois (161 tokens). Les séparer
+  serait une erreur — c'est précisément leur distinction qui porte l'information,
+  et le §1 vient d'en ajouter la matière.
+
+### La cible n'est pas un pourcentage, et voilà ce que ça donne
+
+~740 tokens sur 12 217 de coût fixe, soit **6 %**. C'est peu, et c'est le
+résultat honnête : **le chapitre n'est pas gras, il est simplement grand**, et
+il l'est parce que chaque ligne de bloc ajoutée depuis le lot 6 y a déposé son
+mode d'emploi. La vraie économie serait ailleurs — section C (3 429 tokens) et
+BUDGET DE RECHERCHE (1 870) —, et elle touche des règles qui **décident de ce
+qui est rendu**, donc hors du périmètre de cet arbitrage.
+
+**Rien n'est appliqué.** Le tableau est là pour être tranché.
+
+## §4 — Relevé consolidé de l'état de la mesure
+
+**Sans conclusion.** Les effectifs sont de quelques dizaines et les activations
+datent de deux jours. Ce relevé dit où on en est, pas ce que ça vaut.
+
+### §4.1 — Les trois populations
+
+| Population | Sélections | Tranchées | Gagnées | Fenêtre |
+| --- | ---: | ---: | ---: | --- |
+| principale | 225 | 209 | 105 | 05/08 → 19/08 |
+| tardive | 52 | 52 | 32 | 05/08 → **17/08** |
+| exploratoire | 21 | 14 | 4 | 17/08 → 19/08 |
+| **total** | **298** | **275** | **141** | |
+
+La somme retombe sur le `COUNT(*)` de `picks` (298). La population **tardive
+s'arrête au 17/08** — la garde d'écriture ne laisse plus rien y entrer.
+
+Depuis les activations :
+
+| Fenêtre | Sélections | Tranchées |
+| --- | ---: | ---: |
+| avant le 18/08 | 254 | 249 |
+| 18/08 — lignes de service | 25 | 25 |
+| 19–20/08 — ligne `Ici` | 19 | **1** |
+
+**Les 19 sélections postérieures à `Ici` n'ont qu'un résultat saisi.** Rien ne
+se lit encore sur cette fenêtre.
+
+### §4.2 — `source_level` et angle
+
+| `source_level_effective` | Sél. | Tranchées | Gagnées |
+| --- | ---: | ---: | ---: |
+| lecture | 132 | 119 | 57 |
+| (non renseigné) | 101 | 100 | 48 |
+| 2 | 28 | 25 | 17 |
+| 1 | 25 | 20 | 11 |
+| 3 | 9 | 8 | 5 |
+| 4 | 3 | 3 | 3 |
+
+| Angle | Sél. | Tranchées | Gagnées |
+| --- | ---: | ---: | ---: |
+| issue | 102 | 89 | 38 |
+| (non renseigné) | 101 | 100 | 48 |
+| manière | 95 | 86 | 55 |
+
+Le déclaré et l'effectif divergent fortement : `source_level` déclaré donne 77
+en niveau 2 et 73 en niveau 1, quand l'effectif en garde 28 et 25. **La cause
+est unique et elle est nommée : `research_override_cause = ligne_absente` sur
+89 sélections** — la ligne `dossiers_ouverts` n'est toujours pas collée, donc
+tout le lot bascule en lecture. C'est le régime que le lot 12 décrivait, et il
+n'a pas changé.
+
+### §4.3 — Écart cran déclaré / recalculé
+
+**147 crans calculés sur 298** ; accord **16 sur 147 — 11 %**.
+
+| Déclaré → calculé | n |
+| --- | ---: |
+| 3 → 1 | 51 |
+| 4 → 1 | 35 |
+| 2 → 1 | 33 |
+| 5 → 1 | 6 |
+| 1 → 1 (accord) | 7 |
+| 3 → 3, 4 → 4, 5 → 5 (accord) | 9 |
+| 2 → 3, 4 → 5 | 6 |
+
+**125 des 131 désaccords sont un écrasement vers 1**, c'est-à-dire le même
+`ligne_absente` que ci-dessus. L'écart ne mesure donc pas la rédaction du
+gabarit tant que la ligne n'est pas collée.
+
+### §4.4 — Couverture des lignes ajoutées, par circuit
+
+Seuils réels : `MIN_SERVE_POINTS` = 400, `MIN_GAMES` = 300.
+
+| Circuit | Surface | Joueurs | `Service` | `Retour` | `Jeux` |
+| --- | --- | ---: | ---: | ---: | ---: |
+| ATP | Hard | 130 | 129 | 127 | 0 |
+| ATP | (toutes) | 130 | 130 | 130 | **4** |
+| ATP | Clay | 127 | 114 | 113 | 0 |
+| ATP | Grass | 122 | 73 | 73 | 0 |
+| ATP | I.hard | 117 | 80 | 78 | 0 |
+| WTA | Hard | 120 | 118 | 118 | 0 |
+| WTA | (toutes) | 120 | 120 | 120 | **10** |
+| WTA | Clay | 118 | 107 | 108 | 0 |
+| WTA | Grass | 117 | 70 | 70 | 0 |
+| WTA | I.hard | 66 | 22 | 21 | 0 |
+
+1 167 lignes, **250 joueurs**. `Service` et `Retour` sont servis sur la quasi
+totalité des joueurs sur dur ; **`Jeux` sort sur 14 joueurs sur 250**, et
+uniquement sur le repli toutes surfaces — maximum par surface **257** pour un
+seuil à 300. C'est le blocage structurel que le lot 12 avait nommé, mesuré ici.
+
+`Ici` : la ligne est branchée (`serve_stats`, libellé `Ici`) ; sa couverture de
+production a été relevée au lot 12 à 79 % et n'est pas rejouée ici.
+
+### §4.5 — Le coût fixe du gabarit
+
+| Date | Prompts | `fixed_tokens` | Tokens / bloc |
+| --- | ---: | ---: | ---: |
+| 13/08 | 10 | 9 517 – 10 994 | 730 |
+| 15/08 | 19 | 10 875 – 13 118 | 691 |
+| 17/08 | 4 | 11 472 – 12 454 | 648 |
+| 18/08 | 6 | 11 730 – 13 049 | 850 |
+| **19/08** | 3 | **12 217 – 13 808** | **1 168** |
+
+Lot médian sur 156 prompts : **8 blocs**. Sur ce lot, le cadre pèse
+**12 217 tokens pour ~10 810 de blocs — 53 % du prompt**.
+
+## §5 — Dettes de forme
+
+- **Registre des chemins d'écriture** : ce lot n'ajoute aucun `INSERT` vers
+  `picks`, `combos`, `combo_legs` ou `set_scores` — la météo écrit dans
+  `context` par `store()`, hors périmètre du registre. `tests/test_write_paths.py`
+  passe, et son critère lit la source : un chemin ajouté sans déclaration
+  ferait tomber la suite. Rien à déclarer.
+- **`changelog_mesure`** : une entrée, à sa date d'activation (voir ci-dessous).
+- **Test de contrat d'en-tête et bout en bout** : ce lot n'ajoute aucun objet
+  d'en-tête ni aucun format structuré collé — la ligne `Météo` existait déjà et
+  ses quatre états sont couverts par cinq tests neufs. Le banc de transport
+  n'est pas concerné : aucun nouveau format ne traverse un collage.
+- **Purge du lot 12** : aucun artefact `myassistantbet-*` ne subsiste dans
+  `/tmp`. Le tmpfs est à **68 %**, contre 96 % au relevé du 19/08 consigné dans
+  `CONTRIBUTING.md`. Le journal systemd n'expose pas la ligne de purge sur la
+  fenêtre lisible, donc **l'attribution n'est pas prouvée** : la rotation de
+  `pytest` explique une part inconnue de la baisse.
+
+## §6 — Ce que la mesure contredit dans le brief
+
+Quatre affirmations, dont trois qui changent une décision.
+
+| Affirmé | Mesuré |
+| --- | --- |
+| « une quinzaine de lignes de saisie », sept pays | 31 pays de stade, 126 villes, **sept schémas de code** — et 0 ligne à saisir pour la branche construite |
+| la granularité est peut-être régionale | **départementale** : 96 zones en France, 116 en Autriche, 233 en Espagne |
+| la Turquie fait partie des sept pays cibles | **aucun flux MeteoAlarm** — 404 sur quatre graphies |
+| `venue.id` nul « sur 210 blocs en Conference League » | nul sur **79 % de tout ce qui est demandé**, MLS comprise (0/26), et **par match** et non par compétition |
+
+Et une du dossier de projet, que ce lot lève : *« MeteoAlarm agrège l'Europe
+mais n'émet rien »*. La charge utile porte `senderName` — « Meteorologisk
+Institutt » — donc l'émetteur réel est recopiable et le niveau 1 tient.
+
+### La leçon de méthode du lot
+
+**Le nombre d'entrées d'une table ne dit pas si elle doit exister ; son mode de
+vérification, si.** Les 76 villes du groupe « code » passaient le critère du
+brief (« moins de ~100 entrées → construis ») et ne devaient pas être
+construites, parce qu'aucune de leurs entrées ne se vérifie contre quoi que ce
+soit. Les 14 villes du groupe « polygone » n'ont demandé **aucune** entrée.
+
+C'est la même bascule qu'au §2 : 40 désaccords de pays dont 37 de vocabulaire,
+2 vrais et **1 faux**. Ce qui décide n'est ni le compte ni le taux, c'est de
+savoir si l'erreur, quand elle survient, **se voit**. Un polygone qui se trompe
+n'existe pas ; un `EMMA_ID` mal saisi et un `geo_country` qui dit « Colombia »
+pour Séville se taisent tous les deux — et disent, en se taisant, l'inverse de
+la vérité.
