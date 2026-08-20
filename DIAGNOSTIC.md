@@ -6853,3 +6853,103 @@ cadre 13 312 ; les prompts suivants porteront ~13 900.
 la raison pour laquelle la porte se justifie quand même : le cadre commun est ce
 qui se paie à **chaque** prompt d'une session, et une session en génère quatre à
 cinq.
+
+## §1 — Le règlement automatique : 93,3 % était un artefact, et la cause est une clé
+
+### §1a — La réparation, et ce qu'elle a révélé
+
+**Le taux de 93,3 % du lot 15 ne mesurait pas le règlement, il mesurait mon
+index.** Les résultats y étaient rangés par **paire de noms de famille**, sans
+date : deux rencontres du même couple s'écrasaient donc l'une l'autre, et la
+dernière lue gagnait. Les quatre divergences rapportées n'étaient pas quatre cas
+limites du sport, c'était **quatre fois le même défaut d'appariement**.
+
+Mesure du 20/08/2026, sur **800 matchs** recoupables entre `event/get` et
+`tennis-data.co.uk` — deux sources indépendantes, la seconde nommant
+explicitement son vainqueur :
+
+| Clé de rapprochement | Matchs | Accord sur le vainqueur |
+| --- | ---: | ---: |
+| paire de noms seule | 710 | **94,1 %** |
+| **paire de noms + jour** | 800 | **99,75 %** |
+
+Et les **deux** désaccords restants sur 800 n'en sont pas : `7-5,3-6,2-1` et
+`6-1,1-0` portent un set **inachevé**, donc un abandon. Compter les sets y
+désigne celui qui menait quand le jeu s'est arrêté — le perdant.
+
+**Deux conséquences, et la seconde valait le détour :**
+
+- la convention du champ `score` est **établie et non supposée** : il s'écrit du
+  point de vue de `participant1`, set par set. Ce n'est pas une lecture de
+  documentation, c'est un recoupement contre une source qui nomme son vainqueur ;
+- **l'abandon se détecte sur le score seul**, sans champ supplémentaire : un set
+  qui n'atteint pas 6 avec deux jeux d'écart, ou 7, n'est pas un set — c'est
+  l'instant où le jeu s'est arrêté.
+
+### Le taux réparé, sur les 293 sélections tranchées
+
+| Marché | n | Accord | Divergence | Hors règle | Sans résultat | Taux |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `h2h` | 80 | 39 | **0** | 0 | 41 | **100 %** |
+| `(sans clé) Vainqueur` | 31 | 26 | **0** | 0 | 5 | **100 %** |
+| `(sans clé) 1N2` | 22 | 14 | **0** | 0 | 8 | **100 %** |
+| `totals` | 32 | 5 | **0** | 5 | 22 | **100 %** |
+| `(sans clé) O/U` | 10 | 6 | **0** | 0 | 4 | **100 %** |
+| `(sans clé) O/U 2.5` | 7 | 4 | **0** | 0 | 3 | **100 %** |
+| `(sans clé) O/U 3.5` | 1 | 1 | **0** | 0 | 0 | **100 %** |
+| `alternate_spreads` | 42 | — | — | 31 | 11 | hors règle |
+| `(sans clé) Handicap` | 16 | — | — | 15 | 1 | hors règle |
+| `btts`, `double_chance`, `team_totals`, `correct_score`, `halftime_fulltime`, `to_qualify`, `Hand. jeux`, `Jeux O/U` | 42 | — | — | 27 | 15 | hors règle |
+
+Agrégé par **famille de règle** — c'est la règle qui se met en service, pas le
+libellé :
+
+| Famille | Règlements | Accord | Divergence | Taux |
+| --- | ---: | ---: | ---: | ---: |
+| `issue` (1N2, Vainqueur) | 79 | 79 | **0** | **100,00 %** |
+| `total` (O/U football) | 16 | 16 | **0** | **100,00 %** |
+
+> **95 règlements tentés, 95 d'accord, zéro divergence.**
+
+**Aucune divergence ne reste à nommer** — c'est la réponse à la demande du §1a,
+et elle est plus courte que prévu.
+
+### Un cas exclu à tort, et le correctif
+
+Le premier rejeu laissait `Los Angeles FC` hors règle sur
+`Los Angeles FC – San Diego FC` : le jeton `fc` touchait les **deux** camps, donc
+la règle du doute s'appliquait. Elle avait tort — **un mot présent des deux côtés
+ne porte aucune information sur le camp visé**, donc il ne doit pas en fabriquer.
+Les jetons communs sont retirés avant comparaison ; le doute réel (`FC` seul)
+reste sans camp. Gain : un règlement, et la règle n'est pas affaiblie.
+
+### §1b — Ce qui est mis en service, et ce qui ne l'est pas
+
+**Deux familles, celles à 100 %.** `ENABLED = ("issue", "total")`. Tout le reste
+reste manuel — handicaps, scores exacts, mi-temps/fin de match, qualification,
+totaux d'équipe, deux-équipes-marquent, double chance — **et les totaux au
+tennis** : `event/get` ne sert pas le compte de jeux dans son score agrégé, donc
+la règle ne s'écrit pas.
+
+Les quatre gardes demandées, et où chacune vit :
+
+| Garde | Où |
+| --- | --- |
+| le cron propose, il n'écrit pas d'autorité | `etat = propose`, et un test lit la source de la tâche planifiée pour vérifier qu'elle n'appelle ni `apply`, ni `set_result`, ni `UPDATE picks` |
+| cas non couvert → non tranché | un marché hors règle ne produit **aucune ligne** : il n'est pas rangé « inconnu », il est absent |
+| une divergence alerte, n'écrase jamais | `etat = divergent`, `picks.result` intact, badge sur la feuille de session avec le score qui la fonde — et `apply()` **refuse** une divergence |
+| journaliser source et horodatage | `reglements.source` et `observed_at` sur chaque ligne, `agreement()` rend le taux par famille |
+
+**La promotion est un geste humain et le calcul ne la défait pas** : rejouer la
+passe ne ramène pas une ligne `applique` à `propose`.
+
+### Ce que le règlement ne peut pas régler, et ce n'est pas une règle qui manque
+
+Sur les 293 sélections : **95 réglées, 136 hors règle, 94 sans résultat, 2
+inachevées.** Les 94 ne manquent pas d'une règle — elles manquent d'un
+**résultat** : la passe relit ce que l'enrichissement a déjà archivé, et
+169 événements sur 293 en portaient un au 20/08. Les autres arriveront à mesure
+que l'enrichissement repasse sur leurs équipes.
+
+C'est aussi pourquoi la tâche passe **trois fois par jour** et ne coûte rien :
+aucun appel réseau, uniquement une relecture.

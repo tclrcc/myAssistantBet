@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -15,6 +16,7 @@ from myassistantbet.scheduler import (
     LINEUPS_EVERY_MIN,
     LINEUPS_JOB_ID,
     SCAN_JOB_ID,
+    SETTLEMENT_JOB_ID,
     TIMELINES_JOB_ID,
     build_scheduler,
 )
@@ -35,21 +37,48 @@ def _job(scheduler: AsyncIOScheduler, job_id: str) -> Any:
     return next(job for job in scheduler.get_jobs() if job.id == job_id)
 
 
-def test_les_quatre_taches_sont_planifiees(scheduler: AsyncIOScheduler) -> None:
-    """La reprise des timelines rejoint les trois autres.
+def test_les_cinq_taches_sont_planifiees(scheduler: AsyncIOScheduler) -> None:
+    """La reprise des timelines et le reglement automatique rejoignent les trois
+    premieres.
 
-    **Elle n'est pas gratuite**, contrairement aux sources du lot voisin, et son
-    garde-fou n'est donc pas la gratuite mais le plancher de quota verifie avant
-    chaque joueur. Elle est ici parce qu'elle ne peut pas finir en une fois : la
-    couverture mesuree de la source est de 6 %, elle avance par lots bornes, et
-    l'archive fait qu'un passage ne repaie jamais le precedent.
+    **La timeline n'est pas gratuite**, contrairement aux sources du lot voisin,
+    et son garde-fou n'est donc pas la gratuite mais le plancher de quota
+    verifie avant chaque joueur. Elle est ici parce qu'elle ne peut pas finir en
+    une fois : la couverture mesuree de la source est de 6 %, elle avance par
+    lots bornes, et l'archive fait qu'un passage ne repaie jamais le precedent.
+
+    **Le reglement, lui, est gratuit** : il relit ce que l'enrichissement a deja
+    archive et ne fait aucun appel. C'est aussi pour ca qu'il passe trois fois
+    par jour — un passage de plus ne se discute pas.
     """
     assert {job.id for job in scheduler.get_jobs()} == {
         SCAN_JOB_ID,
         FREE_JOB_ID,
         LINEUPS_JOB_ID,
         TIMELINES_JOB_ID,
+        SETTLEMENT_JOB_ID,
     }
+
+
+def test_le_reglement_ne_touche_jamais_picks_de_lui_meme(
+    scheduler: AsyncIOScheduler, migrated: Settings
+) -> None:
+    """**Le cron propose, il n'ecrit pas d'autorite.**
+
+    293 selections tranchees portent tout ce que ce projet sait produire, et un
+    reglement errone les corromprait en silence. La passe planifiee ne doit donc
+    jamais appeler la promotion — un test le verifie sur la source plutot que
+    sur le comportement, une consigne se contournant et un appel absent non.
+    """
+    source = (
+        Path(__file__).resolve().parents[1] / "src" / "myassistantbet" / "scheduler.py"
+    ).read_text(encoding="utf-8")
+    bloc = source[source.index("async def _settlement") : source.index("async def _lineups")]
+    for interdit in ("settlement.apply", "set_result", "UPDATE picks"):
+        assert interdit not in bloc, (
+            f"la tache planifiee appelle {interdit} : elle cesse de proposer et "
+            "commence a ecrire d'autorite"
+        )
 
 
 def test_aucune_tache_n_enrichit_la_shortlist(scheduler: AsyncIOScheduler) -> None:

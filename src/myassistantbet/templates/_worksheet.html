@@ -130,6 +130,28 @@
                   hx-target="#worksheet" hx-swap="outerHTML">{{ symbole }}</button>
           {% endfor %}
         </div>
+        {# **Le règlement automatique propose, il n'écrit pas d'autorité.** Une
+           proposition se promeut d'un geste ; une divergence — le calcul
+           contredit un résultat déjà saisi — ne se promeut pas du tout et se
+           voit, avec le score qui la fonde. C'est la leçon de
+           `set_open_dossiers` au lot 14 : un signal qui écrase n'est pas un
+           signal, c'est une perte. #}
+        {% set reglement = settlements.get(pick.pick_id) %}
+        {% if reglement %}
+          {% if reglement.etat == 'divergent' %}
+        <span class="badge warn"
+              title="Le calcul lit « {{ reglement.verdict }} » sur {{ reglement.detail }}, la saisie dit « {{ reglement.manuel }} ». Rien n'a été écrasé.">
+          divergence : {{ reglement.detail }}
+        </span>
+          {% else %}
+        <button type="button" class="link-action"
+                hx-post="/picks/{{ pick.pick_id }}/settle"
+                hx-target="#worksheet" hx-swap="outerHTML"
+                title="Proposé d'après {{ reglement.source }} — {{ reglement.detail }}">
+          proposé : {{ reglement.verdict }}
+        </button>
+          {% endif %}
+        {% endif %}
       </td>
       <td class="nowrap">
         {% if pick.coupon_id %}

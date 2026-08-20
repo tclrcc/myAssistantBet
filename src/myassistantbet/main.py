@@ -50,6 +50,7 @@ from .services import prompt as prompt_service
 from .services import sections as sections_service
 from .services import session as session_service
 from .services import set_scores as set_scores_service
+from .services import settlement as settlement_service
 from .services import stakes as stakes_service
 from .services import stats_export as stats_export_service
 from .services import tennis_history as tennis_history_service
@@ -1074,6 +1075,11 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         # le seul lecteur de `bankroll_journee`, sans quoi la table serait
         # ecrite et jamais relue.
         "day_state": stakes_service.day_state(now.strftime("%Y-%m-%d"), settings),
+        # Les reglements proposes, et **les divergences d'abord** : un calcul
+        # qui contredit un reglage pose a la main ne s'ecrit nulle part, il se
+        # voit ici. C'est la lecon de `set_open_dossiers` au lot 14 — un signal
+        # qui ecrase n'est pas un signal.
+        "settlements": {row.pick_id: row for row in settlement_service.pending(settings)},
         "coupon_tracking": thresholds_service.toggle_of(
             thresholds_service.COUPON_TRACKING, settings
         ),
@@ -1639,6 +1645,21 @@ def set_pick_real_price(
         history_service.set_real_price(pick_id, price, settings)
     except history_service.HistoryError as exc:
         logger.warning("Cote obtenue refusee : %s", exc)
+    return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
+
+
+@app.post("/picks/{pick_id}/settle", response_class=HTMLResponse)
+def apply_pick_settlement(request: Request, pick_id: int) -> HTMLResponse:
+    """Promeut un reglement propose. **Geste humain, jamais cron.**
+
+    Refuse une divergence : promouvoir contre un reglement deja pose serait
+    l'ecrasement que ce chemin existe pour empecher. Il faut d'abord trancher a
+    la main, avec le score sous les yeux.
+    """
+    settings = get_settings()
+    session_id = _pick_session(pick_id)
+    if not settlement_service.apply(pick_id, settings):
+        logger.warning("Reglement non promouvable pour la selection %d", pick_id)
     return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
 
 

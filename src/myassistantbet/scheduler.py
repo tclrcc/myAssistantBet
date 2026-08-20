@@ -69,6 +69,21 @@ TIMELINES_JOB_DELAY_MIN = 30
 #: en base tant qu'aucun match n'est dans la fenetre.
 LINEUPS_EVERY_MIN = 10
 
+#: Le reglement automatique. **Trois passages par jour, et ils ne coutent
+#: rien** : la passe ne fait aucun appel reseau, elle relit ce que
+#: l'enrichissement a deja archive — `api_responses` au tennis, les resumes de
+#: saison au football.
+#:
+#: Elle ne peut donc regler que ce que la collecte a rapporte, et c'est une
+#: limite a connaitre : sur les 293 selections tranchees, **169 evenements
+#: seulement** portaient un resultat lisible au 20/08/2026. Les autres
+#: arriveront a mesure que l'enrichissement repasse sur leurs equipes.
+#:
+#: Trois heures plutot qu'une seule parce que les resultats n'arrivent pas a
+#: heure fixe, et gratuit veut dire qu'un passage de plus ne se discute pas.
+SETTLEMENT_JOB_ID = "reglement_automatique"
+SETTLEMENT_HOURS = "9,15,22"
+
 
 def build_scheduler(client: httpx.AsyncClient, settings: Settings) -> AsyncIOScheduler:
     """Planifie le scan quotidien et les rafraichissements gratuits."""
@@ -191,6 +206,35 @@ def build_scheduler(client: httpx.AsyncClient, settings: Settings) -> AsyncIOSch
         except Exception:
             logger.exception("Timelines de service : echec")
 
+    async def _settlement() -> None:
+        """Propose les reglements calculables. **N'ecrit jamais dans `picks`.**
+
+        Le cron propose, un humain promeut : 293 selections tranchees portent
+        tout ce que ce projet sait produire, et un reglement errone les
+        corromprait en silence. Une divergence avec un reglement deja pose se
+        journalise et n'ecrase rien — la lecon de `set_open_dossiers` au lot 14.
+
+        **Aucun appel reseau** : la passe relit ce que l'enrichissement a deja
+        archive, donc elle ne coute rien, et elle ne peut rien manquer d'autre
+        que ce que la collecte n'a pas encore rapporte.
+        """
+        from .services import settlement
+
+        try:
+            passe = settlement.run(settings)
+        except Exception:
+            logger.exception("Reglement automatique : passe interrompue")
+            return
+        logger.info(
+            "Reglement automatique : %d proposition(s), %d divergence(s), "
+            "%d hors regle, %d sans resultat, %d inacheve(s)",
+            len(passe.nouveaux),
+            len(passe.divergents),
+            passe.hors_regle,
+            passe.sans_resultat,
+            passe.inacheves,
+        )
+
     async def _lineups() -> None:
         """Compositions des matchs de la shortlist dont le coup d'envoi approche.
 
@@ -240,6 +284,16 @@ def build_scheduler(client: httpx.AsyncClient, settings: Settings) -> AsyncIOSch
         replace_existing=True,
         # Un passage manque ne se rattrape pas : la passe est reprenable, donc
         # celui de demain reprendra exactement ou celui-ci s'est arrete.
+        misfire_grace_time=3600,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _settlement,
+        trigger=CronTrigger(hour=SETTLEMENT_HOURS, minute=5, timezone=settings.tz),
+        id=SETTLEMENT_JOB_ID,
+        replace_existing=True,
+        # Un passage manque se rattrape tout seul : la passe est idempotente et
+        # recalcule tout, donc celui d'apres reprend exactement le meme etat.
         misfire_grace_time=3600,
         coalesce=True,
     )

@@ -43,6 +43,7 @@ EXPECTED_TABLES = {
     "prompt_events",
     "prompt_odds",
     "prompts",
+    "reglements",
     "schema_migrations",
     "session_events",
     "source_freshness",

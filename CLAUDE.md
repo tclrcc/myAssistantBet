@@ -1638,6 +1638,43 @@ projet.
   surfaces, **en le declarant**, comme `fell_back` le fait deja pour les points de
   service.
 
+## Un zero sur un rapprochement de joueurs est un defaut d'appariement
+
+**Regle de revue, du 20/08/2026, et elle a ete apprise trois fois en une
+semaine.** Un taux de 0 % sur un rapprochement de noms est **parfaitement
+credible** — la source ne couvre pas ce joueur, l'historique ne remonte pas
+assez loin — et c'est exactement ce qui le rend dangereux : il se rapporte sans
+qu'on le verifie, et il ferme un chantier.
+
+| Ou | Ce que le zero disait | Ce qu'il etait |
+| --- | --- | --- |
+| Fernandez, lot 5 | profil vide chez le fournisseur | un **doublon** portait les 452 matchs |
+| Andreescu, lot 9 | joueuse absente de la source | la source ecrit « Bianca Vanessa Andreescu » |
+| recuperabilite tennis, lot 15 | **0 sur 127**, source inexploitable | `tennis_matches` ecrit « Mensik J. », `events` ecrit « Alex Michelsen » — corrige a **65,8 %** |
+
+Le troisieme aurait **ferme le tennis pour de bon** : un « 0 % » sur la
+recuperabilite des resultats se serait lu comme l'absence de toute source, et le
+reglement automatique n'aurait jamais ete construit.
+
+**La regle** : un taux de 0 % sur un rapprochement de joueurs est un defaut
+d'appariement **jusqu'a preuve du contraire**, et la preuve se fait avant de le
+rapporter. Le repli progressif est deja en place et se parcourt en entier —
+casse, accents, tirets, **ordre des noms** (prenom devant chez l'un, nom de
+famille devant chez l'autre), initiales, decoupages multiples.
+
+- **Le zero ne se rapporte qu'apres**, et il se rapporte alors avec le repli qui
+  a ete tente. « 0 sur 127 » ne dit rien ; « 0 sur 127, replis casse, accents et
+  ordre des noms epuises » est un resultat.
+- **Chaque source a sa fonction de nom, et elles ne se partagent pas.** Le nom de
+  famille est le **dernier** mot chez `events` (`Alex Michelsen`) et le
+  **premier** chez `tennis_matches` (`Mensik J.`). Une fonction unique appliquee
+  aux deux compare « alex » a « mensik » — c'est litteralement le defaut du
+  lot 15.
+- **Le corollaire vaut au-dela des joueurs** : le lot 16 a mesure 94,1 % la ou il
+  y avait 99,75 %, parce que la cle de rapprochement omettait la **date**. Deux
+  rencontres du meme couple s'ecrasaient. Un taux qui surprend se re-verifie sur
+  sa cle avant d'etre ecrit.
+
 ## Avant de coder une heuristique sur des libelles, cherchez l'identifiant
 
 **Regle de revue, tiree de trois defauts de la meme famille.** Le handicap qui semblait mal
