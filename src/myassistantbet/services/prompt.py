@@ -1635,6 +1635,18 @@ def split_cost(body: str) -> PromptCost:
     )
 
 
+#: La version du cadre d'analyse sous lequel une sortie a ete produite.
+#:
+#: **Sans elle, une analyse archivee ne se relit plus contre les regles en
+#: vigueur au moment ou elle a ete produite**, et la base de calibration devient
+#: inhomogene sans que rien ne le signale. Meme raison que `sessions.scale_version`,
+#: dont le commentaire dit qu'une echelle ne se reconstitue pas apres coup.
+#:
+#: Elle **suit la Skill** et non le code de cette application : c'est le cadre qui
+#: decide de ce qui est rendu. 1.3 — plancher de cote explicite, regle
+#: d'agregation du niveau de source, deux controles de plus en fin de checklist.
+FRAMEWORK_VERSION = "1.3"
+
 #: Ce qui part reellement a l'analyse. **Un seul endroit le dit**, et c'est lui
 #: que les garde-fous de migration interrogent : « le gabarit produit-il encore »
 #: est une question d'etat, pas une question de code present.

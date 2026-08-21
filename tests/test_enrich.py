@@ -720,8 +720,8 @@ async def test_l_enrichissement_recupere_aussi_le_dossier_d_equipe(
     assert result.dossier_note == ""
     lignes = dict(renderable_events(session_id, permissif, NOW)[0].context_lines)
     assert lignes["Entraineur"] == (
-        "BK Hacken P. Gustafsson (depuis 06/2023, 3 ans) | "
-        "Djurgardens IF M. Lindqvist (depuis 06/2026, 1 mois)"
+        "BK Hacken Per Gustafsson (depuis 06/2023, 3 ans) | "
+        "Djurgardens IF Mikael Lindqvist (depuis 06/2026, 1 mois)"
     )
 
 

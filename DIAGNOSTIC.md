@@ -1,3 +1,58 @@
+# ÉTAT AU 21/08/2026 — quatre défauts remontés par la section F, mesurés et non corrigés
+
+**Diagnostic seulement.** Aucun n'est corrigé : chacun demande sa propre mesure,
+et les corriger d'affilée sans mesurer serait exactement ce que ce projet
+interdit. Écrits ici pour ne pas être redécouverts.
+
+## 1. « La Cartuja (Séville) » étiquetée Colombia — limite connue, pas défaut neuf
+
+`context.venue` porte `{name: "Estadio de La Cartuja", city: "Sevilla", country:
+null}` : **le pays est vide en base**, et « Colombia » vient du géocodage fait à
+la lecture. Sur 399 relevés `venue`, **4 seulement portent un pays**.
+
+C'est la limite déjà documentée dans le CLAUDE.md : les relevés antérieurs à
+`home_country` n'ont pas le garde-fou « homonyme dans le pays du club », et le
+pays sort alors de la seule règle de population. Ce qui reste à comprendre :
+pourquoi Sevilla (Espagne, ~680 000) perd contre son homonyme colombien, alors
+que la règle prend le plus peuplé. **À mesurer sur la réponse du géocodeur avant
+de toucher à quoi que ce soit** — la règle est peut-être juste et la donnée
+d'entrée fausse.
+
+## 2. Météo relevée à 14h00 pour un coup d'envoi à 21h00
+
+Les chiffres valent **à l'heure du coup d'envoi**, c'est la règle du module. Un
+relevé daté de 14h00 sur un match de 21h00 dit soit que l'heure cible est mal
+calculée, soit que la mention affiche l'heure du relevé quand elle devrait
+afficher l'heure visée. **Les deux se distinguent dans la charge utile**, qui
+porte les deux instants.
+
+## 3. Une borne de palier calculée sur un prix que le bloc n'affiche pas
+
+L'en-tête annonce `7.38 (M3 · O/U Over 4.5)` quand le bloc M3 ne porte aucune
+ligne 4.5. `tier_scope` lit **toutes** les cotes de l'événement ; le rendu, lui,
+limite les lignes O/U aux cinq plus proches de la ligne principale.
+
+**Deux sorties du même calcul qui ne se parlent pas** — le défaut nommé dans le
+CLAUDE.md à propos de `Tour` et `truncated()`. La borne doit se calculer sur ce
+que le bloc **montre**, sans quoi elle envoie chercher un prix invisible.
+
+## 4. Buteur / 1er buteur ni cotés ni déclarés non servis
+
+Présents sur certains matchs, absents des **deux** listes sur d'autres. Or la
+ligne `Non servis` se construit sur `markets_for()`, qui dépend de
+`PLAYER_PROPS_LEAGUES` : hors de ces compétitions le marché n'est pas demandé,
+donc il ne peut pas être déclaré manquant.
+
+**C'est le piège documenté des props buteurs**, dans son autre moitié : elles
+avaient été ajoutées à `markets.py` sans l'être à `render.py` et sortaient en clé
+brute ; ici la question est de savoir si un marché **jamais demandé** doit
+apparaître en `Non servis`. La réponse n'est pas évidente — le CLAUDE.md dit
+qu'un événement d'étage A n'annonce rien de profond, « ces marchés n'ont pas été
+réclamés, et les lister ferait chercher une panne là où il n'y a qu'un
+enrichissement jamais lancé ». **À trancher, pas à corriger d'instinct.**
+
+---
+
 # ÉTAT AU 19/08/2026, 23h45 — à lire en premier
 
 **En service** : schéma **64**, `SERVE_LINES_ENABLED=1`,

@@ -1360,6 +1360,65 @@ Ce qui rouvrirait la question, et rien d'autre : une competition qui passerait d
 `false` a `true` chez le fournisseur — ce que la synchronisation constate deja
 toute seule.
 
+## Le nom de l'entraineur : le champ propre etait a cote du champ casse
+
+**Mesure du 21/08/2026, apres un lot ou 43 % des matchs portaient une ligne
+`Entraineur` douteuse.** Le fournisseur sert **trois** champs pour une meme
+personne — `name`, `firstname`, `lastname` — et nous ne lisions que le premier.
+
+- **970 des 1 631 fiches en base portent un nom abrege** (`X. Nom`), dont 876
+  completables ;
+- le cas emblematique vient du fournisseur : Sebastian Hoeneß y figure sous
+  `name = "S. Hoeneb"`, le ß rendu par un b, quand `lastname` porte « Hoeneß »
+  sans faute.
+
+**Le correctif naif est faux, et c'est ce qui decide de la regle.** Prendre
+`firstname + lastname` partout rendrait « Enrique Setién Solar » la ou `name` dit
+« Quique Setién », et « Jesús Rodríguez Tato » la ou il dit « Tato » : le nom
+d'usage est celui avec lequel on cherche. Il ne se remplace que lorsqu'il est
+**abrege**, jamais parce qu'il est court.
+
+- **Aucune concordance n'est exigee entre les champs**, et c'etait l'erreur du
+  premier jet. Il n'y a rien a apparier : les trois decrivent la meme fiche, et
+  choisir lequel afficher n'est pas un rapprochement. Exiger que le nom de
+  famille abrege se retrouve dans `lastname` refusait 42 completions justes —
+  noms composes, accents polonais, particules — et laissait passer le seul cas
+  ou le champ ment vraiment.
+- **Ce que ca repare depasse le libelle.** La feuille de match, elle, porte
+  **toujours** le nom complet : 287 relevés sur 287, aucun abrege. La comparaison
+  etait donc « fiche abregee contre feuille complete », ce qui ne pouvait
+  conclure que sur l'initiale. Mesure sur les 281 paires : **220 « meme homme »
+  contre 155**, les mentions d'incertitude tombent de **71 a 6**, et les
+  divergences ne bougent pas (55).
+- **Un second prenom ne fait pas deux hommes** (`_same_person`). Comparer deux
+  noms complets faisait tomber trois paires en divergence qui sont le meme homme
+  — « Alexander Matthias Blessin » contre « Alexander Blessin », « Desmond »
+  contre « Des ». Le nom de famille doit etre identique et les prenoms
+  compatibles mot a mot : deux prenoms differents partageant le nom restent deux
+  hommes, les fratries existent au football.
+
+### L'identifiant existe, et il ment
+
+Le commentaire du code disait « sur l'identifiant, jamais sur le nom ». **Il se
+trompait deux fois** : `_current_post` ne posait pas l'`id` dans le candidat, donc
+ce chemin n'a **jamais** pu s'executer — et il ne le doit pas.
+
+Mesure sur les 281 paires : **35 portent deux identifiants pour le meme homme**
+(« Felip Ortiz », fiche 22636 contre feuille 26454), contre 7 ou l'identifiant
+aurait mieux tranche que le nom. Le fournisseur duplique ses fiches
+d'entraineur, et s'y fier retournerait 35 accords en divergences pour 7 gains.
+
+**Meme famille que `fixture.venue.city`** : le champ existe, il est structure, et
+il se trompe assez souvent pour qu'une regle batie dessus affirme a tort. La
+regle « cherchez l'identifiant » dit ou regarder ; elle ne dispense pas de
+verifier qu'il dit vrai. Porte fermee, mesuree — ne pas la rouvrir.
+
+### Ce que le correctif ne repare pas
+
+Une **nomination absente** de la charge utile reste hors de portee : c'est le cas
+documente plus haut, et le nom complet n'y change rien. La ligne reste une piste
+datee, pas un fait.
+
 ## L'arbitre : le nom seul, et pourquoi il n'y a rien d'autre
 
 Un marche Cartons est servi sur une partie des blocs sans qu'aucune ligne ne permette de le

@@ -2,7 +2,7 @@
 
 Ce document fixe la règle de décision **avant** de produire le premier résultat. Il est écrit à ce moment précisément parce qu'après quatre phases de migration, la tentation de lire un résultat ambigu comme un succès est maximale.
 
-Version de la Skill au moment de l'écriture : **1.2**.
+Version de la Skill au moment de l'écriture : **1.3** — plancher de cote 1,25 explicite, règle d'agrégation du niveau de source, deux contrôles remontés dans la checklist finale.
 
 ## La question
 
@@ -10,7 +10,7 @@ Le gabarit peut-il être retiré ?
 
 ## Ce qui n'est pas testé
 
-**L'équivalence des sorties.** La Skill v1.2 diffère volontairement du gabarit : elle ouvre C-bis, ancre les cinq crans de confiance, et ferme le tableau principal aux sélections non vérifiées. Une sortie identique au gabarit prouverait que la Skill ne s'applique pas.
+**L'équivalence des sorties.** La Skill v1.3 diffère volontairement du gabarit : elle ouvre C-bis, ancre les cinq crans de confiance, et ferme le tableau principal aux sélections non vérifiées. Une sortie identique au gabarit prouverait que la Skill ne s'applique pas.
 
 **Le taux de réussite.** Deux lots ne disent rien sur la performance. Tout critère fondé sur des résultats de matchs est hors périmètre ici, et le rester est une condition de validité du test.
 

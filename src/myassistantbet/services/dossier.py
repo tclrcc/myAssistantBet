@@ -738,6 +738,48 @@ def _too_thin(team_id: int, season: int, settings: Settings) -> bool:
 # -- Rendu ------------------------------------------------------------------
 
 
+def coach_name(entry: dict[str, Any]) -> str:
+    """Le nom d'un entraineur, **complete quand la fiche l'abrege**.
+
+    Le fournisseur sert trois champs pour une meme personne : `name`, `firstname`
+    et `lastname`. `name` est le nom **d'usage** et c'est le bon la plupart du
+    temps — « Quique Setién » vaut mieux que « Enrique Setién Solar », et « Tato »
+    mieux que « Jesús Rodríguez Tato ». Mais il est **abrege une fois sur deux**,
+    et parfois corrompu.
+
+    Mesure du 21/08/2026 sur les 1 631 fiches en base : **970 portent un nom
+    abrege** (`X. Nom`), dont **876 completables**. Cas emblematique, et il est du
+    fournisseur : Sebastian Hoeneß y figure sous `name = "S. Hoeneb"` — le ß rendu
+    par un b — quand `lastname` porte « Hoeneß » sans faute. Nous lisions le
+    champ casse alors que le champ propre etait a cote.
+
+    **Aucune concordance n'est exigee entre les deux, et c'etait l'erreur du
+    premier jet.** Il n'y a rien a apparier : les trois champs decrivent la meme
+    fiche, et choisir lequel afficher n'est pas un rapprochement. Exiger que le
+    nom de famille abrege se retrouve dans `lastname` refusait 42 completions
+    parfaitement justes — noms composes (« A. Franco » / « Antonio Franco
+    López »), accents polonais (« D. Zuraw » / « Dariusz Żuraw »), particules
+    (« R. Demil » / « Rik De Mil ») — et laissait passer le seul cas ou le champ
+    ment vraiment.
+
+    **Ce que ca repare au-dela du libelle** : `_coach_match` compare la fiche a la
+    feuille de match. Sur un nom abrege, il ne peut le faire que sur l'initiale du
+    prenom, ce qui ne conclut pas — la ligne dit alors « apparie sur l'initiale »
+    ou « divergence ». Avec le prenom entier, la comparaison redevient exacte.
+    """
+    nom = str(entry.get("name") or "").strip()
+    prenom = str(entry.get("firstname") or "").strip()
+    famille = str(entry.get("lastname") or "").strip()
+    if not _abbreviated(nom) or not prenom or not famille:
+        return nom
+    return f"{prenom} {famille}"
+
+
+def _abbreviated(nom: str) -> bool:
+    """`S. Hoeneb` oui, `Xie Feng` non. L'initiale suivie d'un point et d'un nom."""
+    return len(nom) > 3 and nom[1] == "." and nom[2] == " "
+
+
 def _current_post(entries: list[dict[str, Any]], team_id: int) -> dict[str, Any] | None:
     """Entraineur en poste dans cette equipe, et la date de sa prise de fonction.
 
@@ -768,7 +810,7 @@ def _current_post(entries: list[dict[str, Any]], team_id: int) -> dict[str, Any]
         for step in entry.get("career") or []:
             if (step.get("team") or {}).get("id") != team_id or step.get("end"):
                 continue
-            candidate = {"name": entry["name"], "start": step.get("start")}
+            candidate = {"name": coach_name(entry), "start": step.get("start")}
             # Deux postes ouverts sur la meme equipe : le plus recent est celui
             # qui compte, l'autre n'a jamais ete referme par le fournisseur.
             if best is None or str(candidate["start"] or "") > str(best["start"] or ""):
@@ -901,10 +943,17 @@ def _coach_fragment(
         if not sheets_possible:
             return f"{team} {fiche} — fiche seule, aucune feuille servie ici"
         return f"{team} {fiche}"
-    # **Sur l'identifiant, jamais sur le nom** : « D. McInnes » et
-    # « Derek McInnes » sont deux libelles du meme homme, et les deux figurent
-    # dans la fiche de Hearts. Un rapprochement par libelle aurait invente une
-    # divergence la ou il n'y en a pas.
+    # **Sur le nom, et l'identifiant ne peut pas servir : il ment.** Mesure du
+    # 21/08/2026 sur les 281 paires fiche/feuille de la base — **35 portent deux
+    # identifiants pour le meme homme** (« Felip Ortiz », fiche 22636 contre
+    # feuille 26454), contre 7 ou l'identifiant aurait mieux tranche que le nom.
+    # Le fournisseur duplique ses fiches d'entraineur, et s'y fier retournerait
+    # 35 accords en divergences pour 7 gains.
+    #
+    # Meme famille que `fixture.venue.city` : l'identifiant existe, il est
+    # structure, et il se trompe assez souvent pour qu'un booleen calcule dessus
+    # affirme a tort. La regle « cherchez l'identifiant » dit ou regarder ; elle
+    # ne dispense pas de verifier qu'il dit vrai.
     etat = _coach_match(post, observed)
     if etat == COACH_SAME:
         return f"{team} {fiche} — vu sur la feuille du {quand}"
@@ -960,9 +1009,12 @@ def _initials_match(fiche: str, vu: str) -> bool:
 def _coach_match(post: dict[str, Any], observed: dict[str, Any] | None) -> str:
     """Ce que les deux sources permettent de dire du meme homme.
 
-    L'identifiant tranche quand les deux le portent. La fiche `/coachs` n'expose
-    pas le sien au niveau de l'etape de carriere retenue, d'ou le repli sur le
-    libelle normalise — qui ne sert qu'a **eviter d'annoncer une divergence**,
+    **La comparaison porte sur le libelle, et c'est mesure plutot que subi.**
+    L'identifiant existe des deux cotes sur 144 feuilles, et il **ment** : sur
+    les 281 paires de la base, 35 portent deux identifiants pour le meme homme
+    contre 7 ou il aurait mieux tranche. Le fournisseur duplique ses fiches. Le
+    libelle normalise ne sert donc pas de repli — c'est la source la plus sure
+    des deux — et il ne conclut qu'a **eviter d'annoncer une divergence**,
     jamais a en affirmer une.
 
     **Trois etats, parce que le troisieme se produit tout le temps.** Mesure du
@@ -983,9 +1035,38 @@ def _coach_match(post: dict[str, Any], observed: dict[str, Any] | None) -> str:
     observe = sort_key(str((observed or {}).get("name") or ""))
     if not fiche or not observe:
         return COACH_DIFFERENT
-    if fiche == observe:
+    if fiche == observe or _same_person(fiche, observe):
         return COACH_SAME
     return COACH_INITIAL if _initials_match(fiche, observe) else COACH_DIFFERENT
+
+
+def _same_person(fiche: str, observe: str) -> bool:
+    """Deux ecritures completes du meme homme, a un prenom pres.
+
+    **Apparu en completant les noms abreges, et mesure avant d'etre corrige.**
+    Comparer deux noms complets fait tomber trois paires en « divergence » qui
+    sont le meme homme : la fiche porte un second prenom que la feuille omet
+    (« Alexander Matthias Blessin » contre « Alexander Blessin »), ou un prenom
+    entier la ou la feuille abrege (« Desmond » contre « Des »).
+
+    C'est **l'idiome deja employe deux fois** dans ce projet : le nom de famille
+    se compare en suffixe pour l'entraineur, et `tennis_history.resolve` reunit
+    deux graphies d'un joueur sur « meme nom, initiales en chaine de prefixes ».
+
+    **Le nom de famille doit etre identique** — c'est lui qui porte l'identite —
+    et les prenoms compatibles mot a mot. Deux prenoms differents partageant le
+    nom restent deux hommes : les fratries existent au football, et c'est
+    exactement ce que `COACH_INITIAL` refuse de trancher.
+    """
+    gauche, droite = fiche.split(), observe.split()
+    if not gauche or not droite or gauche[-1] != droite[-1]:
+        return False
+    court, long = sorted((gauche[:-1], droite[:-1]), key=len)
+    if not court:
+        return False
+    return all(
+        long[rang].startswith(mot) or mot.startswith(long[rang]) for rang, mot in enumerate(court)
+    )
 
 
 def _day(moment: Any) -> str:

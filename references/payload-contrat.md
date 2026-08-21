@@ -46,7 +46,7 @@ Pour la même raison, le conteneur générique ne s'appelle pas `faits` : ce lib
 ```json
 {
   "origine": "myassistantbet",
-  "framework_version": "1.2",
+  "framework_version": "1.3",
   "genere_le": "2026-08-21T09:12:00+02:00",
   "sports": ["football", "tennis"],
   "nb_matchs": 6,

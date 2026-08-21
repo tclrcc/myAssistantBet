@@ -95,8 +95,8 @@ async def test_le_dossier_porte_l_entraineur_et_son_anciennete(
     await dossier.refresh_event(api_client, 1, migrated, now=NOW)
 
     assert _lines(migrated)["Entraineur"] == (
-        "BK Hacken P. Gustafsson (depuis 06/2023, 3 ans) | "
-        "Djurgardens IF M. Lindqvist (depuis 06/2026, 1 mois)"
+        "BK Hacken Per Gustafsson (depuis 06/2023, 3 ans) | "
+        "Djurgardens IF Mikael Lindqvist (depuis 06/2026, 1 mois)"
     )
 
 
@@ -128,7 +128,10 @@ async def test_la_feuille_de_match_date_la_fiche_d_entraineur(
             "home": [],
             "away": [],
             # Concordance : meme identifiant que la fiche, donc la feuille date.
-            "home_coach": {"id": 1001, "name": "P. Gustafsson", "seen": "2026-08-09T15:00:00Z"},
+            # **Le nom complet, parce que la feuille l'est toujours** : 287 relevés
+            # sur 287 en base, aucun abrege. Une feuille abregee simulait une
+            # donnee que le fournisseur ne produit pas.
+            "home_coach": {"id": 1001, "name": "Per Gustafsson", "seen": "2026-08-09T15:00:00Z"},
             # Divergence : le banc du 09/08 nomme quelqu'un d'autre.
             "away_coach": {"id": 2002, "name": "Wouter Vrancken", "seen": "2026-08-09T14:00:00Z"},
         },
@@ -138,11 +141,11 @@ async def test_la_feuille_de_match_date_la_fiche_d_entraineur(
     await dossier.refresh_event(api_client, 1, migrated, now=NOW)
     ligne = _lines(migrated)["Entraineur"]
 
-    assert "BK Hacken P. Gustafsson (depuis 06/2023, 3 ans) — vu sur la feuille du 09/08" in ligne
+    assert "BK Hacken Per Gustafsson (depuis 06/2023, 3 ans) — vu sur la feuille du 09/08" in ligne
     assert "confirme" not in ligne, "un accord de deux fiches n'est pas une verification"
     assert (
         "Djurgardens IF feuille du 09/08 : Wouter Vrancken | "
-        "fiche : M. Lindqvist (depuis 06/2026, 1 mois) — divergence"
+        "fiche : Mikael Lindqvist (depuis 06/2026, 1 mois) — divergence"
     ) in ligne
 
 
@@ -184,7 +187,7 @@ async def test_un_entraineur_parti_n_est_jamais_nomme_en_poste(
     await dossier.refresh_event(api_client, 1, migrated, now=NOW)
 
     ligne = _lines(migrated)["Entraineur"]
-    assert "M. Lindqvist" in ligne
+    assert "Mikael Lindqvist" in ligne
     assert "T. Kalmar" not in ligne, "son etape a Djurgarden est refermee"
 
 
@@ -318,7 +321,7 @@ async def test_une_equipe_sans_entraineur_servi_ne_produit_aucune_ligne(
     await dossier.refresh_event(api_client, 1, migrated, now=NOW)
 
     ligne = _lines(migrated)["Entraineur"]
-    assert "BK Hacken P. Gustafsson" in ligne
+    assert "BK Hacken Per Gustafsson" in ligne
     assert AWAY not in ligne
 
 
@@ -337,7 +340,7 @@ async def test_une_prise_de_fonction_posterieure_au_match_ne_rend_aucune_duree(
 
     await dossier.refresh_event(api_client, 1, migrated, now=NOW)
 
-    assert "BK Hacken P. Gustafsson (depuis 01/2027)" in _lines(migrated)["Entraineur"]
+    assert "BK Hacken Per Gustafsson (depuis 01/2027)" in _lines(migrated)["Entraineur"]
 
 
 # -- Plancher d'appels --------------------------------------------------------
@@ -436,6 +439,8 @@ async def test_relire_le_dossier_ne_declenche_aucun_appel(migrated: Settings) ->
     )
 
     for _ in range(3):
+        # Fiche montee sans `firstname`/`lastname` : il n'y a rien a completer,
+        # et le nom abrege reste le seul disponible.
         assert "P. Gustafsson" in _lines(migrated)["Entraineur"]
 
 
@@ -1221,7 +1226,7 @@ def test_le_bouton_de_la_fiche_recupere_aussi_le_dossier(
 
     assert reponse.status_code == 200
     assert dossier.load(376, dossier.KIND_COACH, settings=migrated) is not None
-    assert "P. Gustafsson" in reponse.text, "et la fiche affiche la ligne"
+    assert "Per Gustafsson" in reponse.text, "et la fiche affiche la ligne"
 
 
 def test_la_fiche_affiche_les_lignes_du_dossier(client: TestClient, migrated: Settings) -> None:
@@ -1243,6 +1248,7 @@ def test_la_fiche_affiche_les_lignes_du_dossier(client: TestClient, migrated: Se
     page = client.get("/events/1")
 
     assert "Entraineur" in page.text
+    # Meme fiche sans prenom ni nom de famille : aucune completion possible.
     assert "P. Gustafsson" in page.text
 
 
@@ -1680,3 +1686,89 @@ def test_le_chapitre_definit_chaque_mention_que_le_code_produit(migrated: Settin
     # Et le cas majoritaire — la ligne nue — est dit lui aussi : 45 a 59 % des
     # fragments ne portent aucune mention, et le chapitre n'en disait rien.
     assert "Sans mention, la fiche est seule" in chapitre
+
+
+# -- Le nom de l'entraineur : le fournisseur en sert trois, et abrege le sien --
+
+
+def test_un_nom_abrege_se_complete_par_le_prenom_et_le_nom_de_la_fiche() -> None:
+    """**Le champ propre etait a cote du champ casse.**
+
+    Mesure du 21/08/2026 sur les 1 631 fiches en base : **970 portent un nom
+    abrege**, dont 876 completables. Cas emblematique et il vient du
+    fournisseur — Sebastian Hoeneß y figure sous `name = "S. Hoeneb"`, le ß rendu
+    par un b, quand `lastname` porte « Hoeneß » sans faute.
+    """
+    from myassistantbet.services.dossier import coach_name
+
+    assert coach_name({"name": "S. Hoeneb", "firstname": "Sebastian", "lastname": "Hoeneß"}) == (
+        "Sebastian Hoeneß"
+    )
+
+
+def test_un_nom_d_usage_complet_ne_se_remplace_jamais() -> None:
+    """**Et c'est ce qui interdit le correctif naif.**
+
+    `firstname + lastname` rend « Enrique Setién Solar » la ou `name` dit
+    « Quique Setién », et « Jesús Rodríguez Tato » la ou il dit « Tato ». Le nom
+    d'usage est celui avec lequel on cherche : il ne se remplace que lorsqu'il
+    est **abrege**, jamais parce qu'il est court.
+    """
+    from myassistantbet.services.dossier import coach_name
+
+    fiche = {"name": "Quique Setién", "firstname": "Enrique", "lastname": "Setién Solar"}
+    assert coach_name(fiche) == "Quique Setién"
+    assert coach_name({"name": "Xie Feng", "firstname": "Feng", "lastname": "Xie"}) == "Xie Feng"
+
+
+def test_aucune_concordance_n_est_exigee_entre_les_champs() -> None:
+    """**Il n'y a rien a apparier : les trois champs decrivent la meme fiche.**
+
+    Le premier jet exigeait que le nom de famille abrege se retrouve dans
+    `lastname`. Cette condition refusait 42 completions justes — noms composes,
+    accents polonais, particules — et laissait passer le seul cas ou le champ
+    ment vraiment.
+    """
+    from myassistantbet.services.dossier import coach_name
+
+    assert coach_name(
+        {"name": "A. Franco", "firstname": "Antonio", "lastname": "Franco López"}
+    ) == ("Antonio Franco López")
+    assert (
+        coach_name({"name": "R. Demil", "firstname": "Rik", "lastname": "De Mil"}) == "Rik De Mil"
+    )
+
+
+def test_une_fiche_sans_prenom_garde_son_abrege() -> None:
+    """94 fiches sur 970 n'ont ni prenom ni nom de famille : l'abrege est alors
+    tout ce qu'on a, et inventer serait pire."""
+    from myassistantbet.services.dossier import coach_name
+
+    assert coach_name({"name": "H. Hansen"}) == "H. Hansen"
+    assert coach_name({"name": "H. Hansen", "firstname": "", "lastname": ""}) == "H. Hansen"
+
+
+def test_un_second_prenom_ne_fait_pas_deux_hommes() -> None:
+    """**Apparu en completant, et mesure avant d'etre corrige.**
+
+    Comparer deux noms complets faisait tomber trois paires en « divergence »
+    qui sont le meme homme : la fiche porte un second prenom que la feuille omet,
+    ou le prenom entier la ou la feuille abrege.
+    """
+    from myassistantbet.services.dossier import COACH_SAME, _coach_match
+
+    for fiche, feuille in (
+        ("Alexander Matthias Blessin", "Alexander Blessin"),
+        ("Desmond Buckingham", "Des Buckingham"),
+        ("Fabian Marc Hürzeler", "Fabian Hurzeler"),
+    ):
+        assert _coach_match({"name": fiche}, {"name": feuille}) == COACH_SAME, fiche
+
+
+def test_deux_freres_restent_deux_hommes() -> None:
+    """Le nom de famille porte l'identite, les prenoms doivent etre compatibles.
+    Deux prenoms differents partageant le nom sont deux personnes — les fratries
+    existent au football, et c'est ce que la tolerance ne doit pas avaler."""
+    from myassistantbet.services.dossier import COACH_SAME, _coach_match
+
+    assert _coach_match({"name": "Alexander Zverev"}, {"name": "Mischa Zverev"}) != COACH_SAME
