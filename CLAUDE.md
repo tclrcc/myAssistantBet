@@ -4081,6 +4081,42 @@ etablie, exposition reconstituee pour les 103.
   est mesure ailleurs. Le deficit de `conf 3` vaut `-11,1` sur 53 ; un biais d'exposition
   de la taille observee ne le deplacerait pas de facon perceptible.
 
+## Une chose a ne pas oublier se transforme en chose qui refuse de l'etre
+
+**Regle de revue, du 21/08/2026, et son precedent est dans ce fichier depuis des
+mois.** `FEEDBACK_SUSPENDED` porte une note disant que sa bascule ne se produira
+pas toute seule. Elle est exacte, elle est lue, et le drapeau est toujours leve —
+si bien que **plus personne ne sait s'il l'est encore volontairement ou
+seulement par oubli**. Les deux etats se ressemblent trait pour trait : c'est le
+defaut caracteristique du projet, applique cette fois a une decision plutot qu'a
+une donnee.
+
+Citer ce drapeau comme precedent d'un bon commentaire, c'est citer la preuve que
+le commentaire ne tient pas une decision. **Un test, si.**
+
+- **Une condition structurelle quand il en existe une.** L'alarme de cadre se
+  tait parce qu'elle mord sur 20 prompts sur 20 ; cette raison disparait avec le
+  gabarit. Le test se pose donc sur `ACTIVE_PRODUCER` — des que le payload
+  devient ce qui part, `FRAME_ALERT_MUTED` doit etre retombe, sinon la suite est
+  rouge. Rien a retenir, rien a dater.
+- **Un rendez-vous date sinon**, meme idiome que `Threshold.remeasure_on` : « un
+  provisoire non date devient permanent par oubli ». `FEEDBACK_SUSPENDED_REVIEW`
+  porte la date a laquelle le drapeau se **re-decide**.
+- **Le test ne leve jamais le drapeau a la place de qui exploite.** Il demande de
+  choisir, et il nomme les deux reponses valables : lever, ou reecrire la date
+  **avec la raison** de garder. Repousser une date sans ecrire la raison est
+  exactement ainsi qu'un provisoire devient permanent.
+- **Le rendez-vous se teste lui-meme.** Un garde-fou qui ne se declencherait
+  jamais serait pire qu'absent — il donnerait l'apparence d'un garde-fou. Les
+  quatre transitions sont verifiees : condition atteinte drapeau leve (rouge),
+  condition atteinte drapeau retire (vert), et l'inverse.
+- **Il se tait des que le drapeau tombe** : une fois la suspension retiree, il
+  n'y a plus rien a re-decider.
+
+**La question a se poser en ecrivant un commentaire qui dit « a ne pas oublier »**
+est : *quelle condition rendra ceci faux, et un test peut-il la voir ?* Si oui,
+le commentaire explique et le test garde. Si non, il faut une date.
+
 ## Un rythme de saisie n'est pas un resultat
 
 Une question du genre « dans combien de sessions saurai-je » repond a une

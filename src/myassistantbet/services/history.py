@@ -3520,6 +3520,21 @@ GUARD_IN_SERVICE = "2026-08-11"
 #: que personne le decide. Rouvrir le bloc demande donc de modifier le code.
 FEEDBACK_SUSPENDED = True
 
+#: La date a laquelle ce drapeau se **re-decide**, et non celle ou il tombe.
+#:
+#: **Ce drapeau est la demonstration qu'un commentaire ne tient pas une
+#: decision.** Sa note dit depuis des mois que sa bascule ne se produira pas
+#: toute seule ; il est toujours leve, et plus personne ne sait s'il l'est encore
+#: **volontairement** ou seulement par oubli. Les deux etats se ressemblent trait
+#: pour trait — le defaut caracteristique de ce projet, applique cette fois a une
+#: decision plutot qu'a une donnee.
+#:
+#: Un test devient donc rouge passe cette date. Il ne demande pas de lever le
+#: drapeau : il demande de **choisir**, et de reecrire la date avec la raison si
+#: le choix est de le garder. Meme idiome que `Threshold.remeasure_on` — « un
+#: provisoire non date devient permanent par oubli ».
+FEEDBACK_SUSPENDED_REVIEW = "2026-11-21"
+
 
 def load_bands(settings: Settings | None = None, reference: float | None = None) -> dict[int, Band]:
     """Bandes cibles par niveau de confiance, telles qu'elles sont reglees.

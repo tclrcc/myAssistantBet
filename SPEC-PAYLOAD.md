@@ -394,9 +394,14 @@ qui se coupe est l'**affichage** et rien d'autre : `fixed_tokens` s'écrit,
 - **Le seuil ne bouge pas.** Le déplacer pour faire taire l'alarme fabriquerait
   un « avant » incomparable avec l'« après » : le nombre suivrait le confort au
   lieu de suivre la réalité.
-- **Une constante et non un réglage**, même forme que `FEEDBACK_SUSPENDED` : ce
-  n'est pas une préférence d'affichage mais un état d'exploitation daté, et sa
-  bascule ne se produira pas toute seule.
+- **Une constante et non un réglage**, même forme que `FEEDBACK_SUSPENDED` — et
+  ce précédent est justement la preuve qu'un commentaire ne tient pas une
+  décision : il porte depuis des mois une note disant que sa bascule ne se
+  produira pas toute seule, et il est toujours levé.
+- **Le rallumage ne dépend donc d'aucune mémoire.** `tests/test_sentinelles.py`
+  devient rouge dès que `ACTIVE_PRODUCER` bascule sur le payload sans que
+  `FRAME_ALERT_MUTED` soit retombé. La condition est **structurelle** : la raison
+  de se taire — l'alarme mord partout — disparaît avec le gabarit.
 - **Le test qui gardait « une alarme qui ne mord pas ne dit rien » a dû être
   repris** : avec la coupure, sa ligne était vide pour deux raisons, et il
   passait pour la mauvaise. Il construit désormais son objet sans la coupure —

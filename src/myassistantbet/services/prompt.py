@@ -1635,6 +1635,20 @@ def split_cost(body: str) -> PromptCost:
     )
 
 
+#: Ce qui part reellement a l'analyse. **Un seul endroit le dit**, et c'est lui
+#: que les garde-fous de migration interrogent : « le gabarit produit-il encore »
+#: est une question d'etat, pas une question de code present.
+PRODUCER_TEMPLATE = "gabarit"
+PRODUCER_PAYLOAD = "payload"
+
+#: L'etat de la migration. Bascule sur `PRODUCER_PAYLOAD` le jour ou le payload
+#: devient ce qui part — pas le jour ou `build_payload` existe, qui vient avant.
+#:
+#: **Cette valeur a un lecteur, et ce n'est pas l'affichage** : un test refuse de
+#: passer si elle bascule sans que `FRAME_ALERT_MUTED` soit rallume. Voir plus
+#: bas la raison, et `tests/test_sentinelles.py` pour le mecanisme.
+ACTIVE_PRODUCER = PRODUCER_TEMPLATE
+
 #: L'alarme de cadre se **tait a l'ecran** jusqu'a la coupe du gabarit.
 #:
 #: **Un signal toujours actif ne se distingue pas d'un signal absent.** Mesure du
@@ -1652,8 +1666,15 @@ def split_cost(body: str) -> PromptCost:
 #: confort au lieu de suivre la realite.
 #:
 #: Une **constante et non un reglage**, meme forme que `FEEDBACK_SUSPENDED` : ce
-#: n'est pas une preference d'affichage mais un etat d'exploitation date, et sa
-#: bascule ne se produira pas toute seule. Elle se rallume avec la coupe.
+#: n'est pas une preference d'affichage mais un etat d'exploitation date.
+#:
+#: **Et le precedent est justement la preuve que le commentaire ne suffit pas.**
+#: `FEEDBACK_SUSPENDED` porte depuis des mois une note disant que sa bascule ne
+#: se produira pas toute seule — et il est toujours leve. Une chose a ne pas
+#: oublier ecrite dans un commentaire est une chose qui sera oubliee.
+#:
+#: Le rallumage ne depend donc d'aucune memoire : un test devient rouge des que
+#: `ACTIVE_PRODUCER` bascule sans que ce drapeau soit retombe.
 FRAME_ALERT_MUTED = True
 
 
