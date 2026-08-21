@@ -3910,6 +3910,10 @@ class Exploratory:
     #: reclame, alors que ce champ n'a qu'un usage : nommer le passage a
     #: reecrire.
     notation: Notation = field(default_factory=Notation)
+    #: L'adherence du cadre sur **cette** population. Tenue a part de celle de la
+    #: section C, meme regle que `notation` : les deux populations sont produites
+    #: par deux circuits, et un compte commun ne designerait aucun des deux.
+    tier_drift: TierDrift = field(default_factory=lambda: TierDrift())
 
     @property
     def empty(self) -> bool:
@@ -5053,6 +5057,12 @@ class TierDrift:
     compteur lisible — au-dela du bruit, un ecart designe une derive entre le
     cadre publie et la configuration servie, jamais une distraction.
 
+    Apres le deplacement : **39 ecarts sur 312** en section C, dont 37 par le
+    seul passage de la frontiere SAFE/FUN a 1.80, et **0 sur 40** en C-bis — les
+    selections exploratoires vivent dans les paliers hauts, que la frontiere n'a
+    pas touches. Deux populations, deux comptes : c'est exactement ce que
+    l'agregat cachait.
+
     **Un pic sur les lignes anterieures est attendu et n'est pas une
     regression** : elles ont ete emises sous l'ancien barme. C'est pour le dire
     que la repartition se coupe a la date d'application de la migration.
@@ -5089,16 +5099,24 @@ class TierDrift:
         )
 
 
-def tier_drift(settings: Settings | None = None) -> TierDrift:
+def tier_drift(settings: Settings | None = None, *, exploratory: bool = False) -> TierDrift:
     """Combien de fois l'emoji colle differe du palier recalcule.
 
     **Un compte, jamais un taux**, donc aucun seuil ne le garde : il est juste a
     tout effectif, meme regle que le compte des non-classees.
 
-    La coupe se fait sur la date d'application de la migration qui a deplace la
-    frontiere, et non sur `framework_version` : ce champ est emis dans le payload
-    et **persiste nulle part**. La date d'une migration, elle, est en base depuis
-    toujours — meme idiome que l'audit des colonnes muettes.
+    **Segmente par population, et pas agrege.** Le premier jet comptait les 352
+    selections de la base — section C et C-bis melangees — puis se rendait en
+    note d'une carte dont la population est la section C seule : deux
+    denominateurs sur la meme carte, dont un qui refondait les deux populations
+    que tout le reste du module tient separees. Meme regle que `Notation`, dont
+    le commentaire dit que les additionner designerait une clause moyenne que ni
+    l'une ni l'autre ne reclame.
+
+    La coupe temporelle se fait sur la date d'application de la migration qui a
+    deplace la frontiere, et non sur `framework_version` : ce champ est emis dans
+    le payload et **persiste nulle part**. La date d'une migration, elle, est en
+    base depuis toujours — meme idiome que l'audit des colonnes muettes.
     """
     settings = settings or get_settings()
     with connect(settings) as conn:
@@ -5107,7 +5125,10 @@ def tier_drift(settings: Settings | None = None) -> TierDrift:
             "SELECT applied_at FROM schema_migrations WHERE name = ?",
             (TIER_PARTITION_MIGRATION,),
         ).fetchone()
-        rows = conn.execute("SELECT tier, price, created_at FROM picks").fetchall()
+        rows = conn.execute(
+            "SELECT tier, price, created_at FROM picks WHERE exploratoire = ?",
+            (1 if exploratory else 0,),
+        ).fetchall()
 
     bascule = str(borne["applied_at"]) if borne else ""
     found = TierDrift()

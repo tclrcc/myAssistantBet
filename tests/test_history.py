@@ -2988,6 +2988,40 @@ def test_l_ecart_entre_palier_emis_et_recalcule_se_compte(migrated: Settings) ->
     assert "1 écart(s)" in ecart.line
 
 
+def test_l_ecart_se_compte_par_population(migrated: Settings) -> None:
+    """**Deux circuits, deux comptes.** Le premier jet agregeait les deux
+    populations puis se rendait en note d'une carte dont le denominateur est la
+    section C seule : deux nombres sur la meme carte, dont un qui refondait ce
+    que tout le module tient separe. Meme regle que `Notation`.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    add_pick(
+        session_id,
+        tier="fun",
+        market="1N2",
+        selection="Lyon",
+        event_id=str(event_id),
+        price="1.72",  # tombe en SAFE : ecart
+        settings=migrated,
+    )
+    add_pick(
+        session_id,
+        tier="giga_fun",
+        market="1N2",
+        selection="Nice",
+        event_id=str(event_id),
+        price="4.50",  # d'accord
+        independence_note="angles indépendants",
+        exploratory=True,
+        settings=migrated,
+    )
+
+    principale, exploratoire = tier_drift(migrated), tier_drift(migrated, exploratory=True)
+
+    assert (principale.comparable, principale.disagreed) == (1, 1)
+    assert (exploratoire.comparable, exploratoire.disagreed) == (1, 0)
+
+
 def test_une_selection_sans_cote_n_est_pas_un_desaccord(migrated: Settings) -> None:
     """Rien a recalculer n'est pas un ecart : le repli est nomme (`unpriced`)
     plutot que compte avec les desaccords — la confusion ferait crier a la derive

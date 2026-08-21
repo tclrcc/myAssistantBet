@@ -583,6 +583,10 @@ def report(settings: Settings | None = None) -> StatsReport:
     # toute la section C-bis existe pour rendre possible, et la calculer dans
     # l'un des deux agregats l'aurait fait dependre de sa propre population.
     exploratoire = history_service.exploratory(settings)
+    # **Segmente, comme la notation.** Les deux populations sont produites par
+    # deux circuits ; un compte commun ne designerait aucun des deux, et se
+    # rendrait en note d'une carte dont le denominateur serait un autre.
+    exploratoire.tier_drift = history_service.tier_drift(settings, exploratory=True)
     # Le journal se lit **avant** les decoupages : ce sont ses dates qui les
     # posent, et une coupe choisie apres avoir vu les donnees serait la faute
     # que la page a mis huit lots a corriger.
@@ -849,6 +853,14 @@ def as_json(found: StatsReport) -> dict[str, Any]:
             # celui de la principale : les desaccords des deux cotes ne sont pas
             # le meme passage, et ce champ n'a qu'un usage, nommer la clause a
             # reecrire.
+            "tier_drift": {
+                "comparable": found.exploratory.tier_drift.comparable,
+                "agreed": found.exploratory.tier_drift.agreed,
+                "disagreed": found.exploratory.tier_drift.disagreed,
+                "unpriced": found.exploratory.tier_drift.unpriced,
+                "before": found.exploratory.tier_drift.before,
+                "after": found.exploratory.tier_drift.after,
+            },
             "notation": {
                 "comparable": found.exploratory.notation.comparable,
                 "agreed": found.exploratory.notation.agreed,

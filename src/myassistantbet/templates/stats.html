@@ -1567,7 +1567,12 @@
 
   {% if exploratory.by_tier %}
   <div class="charts is-single">
-    {{ card("Par palier", exploratory.by_tier) }}
+    {{ card("Par palier", exploratory.by_tier,
+            note=exploratory.tier_drift.line,
+            reason="Même lecture que la section C — le palier se recalcule depuis la cote
+                    déclarée — mais **compté à part** : les deux populations sont produites
+                    par deux circuits, et un compte commun ne dirait rien de l'un ni de
+                    l'autre.") }}
   </div>
   {% endif %}
 
