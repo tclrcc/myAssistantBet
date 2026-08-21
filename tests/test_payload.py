@@ -14,6 +14,8 @@ from myassistantbet.services.payload import (
     ATTRIBUT_COLUMNS,
     ORIGIN,
     SECTIONS,
+    FactAudit,
+    audit_facts,
     build_payload,
 )
 
@@ -179,3 +181,110 @@ def test_un_bloc_de_confiance_reste_lu_malgre_le_garde_fou(migrated: Settings) -
 
     assert len(lecture.claims) == 1
     assert lecture.rejects == []
+
+
+def test_le_payload_porte_autant_de_faits_que_le_rendu_texte(migrated: Settings) -> None:
+    """**Controle amont du protocole de comparaison.**
+
+    Le cas qui l'a fait ecrire est reel : un appel qui perdait la cle du
+    fournisseur rendait un bloc de tennis a 10 attributs au lieu de 21, **sans
+    qu'aucune erreur ne se leve**. Le test de comparaison l'aurait pris pour une
+    faiblesse de la migration — tous ses criteres portent sur la sortie, et aucun
+    ne voit la cause.
+    """
+    audits = audit_facts(_session(migrated), migrated)
+
+    assert audits, "sans match, le controle ne prouve rien"
+    ecarts = [audit.line for audit in audits if audit.gap]
+    assert ecarts == [], f"le payload et le rendu texte divergent : {ecarts}"
+
+
+def test_le_controle_amont_voit_un_bloc_appauvri(migrated: Settings) -> None:
+    """**Un controle qui ne se declencherait jamais donnerait l'apparence d'un
+    controle.** On lui montre donc un match dont les faits ont ete ampute."""
+    session_id = _session(migrated)
+    audits = audit_facts(session_id, migrated)
+    complet = audits[0]
+
+    ampute = FactAudit(repere=complet.repere, texte=complet.texte + 11, payload=complet.payload)
+
+    assert ampute.gap == -11
+    assert "-11" in ampute.line
+
+
+# -- Les lecteurs de `prompts.body` apprennent la forme, sans perdre l'ancienne --
+
+
+def test_un_corps_qui_commence_par_une_accolade_est_un_payload() -> None:
+    """**La bascule se lit sur la forme, et rien d'autre.** Aucune colonne,
+    aucune migration : les corps archives restent lisibles par le chemin qui les
+    a produits."""
+    from myassistantbet.services.ingestion import is_payload
+
+    assert is_payload('{"origine": "myassistantbet"}')
+    assert is_payload('\n  {"origine": "x"}')
+    assert not is_payload("# SESSION D'ANALYSE\n\n### M1 · FOOT · …")
+    assert not is_payload("")
+
+
+def test_le_decoupage_du_cout_ne_met_pas_un_payload_tout_en_cadre(
+    migrated: Settings,
+) -> None:
+    """**L'inverse exact de la verite, sur la mesure qui juge la coupe.**
+
+    Le decoupage cherche des en-tetes `### M1 · …` ; un payload n'en porte
+    aucun, donc la lecture d'origine rendait « tout en cadre » — zero bloc, cout
+    fixe maximal — au moment precis ou l'on veut montrer que le cadre a disparu.
+    """
+    from myassistantbet.services.prompt import split_cost
+
+    corps = build_payload(_session(migrated), migrated).dumps()
+
+    cout = split_cost(corps)
+
+    assert cout.fixed == 0, "un payload n'a pas de cadre"
+    assert cout.blocks == 1
+    assert cout.block_tokens == cout.tokens
+
+
+def test_un_prompt_garde_son_decoupage_d_origine() -> None:
+    """La forme d'avant ne se perd pas : c'est la moitie du contrat."""
+    from myassistantbet.services.prompt import split_cost
+
+    cout = split_cost("cadre " * 50 + "\n### M1 · FOOT · X – Y · 18h\nbloc\n## SORTIE ATTENDUE\nz")
+
+    assert cout.blocks == 1
+    assert cout.fixed > 0
+
+
+def test_les_sections_attendues_se_lisent_dans_le_payload(migrated: Settings) -> None:
+    """**Sans gabarit, les motifs ne se trouvent nulle part** et l'audit
+    conclurait « rien n'etait demande », donc « rien a reclamer ». C'est le
+    defaut que ce module existe pour corriger, retourne contre lui."""
+    from myassistantbet.services.sections import SECTIONS as LECTEURS
+
+    corps = build_payload(_session(migrated), migrated).dumps()
+
+    for section in LECTEURS:
+        assert section.asks(corps), f"« {section.label} » devrait etre reclamee"
+
+
+def test_le_payload_n_ecrit_jamais_la_chaine_du_canal_retour(migrated: Settings) -> None:
+    """**La collision fermee par construction.** `confidence.OPEN_KEY` cherche
+    cette chaine dans le collage : un payload recolle avec la reponse ferait
+    passer la ligne pour « illisible » plutot qu'« absente », et le projet a
+    separe ces deux etats exprès."""
+    corps = build_payload(_session(migrated), migrated).dumps()
+
+    assert "dossiers_ouverts" not in corps
+
+
+def test_les_deux_ecritures_du_compte_de_matchs_ne_divergent_pas() -> None:
+    """`prompt` et `history` portent chacun l'expression qui lit `nb_matchs` :
+    `prompt` importe `history`, donc l'inverse fermerait le cycle. Deux
+    ecritures de la meme regle divergent — celle-ci ne le pourra pas en
+    silence."""
+    from myassistantbet.services.history import PAYLOAD_MATCHS as COTE_HISTORY
+    from myassistantbet.services.prompt import PAYLOAD_MATCHS as COTE_PROMPT
+
+    assert COTE_PROMPT.pattern == COTE_HISTORY.pattern

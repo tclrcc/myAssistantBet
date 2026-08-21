@@ -49,7 +49,7 @@ from .inference import (
     two_proportions,
     wilson,
 )
-from .ingestion import CONF, EXPLORATOIRE, SELECTION
+from .ingestion import CONF, EXPLORATOIRE, SELECTION, is_payload
 from .labels import affiche, sort_key
 from .market_families import family_key, family_label, family_of, family_rank, market_key_for
 from .market_families import load as load_families
@@ -835,6 +835,12 @@ def list_sessions(settings: Settings | None = None) -> list[SessionSummary]:
 #: generation a l'autre pour un meme match.
 _BLOCK_HEADER = re.compile(r"^### M\d+ · (.+)$", re.MULTILINE)
 
+#: Le nombre de matchs qu'un payload declare. **Ecrit ici et non importe de
+#: `prompt`** : ce module-la importe celui-ci, et l'inverse fermerait le cycle.
+#: Un test compare les deux expressions plutot que de laisser deux ecritures
+#: diverger en silence.
+PAYLOAD_MATCHS = re.compile(r'"nb_matchs"\s*:\s*(\d+)')
+
 #: Le meme en-tete, **avec** son repere. Le numero de bloc ne survit pas d'une
 #: generation a l'autre — c'est pour ca que `_BLOCK_HEADER` le jette — mais il
 #: est coherent a l'interieur d'un rendu, ce qui en fait une somme de controle
@@ -987,9 +993,23 @@ def lots(settings: Settings | None = None) -> dict[int, Lot]:
     found = {session_id: Lot(size=size) for session_id, size in recorded.items()}
     rebuilt: dict[int, set[str]] = {}
     for row in archived:
-        rebuilt.setdefault(int(row["session_id"]), set()).update(
-            _BLOCK_HEADER.findall(row["body"] or "")
-        )
+        corps = row["body"] or ""
+        # **Un payload n'a pas d'en-tetes de bloc**, et les y chercher rendrait un
+        # lot vide sans le dire — un « 0 sur 0 » indiscernable d'une session ou
+        # rien n'a ete soumis. Le lot s'y lit sur ce qu'il declare.
+        #
+        # Le cas ne devrait pas se produire : `save_prompt` ecrit toujours
+        # `prompt_events`, et cette reconstruction ne concerne que les sessions
+        # qui n'en ont pas. Il est ferme quand meme, parce qu'un lot faux ici se
+        # lit comme un taux de selection faux ailleurs.
+        if is_payload(corps):
+            declare = PAYLOAD_MATCHS.search(corps)
+            rebuilt.setdefault(int(row["session_id"]), set()).update(
+                f"payload:{row['session_id']}:{rang}"
+                for rang in range(int(declare.group(1)) if declare else 0)
+            )
+            continue
+        rebuilt.setdefault(int(row["session_id"]), set()).update(_BLOCK_HEADER.findall(corps))
     for session_id, matches in rebuilt.items():
         found[session_id] = Lot(size=len(matches), reconstructed=True)
     return found

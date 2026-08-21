@@ -288,6 +288,23 @@ def read_bodies(
     return sorted(bodies, key=lambda body: body.start)
 
 
+def is_payload(body: str) -> bool:
+    """Ce corps archive est-il un **bloc de donnees** ou un prompt ?
+
+    **La bascule se lit sur la forme, et rien d'autre.** Un corps qui commence
+    par `{` est un payload ; tout le reste est un prompt d'avant la migration.
+    Aucune colonne, aucune migration, aucun retro-remplissage : les 179 corps
+    archives restent lisibles par le chemin qui les a produits.
+
+    C'est ce qui permet aux lecteurs de `prompts.body` — l'audit des sections, le
+    decoupage du cout, la reconstruction d'un lot — de changer de regime sans
+    perdre l'ancien. Sans elle, ils concluraient « rien n'etait demande » sur un
+    payload, ce qui est le defaut que le premier d'entre eux existe pour
+    corriger.
+    """
+    return (body or "").lstrip().startswith("{")
+
+
 def _loads(body: str) -> dict | None:
     try:
         payload = json.loads(body)

@@ -46,7 +46,27 @@ ORIGIN = "myassistantbet"
 #: en cherchant ses motifs dans le corps du prompt : sans gabarit, il conclurait
 #: « rien n'etait demande », donc « rien a reclamer ». C'est le defaut que ce
 #: module-la existe pour corriger, retourne contre lui.
-SECTIONS = ("A", "B", "C", "C-bis", "D", "E", "F")
+SECTIONS = (
+    "A",
+    "B",
+    "C",
+    "C-bis",
+    "D",
+    "E",
+    "F",
+    # Les artefacts structures que les lecteurs d'import reclament. Ils ne sont
+    # pas des sections du rendu, mais c'est la meme question — **qu'est-ce que
+    # cette session attend** — et deux listes auraient diverge.
+    "conf",
+    "combo",
+    "sets",
+    # **Jamais la chaine `dossiers_ouverts`**, et c'est la collision qu'on a
+    # ferme par construction : `confidence.OPEN_KEY` la cherche dans le collage,
+    # et un payload recolle avec la reponse ferait passer la ligne pour
+    # « illisible » au lieu d'« absente » — deux etats que le projet a separes
+    # exprès. Le lecteur connait ce nom-ci, ecrit une seule fois de son cote.
+    "dossiers",
+)
 
 #: Les libelles du socle nomme, par cle du contrat. Tout le reste passe par
 #: `attributs[]`.
@@ -332,3 +352,49 @@ def build_payload(
             "matchs": matchs,
         }
     )
+
+
+@dataclass(frozen=True)
+class FactAudit:
+    """Ce qu'un match porte de chaque cote, et l'ecart entre les deux."""
+
+    repere: str
+    texte: int
+    payload: int
+
+    @property
+    def gap(self) -> int:
+        return self.payload - self.texte
+
+    @property
+    def line(self) -> str:
+        return f"{self.repere} : {self.texte} lignes rendues, {self.payload} faits ({self.gap:+d})"
+
+
+def audit_facts(session_id: int, settings: Settings | None = None) -> list[FactAudit]:
+    """Le payload porte-t-il autant de faits que le rendu texte, match par match ?
+
+    **Controle amont du protocole de comparaison, et il existe pour une raison
+    mesuree.** Un appel qui perdait la cle du fournisseur, la surface et la
+    competition rendait un bloc de tennis a **10 attributs au lieu de 21**, sans
+    qu'aucune erreur ne se leve. Le test de comparaison l'aurait pris pour une
+    faiblesse de la migration : tous ses criteres portent sur la **sortie**, et
+    aucun ne voit la cause.
+
+    Le compte se fait sur les faits **assembles**, des deux cotes, et non sur le
+    JSON : ce qui monte dans le socle nomme y est compte comme le reste, sans
+    quoi le controle signalerait un ecart a chaque promotion de libelle.
+
+    Un ecart arrete le test jusqu'a correction. Il ne se compense pas.
+    """
+    settings = settings or get_settings()
+    audits: list[FactAudit] = []
+    for index, event in enumerate(renderable_events(session_id, settings), start=1):
+        audits.append(
+            FactAudit(
+                repere=f"M{index}",
+                texte=len([ligne for ligne in event.context_lines if ligne[1]]),
+                payload=len([fait for fait in event.context_facts if fait.valeur]),
+            )
+        )
+    return audits

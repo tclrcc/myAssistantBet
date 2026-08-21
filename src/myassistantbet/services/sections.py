@@ -44,11 +44,37 @@ from ..db import connect
 from . import picks_import, set_scores
 from .combos import read_combos
 from .confidence import OPEN_ABSENT, read_blocks, read_opened
-from .ingestion import unnumber
+from .ingestion import is_payload, unnumber
 
 #: Le bloc des consignes permanentes, tel que le gabarit l'ecrit. Il commence a
 #: son titre et court jusqu'au titre de niveau 2 suivant.
 _USER_NOTES = re.compile(r"^## CONSIGNES PERMANENTES$.*?(?=^## )", re.MULTILINE | re.DOTALL)
+
+
+#: La cle du payload qui declare les sections attendues, et le nom de chacune.
+#: **Deux ecritures de la meme liste diverge**raient : celle-ci lit ce que le
+#: payload declare, `payload.SECTIONS` decide ce qu'il ecrit.
+_PAYLOAD_SECTIONS = re.compile(r'"sections_attendues"\s*:\s*\[([^\]]*)\]')
+
+
+def declared_sections(prompt: str) -> set[str] | None:
+    """Les sections que le payload declare, ou `None` si le corps n'en est pas un.
+
+    **La source de verite change de porteur avec le gabarit.** `_ASKS_*` cherche
+    les motifs que le gabarit ecrivait ; sans gabarit, aucun ne se trouve et
+    l'audit conclurait « rien n'etait demande », donc « rien a reclamer ». C'est
+    exactement le defaut que ce module existe pour corriger, retourne contre lui.
+
+    Une liste de cles n'est pas une description de methode : elle dit ce que la
+    session reclame, pas comment le produire. C'est la seule trace de cadre qui
+    subsiste dans le bloc.
+    """
+    if not is_payload(prompt):
+        return None
+    trouve = _PAYLOAD_SECTIONS.search(prompt)
+    if trouve is None:
+        return set()
+    return {mot.strip().strip('"') for mot in trouve.group(1).split(",") if mot.strip()}
 
 
 def gabarit_only(prompt: str) -> str:
@@ -147,17 +173,38 @@ OPENED = "dossiers_ouverts"
 
 #: Les cinq sections structurees que le rendu porte. L'ordre est celui du
 #: gabarit — on relit un compte-rendu dans l'ordre ou on a colle.
+#: Le nom qu'une section porte **dans un payload**, quand il differe de sa cle.
+#:
+#: `dossiers_ouverts` n'y figure jamais sous ce nom : `confidence.OPEN_KEY` le
+#: cherche dans le collage, et un payload recolle avec la reponse ferait passer
+#: la ligne pour « illisible » plutot qu'« absente ». Le payload ecrit
+#: `dossiers`, et la correspondance vit ici — une seule fois, du cote qui lit.
+_PAYLOAD_NAMES = {OPENED: "dossiers", "c_bis": "C-bis"}
+
+
+def _asks(cle: str, motif: re.Pattern[str]) -> Callable[[str], bool]:
+    """Ce que la session reclame, dans les deux regimes.
+
+    Sur un **payload**, la reponse se lit dans `sections_attendues` : le gabarit
+    n'ecrit plus rien, donc ses motifs ne s'y trouvent pas et l'audit conclurait
+    « rien n'etait demande ». Sur un **prompt**, rien ne change.
+    """
+
+    def lire(raw: str) -> bool:
+        declarees = declared_sections(raw)
+        if declarees is None:
+            return bool(motif.search(raw))
+        return _PAYLOAD_NAMES.get(cle, cle) in declarees
+
+    return lire
+
+
 SECTIONS: tuple[Section, ...] = (
-    Section("c_bis", "section C-bis", lambda raw: bool(_ASKS_C_BIS.search(raw)), _finds_c_bis),
-    Section("conf", "blocs conf", lambda raw: bool(_ASKS_CONF.search(raw)), _finds_conf),
-    Section("combo", "blocs combo", lambda raw: bool(_ASKS_COMBO.search(raw)), _finds_combo),
-    Section("sets", "ligne sets:", lambda raw: bool(_ASKS_SETS.search(raw)), _finds_sets),
-    Section(
-        OPENED,
-        "ligne dossiers_ouverts",
-        lambda raw: bool(_ASKS_OPENED.search(raw)),
-        _finds_opened,
-    ),
+    Section("c_bis", "section C-bis", _asks("c_bis", _ASKS_C_BIS), _finds_c_bis),
+    Section("conf", "blocs conf", _asks("conf", _ASKS_CONF), _finds_conf),
+    Section("combo", "blocs combo", _asks("combo", _ASKS_COMBO), _finds_combo),
+    Section("sets", "ligne sets:", _asks("sets", _ASKS_SETS), _finds_sets),
+    Section(OPENED, "ligne dossiers_ouverts", _asks(OPENED, _ASKS_OPENED), _finds_opened),
 )
 
 

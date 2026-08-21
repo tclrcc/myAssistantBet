@@ -32,6 +32,7 @@ from . import changelog, stakes
 from .competitions import is_knockout, reads_domestic_aggregates
 from .enrich import markets_for
 from .history import SCALE_VERSION, feedback
+from .ingestion import is_payload
 from .labels import affiche, bookmaker_label, is_reference
 from .render import (
     COMMON_UNPLAYABLE_MIN,
@@ -1587,6 +1588,11 @@ BLOCK_HEADER = re.compile(r"^### M\d+ ", re.MULTILINE)
 #: derive qui bouge avec la taille du lot ne mesure pas la derive.
 BLOCKS_END = re.compile(r"^## (CE QUE L'HISTORIQUE DIT|SORTIE ATTENDUE)", re.MULTILINE)
 
+#: Le nombre de matchs qu'un payload declare. **Declare et non compte** : lire
+#: `"origine"` autant de fois qu'il apparait compterait aussi la racine, et
+#: compter les accolades supposerait une forme.
+PAYLOAD_MATCHS = re.compile(r'"nb_matchs"\s*:\s*(\d+)')
+
 
 @dataclass(frozen=True)
 class PromptCost:
@@ -1620,6 +1626,21 @@ def split_cost(body: str) -> PromptCost:
     bouge avec la taille du lot ne mesure pas la derive.
     """
     texte = body or ""
+    # **Un payload n'a pas de cadre, et le dire est le seul comportement juste.**
+    # Le decoupage cherche des en-tetes `### M1 · …` : un bloc de donnees n'en
+    # porte aucun, donc la lecture d'origine rendait « tout en cadre » — l'exact
+    # inverse de la verite, sur la mesure qui sert justement a juger la coupe.
+    #
+    # Les matchs se comptent sur ce que le lot declare, jamais sur une forme
+    # devinee dans le JSON.
+    if is_payload(texte):
+        matchs = PAYLOAD_MATCHS.search(texte)
+        return PromptCost(
+            tokens=estimate_tokens(texte),
+            blocks=int(matchs.group(1)) if matchs else 0,
+            fixed=0,
+            block_tokens=estimate_tokens(texte),
+        )
     entetes = list(BLOCK_HEADER.finditer(texte))
     total = estimate_tokens(texte)
     if not entetes:

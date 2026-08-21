@@ -23,6 +23,16 @@ Le gabarit peut-il être retiré ?
 5. **Aucune retouche manuelle** d'aucun des deux prompts.
 6. `framework_version` consigné avec chaque sortie.
 
+## Contrôle amont
+
+À passer **avant** de tirer le premier lot de test, sur le lot lui-même.
+
+Le payload doit porter **autant de faits que le rendu texte du même lot**, par match. Un écart signifie qu'une tranche s'est perdue à l'assemblage, et le test mesurerait alors un bug de collecte en croyant mesurer la migration — un bloc appauvri produit une analyse plus faible, et la conclusion tomberait contre le payload pour une raison qui ne le concerne pas.
+
+Ce contrôle existe parce que les critères ci-dessous portent tous sur la sortie. Aucun ne voit la cause. Un écart arrête le test jusqu'à correction ; il ne se compense pas et ne se note pas en réserve.
+
+Il est outillé : `payload.audit_facts(session_id)` rend l'écart par match, et un test le pose en propriété sur un lot monté pour l'occasion. **Le cas qui l'a fait écrire est réel** — un appel qui perdait la clé du fournisseur rendait un bloc de tennis à 10 attributs au lieu de 21, sans qu'aucune erreur ne se lève.
+
 ## Critères mesurables
 
 Vérifiables sans jugement, à relever pour chaque sortie.

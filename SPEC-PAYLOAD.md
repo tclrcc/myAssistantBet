@@ -471,15 +471,58 @@ format. Les lots servis font 7 à 8 matchs : la migration y gagne 27 à 32 %.
 - **Le colonnaire n'apporte que 7 %**, et la décomposition dit pourquoi : sur un
   lot de 4, **40 % du poids sont les valeurs des faits** — incompressibles — 23 %
   les cotes, et 14 % seulement l'attribution répétée (46 caractères par ligne).
-- **Piste non prise, et elle demande une décision** : `source`, `date` et
-  `niveau` sont identiques pour tous les faits d'une même tranche — 15 des 20
-  attributs d'un bloc tennis viennent de `tennis-data.co.uk` à la même date. Les
-  factoriser vaudrait ~14 %, mais **déplacerait l'attribution hors du fait**, ce
-  que le principe du contrat interdit en toutes lettres. C'est un arbitrage de
-  contrat, pas de format.
+### Factoriser l'attribution : refusé, et pas pour une raison doctrinale
+
+`source`, `date` et `niveau` sont identiques pour tous les faits d'une même
+tranche — 15 des 20 attributs d'un bloc tennis viennent de `tennis-data.co.uk` à
+la même date. Les factoriser vaudrait ~14 %.
+
+**Le problème est résolu sans eux.** L'équilibre est à ~17,3 matchs contre des
+lots de 7 à 8 : ces 14 % achèteraient une marge dont personne n'a l'usage.
+
+**Ce qu'ils coûteraient est ce que ce chantier a passé une semaine à éliminer.**
+Les 15 attributs qui partagent leur attribution ne sont pas le problème — ce sont
+les **5 autres**. Un attribut hors tranche hériterait de la date modale du
+groupe, c'est-à-dire d'une **date de repli, invisible parce que le fait aurait
+l'air attribué**. Le contrat l'interdit nommément : « une date fausse est pire
+qu'une date absente, elle a l'apparence d'un fait ».
+
+**Condition de réexamen, et la méthode qui irait avec** : si les lots approchent
+15 matchs. Et alors le groupement se fait **par attribution**, pas par tranche —
+un groupe se définit par son triplet `(source, date, niveau)`, et tout fait qui
+en diffère forme le sien. L'héritage devient exact : ce n'est plus une
+factorisation mais une **déduplication**, et le principe du contrat tient.
 
 **Plus aucun changement de format à partir du premier lot tiré.** Ces deux-ci
 sont antérieurs et déclarés au protocole.
+
+## §7 quinquies — Les lecteurs de `prompts.body`, et la bascule qui ne migre rien
+
+Cinq lecteurs interrogent le corps archivé. **Tous les cinq échouaient en
+silence sur un payload** — vérifié avant d'écrire une ligne :
+
+| Lecteur | Sur un payload, avant | Après |
+| --- | --- | --- |
+| `sections.asks` | toutes les sections déclarées **non demandées** | lues dans `sections_attendues` |
+| `split_cost` | 0 bloc, **tout en cadre** | 0 cadre, `nb_matchs` blocs |
+| `history` (lot d'une session) | lot vide | compte déclaré |
+| `read_research_budget` | `None` | `None`, et c'est juste — le budget vit dans la Skill |
+
+- **La bascule se lit sur la forme du corps** : un corps qui commence par `{` est
+  un payload. Aucune colonne, aucune migration, aucun retro-remplissage — les
+  corps archivés restent lisibles par le chemin qui les a produits, et un test
+  garde les deux régimes.
+- **`split_cost` était le plus trompeur** : il rendait « tout en cadre » sur le
+  bloc dont l'argument principal est de ne plus en avoir. La mesure qui juge la
+  coupe disait l'inverse de la vérité.
+- **Le payload n'écrit jamais la chaîne `dossiers_ouverts`**, et le lecteur porte
+  la correspondance de son côté (`_PAYLOAD_NAMES`). `confidence.OPEN_KEY` la
+  cherche dans le collage : un payload recollé avec la réponse ferait passer la
+  ligne pour « illisible » plutôt qu'« absente », deux états que le projet a
+  séparés exprès.
+- Deux modules portent l'expression qui lit `nb_matchs`, parce que `prompt`
+  importe `history` et que l'inverse fermerait le cycle. **Un test compare les
+  deux motifs** plutôt que de laisser deux écritures diverger.
 
 ## §8 — Ordre des phases
 
