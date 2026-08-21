@@ -20,7 +20,7 @@ decide de sa forme par `SPEC-PAYLOAD.md`. Trois tiennent tout :
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -30,7 +30,7 @@ from .attribution import TRANCHES, UNKNOWN_LEVEL, Fait
 from .context import failure_causes
 from .prompt import FRAMEWORK_VERSION
 from .render import MERGED_MARKETS, RenderableEvent, market_label, price
-from .session import context_density, renderable_events
+from .session import context_density, renderable_events, started_labels
 
 #: L'emetteur, pose sur la racine **et sur chaque objet-match**.
 #:
@@ -40,6 +40,12 @@ from .session import context_density, renderable_events
 #: dans une reponse serait lu comme une reclamation : echec au parse, divergence
 #: entre le compte des blocs et celui des lignes, perte des crans du lot.
 ORIGIN = "myassistantbet"
+
+#: Le nom sous lequel un bloc de donnees s'archive dans `prompts.template_name`.
+#: **Pas un fichier** : il n'y a plus de gabarit a nommer, et la colonne doit
+#: quand meme dire ce qui a produit le corps — c'est elle qui separera les deux
+#: regimes dans les mesures a venir.
+TEMPLATE_NAME = "payload"
 
 #: Les sections que la session reclame. **Des cles, pas une methode** — le
 #: gabarit ne les decrit plus, mais `sections.survey` deduit ce qui etait attendu
@@ -92,9 +98,18 @@ PAIR = " | "
 
 @dataclass(frozen=True)
 class Payload:
-    """Le bloc rendu, et de quoi le mesurer sans le relire."""
+    """Le bloc rendu, et de quoi l'archiver sans le relire.
+
+    `event_ids` et `started` accompagnent la charge utile parce que
+    `prompt.save_prompt` en a besoin : ce sont eux qui donnent au taux de
+    selection son denominateur et qui disent ce qui a ete ecarte. Un bloc emis
+    sans passer par cet archivage perdrait le rattachement des picks — et le
+    test de comparaison, ses deux barrieres dures.
+    """
 
     data: dict[str, Any]
+    event_ids: list[int] = field(default_factory=list)
+    started: list[str] = field(default_factory=list)
 
     def dumps(self) -> str:
         """UTF-8, accents non echappes, cles triees, **sans indentation**.
@@ -329,7 +344,7 @@ def build_payload(
         }
     )
     return Payload(
-        {
+        data={
             "origine": ORIGIN,
             "framework_version": FRAMEWORK_VERSION,
             "genere_le": moment.isoformat(),
@@ -350,7 +365,9 @@ def build_payload(
                 "producteurs_muets": muets,
             },
             "matchs": matchs,
-        }
+        },
+        event_ids=[event.event_id for event in events],
+        started=started_labels(session_id, settings, moment, competition_id),
     )
 
 

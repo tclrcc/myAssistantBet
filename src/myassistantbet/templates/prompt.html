@@ -43,6 +43,11 @@
     <a class="button" href="/session/{{ session_id }}/prompt.md?template={{ template_name }}{% if competition_id %}&competition_id={{ competition_id }}{% endif %}">
       Télécharger .md
     </a>
+    {# Le bloc de donnees, a cote du prompt et non a sa place : le gabarit reste
+       le repli jusqu'a ce que le protocole de comparaison ait tranche. #}
+    <a class="button" href="/session/{{ session_id }}/payload.json{% if competition_id %}?competition_id={{ competition_id }}{% endif %}">
+      Bloc de données
+    </a>
   </div>
 </form>
 

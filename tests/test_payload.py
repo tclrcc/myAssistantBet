@@ -3,9 +3,14 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
+
+import pytest
+from fastapi.testclient import TestClient
 
 from myassistantbet import db
 from myassistantbet.config import Settings
+from myassistantbet.main import app
 from myassistantbet.services import board
 from myassistantbet.services.attribution import UNKNOWN_LEVEL
 from myassistantbet.services.confidence import is_claim, read_blocks
@@ -14,6 +19,7 @@ from myassistantbet.services.payload import (
     ATTRIBUT_COLUMNS,
     ORIGIN,
     SECTIONS,
+    TEMPLATE_NAME,
     FactAudit,
     audit_facts,
     build_payload,
@@ -288,3 +294,44 @@ def test_les_deux_ecritures_du_compte_de_matchs_ne_divergent_pas() -> None:
     from myassistantbet.services.prompt import PAYLOAD_MATCHS as COTE_PROMPT
 
     assert COTE_PROMPT.pattern == COTE_HISTORY.pattern
+
+
+def test_la_route_rend_le_bloc_et_l_archive(
+    isolated_settings: Settings, client: TestClient
+) -> None:
+    """**Le service et sa surface se livrent ensemble.**
+
+    Un `build_payload` que rien n'expose ne peut pas etre teste : le protocole
+    demande de tirer un lot, donc de pouvoir le coller. Et le bloc doit
+    s'archiver comme un prompt — `prompt_events` donne au taux de selection son
+    denominateur, et sans lui le rattachement des picks se perd.
+    """
+    session_id = _session(isolated_settings)
+
+    reponse = client.get(f"/session/{session_id}/payload.json")
+
+    assert reponse.status_code == 200
+    assert reponse.headers["content-type"].startswith("text/plain")
+    charge = json.loads(reponse.text)
+    assert charge["origine"] == ORIGIN
+
+    archive = db.query_one(
+        "SELECT template_name, blocks, body FROM prompts WHERE session_id = ? ORDER BY id DESC",
+        (session_id,),
+        settings=isolated_settings,
+    )
+    assert archive["template_name"] == TEMPLATE_NAME
+    assert archive["blocks"] == charge["nb_matchs"]
+    lot = db.query(
+        "SELECT event_id FROM prompt_events pe JOIN prompts p ON p.id = pe.prompt_id "
+        "WHERE p.session_id = ?",
+        (session_id,),
+        settings=isolated_settings,
+    )
+    assert lot, "sans prompt_events, le taux de selection n'a plus de denominateur"
+
+
+@pytest.fixture
+def client(isolated_settings: Settings) -> Iterator[TestClient]:
+    with TestClient(app) as test_client:
+        yield test_client

@@ -45,6 +45,7 @@ from .services import manual as manual_service
 from .services import mapping_ui as mapping_service
 from .services import market_families as market_families_service
 from .services import odds_view as odds_view_service
+from .services import payload as payload_service
 from .services import picks_import as picks_import_service
 from .services import prompt as prompt_service
 from .services import sections as sections_service
@@ -945,6 +946,41 @@ def prompt_page(
             "frame_alert": prompt_service.frame_alert(rendered.body, settings),
         },
     )
+
+
+@app.get("/session/{session_id}/payload.json")
+def payload_download(session_id: int, competition_id: int | None = None) -> PlainTextResponse:
+    """Le bloc de donnees d'une session, archive comme un prompt.
+
+    **Il s'archive, et ce n'est pas un detail.** `save_prompt` ecrit
+    `prompt_events` — le denominateur du taux de selection — les cotes figees de
+    la session, l'echelle de confiance en vigueur et le drapeau de retour
+    d'experience. Un bloc emis sans passer par la perdrait le rattachement des
+    picks, et le test de comparaison ses deux barrieres dures.
+
+    **Servi en `text/plain` et non en `application/json`** : ce bloc se colle
+    dans une conversation, il n'est pas consomme par un client. Le navigateur
+    l'affiche au lieu de le telecharger, ce qui est exactement l'usage.
+    """
+    _require_session(session_id)
+    settings = get_settings()
+    charge = payload_service.build_payload(session_id, settings, competition_id=competition_id)
+    corps = charge.dumps()
+    prompt_service.save_prompt(
+        session_id,
+        prompt_service.RenderedPrompt(
+            template_name=payload_service.TEMPLATE_NAME,
+            body=corps,
+            blocks=charge.data["nb_matchs"],
+            started=charge.started,
+            event_ids=charge.event_ids,
+            # Le bloc ne transmet aucun taux : la question ne se pose pas, et la
+            # colonne dirait « non » pour la bonne raison.
+            feedback_active=False,
+        ),
+        settings,
+    )
+    return PlainTextResponse(corps, media_type="text/plain; charset=utf-8")
 
 
 @app.get("/session/{session_id}/prompt.md")
