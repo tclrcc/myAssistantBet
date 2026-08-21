@@ -10819,3 +10819,75 @@ question de produit, pas de style.
   brief dit que c'est un écran de bureau et qu'il ne faut pas y dépenser
   d'effort ; la mesure ne contredit pas — à 1 440 px, la largeur de référence,
   rien ne se replie.
+
+## Ce que la mesure contredit dans ce brief
+
+Le brief le disait lui-même — « ce brief décrit une interface d'après des
+captures d'écran : plusieurs de ses constats sont probablement approximatifs ».
+Il l'était plus qu'il ne le pensait : **sept prémisses sur onze sont fausses ou
+inversées**, et deux d'entre elles auraient conduit à défaire ce qui marche.
+
+| Prémisse | Ce que la mesure dit | Effet sur le travail |
+| --- | --- | --- |
+| « du texte gris de 12 pixels » | 14,4 px sur le board, 13,6 sur Compétitions ; 11,2 px sur **9 éléments** | aucun — la cible était ailleurs |
+| « tout est au même corps » | **l'inverse** : 6 crans déclarés, 11 à 14 rendus | **a changé le travail** : appliquer l'échelle, pas la réécrire |
+| « trois ou quatre tailles, pas davantage » | les six ont un rôle écrit ; le défaut est le **taux d'application**, 17 % | descendre à quatre aurait défait une décision documentée |
+| « chiffres tabulaires pour toutes les cotes » | déjà fait, 14 fois | rien à faire |
+| « espacement sur une échelle unique » | déjà fait à 85 % | rien à faire — et la forcer à 100 % aurait cassé une densité **mesurée** |
+| « en-têtes collants » (à faire) | déjà fait | rien à faire |
+| « du vert au rouge » pour les paliers | 🟢 🔵 🟠 🔴 💥 — **le deuxième cran est bleu** | **a changé le travail** : formaliser copierait une échelle non monotone |
+| « le gris est probablement sous le seuil » | 4,95 sur blanc (passe), **4,49** sur les surfaces grises (échoue **d'un centième**) | corrigé, mais le défaut était à la troisième décimale |
+| « la réserve est presque au même poids que le chiffre » | l'inversion est réelle et **ailleurs** : la réserve est 25 % plus grande et 4× plus contrastée que **la légende du chiffre** | corrigé, par l'autre bout |
+| « l'écran de pose est une table à huit colonnes » | vrai, et pire : **882 px demandés sur 390**, 124 cibles sous 44 px | corrigé |
+| « le point `·` doit se distinguer d'un zéro » | il s'en distingue déjà — couleur, glyphe, largeur de quatre chiffres, pas de séparateur décimal | vérifié, rien à faire |
+
+**Et trois défauts que le brief ne pouvait pas voir**, tous trouvés en mesurant
+l'existant avant de construire ce qui était demandé — quatrième occurrence du
+motif noté au lot 18 :
+
+| Trouvé en mesurant | Ce qu'on mesurait | Ce qu'on cherchait |
+| --- | --- | --- |
+| `/competitions` déborde de 260 px, colonne « Fiche » coupée | la largeur des tables longues | de quoi juger l'alternance de fond |
+| le filet de ligne est à **1,01 – 1,14** de contraste, invisible sous la bande de sport | la même | la même |
+| la tuile de décompte de `/stats` était placée par une règle nommant `.hero-figure`, **absente depuis que le résidu a sa propre tuile** — figure étalée sur 1 087 px, case sous l'étiquette vide | le rendu du bloc de tête après le §2 | rien |
+| `.link-quiet` est `color: transparent`, donc **invisible pour toujours** sur un écran tactile | les cibles de 44 px | la taille, pas la visibilité |
+
+Les quatre ont la forme caractéristique du dépôt : **rien ne casse**. La colonne
+coupée ressemble à une colonne qui n'existe pas, le filet invisible ressemble à
+un choix de densité, la tuile mal placée ressemble à un réglage approximatif, et
+le bouton transparent ressemble à un bouton absent.
+
+## Récapitulatif du lot 21
+
+**Neuf commits, aucune migration, schéma inchangé à 70** — donc aucune sauvegarde
+requise. Toutes les captures et mesures portent sur une copie `VACUUM INTO` de la
+base servie ; aucun de mes processus n'a ouvert `data/myassistantbet.db`
+(vérifié par les descripteurs de fichiers).
+
+| § | Ce qui a changé | Mesure avant → après |
+| --- | --- | --- |
+| 0 | l'inventaire, avant toute décision | 7 prémisses renversées |
+| 1 | l'échelle typographique appliquée ; `--muted` remonté ; deux jetons | **17 % → 91 %** de jetons ; contraste **4,49 → 4,81** au pire |
+| 2 | la réserve prend son registre, la légende du chiffre remonte | ladder 48 → 12,8 → 16 px devenue 48 → 13,1 → 13,1 |
+| 3 | l'écran de pose en cartes sur téléphone | **882/485 → 485/485** ; **124 → 0** cibles sous 44 px |
+| 4 | le filet de ligne, et Compétitions tient dans sa page | filet **1,03 → 1,66** ; débordement **260 px → 0** |
+| 5 | contraste et cibles tactiles | boutons de résultat sombres **2,17 → 8,97** |
+| 6 | **rien** — cinq améliorations écrites, non faites | 0 |
+
+**Ce qui n'a pas bougé, et c'est le point** :
+
+- **aucun mot de texte**, nulle part — ni libellé, ni réserve, ni explication, ni
+  gabarit de prompt ;
+- **aucune condition Jinja**. Le seul gabarit touché est `_worksheet.html`, et le
+  diff n'y porte que **sept attributs `class` et un `data-col`** — aucune
+  variable, aucune accolade, aucune condition ;
+- **aucune dépendance** : pas de framework, pas d'étape de compilation, pas de
+  bibliothèque d'icônes, pas de police distante. Le test qui interdit tout
+  `https://` dans la feuille reste vert ;
+- **aucun graphique, aucune courbe, aucune sparkline** ;
+- **aucune réserve repliée** : le pli reste réservé à ce qui explique une
+  méthode ;
+- **aucune couleur sur la confiance** ;
+- **2 448 tests au vert**, avant comme après ;
+- **les trois populations sont identiques au caractère près** — 245 principales,
+  32 exploratoires, 52 tardives, mêmes résultats, mêmes sommes de cotes.
