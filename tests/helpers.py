@@ -205,7 +205,7 @@ def lot_avec_recul(
     confiances: dict[int, tuple[int, int]] | None = None,
     market: str = "O/U 2.5",
 ) -> int:
-    """Une session dont les selections franchissent **les deux** seuils du gate.
+    """Une session dont les selections franchissent **tous** les seuils du gate.
 
     `confiances` donne, par cran, le couple `(gagnees, perdues)`. Le defaut
     reproduit la forme reelle de la base — un cran 3 large et legerement sous le
@@ -214,14 +214,30 @@ def lot_avec_recul(
     egalement satisfaite.
 
     L'**etalement** compte autant que le volume : les selections sont reparties
-    sur `FEEDBACK_MIN_DAYS` journees d'analyse distinctes. Un lot nombreux mais
-    concentre mesure ces jours-la, et le gate le refuse — c'est le seul des deux
-    seuils qu'une fixture naive oublie.
+    sur `FEEDBACK_MIN_DAYS` journees d'analyse distinctes, et sur
+    `FEEDBACK_MIN_COMPETITIONS` competitions. Un lot nombreux mais concentre
+    mesure ces jours-la, et le gate le refuse — ce sont les seuils qu'une fixture
+    naive oublie.
+
+    **Le seuil par cellule est abaisse ici, et c'est le seul reglage que ce
+    helper touche.** Il vaut 100 par defaut pour une fenetre de 60 : aucune
+    cellule ne peut donc jamais l'atteindre, et une fixture qui le laisserait
+    en place testerait un bloc vide en croyant tester ses lignes. L'abaisser est
+    exactement le role de ce helper — ouvrir les gates — mais il faut savoir que
+    le defaut, lui, les ferme.
     """
     from myassistantbet import db
     from myassistantbet.services import board, coupons
-    from myassistantbet.services.history import FEEDBACK_MIN_DAYS, add_pick, set_result
+    from myassistantbet.services.history import (
+        FEEDBACK_MIN_COMPETITIONS,
+        FEEDBACK_MIN_DAYS,
+        add_pick,
+        set_result,
+    )
     from myassistantbet.services.manual import build, save
+    from myassistantbet.services.thresholds import save as save_threshold
+
+    save_threshold("feedback_min_cell", "10", settings)
 
     # Le total tient **exactement** dans `FEEDBACK_WINDOW` : au-dela, la fenetre
     # glissante tronque, et elle tronque par date — le cran le moins fourni
@@ -231,22 +247,31 @@ def lot_avec_recul(
     # sous sa cible, un dedans, un legerement dessous : trois etats distincts,
     # ce qu'une repartition uniforme ne donnerait pas.
     repartition = confiances or {3: (12, 18), 4: (12, 8), 5: (6, 4)}
-    event_id = save(
-        build(
-            "football",
-            "Amical",
-            "Lyon",
-            "Nice",
-            "2099-01-01",
-            "20:45",
-            "Lyon 2.10\nNice 3.40",
-            "",
-            "",
-            settings=settings,
-        ),
-        settings,
-    )
-    session_id = board.toggle_selection(event_id, True, settings)
+    # **Trois competitions, pas une.** Dix journees sur un seul tournoi passent le
+    # compte de journees sans decrire autre chose qu'un contexte : c'est ce que le
+    # troisieme seuil du gate refuse, et une fixture a une competition le
+    # declencherait a chaque test.
+    evenements = [
+        save(
+            build(
+                "football",
+                f"Amical {rang + 1}",
+                f"Lyon {rang + 1}",
+                f"Nice {rang + 1}",
+                "2099-01-01",
+                "20:45",
+                f"Lyon {rang + 1} 2.10\nNice {rang + 1} 3.40",
+                "",
+                "",
+                settings=settings,
+            ),
+            settings,
+        )
+        for rang in range(FEEDBACK_MIN_COMPETITIONS)
+    ]
+    session_id = 0
+    for identifiant in evenements:
+        session_id = board.toggle_selection(identifiant, True, settings)
 
     rang = 0
     for cran, (gagnees, perdues) in sorted(repartition.items()):
@@ -256,7 +281,7 @@ def lot_avec_recul(
                 tier="fun",
                 market=market,
                 selection=f"Over {cran}-{index}",
-                event_id=str(event_id),
+                event_id=str(evenements[rang % len(evenements)]),
                 price="2.10",
                 confidence=str(cran),
                 # Ces lots montent plusieurs selections sur un meme match par

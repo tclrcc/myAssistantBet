@@ -49,7 +49,7 @@ from .render import (
 )
 from .research import sheet as research_sheet
 from .session import has_started, renderable_events, session_label, started_labels
-from .thresholds import COUPON_TRACKING, solid_combo_conflict, toggle_of
+from .thresholds import COUPON_TRACKING, SAFE_BANDS, solid_combo_conflict, toggle_of
 from .thresholds import value_of as threshold
 from .weather import ALERT_MARK
 
@@ -1619,7 +1619,12 @@ def save_tiers(rows: list[dict[str, Any]], settings: Settings | None = None) -> 
     # decrivent le meme objet depuis deux ecrans. Ils se sont deja contredits en
     # silence — `1.70^4 = 8.35` pour une cible de 9 — et la sortie ne trahissait
     # rien, un combine plus court etant une reponse prevue.
-    conflit = solid_combo_conflict(settings, safe_cap=rows[0].get("max_price") if rows else None)
+    # **Le plafond de la seconde bande sure**, celle jusqu'a laquelle un combine
+    # prend ses jambes — pas celui de la premiere.
+    conflit = solid_combo_conflict(
+        settings,
+        safe_cap=rows[SAFE_BANDS - 1].get("max_price") if len(rows) >= SAFE_BANDS else None,
+    )
     if conflit:
         raise CustomizationError(conflit)
 

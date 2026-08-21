@@ -42,6 +42,8 @@ from myassistantbet.services.prompt import (
     save_preference,
     save_prompt,
 )
+from myassistantbet.services.thresholds import save as save_threshold
+from myassistantbet.services.thresholds import value_of as threshold_value
 
 from .helpers import NOW, lot_avec_recul, pose_bandes
 
@@ -57,7 +59,19 @@ def _session_avec_match(
     sport: str = "football",
     competition: str = "Amical",
 ) -> tuple[int, int]:
-    """Cree un evenement manuel cote, et renvoie (session_id, event_id)."""
+    """Cree un evenement manuel cote, et renvoie (session_id, event_id).
+
+    **Ouvre au passage les deux seuils de transmission que ce fichier ne mesure
+    pas** : ces tests portent sur ce qu'une cellule dit — sa bande, son ecart,
+    sa mention « hors bande » — et non sur l'ouverture du gate, qui a ses tests
+    dedies. Les laisser fermes ferait echouer dix-huit tests pour une raison
+    etrangere a ce qu'ils verifient.
+
+    Le seuil par cellule vaut 100 pour une fenetre de 60 : sans cet abaissement,
+    **aucune** cellule ne peut jamais paraitre, quel que soit le lot monte.
+    """
+    save_threshold("feedback_min_cell", "10", settings)
+    save_threshold("feedback_min_competitions", "1", settings)
     event_id = save(
         build(
             sport,
@@ -237,7 +251,11 @@ def test_les_libelles_de_marche_sont_regroupes(migrated: Settings) -> None:
     # Le groupe doit survivre au minimum par ligne : on repete les orthographes
     # jusqu'a l'atteindre, sinon le test mesurerait le seuil et non le regroupement.
     orthographes = ("Over 2.5 buts", "over 2,5  Buts", "OVER 2.5 BUTS", "Over 2.5 buts")
-    for index in range(FEEDBACK_MIN_ROWS):
+    # **Le seuil de transmission, pas celui de lecture** : ce qui decide qu'une
+    # cellule part dans le prompt est `feedback_min_cell`, bien plus haut que le
+    # seuil d'affichage d'un regroupement.
+    cellule = threshold_value("feedback_min_cell", migrated)
+    for index in range(cellule):
         _regle(
             migrated,
             session_id,
@@ -246,15 +264,13 @@ def test_les_libelles_de_marche_sont_regroupes(migrated: Settings) -> None:
             "win",
             market=orthographes[index % len(orthographes)],
         )
-    for _ in range(FEEDBACK_MIN_TOTAL - FEEDBACK_MIN_ROWS):
+    for _ in range(FEEDBACK_MIN_TOTAL - cellule):
         _regle(migrated, session_id, event_id, "fun", "loss", market="Score exact")
 
     markets = {row.key: row for row in feedback(migrated).by_market}
 
     assert set(markets) == {"over 2 5 buts", "score exact"}
-    assert markets["over 2 5 buts"].settled == FEEDBACK_MIN_ROWS, (
-        "quatre orthographes, un seul marche"
-    )
+    assert markets["over 2 5 buts"].settled == cellule, "quatre orthographes, un seul marche"
 
 
 def test_le_taux_par_confiance_est_expose(migrated: Settings) -> None:
@@ -315,9 +331,12 @@ def test_le_prompt_annonce_le_manque_de_recul(migrated: Settings) -> None:
 
 def test_le_prompt_publie_les_taux_et_interdit_la_comparaison(migrated: Settings) -> None:
     session_id, event_id = _session_avec_match(migrated)
-    for _ in range(FEEDBACK_MIN_ROWS):
+    # Le seuil de **transmission** d'une cellule, pas celui d'affichage : c'est
+    # lui qui decide qu'un palier part dans le prompt.
+    cellule = threshold_value("feedback_min_cell", migrated)
+    for _ in range(cellule):
         _regle(migrated, session_id, event_id, "safe", "win")
-    for _ in range(FEEDBACK_MIN_TOTAL - FEEDBACK_MIN_ROWS):
+    for _ in range(FEEDBACK_MIN_TOTAL - cellule):
         _regle(migrated, session_id, event_id, "giga_fun", "loss")
 
     body = build_prompt(session_id, settings=migrated, now=NOW).body
@@ -749,10 +768,10 @@ def test_la_bande_cible_accompagne_le_taux_dans_le_prompt(migrated: Settings) ->
     ligne = next(row for row in feedback(migrated).by_confidence if row.key == "3")
 
     assert ligne.rate == 0.4
-    assert ligne.band is not None and ligne.band.label == "44 – 53 %"
-    assert ligne.band.offset_label == "global -6 → +3", "stockee en ecart, rendue en taux"
-    assert ligne.gap == pytest.approx(-4.0)
-    assert "cible 44 – 53 %, écart -4 pts" in ligne.line
+    assert ligne.band is not None and ligne.band.label == "42 – 52 %"
+    assert ligne.band.offset_label == "global -8 → +2", "stockee en ecart, rendue en taux"
+    assert ligne.gap == pytest.approx(-2.0), "40 % observés contre une borne basse à 42"
+    assert "cible 42 – 52 %, écart -2 pts" in ligne.line
 
 
 def test_un_taux_dans_sa_bande_n_affiche_aucun_ecart(migrated: Settings) -> None:
@@ -764,7 +783,7 @@ def test_un_taux_dans_sa_bande_n_affiche_aucun_ecart(migrated: Settings) -> None
     ligne = next(row for row in feedback(migrated).by_confidence if row.key == "4")
 
     assert ligne.gap is None
-    assert "cible 53 – 62 %" in ligne.line
+    assert "cible 52 – 62 %" in ligne.line
     assert "écart" not in ligne.line
 
 
@@ -804,7 +823,7 @@ def test_le_prompt_explique_comment_lire_l_ecart(migrated: Settings) -> None:
 
     corps = " ".join(build_prompt(session_id, settings=migrated, now=NOW).body.split())
 
-    assert "cible 44 – 53 %, écart -4 pts" in corps
+    assert "cible 42 – 52 %, écart -2 pts" in corps
     assert "seul chiffre de ce bloc qui parle de ma notation plutôt que des matchs" in corps
     assert "resserrer dès la section C" in corps
     assert "n'en fais pas une règle" in corps

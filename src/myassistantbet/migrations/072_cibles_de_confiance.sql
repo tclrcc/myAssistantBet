@@ -1,0 +1,31 @@
+-- 072_cibles_de_confiance.sql — les bandes resolues ne tombaient pas sur celles
+-- du cadre.
+--
+-- Les bornes sont des **ecarts en points au taux global** depuis la migration
+-- 032, et c'est la conversion en taux qui doit concorder avec le cadre. Au taux
+-- global constate de 58 %, les valeurs servies rendaient :
+--
+--     conf 5   +12 et plus   ->  70 % et plus     conforme
+--     conf 4   +3  -> +12    ->  61 – 70 %        le cadre dit 60 – 70
+--     conf 3   -6  -> +3     ->  52 – 61 %        le cadre dit 50 – 60
+--
+-- Un point de decalage sur chaque borne, donc une bande entiere decalee vers le
+-- haut : un cran juste s'y annoncait « sous sa bande » et la consigne de
+-- resserrement se declenchait sur un ecart qui n'existait pas.
+--
+-- **Le cran 2 reste sans cible, et c'est une decision reprise.** Ouvrir la
+-- sienne — `-23 -> -8`, soit 35 – 50 % — a ete propose puis ecarte sur mesure :
+-- le cadre envoie **toute** confiance 2 en section C-bis, et `analysis()` filtre
+-- `exploratoire = 0`. La bascule est deja visible en base : 28 conf 2 en section
+-- C et 0 en C-bis avant le 16/08, 8 contre 32 depuis. La cible se resoudrait
+-- donc contre 31 lignes gelees pendant que les vraies conf 2 s'accumulent dans
+-- une population que ce calcul ne regarde pas — decorative par construction. La
+-- question se rouvre a la re-mesure du 20/09/2026, avec la resolution propre a
+-- la population exploratoire.
+--
+-- Les crans 1 et 2 gardent donc leurs deux bornes vides (migration 031) : ils
+-- sont pines par ce que la recherche a trouve, et aucun mouvement correctif n'y
+-- est un choix.
+
+UPDATE confidence_bands SET low = 2.0,  high = 12.0 WHERE level = 4;
+UPDATE confidence_bands SET low = -8.0, high =  2.0 WHERE level = 3;

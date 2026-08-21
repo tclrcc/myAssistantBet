@@ -52,6 +52,7 @@ from myassistantbet.services.history import (
     set_open_dossiers,
     set_result,
 )
+from myassistantbet.services.thresholds import value_of as threshold_value
 
 LOIN = "2099-01-01T20:45:00Z"
 
@@ -613,16 +614,21 @@ def test_un_desaccord_concentre_designe_la_clause_a_reecrire(migrated: Settings)
     session_id = _session(migrated)
     quatre = _bloc(source_level=1, faits=[_fait()], manque_touche_facteur=False)
     trois = _bloc(source_level=1, faits=[_fait()], manque_touche_facteur=True)
-    for _ in range(6):
+    # **L'effectif suit le seuil de la page**, il ne le recopie pas : celui-ci a
+    # deja bouge une fois, et un compte ecrit ici casserait sans rien apprendre.
+    seuil = threshold_value("feedback_min_rows", migrated)
+    desaccords = seuil - seuil // 4
+    accords = seuil - desaccords
+    for _ in range(desaccords):
         _tranchee(migrated, session_id, "4", trois)  # annonce 4, table 3
-    for _ in range(2):
+    for _ in range(accords):
         _tranchee(migrated, session_id, "4", quatre)  # accord
 
     notation = analysis(settings=migrated).notation
 
-    assert notation.comparable == 8
-    assert notation.transitions == [(4, 3, 6)]
-    assert notation.dominant == (4, 3, 6)
+    assert notation.comparable == seuil
+    assert notation.transitions == [(4, 3, desaccords)]
+    assert notation.dominant == (4, 3, desaccords)
     assert "un 4 annoncé que la table met à 3" in notation.clause_line
 
 

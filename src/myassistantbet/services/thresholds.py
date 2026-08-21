@@ -70,32 +70,39 @@ class Threshold:
 #: disputent un nom.
 PREFIX = "seuil_"
 
+#: Combien de bandes de cote sont « sures », donc dans lesquelles un combine se
+#: batit. `prompt.QUOTA_FLOOR_TIERS` en est la lecture cote quotas ; la valeur
+#: vit **ici** parce que `prompt` importe ce module et non l'inverse, et un test
+#: compare les deux plutot que d'esperer qu'elles ne divergent pas.
+SAFE_BANDS = 2
+
 THRESHOLDS: dict[str, Threshold] = {
     "combo_min_lot": Threshold(
         key="combo_min_lot",
         label="Lot minimum pour deux combinés",
-        default=6,
+        default=24,
         low=2,
         high=40,
         note=(
-            "En dessous, le prompt ne demande qu'un seul combiné. Sur un lot de 5 matchs "
-            "et un taux de sélection médian de 36 %, réclamer un combiné de 3-4 jambes "
-            "et un second de 4-5 jambes — une seule sélection par match — était "
-            "insatisfiable avant même que l'analyse commence."
+            "En dessous, le prompt ne demande qu'un seul combiné. Deux combinés réclament 7 "
+            "à 9 jambes, une seule sélection par match : au taux de sélection médian de "
+            "36 %, un lot de 20 en donne 7,2 — la borne exacte, donc insatisfiable une fois "
+            "sur deux. À 24, l'espérance monte à 8,6."
         ),
     ),
     "combo_solo_min_lot": Threshold(
         key="combo_solo_min_lot",
         label="Lot minimum pour un combiné",
-        default=5,
+        default=11,
         low=2,
         high=20,
         note=(
             "En dessous, le prompt ne demande **aucun** combiné. Le seuil des deux combinés "
-            "avait son symétrique manquant : sur un lot de 4 matchs et un taux de sélection "
-            "médian de 36 %, l'espérance tourne autour de 1.4 sélection, quand la section D "
-            "en réclame trois indépendantes. Mieux vaut supprimer la demande que faire écrire "
-            "qu'elle était insatisfiable."
+            "avait son symétrique manquant : la section D réclame trois jambes disjointes, et "
+            "au taux de sélection médian de 36 % un lot de 9 n'en donne que 3,24 en espérance "
+            "— une cause commune, et le lot est court une fois sur deux. À 11, l'espérance "
+            "monte à 3,96. Mieux vaut supprimer la demande que faire écrire qu'elle était "
+            "insatisfiable."
         ),
     ),
     "combo_court_jambes": Threshold(
@@ -182,16 +189,49 @@ THRESHOLDS: dict[str, Threshold] = {
     "feedback_min_rows": Threshold(
         key="feedback_min_rows",
         label="Sélections tranchées avant qu'un regroupement affiche un taux",
-        default=8,
+        default=25,
         low=2,
         high=100,
         note=(
+            "À n = 8, l'intervalle de Wilson fait ±30 points : rien n'est affirmé, mais "
+            "l'estimation ponctuelle ancre quand même la lecture, et c'est elle qu'on retient. "
             "Un regroupement moins fourni ne mesure que le hasard. Le seuil est unique, mais "
             "les deux surfaces n'en font pas le même usage et c'est voulu : la page garde la "
             "ligne et affiche son effectif à la place du taux — un humain doit savoir qu'une "
             "case est vide parce qu'elle est maigre et non parce qu'elle est nulle — quand le "
             "prompt la tait, un « effectif insuffisant » n'y servant ni à dire où chercher, "
             "ni où relever l'exigence."
+        ),
+    ),
+    "feedback_min_cell": Threshold(
+        key="feedback_min_cell",
+        label="Sélections tranchées avant qu'une cellule soit transmise au prompt",
+        default=100,
+        low=10,
+        high=1000,
+        note=(
+            "**Dissocie la transmission du taux global de celle des taux par cellule.** "
+            "« Sélections tranchées avant transmission » garde un taux global affiché avec "
+            "son intervalle, et il est correct pour ça ; il est très insuffisant pour un taux "
+            "par cran, par palier, par sport ou par marché — un sous-ensemble d'une "
+            "population de 40 ne mesure rien. Ce seuil-ci porte sur l'effectif de la cellule, "
+            "et sous lui la cellule ne part pas. Distinct du seuil de lecture d'un "
+            "regroupement, qui décide de ce que la **page** affiche : le lecteur d'une page "
+            "voit l'effectif à côté du taux, le prompt ne voit que le taux."
+        ),
+    ),
+    "feedback_min_competitions": Threshold(
+        key="feedback_min_competitions",
+        label="Compétitions distinctes avant transmission",
+        default=3,
+        low=1,
+        high=20,
+        note=(
+            "La troisième moitié du garde-fou d'étalement, et elle manquait. « Dix journées "
+            "distinctes » vise à éviter qu'un taux repose sur un seul contexte — mais dix "
+            "soirées de tennis satisfont le compteur sans satisfaire l'intention. Vérifié "
+            "conjointement avec le compte de journées : il faut les deux, comme il faut déjà "
+            "le volume et l'étalement."
         ),
     ),
     "enjeu_min_journees": Threshold(
@@ -397,11 +437,19 @@ def solid_combo_conflict(
     solide entierement bati en bande sure n'existait pas, et rien nulle part ne
     le disait. `1.80^4 = 10.50` le rend a nouveau possible.
 
-    **Le plafond seul suffit, et c'est ce qui rend le controle honnete** : une
-    jambe peut se prendre partout dans la bande, donc `plafond^jambes` est le
-    produit **maximal** atteignable sans quitter le palier sur. S'il ne suffit
-    pas, aucune combinaison ne suffit — le controle ne se prononce pas sur ce
-    qui est probable, seulement sur ce qui est possible.
+    **Le plafond est celui de la seconde bande sure, pas de la premiere.** Un
+    combine se batit dans les **deux** paliers les plus surs — c'est ce
+    qu'etablit `safe_legs_available`, qui somme leurs quotas — et un controle
+    cale sur le seul plus sur refusait trois jambes a 1.80 (`5.83 < 9`) alors
+    que les memes trois jambes en FUN donnent `2.30^3 = 12.2`. **Un garde qui
+    refuse une configuration valide apprend a ignorer les gardes** : son travail
+    est d'attraper l'impossible, pas d'imposer une preference de style. Il garde
+    des dents — a deux jambes, `2.30^2 = 5.29 < 9`, et le refus tombe a juste
+    titre.
+
+    `plafond^jambes` est donc le produit **maximal** atteignable sans quitter les
+    bandes sures. S'il ne suffit pas, aucune combinaison ne suffit — le controle
+    ne se prononce pas sur ce qui est probable, seulement sur ce qui est possible.
 
     Les trois valeurs se passent en argument pour que l'appelant teste la saisie
     **qu'il s'apprete a ecrire** plutot que celle deja en base : un controle qui
@@ -411,6 +459,10 @@ def solid_combo_conflict(
     seuils sont deux tables de configuration, et faire remonter ce controle dans
     `prompt.py` aurait ferme le chemin de l'ecran des seuils, qui ne peut pas
     importer ce module-la sans cycle. Une implementation, deux surfaces.
+
+    Le nombre de bandes sures vient de `SAFE_BANDS`, lu une fois :
+    `prompt.QUOTA_FLOOR_TIERS` en est la lecture cote quotas, et un test compare
+    les deux plutot que d'esperer qu'elles ne divergent pas.
     """
     settings = settings or get_settings()
     if legs is None:
@@ -419,7 +471,10 @@ def solid_combo_conflict(
         target = value_of("combo_court_cote", settings)
     if safe_cap is None:
         with connect(settings) as conn:
-            row = conn.execute("SELECT max_price FROM tiers ORDER BY position LIMIT 1").fetchone()
+            row = conn.execute(
+                "SELECT max_price FROM tiers ORDER BY position LIMIT 1 OFFSET ?",
+                (SAFE_BANDS - 1,),
+            ).fetchone()
         # Une bande sure sans borne haute n'a pas de plafond a franchir : le
         # controle n'a alors rien a dire, et affirmer le contraire serait une
         # alarme sur une configuration parfaitement valable.
@@ -434,7 +489,7 @@ def solid_combo_conflict(
     return (
         f"Le combiné solide est hors d'atteinte en bande sûre : {safe_cap:.2f} "
         f"puissance {legs} vaut {atteignable:.2f}, pour une cote cible de {target}. "
-        "Relevez le plafond du palier le plus sûr, ou abaissez la cote cible "
+        "Relevez le plafond de la seconde bande sûre, ou abaissez la cote cible "
         "(écran Seuils, « Cote cible — combiné solide »)."
     )
 

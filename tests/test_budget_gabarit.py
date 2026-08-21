@@ -86,7 +86,10 @@ def test_les_trois_emplacements_lisent_la_meme_valeur(migrated: Settings) -> Non
 
     from .test_research import _lot
 
-    lot = 21
+    # Le troisieme emplacement vit dans le paragraphe du combine long : le lot
+    # doit donc depasser le seuil des deux combines, sinon la section D ne le
+    # rend pas et le test mesurerait ce seuil-la.
+    lot = max(21, value_of("combo_min_lot", migrated))
     budget = value_of("recherche_dossiers", migrated)
     corps = " ".join(
         build_prompt(

@@ -442,22 +442,44 @@ def test_les_bandes_se_touchant_exactement_sont_acceptees(
 def test_un_plafond_sur_qui_rend_le_combine_solide_impossible_est_refuse(
     client: TestClient, isolated_settings: Settings
 ) -> None:
-    """`1.70^4 = 8.35` pour une cote cible de 9 : le combine solide entierement
-    bati en bande sure n'existait pas, et **rien ne le disait** — un combine plus
-    court avec sa cote reelle est une reponse prevue par le gabarit, donc la
-    sortie ne trahissait pas l'impossibilite.
-
-    Le controle echoue bruyamment le jour ou quelqu'un rabaisse le plafond sans
-    toucher a la cible.
+    """Le combine solide se batit dans les **deux** bandes sures : c'est donc le
+    plafond de la seconde qui decide. Rabaisse a 1.70, `1.70^4 = 8.35` pour une
+    cote cible de 9 — le combine n'existe pas, et **rien ne le disait** : un
+    combine plus court avec sa cote reelle est une reponse prevue par le gabarit,
+    donc la sortie ne trahissait pas l'impossibilite.
     """
     tiers = load_tiers(isolated_settings)
-    data = _form_paliers(tiers, max_price={"safe": "1.70"}, min_price={"fun": "1.70"})
+    # Les bandes restent contigues : c'est bien le plafond sur qui est en cause,
+    # pas une borne incoherente.
+    data = _form_paliers(
+        tiers,
+        max_price={"safe": "1.60", "fun": "1.70"},
+        min_price={"fun": "1.60", "ultra_fun": "1.70"},
+    )
 
     response = client.post("/settings/tiers", data=data)
 
     assert "combiné solide est hors d" in response.text
     assert "8.35" in response.text, "le produit atteignable est nommé"
-    assert load_tiers(isolated_settings)[0].max_price == 1.80, "rien n'est ecrit"
+    assert load_tiers(isolated_settings)[1].max_price == 2.30, "rien n'est ecrit"
+
+
+def test_le_combine_solide_se_mesure_sur_la_seconde_bande_sure(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """**Un garde qui refuse une configuration valide apprend a ignorer les
+    gardes.** Trois jambes a `1.80^3 = 5.83` seraient refusees par un controle
+    cale sur la premiere bande ; les memes trois jambes en FUN donnent
+    `2.30^3 = 12.2`, et la configuration est constructible."""
+    reponse = client.post("/settings/thresholds", data={"key": "combo_court_jambes", "value": "3"})
+
+    assert "combiné solide est hors d" not in reponse.text
+    assert threshold_value("combo_court_jambes", isolated_settings) == 3
+
+    # Il garde des dents : a deux jambes, 2.30^2 = 5.29 et le refus tombe.
+    refus = client.post("/settings/thresholds", data={"key": "combo_court_jambes", "value": "2"})
+    assert "combiné solide est hors d" in refus.text
+    assert threshold_value("combo_court_jambes", isolated_settings) == 3, "rien n'est ecrit"
 
 
 def test_une_cote_cible_hors_d_atteinte_est_refusee_a_l_ecran_des_seuils(
@@ -572,16 +594,20 @@ def test_l_ecran_explique_l_etat_sans_cible(client: TestClient) -> None:
 # -- Le gate de recul, regle et mesure ---------------------------------------
 
 
-def test_les_deux_seuils_du_gate_sont_reglables(migrated: Settings) -> None:
+def test_les_trois_seuils_du_gate_sont_reglables(migrated: Settings) -> None:
     """Ils vivaient dans le code et l'ecran les citait en dur, alors qu'ils sont
     exactement ce que la table des seuils heberge : des nombres qui decident
-    d'une regle sans etre une donnee."""
-    assert reach(migrated) == (40, 10), "les defauts, tant que rien n'est saisi"
+    d'une regle sans etre une donnee.
+
+    **Trois et non deux depuis la variete** : dix journees sur un seul tournoi
+    passent le compte de journees sans decrire autre chose qu'un contexte."""
+    assert reach(migrated) == (40, 10, 3), "les defauts, tant que rien n'est saisi"
 
     thresholds.save("feedback_min_total", "25", migrated)
     thresholds.save("feedback_min_days", "4", migrated)
+    thresholds.save("feedback_min_competitions", "2", migrated)
 
-    assert reach(migrated) == (25, 4)
+    assert reach(migrated) == (25, 4, 2)
 
 
 def test_le_seuil_regle_ouvre_reellement_le_gate(migrated: Settings) -> None:

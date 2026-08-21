@@ -397,7 +397,32 @@ class Comparison:
 FEEDBACK_MIN_TOTAL = 40
 
 #: Meme regle a l'echelle d'une ligne : un regroupement vu sept fois reste tu.
+#:
+#: **Seuil de lecture, et non de transmission.** Il decide de ce qu'une surface
+#: affiche a cote de son effectif ; ce qui part dans le prompt est garde par
+#: `FEEDBACK_MIN_CELL`, bien plus haut. A n = 8 l'intervalle de Wilson fait
+#: +/- 30 points : rien n'est affirme, mais l'estimation ponctuelle ancre quand
+#: meme la lecture, et le prompt ne montre pas d'intervalle.
 FEEDBACK_MIN_ROWS = 8
+
+#: Effectif d'une **cellule** sous lequel elle ne part pas dans le prompt.
+#:
+#: `FEEDBACK_MIN_TOTAL` garde le taux **global**, affiche avec son intervalle, et
+#: il est calibre pour ca. Un taux par cran, par palier, par sport ou par marche
+#: est un sous-ensemble de cette meme population : le garder au meme seuil
+#: reviendrait a transmettre des cellules de cinq ou six lignes.
+FEEDBACK_MIN_CELL = 100
+
+#: Competitions distinctes sous lesquelles aucun detail n'est publie.
+#:
+#: **La troisieme moitie du garde-fou d'etalement.** Dix journees distinctes
+#: visent a ce qu'un taux ne repose pas sur un seul contexte — mais dix soirees
+#: de tennis satisfont le compteur sans satisfaire l'intention. La note de
+#: `FEEDBACK_MIN_DAYS` disait qu'« une concentration ne se mesure pas par
+#: competition », et c'etait juste **contre** le calendrier : les deux tableaux
+#: d'un meme tournoi sont deux competitions et une seule semaine. Ce n'est pas un
+#: remplacement, c'est une condition de plus — il faut les trois.
+FEEDBACK_MIN_COMPETITIONS = 3
 
 #: Journees d'analyse distinctes sous lesquelles aucun detail n'est publie.
 #:
@@ -5198,8 +5223,13 @@ def analysis(settings: Settings | None = None) -> Analysis:
         ).fetchall()
 
     report = Analysis()
-    report.minimum, report.minimum_days = reach(settings)
+    report.minimum, report.minimum_days, report.minimum_competitions = reach(settings)
     report.minimum_rows = threshold_value("feedback_min_rows", settings)
+    # **Le seuil descend dans la matrice des crans des l'assemblage**, et pas
+    # seulement quand `_notation` tourne : sur un lot vide, celle-ci n'est jamais
+    # appelee et la matrice gardait le defaut du module. Deux seuils differents
+    # sur la meme page, dont un qui ne se voit qu'a effectif nul.
+    report.notation.minimum = report.minimum_rows
     report.recorded = int(recorded)
     # **Le taux de selection garde toutes les selections, et lui seul.** Il ne
     # mesure pas ce que vaut une etiquette mais ce qui a ete retenu du lot : un
@@ -5808,6 +5838,11 @@ class Feedback:
     settled: int = 0
     #: Journees d'analyse distinctes couvertes par ces selections.
     days: int = 0
+    #: Competitions distinctes couvertes. **Troisieme condition du gate**, et il
+    #: faut les trois : dix soirees de tennis satisfont le compte de journees
+    #: sans satisfaire son intention — qu'un taux ne repose pas sur un seul
+    #: contexte.
+    competitions: int = 0
     window: int = FEEDBACK_WINDOW
     #: Selections tranchees **de tout l'historique**. Sans elle, `settled`
     #: plafonne a `window` et se lit comme un total : « 60 selections tranchees
@@ -5816,6 +5851,11 @@ class Feedback:
     recorded: int = 0
     minimum: int = FEEDBACK_MIN_TOTAL
     minimum_days: int = FEEDBACK_MIN_DAYS
+    minimum_competitions: int = FEEDBACK_MIN_COMPETITIONS
+    #: Effectif d'une cellule sous lequel elle ne part pas. **Descend dans
+    #: l'objet** comme les autres : une classe qui irait lire son propre reglage
+    #: serait intestable hors d'une base.
+    minimum_cell: int = FEEDBACK_MIN_CELL
     #: Une replication est en cours : aucun taux de reussite ne part dans le
     #: prompt, quel que soit le recul accumule.
     #:
@@ -5864,6 +5904,22 @@ class Feedback:
         return self.settled == 0 and self.selection_median is None
 
     @property
+    def cell_gate_unreachable(self) -> bool:
+        """Le seuil de cellule depasse la fenetre : **aucune cellule ne peut
+        jamais passer**.
+
+        `feedback()` ne lit que les `window` dernieres tranchees : une cellule en
+        est un sous-ensemble, donc elle ne peut pas porter plus. Regle a 100 sur
+        une fenetre de 60, le gate par cellule ne se ferme pas — il ne s'ouvre
+        jamais, et le bloc rendrait exactement ce que rend un manque de recul.
+
+        C'est le defaut caracteristique du projet applique a un reglage : une
+        sortie identique pour « pas encore assez » et « jamais ». Il se dit donc,
+        au lieu de se deviner.
+        """
+        return self.minimum_cell > self.window
+
+    @property
     def scope_line(self) -> str:
         """« mes 60 dernières tranchées, sur 100 enregistrées ».
 
@@ -5884,15 +5940,25 @@ class Feedback:
         """
         volume = self.settled < self.minimum
         etalement = self.days < self.minimum_days
-        if volume and etalement:
+        contextes = self.competitions < self.minimum_competitions
+        if volume and (etalement or contextes):
             return f"il en faudrait {self.minimum}, réparties sur {self.minimum_days} journées"
         if volume:
             return (
                 f"l'étalement suffit ; c'est le volume qui manque — il en faudrait {self.minimum}"
             )
+        if etalement:
+            return (
+                "le volume suffit ; c'est l'étalement qui manque — il faudrait "
+                f"{self.minimum_days} journées d'analyse distinctes"
+            )
+        # **Troisieme cause, et elle ne se confond avec aucune des deux autres** :
+        # dix journees sur un seul tournoi passent le compte de journees et ne
+        # decrivent qu'un contexte. La nommer separement evite de faire chercher
+        # du volume la ou il faut de la variete.
         return (
-            "le volume suffit ; c'est l'étalement qui manque — il faudrait "
-            f"{self.minimum_days} journées d'analyse distinctes"
+            "le volume et l'étalement suffisent ; c'est la variété qui manque — il faudrait "
+            f"{self.minimum_competitions} compétitions distinctes"
         )
 
     @property
@@ -5924,10 +5990,17 @@ class Feedback:
         vivaient dans le code, l'ecran les citait en dur, et rien ne disait ou en
         etait le compte.
         """
-        return (
+        base = (
             f"{self.settled} / {self.minimum} sélection(s) tranchée(s) · "
-            f"{self.days} / {self.minimum_days} journée(s) distincte(s)"
+            f"{self.days} / {self.minimum_days} journée(s) distincte(s) · "
+            f"{self.competitions} / {self.minimum_competitions} compétition(s) distincte(s)"
         )
+        if self.cell_gate_unreachable:
+            base += (
+                f" — aucune cellule ne passera : le seuil par cellule vaut "
+                f"{self.minimum_cell} pour une fenêtre de {self.window}"
+            )
+        return base
 
     @property
     def missing_line(self) -> str:
@@ -5953,6 +6026,10 @@ class Feedback:
             manque.append(f"{self.minimum - self.settled} sélection(s) tranchée(s)")
         if self.days < self.minimum_days:
             manque.append(f"{self.minimum_days - self.days} journée(s) d'analyse")
+        if self.competitions < self.minimum_competitions:
+            manque.append(
+                f"{self.minimum_competitions - self.competitions} compétition(s) distincte(s)"
+            )
         if not manque:
             # Le recul est atteint : il ne manque plus rien, et rien ne part
             # quand meme. C'est le seul etat ou la cause est **entierement** une
@@ -5998,7 +6075,10 @@ class Feedback:
         Une suspension prime sur les deux : voir `suspended`.
         """
         return (
-            not self.suspended and self.settled >= self.minimum and self.days >= self.minimum_days
+            not self.suspended
+            and self.settled >= self.minimum
+            and self.days >= self.minimum_days
+            and self.competitions >= self.minimum_competitions
         )
 
 
@@ -6080,8 +6160,8 @@ def _selection_median(settings: Settings) -> tuple[float | None, int]:
     return median, len(parts)
 
 
-def reach(settings: Settings | None = None) -> tuple[int, int]:
-    """Les deux seuils du gate, tels qu'ils sont regles.
+def reach(settings: Settings | None = None) -> tuple[int, int, int]:
+    """Les **trois** seuils du gate, tels qu'ils sont regles.
 
     Ecrits **une seule fois** et lus par les deux surfaces : sous quel compte un
     taux ne veut plus rien dire est une propriete des donnees, pas de l'endroit
@@ -6092,6 +6172,7 @@ def reach(settings: Settings | None = None) -> tuple[int, int]:
     return (
         threshold_value("feedback_min_total", settings),
         threshold_value("feedback_min_days", settings),
+        threshold_value("feedback_min_competitions", settings),
     )
 
 
@@ -6126,6 +6207,10 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
             # `_tier_of` et le choix de journal ci-dessous.
             "       k.price, "
             "       k.price_source, k.price_real, k.tier_real, "
+            # `competition_id` et non le libelle : deux orthographes d'un meme
+            # tournoi compteraient pour deux contextes, ce qui est exactement ce
+            # que le garde-fou existe pour empecher.
+            "       e.competition_id, "
             "       c.category, COALESCE(c.label, '') AS competition FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
@@ -6145,14 +6230,20 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
             "AND exploratoire = 0" + (" AND played = 1" if played_only else "")
         ).fetchone()["n"]
 
-    minimum, minimum_days = reach(settings)
-    minimum_rows = threshold_value("feedback_min_rows", settings)
+    minimum, minimum_days, minimum_competitions = reach(settings)
+    # **Seuil de transmission, pas de lecture.** Une cellule part dans le prompt
+    # bien plus tard qu'elle ne s'affiche sur la page : le lecteur d'une page voit
+    # l'effectif a cote du taux, le prompt ne voit que le taux.
+    minimum_rows = threshold_value("feedback_min_cell", settings)
     report = Feedback(
+        minimum_cell=minimum_rows,
         settled=len(rows),
         days=len({str(row["created_at"])[:10] for row in rows}),
+        competitions=len({row["competition_id"] for row in rows if row["competition_id"]}),
         recorded=int(recorded),
         minimum=minimum,
         minimum_days=minimum_days,
+        minimum_competitions=minimum_competitions,
         suspended=FEEDBACK_SUSPENDED,
         global_rate=_global_rate(rows, [str(row["result"]) for row in rows]),
     )

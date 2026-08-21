@@ -1286,10 +1286,10 @@ def test_les_bandes_sont_reglees_en_base_pas_en_dur(migrated: Settings) -> None:
     bandes = load_bands(migrated, reference=50.0)
 
     assert [bande.level for bande in bandes.values()] == [1, 2, 3, 4, 5]
-    assert (bandes[4].low, bandes[4].high) == (3.0, 12.0)
+    assert (bandes[4].low, bandes[4].high) == (2.0, 12.0)
     assert bandes[5].high is None, "le dernier cran n'a pas de borne haute"
-    assert bandes[4].offset_label == "global +3 → +12"
-    assert bandes[4].label == "53 – 62 %", "resolue contre le taux global"
+    assert bandes[4].offset_label == "global +2 → +12"
+    assert bandes[4].label == "52 – 62 %", "resolue contre le taux global"
     assert bandes[5].label == "62 % et plus"
     assert not bandes[1].targeted and bandes[1].offset_label == "pas de cible"
 
@@ -1331,7 +1331,7 @@ def test_un_intervalle_a_cheval_ne_signale_rien(migrated: Settings) -> None:
     assert ligne.rate == pytest.approx(7 / 16)
     # Toutes ces selections portent la confiance 4 : le taux global vaut donc le
     # sien, et sa cible se resout a `global +3 -> +12`, soit 47 a 56 %.
-    assert ligne.band.label == "47 – 56 %"
+    assert ligne.band.label == "46 – 56 %"
     assert not ligne.off_band, "l'intervalle chevauche encore la bande cible"
 
 
@@ -1434,7 +1434,7 @@ def test_la_page_affiche_la_bande_cible(client: TestClient, isolated_settings: S
 
     page = " ".join(client.get("/stats").text.split())
 
-    assert "bande global +3 → +12 → 53 – 62 %" in page
+    assert "bande global +2 → +12 → 52 – 62 %" in page
     # Le mot survit ailleurs dans un autre sens — « la vraie cible est plus
     # haute » parle d'un effectif requis. C'est **l'etiquette de bande** qui ne
     # doit plus promettre un pilotage.
@@ -2764,6 +2764,77 @@ def test_une_cote_obtenue_impossible_est_refusee(migrated: Settings) -> None:
         set_real_price(pick_id, "0.90", migrated)
 
 
+def test_dix_journees_sur_un_seul_tournoi_ne_transmettent_pas(migrated: Settings) -> None:
+    """**La troisieme moitie du garde-fou d'etalement.** « Dix journees
+    distinctes » vise a ce qu'un taux ne repose pas sur un seul contexte ; dix
+    soirees de tennis satisfont le compteur sans satisfaire l'intention.
+
+    Il faut les trois conditions, et le manque se nomme : envoyer chercher du
+    volume la ou il faut de la variete ferait perdre des semaines.
+    """
+    volume_et_etalement = history.Feedback(
+        settled=80, days=12, competitions=1, minimum=40, minimum_days=10, minimum_competitions=3
+    )
+
+    assert not volume_et_etalement.enough
+    assert "c'est la variété qui manque" in volume_et_etalement.missing_note
+    assert "2 compétition(s) distincte(s)" in volume_et_etalement.missing_line
+    assert "1 / 3 compétition(s) distincte(s)" in volume_et_etalement.reach_line
+
+
+def test_un_seuil_de_cellule_hors_fenetre_se_dit(migrated: Settings) -> None:
+    """**Une sortie identique pour « pas encore assez » et « jamais ».**
+    `feedback()` ne lit que les `window` dernieres tranchees : une cellule en est
+    un sous-ensemble, donc un seuil par cellule superieur a la fenetre ne se
+    ferme pas — il ne s'ouvre jamais, et le bloc rend exactement ce que rend un
+    manque de recul.
+
+    Le defaut caracteristique du projet, applique cette fois a un reglage. Il se
+    dit, au lieu de se deviner.
+    """
+    impossible = history.Feedback(settled=60, days=12, competitions=3, window=60, minimum_cell=100)
+    atteignable = history.Feedback(settled=60, days=12, competitions=3, window=60, minimum_cell=40)
+
+    assert impossible.cell_gate_unreachable
+    assert "aucune cellule ne passera" in impossible.reach_line
+    assert not atteignable.cell_gate_unreachable
+    assert "aucune cellule ne passera" not in atteignable.reach_line
+
+
+def test_les_cibles_de_confiance_se_resolvent_sur_celles_du_cadre(
+    migrated: Settings,
+) -> None:
+    """Les bornes se **reglent** en ecart au taux global et se **lisent** en
+    taux : c'est la lecture qui doit concorder avec le cadre, pas le reglage.
+
+    A 58 % de taux global, les valeurs servies rendaient 61 – 70 pour le cran 4
+    et 52 – 61 pour le cran 3, quand le cadre dit 60 – 70 et 50 – 60. Un point
+    de decalage sur chaque borne suffit a faire annoncer « sous sa bande » un
+    cran parfaitement juste, donc a declencher un resserrement sur un ecart qui
+    n'existe pas.
+    """
+    bandes = load_bands(migrated, reference=58.0)
+
+    assert bandes[5].low_absolute == 70.0 and bandes[5].high_absolute is None
+    assert (bandes[4].low_absolute, bandes[4].high_absolute) == (60.0, 70.0)
+    assert (bandes[3].low_absolute, bandes[3].high_absolute) == (50.0, 60.0)
+
+
+def test_les_crans_sans_cible_le_restent(migrated: Settings) -> None:
+    """**Le cran 2 n'ouvre pas sa cible**, et c'est mesure : le cadre envoie
+    toute confiance 2 en section C-bis, quand `analysis()` filtre
+    `exploratoire = 0`. Une cible s'y resoudrait contre une population gelee
+    pendant que les vraies conf 2 s'accumulent ailleurs.
+
+    Les crans 1 et 2 sont par ailleurs pines par ce que la recherche a trouve :
+    aucun mouvement correctif n'y est un choix.
+    """
+    bandes = load_bands(migrated)
+
+    assert not bandes[2].targeted and bandes[2].high is None
+    assert not bandes[1].targeted and bandes[1].high is None
+
+
 def test_les_bandes_de_cote_forment_une_partition(migrated: Settings) -> None:
     """Ni trou, ni recouvrement : toute cote au-dessus du plancher a **un**
     palier et un seul.
@@ -3204,7 +3275,7 @@ def test_une_cible_relative_suit_le_taux_global(migrated: Settings) -> None:
 
     haute = next(row for row in analysis(migrated).by_confidence if row.key == "4")
     assert haute.band.reference == 50.0
-    assert haute.band.label == "53 – 62 %"
+    assert haute.band.label == "52 – 62 %"
 
     # Le meme cran, sur un lot deux fois moins reussi : la cible descend avec.
     for _ in range(20):
@@ -3212,7 +3283,7 @@ def test_une_cible_relative_suit_le_taux_global(migrated: Settings) -> None:
 
     haute = next(row for row in analysis(migrated).by_confidence if row.key == "4")
     assert haute.band.reference == 25.0
-    assert haute.band.label == "28 – 37 %", "la cible suit, elle ne combat pas le mélange"
+    assert haute.band.label == "27 – 37 %", "la cible suit, elle ne combat pas le mélange"
 
 
 def test_la_reference_est_celle_de_la_fenetre_du_bloc(migrated: Settings) -> None:
@@ -3596,7 +3667,9 @@ def test_le_recul_atteint_sous_suspension_ne_rend_pas_une_phrase_cassee() -> Non
     Sixieme forme du defaut caracteristique du projet, et la premiere sur une
     **syntaxe** — jusque-la c'etait toujours une valeur.
     """
-    recul = history.Feedback(settled=80, days=12, minimum=40, minimum_days=10, suspended=True)
+    recul = history.Feedback(
+        settled=80, days=12, competitions=3, minimum=40, minimum_days=10, suspended=True
+    )
 
     ligne = recul.missing_line
 
@@ -3610,7 +3683,9 @@ def test_le_compte_a_rebours_nomme_la_suspension() -> None:
     Sous suspension, franchir les deux seuils ne transmet rien : `enough` exige
     `not suspended`, et la constante ne se retourne que par une modification de
     source. Promettre la transmission « au franchissement » serait faux."""
-    recul = history.Feedback(settled=60, days=4, minimum=40, minimum_days=10, suspended=True)
+    recul = history.Feedback(
+        settled=60, days=4, competitions=3, minimum=40, minimum_days=10, suspended=True
+    )
 
     ligne = recul.missing_line
 
@@ -3621,7 +3696,9 @@ def test_le_compte_a_rebours_nomme_la_suspension() -> None:
 def test_sans_suspension_la_ligne_ne_parle_que_des_seuils() -> None:
     """Ce qui n'a pas de donnee est omis, jamais rendu vide : mentionner une
     suspension levee ferait chercher un blocage absent."""
-    recul = history.Feedback(settled=20, days=4, minimum=40, minimum_days=10, suspended=False)
+    recul = history.Feedback(
+        settled=20, days=4, competitions=3, minimum=40, minimum_days=10, suspended=False
+    )
 
     ligne = recul.missing_line
 
@@ -3630,7 +3707,9 @@ def test_sans_suspension_la_ligne_ne_parle_que_des_seuils() -> None:
 
 
 def test_les_taux_transmis_le_disent_sans_reserve() -> None:
-    recul = history.Feedback(settled=80, days=12, minimum=40, minimum_days=10, suspended=False)
+    recul = history.Feedback(
+        settled=80, days=12, competitions=3, minimum=40, minimum_days=10, suspended=False
+    )
 
     assert recul.enough
     assert recul.missing_line == "Les taux sont transmis au prompt."

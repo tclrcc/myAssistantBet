@@ -140,6 +140,15 @@ def test_templates_disponibles() -> None:
     assert names[0] == DEFAULT_TEMPLATE, "le defaut est propose en premier"
 
 
+def test_les_deux_lectures_du_nombre_de_bandes_sures_concordent() -> None:
+    """`QUOTA_FLOOR_TIERS` la lit cote quotas, `SAFE_BANDS` cote combine. La
+    valeur vit dans `thresholds` parce que `prompt` l'importe et non l'inverse ;
+    ce test compare les deux plutot que d'esperer qu'elles ne divergent pas."""
+    from myassistantbet.services.thresholds import SAFE_BANDS
+
+    assert QUOTA_FLOOR_TIERS == SAFE_BANDS
+
+
 def test_paliers_lus_en_base(migrated: Settings) -> None:
     tiers = load_tiers(migrated)
 
@@ -1569,9 +1578,10 @@ def test_la_meme_cause_ne_se_declenche_plus_sur_le_tournoi_partage(migrated: Set
     La meme cause, c'est desormais le meme protagoniste, ou un facteur nomme
     comme moteur des deux angles.
 
-    Le lot fait six matchs : la section D ne parle de combines — donc de causes
-    partagees entre jambes — qu'au-dessus de `combo_solo_min_lot`."""
-    corps = " ".join(build_prompt(_lot_de(migrated, 6), settings=migrated, now=NOW).body.split())
+    Le lot doit depasser `combo_solo_min_lot` : en dessous, la section D ne parle
+    pas de combines — donc pas de causes partagees entre jambes."""
+    lot = threshold_value("combo_solo_min_lot", migrated) + 1
+    corps = " ".join(build_prompt(_lot_de(migrated, lot), settings=migrated, now=NOW).body.split())
 
     assert "un facteur nommément désigné comme moteur des deux angles" in corps
     assert "Partager le tournoi, la surface ou la soirée **ne suffit pas**" in corps
@@ -1666,7 +1676,9 @@ def test_un_lot_trop_court_ne_demande_aucun_combine(migrated: Settings) -> None:
 def test_le_seuil_d_un_combine_se_regle(migrated: Settings) -> None:
     """Un seuil est une decision de l'utilisateur : le coder en dur obligerait
     a redeployer pour changer d'avis."""
-    assert threshold_value("combo_solo_min_lot", migrated) == 5
+    assert (
+        threshold_value("combo_solo_min_lot", migrated) == THRESHOLDS["combo_solo_min_lot"].default
+    )
 
     save_threshold("combo_solo_min_lot", "3", migrated)
     corps = build_prompt(_lot_de(migrated, 4), settings=migrated, now=NOW).body
@@ -1833,6 +1845,9 @@ def test_le_combine_court_vise_un_compte_et_le_long_un_plafond(
     save_threshold("combo_court_jambes", "4", migrated)
     save_threshold("combo_court_cote", "9", migrated)
     save_threshold("combo_long_cote", "100", migrated)
+    # Le lot doit porter **deux** combines pour que le court et le long
+    # coexistent : le seuil descend a la taille du lot monte ici.
+    save_threshold("combo_min_lot", "12", migrated)
 
     plat = _section_d(migrated, 12)
     # Le plafond se **calcule** : les quotas du seed ne sont pas ceux de la base
@@ -1852,6 +1867,7 @@ def test_le_combine_long_dit_son_motif_d_arret(migrated: Settings) -> None:
     echec : c'est leur repartition qui dira si la cible est bien reglee — toujours
     « cible » et elle peut monter, toujours « confiance » et le lot est la
     contrainte."""
+    save_threshold("combo_min_lot", "12", migrated)
     plafond = safe_legs_available(
         load_tiers(migrated), 12, threshold_value("recherche_dossiers", migrated)
     )
@@ -1874,6 +1890,7 @@ def test_le_plafond_annonce_dit_d_ou_il_vient(migrated: Settings) -> None:
     fini.
     """
     lot = 12
+    save_threshold("combo_min_lot", str(lot), migrated)
     budget = threshold_value("recherche_dossiers", migrated)
     plafond = safe_legs_available(load_tiers(migrated), lot, budget)
     plat = _section_d(migrated, lot)
