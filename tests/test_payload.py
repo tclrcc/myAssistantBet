@@ -10,7 +10,12 @@ from myassistantbet.services import board
 from myassistantbet.services.attribution import UNKNOWN_LEVEL
 from myassistantbet.services.confidence import is_claim, read_blocks
 from myassistantbet.services.manual import build, save
-from myassistantbet.services.payload import ORIGIN, SECTIONS, build_payload
+from myassistantbet.services.payload import (
+    ATTRIBUT_COLUMNS,
+    ORIGIN,
+    SECTIONS,
+    build_payload,
+)
 
 
 def _session(settings: Settings, cotes: str = "Lyon 2.10\nNice 3.40") -> int:
@@ -98,13 +103,20 @@ def test_les_cotes_sont_colonnaires_et_datees_une_fois(migrated: Settings) -> No
 
 
 def test_chaque_attribut_porte_ses_trois_mentions(migrated: Settings) -> None:
-    """Un fait sans source, sans date et sans niveau ne se juge pas."""
+    """Un fait sans source, sans date et sans niveau ne se juge pas.
+
+    **En colonnaire comme les cotes** : cinq noms de champs repetes sur une
+    vingtaine d'entrees par match, quand le cout par match decide si la migration
+    a un argument.
+    """
     charge = build_payload(_session(migrated), migrated).data
 
     for match in charge["matchs"]:
-        for attribut in match["attributs"]:
-            assert set(attribut) == {"cle", "valeur", "source", "date", "niveau"}
-            assert attribut["niveau"] <= UNKNOWN_LEVEL
+        attributs = match["attributs"]
+        assert attributs["colonnes"] == list(ATTRIBUT_COLUMNS)
+        for ligne in attributs["lignes"]:
+            assert len(ligne) == len(ATTRIBUT_COLUMNS)
+            assert ligne[ATTRIBUT_COLUMNS.index("niveau")] <= UNKNOWN_LEVEL
 
 
 def test_le_lot_annonce_les_sections_qu_il_attend(migrated: Settings) -> None:
@@ -136,7 +148,7 @@ def test_la_collecte_ne_descend_pas_dans_les_attributs(migrated: Settings) -> No
     assert "densite" in charge["collecte"]
     for match in charge["matchs"]:
         assert "densite" in match["collecte"]
-        assert all(attribut["cle"] != "Densite" for attribut in match["attributs"])
+        assert all(ligne[0] != "Densite" for ligne in match["attributs"]["lignes"])
 
 
 def test_une_session_vide_rend_un_lot_sans_match(migrated: Settings) -> None:

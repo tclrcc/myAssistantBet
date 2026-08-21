@@ -77,18 +77,44 @@ class Payload:
     data: dict[str, Any]
 
     def dumps(self) -> str:
-        """UTF-8, accents non echappes, cles triees : les accents coutent moins
-        que leurs echappements, et l'ordre stable rend deux rendus comparables."""
-        return json.dumps(self.data, ensure_ascii=False, sort_keys=True, indent=1)
+        """UTF-8, accents non echappes, cles triees, **sans indentation**.
+
+        Les accents coutent moins que leurs echappements, et l'ordre stable rend
+        deux rendus comparables.
+
+        **L'indentation pesait 28 % du bloc** — 2 350 tokens par match contre
+        1 692 — et c'est le poste le plus cher apres les faits eux-memes. Mesure
+        du 21/08/2026 : elle repousse a elle seule le point d'equilibre avec le
+        prompt de 8,7 a ~17,7 matchs, soit de la taille des lots servis a bien
+        au-dela.
+
+        Ce qu'elle coute en echange est la lecture a l'oeil, et ce bloc n'est pas
+        fait pour ca : il se colle. Qui veut le relire le passe a
+        `python -m json.tool` — un second rendu indente vivrait ici sans lecteur,
+        ce que ce projet a deja paye une fois.
+        """
+        return json.dumps(self.data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
 
 
-def _attribut(fait: Fait) -> dict[str, Any]:
+#: Les colonnes de `attributs`. **Colonnaire comme les cotes, et pour la meme
+#: raison** : cinq noms de champs repetes a chaque entree, sur une vingtaine
+#: d'entrees par match.
+#:
+#: Ce n'est pas une optimisation de confort. Mesure du 21/08/2026 : un match
+#: coute 2 532 tokens en payload contre 1 058 en bloc de prompt, et le
+#: chargement de la Skill (~3 159) ramene le point d'equilibre a **7,6 matchs**
+#: — soit exactement la taille des lots servis. Le cout par match decide donc si
+#: la migration a un argument.
+ATTRIBUT_COLUMNS = ("cle", "valeur", "source", "date", "niveau")
+
+
+def _attributs(faits: list[Fait]) -> dict[str, Any]:
+    """Les faits hors socle, en colonnaire. Un seul format, un seul parseur."""
     return {
-        "cle": fait.label,
-        "valeur": fait.valeur,
-        "source": fait.source,
-        "date": fait.date,
-        "niveau": fait.niveau,
+        "colonnes": list(ATTRIBUT_COLUMNS),
+        "lignes": [
+            [fait.label, fait.valeur, fait.source, fait.date, fait.niveau] for fait in faits
+        ],
     }
 
 
@@ -225,7 +251,7 @@ def _match(
         # tiers des faits : tout le tennis, et les statistiques de match du
         # football. Rien n'est perdu, et un libelle ajoute demain n'exige pas de
         # toucher au schema.
-        "attributs": [_attribut(fait) for fait in faits if fait.label not in NAMED],
+        "attributs": _attributs([fait for fait in faits if fait.label not in NAMED]),
         "cotes": _odds(event),
         # **La densite n'est pas un fait sur le match** : elle mesure ce que la
         # collecte a rapporte. « 0 sur 25 » lu comme une propriete de la

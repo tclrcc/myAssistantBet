@@ -96,10 +96,13 @@ Pour la même raison, le conteneur générique ne s'appelle pas `faits` : ce lib
     "match_precedent": {"adversaire": "...", "resultat": "...", "date": "...", "competition": "..."},
     "prochain_match": {"adversaire": "...", "date": "...", "competition": "..."}
   },
-  "attributs": [
-    {"cle": "xg_domicile", "valeur": 1.62, "source": "...", "date": "...", "niveau": 3},
-    {"cle": "elo", "valeur": 1874, "source": "...", "date": "...", "niveau": 3}
-  ],
+  "attributs": {
+    "colonnes": ["cle", "valeur", "source", "date", "niveau"],
+    "lignes": [
+      ["xg_domicile", 1.62, "...", "...", 3],
+      ["elo", 1874, "...", "...", 3]
+    ]
+  },
   "cotes": {
     "releve_le": "2026-08-21T09:12:00+02:00",
     "colonnes": ["marche", "selection", "principal", "reference"],
@@ -115,6 +118,8 @@ Pour la même raison, le conteneur générique ne s'appelle pas `faits` : ce lib
 Le socle nommé couvre ce qui est référencé par une règle de décision. Tout le reste — Elo, Repos, Parcours, Profil, Marge, Usure côté tennis ; xG, corners, cartons, possession côté football — passe par `attributs[]`, chaque entrée portant `cle`, `valeur`, `source`, `date`, `niveau`.
 
 Rien n'est perdu, tout est attribué, et un libellé ajouté demain n'exige pas de toucher au schéma.
+
+**En colonnaire, comme les cotes.** Cinq noms de champs répétés sur une vingtaine d'entrées par match : ce n'est pas une optimisation de confort, c'est le coût par match, et c'est lui qui décide si la migration a un argument. Le bloc entier est rendu **sans indentation** pour la même raison — elle pesait 28 %.
 
 **Règle de promotion** : un libellé monte dans le socle nommé le jour où il est référencé par une règle de décision ou sert d'axe de calibration. Pas avant. Un socle qui grossit par anticipation redevient un schéma à maintenir.
 

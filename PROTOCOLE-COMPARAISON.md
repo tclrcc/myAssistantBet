@@ -37,10 +37,27 @@ Vérifiables sans jugement, à relever pour chaque sortie.
 | 6 | Sélections du tableau principal adossées à un fait de niveau 1–2 | 100 % |
 | 7 | Répartition des crans de confiance | Au moins trois crans distincts employés sur les deux lots |
 | 8 | Marchés absents signalés en Section F | Tous ceux listés dans `marches_absents` |
-| 9 | Tokens de cadre | Payload nettement sous le régime mesuré (≈ 15 000) |
+| 9 | Tokens **totaux**, chargement de la Skill inclus, à la taille réelle du lot | Payload strictement inférieur au prompt, et point d'équilibre déclaré |
 | 10 | Conditions d'invalidation présentes | Une par sélection |
 
 Les critères 1 et 2 sont des barrières : un manquement sur l'un des deux arrête le test, quel que soit le reste.
+
+Le critère 9 porte sur le **coût total**, pas sur le cadre. Le payload n'a pas de cadre par construction : mesurer celui-ci reviendrait à vérifier une tautologie. Le cadre n'a pas disparu, il a changé de porteur — la Skill se charge à chaque session et son poids appartient au total. Le point d'équilibre en nombre de matchs se déclare avec la mesure : un gain qui s'inverse au-delà de la taille de lot habituelle n'est pas un gain.
+
+**Mesure du 21/08/2026, avant le premier tir** — lot réel de 4 matchs, `SKILL.md` à 3 159 tokens :
+
+| taille du lot | prompt | payload + Skill | écart |
+| ---: | ---: | ---: | ---: |
+| 4 | 18 610 | 9 927 | −47 % |
+| 7 | 21 784 | 15 003 | −32 % |
+| 8 | 22 842 | 16 695 | −27 % |
+| 10 | 24 958 | 20 079 | −20 % |
+| 18 | 33 422 | 33 615 | 0 % |
+| 21 | 36 596 | 38 691 | +5 % |
+
+**Point d'équilibre : ~17,7 matchs.** Il valait 7,6 avant deux corrections de format appliquées le même jour — les attributs passés en colonnaire (−7 %) et surtout la suppression de l'indentation (−28 %, le poste le plus cher après les faits eux-mêmes).
+
+**Plus aucun changement de format à partir du premier lot tiré.** Ces deux-ci sont antérieurs, et déclarés ici.
 
 ## Comparaison de qualité
 

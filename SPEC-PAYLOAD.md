@@ -438,34 +438,48 @@ recouvrent trois situations qui n'appellent pas la même décision de budget :
   actif ». Réserve : 75 relevés, et un lot monté sur des matchs enrichis trois
   jours plus tôt changerait le tableau.
 
-## §7 quater — Le payload est plus lourd par match, et le gain vient du cadre
+## §7 quater — Le coût par match décide, et le cadre n'a pas disparu
 
-**Mesure du 21/08/2026 sur un lot réel de 4 matchs de tennis** (session 19) :
+**La première mesure était fausse par omission.** Elle donnait « payload : cadre
+— », c'est-à-dire zéro. Le cadre n'a pas disparu : **il a changé de porteur**. Le
+`SKILL.md` se charge à chaque session et pèse **3 159 tokens** (11 371
+caractères, mesuré le 21/08/2026). L'omettre attribuait à la migration un gain
+qui n'existait pas.
 
-| | total | cadre | par match |
-| --- | ---: | ---: | ---: |
-| prompt (gabarit) | 18 612 | 14 378 | 1 058 |
-| payload | 10 128 | — | **2 532** |
+Mesure complète, sur un lot réel de 4 matchs de tennis :
 
-**−45 % au total, mais 2,4× plus cher par match.** C'est le coût de
-l'attribution : chaque fait porte `cle`, `valeur`, `source`, `date`, `niveau`, et
-le nom des champs se répète à chaque entrée.
+| | par match |
+| --- | ---: |
+| bloc de prompt | 1 058 |
+| payload, premier jet | 2 532 |
+| payload colonnaire | 2 350 |
+| **payload colonnaire sans indentation** | **1 692** |
 
-**Conséquence à connaître avant de conclure quoi que ce soit du test** : le point
-d'équilibre est à **~10 matchs**. En dessous le payload est moins cher, au-dessus
-il coûte plus que le prompt — sur un lot de 21 blocs, 53 000 tokens contre 36 600.
+| taille du lot | prompt | payload + Skill | écart |
+| ---: | ---: | ---: | ---: |
+| 4 | 18 610 | 9 927 | −47 % |
+| 8 | 22 842 | 16 695 | −27 % |
+| 18 | 33 422 | 33 615 | 0 % |
+| 21 | 36 596 | 38 691 | +5 % |
 
-- Le gain mesuré vient **entièrement** de la suppression du cadre, et pas du
-  format. Le dire autrement serait attribuer au JSON un mérite qui revient à la
-  coupe.
-- **La piste existe et n'est pas prise** : les attributs peuvent passer en
-  colonnaire, comme les cotes le sont déjà — `{colonnes, lignes}` supprime la
-  répétition des cinq noms de champs. À mesurer avant d'être fait, et **après**
-  le test : changer le format entre la livraison et la comparaison invaliderait
-  le protocole au même titre qu'un ajustement de la Skill.
-- Le critère 9 du protocole — « payload nettement sous le régime mesuré
-  (≈ 15 000) » — reste tenu sur un lot de la taille du test, et c'est ce qu'il
-  demande. Il ne dit rien des gros lots, et il ne le doit pas.
+**Point d'équilibre : ~17,7 matchs**, contre 7,6 avant les deux corrections de
+format. Les lots servis font 7 à 8 matchs : la migration y gagne 27 à 32 %.
+
+- **L'indentation était le poste le plus cher après les faits eux-mêmes** : 28 %
+  du bloc. Ce qu'elle coûte en échange est la lecture à l'œil, et ce bloc se
+  colle — qui veut le relire le passe à `python -m json.tool`.
+- **Le colonnaire n'apporte que 7 %**, et la décomposition dit pourquoi : sur un
+  lot de 4, **40 % du poids sont les valeurs des faits** — incompressibles — 23 %
+  les cotes, et 14 % seulement l'attribution répétée (46 caractères par ligne).
+- **Piste non prise, et elle demande une décision** : `source`, `date` et
+  `niveau` sont identiques pour tous les faits d'une même tranche — 15 des 20
+  attributs d'un bloc tennis viennent de `tennis-data.co.uk` à la même date. Les
+  factoriser vaudrait ~14 %, mais **déplacerait l'attribution hors du fait**, ce
+  que le principe du contrat interdit en toutes lettres. C'est un arbitrage de
+  contrat, pas de format.
+
+**Plus aucun changement de format à partir du premier lot tiré.** Ces deux-ci
+sont antérieurs et déclarés au protocole.
 
 ## §8 — Ordre des phases
 
