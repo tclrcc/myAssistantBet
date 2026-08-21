@@ -33,11 +33,25 @@
   --panel-3: #242936;
   --line: #2a3040;
   --line-soft: #1f242f;
+  /* Le filet entre deux lignes de tableau. **Distinct de `--line-soft`, et
+     c'est une mesure** : la bande de sport se pose par-dessus le filet, et sur
+     un board qui groupe par competition les lignes de meme sport se suivent par
+     paquets de dix a trente. Rapport mesure du filet contre le fond de sa
+     propre ligne : 1,01 a 1,23 — donc aucun guide horizontal sur 133 lignes
+     larges de 1 377 px. Cette valeur-ci tient 1,56 a 1,85 contre les quatre
+     fonds possibles (aucun sport, football, tennis, cyclisme). */
+  --row-line: #3c445b;
 
   /* Texte. */
   --text: #eceef4;
   --text-dim: #b6bdcc;
-  --muted: #7c8698;
+  /* **Remonte de #7c8698, et le centieme compte.** Ce jeton porte toutes les
+     mentions secondaires — 46 regles, dont chaque reserve de lecture de
+     `/stats`. Il valait 4,48 sur `--panel-2`, donc sous AA d'un centieme : la
+     lecon du « 50,011 % » vaut ici, une valeur qui passe sur la troisieme
+     decimale n'est pas un fait. La cible est 4,8 sur la surface la moins
+     favorable, pas 4,5. Mesure apres : 4,81 a 5,94. */
+  --muted: #8c95a5;
 
   /* Accents. Un seul bleu porteur d'action, le reste est semantique. */
   --accent: #5b8cfa;
@@ -50,6 +64,12 @@
      bouton paraissait eclaire par en dessous. */
   --accent-deep: #4a7ae8;
   --accent-light: #7ba4fb;
+  /* Le texte pose **sur** un aplat d'accent, jamais a cote. `.seg.is-on`
+     ecrivait `#fff` en dur : sur le vert sombre le blanc vaut **2,21**, sur
+     l'ambre **2,17**, alors qu'il vaut 4,52 a 4,88 sur les memes accents en
+     theme clair. Ce n'est donc pas une couleur mais un jeton — la meme regle
+     que `--edge` et `--surface`, qui s'inversent d'un theme a l'autre. */
+  --on-accent: #0b0d12;
   --alert: #f2726a;
   --alert-soft: rgba(242, 114, 106, 0.13);
   --ok: #45c48a;
@@ -116,9 +136,18 @@
     sans-serif;
 
   /* Echelle typographique. Six tailles, pas une de plus : chacune a un role, et
-     une septieme ne se distinguerait plus de sa voisine. Les valeurs montent
-     d'environ un cinquieme a chaque cran — assez pour que la hierarchie se lise
-     sans mesurer, pas au point de faire des sauts. */
+     une septieme ne se distinguerait plus de sa voisine.
+
+     **Les rapports reels sont 1,14 · 1,10 · 1,11 · 1,25 · 1,36**, et non « un
+     cinquieme a chaque cran » comme l'affirmait ce commentaire — serres en bas
+     ou l'oeil compare des mentions voisines, larges en haut ou il compare des
+     titres. Un docstring faux coute plus qu'un docstring absent : il fait
+     re-deriver la meme conclusion fausse au lecteur suivant.
+
+     Le defaut n'a jamais ete leur nombre mais leur **taux d'application** :
+     73 declarations sur 88 ecrivaient une valeur en dur, sur 23 valeurs
+     distinctes — donc de la dispersion qui avait l'air d'une hierarchie, avec
+     14 px, 14,08 px et 14,4 px cote a cote sur la meme page. */
   --text-xs: 0.72rem;   /* etiquettes en capitales, en-tetes de tableau */
   --text-sm: 0.82rem;   /* mentions secondaires, notes */
   --text-md: 0.9rem;    /* corps des tableaux */
@@ -158,10 +187,11 @@
     --panel-3: #e6eaf1;
     --line: #d3d9e3;
     --line-soft: #e4e8ef;
+    --row-line: #bac3d3;
 
     --text: #0f131b;
     --text-dim: #3c4553;
-    --muted: #67717f;
+    --muted: #5d6673;
 
     /* Un bleu plus dense : celui du theme sombre passe le contraste sur du
        noir, pas sur du blanc. */
@@ -171,6 +201,7 @@
     --accent-line: rgba(47, 104, 216, 0.35);
     --accent-deep: #2455bd;
     --accent-light: #5b8cfa;
+    --on-accent: #ffffff;
     --alert: #cf3a30;
     --alert-soft: rgba(207, 58, 48, 0.1);
     --ok: #14875a;
@@ -260,7 +291,7 @@ a:hover { text-decoration: underline; }
 }
 .brand {
   font-weight: 700;
-  font-size: 0.95rem;
+  font-size: var(--text-lg);
   color: var(--text);
   letter-spacing: -0.02em;
 }
@@ -270,7 +301,7 @@ a:hover { text-decoration: underline; }
   color: var(--muted);
   padding: 0.3rem var(--s3);
   border-radius: 999px;
-  font-size: 0.88rem;
+  font-size: var(--text-md);
   transition: background 0.14s, color 0.14s;
 }
 .topbar nav a:hover {
@@ -327,7 +358,7 @@ main { padding: var(--s5); max-width: 1440px; margin: 0 auto; }
 .banner .label,
 .enrich-bar .label {
   color: var(--muted);
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   font-weight: 600;
@@ -338,8 +369,8 @@ main { padding: var(--s5); max-width: 1440px; margin: 0 auto; }
 }
 .value.alert, a.value.alert { color: var(--alert); }
 .muted { color: var(--muted); font-weight: 400; }
-.small { font-size: 0.85rem; }
-.subtitle { color: var(--muted); margin: var(--s1) 0 0; font-size: 0.88rem; }
+.small { font-size: var(--text-sm); }
+.subtitle { color: var(--muted); margin: var(--s1) 0 0; font-size: var(--text-md); }
 
 /* --- Boutons -------------------------------------------------------------- */
 
@@ -347,7 +378,7 @@ button.primary,
 .button {
   display: inline-block;
   font: inherit;
-  font-size: 0.88rem;
+  font-size: var(--text-md);
   padding: 0.45rem 0.9rem;
   border-radius: var(--radius-sm);
   cursor: pointer;
@@ -391,7 +422,7 @@ button.primary:disabled {
   color: var(--accent);
   cursor: pointer;
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   padding: 0;
 }
 .link-action:hover { text-decoration: underline; }
@@ -402,7 +433,7 @@ button.primary:disabled {
   color: var(--muted);
   cursor: pointer;
   font: inherit;
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   text-decoration: underline;
   padding: 0;
 }
@@ -442,7 +473,7 @@ form.substitute .small { max-width: 62ch; }
 .rejected { font-family: var(--mono); font-size: 0.85em; color: var(--warn); }
 
 .alert { color: var(--alert); }
-.blocked .alert { font-size: 0.85rem; }
+.blocked .alert { font-size: var(--text-sm); }
 
 /* --- Champs --------------------------------------------------------------- */
 
@@ -459,7 +490,7 @@ textarea {
   border-radius: var(--radius-sm);
   padding: 0.42rem 0.55rem;
   font: inherit;
-  font-size: 0.88rem;
+  font-size: var(--text-md);
   transition: border-color 0.12s, background 0.12s;
 }
 input:hover, select:hover, textarea:hover { border-color: var(--panel-3); }
@@ -468,9 +499,9 @@ input:focus, select:focus, textarea:focus {
   background: var(--panel);
   outline: none;
 }
-textarea { resize: vertical; font-family: var(--mono); font-size: 0.85rem; line-height: 1.55; }
+textarea { resize: vertical; font-family: var(--mono); font-size: var(--text-sm); line-height: 1.55; }
 input[type="checkbox"] { accent-color: var(--accent); width: 15px; height: 15px; cursor: pointer; }
-label.check { display: flex; align-items: center; gap: var(--s2); font-size: 0.85rem; cursor: pointer; }
+label.check { display: flex; align-items: center; gap: var(--s2); font-size: var(--text-sm); cursor: pointer; }
 
 .filters {
   display: flex;
@@ -484,7 +515,7 @@ label.check { display: flex; align-items: center; gap: var(--s2); font-size: 0.8
   display: flex;
   flex-direction: column;
   gap: var(--s1);
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-weight: 600;
@@ -496,7 +527,7 @@ label.check { display: flex; align-items: center; gap: var(--s2); font-size: 0.8
 .filters optgroup option { color: var(--text); }
 .filters input[type="number"] { width: 4.5rem; }
 .pick-form .narrow input { width: 5rem; }
-.filters .reset { font-size: 0.8rem; padding-bottom: 0.55rem; }
+.filters .reset { font-size: var(--text-sm); padding-bottom: 0.55rem; }
 
 /* --- Selection en masse --------------------------------------------------- */
 
@@ -508,7 +539,7 @@ label.check { display: flex; align-items: center; gap: var(--s2); font-size: 0.8
   padding: 0 var(--s1);
 }
 .bulk form { display: inline; }
-.bulk-count { color: var(--muted); font-size: 0.82rem; margin-right: auto; }
+.bulk-count { color: var(--muted); font-size: var(--text-sm); margin-right: auto; }
 
 /* --- Tableaux ------------------------------------------------------------- */
 
@@ -520,7 +551,7 @@ table.board {
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   box-shadow: var(--edge);
-  font-size: 0.9rem;
+  font-size: var(--text-md);
   /* Toute la table en chiffres a chasse fixe. `.num` le faisait deja colonne
      par colonne, mais l'heure et les comptes y echappaient : « 07/08 13:35 »
      et « 07/08 17:00 » ne s'alignaient pas d'une ligne a l'autre, et sur
@@ -533,7 +564,7 @@ table.board th {
   z-index: 5;
   background: var(--panel-2);
   text-align: left;
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
   font-weight: 650;
   text-transform: uppercase;
   letter-spacing: 0.07em;
@@ -556,7 +587,7 @@ table.board tbody tr:last-child td:last-child { border-bottom-right-radius: var(
    de ligne du texte fait le reste du travail. */
 table.board td {
   padding: 0.45rem var(--s3);
-  border-bottom: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--row-line);
   vertical-align: middle;
 }
 table.board tbody tr:last-child td { border-bottom: 0; }
@@ -599,7 +630,7 @@ table.board td.group { border-left: 1px solid var(--line-soft); }
   background: linear-gradient(180deg, var(--panel), transparent);
   border: 1px dashed var(--line);
   border-radius: var(--radius);
-  font-size: 0.92rem;
+  font-size: var(--text-md);
 }
 
 .badge {
@@ -609,7 +640,7 @@ table.board td.group { border-left: 1px solid var(--line-soft); }
   border-radius: 999px;
   background: var(--panel-2);
   border: 1px solid var(--line);
-  font-size: 0.78rem;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
   text-align: center;
   color: var(--text-dim);
@@ -624,7 +655,7 @@ a.badge:hover { border-color: var(--accent-line); text-decoration: none; }
   background: var(--panel-3);
   border: 1px solid var(--line);
   color: var(--text-dim);
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   letter-spacing: 0.02em;
 }
 .tag-thin { background: none; color: var(--muted); }
@@ -676,7 +707,7 @@ a.badge:hover { border-color: var(--accent-line); text-decoration: none; }
   border: 1px solid var(--line);
   border-radius: var(--radius);
   margin-bottom: var(--s4);
-  font-size: 0.88rem;
+  font-size: var(--text-md);
   color: var(--text-dim);
 }
 .odds-summary b { color: var(--text); font-variant-numeric: tabular-nums; }
@@ -702,14 +733,14 @@ a.badge:hover { border-color: var(--accent-line); text-decoration: none; }
   padding: var(--s2) var(--s3);
   background: var(--panel-2);
   border-bottom: 1px solid var(--line);
-  font-size: 0.82rem;
+  font-size: var(--text-sm);
   font-weight: 650;
   text-transform: uppercase;
   letter-spacing: 0.05em;
 }
 .market-key {
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   font-weight: 400;
   text-transform: none;
   letter-spacing: 0;
@@ -718,7 +749,7 @@ a.badge:hover { border-color: var(--accent-line); text-decoration: none; }
 /* Source d'un marche que le book principal ne sert pas : la cote situe le
    marche, elle n'est pas le prix qu'on obtiendra. */
 .market-book {
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   font-weight: 400;
   text-transform: none;
   letter-spacing: 0;
@@ -734,19 +765,19 @@ table.odds { width: 100%; border-collapse: collapse; }
 table.odds td {
   padding: 0.28rem var(--s3);
   border-bottom: 1px solid var(--line-soft);
-  font-size: 0.87rem;
+  font-size: var(--text-md);
 }
 table.odds tr:last-child td { border-bottom: 0; }
 table.odds tr:hover { background: var(--panel-2); }
 table.odds .outcome { color: var(--text-dim); }
 table.odds .price { font-variant-numeric: tabular-nums; font-weight: 600; width: 4rem; }
-table.odds .line { width: 3rem; font-size: 0.82rem; }
+table.odds .line { width: 3rem; font-size: var(--text-sm); }
 
 /* La saisie manuelle est un `details.panel` : elle herite du fond, de la
    bordure et du rembourrage communs. Ne pas les redeclarer ici, sinon le
    panneau se retrouve avec deux cadres imbriques. */
 .manual-odds { max-width: 720px; }
-.manual-odds .hint { color: var(--muted); font-size: 0.85rem; margin: 0 0 var(--s3); padding-bottom: 0; }
+.manual-odds .hint { color: var(--muted); font-size: var(--text-sm); margin: 0 0 var(--s3); padding-bottom: 0; }
 .manual-odds textarea { width: 100%; }
 .manual-odds-actions {
   display: flex;
@@ -789,24 +820,24 @@ code {
 
 .manual-form { display: flex; flex-direction: column; gap: var(--s4); max-width: 1000px; }
 .manual-form .row { display: flex; gap: var(--s4); flex-wrap: wrap; }
-.manual-form label { display: flex; flex-direction: column; gap: var(--s1); font-size: 0.85rem; }
+.manual-form label { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--text-sm); }
 .manual-form .grow { flex: 1; min-width: 260px; }
-.manual-form .hint { color: var(--muted); font-weight: 400; font-size: 0.78rem; }
+.manual-form .hint { color: var(--muted); font-weight: 400; font-size: var(--text-sm); }
 .manual-form button { align-self: flex-start; }
 
 /* Creation d'une competition absente du catalogue The Odds API. Elle vit dans
    un `details.panel`, qui porte deja son fond, sa bordure et son rembourrage :
    ne declarer ici que la disposition, sinon le panneau prend deux cadres. */
 .competition-form { display: flex; gap: var(--s4); align-items: flex-end; flex-wrap: wrap; }
-.competition-form label { display: flex; flex-direction: column; gap: var(--s1); font-size: 0.85rem; }
+.competition-form label { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--text-sm); }
 .competition-form input[name="apifootball_league_id"] { width: 7rem; }
 
 .mapping-form { display: flex; gap: var(--s4); align-items: flex-end; flex-wrap: wrap; }
-.mapping-form label { display: flex; flex-direction: column; gap: var(--s1); font-size: 0.85rem; }
+.mapping-form label { display: flex; flex-direction: column; gap: var(--s1); font-size: var(--text-sm); }
 .mapping-form select { min-width: 260px; }
 
 table.board textarea { width: 100%; min-width: 220px; }
-table.board select { padding: 0.2rem 0.35rem; font-size: 0.85rem; }
+table.board select { padding: 0.2rem 0.35rem; font-size: var(--text-sm); }
 /* Une colonne de plus sur un tableau deja large : le menu prend la place du
    plus long de ses libelles, pas davantage. */
 table.board select.niveau { max-width: 11rem; }
@@ -823,14 +854,14 @@ table.board select.niveau { max-width: 11rem; }
    l'autre. */
 .stats > div { flex: 1; min-width: min(30rem, 100%); }
 .stats h3 {
-  font-size: 0.75rem;
+  font-size: var(--text-sm);
   font-weight: 650;
   color: var(--muted);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   margin: 0 0 var(--s2);
 }
-table.rates { font-size: 0.9rem; }
+table.rates { font-size: var(--text-md); }
 /* Une valeur ne se coupe jamais : « -11 pts » repli sur deux lignes se lit de
    travers, et l'unite separee de son nombre a l'air d'une autre colonne. */
 table.rates .num { white-space: nowrap; }
@@ -886,7 +917,7 @@ details.panel .pick-form { margin-bottom: 0; }
   padding: var(--s3) var(--s3) var(--s2);
   border-bottom: 1px solid var(--line);
   background: var(--panel-2);
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   font-weight: 650;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -904,7 +935,7 @@ details.panel .pick-form { margin-bottom: 0; }
   display: inline-block;
   min-width: 3rem;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
 }
 
@@ -925,7 +956,7 @@ tr.result-void td:first-child { box-shadow: inset 3px 0 0 var(--muted); }
   margin-left: var(--s2);
   color: transparent;
   font: inherit;
-  font-size: 0.78rem;
+  font-size: var(--text-sm);
   cursor: pointer;
 }
 tr:hover .link-quiet, .link-quiet:focus-visible { color: var(--muted); }
@@ -934,7 +965,7 @@ tr:hover .link-quiet, .link-quiet:focus-visible { color: var(--muted); }
 .pick-event { display: flex; align-items: center; gap: var(--s2); flex-wrap: wrap; }
 /* Recherche d'un match hors de la journee. Etroite a dessein : elle est le
    recours, pas le geste ordinaire — le menu suffit dans la plupart des cas. */
-.pick-search { width: 11rem; font-size: 0.85rem; }
+.pick-search { width: 11rem; font-size: var(--text-sm); }
 .pick-event select { max-width: 20rem; }
 
 /* Quatre etats, un clic chacun. Un menu deroulant en demandait deux, et la
@@ -946,7 +977,7 @@ tr:hover .link-quiet, .link-quiet:focus-visible { color: var(--muted); }
   background: var(--panel-2);
   color: var(--muted);
   font: inherit;
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   line-height: 1;
   padding: 0.3rem 0.5rem;
   cursor: pointer;
@@ -954,7 +985,7 @@ tr:hover .link-quiet, .link-quiet:focus-visible { color: var(--muted); }
 }
 .seg:last-child { border-right: 0; }
 .seg:hover { background: var(--panel-3); color: var(--text); }
-.seg.is-on { color: #fff; }
+.seg.is-on { color: var(--on-accent); }
 .seg-win.is-on { background: var(--ok); }
 .seg-loss.is-on { background: var(--alert); }
 .seg-void.is-on { background: var(--panel-3); color: var(--text); }
@@ -981,7 +1012,7 @@ tr:hover .link-quiet, .link-quiet:focus-visible { color: var(--muted); }
   margin-bottom: var(--s2);
 }
 .coupon .push { margin-left: auto; }
-.coupon-result { font-size: 0.9rem; }
+.coupon-result { font-size: var(--text-md); }
 .coupon.result-win .coupon-result { color: var(--ok); }
 .coupon.result-loss .coupon-result { color: var(--alert); }
 
@@ -993,10 +1024,10 @@ tr:hover .link-quiet, .link-quiet:focus-visible { color: var(--muted); }
   padding: var(--s1) var(--s2);
   border-radius: var(--radius-sm);
   background: var(--panel-2);
-  font-size: 0.88rem;
+  font-size: var(--text-md);
 }
 .legs .leg-pick { font-weight: 550; }
-.legs .leg-result { margin-left: auto; color: var(--muted); font-size: 0.82rem; }
+.legs .leg-result { margin-left: auto; color: var(--muted); font-size: var(--text-sm); }
 .legs li.result-win .leg-result { color: var(--ok); }
 .legs li.result-loss .leg-result { color: var(--alert); }
 .shot-form { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
@@ -1050,7 +1081,7 @@ tr:hover .link-quiet, .link-quiet:focus-visible { color: var(--muted); }
   display: flex;
   flex-direction: column;
   gap: var(--s1);
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-weight: 600;
@@ -1062,7 +1093,7 @@ tr:hover .link-quiet, .link-quiet:focus-visible { color: var(--muted); }
   text-transform: none;
   letter-spacing: 0;
   font-weight: 400;
-  font-size: 0.75rem;
+  font-size: var(--text-sm);
   color: var(--muted);
 }
 .grid-head button { margin-left: auto; }
@@ -1113,7 +1144,7 @@ kbd {
   flex-direction: column;
   gap: var(--s1);
   width: 100%;
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   font-weight: 600;
@@ -1123,7 +1154,7 @@ kbd {
   text-transform: none;
   letter-spacing: 0;
   font-weight: 400;
-  font-size: 0.75rem;
+  font-size: var(--text-sm);
 }
 .paste-form textarea { width: 100%; }
 
@@ -1162,7 +1193,7 @@ kbd {
   display: inline-block;
   padding: 0.06rem 0.5rem;
   border-radius: 999px;
-  font-size: 0.75rem;
+  font-size: var(--text-sm);
   font-weight: 600;
   letter-spacing: 0.01em;
   border: 1px solid transparent;
@@ -1188,7 +1219,7 @@ kbd {
   display: inline-block;
   padding: 0.02rem 0.4rem;
   border-radius: 999px;
-  font-size: 0.7rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   white-space: nowrap;
   color: var(--muted);
@@ -1263,7 +1294,7 @@ tr.sportrow-cycling  { background: var(--sport-cycling-soft); }
 .block-head span { margin-left: auto; text-align: right; }
 .block-note {
   color: var(--text-dim);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   max-width: 62ch;
   margin: 0 0 var(--s4);
 }
@@ -1284,7 +1315,7 @@ tr.sportrow-cycling  { background: var(--sport-cycling-soft); }
    reste consultable, c'est sa portee qui est bornee. */
 .block-warn {
   color: var(--text);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   max-width: 76ch;
   margin: 0 0 var(--s4);
   padding: var(--s3);
@@ -1459,7 +1490,7 @@ details.readout > .why-body { padding: 0 var(--s4) var(--s4); margin-top: 0; }
   box-shadow: var(--edge);
 }
 .tile .track { margin: var(--s1) 0; }
-.tile-detail { color: var(--muted); font-size: 0.8rem; }
+.tile-detail { color: var(--muted); font-size: var(--text-sm); }
 /* Chiffres proportionnels : en gros corps, `tabular-nums` donne a chaque
    chiffre la largeur d'un zero et « 12 % » parait tenu a distance. */
 .tile-figure,
@@ -1608,7 +1639,7 @@ details.readout > .why-body { padding: 0 var(--s4) var(--s4); margin-top: 0; }
 }
 .chart-card h3 {
   margin: 0 0 var(--s3);
-  font-size: 0.75rem;
+  font-size: var(--text-sm);
   font-weight: 650;
   color: var(--text-dim);
   text-transform: uppercase;
@@ -1626,7 +1657,7 @@ details.readout > .why-body { padding: 0 var(--s4) var(--s4); margin-top: 0; }
 .chart-note {
   margin: 0;
   color: var(--muted);
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
 }
 .chart-note + details.why { margin-top: var(--s2); }
 /* Le residu decline. Un tableau et non des barres : un ecart signe n'a ni
@@ -1635,7 +1666,7 @@ details.readout > .why-body { padding: 0 var(--s4) var(--s4); margin-top: 0; }
    conteneur, jamais la page. */
 .table-scroll { overflow-x: auto; }
 .board.compact th,
-.board.compact td { padding: 0.3rem 0.5rem; font-size: 0.8rem; }
+.board.compact td { padding: 0.3rem 0.5rem; font-size: var(--text-sm); }
 /* La ligne qui s'ecarte de ses propres prix. **Elle marque, elle ne conclut
    pas** : aucune phrase n'accompagne cette teinte, c'est la page qui affiche et
    le lecteur qui decide. */
@@ -1651,14 +1682,14 @@ details.readout > .why-body { padding: 0 var(--s4) var(--s4); margin-top: 0; }
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   background: var(--warn-soft);
   color: var(--text-dim);
-  font-size: 0.8rem;
+  font-size: var(--text-sm);
 }
 .chart-flag strong { color: var(--warn); }
 /* Un chiffre seul, quand la carte n'a pas de barre a montrer. */
-.chart-figure { margin: 0 0 var(--s3); color: var(--text-dim); font-size: 0.85rem; }
+.chart-figure { margin: 0 0 var(--s3); color: var(--text-dim); font-size: var(--text-sm); }
 .chart-figure b { font-size: 1.5rem; font-weight: 700; color: var(--text);
                   letter-spacing: var(--track-tight); margin-right: 0.15rem; }
-.chart-empty { margin: 0; color: var(--muted); font-size: 0.85rem; }
+.chart-empty { margin: 0; color: var(--muted); font-size: var(--text-sm); }
 /* Un tableau pose dans une carte : deux fois plus dense que sur une page, et
    sans le fond propre qui le detacherait de sa carte. */
 table.board.compact { font-size: var(--text-sm); }
@@ -1686,7 +1717,7 @@ table.board.compact th, table.board.compact td { padding: 0.3rem var(--s2); }
    plutot que de pousser la barre hors de la carte, et l'info-bulle le rend
    entier. */
 .bar-label {
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   color: var(--text-dim);
   white-space: nowrap;
   overflow: hidden;
@@ -1697,14 +1728,14 @@ table.board.compact th, table.board.compact td { padding: 0.3rem var(--s2); }
    graphique est celle qui se lit le plus mal. */
 .bar-value {
   text-align: right;
-  font-size: 0.88rem;
+  font-size: var(--text-md);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .bar-count {
   text-align: right;
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: var(--text-sm);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -1789,7 +1820,7 @@ table.board.compact th, table.board.compact td { padding: 0.3rem var(--s2); }
   padding: 0.3rem 0.8rem;
   border-radius: 999px;
   cursor: pointer;
-  font-size: 0.86rem;
+  font-size: var(--text-sm);
   font-weight: 500;
   line-height: 1;
   color: var(--muted);
@@ -1841,7 +1872,7 @@ td .sport {
   border: 0;
   background: none;
   padding: 0;
-  font-size: 1.15rem;
+  font-size: var(--text-xl);
   line-height: 1;
 }
 
@@ -1891,7 +1922,7 @@ td .sport {
 .context-icon { width: 1.15em; height: 1.15em; color: var(--muted); }
 
 .context-label {
-  font-size: 0.78rem;
+  font-size: var(--text-sm);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--muted);
@@ -1927,11 +1958,11 @@ td .sport {
 }
 .recent-matches h3 {
   margin: 0 0 var(--s2);
-  font-size: 0.85rem;
+  font-size: var(--text-sm);
   font-weight: 650;
   color: var(--text-dim);
 }
-.recent-matches table { font-size: 0.8rem; }
+.recent-matches table { font-size: var(--text-sm); }
 .recent-matches .empty { margin: 0; }
 
 /* --- Epaisseur des surfaces ------------------------------------------------
