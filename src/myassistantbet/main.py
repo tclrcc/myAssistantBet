@@ -1854,6 +1854,7 @@ def _settings_context(**overrides: object) -> dict[str, object]:
         "thresholds": thresholds_service.current(settings),
         "toggles": thresholds_service.toggles(settings),
         "thresholds_saved": False,
+        "thresholds_error": "",
     }
     context.update(overrides)
     return context
@@ -1915,9 +1916,21 @@ def save_preferences(request: Request, preferences: str = Form(default="")) -> H
 
 @app.post("/settings/thresholds", response_class=HTMLResponse)
 async def save_threshold(request: Request) -> HTMLResponse:
-    """Enregistre un seuil numerique. Hors bornes, il revient a son defaut."""
+    """Enregistre un seuil numerique. Hors bornes, il revient a son defaut.
+
+    **Un seul cas se refuse** : le couple qui decrit le combine solide, dont la
+    valeur est valable prise seule et fausse prise avec le plafond de la bande
+    sure. Aucun defaut ne repare ca, donc le retour au defaut ne s'applique pas.
+    """
     form = await request.form()
-    thresholds_service.save(str(form.get("key", "")), str(form.get("value", "")), get_settings())
+    try:
+        thresholds_service.save(
+            str(form.get("key", "")), str(form.get("value", "")), get_settings()
+        )
+    except thresholds_service.ThresholdError as exc:
+        return templates.TemplateResponse(
+            request, "_thresholds.html", _settings_context(thresholds_error=str(exc))
+        )
     return templates.TemplateResponse(
         request, "_thresholds.html", _settings_context(thresholds_saved=True)
     )

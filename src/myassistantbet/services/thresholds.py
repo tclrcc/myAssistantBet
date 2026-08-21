@@ -28,6 +28,16 @@ from ..db import connect, utcnow
 logger = logging.getLogger(__name__)
 
 
+class ThresholdError(ValueError):
+    """Saisie refusee. Le message est affiche tel quel a l'utilisateur.
+
+    **Un seuil ne se refuse presque jamais** — hors bornes ou illisible, il
+    revient au defaut. La seule exception est le couple qui decrit le combine
+    solide : sa valeur est valable prise seule et fausse prise avec le plafond
+    de la bande sure, et aucun defaut ne repare ca.
+    """
+
+
 @dataclass(frozen=True)
 class Threshold:
     """Un seuil reglable, et ce qu'il decide."""
@@ -341,6 +351,19 @@ def save(key: str, raw: str, settings: Settings | None = None) -> None:
     except (TypeError, ValueError):
         value = threshold.default
     value = value if threshold.low <= value <= threshold.high else threshold.default
+    # **Le seul refus de ce module**, et il est cible : ailleurs une valeur
+    # illisible revient au defaut, parce qu'un seuil mal saisi doit degrader vers
+    # un comportement connu. Ici la valeur est parfaitement lisible et dans ses
+    # bornes — c'est son accord avec le plafond de la bande sure qui manque, et
+    # le retour au defaut ne le retablirait pas.
+    if key in ("combo_court_jambes", "combo_court_cote"):
+        conflit = solid_combo_conflict(
+            settings,
+            legs=value if key == "combo_court_jambes" else None,
+            target=value if key == "combo_court_cote" else None,
+        )
+        if conflit:
+            raise ThresholdError(conflit)
     with connect(settings) as conn:
         conn.execute(
             "INSERT INTO preferences (key, value, updated_at) VALUES (?, ?, ?) "
@@ -349,6 +372,71 @@ def save(key: str, raw: str, settings: Settings | None = None) -> None:
             (PREFIX + key, str(value), utcnow()),
         )
     logger.info("Seuil %s : %d", key, value)
+
+
+# -- Le combine solide doit rester atteignable -------------------------------
+
+
+def solid_combo_conflict(
+    settings: Settings | None = None,
+    *,
+    safe_cap: float | None = None,
+    legs: int | None = None,
+    target: int | None = None,
+) -> str:
+    """Le combine solide tient-il dans la bande sure ? Rend la raison, ou "".
+
+    Trois nombres regles sur trois ecrans differents decrivent le meme objet :
+    le plafond de la bande la plus sure, le nombre de jambes visees et la cote
+    cible. Ils peuvent se contredire, et la contradiction ne casse rien — elle
+    fait seulement demander a l'analyse quelque chose d'**arithmetiquement
+    impossible**, ce que la sortie ne trahit pas : un combine plus court, avec
+    sa cote reelle, est une reponse prevue par le gabarit.
+
+    C'est ce qui s'est produit : `1.70^4 = 8.35` pour une cible de 9. Un combine
+    solide entierement bati en bande sure n'existait pas, et rien nulle part ne
+    le disait. `1.80^4 = 10.50` le rend a nouveau possible.
+
+    **Le plafond seul suffit, et c'est ce qui rend le controle honnete** : une
+    jambe peut se prendre partout dans la bande, donc `plafond^jambes` est le
+    produit **maximal** atteignable sans quitter le palier sur. S'il ne suffit
+    pas, aucune combinaison ne suffit — le controle ne se prononce pas sur ce
+    qui est probable, seulement sur ce qui est possible.
+
+    Les trois valeurs se passent en argument pour que l'appelant teste la saisie
+    **qu'il s'apprete a ecrire** plutot que celle deja en base : un controle qui
+    relit la table apres coup laisserait passer la saisie qui l'invalide.
+
+    Le plafond se lit dans `tiers`, une seule colonne : les bandes de cote et les
+    seuils sont deux tables de configuration, et faire remonter ce controle dans
+    `prompt.py` aurait ferme le chemin de l'ecran des seuils, qui ne peut pas
+    importer ce module-la sans cycle. Une implementation, deux surfaces.
+    """
+    settings = settings or get_settings()
+    if legs is None:
+        legs = value_of("combo_court_jambes", settings)
+    if target is None:
+        target = value_of("combo_court_cote", settings)
+    if safe_cap is None:
+        with connect(settings) as conn:
+            row = conn.execute("SELECT max_price FROM tiers ORDER BY position LIMIT 1").fetchone()
+        # Une bande sure sans borne haute n'a pas de plafond a franchir : le
+        # controle n'a alors rien a dire, et affirmer le contraire serait une
+        # alarme sur une configuration parfaitement valable.
+        if row is None or row["max_price"] is None:
+            return ""
+        safe_cap = float(row["max_price"])
+    if safe_cap is None:
+        return ""
+    atteignable = safe_cap**legs
+    if atteignable >= target:
+        return ""
+    return (
+        f"Le combiné solide est hors d'atteinte en bande sûre : {safe_cap:.2f} "
+        f"puissance {legs} vaut {atteignable:.2f}, pour une cote cible de {target}. "
+        "Relevez le plafond du palier le plus sûr, ou abaissez la cote cible "
+        "(écran Seuils, « Cote cible — combiné solide »)."
+    )
 
 
 # -- Les interrupteurs -------------------------------------------------------

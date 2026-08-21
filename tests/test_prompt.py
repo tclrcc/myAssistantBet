@@ -144,9 +144,9 @@ def test_paliers_lus_en_base(migrated: Settings) -> None:
     tiers = load_tiers(migrated)
 
     assert [tier.key for tier in tiers] == ["safe", "fun", "ultra_fun", "giga_fun", "giga_plus"]
-    assert tiers[0].range_label == "1.25 – 1.70"
+    assert tiers[0].range_label == "1.25 – 1.80"
     assert tiers[0].quota_label == "2-4 🟢"
-    assert tiers[-1].range_label.startswith("> 15.00")
+    assert tiers[-1].range_label.startswith("> 8.00")
 
 
 @pytest.mark.parametrize(
@@ -325,7 +325,7 @@ async def test_paliers_injectes_dans_le_prompt(
 
     body = build_prompt(session_id, settings=migrated, now=NOW).body
 
-    assert "🟢 SAFE         1.25 – 1.70" in body
+    assert "🟢 SAFE         1.25 – 1.80" in body
     assert "💥 GIGA+" in body
     # Les bornes **de ce lot**, pas celles d'un lot de dix. Le prompt annoncait
     # « 2-4 🟢, 3-5 🔵… » sur un lot d'un match, puis expliquait en prose que
@@ -795,9 +795,13 @@ async def test_le_palier_se_lit_sur_la_cote_seule(
     """Les bandes **ne se chevauchent pas**, et l'arbitrage a ete retire.
 
     Le paragraphe faisait trancher la confiance « dans une zone commune a deux
-    paliers » — sauf que les bandes ne se touchent qu'en un point exact (1.70,
+    paliers » — sauf que les bandes ne se touchent qu'en un point exact (1.80,
     2.30, 3.60, 8.00) : sur cent selections, aucune cote n'y est jamais tombee.
     Deux cents mots de consigne pour un cas qui ne se produit pas.
+
+    Un second arbitrage par la confiance a ete propose depuis, sur des bandes
+    cette fois **volontairement** chevauchantes, et ecarte sur mesure : 70 des
+    352 selections en base tombaient dans les zones qu'il aurait ouvertes.
 
     Et s'il s'etait produit, la regle aurait ete nuisible : ce palier sert a
     calculer un taux par **bande de cote**, et faire dependre le classement de
@@ -809,10 +813,11 @@ async def test_le_palier_se_lit_sur_la_cote_seule(
 
     body = build_prompt(session_id, settings=migrated, now=NOW).body
 
-    assert "la confiance tranche" not in body
-    assert "La cote décide seule" in body
-    assert "la borne haute appartient au palier suivant" in body
-    assert "la confiance a déjà son propre axe" in body
+    plat = " ".join(body.split())
+    assert "la confiance tranche" not in plat
+    assert "La cote décide seule" in plat
+    assert "la borne haute appartient au palier suivant" in plat
+    assert "la confiance a déjà son propre axe" in plat
 
 
 def test_chaque_porte_du_preambule_vise_un_libelle_qui_existe() -> None:
@@ -1275,11 +1280,16 @@ def _lot_aux_cotes(migrated: Settings, *blocs: str) -> int:
 
 
 def test_la_borne_haute_appartient_au_palier_suivant(migrated: Settings) -> None:
-    """Une cote a 1.70 est FUN, pas SAFE. La convention du prompt, en code."""
+    """La convention en code, **sur les bornes reglees et non sur des valeurs
+    ecrites ici** : la frontiere s'est deja deplacee une fois, et un test qui la
+    recopie casse alors sans rien apprendre. Ce qui doit rester vrai est que la
+    borne appartient au palier du dessus, ou qu'elle tombe."""
     safe, fun = load_tiers(migrated)[:2]
+    frontiere = safe.max_price
+    assert frontiere is not None
 
-    assert safe.covers(1.69) and not safe.covers(1.70)
-    assert fun.covers(1.70)
+    assert safe.covers(frontiere - 0.01) and not safe.covers(frontiere)
+    assert fun.covers(frontiere)
 
 
 def test_seuls_les_paliers_atteignables_sont_injectes(migrated: Settings) -> None:
@@ -1487,12 +1497,12 @@ def test_chaque_bloc_dit_les_paliers_que_ses_cotes_atteignent(migrated: Settings
     bloc n'offrait aucune cote sous 1.70 — aucune selection SAFE n'en sortirait,
     quel que soit l'angle, et rien ne le disait."""
     session_id = _lot_aux_cotes(
-        migrated, "Lyon 0 1.71\nNice 0 2.23", "Lyon 1 1.40\nNul 2.00\nNice 1 3.00"
+        migrated, "Lyon 0 1.81\nNice 0 2.23", "Lyon 1 1.40\nNul 2.00\nNice 1 3.00"
     )
 
     corps = build_prompt(session_id, settings=migrated, now=NOW).body
 
-    assert "Paliers     FUN (cotes du bloc 1.71-2.23 — aucun SAFE ni ULTRA FUN)" in corps
+    assert "Paliers     FUN (cotes du bloc 1.81-2.23 — aucun SAFE ni ULTRA FUN)" in corps
     assert "Paliers     SAFE, FUN, ULTRA FUN\n" in corps, (
         "un bloc qui n'exclut rien de plus que le lot n'explique rien"
     )
@@ -1883,6 +1893,10 @@ def test_un_combine_court_plus_grand_que_le_lot_est_annonce_comme_tel(
     tiers = load_tiers(migrated)
     save_threshold("combo_min_lot", "2", migrated)
     save_threshold("combo_solo_min_lot", "2", migrated)
+    # La cote cible descend d'abord : le controle de coherence exige que le
+    # combine solide reste atteignable en bande sure, et ce test-ci descend le
+    # nombre de jambes pour une raison qui n'a rien a voir avec elle.
+    save_threshold("combo_court_cote", "5", migrated)
 
     plafond = safe_legs_available(tiers, 3, threshold_value("recherche_dossiers", migrated))
     save_threshold("combo_court_jambes", str(plafond + 1), migrated)

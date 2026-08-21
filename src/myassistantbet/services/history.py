@@ -1482,22 +1482,45 @@ def _reject_out_of_band(price: float | None, settings: Settings | None, champ: s
     raise HistoryError(f"« {champ} » : {price:.2f} ne tombe dans aucun palier{detail}.")
 
 
+def in_band(price: float, minimum: float, maximum: float | None) -> bool:
+    """La convention de borne du projet, ecrite **une seule fois**.
+
+    **Borne basse incluse, borne haute exclue** : une cote de 1.80 est FUN et
+    non SAFE, une cote de 8.00 est GIGA+ et non GIGA FUN. Une borne haute vide
+    veut dire « pas de limite » — le dernier palier ne peut rien avoir au-dessus
+    de lui.
+
+    Elle etait ecrite **trois fois** : ici, dans `prompt.Tier.covers`, et une
+    troisieme en clair au milieu de `tier_offers`, que rien ne comparait aux
+    deux autres. Les trois s'accordaient, et c'est exactement ce qui rend la
+    situation couteuse — un desaccord se serait vu, une convergence entretenue a
+    la main tient jusqu'au jour ou elle cede sans bruit. `prompt.py` importe ce
+    module, l'inverse ferait un cycle : c'est donc ici que la regle vit, et les
+    deux autres l'appellent.
+
+    Pure, sans base : c'est ce qui permet de la tester sur des bornes choisies
+    plutot que sur celles du jour, et de l'appeler depuis une boucle SQL sans
+    rouvrir une connexion par ligne.
+    """
+    if price < minimum:
+        return False
+    return maximum is None or price < maximum
+
+
 def tier_for_price(price: float | None, settings: Settings | None = None) -> str | None:
     """Palier d'une cote, lu sur les bandes reglees.
 
-    **La borne haute appartient au palier suivant** : une cote a 1.70 est FUN et
-    non SAFE. La regle est celle du prompt, et elle est ecrite ici une seconde
-    fois parce que `prompt.py` importe ce module — l'inverse ferait un cycle. Un
-    test compare les deux implementations plutot que d'esperer qu'elles ne
-    divergent pas.
+    **La cote decide seule.** La confiance n'entre pas ici et ne doit pas y
+    entrer : ce palier sert a calculer un taux de reussite par bande de cote, et
+    deux selections au meme prix doivent tomber dans le meme palier. La
+    confiance a son propre axe.
     """
     if price is None:
         return None
     with connect(settings) as conn:
         for row in conn.execute("SELECT key, min_price, max_price FROM tiers ORDER BY position"):
-            if price < float(row["min_price"]):
-                continue
-            if row["max_price"] is None or price < float(row["max_price"]):
+            haute = row["max_price"]
+            if in_band(price, float(row["min_price"]), None if haute is None else float(haute)):
                 return str(row["key"])
     return None
 
@@ -1582,7 +1605,10 @@ def tier_offers(settings: Settings | None = None) -> list[TierOffer]:
         price = float(row["price"])
         for key, _, bande in bandes:
             haute = bande["max_price"]
-            if price >= float(bande["min_price"]) and (haute is None or price < float(haute)):
+            # La convention de borne se lit dans `in_band`, jamais recopiee ici :
+            # cette boucle en portait sa propre ecriture, et c'est la seule des
+            # trois qu'aucun test ne comparait aux autres.
+            if in_band(price, float(bande["min_price"]), None if haute is None else float(haute)):
                 offerts[(int(row["session_id"]), key)] = True
                 break
     comptes = {(int(row["session_id"]), str(row["tier"])): int(row["n"]) for row in produits}

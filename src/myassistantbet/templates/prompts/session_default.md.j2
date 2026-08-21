@@ -658,11 +658,12 @@ La ligne **« Paliers »** qui ferme chaque bloc dit ce que **ses** cotes
 atteignent ; sa parenthèse ne paraît que s'il restreint au-delà du lot.
 
 **La cote décide seule, et la borne haute appartient au palier suivant** : une
-cote à 1.70 est FUN, pas SAFE. N'invente aucune autre règle, et surtout n'y fais
-pas entrer la confiance : ce palier est enregistré avec la sélection et sert à
-calculer un taux de réussite par bande de cote dans le temps. Deux sélections au
-même prix doivent tomber dans le même palier, sans quoi ce taux ne mesure plus
-une bande de cote — et la confiance a déjà son propre axe.
+cote à 1.80 est FUN, pas SAFE ; une cote à 8.00 est GIGA+, pas GIGA FUN.
+N'invente aucune autre règle, et surtout n'y fais pas entrer la confiance : ce
+palier est enregistré avec la sélection et sert à calculer un taux de réussite
+par bande de cote dans le temps. Deux sélections au même prix doivent tomber
+dans le même palier, sans quoi ce taux ne mesure plus une bande de cote — et la
+confiance a déjà son propre axe.
 
 Quotas **de ce lot** : {{ quotas | join(', ') }}. Une seule sélection par match,
 donc le total ne peut pas dépasser {{ event_blocks | length }}, tous paliers

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -27,6 +28,7 @@ from myassistantbet.services.prompt import (
     save_tiers,
     template_path,
 )
+from myassistantbet.services.thresholds import value_of as threshold_value
 
 from .helpers import lot_avec_recul
 
@@ -145,35 +147,46 @@ def _rows(migrated: Settings) -> list[dict[str, object]]:
 
 
 def test_modification_d_une_bande(migrated: Settings) -> None:
+    """Une frontiere se deplace **des deux cotes a la fois** : les bandes forment
+    une partition, et n'en bouger qu'une moitie ouvre un trou ou un
+    recouvrement — tous deux refuses, chacun par son test."""
     rows = _rows(migrated)
     rows[0]["min_price"] = 1.30
-    rows[0]["max_price"] = 1.65
+    rows[0]["max_price"] = 1.85
     rows[0]["label"] = "PRUDENT"
+    rows[1]["min_price"] = 1.85
 
     save_tiers(rows, migrated)
 
     tier = load_tiers(migrated)[0]
-    assert (tier.min_price, tier.max_price, tier.label) == (1.30, 1.65, "PRUDENT")
-    assert tier.range_label == "1.30 – 1.65"
+    assert (tier.min_price, tier.max_price, tier.label) == (1.30, 1.85, "PRUDENT")
+    assert tier.range_label == "1.30 – 1.85"
 
 
 def test_borne_haute_vide_signifie_sans_limite(migrated: Settings) -> None:
+    """Et **seul le dernier palier** peut la laisser vide : ailleurs elle avale
+    tous ceux qui le suivent, `in_band` lisant une borne haute vide comme
+    « pas de limite »."""
     rows = _rows(migrated)
-    rows[0]["max_price"] = None
-
+    plafond = load_tiers(migrated)[-1].min_price
+    rows[-1]["max_price"] = 40.0
     save_tiers(rows, migrated)
+    assert load_tiers(migrated)[-1].range_label == f"{plafond:.2f} – 40.00"
 
-    assert load_tiers(migrated)[0].range_label.startswith("> 1.25")
+    rows[-1]["max_price"] = None
+    save_tiers(rows, migrated)
+    assert load_tiers(migrated)[-1].range_label.startswith(f"> {plafond:.2f}")
 
 
 def test_borne_haute_inferieure_refusee(migrated: Settings) -> None:
     rows = _rows(migrated)
+    ancienne = rows[0]["max_price"]
     rows[0]["max_price"] = 1.10
 
     with pytest.raises(CustomizationError, match="borne haute"):
         save_tiers(rows, migrated)
 
-    assert load_tiers(migrated)[0].max_price == 1.70, "rien n'est ecrit"
+    assert load_tiers(migrated)[0].max_price == ancienne, "rien n'est ecrit"
 
 
 def test_quota_incoherent_refuse(migrated: Settings) -> None:
@@ -343,7 +356,119 @@ def test_paliers_incoherents_refuses_via_htmx(
     response = client.post("/settings/tiers", data=data)
 
     assert "borne haute" in response.text
-    assert load_tiers(isolated_settings)[0].max_price == 1.70
+    assert load_tiers(isolated_settings)[0].max_price == 1.80
+
+
+def _form_paliers(tiers: list[Any], **surcharges: dict[str, str]) -> dict[str, list[str]]:
+    """Le formulaire des paliers, tel que le gabarit le poste.
+
+    `surcharges` remplace un champ pour une cle : `{"min_price": {"fun": "1.90"}}`.
+    """
+    champs = {
+        "key": lambda tier: tier.key,
+        "emoji": lambda tier: tier.emoji,
+        "label": lambda tier: tier.label,
+        "min_price": lambda tier: str(tier.min_price),
+        "max_price": lambda tier: "" if tier.max_price is None else str(tier.max_price),
+        "quota_min": lambda tier: str(tier.quota_min),
+        "quota_max": lambda tier: str(tier.quota_max),
+    }
+    return {
+        nom: [surcharges.get(nom, {}).get(tier.key, lire(tier)) for tier in tiers]
+        for nom, lire in champs.items()
+    }
+
+
+def test_un_trou_entre_deux_bandes_est_refuse(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Une cote entre les deux n'appartiendrait a aucun palier, donc serait
+    refusee a l'enregistrement — et le message de refus parlerait du palier le
+    plus proche, jamais du trou qui l'a causee."""
+    tiers = load_tiers(isolated_settings)
+    data = _form_paliers(tiers, min_price={"fun": "1.90"})
+
+    response = client.post("/settings/tiers", data=data)
+
+    assert "Trou entre safe et fun" in response.text
+    assert load_tiers(isolated_settings)[1].min_price == 1.80, "rien n'est ecrit"
+
+
+def test_un_recouvrement_entre_deux_bandes_est_refuse(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """**Decision reprise**, et c'est pour ca que ce test existe : des bandes
+    chevauchantes arbitrees par la confiance ont ete proposees puis ecartees. La
+    zone commune n'a donc plus aucune regle pour la trancher — elle se resoudrait
+    en silence par la position — et un reglage que rien ne resout ne doit pas
+    pouvoir s'ecrire depuis l'ecran."""
+    tiers = load_tiers(isolated_settings)
+    data = _form_paliers(tiers, min_price={"fun": "1.65"})
+
+    response = client.post("/settings/tiers", data=data)
+
+    assert "Recouvrement entre safe et fun" in response.text
+    assert load_tiers(isolated_settings)[1].min_price == 1.80, "rien n'est ecrit"
+
+
+def test_une_borne_haute_vide_ailleurs_qu_en_dernier_est_refusee(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Elle avalerait tous les paliers suivants : `in_band` lit une borne haute
+    vide comme « pas de limite »."""
+    tiers = load_tiers(isolated_settings)
+    data = _form_paliers(tiers, max_price={"safe": ""})
+
+    response = client.post("/settings/tiers", data=data)
+
+    assert "seul le dernier palier" in response.text
+    assert load_tiers(isolated_settings)[0].max_price == 1.80, "rien n'est ecrit"
+
+
+def test_les_bandes_se_touchant_exactement_sont_acceptees(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """La contrainte est la contiguite, pas l'immobilite : deplacer une frontiere
+    des deux cotes a la fois reste un reglage valable."""
+    tiers = load_tiers(isolated_settings)
+    data = _form_paliers(tiers, max_price={"fun": "2.40"}, min_price={"ultra_fun": "2.40"})
+
+    response = client.post("/settings/tiers", data=data)
+
+    assert "Bandes de cotes enregistrées" in response.text
+    assert load_tiers(isolated_settings)[2].min_price == 2.40
+
+
+def test_un_plafond_sur_qui_rend_le_combine_solide_impossible_est_refuse(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """`1.70^4 = 8.35` pour une cote cible de 9 : le combine solide entierement
+    bati en bande sure n'existait pas, et **rien ne le disait** — un combine plus
+    court avec sa cote reelle est une reponse prevue par le gabarit, donc la
+    sortie ne trahissait pas l'impossibilite.
+
+    Le controle echoue bruyamment le jour ou quelqu'un rabaisse le plafond sans
+    toucher a la cible.
+    """
+    tiers = load_tiers(isolated_settings)
+    data = _form_paliers(tiers, max_price={"safe": "1.70"}, min_price={"fun": "1.70"})
+
+    response = client.post("/settings/tiers", data=data)
+
+    assert "combiné solide est hors d" in response.text
+    assert "8.35" in response.text, "le produit atteignable est nommé"
+    assert load_tiers(isolated_settings)[0].max_price == 1.80, "rien n'est ecrit"
+
+
+def test_une_cote_cible_hors_d_atteinte_est_refusee_a_l_ecran_des_seuils(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """**Le meme controle des deux cotes.** Le couple se regle depuis deux
+    ecrans : le garder sur un seul laisserait l'autre le casser."""
+    response = client.post("/settings/thresholds", data={"key": "combo_court_cote", "value": "50"})
+
+    assert "combiné solide est hors d" in response.text
+    assert threshold_value("combo_court_cote", isolated_settings) == 9, "rien n'est ecrit"
 
 
 def test_un_seuil_se_regle_depuis_l_ecran(client: TestClient, isolated_settings: Settings) -> None:

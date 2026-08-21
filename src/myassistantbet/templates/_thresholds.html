@@ -1,4 +1,5 @@
 <div id="thresholds">
+  {% if thresholds_error %}<div class="report report-warn">{{ thresholds_error }}</div>{% endif %}
   {% if thresholds_saved %}<div class="report">Seuil enregistré.</div>{% endif %}
 
   <p class="muted small">

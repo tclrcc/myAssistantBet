@@ -31,7 +31,7 @@ from ..providers.oddsapi import SCAN_MARKETS
 from . import changelog, stakes
 from .competitions import is_knockout, reads_domestic_aggregates
 from .enrich import markets_for
-from .history import SCALE_VERSION, feedback
+from .history import SCALE_VERSION, feedback, in_band
 from .ingestion import is_payload
 from .labels import affiche, bookmaker_label, is_reference
 from .render import (
@@ -49,7 +49,7 @@ from .render import (
 )
 from .research import sheet as research_sheet
 from .session import has_started, renderable_events, session_label, started_labels
-from .thresholds import COUPON_TRACKING, toggle_of
+from .thresholds import COUPON_TRACKING, solid_combo_conflict, toggle_of
 from .thresholds import value_of as threshold
 from .weather import ALERT_MARK
 
@@ -116,12 +116,13 @@ class Tier:
     def covers(self, value: float) -> bool:
         """Vrai si cette cote tombe dans la bande.
 
-        **La borne haute appartient au palier suivant** : une cote a 1.70 est
-        FUN et non SAFE. C'est la convention du prompt, ecrite une seule fois.
+        **La convention de borne vit dans `history.in_band`** — basse incluse,
+        haute exclue — et n'est plus ecrite ici. Elle l'etait, et le docstring
+        affirmait meme qu'elle l'etait « une seule fois » alors qu'il en
+        existait trois exemplaires. Le troisieme dormait au milieu de
+        `history.tier_offers` sans qu'aucun test ne le compare aux deux autres.
         """
-        if value < self.min_price:
-            return False
-        return self.max_price is None or value < self.max_price
+        return in_band(value, self.min_price, self.max_price)
 
     @property
     def quota_label(self) -> str:
@@ -352,7 +353,7 @@ class TierScope:
 
     **L'atteignabilite se mesure sur les cotes reellement offertes, pas sur
     l'intervalle qu'elles couvrent.** Un lot dont les prix seraient 1.34 et 3.40
-    ne porte aucune cote entre 1.70 et 2.30 : declarer 🔵 FUN atteignable parce
+    ne porte aucune cote entre 1.80 et 2.30 : declarer 🔵 FUN atteignable parce
     qu'il tombe « entre les deux » ferait chercher un prix qui n'existe nulle
     part. Une selection recopie **une** cote d'**un** bloc, jamais un intervalle.
     """
@@ -1522,6 +1523,79 @@ def save_bands(rows: list[dict[str, Any]], settings: Settings | None = None) -> 
     logger.info("Bandes de confiance mises a jour : %d niveaux", len(rows))
 
 
+def _ordered_by_position(
+    rows: list[dict[str, Any]], settings: Settings | None
+) -> list[dict[str, Any]]:
+    """Les lignes saisies, dans l'ordre ou le classement les parcourt.
+
+    `tier_for_price` itere `ORDER BY position` et rend le **premier** palier qui
+    couvre la cote : c'est donc cet ordre-la qu'il faut controler, et non celui
+    du formulaire, qui n'y correspond que par convention.
+    """
+    with connect(settings) as conn:
+        positions = {
+            str(row["key"]): int(row["position"])
+            for row in conn.execute("SELECT key, position FROM tiers")
+        }
+    paires = list(enumerate(rows))
+    paires.sort(key=lambda item: (positions.get(str(item[1].get("key")), 99), item[0]))
+    return [row for _, row in paires]
+
+
+def _reject_discontinuity(rows: list[dict[str, Any]], settings: Settings | None = None) -> None:
+    """Les bandes doivent former une partition : ni trou, ni recouvrement.
+
+    Le validateur ne regardait **aucune** ligne en face d'une autre : il verifiait
+    borne haute > borne basse, palier par palier, et laissait passer un trou
+    comme un recouvrement. Les deux sont des defauts silencieux, et de la famille
+    la plus couteuse de ce projet — rien ne casse :
+
+      · un **trou** rend une cote inclassable, donc refusee a l'ecriture par
+        `_reject_out_of_band` avec un message qui parle de palier le plus proche.
+        La cause reelle — deux bornes qui ne se rejoignent pas — ne se lit nulle
+        part ;
+      · un **recouvrement** se resout en silence par la position : la cote tombe
+        dans le premier palier de la liste, sans qu'aucune regle ne l'ait decide.
+
+    **Le recouvrement est refuse, et c'est une decision reprise.** Il avait
+    d'abord ete question de l'accepter jusqu'a l'ordre 2, la confiance tranchant
+    dans la zone commune ; cet arbitrage a ete ecarte — le palier mesure une
+    bande de **cote**, et l'y faire dependre de la confiance aurait mis deux
+    selections au meme prix dans deux paliers differents. La zone commune n'a
+    donc plus de regle pour la trancher, et un reglage qu'aucune regle ne resout
+    ne doit pas pouvoir s'ecrire depuis l'ecran.
+
+    Une seule borne haute vide est permise, et seulement sur le dernier palier :
+    ailleurs, elle avalerait tous les paliers suivants.
+    """
+    ordered = _ordered_by_position(rows, settings)
+    for bas, haut in zip(ordered, ordered[1:], strict=False):
+        plafond = bas.get("max_price")
+        if plafond is None:
+            raise CustomizationError(
+                f"Palier {bas.get('key')} : borne haute manquante — seul le dernier palier "
+                "peut être sans limite, sinon il avale tous ceux qui le suivent."
+            )
+        plancher = haut.get("min_price")
+        if plancher is None:
+            # Deja refuse plus haut par la boucle des bornes ; la garde evite une
+            # comparaison contre None si l'ordre des controles bouge un jour.
+            return
+        if plancher > plafond:
+            raise CustomizationError(
+                f"Trou entre {bas.get('key')} et {haut.get('key')} : "
+                f"{plafond:.2f} puis {plancher:.2f}. Une cote entre les deux n'appartiendrait "
+                "à aucun palier et serait refusée à l'enregistrement."
+            )
+        if plancher < plafond:
+            raise CustomizationError(
+                f"Recouvrement entre {bas.get('key')} et {haut.get('key')} : "
+                f"{plancher:.2f} à {plafond:.2f} tombe dans les deux. Le palier se lit sur la "
+                "cote seule, et rien ne tranche une zone commune — les bandes doivent se "
+                "toucher exactement."
+            )
+
+
 def save_tiers(rows: list[dict[str, Any]], settings: Settings | None = None) -> None:
     """Met a jour les bandes de cotes. Les bornes doivent rester coherentes."""
     for row in rows:
@@ -1538,6 +1612,16 @@ def save_tiers(rows: list[dict[str, Any]], settings: Settings | None = None) -> 
             raise CustomizationError(
                 f"Palier {row.get('key')} : le quota maximum est inférieur au minimum."
             )
+
+    _reject_discontinuity(rows, settings)
+
+    # Le plafond de la bande la plus sure et la cote cible du combine solide
+    # decrivent le meme objet depuis deux ecrans. Ils se sont deja contredits en
+    # silence — `1.70^4 = 8.35` pour une cible de 9 — et la sortie ne trahissait
+    # rien, un combine plus court etant une reponse prevue.
+    conflit = solid_combo_conflict(settings, safe_cap=rows[0].get("max_price") if rows else None)
+    if conflit:
+        raise CustomizationError(conflit)
 
     with connect(settings) as conn:
         for row in rows:

@@ -34,6 +34,7 @@ from myassistantbet.services.history import (
     delete_pick,
     feedback,
     get_pick,
+    in_band,
     labelling,
     list_picks,
     list_sessions,
@@ -2762,20 +2763,85 @@ def test_une_cote_obtenue_impossible_est_refusee(migrated: Settings) -> None:
         set_real_price(pick_id, "0.90", migrated)
 
 
-def test_le_palier_d_une_cote_suit_la_convention_du_prompt(migrated: Settings) -> None:
-    """**La borne haute appartient au palier suivant** : une cote a 1.70 est FUN
-    et non SAFE. La regle est ecrite deux fois — ici et dans `prompt.Tier` — le
-    module du prompt important celui-ci, l'inverse ferait un cycle. Ce test
-    compare les deux plutot que d'esperer qu'elles ne divergent pas.
+def test_les_bandes_de_cote_forment_une_partition(migrated: Settings) -> None:
+    """Ni trou, ni recouvrement : toute cote au-dessus du plancher a **un**
+    palier et un seul.
+
+    La propriete se verifie sur les bandes reglees plutot que sur une liste de
+    valeurs attendues : un plafond deplace ne doit pas casser ce test-la, il doit
+    casser celui des frontieres, juste en dessous.
     """
     from myassistantbet.services.prompt import load_tiers
 
-    for price in (1.24, 1.25, 1.69, 1.70, 2.59, 2.60, 14.99, 15.00, 99.0):
-        attendu = next(
-            (tier.key for tier in load_tiers(migrated) if tier.covers(price)),
+    tiers = load_tiers(migrated)
+    plancher = min(tier.min_price for tier in tiers)
+    for centimes in range(int(plancher * 100), 2_001):
+        price = centimes / 100
+        couvrants = [tier.key for tier in tiers if tier.covers(price)]
+        assert len(couvrants) == 1, f"cote {price:.2f} couverte par {couvrants}"
+
+
+def test_les_frontieres_de_palier_appartiennent_a_la_bande_du_dessus(
+    migrated: Settings,
+) -> None:
+    """**Borne basse incluse, borne haute exclue.** Ce sont les valeurs du jour,
+    et c'est assume : ce test-ci existe pour qu'un deplacement de bornes se solde
+    par un echec rouge plutot que par un silence — c'est le seul endroit du
+    depot ou les nombres du barme sont ecrits.
+    """
+    frontieres = {
+        1.24: None,
+        1.25: "safe",
+        1.79: "safe",
+        1.80: "fun",
+        2.29: "fun",
+        2.30: "ultra_fun",
+        3.59: "ultra_fun",
+        3.60: "giga_fun",
+        7.99: "giga_fun",
+        8.00: "giga_plus",
+        12.00: "giga_plus",
+        999.0: "giga_plus",
+    }
+    for price, attendu in frontieres.items():
+        assert tier_for_price(price, migrated) == attendu, f"cote {price}"
+
+
+def test_les_trois_lectures_de_bande_disent_la_meme_chose(migrated: Settings) -> None:
+    """La convention de borne etait ecrite **trois** fois : `tier_for_price`,
+    `prompt.Tier.covers`, et une troisieme en clair au milieu de `tier_offers`
+    que rien ne comparait aux deux autres.
+
+    Les trois passent desormais par `in_band`, et ce test les compare — la
+    troisieme en appelant `in_band` sur les memes bornes que la boucle SQL, seule
+    facon de l'atteindre sans monter une session entiere.
+    """
+    from myassistantbet.services.prompt import load_tiers
+
+    tiers = load_tiers(migrated)
+    for price in (1.24, 1.25, 1.79, 1.80, 2.30, 3.60, 7.99, 8.00, 99.0):
+        par_covers = next((tier.key for tier in tiers if tier.covers(price)), None)
+        par_in_band = next(
+            (tier.key for tier in tiers if in_band(price, tier.min_price, tier.max_price)),
             None,
         )
-        assert tier_for_price(price, migrated) == attendu, f"cote {price}"
+        assert tier_for_price(price, migrated) == par_covers, f"cote {price}"
+        assert par_in_band == par_covers, f"cote {price}"
+
+
+def test_la_confiance_n_entre_pas_dans_le_classement(migrated: Settings) -> None:
+    """**Le palier mesure une bande de cote, et rien d'autre.** Un arbitrage par
+    la confiance dans une zone de chevauchement a ete propose puis ecarte : il
+    aurait mis deux selections au meme prix dans deux paliers differents, donc
+    gonfle le taux d'un palier et degrade celui du voisin par construction.
+
+    Le test porte sur la **signature** plutot que sur le comportement, meme garde
+    que `plan()` cote mises : une consigne se contourne, un parametre absent non.
+    """
+    import inspect
+
+    parametres = set(inspect.signature(tier_for_price).parameters)
+    assert parametres == {"price", "settings"}, parametres
 
 
 def test_la_feuille_reclame_la_cote_obtenue_sur_une_cote_de_reference(
