@@ -224,9 +224,16 @@ CLAIM_KEYS = ("faits", "facts", "source_level", "confiance", "confidence")
 
 
 def is_claim(payload: dict) -> bool:
-    """Cet objet est-il un bloc de confiance, lu sur sa seule forme ?"""
+    """Cet objet est-il un bloc de confiance, lu sur sa seule forme ?
+
+    **`origine` exclut, au meme titre que `jambes`.** Un objet qui declare
+    l'application comme emetteur est un bloc de **donnees** : il part vers
+    l'analyse, il n'en revient pas. Le lire comme une reclamation ferait diverger
+    le compte des blocs de celui des lignes, et couterait les crans du lot —
+    panne silencieuse, detection tardive.
+    """
     return any(key in payload for key in CLAIM_KEYS) and not (
-        "jambes" in payload or "legs" in payload
+        "jambes" in payload or "legs" in payload or "origine" in payload
     )
 
 

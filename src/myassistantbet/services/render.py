@@ -21,6 +21,7 @@ from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import Any
 
 from ..config import Settings
 from .coverage import query_books
@@ -178,6 +179,12 @@ class RenderableEvent:
     markets: dict[str, list[Outcome]] = field(default_factory=dict)
     #: Lignes de contexte deja formatees : (libelle, valeur). Alimentees en phase 3.
     context_lines: list[tuple[str, str]] = field(default_factory=list)
+    #: Les **memes** lignes, avec leur source, leur date et leur niveau. Portees
+    #: ici plutot que recalculees par le payload : `renderable_events` connait la
+    #: cle du fournisseur, la surface et la competition — un second appel sans
+    #: eux rendait un bloc de tennis ampute de son repos, de son parcours et de
+    #: ses lignes de service, sans qu'aucune erreur ne se leve.
+    context_facts: list[Any] = field(default_factory=list)
     note: str | None = None
     bookmaker_label: str = "Betclic"
     fetched_local: datetime | None = None

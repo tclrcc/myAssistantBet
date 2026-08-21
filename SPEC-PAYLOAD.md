@@ -438,6 +438,35 @@ recouvrent trois situations qui n'appellent pas la même décision de budget :
   actif ». Réserve : 75 relevés, et un lot monté sur des matchs enrichis trois
   jours plus tôt changerait le tableau.
 
+## §7 quater — Le payload est plus lourd par match, et le gain vient du cadre
+
+**Mesure du 21/08/2026 sur un lot réel de 4 matchs de tennis** (session 19) :
+
+| | total | cadre | par match |
+| --- | ---: | ---: | ---: |
+| prompt (gabarit) | 18 612 | 14 378 | 1 058 |
+| payload | 10 128 | — | **2 532** |
+
+**−45 % au total, mais 2,4× plus cher par match.** C'est le coût de
+l'attribution : chaque fait porte `cle`, `valeur`, `source`, `date`, `niveau`, et
+le nom des champs se répète à chaque entrée.
+
+**Conséquence à connaître avant de conclure quoi que ce soit du test** : le point
+d'équilibre est à **~10 matchs**. En dessous le payload est moins cher, au-dessus
+il coûte plus que le prompt — sur un lot de 21 blocs, 53 000 tokens contre 36 600.
+
+- Le gain mesuré vient **entièrement** de la suppression du cadre, et pas du
+  format. Le dire autrement serait attribuer au JSON un mérite qui revient à la
+  coupe.
+- **La piste existe et n'est pas prise** : les attributs peuvent passer en
+  colonnaire, comme les cotes le sont déjà — `{colonnes, lignes}` supprime la
+  répétition des cinq noms de champs. À mesurer avant d'être fait, et **après**
+  le test : changer le format entre la livraison et la comparaison invaliderait
+  le protocole au même titre qu'un ajustement de la Skill.
+- Le critère 9 du protocole — « payload nettement sous le régime mesuré
+  (≈ 15 000) » — reste tenu sur un lot de la taille du test, et c'est ce qu'il
+  demande. Il ne dit rien des gros lots, et il ne le doit pas.
+
 ## §8 — Ordre des phases
 
 Une phase, un commit, `ruff` et `pytest` verts, puis validation.
@@ -457,7 +486,12 @@ Une phase, un commit, `ruff` et `pytest` verts, puis validation.
    gabarit ne bouge pas encore. Les deux coexistent, ce qui rend la comparaison
    possible sur un lot réel.
 4. **Le discriminant.** `is_claim` exclut `origine`, test de non-régression sur
-   un collage complet.
+   un collage complet. **Livré avec la phase 3, parce que le renommage l'a rendu
+   urgent** : tant que le conteneur s'appelait `faits`, le payload était écarté
+   *par accident*, en partageant une clé avec les blocs de confiance. Le
+   renommer a supprimé cette collision — et avec elle la seule chose qui le
+   faisait reconnaître par `_shaped`. Le bloc collé n'était plus écarté : il
+   était parsé, et il échouait. Un test l'a attrapé au premier essai.
 5. **Les lecteurs.** `sections`, `history`, `confidence`, `split_cost`,
    `read_research_budget` apprennent la forme payload, sans perdre l'ancienne.
 6. **La coupe.** Le gabarit se réduit aux faits ; les phrases méthodologiques

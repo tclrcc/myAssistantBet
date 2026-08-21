@@ -300,7 +300,16 @@ def _loads(body: str) -> dict | None:
 #: quelconque. Sert **uniquement** a ecarter un bloc cloture de la mauvaise
 #: famille : un objet qui n'en porte aucune n'appartient a personne, et le
 #: refuser des deux cotes le ferait disparaitre sans un mot.
-_SHAPES = ("faits", "facts", "source_level", "confiance", "jambes", "legs")
+#: `origine` y figure pour une raison qui n'est pas la meme que les autres : ce
+#: n'est pas une cle de bloc, c'est la marque d'un objet **emis par
+#: l'application**. Sans elle, le bloc de donnees colle dans une reponse n'a
+#: aucune forme connue, donc il n'est pas ecarte — il est parse, et il echoue.
+#:
+#: **Le renommage du conteneur l'a rendue necessaire.** Tant qu'il s'appelait
+#: `faits`, le payload etait ecarte par accident, en partageant une cle avec les
+#: blocs de confiance. Le renommer a supprime cette collision — et avec elle la
+#: seule chose qui le faisait reconnaitre ici.
+_SHAPES = ("faits", "facts", "source_level", "confiance", "jambes", "legs", "origine")
 
 
 def _shaped(payload: dict) -> bool:

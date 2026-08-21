@@ -17,10 +17,11 @@ Le gabarit peut-il être retiré ?
 ## Conditions de tir
 
 1. **Deux lots réels**, désignés par règle et non par choix : le **premier lot football** et le **premier lot tennis** qui se présentent après la livraison de `build_payload`. Aucune sélection discrétionnaire — « ce lot-là était particulier » est le raisonnement qui se tient toujours après une sortie décevante. Le tennis étant le poste faible mesuré, l'exclure biaiserait le test.
-2. **Les deux versions tournent avant le coup d'envoi du premier match du lot.** L'antériorité s'applique au test comme à une session normale.
-3. **Sessions séparées.** Générer les deux sorties dans une même conversation contamine la seconde.
-4. **Aucune retouche manuelle** d'aucun des deux prompts.
-5. `framework_version` consigné avec chaque sortie.
+2. **Taille minimale : quatre matchs.** Sous ce seuil, un lot ne peut ni faire varier les crans de confiance, ni remplir C-bis, ni produire une Section F lisible. Un lot plus court n'est pas rejeté par choix : il ne compte pas comme lot, et la désignation passe au suivant. Cette clause est écrite avant de connaître le calendrier, précisément pour qu'elle ne puisse pas servir à écarter un lot décevant.
+3. **Les deux versions tournent avant le coup d'envoi du premier match du lot.** L'antériorité s'applique au test comme à une session normale.
+4. **Sessions séparées.** Générer les deux sorties dans une même conversation contamine la seconde.
+5. **Aucune retouche manuelle** d'aucun des deux prompts.
+6. `framework_version` consigné avec chaque sortie.
 
 ## Critères mesurables
 

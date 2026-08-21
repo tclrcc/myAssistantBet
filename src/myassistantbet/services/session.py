@@ -633,7 +633,7 @@ def _context_for(
     settings: Settings,
     cache: dict[str, Any] | None = None,
     now: datetime | None = None,
-) -> list[tuple[str, str]]:
+) -> list[Fait]:
     """Adaptateur pour une ligne de la requete de session.
 
     Ajoute une ligne **`Densite`** en fin de bloc quand celui-ci est maigre ou
@@ -643,7 +643,7 @@ def _context_for(
     fournisseur de contexte ne couvre pas. L'analyse doit savoir laquelle des
     deux, parce que la reponse decide si la recherche web peut combler le trou.
     """
-    lines = context_block(
+    lines = block_facts(
         int(row["id"]),
         row["home"],
         row["away"],
@@ -656,10 +656,12 @@ def _context_for(
         cache=cache,
         now=now,
     )
-    density = context_density([label for label, _ in lines], row["sport_key"], settings)
+    density = context_density([fait.label for fait in lines], row["sport_key"], settings)
     if density.known and (density.empty or density.thin):
         cause = failure_causes([int(row["id"])], settings).get(int(row["id"]), "")
-        lines.append(("Densite", _density_note(density, cause)))
+        # La densite n'est pas un fait sur le match : elle mesure ce que la
+        # collecte a rapporte, et sa tranche le dit.
+        lines += attribue([("Densite", _density_note(density, cause))], "collecte")
     return lines
 
 
@@ -868,7 +870,10 @@ def renderable_events(
                     away=row["away"],
                     commence_local=_local(row["commence_time"], settings.tz),
                     markets=markets,
-                    context_lines=_context_for(row, settings, cache, now),
+                    # Les deux formes, assemblees **une fois** : le rendu texte
+                    # est la projection des faits, jamais un second assemblage.
+                    context_facts=(faits := _context_for(row, settings, cache, now)),
+                    context_lines=lignes_de(faits),
                     note=row["note"] or None,
                     # L'en-tete ne nomme que la source principale : les autres
                     # sont portees ligne par ligne. Un en-tete « Betclic +
