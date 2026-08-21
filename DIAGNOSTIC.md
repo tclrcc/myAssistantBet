@@ -10121,3 +10121,134 @@ jour** — la phrase a changé de **fond**, parce qu'elle était fausse là où 
 était vérifiable. Le test énonce désormais la règle qu'il doit garder : la
 population se définit par l'exigence levée, jamais par son contenu, et il refuse
 explicitement le retour de l'ancienne formule.
+
+## §3 — Le trou de collecte sur M4, et le quatrième état non nommé
+
+### Le constat de la section F est exact
+
+M4 · `Al-Hazem – Diriyah Club`, Saudi Pro League. Sa ligne `Non servis` est
+**identique mot pour mot** à celle de M3, même compétition :
+
+```
+M3   Handicap    Al-Riyadh +1.75† 1.98 | Al-Nassr -1.75† 1.84   [Pinnacle (ref.)]
+     O/U         3.25†: 1.61/2.28 | … | 4.25†: 2.62/1.48        [Pinnacle (ref.)]
+     Non servis  DC, BTTS, MT O/U, BTTS MT, MT/FT, Eq. buts, Score exact, …
+
+M4   (aucune ligne Handicap, aucune ligne O/U)
+     Non servis  DC, BTTS, MT O/U, BTTS MT, MT/FT, Eq. buts, Score exact, …
+```
+
+`Handicap` et `O/U` n'apparaissent **ni en cote ni en « Non servis »** sur M4,
+alors que M3 et M5 les portent tous les deux.
+
+### La cause : la rencontre a été interrogée, et le fournisseur a répondu vide
+
+Deux appels d'étage B sur la Saudi Pro League ce soir-là :
+
+| Heure | Événement | Coût |
+| --- | --- | ---: |
+| 23:36:39 | `1e472ff1…` = **M3** Al-Riyadh | **2** |
+| 23:36:40 | `f6cc553a…` = **M4** Al-Hazem | **0** |
+
+Un coût de **0** sur The Odds API veut dire une **réponse vide** — « les réponses
+vides ne sont pas facturées ». Donc : **M4 a bien été interrogé, et rien n'est
+revenu.** Ce n'est ni un match sauté, ni un plancher de crédit, ni une panne.
+
+### Pourquoi « Non servis » ne les nomme pas — et c'est bien un quatrième état
+
+`session._unserved_for` a trois causes, et la deuxième — « demandé pour ce match
+et non revenu » — est gardée par `_is_enriched` :
+
+```python
+def _is_enriched(sport_key: str, present: set[str]) -> bool:
+    """Signe : un marché hors du couple de l'étage A. S'il n'en restait aucun,
+    c'est que le book n'a rien servi de profond — et ce constat-là est déjà
+    mémorisé au niveau de la compétition par `coverage`."""
+    return bool(present - set(SCAN_MARKETS)) and sport_key in MARKET_ORDER_BY_SPORT
+```
+
+**L'inférence est fausse, et M4 en est le contre-exemple.** Le passage de l'étage
+B est déduit de la **présence d'un marché profond**. Sur une réponse vide il n'y
+en a aucun, donc `_is_enriched` rend faux, donc la deuxième cause ne s'applique
+pas et seule la liste de compétition est rendue.
+
+Et le repli annoncé — « ce constat est déjà mémorisé par `coverage` » — ne joue
+pas non plus. Le memo de compétition dit l'inverse :
+
+```
+alternate_spreads     servi=1  checks=31   2026-08-20T23:36
+alternate_totals      servi=1  checks=31   2026-08-20T23:36
+```
+
+`coverage.record` écrit `served = MAX(served, excluded.served)` : une fois un
+marché vu servi sur une compétition, il l'est pour toujours. Ces deux marchés
+sont donc **absents de `barren`** — à juste titre, M3 les porte — et absents de
+`ici`. Ils ne tombent nulle part.
+
+**Oui, un quatrième état existe et il n'est pas nommé** :
+*l'étage B a tourné sur ce match et n'a rien rapporté.* Il rend exactement la
+même chose qu'un événement d'étage A jamais enrichi — la forme caractéristique
+du défaut de ce projet, une sortie identique pour deux causes.
+
+### Portée : rare dans l'absolu, la moitié de ce lot
+
+Sur les 1 107 appels d'étage B de la base, **29 sont revenus vides (3 %)**, pour
+23 événements distincts. Trois seulement sont réellement partis dans un prompt :
+
+| Événement | Compétition | Rendu |
+| --- | --- | ---: |
+| e860 Waldhof Mannheim | DFB-Pokal | 4× |
+| e861 SC Preußen Münster | DFB-Pokal | 4× |
+| e872 Al-Hazem | Saudi Pro League | 4× |
+
+**Les trois sont dans ce lot** — M1, M2 et M4, soit **la moitié de ses six blocs
+de football**. Structurellement rare, entièrement concentré ici : c'est pourquoi
+l'analyse l'a vu maintenant et pas avant.
+
+Corollaire qui corrige une lecture intermédiaire : M1 et M2 n'ont pas « échappé à
+l'enrichissement ». Ils ont été interrogés comme M4, et sont revenus vides comme
+lui.
+
+### La correction proposée — non construite, et pourquoi
+
+**Il faut un fait persisté, pas une inférence.** Tous les signaux disponibles
+sans migration ré-introduisent le faux positif que la garde existe pour
+empêcher :
+
+| Signal candidat | Pourquoi il ne tient pas |
+| --- | --- |
+| retirer la garde `_is_enriched` | un événement **jamais** enrichi listerait tous ses marchés comme « demandés et non revenus » — « faire chercher une panne là où il n'y a qu'un enrichissement jamais lancé » |
+| le memo `coverage` | il est une **union** par compétition, par construction : il ne peut pas exprimer « servi ici, pas là » |
+| la présence de contexte | le balayage des compositions écrit du contexte **sans** appel d'étage B : l'équivalence se casse |
+| `api_usage` | c'est un registre de quota, pas un état de collecte, et l'y faire lire par le rendu couplerait deux choses qui n'ont pas la même durée de vie |
+
+Ce qui manque est **une marque par événement, écrite par `enrich` au moment où il
+appelle** — un horodatage de tentative d'étage B, indépendant de ce qui est
+revenu. Une colonne, une migration, et `_is_enriched` se lit alors sur un fait
+plutôt que sur une déduction. La deuxième cause de `Non servis` couvre alors le
+cas sans nouveau libellé, et son texte est déjà juste : *demandé pour ce match et
+non revenu*. **Coût en tokens : zéro.**
+
+Pas construit ce soir : le §3 est cadré comme « établir la cause », la mesure dit
+3 événements sur toute l'histoire, et une migration sur la base servie pour un
+état qu'on vient de nommer se décide avec le reste. **C'est le premier point du
+prochain lot** — il a touché la moitié des blocs de football de cette session.
+
+### `Se qualifie` : exclusion volontaire, pas le même mécanisme
+
+| Bloc | Compétition | Niveau | `Se qualifie` dans `Non servis` |
+| --- | --- | --- | :---: |
+| M1, M2 | DFB-Pokal | `coupe_nationale` | **oui** |
+| M3, M4 | Saudi Pro League | `d1_hors_europe` | non |
+| M5 | Allsvenskan | `d1_europe` | non |
+| M7 | Austrian Bundesliga | `d1_europe` | non |
+
+`markets.markets_for(..., knockout=is_knockout(category))` ne demande
+`to_qualify` que sur `KNOCKOUT_CATEGORIES` = `{coupe_continentale,
+coupe_nationale}`. Sur un championnat le marché n'est **jamais demandé**, donc il
+n'a pas à figurer dans une liste de marchés demandés et non revenus.
+
+C'est le comportement voulu et documenté — « ailleurs le marché ne serait jamais
+servi, et le réclamer coûterait un crédit par match pour un constat vide ». Les
+deux blocs de coupe du lot le portent, les quatre blocs de championnat non :
+**aucun rapport avec le trou de M4.**
