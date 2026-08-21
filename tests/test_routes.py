@@ -426,6 +426,29 @@ def test_chaque_sport_porte_sa_bande_et_son_filet() -> None:
         assert f"tr.sportrow-{sport} td:first-child" in css, f"aucun filet pour {sport}"
 
 
+def test_tout_jeton_qui_sinverse_est_declare_dans_les_deux_themes() -> None:
+    """Meme famille que le test des teintes de sport, et meme mode de panne.
+
+    Un jeton dont la valeur **depend du fond** — le texte pose sur un aplat
+    d'accent, le filet entre deux lignes — ne manque jamais s'il n'est declare
+    que dans `:root` : il retombe sur la valeur sombre, et le theme clair recoit
+    une couleur pensee pour du noir. Rien ne casse, la page a l'air normale, et
+    l'ecart ne se voit que sur une capture.
+
+    Mesure qui les a fait naitre : le blanc de `.seg.is-on` vaut 2,21 sur le
+    vert du theme sombre et 4,52 sur celui du theme clair ; le filet de ligne
+    vaut 1,03 contre une bande de sport sombre la ou une valeur unique ne peut
+    pas tenir les deux.
+    """
+    css = _stylesheet()
+    debut = css.index("@media (prefers-color-scheme: light)")
+
+    for jeton in ("--on-accent:", "--row-line:"):
+        assert css.count(jeton) >= 2, f"{jeton} n'est pas declare dans les deux themes"
+        assert jeton in css[debut:], f"{jeton} manque au theme clair"
+        assert jeton in css[:debut], f"{jeton} manque au theme sombre"
+
+
 # -- Shortlist : densite de contexte ----------------------------------------
 
 
