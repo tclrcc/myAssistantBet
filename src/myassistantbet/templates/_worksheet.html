@@ -47,8 +47,8 @@
                   title="Choisir le match, y compris hors de la shortlist">rattacher</button>
         {% endif %}
       </td>
-      <td class="nowrap">{{ pick.tier_label }}</td>
-      <td class="affiche">
+      <td class="nowrap pick-tier">{{ pick.tier_label }}</td>
+      <td class="affiche pick-selection">
         {{ pick.selection }}
         <span class="muted small">{{ pick.market }}</span>
         {# La justification d'une seconde sélection sur le même match. Rendue ici
@@ -71,7 +71,7 @@
         </span>
         {%- endif %}
       </td>
-      <td class="num">
+      <td class="num pick-price">
         {{ '%.2f'|format(pick.price) if pick.price else '·' }}
         {# La cote **obtenue**, saisie après avoir posé le pari — elle ne se
            relève jamais toute seule, ce serait une intégration transactionnelle
@@ -119,8 +119,8 @@
         {% endif %}
         {% endif %}
       </td>
-      <td class="num muted">{{ pick.confidence or '·' }}</td>
-      <td>
+      <td class="num muted pick-conf" data-col="Conf">{{ pick.confidence or '·' }}</td>
+      <td class="pick-result">
         <div class="segmented" role="group" aria-label="Résultat">
           {% for value, symbole, titre in [('win', '✓', 'Gagné'), ('loss', '✗', 'Perdu'), ('void', '∅', 'Annulé'), ('pending', '·', 'En attente')] %}
           <button type="button" title="{{ titre }}" aria-label="{{ titre }}"
@@ -153,7 +153,7 @@
           {% endif %}
         {% endif %}
       </td>
-      <td class="nowrap">
+      <td class="nowrap pick-play">
         {% if pick.coupon_id %}
           <a class="badge ok" href="#coupon-{{ pick.coupon_id }}">coupon {{ pick.coupon_id }}</a>
         {% elif coupon_tracking %}
@@ -165,7 +165,7 @@
           <span class="muted">·</span>
         {% endif %}
       </td>
-      <td class="tight">
+      <td class="tight pick-drop">
         <button type="button" class="link-danger"
                 hx-post="/picks/{{ pick.pick_id }}/delete"
                 hx-target="#worksheet" hx-swap="outerHTML"
