@@ -9834,3 +9834,191 @@ arbitraire du prorata a disparu ; le zéro justifié par le budget se nomme.**
 Et ce prompt est **le premier de l'histoire de la base à porter les consignes
 permanentes** — 0 sur les 170 archivés, la saisie datant du 20/08 à 22:06, sept
 minutes après le dernier prompt rendu.
+
+---
+
+# LOT 20 — trois corrections tirées d'une analyse rendue
+
+Lot du 21/08/2026, **prompt 171, session 19** — sept blocs, six de football et un
+de tennis. Il est en base, donc tout ce qui suit se lit sur le rendu réel et non
+sur une reconstitution. Mesures sur une copie `VACUUM INTO` de la base servie.
+
+## §1 — La fiche entraîneur muette
+
+### §1a — La mesure, et elle exclut la branche « c'est rare »
+
+**Le cas muet est le cas majoritaire.** Sur les fragments d'équipe rendus dans un
+prompt — un fragment par équipe, la ligne en portant deux :
+
+| État de la ligne | Toute l'histoire | Depuis le 17/08 |
+| --- | ---: | ---: |
+| **aucune mention** | **704 (59 %)** | **88 (45 %)** |
+| « vu sur la feuille du JJ/MM » | 224 (19 %) | 75 (39 %) |
+| « divergence » | 111 (9 %) | 17 (9 %) |
+| « non confirmé » | 76 (6 %) | 1 (1 %) |
+| « apparié sur l'initiale du prénom » | 69 (6 %) | 12 (6 %) |
+| « (feuille du JJ/MM) », fiche absente | 9 (1 %) | 1 (1 %) |
+| *total* | 1 193 | 194 |
+
+**Première contradiction du brief : les mentions ne sont pas trois, elles sont
+cinq.** Le gabarit en définit trois ; le code en produit cinq, et deux d'entre
+elles — « non confirmé » (6 %) et « (feuille du JJ/MM) » (1 %) — **ne sont
+définies nulle part dans le chapitre COMMENT LIRE LES BLOCS**. C'est le défaut
+que ce prompt évite partout ailleurs, et il est déjà là.
+
+### D'où vient la valeur quand rien n'accompagne : de la fiche seule
+
+Établi par le code, pas par inférence. `_coach_fragment` :
+
+```python
+if not vu or not quand:
+    return f"{team} {fiche} — non confirme" if sheets_read else f"{team} {fiche}"
+```
+
+`vu` vient de la feuille de match. Muet ⇒ **aucune feuille n'a été lue**, donc la
+fiche seule, et **jamais un accord non signalé** : un accord produit toujours
+« vu sur la feuille du JJ/MM ».
+
+### Et le cas muet a deux causes opposées — ce que le docstring ne dit qu'à moitié
+
+Sur les 257 événements de football réellement partis dans un prompt :
+
+| Cause | Événements | Part |
+| --- | ---: | ---: |
+| feuilles lues → la ligne porte une mention | 159 | 62 % |
+| **MUET · `injuries` couvert** — les feuilles ne sont pas nécessaires | 87 | 34 % |
+| **MUET · `lineups` non servi** — les feuilles sont **impossibles** | 10 | 4 % |
+| pas de rapprochement | 1 | 0 % |
+
+Le docstring de `_coach_fragment` nomme l'angle mort et le situe : *« cette
+condition est aussi celle qui rend le contrôle inopérant sur les compétitions
+**bien couvertes**, donc sur les grands championnats »*. C'est vrai des 34 %.
+Ça ne l'est pas des 4 %, qui sont l'exact contraire — des compétitions où le
+fournisseur ne sert **ni** les absents **ni** les compositions :
+
+```
+   5  La Liga 2 - Spain
+   2  DFB-Pokal
+   1  Supercoupe d'Europe
+   1  Trophée des Champions
+   1  Community Shield
+```
+
+**M2 est là-dedans.** `SC Preußen Münster – Karlsruher SC`, DFB-Pokal,
+`injuries: false` et `fixtures.lineups: false` : aucune feuille ne peut être
+lue, rien ne recoupe la fiche, et rien ne le dit. Les deux entraîneurs étaient
+faux, dont un crédité de six ans d'ancienneté.
+
+Le lot du 21/08 illustre les trois régimes d'un coup :
+
+| Bloc | Compétition | `injuries` | `lineups` | Feuilles | Mention |
+| --- | --- | :---: | :---: | :---: | --- |
+| M1, M2 | DFB-Pokal | false | **false** | **impossibles** | **aucune** |
+| M3, M4 | Saudi Pro League | false | true | lues | « vu sur la feuille », « divergence » |
+| M5 | Allsvenskan | **true** | true | inutiles | **aucune** |
+| M7 | Austrian Bundesliga | false | true | lues | « divergence », « initiale » |
+
+### La date de fiche n'existe pas — la première option du §1b est impossible
+
+> « Si la ligne peut porter **la date de la fiche** à côté de l'ancienneté, c'est
+> la correction la plus simple et elle suffit. »
+
+**Le fournisseur n'en sert aucune.** La charge utile de `/coachs` porte
+`age, birth, career, firstname, height, id, lastname, name, nationality, photo,
+team, weight` — et `career` ne contient que `start`, `end`, `team`. Aucun champ
+de mise à jour : ni `update`, ni `updated`, ni `last_*`, ni `modified`.
+
+La seule date disponible est `team_context.fetched_at`, qui est **notre date de
+lecture**. L'écrire à côté de l'ancienneté serait pire que le silence : elle
+donnerait l'assurance d'une fraîcheur qui ne décrit que nous. `CLAUDE.md` a déjà
+fermé cette porte sur le cas Utrecht — « le relevé datait du matin même :
+raccourcir `TTL_HOURS[KIND_COACH]` paierait des appels sans rien corriger ».
+
+La seconde option du brief — `fiche non rafraîchie dans notre fenêtre` — est
+fausse pour la même raison : la fiche **est** rafraîchie. C'est le fournisseur
+qui ne referme pas ses étapes.
+
+### Aucun signal par ligne n'échappe au décor, sauf un
+
+Trois candidats mesurés, et deux tombent :
+
+| Candidat | Se déclencherait sur | Verdict |
+| --- | ---: | --- |
+| « fiche seule » sur tout cas muet | 45 – 59 % des fragments | **décor** |
+| « choix heuristique entre étapes ouvertes » | **83 %** des fiches (348/421) | **décor** |
+| « aucune feuille servie sur cette compétition » | **4 %** des événements | **signal** |
+
+Le second chiffre mérite d'être écrit : sur les 421 fiches en base, **68
+seulement (16 %) portent une seule étape ouverte** dans l'équipe. Partout
+ailleurs le nom rendu est le résultat d'un départage — « le départ le plus
+récent décide ». `CLAUDE.md` annonçait 92 clubs sur 110 ; sur la base d'
+aujourd'hui c'est **83 %**, et la conclusion ne bouge pas.
+
+### §1b — La correction retenue
+
+**Une quatrième mention, sur les seuls 4 %**, et la mise à jour du chapitre.
+C'est exactement la discipline des trois états d'`Absents` — « aucun absent
+signalé » / « non interrogés » / « source injoignable » — appliquée ici : une
+chose qu'on n'a pas vérifiée et une chose qu'on ne **peut pas** vérifier ne
+s'écrivent pas pareil.
+
+Formulation de la ligne, avant application :
+
+> `SC Preußen Münster K. Schulze-Marmeling (depuis 04/2026, 4 mois) — fiche seule, aucune feuille servie ici`
+
+- **« fiche seule »** dit d'où vient le nom, ce qu'aucune ligne muette ne disait ;
+- **« aucune feuille servie ici »** dit que le recoupement est hors de portée sur
+  cette compétition, pas qu'on a négligé de le faire. « Ici » désigne la
+  compétition, comme partout dans les blocs de football ;
+- **elle ne paraît que sur `lineups: false` constaté.** Une couverture inconnue
+  ne rend rien : on n'affirme pas une absence qu'on n'a pas lue.
+
+Les deux mentions qui ont fonctionné — « apparié sur l'initiale du prénom » et
+« divergence » — ne sont pas touchées.
+
+Formulation du chapitre, avant application. Le paragraphe existant passe de
+« trois mentions » à ce qui est réellement produit, **et il dit ce que veut dire
+une ligne nue** — l'état majoritaire, sur lequel il ne disait rien :
+
+> Deux sources la nourrissent, la fiche et la feuille de match, et la mention
+> dit ce qu'elles permettent de conclure. **Sans mention, la fiche est seule** :
+> rien ne l'a recoupée, et c'est le cas le plus fréquent.
+>
+>   · **« vu sur la feuille du JJ/MM »** — … *(inchangé)*
+>   · **« apparié sur l'initiale du prénom »** — … *(inchangé)*
+>   · **« divergence »** — … *(inchangé)*
+>   · **« non confirmé »** — une feuille a été lue et ne nomme aucun entraîneur.
+>   · **« fiche seule, aucune feuille servie ici »** — le fournisseur ne sert pas
+>     les compositions sur cette compétition : le recoupement est hors de portée,
+>     pas négligé. C'est là que la conférence de presse compte le plus.
+
+**Ce que ça ne corrige pas, et il faut le dire** : sur les 34 % où `injuries`
+couvre, la ligne reste nue et la fiche reste seule. La mention y paraîtrait sur
+un bloc sur trois, où elle cesserait d'être un signal — c'est le raisonnement du
+docstring, et il tient. Ce qui change pour ces blocs-là est la phrase du
+chapitre, qui dit désormais ce qu'une ligne nue vaut.
+
+### Le coût, mesuré
+
+| Ce qui change | Coût |
+| --- | ---: |
+| chapitre COMMENT LIRE LES BLOCS | **+110 tokens**, une fois par prompt portant une ligne `Entraîneur` |
+| la mention sur la ligne | **+11 tokens** par fragment concerné — **4 %** des événements |
+
+Le chapitre paie donc deux mentions qui existaient sans définition (« non
+confirmé », rendue sur 6 % des fragments, et « (feuille du JJ/MM) »), la
+nouvelle, et la phrase qui dit ce que vaut une ligne nue — l'état majoritaire,
+sur lequel il ne disait rien.
+
+### Ce que la mesure a trouvé et que le brief ne demandait pas
+
+`M4 · Al-Hazem` porte « feuille du 13/08 : **Jalel Kadri** | fiche : **Jalal
+Qaderi** — divergence ». Ce sont deux translittérations du même nom arabe. La
+mention est donc probablement un **faux positif**, et `_coach_match` ne peut pas
+le voir : elle compare sur l'identifiant, puis sur le nom replié — et
+`jalel kadri` ≠ `jalal qaderi`.
+
+**Rien n'est fait**, et c'est délibéré : le sens de l'erreur est le bon. Une
+divergence annoncée à tort envoie vérifier ; une divergence tue laisse croire.
+Le coût est une recherche de plus, le gain serait une affirmation de moins — le
+mauvais échange sur une ligne dont le préambule dit qu'elle est une piste.

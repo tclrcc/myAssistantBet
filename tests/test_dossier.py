@@ -1560,3 +1560,123 @@ def test_la_ligne_d_initiale_ne_conclut_pas_et_porte_le_prenom_entier(
     assert "apparié sur l'initiale du prénom" in ligne
     assert "divergence" not in ligne
     assert "vu sur la feuille" not in ligne, "elle ne conclut pas non plus a l'identite"
+
+
+# -- Le cas muet a deux causes, et une seule se dit --------------------------
+
+
+def _fiche(settings: Settings, team_id: int = 12, nom: str = "C. Eichner") -> None:
+    dossier.store(
+        team_id,
+        dossier.KIND_COACH,
+        [{"id": 1, "name": nom, "career": [{"team": {"id": team_id}, "start": "2020-02-01"}]}],
+        settings=settings,
+    )
+
+
+def test_une_competition_sans_compositions_le_dit_sur_la_ligne(migrated: Settings) -> None:
+    """**Le cas le plus dangereux etait le plus muet.**
+
+    Sur le lot du 21/08, les deux entraineurs de M2 — DFB-Pokal — etaient faux,
+    dont un credite de six ans d'anciennete, et la ligne ne portait **aucune**
+    mention. La cause est structurelle : cette competition declare
+    `injuries: false` **et** `fixtures.lineups: false`, donc aucune feuille ne
+    peut etre lue et rien ne recoupe la fiche.
+
+    C'est l'exact contraire de l'angle mort deja documente — les competitions
+    bien couvertes, ou les feuilles ne sont pas necessaires. Une chose qu'on n'a
+    pas verifiee et une chose qu'on ne **peut pas** verifier ne s'ecrivent pas
+    pareil, meme discipline que les trois etats d'`Absents`.
+    """
+    _fiche(migrated)
+
+    ligne = dossier._coach_fragment(
+        "Karlsruher SC", 12, NOW, migrated, sheets_read=False, sheets_possible=False
+    )
+
+    assert "fiche seule, aucune feuille servie ici" in ligne
+    assert "C. Eichner" in ligne
+
+
+def test_une_competition_bien_couverte_ne_paie_aucune_mention(migrated: Settings) -> None:
+    """**34 % des evenements, et la mention y serait du decor.**
+
+    Quand `/injuries` couvre, les feuilles ne sont pas telechargees parce
+    qu'elles ne servent a rien d'autre — pas parce qu'elles manquent. Ecrire la
+    mention sur un bloc sur trois la ferait cesser d'etre un signal, exactement
+    le defaut des deux seuils egaux.
+    """
+    _fiche(migrated)
+
+    ligne = dossier._coach_fragment(
+        "IK Sirius", 12, NOW, migrated, sheets_read=False, sheets_possible=True
+    )
+
+    assert "fiche seule" not in ligne
+    assert "non confirme" not in ligne
+    assert ligne.startswith("IK Sirius C. Eichner")
+
+
+def test_une_couverture_inconnue_n_affirme_aucune_absence(migrated: Settings) -> None:
+    """On n'affirme pas une absence qu'on n'a pas lue. `_sheets_possible` rend
+    donc **vrai** par defaut : seul un `lineups: false` constate fait paraitre
+    la mention."""
+    assert dossier._sheets_possible({}) is True
+    assert dossier._sheets_possible({"coverage": {}}) is True
+    assert dossier._sheets_possible({"coverage": {"fixtures": {}}}) is True
+    assert dossier._sheets_possible({"coverage": {"fixtures": {"lineups": True}}}) is True
+    assert dossier._sheets_possible({"coverage": {"fixtures": {"lineups": False}}}) is False
+
+
+def test_une_feuille_lue_sans_entraineur_prime_sur_la_couverture(migrated: Settings) -> None:
+    """Les deux etats ne peuvent pas coexister, et c'est le releve qui gagne :
+    si une feuille a ete lue, la couverture declaree est dementie par le fait."""
+    _fiche(migrated)
+
+    ligne = dossier._coach_fragment(
+        "Karlsruher SC", 12, NOW, migrated, sheets_read=True, sheets_possible=False
+    )
+
+    assert "non confirme" in ligne
+    assert "aucune feuille servie ici" not in ligne
+
+
+def test_le_chapitre_definit_chaque_mention_que_le_code_produit(migrated: Settings) -> None:
+    """**Un libelle sans definition dans le chapitre est le defaut que ce prompt
+    evite partout**, et il y en avait deux : « non confirme », rendu sur 6 % des
+    fragments, et « (feuille du JJ/MM) ». Le chapitre annoncait « trois
+    mentions » quand le code en produit cinq.
+
+    Le test enonce la propriete — chaque mention produite est definie — et non
+    la liste du jour.
+    """
+    from myassistantbet.services.prompt import build_prompt
+
+    _seed_event(migrated)
+    dossier.store(
+        376,
+        dossier.KIND_COACH,
+        [{"name": "P. Gustafsson", "career": [{"team": {"id": 376}, "start": "2023-06-01"}]}],
+        settings=migrated,
+    )
+    db.execute(
+        "INSERT INTO sessions (id, label, created_at) VALUES (1, 'test', ?)",
+        (db.utcnow(),),
+        settings=migrated,
+    )
+    db.execute("INSERT INTO session_events (session_id, event_id) VALUES (1, 1)", settings=migrated)
+
+    corps = build_prompt(1, settings=migrated, now=NOW).body
+    chapitre = corps.split("**« Entraîneur »**")[1]
+
+    for mention in (
+        "vu sur la feuille du JJ/MM",
+        "apparié sur l'initiale du prénom",
+        "divergence",
+        "non confirmé",
+        "fiche seule, aucune feuille servie ici",
+    ):
+        assert mention in chapitre, f"« {mention} » n'est definie nulle part"
+    # Et le cas majoritaire — la ligne nue — est dit lui aussi : 45 a 59 % des
+    # fragments ne portent aucune mention, et le chapitre n'en disait rien.
+    assert "Sans mention, la fiche est seule" in chapitre

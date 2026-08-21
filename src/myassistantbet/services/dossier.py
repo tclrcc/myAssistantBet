@@ -784,6 +784,7 @@ def _coach_fragment(
     settings: Settings,
     observed: dict[str, Any] | None = None,
     sheets_read: bool = False,
+    sheets_possible: bool = True,
 ) -> str:
     """`Estoril I. Cathro (depuis 07/2024, 2 ans — vu sur la feuille du 09/08)`.
 
@@ -816,7 +817,10 @@ def _coach_fragment(
     **Angle mort a connaitre, et il est structurel** : cette condition est aussi
     celle qui rend le controle **inoperant sur les competitions bien couvertes**,
     donc sur les grands championnats, qui sont l'essentiel des lots hors coupes
-    d'Europe. Le taux de 4 fiches fausses sur 12 est donc mesure sur un terrain
+    d'Europe. Ce n'en est que **la moitie**, et l'autre est l'exact contraire —
+    une competition ou `lineups` n'est pas servi ne peut pas etre recoupee du
+    tout, et c'est la que la fiche est le plus souvent perimee. Celle-la se
+    dit. Le taux de 4 fiches fausses sur 12 est donc mesure sur un terrain
     non representatif — il dit ce qui se passe en qualification europeenne, pas
     en Ligue 1. Rien ne suggere que `/coachs` y soit plus fiable, c'est le meme
     endpoint ; rien ne suggere l'inverse non plus.
@@ -825,9 +829,12 @@ def _coach_fragment(
     appels par match pour verifier un nom. Le chiffre viendra gratuitement d'un
     lot ou les feuilles sont lues pour une autre raison.
 
-    Quatre etats, dont trois n'existent que si l'on a regarde :
+    Cinq etats, dont trois n'existent que si l'on a regarde :
 
-    - feuilles non lues : la fiche seule, comme avant, sans mention ;
+    - feuilles non lues et **impossibles** — le fournisseur ne sert pas les
+      compositions sur cette competition : la fiche seule, et la ligne le dit.
+      Voir `_sheets_possible` ;
+    - feuilles non lues mais possibles : la fiche seule, sans mention ;
     - lues et concordantes : la date de la feuille, **jamais le mot
       « confirme » — sur Pafos les deux sources disent Celades et la realite
       est Sa Pinto, donc l'accord de deux fiches perimees se presenterait
@@ -859,7 +866,17 @@ def _coach_fragment(
     tenure = _tenure(post.get("start"), reference)
     fiche = f"{post['name']} ({tenure})" if tenure else str(post["name"])
     if not vu or not quand:
-        return f"{team} {fiche} — non confirme" if sheets_read else f"{team} {fiche}"
+        if sheets_read:
+            return f"{team} {fiche} — non confirme"
+        # **Le seul cas muet qui se dise.** Sur les 34 % ou `/injuries` couvre,
+        # la mention paraitrait sur un bloc sur trois et cesserait d'etre un
+        # signal ; sur les 4 % ou `lineups` n'est pas servi, elle dit que le
+        # recoupement est **hors de portee** et non neglige — et c'est la que la
+        # fiche est le plus souvent perimee, mesure sur le lot du 21/08 ou les
+        # deux entraineurs de DFB-Pokal etaient faux, dont un credite de six ans.
+        if not sheets_possible:
+            return f"{team} {fiche} — fiche seule, aucune feuille servie ici"
+        return f"{team} {fiche}"
     # **Sur l'identifiant, jamais sur le nom** : « D. McInnes » et
     # « Derek McInnes » sont deux libelles du meme homme, et les deux figurent
     # dans la fiche de Hearts. Un rapprochement par libelle aurait invente une
@@ -963,6 +980,31 @@ def _sheets_side(sheets: dict[str, Any], side: str) -> tuple[dict[str, Any] | No
     si.
     """
     return sheets.get(f"{side}_coach"), bool(sheets)
+
+
+def _sheets_possible(teams: dict[str, Any]) -> bool:
+    """Le fournisseur sert-il les compositions sur cette competition ?
+
+    **Le cas muet a deux causes opposees, et une seule se dit.** Mesure du
+    21/08/2026 sur les 257 evenements de football partis en prompt : 62 %
+    portent une mention, **34 % sont muets parce que `/injuries` couvre** — les
+    feuilles ne sont alors pas necessaires — et **4 % parce que `lineups` n'est
+    pas servi**, ou elles sont impossibles.
+
+    Le second cas est l'exact contraire du premier : ce ne sont pas des
+    competitions bien couvertes mais des competitions ou le fournisseur ne sert
+    **ni** les absents **ni** les compositions — DFB-Pokal, La Liga 2,
+    Supercoupe d'Europe. Rien n'y recoupe la fiche, et rien ne le disait.
+
+    Meme discipline que les trois etats d'`Absents` : une chose qu'on n'a pas
+    verifiee et une chose qu'on ne **peut pas** verifier ne s'ecrivent pas
+    pareil.
+
+    **Une couverture inconnue rend vrai**, donc aucune mention : on n'affirme
+    pas une absence qu'on n'a pas lue.
+    """
+    fixtures = (teams.get("coverage") or {}).get("fixtures") or {}
+    return fixtures.get("lineups") is not False
 
 
 def _history(
@@ -1246,6 +1288,10 @@ def dossier_lines(
     # Les feuilles de match sont rangees par evenement, la fiche d'entraineur
     # par equipe : c'est ici qu'elles se rejoignent, et nulle part ailleurs.
     feuilles = load_context(event_id, settings).get(KIND_SHEETS) or {}
+    # La couverture des compositions vient du meme releve que les identifiants
+    # d'equipe : elle est deja en main, et elle separe les deux causes du cas
+    # muet — feuilles inutiles, ou feuilles impossibles.
+    possible = _sheets_possible(teams)
 
     lines: list[tuple[str, str]] = []
     for label, fragments in (
@@ -1253,10 +1299,20 @@ def dossier_lines(
             "Entraineur",
             (
                 _coach_fragment(
-                    home, home_id, reference, settings, *_sheets_side(feuilles, "home")
+                    home,
+                    home_id,
+                    reference,
+                    settings,
+                    *_sheets_side(feuilles, "home"),
+                    sheets_possible=possible,
                 ),
                 _coach_fragment(
-                    away, away_id, reference, settings, *_sheets_side(feuilles, "away")
+                    away,
+                    away_id,
+                    reference,
+                    settings,
+                    *_sheets_side(feuilles, "away"),
+                    sheets_possible=possible,
                 ),
             ),
         ),
