@@ -61,6 +61,31 @@ EXPECTED_TABLES = {
 }
 
 
+def test_une_variable_prefixee_sans_effet_est_refusee(monkeypatch) -> None:
+    """**Le cas residuel de l'incident du 21/08.** `extra="forbid"` ne regarde
+    que les cles d'un `.env` : une variable d'environnement inconnue n'y est ni
+    lue ni refusee, elle ne fait rien en silence. C'est ainsi que
+    `MYASSISTANTBET_DB` a laisse un script se croire isole pendant que
+    `get_settings()` rendait les parametres servis.
+
+    Le prefixe n'a aucun usage legitime — l'application ne declare pas
+    d'`env_prefix` — donc le refus est sans faux positif possible.
+    """
+    monkeypatch.setenv("MYASSISTANTBET_DB", "/tmp/jamais-lu.db")
+
+    with pytest.raises(ValueError, match="sans effet"):
+        Settings(_env_file=None)
+
+
+def test_une_variable_prefixee_qui_correspond_a_un_champ_passe(monkeypatch) -> None:
+    """L'autre moitie : le refus porte sur ce qui **ne correspond a rien**, pas
+    sur le prefixe lui-meme. Une garde qui refuserait aussi un nom reconnu serait
+    pire qu'absente."""
+    monkeypatch.setenv("MYASSISTANTBET_DB_PATH", "/tmp/reconnu.db")
+
+    assert Settings(_env_file=None) is not None
+
+
 def test_une_migration_non_declaree_est_refusee(isolated_settings: Settings, monkeypatch) -> None:
     """**Garde payee le 21/08/2026.** Un script de controle a cru isoler sa base
     par `MYASSISTANTBET_DB` — le champ s'appelle `db_path`, donc la variable est

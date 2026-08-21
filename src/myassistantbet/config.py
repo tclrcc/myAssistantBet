@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PACKAGE_DIR = Path(__file__).resolve().parent
@@ -175,6 +176,43 @@ class Settings(BaseSettings):
     #: Interroger jusqu'a dix books coute le meme prix qu'un seul : le cout vaut
     #: `marches x ceil(books / 10)`. Vide = Betclic seul, comme avant.
     reference_bookmakers: str = ""
+
+    @model_validator(mode="after")
+    def _refuse_les_variables_fantomes(self) -> Settings:
+        """Refuse une variable `MYASSISTANTBET_*` qui ne correspond a aucun champ.
+
+        **Le cas residuel que `extra="forbid"` ne couvre pas**, et il a coute une
+        migration sur la base servie : ce mode ne regarde que les cles d'un
+        `.env`, jamais celles de l'environnement — pydantic-settings n'y lit que
+        les champs declares, mesure le 21/08/2026. Une variable inconnue n'y est
+        donc ni lue ni refusee : elle **ne fait rien, en silence**, et
+        `MYASSISTANTBET_DB` a laisse `get_settings()` rendre les parametres
+        servis a un script qui se croyait isole.
+
+        Ce prefixe n'a aucun usage legitime — l'application ne declare pas
+        d'`env_prefix`, donc `DB_PATH` est le nom reel et `MYASSISTANTBET_DB` ne
+        peut etre qu'une erreur. Le refus est donc sans faux positif possible, ce
+        qui n'est pas le cas d'un balayage plus large.
+
+        **Un refus et non un avertissement**, meme traitement que `extra="forbid"`
+        sur le `.env` : le defaut qu'on corrige est precisement qu'un reglage sans
+        effet ne se voit pas, et un log d'alerte au demarrage ne se voit pas non
+        plus.
+        """
+        fantomes = sorted(
+            nom
+            for nom in os.environ
+            if nom.startswith("MYASSISTANTBET_")
+            and nom.removeprefix("MYASSISTANTBET_").lower() not in type(self).model_fields
+        )
+        if fantomes:
+            raise ValueError(
+                f"Variable(s) d'environnement sans effet : {', '.join(fantomes)}. "
+                "Cette application ne préfixe pas ses variables — « DB_PATH », pas "
+                "« MYASSISTANTBET_DB ». Renomme-les ou retire-les : laissées en place, "
+                "elles ne font rien et le réglage qu'elles croient poser n'est pas appliqué."
+            )
+        return self
 
     @property
     def reference_books(self) -> tuple[str, ...]:

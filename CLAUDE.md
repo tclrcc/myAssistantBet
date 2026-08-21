@@ -6492,12 +6492,16 @@ non planifiee.
   saute toute version deja presente dans `schema_migrations`
   (`if version in done: continue`), et les cinq bornes en base sont deja celles
   que la migration ecrit. Rien ne sera rejoue, rien ne bougera.
-- **Ce qui empeche la recidive** : `db.scratch_copy()` donne au chemin d'ecriture
-  l'equivalent du `VACUUM INTO` de lecture, et `run_migrations(deliberate=)`
-  refuse un appel non declare hors de la suite de tests. `extra="forbid"` sur les
-  parametres attrape une cle inconnue dans `.env` — **et pas** une variable
-  d'environnement inconnue, mesure le meme jour : pydantic-settings ne lit
-  l'environnement que pour les champs declares.
+- **Ce qui empeche la recidive**, en trois gardes qui n'attrapent pas la meme
+  chose : `db.scratch_copy()` donne au chemin d'ecriture l'equivalent du
+  `VACUUM INTO` de lecture ; `run_migrations(deliberate=)` refuse un appel non
+  declare hors de la suite de tests ; et un validateur refuse toute variable
+  `MYASSISTANTBET_*` sans champ correspondant — ce prefixe n'a aucun usage
+  legitime, l'application ne declarant pas d'`env_prefix`, donc le refus est sans
+  faux positif possible. `extra="forbid"` sur les parametres attrape une cle
+  inconnue dans `.env` — **et pas** une variable d'environnement inconnue, mesure
+  le meme jour : pydantic-settings ne lit l'environnement que pour les champs
+  declares. C'est la troisieme garde qui porte ce cas.
 - **Ce qui n'a pas ete fait, et pourquoi** : restaurer 1.70. La table injectee
   disait 1.70 pendant que le cadre disait 1.80, et le modele suit la table — 1,7 %
   d'ecart entre l'emoji colle et la cote sur 352 selections. Restaurer aurait fait
