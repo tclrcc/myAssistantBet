@@ -9,6 +9,8 @@ pauvre que celui qui part vraiment.
 
 from __future__ import annotations
 
+import html
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -349,3 +351,59 @@ def migre_jusqu_a(settings: Any, version: int) -> list[str]:
         return db.run_migrations(settings, migrations_dir=dossier)
     finally:
         shutil.rmtree(dossier, ignore_errors=True)
+
+
+#: Le formulaire d'apercu d'import, tel que le gabarit le rend.
+_IMPORT_FORM = re.compile(
+    r'<form method="post" action="/history/\d+/picks/import">(.*?)</form>', re.S
+)
+
+
+def repost_import_form(page: str) -> dict[str, object]:
+    """Le formulaire d'apercu, renvoye comme un navigateur le ferait.
+
+    **Rien n'est fabrique ici** : les champs sont ceux que le gabarit a rendus,
+    avec leurs valeurs et leurs cases deja cochees. Un test qui construirait le
+    corps a la main testerait sa propre idee du formulaire, et c'est exactement
+    ce qui a permis a la porte de se fermer sans que rien ne tombe.
+
+    **Partage plutot que recopie**, et pour la raison que ce projet paie
+    partout : deux fichiers de test qui reposteraient chacun leur idee du
+    formulaire finiraient par ne plus poster le meme, et le second cesserait
+    silencieusement de couvrir ce que le premier garde. Un champ cache ajoute
+    au gabarit voyage desormais dans tous les tests qui passent par ici.
+    """
+    corps = _IMPORT_FORM.search(page)
+    assert corps is not None, (
+        "aucun formulaire d'import dans l'aperçu — un collage complet doit être "
+        "importable, et il ne l'est plus"
+    )
+    corps = corps.group(1)
+    champs: list[tuple[str, str]] = []
+    for balise in re.finditer(r"<input\b([^>]*)>", corps):
+        attributs = balise.group(1)
+        nom = re.search(r'name="([^"]*)"', attributs)
+        if nom is None:
+            continue
+        genre = (re.search(r'type="([^"]*)"', attributs) or [None, "text"])[1]
+        if genre == "checkbox" and "checked" not in attributs:
+            continue
+        valeur = re.search(r"value=(?:\"([^\"]*)\"|'([^']*)')", attributs)
+        brut = ""
+        if valeur is not None:
+            brut = valeur.group(1) if valeur.group(1) is not None else (valeur.group(2) or "")
+        champs.append((html.unescape(nom.group(1)), html.unescape(brut)))
+    for menu in re.finditer(r'<select\s+name="([^"]*)"[^>]*>(.*?)</select>', corps, re.S):
+        options = menu.group(2)
+        choisie = re.search(r'<option value="([^"]*)"[^>]*\bselected\b', options) or re.search(
+            r'<option value="([^"]*)"', options
+        )
+        champs.append((html.unescape(menu.group(1)), html.unescape(choisie.group(1))))
+    envoi: dict[str, object] = {}
+    for nom, valeur in champs:
+        if nom in envoi:
+            deja = envoi[nom]
+            envoi[nom] = (deja if isinstance(deja, list) else [deja]) + [valeur]
+        else:
+            envoi[nom] = valeur
+    return envoi

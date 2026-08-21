@@ -5345,6 +5345,79 @@ preambule — et les jetait une fois l'analyse rendue.
 - La saisie passe par **deux menus fermes** et jamais par un champ libre : une faute de
   frappe ferait disparaitre la ligne de son regroupement sans un mot.
 
+## La prose de la section C (`picks.angle_note`, `picks.invalidation`)
+
+**Le gabarit ecrit onze colonnes, `picks_import.HEADERS` en declarait huit.**
+`Angle (1 ligne)` et `Ce qui la tue` etaient produites a chaque session, collees
+a chaque import, et jetees par trois entrees manquantes dans un dictionnaire.
+
+Mesure du 21/08/2026, faite avant d'ecrire une ligne : les **41 collages
+archives portent tous l'en-tete complet**, une seule variante sur 41, et sur les
+lignes rapprochables la cellule `Ce qui la tue` est non vide **76 fois sur 76**.
+Le taux de renseignement par le modele etait parfait ; c'est la captation qui
+manquait. Le commentaire du champ `angle` signalait meme le piege — « Angle »
+n'est pas un alias d'`angle` — sans qu'il existe nulle part ou verser la phrase.
+
+- **`invalidation` porte le controle 7 du cadre** — « chaque selection porte une
+  condition d'invalidation » — donc la seule des deux colonnes qui soit
+  **opposable**. Et c'est la seule colonne de ce chantier qu'un bilan pourra
+  relire sans precaution de date : elle est ecrite **avant le coup d'envoi**,
+  donc rien de ce qui vient apres ne peut la contaminer. C'est ce qui la separe
+  d'un commentaire.
+- **`angle_note` reste distincte d'`angle`**, qui porte le vocabulaire ferme
+  `issue` / `maniere`. Les fondre ferait entrer une phrase entiere dans un champ
+  a deux valeurs, et la carte « par type d'angle » cesserait de regrouper quoi
+  que ce soit.
+- **Un tiret n'est pas une condition** (`PROSE_EMPTY`). Un rendu ecrit `—` pour
+  dire « rien ici » ; le recopier ferait passer la ligne pour couverte et le
+  controle 7 passerait sur une selection qui ne porte rien — le defaut
+  caracteristique du projet, applique a un controle.
+- **`prose_source` dit d'ou vient la valeur**, `import` ou `reconstruit`. Ce
+  n'est pas « fiable » contre « moins fiable » : une captation recopie une
+  cellule que le lecteur avait sous les yeux, une reprise decoupe une ligne par
+  ses offsets, donc par une regle qui peut echouer. `NULL` veut dire que les
+  deux colonnes sont vides — il n'y a rien a situer. Meme regle que
+  `price_source` : ce qui a ete deduit se declare, ce qui n'existe pas ne se
+  declare pas.
+- **Les deux colonnes sont rendues sur la feuille de session.** Une donnee que
+  rien ne lit finit par se retirer — c'est le sort exact de l'effectif collecte
+  des mois sans lecteur, retire par la migration 022. Et il y a mieux : c'est en
+  relisant la condition **apres** le resultat qu'on voit si l'angle a cede par ou
+  l'analyse l'avait annonce.
+
+### La reprise (`picks_import.rebuild_prose`, `myassistantbet-replay --prose`)
+
+**A faire pendant que `raw_text` existe.** `imports_raw` ne commence qu'a la
+session 15 (17/08/2026) : les 235 selections anterieures n'ont laisse aucun texte
+et ne seront **jamais** reprises. Le solde se reprend, et il se reprend une fois.
+
+- **Le decoupage passe par les offsets, jamais par un rapprochement de
+  libelles.** `picks.offset_start` / `offset_end` ont ete ecrits par l'import qui
+  a cree la ligne : ils designent *cette* ligne-la. Mesure comparee : un
+  rapprochement sur `(session, selection)` rendait **76 lignes sur 77**, les
+  offsets en rendent **117 sur 117** — section C et C-bis comprises — et sans
+  aucun faux appariement possible.
+- **L'entete en vigueur se lit a l'offset** (`_column_maps`), avec les memes
+  remises a zero que `read` : un titre de section ferme l'entete en cours, et
+  sans cette regle l'entete de la section C servirait a decouper une ligne de
+  C-bis. Deux lectures paralleles du meme decoupage auraient fini par ne plus
+  designer les memes colonnes.
+- **Jamais d'ecrasement** : seules les lignes dont `prose_source` est nul sont
+  reprises. Une passe rejouee ne change rien, et un test le verifie.
+- Le compte des **non retrouvees** est nomme et non compte : un compte se
+  resorbe, un identifiant se va voir.
+
+### Ce qui etait deja livre, et qu'il ne fallait pas refaire
+
+Le signalement d'une section declaree et absente du collage **existe depuis le
+17/08** (`sections.for_paste`, rendu par `ImportPreview.readout`), et il a ete
+**durci en refus le 20/08** : l'avertissement avait parle les 20 fois ou la ligne
+`dossiers_ouverts` manquait, et les 20 imports avaient ete valides quand meme.
+`main.import_picks` demande donc une confirmation explicite. **Un signal qui
+n'arrete rien ne se distingue pas d'un signal absent** — et le verifier avant de
+le reconstruire est la meme regle que « chercher d'abord si le bloc ne porte pas
+deja le fait qui la contredit ».
+
 ## Le lot d'une session, et ce qu'elle en a ecarte (`prompt_events`)
 
 L'application enregistrait ce qui avait ete **selectionne**, jamais ce qui avait ete
@@ -6485,6 +6558,38 @@ plusieurs refus possibles, celui qu'il montrait. Un exemplaire choisi se perime
 avec ce qu'il exploite, et le repointer sur un autre refus reproduit la meme
 fragilite decalee d'un cran. La forme robuste est de **ne plus choisir** : que le
 controle enumere les chemins de refus et exige de chacun sa ligne de journal.
+
+### Onzieme occurrence, en version migration : une reprise indexee sur un etat mutable
+
+**La migration 049 annoncait « 16 typees » et le chiffre etait juste.** Rien
+n'obligeait pourtant ce 16 a correspondre a la population reelle : sa clause
+s'indexait sur `sessions.open_dossiers_state`, un etat **ecrit par le dernier
+import de la session**. Les lignes ecrites avant que cet etat soit pose lui ont
+echappe, et le releve ne pouvait pas le dire — il comptait ce qu'il avait touche,
+pas ce qu'il aurait du toucher.
+
+Mesure du 21/08/2026 : **43 selections** portaient `research_overridden = 1` sans
+aucune cause, sessions 11 et 13. Comme `is_collection_fault(None)` vaut faux,
+elles comptaient depuis comme des **observations sur le modele** — « elle s'est
+notee comme si elle avait cherche » — sur une population de 127. Un tiers du
+compte affirmait ce qu'il ignorait.
+
+- **La regle qui en sort** : une reprise s'indexe sur **la colonne qu'elle
+  corrige**, jamais sur un etat qui la decrit. `research_override_cause IS NULL`
+  est rendu faux par la reprise elle-meme, donc la clause est complete et
+  idempotente **par construction** ; `open_dossiers_state = 'absente'` est une
+  observation exterieure qui peut arriver apres.
+- **Le compte d'une reprise ne se verifie pas contre lui-meme.** « 16 typees »
+  se lit comme une couverture ; c'est un volume. La verification est le compte
+  **restant** — combien de lignes remplissent encore la condition d'origine — et
+  il vaut zero ou il ne vaut rien.
+- Corollaire, et c'est la troisieme branche de la regle des « a ne pas oublier » :
+  ces 43 lignes ne se re-typent **pas**. `imports_raw` ne commence qu'a la
+  session 15, le texte de ces deux sessions n'existe plus, et leurs voisines
+  typees `ligne_absente` ne sont qu'un « probablement ». Elles deviennent un
+  **troisieme etat** (`cause_inconnue`, migration 073) : ni observation, ni
+  defaut de collage identifie. Le total cesse de surestimer sans se mettre a
+  sous-estimer.
 
 ### L'incident du 21/08/2026 : une migration partie sur la base servie
 

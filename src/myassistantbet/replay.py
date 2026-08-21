@@ -421,9 +421,29 @@ def main(argv: list[str] | None = None) -> int:
             "les sélections DÉJÀ en base, sans en créer aucune"
         ),
     )
+    parser.add_argument(
+        "--prose",
+        action="store_true",
+        help=(
+            "reprend « Angle (1 ligne) » et « Ce qui la tue » sur TOUTES les sélections "
+            "dont le collage est conservé, sans en créer aucune"
+        ),
+    )
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(levelname)-8s %(message)s")
     settings = get_settings()
+
+    # **Une passe globale, pas un rejeu de collage.** Elle ne prend aucun
+    # identifiant : les deux colonnes ont ete jetees par tous les imports depuis
+    # le premier, et reprendre collage par collage ferait dependre la couverture
+    # de la memoire de celui qui tape. Le compte affiche dit ce qui n'a pas ete
+    # retrouve, et c'est lui qui rend la passe verifiable.
+    if args.prose:
+        rapport = picks_import.rebuild_prose(apply=args.ecrire, settings=settings)
+        print(rapport.line)
+        if not args.ecrire:
+            print("Simulation : rien n'a été écrit. Ajoute --ecrire pour enregistrer.")
+        return 0
 
     if args.lister is not None:
         for collage in imports_raw.list_for_session(args.lister, settings):

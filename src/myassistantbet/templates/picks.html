@@ -246,6 +246,25 @@
               lecture
             </span>
             {% endif %}
+            {# La prose du tableau voyage telle quelle. Champs cachés et non
+               éditables : on recopie ce que le rendu a écrit, on ne le réécrit
+               pas — une condition d'invalidation retouchée à l'aperçu ne serait
+               plus celle sur laquelle la sélection a été prise. #}
+            {% if pick.angle_note %}
+            <input type="hidden" name="angle_note_{{ pick.index }}" value="{{ pick.angle_note }}">
+            {% endif %}
+            {% if pick.invalidation %}
+            <input type="hidden" name="invalidation_{{ pick.index }}"
+                   value="{{ pick.invalidation }}">
+            <span class="badge" title="Ce qui la tue — {{ pick.invalidation }}">invalidation</span>
+            {% else %}
+            {# Le contrôle 7 du cadre. **Signalé, jamais refusé** : on n'en
+               connaît pas encore le taux de base, et opposer avant de mesurer
+               est ce que ce projet refuse partout ailleurs. #}
+            <span class="badge warn" title="Contrôle 7 : aucune condition d'invalidation sur cette ligne">
+              sans invalidation
+            </span>
+            {% endif %}
             {% if pick.claim %}
             <input type="hidden" name="claim_{{ pick.index }}" value="{{ pick.claim.raw }}">
             <span class="badge" title="Cran calculé sur {{ pick.claim.facts | length }} fait(s), {{ pick.claim.distinct_publishers }} éditeur(s) distinct(s)">
@@ -396,6 +415,17 @@
           <option value="{{ key }}">{{ label }}</option>
         {% endfor %}
       </select></label>
+    {# Les deux colonnes de prose du tableau rendu. À la main elles se tapent ;
+       à l'import elles se recopient. La condition d'invalidation porte le
+       contrôle 7 du cadre, et c'est la seule des deux qui soit opposable — elle
+       s'écrit avant le coup d'envoi, donc rien de ce qui vient après ne peut
+       la réécrire. #}
+    <label class="grow">Angle (1 ligne)
+      <input type="text" name="angle_note"
+             placeholder="ce qui porte la sélection"></label>
+    <label class="grow">Ce qui la tue
+      <input type="text" name="invalidation"
+             placeholder="la condition qui invalide l'angle"></label>
     {# Exigée dès qu'une sélection existe déjà sur ce match. Le prompt le demande
        depuis toujours — « et tu le dis alors explicitement » — mais la
        justification restait dans le rendu et n'arrivait jamais en base. #}

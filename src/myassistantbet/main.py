@@ -1190,6 +1190,8 @@ async def add_pick(request: Request, session_id: int) -> HTMLResponse:
             source_level=form.get("source_level", ""),
             price_source=form.get("price_source", ""),
             independence_note=form.get("independence_note", ""),
+            angle_note=form.get("angle_note", ""),
+            invalidation=form.get("invalidation", ""),
             late_reason=form.get("late_reason", ""),
             settings=get_settings(),
         )
@@ -1291,6 +1293,12 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
                 source_level=form.get(f"source_{index}", ""),
                 price_source=form.get(f"price_source_{index}", ""),
                 independence_note=form.get(f"independence_{index}", ""),
+                # Les deux colonnes de prose du tableau rendu. Elles voyagent en
+                # champ cache : elles se recopient, elles ne se saisissent pas —
+                # les rendre editables a l'apercu inviterait a reecrire une
+                # condition d'invalidation que le modele a posee.
+                angle_note=form.get(f"angle_note_{index}", ""),
+                invalidation=form.get(f"invalidation_{index}", ""),
                 late_reason=form.get(f"late_{index}", ""),
                 claim=form.get(f"claim_{index}", ""),
                 # Le drapeau de dossier ouvert voyage avec la ligne. Absent, il

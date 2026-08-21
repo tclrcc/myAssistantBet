@@ -1068,7 +1068,23 @@ def test_la_saisie_a_la_main_n_est_jamais_ecrasee(migrated: Settings) -> None:
     assert ligne["research_overridden"] is None
 
 
-def _ecrasee(settings: Settings, session_id: int, confiance: str, bloc: str) -> None:
+def _ecrasee(
+    settings: Settings,
+    session_id: int,
+    confiance: str,
+    bloc: str,
+    cause: str = OVERRIDE_HORS_DOSSIERS,
+) -> None:
+    """Une selection ramenee en lecture, **avec sa cause**.
+
+    Le motif etait absent de ce montage, et la cause vaut ici ce que le parcours
+    reel produit : `_apply_research` en calcule toujours une des cinq des que
+    `opened` est faux. Sans elle, ces tests montaient l'**etat qu'on repare** —
+    un ecrasement non type — et passaient pour la mauvaise raison, un
+    `is_collection_fault(None)` faux les faisant compter comme des observations
+    sur le modele. Meme famille que la forme canonique d'avant la garde
+    d'anteriorite : la convention de test refletait le defaut.
+    """
     pick_id = add_pick(
         settings=settings,
         session_id=session_id,
@@ -1078,6 +1094,7 @@ def _ecrasee(settings: Settings, session_id: int, confiance: str, bloc: str) -> 
         confidence=confiance,
         claim=bloc,
         opened=False,
+        override_cause=cause,
     )
     set_result(pick_id, "win", settings)
 
@@ -1103,6 +1120,36 @@ def test_l_override_compte_la_distribution_et_non_le_total(migrated: Settings) -
     assert override.claimed == [(3, 2), (5, 1)]
     assert override.fabricated == 1, "le 5 revendique des faits sur un dossier non ouvert"
     assert "dont 1 avec des faits déclarés" in override.line
+
+
+def test_un_ecrasement_sans_cause_ne_compte_pas_comme_une_observation(
+    migrated: Settings,
+) -> None:
+    """**Le troisieme etat, et il tenait a une ligne de `claim_columns`.**
+
+    Une cause hors vocabulaire y devenait `None`, indiscernable d'une ligne
+    anterieure au typage ; `is_collection_fault(None)` valant faux, ces lignes
+    tombaient dans `total`, c'est-a-dire dans le compte qui **impute au modele**
+    une inflation — « elle s'est notee comme si elle avait cherche ». Mesure du
+    21/08/2026 : 43 selections des sessions 11 et 13 dans ce cas, sur une
+    population de 127. Un tiers du compte affirmait ce qu'il ignorait.
+
+    Ni imputable au modele — on ne sait pas s'il avait ouvert un dossier — ni
+    identifiable comme un collage perdu, faute de pouvoir dire lequel : un
+    troisieme compte, et aucune deduction.
+    """
+    session_id = _session(migrated)
+    trois = _bloc(source_level=1, faits=[_fait()], manque_touche_facteur=True)
+    _ecrasee(migrated, session_id, "3", trois, cause=OVERRIDE_HORS_DOSSIERS)
+    for _ in range(2):
+        _ecrasee(migrated, session_id, "3", trois, cause="")
+
+    override = analysis(settings=migrated).override
+
+    assert override.total == 1, "seule celle dont la cause est connue accuse le modele"
+    assert override.unknown == 2
+    assert override.claimed == [(3, 1)], "la distribution ne porte que ce qui est imputable"
+    assert "2 autre(s) ramenée(s) en lecture sans cause" in override.line
 
 
 def test_les_ecrasees_sortent_de_la_matrice_des_transitions(migrated: Settings) -> None:
@@ -1455,6 +1502,12 @@ def test_une_recherche_qui_n_a_pas_eu_lieu_se_compte(migrated: Settings) -> None
             confidence="2",
             claim=_bloc(source_level=2, faits=faits, manque_touche_facteur=True),
             opened=False,
+            # La cause que le parcours reel pose : le match ne figure pas dans
+            # la liste des dossiers declares. Sans elle l'ecrasement serait non
+            # type, donc compte dans `unknown` et pas dans `total` — ce que ce
+            # test mesure est une observation sur le modele, et une observation
+            # suppose qu'on sache ce qui s'est passe.
+            override_cause=OVERRIDE_HORS_DOSSIERS,
             independence_note="angles indépendants (fixture)",
             settings=migrated,
         )

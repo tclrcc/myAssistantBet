@@ -23,7 +23,6 @@ diagnostic est alors de vérifier que le nouveau compte est celui qu'on voulait.
 
 from __future__ import annotations
 
-import html
 import re
 from collections.abc import Iterator
 from pathlib import Path
@@ -39,6 +38,7 @@ from myassistantbet.services import picks_import, sections
 from myassistantbet.services import prompt as prompt_service
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.render import ESTIMATED_MARK
+from tests.helpers import repost_import_form as _repost
 
 #: Le collage réel du 19/08/2026, 21 559 caractères, tel qu'il a été reçu —
 #: clôtures de blocs mangées par le rendu, tabulations à la place des barres,
@@ -349,6 +349,11 @@ COLLAGE_G = (Path(__file__).parent / "fixtures" / "collage_complet_g.md").read_t
 #: d'origine, deux exploratoires), un combine de trois jambes, neuf reperes de
 #: scores dont `M2=PASSE` qui n'en est pas un, neuf dossiers ouverts, et cinq
 #: mises pour les cinq lignes de section C.
+#:
+#: `invalidation` vient du meme tableau, et son compte est le **meme que celui
+#: des selections** : les deux tableaux du rendu portent l'en-tete a onze
+#: colonnes, et chacune de leurs sept lignes remplit la cellule. C'est ce qui
+#: rend le controle 7 comptable — la colonne existait, elle etait jetee.
 ECRIT = {
     "section_c": 5,
     "c_bis": 2,
@@ -358,55 +363,9 @@ ECRIT = {
     "jambes": 3,
     "sets": 8,
     "mises": 5,
+    "invalidations": 7,
+    "angles_prose": 7,
 }
-
-_IMPORT_FORM = re.compile(
-    r'<form method="post" action="/history/\d+/picks/import">(.*?)</form>', re.S
-)
-
-
-def _repost(page: str) -> dict[str, object]:
-    """Le formulaire d'apercu, renvoye comme un navigateur le ferait.
-
-    **Rien n'est fabrique ici** : les champs sont ceux que le gabarit a rendus,
-    avec leurs valeurs et leurs cases deja cochees. Un test qui construirait le
-    corps a la main testerait sa propre idee du formulaire, et c'est exactement
-    ce qui a permis a la porte de se fermer sans que rien ne tombe.
-    """
-    corps = _IMPORT_FORM.search(page)
-    assert corps is not None, (
-        "aucun formulaire d'import dans l'aperçu — un collage complet doit être "
-        "importable, et il ne l'est plus"
-    )
-    corps = corps.group(1)
-    champs: list[tuple[str, str]] = []
-    for balise in re.finditer(r"<input\b([^>]*)>", corps):
-        attributs = balise.group(1)
-        nom = re.search(r'name="([^"]*)"', attributs)
-        if nom is None:
-            continue
-        genre = (re.search(r'type="([^"]*)"', attributs) or [None, "text"])[1]
-        if genre == "checkbox" and "checked" not in attributs:
-            continue
-        valeur = re.search(r"value=(?:\"([^\"]*)\"|'([^']*)')", attributs)
-        brut = ""
-        if valeur is not None:
-            brut = valeur.group(1) if valeur.group(1) is not None else (valeur.group(2) or "")
-        champs.append((html.unescape(nom.group(1)), html.unescape(brut)))
-    for menu in re.finditer(r'<select\s+name="([^"]*)"[^>]*>(.*?)</select>', corps, re.S):
-        options = menu.group(2)
-        choisie = re.search(r'<option value="([^"]*)"[^>]*\bselected\b', options) or re.search(
-            r'<option value="([^"]*)"', options
-        )
-        champs.append((html.unescape(menu.group(1)), html.unescape(choisie.group(1))))
-    envoi: dict[str, object] = {}
-    for nom, valeur in champs:
-        if nom in envoi:
-            deja = envoi[nom]
-            envoi[nom] = (deja if isinstance(deja, list) else [deja]) + [valeur]
-        else:
-            envoi[nom] = valeur
-    return envoi
 
 
 @pytest.fixture
@@ -455,6 +414,8 @@ def test_un_rendu_complet_de_a_a_g_s_importe_et_ecrit_chaque_objet(
         "jambes": compte("SELECT count(*) n FROM combo_legs"),
         "sets": compte("SELECT count(*) n FROM set_scores"),
         "mises": compte("SELECT count(*) n FROM mises"),
+        "invalidations": compte("SELECT count(*) n FROM picks WHERE invalidation IS NOT NULL"),
+        "angles_prose": compte("SELECT count(*) n FROM picks WHERE angle_note IS NOT NULL"),
     }
 
     assert obtenu == ECRIT, (
@@ -635,6 +596,8 @@ def test_un_rendu_complet_s_importe_sous_des_consignes_permanentes(
         "jambes": compte("SELECT count(*) n FROM combo_legs"),
         "sets": compte("SELECT count(*) n FROM set_scores"),
         "mises": compte("SELECT count(*) n FROM mises"),
+        "invalidations": compte("SELECT count(*) n FROM picks WHERE invalidation IS NOT NULL"),
+        "angles_prose": compte("SELECT count(*) n FROM picks WHERE angle_note IS NOT NULL"),
     }
 
     assert obtenu == ECRIT, "des consignes permanentes coûtent une sélection"

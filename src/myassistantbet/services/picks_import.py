@@ -22,6 +22,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
+from ..db import connect
 from . import stakes
 from .combos import PRICE_GAP, ParsedCombo, read_combos
 from .confidence import (
@@ -38,6 +39,7 @@ from .confidence import (
 from .grid import GridRow, anchor, build_view
 from .history import (
     ANGLES,
+    PROSE_REBUILT,
     PickableEvent,
     PromptBlocks,
     list_picks,
@@ -134,6 +136,18 @@ HEADERS: dict[str, tuple[str, ...]] = {
     # un champ a deux valeurs.
     "angle": ("type", "nature"),
     "source": ("source", "niveau de source", "niveau source", "src"),
+    # **La prose, et elle a sa propre colonne.** Le commentaire ci-dessus
+    # signalait le piege depuis le debut — « Angle » n'est pas un alias
+    # d'`angle` — sans qu'il existe nulle part ou verser la phrase : elle
+    # traversait donc l'import et se perdait. Mesure du 21/08/2026 : les 41
+    # collages archives portent tous l'en-tete a onze colonnes, et sur les 76
+    # lignes rapprochables `Ce qui la tue` est non vide **76 fois sur 76**.
+    "angle_note": ("angle 1 ligne", "angle", "argument", "pourquoi"),
+    # Le controle 7 du cadre — « chaque selection porte une condition
+    # d'invalidation ». La seule des deux qui soit **opposable**, et elle est
+    # ecrite avant le coup d'envoi, donc hors de portee d'une relecture
+    # retrospective.
+    "invalidation": ("ce qui la tue", "invalidation", "condition d invalidation"),
 }
 
 
@@ -158,6 +172,12 @@ class ParsedPick:
     #: ne font pas partie de `ready`, une selection restant enregistrable sans.
     angle: str = ""
     source: str = ""
+    #: La prose du tableau, recopiee telle quelle : l'argument en une ligne, et
+    #: la condition qui invalide la selection. **Rien n'est deduit de l'une pour
+    #: l'autre** — un rendu peut remplir la premiere et laisser la seconde vide,
+    #: et c'est cette absence-la que le controle 7 doit pouvoir compter.
+    angle_note: str = ""
+    invalidation: str = ""
     #: Un autre pick de la session porte deja ce match — dans le tableau colle,
     #: ou en base. La ligne reste proposee, mais elle reclame sa justification
     #: d'independance : `add_pick` la refuse sans.
@@ -700,6 +720,19 @@ def _map_columns(cells: list[str]) -> dict[str, int] | None:
     return found if {"market", "selection"} <= set(found) else None
 
 
+#: Ce qu'un rendu ecrit pour dire « rien ici ». Recopie tel quel, un tiret
+#: compterait comme une condition d'invalidation renseignee, et le controle 7
+#: passerait sur une ligne qui n'en porte aucune — exactement le defaut que ce
+#: chantier retire ailleurs. Les trois formes de tiret, le rendu variant.
+PROSE_EMPTY = frozenset({"", "-", "—", "–", "n/a", "na", "aucune", "aucun"})
+
+
+def _prose(text: str) -> str:
+    """Une cellule de prose, vide quand elle ne dit rien."""
+    cleaned = " ".join((text or "").split())
+    return "" if cleaned.lower() in PROSE_EMPTY else cleaned
+
+
 def _at(cells: list[str], position: int | None) -> str:
     """Cellule a cet indice, ou chaine vide si la colonne manque sur la ligne."""
     if position is None or position >= len(cells):
@@ -938,6 +971,8 @@ def parse_table(
                 confidence=_confidence(values["confidence"]),
                 angle=_angle(values["angle"]),
                 source=_source(values["source"]),
+                angle_note=values["angle_note"].strip(),
+                invalidation=_prose(values["invalidation"]),
                 duplicate=signature in seen,
                 same_event=event_id is not None and event_id in events,
                 # Les deux types de match rapproches portent ce drapeau : la
@@ -1709,3 +1744,141 @@ def build_preview(
     except Exception:  # pragma: no cover - un releve ne doit jamais casser un import
         logger.exception("Releve de sections indisponible pour la session %d", session_id)
     return preview
+
+
+# -- Reprise de la prose ----------------------------------------------------
+
+
+@dataclass
+class ProseRebuild:
+    """Ce qu'une reprise de la prose a retrouve, et ce qu'elle a laisse.
+
+    **Un compte, jamais un taux.** Il est juste a tout effectif, et c'est lui
+    qui rend la reprise verifiable : `scanned` moins `matched` est le nombre de
+    selections dont la ligne n'a pas ete retrouvee dans son propre collage, et
+    ce nombre-la doit se voir plutot que de se deviner du silence.
+    """
+
+    #: Selections candidates : un `import_id`, des offsets, et aucune prose
+    #: deja captee. Une valeur captee ne se reecrit jamais par une reprise.
+    scanned: int = 0
+    #: Lignes effectivement retrouvees et decoupees dans le collage archive.
+    matched: int = 0
+    #: Celles dont au moins une des deux colonnes porte quelque chose.
+    written: int = 0
+    #: Retrouvees, mais les deux colonnes vides. **Comptees a part** : le
+    #: gabarit demande les deux, et une cellule laissee vide est une reponse du
+    #: modele, pas une panne de reprise. Les confondre ferait chercher un defaut
+    #: de decoupage la ou il n'y a qu'un tableau incomplet.
+    empty: int = 0
+    #: Les selections dont la ligne n'a pas ete retrouvee, nommees et non
+    #: comptees : un compte se resorbe, un identifiant se va voir.
+    missed: list[int] = field(default_factory=list)
+
+    @property
+    def line(self) -> str:
+        detail = f"{self.matched}/{self.scanned} ligne(s) retrouvée(s), {self.written} écrite(s)"
+        if self.empty:
+            detail += f", {self.empty} sans prose dans le rendu"
+        if self.missed:
+            detail += f" · non retrouvées : {', '.join(str(pid) for pid in self.missed)}"
+        return detail
+
+
+def _column_maps(raw: str) -> list[tuple[int, dict[str, int]]]:
+    """Les entetes de tableau du collage, avec l'offset ou chacun prend effet.
+
+    **Le meme parcours que `read`, et surtout les memes remises a zero.** Un
+    titre de section ferme l'entete en cours ; sans cette regle, l'entete de la
+    section C servirait a decouper une ligne de C-bis, qui porte le sien. Deux
+    lectures paralleles du meme decoupage finiraient par ne plus designer les
+    memes colonnes — le piege deja paye par l'assembleur de contexte.
+    """
+    maps: list[tuple[int, dict[str, int]]] = []
+    ouvert = True
+    for offset, brut in _positioned(raw or ""):
+        line = brut.rstrip("\r\n")
+        if EXPLORATORY_HEAD.search(_fold(line)) or SECTION_HEAD.match(line):
+            ouvert = True
+            continue
+        cells = _cells(line)
+        if cells is None or _is_separator(cells):
+            continue
+        if not ouvert:
+            continue
+        found = _map_columns(cells)
+        if found is not None:
+            maps.append((offset, found))
+            ouvert = False
+    return maps
+
+
+def _map_at(maps: list[tuple[int, dict[str, int]]], offset: int) -> dict[str, int] | None:
+    """L'entete en vigueur a cet offset : le dernier pose avant lui."""
+    retenu = None
+    for depart, mapping in maps:
+        if depart <= offset:
+            retenu = mapping
+        else:
+            break
+    return retenu
+
+
+def rebuild_prose(
+    apply: bool = False,
+    settings: Settings | None = None,
+) -> ProseRebuild:
+    """Reprend `angle_note` et `invalidation` depuis les collages archives.
+
+    **A faire pendant que `raw_text` existe.** `imports_raw` ne commence qu'a la
+    session 15 (17/08/2026) : les 235 selections anterieures n'ont laisse aucun
+    texte et ne seront jamais reprises. Ce qui se reprend ici est le solde — les
+    lignes dont l'`import_id` et les offsets pointent au caractere pres sur leur
+    propre ligne de tableau.
+
+    **Le decoupage passe par les offsets, jamais par un rapprochement de
+    libelles.** `picks.offset_start` / `offset_end` ont ete ecrits par l'import
+    qui a cree la ligne : ils designent *cette* ligne-la et aucune autre. Un
+    rapprochement sur `(session, selection)` aurait rendu 76 lignes sur 77 —
+    mesure — et les faux appariements d'un tel rapprochement sont exactement ce
+    que la colonne `prose_source` ne saurait pas rattraper.
+
+    **Jamais d'ecrasement.** Seules les lignes dont `prose_source` est nul sont
+    reprises : une valeur captee au collage vaut toujours mieux qu'une valeur
+    reconstruite, et une reprise rejouee deux fois ne doit rien changer.
+    """
+    settings = settings or get_settings()
+    report = ProseRebuild()
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT k.id, k.offset_start, k.offset_end, i.raw_text "
+            "  FROM picks k JOIN imports_raw i ON i.id = k.import_id "
+            " WHERE k.prose_source IS NULL "
+            "   AND k.offset_start IS NOT NULL AND k.offset_end IS NOT NULL "
+            " ORDER BY k.id"
+        ).fetchall()
+        caches: dict[int, list[tuple[int, dict[str, int]]]] = {}
+        for row in rows:
+            report.scanned += 1
+            raw = str(row["raw_text"] or "")
+            maps = caches.setdefault(id(raw), _column_maps(raw))
+            debut, fin = int(row["offset_start"]), int(row["offset_end"])
+            cells = _cells(raw[debut:fin].rstrip("\r\n"))
+            mapping = _map_at(maps, debut)
+            if cells is None or mapping is None:
+                report.missed.append(int(row["id"]))
+                continue
+            report.matched += 1
+            argument = " ".join(_at(cells, mapping.get("angle_note")).split())
+            condition = _prose(_at(cells, mapping.get("invalidation")))
+            if not argument and not condition:
+                report.empty += 1
+                continue
+            report.written += 1
+            if apply:
+                conn.execute(
+                    "UPDATE picks SET angle_note = ?, invalidation = ?, prose_source = ? "
+                    " WHERE id = ?",
+                    (argument or None, condition or None, PROSE_REBUILT, int(row["id"])),
+                )
+    return report

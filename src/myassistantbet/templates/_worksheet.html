@@ -60,6 +60,22 @@
           ↳ {{ pick.independence_note }}
         </span>
         {%- endif %}
+        {# La prose du tableau rendu. Elle a traversé chaque import depuis le
+           début et se perdait faute de colonne où l'écrire. Rendue ici pour la
+           même raison que la note ci-dessus, et pour une de plus : la condition
+           d'invalidation a été écrite **avant** le coup d'envoi, donc c'est en
+           la relisant après le résultat qu'on voit si l'angle a cédé par où
+           l'analyse l'avait annoncé. #}
+        {%- if pick.angle_note %}
+        <span class="muted small" title="Angle déclaré{% if pick.prose_source == 'reconstruit' %} — reconstruit depuis le collage archivé{% endif %}">
+          ↳ {{ pick.angle_note }}
+        </span>
+        {%- endif %}
+        {%- if pick.invalidation %}
+        <span class="muted small" title="Ce qui la tue{% if pick.prose_source == 'reconstruit' %} — reconstruit depuis le collage archivé{% endif %}">
+          ✕ {{ pick.invalidation }}
+        </span>
+        {%- endif %}
         {# Le motif d'une saisie postérieure au coup d'envoi. Rendu ici pour la
            même raison que la note ci-dessus : une donnée que rien ne lit finit
            par se retirer. Et celle-ci décide de la lecture du prix — une

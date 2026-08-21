@@ -28,10 +28,12 @@ from .confidence import (
     OPEN_MALFORMED,
     OPEN_READ,
     OVERRIDE_CAUSES,
+    OVERRIDE_INCONNUE,
     OVERRIDE_SANS_FAIT,
     Claim,
     ClaimError,
     is_collection_fault,
+    is_unknown_cause,
 )
 from .confidence import parse as parse_claim
 from .inference import (
@@ -117,6 +119,26 @@ PRICE_SOURCES = {
 #: La seule source dont le prix n'est **pas** celui qu'on obtiendra. C'est elle
 #: qui met une selection en quarantaine tant que sa cote reelle manque.
 PRICE_REFERENCE = "reference"
+
+#: D'ou vient la prose de la section C — l'argument en une ligne, et la
+#: condition d'invalidation.
+#:
+#: **`reconstruit` n'est pas `import` en moins fiable, c'est autre chose.** Une
+#: captation recopie une cellule que le lecteur avait sous les yeux ; une
+#: reprise rapproche une selection deja en base d'une ligne de tableau, par une
+#: regle qui peut apparier de travers. Sur les 76 lignes reprises le 21/08/2026
+#: l'appariement portait sur `(session, sélection)` et une ligne sur 77 n'a pas
+#: trouve sa jumelle — c'est ce taux-la que la colonne rend relisible.
+#:
+#: `NULL` veut dire que les deux colonnes sont vides, donc qu'il n'y a rien a
+#: situer. Meme regle que `price_source` : ce qui a ete deduit se declare, et
+#: ce qui n'existe pas ne se declare pas.
+PROSE_FROM_IMPORT = "import"
+PROSE_REBUILT = "reconstruit"
+PROSE_SOURCES = {
+    PROSE_FROM_IMPORT: "Captée au collage",
+    PROSE_REBUILT: "Reconstruite depuis le collage archivé",
+}
 
 #: Niveau de la source qui porte le fait principal, sur l'echelle a quatre crans
 #: du preambule. `lecture` n'est pas une absence de valeur mais une valeur de
@@ -230,6 +252,18 @@ class Pick:
     price_source: str = ""
     price_real: float | None = None
     tier_real: str = ""
+    #: La prose du tableau de la section C, et d'ou elle vient. Rendues sur la
+    #: feuille de session pour la meme raison que la note d'independance : une
+    #: donnee que rien ne lit finit par se retirer — c'est le sort exact de
+    #: l'effectif collecte des mois sans lecteur, retire par la migration 022.
+    #:
+    #: `invalidation` est en outre ce qui rend le **controle 7** relisible : la
+    #: condition a ete ecrite avant le coup d'envoi, donc la relire apres le
+    #: resultat ne peut pas la contaminer. C'est la seule colonne de ce
+    #: chantier dont un bilan pourra se servir sans precaution de date.
+    angle_note: str = ""
+    invalidation: str = ""
+    prose_source: str = ""
     #: Renseignes par `list_picks`, qui range les selections par competition.
     competition: str = ""
     sport_order: int = 99
@@ -1092,6 +1126,9 @@ def _pick(row: Any, tier_labels: dict[str, str], tz: str = "") -> Pick:
         price_real=_column(row, "price_real"),
         tier_real=_column(row, "tier_real") or "",
         independence_note=_column(row, "independence_note") or "",
+        angle_note=_column(row, "angle_note") or "",
+        invalidation=_column(row, "invalidation") or "",
+        prose_source=_column(row, "prose_source") or "",
         late_reason=_column(row, "late_reason") or "",
         confidence_computed=_column(row, "confidence_computed"),
         distinct_publishers=_column(row, "distinct_publishers"),
@@ -1810,7 +1847,13 @@ def claim_columns(
     cause = None
     if overridden:
         effective, computed = READING_LEVEL, FORCED_RUNG
-        cause = override_cause if override_cause in OVERRIDE_CAUSES else None
+        # **Une cause absente est une cause, pas un silence.** Cette ligne
+        # ecrivait `None` des que le motif sortait du vocabulaire, et 43
+        # selections des sessions 11 et 13 sont entrees ainsi : indiscernables
+        # d'une ligne anterieure au typage, donc comptees comme des observations
+        # sur le modele par `is_collection_fault(None) is False`. Le repli
+        # nomme, et le compte cesse d'imputer ce qu'il ignore.
+        cause = override_cause if override_cause in OVERRIDE_CAUSES else OVERRIDE_INCONNUE
     elif opened and declaration is not None and not declaration.facts:
         # **La regle est a sens unique.** L'absence de dossier force la lecture ;
         # la presence n'accorde rien. Un dossier ouvert dont l'analyse ne tire
@@ -1940,6 +1983,17 @@ def add_pick(
     source_level: str = "",
     price_source: str = "",
     independence_note: str = "",
+    #: La prose du tableau de la section C. **Facultative**, comme `angle` et
+    #: `source_level` : une valeur absente vaut « non renseigne », jamais un
+    #: refus. Le controle 7 se contente de la compter — l'opposer avant d'en
+    #: connaitre le taux de base serait construire avant de mesurer.
+    angle_note: str = "",
+    invalidation: str = "",
+    #: `import` quand les deux colonnes ont ete lues au collage, `reconstruit`
+    #: quand elles ont ete reprises apres coup depuis `imports_raw.raw_text`.
+    #: Une reprise passe par un rapprochement, donc par une regle faillible ;
+    #: une captation recopie une cellule. Les deux ne se lisent pas pareil.
+    prose_source: str = PROSE_FROM_IMPORT,
     late_reason: str = "",
     claim: str = "",
     opened: bool | None = None,
@@ -2020,6 +2074,11 @@ def add_pick(
     price_origin = _vocabulary(price_source, PRICE_SOURCES)
 
     attached = int(event_id) if str(event_id).strip().isdigit() else None
+    # La prose se normalise ici et pas au parsing : la saisie a la main passe
+    # par le meme chemin, et un espace de trop y arrive aussi bien que d'un
+    # tableau colle.
+    argument = " ".join((angle_note or "").split())
+    condition = " ".join((invalidation or "").split())
     with connect(settings) as conn:
         known = {row["key"] for row in conn.execute("SELECT key FROM tiers")}
         if tier not in known:
@@ -2097,9 +2156,10 @@ def add_pick(
             "                   confidence_claimed, research_overridden, "
             "                   research_override_cause, exploratoire, tardive, import_id, "
             "                   offset_start, offset_end, claim_offset_start, "
-            "                   claim_offset_end, created_at) "
+            "                   claim_offset_end, angle_note, invalidation, prose_source, "
+            "                   created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-            "        ?, ?, ?, ?, ?, ?, ?, ?)",
+            "        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 attached,
@@ -2130,6 +2190,13 @@ def add_pick(
                 int(import_id) if str(import_id).strip().isdigit() else None,
                 *_span(offsets),
                 *_span(claim_offsets),
+                argument or None,
+                condition or None,
+                # **La provenance ne s'ecrit que s'il y a quelque chose a
+                # situer.** Un `import` pose sur deux colonnes vides dirait que
+                # le collage les portait vides, quand il ne les portait pas du
+                # tout — la distinction que cette colonne existe pour tenir.
+                prose_source if (argument or condition) else None,
                 utcnow(),
             ),
         )
@@ -2597,20 +2664,29 @@ class SessionRate:
     #: autres : elles ne mesurent pas une analyse, elles mesurent une
     #: transmission, et elles se reparent en recollant le rendu.
     override_faults: int = 0
+    #: Les ecrasees dont **la cause elle-meme manque**. Ni une observation sur le
+    #: modele, ni un defaut de collage identifie : on ne sait pas, et le dire est
+    #: tout ce qu'on peut faire. Elles se comptaient auparavant avec les
+    #: observations — `is_collection_fault(None)` etant faux — ce qui faisait
+    #: lire 43 lignes des sessions 11 et 13 comme autant d'inflations du modele.
+    override_unknown: int = 0
 
     @property
     def override_line(self) -> str:
-        """« 3 » ou « 3 + 16 non transmises ».
+        """« 3 », « 3 + 16 non transmises », « 3 + 16 non transmises + 43 sans cause ».
 
-        Le second nombre ne se tait pas : il est la seule chose qui distingue
-        une session dont le collage a echoue d'une session ou l'analyse ne
-        cherche jamais, et les deux appellent des gestes opposes.
+        Les trois nombres ne se fondent pas : ils distinguent une session ou
+        l'analyse ne cherche jamais, une session dont le collage a echoue, et
+        une session dont on ne sait rien. Les deux premiers appellent des gestes
+        opposes ; le troisieme n'en appelle aucun, et c'est **pour ca** qu'il
+        doit se voir plutot que de grossir l'un des deux autres.
         """
-        if not self.overridden and not self.override_faults:
+        if not self.overridden and not self.override_faults and not self.override_unknown:
             return ""
-        gauche = str(self.overridden)
-        return gauche + (
-            f" + {self.override_faults} non transmise(s)" if self.override_faults else ""
+        return (
+            str(self.overridden)
+            + (f" + {self.override_faults} non transmise(s)" if self.override_faults else "")
+            + (f" + {self.override_unknown} sans cause" if self.override_unknown else "")
         )
 
     #: Les dossiers que le rendu declarait avoir ouverts, et combien d'entre eux
@@ -3778,6 +3854,28 @@ class Notation:
     Mesure qui l'a rendue visible : les quinze premieres selections a porter les
     deux crans sont **toutes en attente**, et la page ne montrait rien le jour ou
     l'ecart est devenu mesurable pour la premiere fois.
+
+    ## Hypothese datee du 21/08/2026, a retrouver quand la population montera
+
+    Sur les **36** selections de section C portant un cran calcule depuis un bloc
+    reel — les 127 autres sont forcees a 1 par l'ecrasement et ne mesurent que le
+    collage — l'accord vaut 28, et **les 8 desaccords vont tous dans le meme
+    sens** : `4` annonce la ou la table rend `5`. `drift` vaut donc -0,29, deja
+    releve sur les 21 premieres paires.
+
+    L'hypothese : le cran 5 serait **sous-peuple par autodepreciation** plutot
+    que par rarete des faits de niveau 1. Elle rejoint par un chemin inattendu
+    les 4,6 % de volume du cran 5, qu'on attribuait a la source.
+
+    **A n = 36 elle est tres loin de tout seuil, et rien n'en est tire ici.**
+    Elle est ecrite a cet endroit precis parce que c'est `transitions` qui la
+    trancherait : le jour ou le denominateur passe le seuil de la page, la
+    concentration sur `(4, 5)` se lira ou ne se lira pas. Ce qui la rendrait
+    caduque n'est pas un raisonnement mais un desaccord qui se disperse.
+
+    Corollaire a ne pas oublier en la relisant : `comparable` doit etre lu
+    **hors selections ecrasees** — `_notation` les exclut deja — sans quoi la
+    matiere de la mesure serait l'override et non la redaction du gabarit.
     """
 
     #: Selections portant les deux valeurs. C'est le seul denominateur honnete
@@ -4660,12 +4758,19 @@ def _by_session(
                 for pick in mine
                 if _column(pick, "research_overridden")
                 and not is_collection_fault(_column(pick, "research_override_cause"))
+                and not is_unknown_cause(_column(pick, "research_override_cause"))
             ),
             override_faults=sum(
                 1
                 for pick in mine
                 if _column(pick, "research_overridden")
                 and is_collection_fault(_column(pick, "research_override_cause"))
+            ),
+            override_unknown=sum(
+                1
+                for pick in mine
+                if _column(pick, "research_overridden")
+                and is_unknown_cause(_column(pick, "research_override_cause"))
             ),
             opened=len(declared := str(_column(row, "open_dossiers") or "").split()),
             on_priority=len(set(declared) & set(priorities.get(session_id, ()))),
@@ -4916,6 +5021,12 @@ class Override:
     """
 
     total: int = 0
+    #: Les ecrasees dont **la cause manque**. Ni imputables au modele, ni
+    #: identifiables comme un collage perdu : elles sortent de `total` et se
+    #: comptent ici. Sans ce troisieme compte, `is_collection_fault(None)` etant
+    #: faux, les 43 lignes non typees des sessions 11 et 13 gonflaient le compte
+    #: d'inflation d'un tiers — le chiffre affirmait ce qu'il ignorait.
+    unknown: int = 0
     #: `(cran revendique, compte)`, du plus frequent au moins.
     claimed: list[tuple[int, int]] = field(default_factory=list)
     #: Selections hors dossiers ouverts qui declarent quand meme **un fait date
@@ -4942,7 +5053,14 @@ class Override:
     @property
     def line(self) -> str:
         if not self.total:
-            return ""
+            # Le compte sans cause se dit **meme seul**, sinon une population
+            # entierement non typee rendrait une ligne vide, indiscernable
+            # d'une population ou rien n'a ete ecrase.
+            return (
+                f"{self.unknown} sélection(s) ramenée(s) en lecture sans cause enregistrée"
+                if self.unknown
+                else ""
+            )
         detail = " · ".join(f"{rung} revendiqué ×{count}" for rung, count in self.claimed)
         fabrique = (
             f" · dont {self.fabricated} avec des faits déclarés sur un dossier non ouvert"
@@ -4954,7 +5072,15 @@ class Override:
             if self.researched
             else ""
         )
-        return f"{self.total} sélection(s) ramenée(s) en lecture — {detail}{fabrique}{cherche}"
+        inconnues = (
+            f" · {self.unknown} autre(s) ramenée(s) en lecture sans cause enregistrée"
+            if self.unknown
+            else ""
+        )
+        return (
+            f"{self.total} sélection(s) ramenée(s) en lecture — "
+            f"{detail}{fabrique}{cherche}{inconnues}"
+        )
 
 
 def _override(rows: list[Any], results: list[str]) -> Override:
@@ -4971,6 +5097,13 @@ def _override(rows: list[Any], results: list[str]) -> Override:
         # transmise. Mesure du 14/08/2026 : 13 des 16 ecrasees de la base
         # declaraient un niveau de source reel et auraient ete comptees ici.
         if is_collection_fault(_column(row, "research_override_cause")):
+            continue
+        # **Et une cause absente n'accuse personne non plus.** Meme raisonnement
+        # d'un cran plus loin : on ignore si le dossier a ete ouvert *et* on
+        # ignore pourquoi on l'ignore. Les compter dans `total` faisait affirmer
+        # une inflation sur 43 lignes dont rien n'est su.
+        if is_unknown_cause(_column(row, "research_override_cause")):
+            found.unknown += 1
             continue
         found.total += 1
         # Ce que la declaration aurait donne ; a defaut de bloc lisible, ce que

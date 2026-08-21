@@ -396,6 +396,17 @@ OVERRIDE_LIGNE_ABSENTE = "ligne_absente"
 OVERRIDE_LIGNE_ILLISIBLE = "ligne_illisible"
 OVERRIDE_REPERES = "reperes_non_resolus"
 
+#: **Le troisieme etat, et il n'est ni l'un ni l'autre.** Un ecrasement dont la
+#: cause n'a pas ete transmise : ni une observation sur le modele — on ignore
+#: s'il avait ouvert un dossier — ni un defaut de collage identifie, faute de
+#: pouvoir dire lequel. Il se compte a part et s'affiche.
+#:
+#: Il existait deja **en creux**, sous la forme d'un NULL indiscernable d'une
+#: ligne anterieure au typage : `claim_columns` ecrivait `None` des que la cause
+#: sortait du vocabulaire, et 43 selections comptaient donc comme des
+#: observations. Le nommer est ce qui les retire des deux comptes.
+OVERRIDE_INCONNUE = "cause_inconnue"
+
 #: Ce que chaque cause dit, en une phrase, la ou elle se rend.
 OVERRIDE_CAUSES: dict[str, str] = {
     OVERRIDE_HORS_DOSSIERS: "match hors des dossiers déclarés ouverts",
@@ -404,6 +415,7 @@ OVERRIDE_CAUSES: dict[str, str] = {
     OVERRIDE_LIGNE_ABSENTE: "ligne « dossiers_ouverts » absente du collage",
     OVERRIDE_LIGNE_ILLISIBLE: "ligne « dossiers_ouverts » illisible",
     OVERRIDE_REPERES: "repères de « dossiers_ouverts » non résolus",
+    OVERRIDE_INCONNUE: "cause non transmise — ni observation, ni défaut identifié",
 }
 
 #: Les causes qui ne disent **rien du modele**. Un cran 1 pose par l'une d'elles
@@ -411,10 +423,28 @@ OVERRIDE_CAUSES: dict[str, str] = {
 #: elle doit sortir de toute statistique sur la notation.
 COLLECTION_FAULTS = frozenset({OVERRIDE_LIGNE_ABSENTE, OVERRIDE_LIGNE_ILLISIBLE, OVERRIDE_REPERES})
 
+#: Les causes qui ne disent **rien du tout** — ni du modele, ni du collage.
+#: Tenues a part des deux autres familles : les ranger avec les defauts de
+#: collecte affirmerait que le collage a perdu quelque chose, ce qu'on ignore
+#: autant que le reste. Un troisieme compte, et aucune deduction.
+UNKNOWN_CAUSES = frozenset({OVERRIDE_INCONNUE})
+
 
 def is_collection_fault(cause: str | None) -> bool:
     """La cause decrit-elle un collage perdu plutot qu'une analyse ?"""
     return cause in COLLECTION_FAULTS
+
+
+def is_unknown_cause(cause: str | None) -> bool:
+    """La cause manque-t-elle, au point de ne rien pouvoir imputer ?
+
+    **`None` en fait partie**, et c'est ce qui ferme le trou : la colonne est
+    nommee depuis la migration 073, mais une base plus ancienne ou un chemin
+    d'ecriture oublie rendraient encore un NULL. Le lire comme « inconnu »
+    plutot que de le laisser tomber dans le compte des observations est la
+    difference exacte que ce troisieme etat existe pour tenir.
+    """
+    return cause is None or cause in UNKNOWN_CAUSES
 
 
 @dataclass(frozen=True)
