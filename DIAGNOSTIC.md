@@ -10725,3 +10725,97 @@ le blanc à 4,69), soit poser `--on-accent` sur le bouton, ce qui donne un texte
 sombre sur bleu clair — lisible à 6,09, et franchement différent. C'est une
 décision d'apparence, pas une réparation, et elle appartient à l'utilisateur. La
 mesure et les deux valeurs sont ici pour que ce soit une ligne de travail.
+
+## §6 — Ce qui demanderait de toucher à la structure ou à la logique
+
+Écrit, non fait. Chaque entrée dit **ce qui bloque** et **ce que ça coûterait**,
+pour que la décision se prenne sur un chiffre et non sur une impression.
+
+### 1. Les couleurs de palier en variables — bloqué deux fois
+
+Le §1 du brief le demandait. Deux obstacles, et le second est le plus sérieux.
+
+- **Il n'existe aucune prise CSS.** `history.py:1020` construit
+  `tier_label = f"{emoji} {label}"` — une chaîne unique — et le gabarit écrit
+  `<td class="nowrap pick-tier">{{ pick.tier_label }}</td>`. Poser une couleur
+  demande `class="… tier-{{ pick.tier }}"`, donc une variable dans un gabarit.
+- **La rampe stockée n'est pas monotone.** Elle vaut 🟢 🔵 🟠 🔴 💥 : le
+  deuxième cran est **bleu**, donc plus froid que le premier dans une échelle
+  qui va sinon du vert au rouge. La reproduire en jetons copie une échelle
+  fausse ; la corriger change un encodage qui est **en base** (`tiers.emoji`) et
+  que `picks_import` doit reconnaître dans un tableau collé à la main.
+
+**Ce que ça vaudrait** : un aplat de couleur derrière le libellé rendrait le
+palier lisible d'un coup d'œil sur la carte de téléphone, où il est aujourd'hui
+un point de 12 px rendu par la police emoji du système — donc de taille et de
+teinte variables d'un appareil à l'autre, et **absent sur certains**. C'est
+exactement le défaut que le sprite SVG a corrigé pour les pictogrammes de
+contexte, et le palier est le seul emoji qui reste.
+
+**Ce que ça coûte** : un attribut de classe par ligne, cinq jetons, et une
+décision sur le bleu.
+
+### 2. La zone de saisie de la fiche, sur `/competitions`
+
+Nommée par le brief, et la mesure la confirme : c'est **la colonne la plus large
+de la table** (278 px sur 1 377), un `<textarea>` de prose posé dans une cellule,
+répété 114 fois — soit 114 zones de saisie chargées pour zéro à trois qu'on
+remplira.
+
+La colonne a été ramenée dans la page par le §4, donc elle n'est plus invisible.
+Mais elle reste un mauvais objet : un texte de plusieurs lignes ne se rédige pas
+dans une cellule de tableau haute de deux lignes.
+
+**La forme juste est un panneau par compétition** — le `<details class="panel">`
+que la feuille porte déjà — ouvert depuis un bouton de la ligne. Ça change la
+structure du tableau, donc c'est hors du lot. Gain mesurable : ~200 px de largeur
+rendus aux neuf autres colonnes, et 114 `<textarea>` en moins dans le document.
+
+### 3. Les libellés de colonne sur les cartes de téléphone
+
+Le §3 en a posé **un seul** — `data-col="Conf"` — parce qu'un chiffre nu ne dit
+pas ce qu'il est. La forme générale serait un `data-col` sur chaque `<td>`, ou un
+paramètre de la macro `picks_table`.
+
+**Ça n'a pas été fait, et pas seulement par prudence** : les six autres colonnes
+se décrivent seules une fois sorties de leur en-tête, et poser six libellés
+ajouterait six lignes de texte par carte sur l'écran où la place manque le plus.
+La règle est celle du projet — une ligne sans donnée est omise — appliquée aux
+étiquettes.
+
+Ce qui la rouvrirait : une colonne ajoutée dont la valeur soit, elle aussi, un
+nombre nu.
+
+### 4. `button.primary` sous le seuil de contraste — une décision d'apparence
+
+Mesuré au §5 : blanc sur l'accent, **3,19** en thème sombre pour un seuil de 4,5.
+Les deux correctifs possibles sont écrits là-bas. Aucun n'est un défaut à
+réparer : l'un change la couleur de marque, l'autre met du texte sombre sur un
+bouton bleu. **C'est le choix de l'utilisateur, pas celui d'un restylage.**
+
+### 5. La barre de navigation prend trois rangées sur téléphone
+
+Sept liens à 44 px de haut occupent **environ 190 px** au-dessus du premier
+contenu de `/history/{id}`, sur un écran de 390 px de large — soit un quart de la
+hauteur utile avant la première sélection.
+
+Le §3 l'a rendue lisible (colonne, cibles conformes) et n'a pas cherché à la
+réduire : toute réduction demande soit un bouton qui replie la navigation — donc
+du JavaScript et un état — soit un ordre de liens différent selon l'écran, donc
+du balisage conditionnel. Les deux sortent du lot.
+
+**Ce que la mesure dit avant de décider** : sur un téléphone, la seule page
+qu'on ouvre est celle de la session en cours, et on y arrive par un lien. Une
+navigation à sept entrées y est peut-être simplement de trop — mais c'est une
+question de produit, pas de style.
+
+### 6. Ce qui a été mesuré et n'a pas de suite
+
+- **La table de composition d'un coupon** (`<details>`, 5 colonnes) reste une
+  table sur téléphone. Elle sert une fois par session, après la pose, et ses
+  cases à cocher sont à 24 × 24 — le minimum de la norme. Rien à faire tant
+  qu'aucune mesure ne dit qu'on s'en sert depuis un téléphone.
+- **Le board entre 1 000 et 1 280 px** replie les affiches sur deux lignes. Le
+  brief dit que c'est un écran de bureau et qu'il ne faut pas y dépenser
+  d'effort ; la mesure ne contredit pas — à 1 440 px, la largeur de référence,
+  rien ne se replie.
