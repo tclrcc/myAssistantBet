@@ -39,7 +39,21 @@ logger = logging.getLogger(__name__)
 FORM = "formulaire"
 API = "api"
 REPLAY = "rejeu"
-SOURCES = (FORM, API, REPLAY)
+#: Une verification faite **sur l'instance servie**, dont le texte n'est pas un
+#: rendu mais un montage. L'apercu enregistre par construction : verifier qu'un
+#: deploiement est passe laisse donc une ligne dans un corpus dont toute la
+#: valeur est d'etre reel.
+#:
+#: **Elle se marque, elle ne s'efface pas.** Un trou dans les identifiants ne
+#: s'explique plus six mois apres, et effacer une ligne d'audit est le geste que
+#: ce projet passe son temps a eviter. Ce qui a ete produit autrement se declare
+#: — meme idiome que `prose_source` et `price_source`.
+#:
+#: **Et la regle qui evite d'en produire** : une sonde sur l'instance servie
+#: passe par `db.scratch_copy()`. Le corpus n'a de valeur que d'etre reel ; le
+#: proteger, c'est ne plus ecrire dedans pour verifier.
+SONDE = "sonde"
+SOURCES = (FORM, API, REPLAY, SONDE)
 
 
 @dataclass(frozen=True)

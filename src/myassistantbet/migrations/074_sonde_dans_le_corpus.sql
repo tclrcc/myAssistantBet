@@ -1,0 +1,39 @@
+-- 074_sonde_dans_le_corpus.sql — une ligne d'audit se marque, elle ne s'efface
+-- pas.
+--
+-- Le 21/08/2026 a 22:00:55Z, une sonde a verifie sur l'**instance servie** que
+-- le compte des controles etait bien deploye. L'apercu enregistre le collage
+-- **par construction** — c'est tout son objet, garder de quoi rejouer — donc la
+-- verification a laisse `imports_raw` #42 : 279 caracteres de tableau
+-- synthetique, session 19, aucune selection creee.
+--
+-- ## Pourquoi elle reste
+--
+-- **Effacer une ligne d'un corpus d'audit est le geste que ce projet passe son
+-- temps a eviter.** Un trou dans les identifiants ne s'explique plus six mois
+-- apres, et la table existe precisement pour que rien de ce qui est arrive ne
+-- disparaisse. Le probleme n'est pas qu'elle soit la : c'est qu'elle soit
+-- **indiscernable** d'un collage reel — les mesures du lot A citent « 41
+-- collages archives », et un 42e synthetique les rendrait fausses sans un mot.
+--
+-- ## L'idiome est celui de `prose_source`
+--
+-- Ce qui a ete produit autrement se **declare**, il ne se corrige pas et il ne
+-- se supprime pas. `source` porte deja cette notion — `formulaire`, `api`,
+-- `rejeu` — et il lui manquait le quatrieme cas. Ce n'est pas une colonne pour
+-- une ligne : l'apercu ecrit a chaque appel, donc la sonde se reproduira, et
+-- lui donner un nom est ce qui la rendra lisible la prochaine fois.
+--
+-- **La regle qui accompagne, et qui vaut plus que la valeur** : une sonde sur
+-- l'instance servie passe par `db.scratch_copy()`. Le corpus n'a de valeur que
+-- d'etre reel ; le proteger, c'est ne plus ecrire dedans pour verifier.
+--
+-- ## Le critere est l'empreinte, jamais l'identifiant
+--
+-- Un `id` designe une ligne sur **cette** base et rien ailleurs ; l'empreinte
+-- designe ce texte-la partout. La migration est donc un no-op complet sur toute
+-- installation qui n'a pas recu la sonde, et idempotente ici — meme regle que
+-- la 073, qui s'indexe sur la colonne qu'elle corrige.
+UPDATE imports_raw
+   SET source = 'sonde'
+ WHERE sha256 = 'e2b3eb65136b5866a152c7651501ee5fc15334ee47314ac86343e00fe250e837';

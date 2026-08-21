@@ -322,8 +322,14 @@ def settle_all(coupon_id: int, result: str, settings: Settings | None = None) ->
         raise HistoryError(f"Résultat inconnu : {result}")
     with connect(settings) as conn:
         cursor = conn.execute(
-            "UPDATE picks SET result = ? WHERE coupon_id = ? AND (result IS NULL OR result = ?)",
-            (result, coupon_id, "pending"),
+            # **La borne haute se pose ici aussi**, et pas seulement dans
+            # `set_result` : ce chemin ecrit `result` en masse, et le laisser
+            # sans date ferait de chaque jambe de combine une ligne hors de
+            # portee de toute relecture. Meme regle — nulle quand le resultat
+            # repasse en attente.
+            "UPDATE picks SET result = ?, result_at = ? "
+            " WHERE coupon_id = ? AND (result IS NULL OR result = ?)",
+            (result, None if result == "pending" else utcnow(), coupon_id, "pending"),
         )
         return cursor.rowcount
 

@@ -5418,6 +5418,59 @@ n'arrete rien ne se distingue pas d'un signal absent** — et le verifier avant 
 le reconstruire est la meme regle que « chercher d'abord si le bloc ne porte pas
 deja le fait qui la contredit ».
 
+## Les deux bornes d'une selection (`created_at`, `result_at`)
+
+**`result_at` n'est pas une colonne de provenance : c'est le garde d'anteriorite
+de la boucle de relecture.** `created_at` ouvre la fenetre — la selection a ete
+posee avant le coup d'envoi, donc son prix est un prix d'avant-match ; il
+manquait la borne **haute**, l'instant ou l'issue est devenue connue. Sans elle,
+aucun bilan ne peut prouver qu'un fait qu'il invoque a ete releve avant que le
+resultat soit su, c'est-a-dire qu'il ne retrospecte pas.
+
+Mesure du 21/08/2026 : `picks` ne portait **qu'une seule colonne de date**. Sur
+300 selections tranchees de section C, 148 etaient datees par
+`reglements.observed_at` et 152 ne l'etaient par rien.
+
+- **Elle dit quand nous l'avons su, jamais quand le match s'est termine.** Meme
+  regle a sens unique que l'anteriorite : la base peut prouver qu'un fait precede
+  la connaissance de l'issue, jamais qu'il la suit.
+- **Elle s'efface avec le resultat.** Une ligne remise en attente perd sa date :
+  un horodatage qui survivrait a l'effacement affirmerait une connaissance qui
+  n'existe plus — le defaut caracteristique du projet, pose sur la colonne qui
+  sert justement a dater ce qu'on sait.
+- **Deux ecrivains et pas un** : `set_result` et `coupons.settle_all`, qui ecrit
+  `result` en masse sur les jambes d'un combine. Le laisser sans date ferait de
+  chaque jambe une ligne hors de portee de toute relecture.
+- **La reprise ne prend que les reglements `applique`, jamais `divergent`**, et
+  la distinction decide du **sens de l'erreur** — la seule chose qui compte pour
+  une borne. Sur une ligne appliquee, le reglement a pose le resultat :
+  `observed_at` precede l'ecriture, la borne est trop tot, un garde qui s'en sert
+  refuse un peu trop et se trompe du bon cote. Sur une ligne divergente, le
+  resultat vient d'une saisie humaine anterieure et `observed_at` n'est que la
+  date ou la regle a relu la source : la borne serait **trop tard**, donc
+  permissive. **Une borne qui se trompe dans le sens permissif est pire qu'une
+  borne absente** — celle-la se voit et se compte.
+- **Une tranchee sans date n'est pas suspecte, elle est hors de portee** d'une
+  relecture qui a besoin d'une borne. Ce n'est pas la meme chose et ca n'appelle
+  pas le meme geste. `Analysis.settled_undated` la compte, et la population est
+  **close** : tout resultat pose depuis la migration 075 est date a l'ecriture.
+
+### `framework_version` sur la selection, et non dans le rendu
+
+Le champ etait emis par une route que rien ne sert et persiste nulle part — il
+n'a **jamais rien etiquete**. `picks.framework_version` est donc estampille par
+l'application a l'ecriture, depuis sa propre constante.
+
+- **Pas d'aller-retour par le modele pour une valeur qu'elle connait.** Le faire
+  declarer dans le rendu puis relire a l'import ajouterait un chemin de perte a
+  une constante locale, et c'est exactement ce chemin qui a rendu le champ
+  inerte.
+- **Aucun retro-remplissage.** Les 352 selections d'avant n'ont pas ete produites
+  sous un cadre que la base connaisse, et leur en preter un ferait ce que le
+  champ existe pour empecher : melanger deux regimes dans une population. `NULL`
+  est la verite, et `AUDITED_COLUMNS` compte les nulles posterieures a la
+  migration — une colonne muette depuis sa naissance doit se voir.
+
 ## Les controles du cadre, comptes a l'import (`services/controls.py`)
 
 Le cadre enonce dix controles « a passer systematiquement, dans l'ordre ».
@@ -6649,6 +6702,30 @@ compte affirmait ce qu'il ignorait.
   **troisieme etat** (`cause_inconnue`, migration 073) : ni observation, ni
   defaut de collage identifie. Le total cesse de surestimer sans se mettre a
   sous-estimer.
+
+### Quatorzieme occurrence : une consigne qui porte sur un champ jamais servi
+
+**Sortie de la verification de la treizieme, et elle vit dans le cadre et non
+dans le code.** La ligne 8 du SKILL instruit le modele sur `framework_version` —
+« le figer au premier prompt d'une session, ne jamais le remplir
+retroactivement ». Mesure du 22/08/2026 : le champ n'est emis que par
+`payload.build_payload`, la route payload **n'a jamais servi en production**, et
+`ACTIVE_PRODUCER` vaut le gabarit, qui ne l'ecrit pas. Sur les 180 prompts
+archives, **zero** porte la chaine.
+
+La consigne decrit donc un geste que le modele n'a jamais eu l'occasion de
+faire, sur un champ qui n'a jamais rien etiquete. Deux ecritures d'une meme
+notion — le cadre qui l'ordonne, le producteur qui ne le sert pas — et rien
+n'obligeait les deux a concorder.
+
+- **Le correctif est dans le cadre, pas dans le code**, et il part avec la
+  publication du 1.4. L'ecrire ici serait la quinzieme occurrence : une note
+  dans un depot qui ne peut pas modifier le fichier concerne.
+- **Cote application, la reponse est de cesser de dependre de l'aller-retour.**
+  `picks.framework_version` (migration 075) est estampille par l'application a
+  l'ecriture de chaque selection, depuis sa propre constante. Une valeur qu'elle
+  connait n'a pas a faire un tour par le modele pour revenir : ce detour n'ajoute
+  qu'un chemin de perte, et c'est celui qui a rendu le champ inerte.
 
 ### Treizieme occurrence : un numero bumpe sur une declaration
 

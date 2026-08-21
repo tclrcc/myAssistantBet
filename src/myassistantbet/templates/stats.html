@@ -267,6 +267,22 @@
       {%- endfor %}
     </p>
     {% endif %}
+    {#- **La borne haute, et elle ne dit pas la même chose que la basse.**
+        `created_at` ouvre la fenêtre pré-résultat, `result_at` la ferme : sans
+        elle, aucune relecture ne peut prouver qu'un fait qu'elle invoque a été
+        relevé avant que l'issue soit connue. Ces lignes ne sont pas suspectes —
+        elles sont hors de portée d'une relecture qui a besoin d'une borne, ce
+        qui n'appelle pas le même geste. Population close depuis la migration
+        075 : tout résultat posé depuis est daté. -#}
+    {% if analysis.settled_undated %}
+    <p class="chart-note">
+      <strong>{{ analysis.settled_undated }} sélection(s) tranchée(s) n'ont pas
+      d'instant de résultat</strong> : on sait ce qui est arrivé, pas quand on
+      l'a su. Un bilan qui relit un fait daté ne peut donc pas montrer sur
+      celles-là qu'il ne rétrospecte pas. Population close — les résultats posés
+      depuis sont datés à l'écriture, et rien ne se reconstitue en arrière.
+    </p>
+    {% endif %}
 
     {# Le recouvrement vit **sous le pli**, avec les axes qu'il concerne : il les
        annonçait au-dessus alors qu'ils sont repliés, donc il commentait des

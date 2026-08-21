@@ -1745,38 +1745,6 @@ def split_cost(body: str) -> PromptCost:
     )
 
 
-#: La version du cadre d'analyse sous lequel une sortie a ete produite.
-#:
-#: **Sans elle, une analyse archivee ne se relit plus contre les regles en
-#: vigueur au moment ou elle a ete produite**, et la base de calibration devient
-#: inhomogene sans que rien ne le signale. Meme raison que `sessions.scale_version`,
-#: dont le commentaire dit qu'une echelle ne se reconstitue pas apres coup.
-#:
-#: Elle **suit la Skill** et non le code de cette application : c'est le cadre qui
-#: decide de ce qui est rendu. 1.3 — plancher de cote explicite, regle
-#: d'agregation du niveau de source, deux controles de plus en fin de checklist.
-#:
-#: **Passee a 1.4 le 21/08/2026 puis ramenee a 1.3 le meme soir.** Le bump avait
-#: ete fait sur une declaration de publication ; le cadre servi disait encore
-#: 1.3 — six copies de cache le disaient, et elles disaient vrai. Aucune sortie
-#: n'a ete produite dans la fenetre, mais la faute n'est pas la : bumper avant
-#: publication fait mentir le payload, et ce champ perd alors sa seule utilite,
-#: qui est de ne pas melanger deux regimes dans une population.
-#:
-#: **Le garde qui en sort vit dans `services/framework.py`** : ce numero ne se
-#: bouge qu'accompagne d'une preuve de lecture mecanique du cadre publie. Une
-#: declaration n'en est pas une — c'est le seul moyen que cette erreur ne se
-#: reproduise pas, elle n'etait detectable ni par le code ni par les tests.
-#:
-#: **Cette constante est declarative, et c'est structurel.** Le cadre vit chez le
-#: fournisseur de Skill, cette valeur en base : rien ne peut forcer les deux a
-#: concorder depuis ici, et le troisieme cas de la regle des copies s'applique —
-#: quand on ne peut pas forcer l'accord, on cesse de dependre de la copie. Ce
-#: numero ne prouve donc pas quel cadre a produit une sortie ; il dit sous quel
-#: cadre elle etait **cense** l'etre, ce qui suffit a ne pas melanger deux
-#: regimes dans une meme population et ne suffit a rien d'autre.
-FRAMEWORK_VERSION = "1.3"
-
 #: Ce qui part reellement a l'analyse. **Un seul endroit le dit**, et c'est lui
 #: que les garde-fous de migration interrogent : « le gabarit produit-il encore »
 #: est une question d'etat, pas une question de code present.

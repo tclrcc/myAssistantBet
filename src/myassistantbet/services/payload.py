@@ -28,7 +28,7 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from .attribution import TRANCHES, UNKNOWN_LEVEL, Fait
 from .context import failure_causes
-from .prompt import FRAMEWORK_VERSION
+from .framework import FRAMEWORK_VERSION
 from .render import MERGED_MARKETS, RenderableEvent, market_label, price
 from .session import context_density, renderable_events, started_labels
 

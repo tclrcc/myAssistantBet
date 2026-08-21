@@ -21,6 +21,7 @@ from __future__ import annotations
 from datetime import date
 
 from myassistantbet.services import framework
+from myassistantbet.services.framework import FRAMEWORK_VERSION
 from myassistantbet.services.history import (
     DEFERRAL_TELL,
     FEEDBACK_SUSPENDED,
@@ -30,7 +31,6 @@ from myassistantbet.services.history import (
 from myassistantbet.services.prompt import (
     ACTIVE_PRODUCER,
     FRAME_ALERT_MUTED,
-    FRAMEWORK_VERSION,
     PRODUCER_PAYLOAD,
     PRODUCER_TEMPLATE,
 )

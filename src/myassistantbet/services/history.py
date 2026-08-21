@@ -36,6 +36,7 @@ from .confidence import (
     is_unknown_cause,
 )
 from .confidence import parse as parse_claim
+from .framework import FRAMEWORK_VERSION
 from .inference import (
     ALPHA,
     Equivalence,
@@ -2157,9 +2158,9 @@ def add_pick(
             "                   research_override_cause, exploratoire, tardive, import_id, "
             "                   offset_start, offset_end, claim_offset_start, "
             "                   claim_offset_end, angle_note, invalidation, prose_source, "
-            "                   created_at) "
+            "                   framework_version, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-            "        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 attached,
@@ -2197,6 +2198,13 @@ def add_pick(
                 # le collage les portait vides, quand il ne les portait pas du
                 # tout — la distinction que cette colonne existe pour tenir.
                 prose_source if (argument or condition) else None,
+                # **Le cadre s'estampille ici, depuis la constante locale.** Il
+                # etait emis par le payload — que rien ne sert — et persiste
+                # nulle part : sur 180 prompts archives, zero portait la chaine.
+                # Le faire declarer par le modele puis relire a l'import
+                # ajouterait un chemin de perte a une valeur que l'application
+                # connait deja.
+                FRAMEWORK_VERSION,
                 utcnow(),
             ),
         )
@@ -2231,11 +2239,30 @@ def _flag(value: bool | None) -> int | None:
 
 
 def set_result(pick_id: int, result: str, settings: Settings | None = None) -> None:
-    """Met a jour le resultat d'un pick."""
+    """Met a jour le resultat d'un pick, et **date l'instant ou il est su**.
+
+    `result_at` est la borne **haute** de la fenetre pre-resultat, celle que
+    `created_at` ouvre : sans elle, aucune relecture ne peut prouver qu'un fait
+    qu'elle invoque a ete releve avant que l'issue soit connue. Ce n'est pas une
+    colonne de provenance, c'est le garde d'anteriorite de la boucle de
+    relecture — l'antecedence appliquee au bilan plutot qu'a la selection.
+
+    **Elle dit quand nous l'avons su, jamais quand le match s'est termine**, et
+    c'est la meme regle a sens unique que partout ici : la base peut prouver
+    qu'un fait precede la connaissance de l'issue, jamais qu'il la suit.
+
+    **Elle s'efface avec le resultat.** Une ligne remise en attente perd sa
+    date : un horodatage qui survivrait a l'effacement affirmerait une
+    connaissance qui n'existe plus — le defaut caracteristique du projet, pose
+    sur la colonne qui sert justement a dater ce qu'on sait.
+    """
     if result not in RESULTS:
         raise HistoryError(f"Résultat inconnu : {result}")
     with connect(settings) as conn:
-        conn.execute("UPDATE picks SET result = ? WHERE id = ?", (result, pick_id))
+        conn.execute(
+            "UPDATE picks SET result = ?, result_at = ? WHERE id = ?",
+            (result, None if result == "pending" else utcnow(), pick_id),
+        )
 
 
 def set_real_price(pick_id: int, price: str = "", settings: Settings | None = None) -> None:
@@ -2890,6 +2917,7 @@ AUDITED_COLUMNS: tuple[AuditedColumn, ...] = (
     AuditedColumn("claim_raw_json", 42, "le bloc de confiance"),
     AuditedColumn("confidence_computed", 42, "le cran calculé"),
     AuditedColumn("research_overridden", 43, "les dossiers ouverts"),
+    AuditedColumn("framework_version", 75, "le cadre d'analyse"),
 )
 
 
@@ -3175,6 +3203,19 @@ class Analysis:
     #: etablie. Comptees et annoncees : une page qui perd un tiers de son volume
     #: sans le dire est pire que celle qui le melangeait.
     without_antecedence: int = 0
+    #: Selections tranchees dont **l'instant du resultat n'est pas date**.
+    #:
+    #: C'est la borne **haute** de la fenetre pre-resultat : sans elle, aucune
+    #: relecture ne peut prouver qu'un fait qu'elle invoque a ete releve avant
+    #: que l'issue soit connue. Ces lignes ne sont pas suspectes — elles sont
+    #: **hors de portee** de toute relecture qui a besoin d'une borne, ce qui
+    #: n'est pas la meme chose et n'appelle pas le meme geste.
+    #:
+    #: **Population close a la migration 075** : tout resultat pose depuis est
+    #: date par `set_result`. L'annoncer comme un manque de collecte enverrait
+    #: chercher un defaut qui ne se produira plus — meme regle que les motifs de
+    #: saisie tardive anterieurs a la garde d'ecriture.
+    settled_undated: int = 0
     #: Les memes, **par motif declare**. Un seul compte les melangeait, et les
     #: trois cas n'appellent pas la meme lecture ni le meme geste :
     #:
@@ -5375,6 +5416,10 @@ def analysis(settings: Settings | None = None) -> Analysis:
             # retard, un pari pris en direct, et une ligne anterieure a la garde
             # d'ecriture n'appellent ni la meme lecture ni le meme geste.
             "       k.late_reason, k.tardive, "
+            # L'instant ou l'issue a ete sue : la borne **haute** de la fenetre
+            # pre-resultat, celle sans laquelle une relecture ne peut pas
+            # prouver qu'elle ne retrospecte pas.
+            "       k.result_at, "
             # L'affiche, pour **nommer** les rencontres qui portent plus d'une
             # selection. Le compte seul disait qu'il faut elargir les
             # intervalles, jamais ou aller regarder.
@@ -5456,6 +5501,14 @@ def analysis(settings: Settings | None = None) -> Analysis:
     rows = [row for row in rows if _guarded(row)]
     tranches = [row for row in tardifs if str(row["result"]) in ("win", "loss")]
     report.without_antecedence = len(tranches)
+    # **Compte sur la population entiere, tardives comprises.** La borne haute
+    # ne depend pas de l'anteriorite : une ligne ecartee du bloc de tete reste
+    # une ligne dont on aimerait savoir quand son issue a ete sue.
+    report.settled_undated = sum(
+        1
+        for row in (*rows, *tardifs)
+        if str(row["result"]) in ("win", "loss", "void") and not _column(row, "result_at")
+    )
     # **Le motif se compte, il ne se fond pas.** « La decision etait anterieure,
     # la saisie non » et « on ne sait pas » se reparent aux deux bouts opposes :
     # la premiere ne se repare pas du tout — l'etiquette est valide — la seconde

@@ -15,7 +15,7 @@ import sys
 from datetime import UTC, datetime
 
 from .services import framework
-from .services.prompt import FRAMEWORK_VERSION
+from .services.framework import FRAMEWORK_VERSION
 
 
 def main(argv: list[str] | None = None) -> int:
