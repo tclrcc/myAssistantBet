@@ -232,6 +232,15 @@ def _by_form(session_id: int, raw: str, settings: Settings) -> set[str]:
         donnees = {
             "rejects": unescape(champs.get("rejects", "[]")),
             "import_id": champs.get("import_id", ""),
+            # **Les deux confirmations sont cochees, comme un humain le ferait.**
+            # Ce banc mesure la journalisation des refus **d'ecriture** ; les
+            # gardes d'import sont une autre question, et les laisser mordre ici
+            # ferait passer un chemin pour muet alors qu'il n'a simplement
+            # jamais ete atteint. C'est ce qui s'est produit en livrant le compte
+            # des controles : le banc a vire au rouge sur `selection`, et c'est
+            # exactement le travail qu'on attend de lui.
+            "confirm_partial": "1",
+            "confirm_controls": "1",
         }
         # Toutes les lignes proposees sont cochees : une ligne decochee ne passe
         # pas par l'ecriture, donc ne dirait rien de sa journalisation.

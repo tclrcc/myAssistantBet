@@ -2397,6 +2397,24 @@ def _late(row: Any) -> bool:
     return bool(commence) and str(row["created_at"]) >= str(commence)
 
 
+def _guarded(row: Any) -> bool:
+    """La selection est-elle **anterieure au coup d'envoi**, drapeau en base ?
+
+    **Le champ, jamais la derivation.** `tardive` est stocke depuis la migration
+    053 et retro-rempli sur le meme critere : une population qui se recalculerait
+    a chaque lecture finirait par ne plus designer les memes lignes que le compte
+    affiche a cote — le piege deja paye par l'assembleur de contexte.
+
+    **Ecrit une seule fois et lu par les deux surfaces.** `analysis()` l'a
+    toujours applique ; `feedback()` ne l'appliquait pas du tout, et la marge
+    tenait a quatre lignes — la premiere tardive au rang 64 sur une fenetre de
+    60. Une clause absente mais inoffensive est invisible, et personne n'aurait
+    pense a l'ajouter le jour ou `FEEDBACK_SUSPENDED` tombe. Deux ecritures de
+    la meme regle auraient diverge ; il n'y en a qu'une.
+    """
+    return not _column(row, "tardive")
+
+
 def _antecedence(row: Any) -> bool:
     """La selection a-t-elle ete enregistree avant le coup d'envoi.
 
@@ -5434,8 +5452,8 @@ def analysis(settings: Settings | None = None) -> Analysis:
     # et retro-rempli sur le meme critere : une population qui se recalculerait a
     # chaque lecture finirait par ne plus designer les memes lignes que le compte
     # affiche a cote — le piege deja paye par l'assembleur de contexte.
-    tardifs = [row for row in rows if row["tardive"]]
-    rows = [row for row in rows if not row["tardive"]]
+    tardifs = [row for row in rows if not _guarded(row)]
+    rows = [row for row in rows if _guarded(row)]
     tranches = [row for row in tardifs if str(row["result"]) in ("win", "loss")]
     report.without_antecedence = len(tranches)
     # **Le motif se compte, il ne se fond pas.** « La decision etait anterieure,
@@ -6389,15 +6407,26 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
             # tournoi compteraient pour deux contextes, ce qui est exactement ce
             # que le garde-fou existe pour empecher.
             "       e.competition_id, "
+            # Le drapeau d'anteriorite : **il est filtre en Python et non ici**,
+            # pour que la regle n'ait qu'une ecriture. Voir `_guarded`.
+            "       k.tardive, "
             "       c.category, COALESCE(c.label, '') AS competition FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
             "LEFT JOIN sports s ON s.id = e.sport_id "
             "LEFT JOIN competitions c ON c.id = e.competition_id "
             "WHERE k.result IN ('win', 'loss') AND k.exploratoire = 0 "
             + ("AND k.played = 1 " if played_only else "")
-            + "ORDER BY k.created_at DESC, k.id DESC LIMIT ?",
-            (FEEDBACK_WINDOW,),
+            + "ORDER BY k.created_at DESC, k.id DESC",
         ).fetchall()
+    # **La fenetre se prend apres le filtre, jamais avant.** Un `LIMIT 60` pose
+    # cote SQL prendrait 60 lignes puis en retirerait les tardives : la fenetre
+    # se retrecirait a proportion du retard, et le bloc annoncerait « les 60
+    # dernieres » sur 51. Elle porte donc 60 selections **eligibles**.
+    #
+    # Le cout du chargement complet est nul a cette echelle — quelques centaines
+    # de lignes — et c'est ce qui permet de n'ecrire la regle qu'une fois plutot
+    # que de poser une seconde clause en SQL a cote du predicat de `analysis()`.
+    rows = [row for row in rows if _guarded(row)][:FEEDBACK_WINDOW]
 
     # La journee d'analyse, et non celle du match : ce bloc juge des decisions,
     # et deux paris pris le meme soir sur deux jours de calendrier restent une

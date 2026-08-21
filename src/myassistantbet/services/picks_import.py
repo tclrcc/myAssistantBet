@@ -473,6 +473,15 @@ class ImportPreview:
     stakes: AttachedStakes = field(default_factory=AttachedStakes)
     #: La taille du collage, pour l'avertissement de troncature.
     char_count: int = 0
+    #: Les champs que l'**en-tete du tableau** portait vraiment. Sans eux, une
+    #: colonne absente et une cellule vide se comptent pareil : le controle 7
+    #: dirait « aucune condition d'invalidation » sur un collage a huit colonnes,
+    #: c'est-a-dire une violation la ou la question n'a pas ete posee. Meme
+    #: distinction que « non interroges » et « aucun absent signale ».
+    columns: frozenset[str] = frozenset()
+    #: Le compte des controles du cadre, recalcule a l'import depuis le collage
+    #: conserve. Voir `services/controls.py`.
+    controls: Any = None
 
     @property
     def count(self) -> int:
@@ -914,6 +923,12 @@ def parse_table(
         if columns is None:
             columns = _map_columns(cells)
             entete_vu = entete_vu or columns is not None
+            if columns is not None:
+                # **L'union et non le dernier entete.** Un rendu complet porte
+                # deux tableaux ; ce qui interesse est ce que le collage a
+                # permis de lire, et un second entete plus pauvre ne retire pas
+                # ce que le premier a rendu lisible.
+                preview.columns |= frozenset(columns)
             continue
 
         values = {name: _at(cells, columns.get(name)) for name in HEADERS}
@@ -1013,6 +1028,12 @@ def parse_table(
     _apply_research(preview, raw, headers or [], valide)
     _attach_combos(preview, raw, valide, headers)
     _attach_scores(preview, raw, rows, nearby, valide, headers)
+    # **Le compte des controles du cadre, pose apres tout le reste** : le
+    # controle 1 se lit sur `same_event`, qui n'est connu qu'une fois les
+    # rapprochements faits. Import differe, `controls` important ce module.
+    from . import controls as controls_service
+
+    preview.controls = controls_service.for_preview(preview)
     return preview
 
 

@@ -85,6 +85,20 @@ def _lot(settings: Settings, noms: list[str]) -> int:
     return session_id
 
 
+def _importer(client: TestClient, session_id: int, page: str) -> None:
+    """Reposte le formulaire rendu, **en cochant ce qu'un humain cocherait**.
+
+    Les deux cases de confirmation ne sont pas pre-cochees — c'est tout leur
+    objet — donc `repost_import_form` ne les reprend pas. Les ajouter ici, une
+    fois, evite que chaque test decide de son cote s'il confirme, ce qui ferait
+    de la garde une propriete du test plutot que du parcours.
+    """
+    envoi = repost_import_form(page)
+    envoi["confirm_partial"] = "1"
+    envoi["confirm_controls"] = "1"
+    client.post(f"/history/{session_id}/picks/import", data=envoi)
+
+
 def _picks(settings: Settings) -> list[dict[str, object]]:
     with connect(settings) as conn:
         return [
@@ -107,7 +121,7 @@ def test_la_prose_du_tableau_arrive_en_base(client: TestClient, migrated: Settin
     session_id = _lot(migrated, ["Lyon", "Nice"])
 
     apercu = client.post(f"/history/{session_id}/picks/preview", data={"table": TABLEAU})
-    client.post(f"/history/{session_id}/picks/import", data=repost_import_form(apercu.text))
+    _importer(client, session_id, apercu.text)
 
     lignes = _picks(migrated)
     assert len(lignes) == 2
@@ -126,7 +140,7 @@ def test_le_type_et_la_prose_de_l_angle_restent_deux_champs(
     session_id = _lot(migrated, ["Lyon", "Nice"])
 
     apercu = client.post(f"/history/{session_id}/picks/preview", data={"table": TABLEAU})
-    client.post(f"/history/{session_id}/picks/import", data=repost_import_form(apercu.text))
+    _importer(client, session_id, apercu.text)
 
     lignes = _picks(migrated)
     assert lignes[0]["angle"] == "maniere", "le vocabulaire fermé, normalisé"
@@ -145,7 +159,7 @@ def test_un_tiret_n_est_pas_une_condition_d_invalidation(
     session_id = _lot(migrated, ["Lyon", "Nice"])
 
     apercu = client.post(f"/history/{session_id}/picks/preview", data={"table": TABLEAU})
-    client.post(f"/history/{session_id}/picks/import", data=repost_import_form(apercu.text))
+    _importer(client, session_id, apercu.text)
 
     seconde = _picks(migrated)[1]
     assert seconde["invalidation"] is None, "le tiret ne dit rien, donc rien n'est écrit"
@@ -165,7 +179,7 @@ def test_la_provenance_reste_nulle_sans_prose(client: TestClient, migrated: Sett
     )
 
     apercu = client.post(f"/history/{session_id}/picks/preview", data={"table": huit_colonnes})
-    client.post(f"/history/{session_id}/picks/import", data=repost_import_form(apercu.text))
+    _importer(client, session_id, apercu.text)
 
     assert _picks(migrated)[0]["prose_source"] is None
 
@@ -191,7 +205,7 @@ def test_la_reprise_marque_ce_qu_elle_reconstruit(client: TestClient, migrated: 
     des non retrouvées est ce qui rend la passe vérifiable."""
     session_id = _lot(migrated, ["Lyon", "Nice"])
     apercu = client.post(f"/history/{session_id}/picks/preview", data={"table": TABLEAU})
-    client.post(f"/history/{session_id}/picks/import", data=repost_import_form(apercu.text))
+    _importer(client, session_id, apercu.text)
     _sans_prose(migrated)
 
     rapport = picks_import.rebuild_prose(apply=True, settings=migrated)
@@ -211,7 +225,7 @@ def test_la_reprise_n_ecrase_jamais_une_valeur_captee(
     reconstruite, et une passe rejouée deux fois ne doit rien changer."""
     session_id = _lot(migrated, ["Lyon", "Nice"])
     apercu = client.post(f"/history/{session_id}/picks/preview", data={"table": TABLEAU})
-    client.post(f"/history/{session_id}/picks/import", data=repost_import_form(apercu.text))
+    _importer(client, session_id, apercu.text)
 
     premier = picks_import.rebuild_prose(apply=True, settings=migrated)
     assert premier.scanned == 0, "rien à reprendre : tout a été capté"
@@ -227,7 +241,7 @@ def test_la_simulation_n_ecrit_rien(client: TestClient, migrated: Settings) -> N
     """Même contrat que le rejeu : on regarde d'abord, on écrit ensuite."""
     session_id = _lot(migrated, ["Lyon", "Nice"])
     apercu = client.post(f"/history/{session_id}/picks/preview", data={"table": TABLEAU})
-    client.post(f"/history/{session_id}/picks/import", data=repost_import_form(apercu.text))
+    _importer(client, session_id, apercu.text)
     _sans_prose(migrated)
 
     rapport = picks_import.rebuild_prose(settings=migrated)

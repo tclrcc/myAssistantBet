@@ -13,6 +13,7 @@ un prix.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from unittest import mock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,6 +22,7 @@ from myassistantbet import db
 from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
+from myassistantbet.services import history as history_module
 from myassistantbet.services.history import (
     LATE_REASONS,
     HistoryError,
@@ -29,6 +31,7 @@ from myassistantbet.services.history import (
     _overlaps,
     add_pick,
     analysis,
+    feedback,
     late,
     overlap_matrix,
     populations,
@@ -119,6 +122,44 @@ def _lot(settings: Settings, lignes: list[tuple[str, str, bool]]) -> int:
             apres_coup_denvoi=tardif,
         )
     return session_id
+
+
+# -- Les deux surfaces portent la meme clause ---------------------------------
+
+
+def test_le_bloc_du_prompt_ecarte_les_selections_tardives(migrated: Settings) -> None:
+    """**`feedback()` n'appliquait aucune clause d'antériorité, et la marge tenait
+    à quatre lignes** — la première tardive au rang 64 sur une fenêtre de 60.
+
+    Une clause absente mais inoffensive est invisible : rien ne l'aurait
+    signalée, et personne n'aurait pensé à l'ajouter le jour où
+    `FEEDBACK_SUSPENDED` tombe. Le prédicat est celui d'`analysis()`, écrit une
+    seule fois — deux écritures de la même règle auraient divergé.
+    """
+    session_id = _lot(
+        migrated,
+        [("2.00", "win", False), ("2.00", "loss", False), ("2.00", "win", True)],
+    )
+    assert session_id
+
+    bloc = feedback(settings=migrated)
+
+    assert bloc.settled == 2, "la tardive sort du dénominateur"
+    assert analysis(settings=migrated).settled == 2, "les deux surfaces s'accordent"
+
+
+def test_la_fenetre_se_prend_apres_le_filtre_et_non_avant(migrated: Settings) -> None:
+    """**Un `LIMIT` posé côté SQL prendrait N lignes puis en retirerait les
+    tardives.** La fenêtre se rétrécirait à proportion du retard, et le bloc
+    annoncerait « les N dernières » sur moins que N. Elle porte des sélections
+    **éligibles**, pas des lignes lues."""
+    lignes = [("2.00", "win", True)] * 3 + [("2.00", "win", False)] * 3
+    assert _lot(migrated, lignes)
+
+    with mock.patch.object(history_module, "FEEDBACK_WINDOW", 3):
+        bloc = feedback(settings=migrated)
+
+    assert bloc.settled == 3, "trois éligibles, et non trois lues dont trois tardives"
 
 
 # -- L'anteriorite -----------------------------------------------------------

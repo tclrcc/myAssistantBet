@@ -31,6 +31,7 @@ from .services import board as board_service
 from .services import combos as combos_service
 from .services import competitions as competitions_service
 from .services import context as context_service
+from .services import controls as controls_service
 from .services import coupons as coupons_service
 from .services import coverage as coverage_service
 from .services import dossier as dossier_service
@@ -1253,6 +1254,22 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
                 request,
                 "picks.html",
                 _picks_context(session_id, sections_service.BLOCKED_NOTE),
+            )
+    # **Les controles du cadre, meme mecanisme et case distincte.** Deux
+    # confirmations et non une : cocher pour une section manquante ferait passer
+    # au meme geste des ecarts au cadre qu'on n'aurait pas lus, et le compte
+    # cesserait d'etre « ce qu'on ne franchit pas sans le voir ».
+    #
+    # Aucun blocage au-dela : la remediation des controles 8 et 9 est le renvoi
+    # en C-bis, qui se decide dans le rendu et pas ici. Refuser la ligne la
+    # ferait disparaitre du lot sans trace.
+    if form.get("confirm_controls") != "1":
+        compte = controls_service.for_import(session_id, form.get("import_id", ""), settings)
+        if compte is not None and compte.blocking:
+            return templates.TemplateResponse(
+                request,
+                "picks.html",
+                _picks_context(session_id, f"{controls_service.BLOCKED_NOTE} {compte.note}."),
             )
     # La liste entiere se garde a **l'import** et non a l'apercu, qui n'ecrit
     # rien : elle inclut les dossiers ouverts qui n'ont produit aucune

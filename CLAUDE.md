@@ -5418,6 +5418,65 @@ n'arrete rien ne se distingue pas d'un signal absent** — et le verifier avant 
 le reconstruire est la meme regle que « chercher d'abord si le bloc ne porte pas
 deja le fait qui la contredit ».
 
+## Les controles du cadre, comptes a l'import (`services/controls.py`)
+
+Le cadre enonce dix controles « a passer systematiquement, dans l'ordre ».
+L'application sait repondre a **quatre** d'entre eux depuis toujours — elle
+connait les evenements rapproches, les crans, les niveaux de source, et depuis
+le lot A la condition d'invalidation — et elle ne l'avait jamais dit.
+
+Mesure du 21/08/2026 sur les 312 selections de section C, faite **avant**
+d'ecrire une ligne, et c'est elle qui leve la reserve « ne pas opposer un
+controle avant d'en connaitre le taux de base » :
+
+| Controle | Ce qu'il dit | Violations mesurees |
+| --- | --- | ---: |
+| 1 | une seule selection par evenement | 16 |
+| 7 | chaque selection porte une condition d'invalidation | 1 sur les 117 captables |
+| 8 | aucune conf 2 dans le tableau principal | 36 |
+| 9 | dirigee par un fait de niveau 1 ou 2 | 39 |
+
+- **Compter, jamais bloquer, et la raison est la remediation.** Pour les
+  controles 8 et 9 elle est le **renvoi en C-bis**, qui se decide dans le rendu
+  et pas a l'import : refuser la ligne la ferait disparaitre du lot sans qu'aucune
+  trace ne dise pourquoi — le rejet silencieux que ce projet retire partout.
+- **Mais un avertissement ne suffit pas, et c'est mesure.** Celui de la section
+  manquante a parle **20 fois sur 20** et les 20 imports ont ete valides quand
+  meme. Le compte passe donc par la **confirmation explicite**, meme mecanisme
+  que la ligne `dossiers_ouverts` absente : rien n'est refuse, rien ne se
+  franchit sans avoir ete vu.
+- **Deux cases et non une.** Cocher pour une section manquante ferait passer au
+  meme geste des ecarts au cadre qu'on n'aurait pas lus.
+- **Trois etats, jamais deux.** Un controle dont la **colonne** manque a l'en-tete
+  est `muet`, pas `tenu` : sans cette distinction, le controle 7 dirait « aucune
+  condition d'invalidation » sur un collage a huit colonnes, c'est-a-dire une
+  violation la ou la question n'a pas ete posee. Meme vocabulaire que `Absents`.
+  Un muet **ne se confirme pas** — la case deviendrait le decor qu'elle existe
+  pour ne pas etre.
+- **Les recouvrements se rendent.** `16 + 36 + 39` ne fait pas 91 si les
+  ensembles se croisent, et une ligne qui viole deux controles ne se repare pas
+  comme deux lignes qui en violent un. Le compte de lignes **distinctes** ferme
+  l'addition, et les paires sont nommees.
+- **Aucun second lecteur** : les lignes viennent de `picks_import`, le seul module
+  qui sache decouper le tableau. Une expression reguliere posee a cote finirait
+  par ne plus designer les memes lignes, et deux comptes du meme collage se
+  contrediraient sans qu'aucun ne soit faux.
+- **La garde relit le collage conserve**, jamais un champ cache : ce qui retient
+  l'import ne peut pas voyager par le formulaire qu'il retient. `imports_raw`
+  fait foi, exactement comme pour les sections. Sans collage relisable — saisie a
+  la main, rejeu — on ne retient rien.
+- **Six controles ne sont pas ici, et c'est delibere.** La ligne en quart et la
+  cote inventee se lisent sur le bloc du match, l'anteriorite a deja sa garde et
+  son compte, le H2H seul et « chaque match apparait quelque part » demandent le
+  rendu entier. Les nommer sans pouvoir les compter donnerait l'apparence d'une
+  couverture complete.
+
+**Ce qui reste a mesurer, et ce n'est pas la presence.** Le controle 7 est
+renseigne a **98,7 %** en section C et **100 %** en C-bis : comme garde il rendra
+peu. Ce qui a de la valeur est le **declenchement** de la condition — l'angle
+a-t-il cede par ou l'analyse l'avait annonce — et sa pertinence quand il ne se
+declenche pas sur une selection perdue. C'est le gisement du futur bilan.
+
 ## Le lot d'une session, et ce qu'elle en a ecarte (`prompt_events`)
 
 L'application enregistrait ce qui avait ete **selectionne**, jamais ce qui avait ete
@@ -6590,6 +6649,41 @@ compte affirmait ce qu'il ignorait.
   **troisieme etat** (`cause_inconnue`, migration 073) : ni observation, ni
   defaut de collage identifie. Le total cesse de surestimer sans se mettre a
   sous-estimer.
+
+### Douzieme occurrence : la suite de tests en portait une version
+
+**Quatre tests sont tombes en corrigeant le typage des ecrasements, et tous les
+quatre encodaient le defaut.** `_ecrasee`, le helper de `test_confidence.py`,
+appelait `add_pick(opened=False)` **sans cause** — un etat que le parcours reel
+ne produit jamais, `_apply_research` en calculant toujours une des cinq. Ils
+passaient donc *parce que* `is_collection_fault(None)` valait faux.
+
+**Un helper de test est une seconde description de la verite, et rien n'oblige
+la seconde a suivre la premiere.** C'est la meme forme que les deux copies d'une
+valeur, appliquee a une forme canonique plutot qu'a un nombre : le montage se
+fige le jour ou il est ecrit, le service continue d'evoluer, et le montage finit
+par decrire un etat que la production ne peut plus atteindre.
+
+Le precedent est deja dans ce fichier, et il n'avait pas ete lu comme un motif :
+*« la forme canonique d'une selection, dans tout le code de test du projet, etait
+un pari pose sur un match deja commence »* — cent six tests casses quand la
+garde d'anteriorite est arrivee. La convention de test refletait la pratique,
+donc le defaut.
+
+**La regle qui en sort, et elle porte sur la reaction plutot que sur le code** :
+quand un correctif casse un test, la premiere question n'est pas comment le
+faire repasser mais **lequel des deux decrit l'etat voulu**. Realigner
+l'assertion sur la nouvelle sortie est le geste par defaut, et c'est celui qui
+transforme un test en description de ce qui est.
+
+- Le symptome qui designe le helper plutot que l'assertion : **plusieurs tests
+  tombent ensemble, sur la meme ligne de montage**. Un test isole qui casse
+  discute d'une regle ; quatre qui cassent au meme endroit disent que le montage
+  a vieilli.
+- Corollaire : un helper de test se relit contre le **chemin de production**, pas
+  contre ce qui fait passer. `_ecrasee` porte desormais la cause que
+  `_apply_research` pose, et un test neuf garde la nouvelle propriete — un
+  ecrasement sans cause ne compte pas comme une observation.
 
 ### L'incident du 21/08/2026 : une migration partie sur la base servie
 
