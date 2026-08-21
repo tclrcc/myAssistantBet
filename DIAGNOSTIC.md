@@ -10342,3 +10342,142 @@ base servie, et la base servie n'a pas été touchée.
   trois. Ce qui change pour elles est la phrase du chapitre, pas la ligne ;
 - **le faux positif de translittération** sur `divergence` : mesuré, laissé, et
   la raison est écrite.
+
+# Lot 21 — Le design de l'interface
+
+## §0 — Inventaire, avant toute décision esthétique
+
+**Le brief décrit l'interface d'après des captures, et le §0 est là pour le
+corriger. Il le corrige beaucoup :** sur ses onze constats de forme, **sept sont
+faux ou inversés**, et les trois défauts qui restent sont plus étroits et plus
+mesurables que ce qui était décrit. Le système que le §1 demande de poser
+**existe déjà, et il est appliqué** — sauf sur un axe.
+
+### Ce qui existe
+
+| Ce qu'on cherchait | Ce qu'on trouve |
+| --- | --- |
+| gabarits servis | **34, tous vivants** — aucun mort, `_charts.html` est importé comme macros par `stats.html` |
+| feuille commune ou style local | **une seule feuille**, 2 011 lignes, 398 règles, 377 sélecteurs distincts |
+| style inline | **zéro `<style>` dans un gabarit**, 6 attributs `style=` en tout sur 34 fichiers |
+| duplication | 19 sélecteurs déclarés deux fois — pour l'essentiel un `@media` en face — et 68 corps d'une ligne répétés (`color: var(--muted)` ×8) |
+| jetons de conception | **90 propriétés personnalisées** dans `:root`, dont une échelle typographique de 6 crans, une échelle d'espacement de 6 crans, un thème clair complet et une teinte par sport |
+
+### Les valeurs écrites en dur — le chiffre qui dit si un système existe
+
+C'est la mesure que le brief demandait, et c'est elle qui renverse sa prémisse.
+
+| Famille | Déclarations | Via jeton | En dur | Valeurs distinctes en dur |
+| --- | ---: | ---: | ---: | ---: |
+| couleur | — | — | **3 hex + 4 rgba** | `#fff`, deux blancs à 14 %, deux noirs à 35 % |
+| espacement | 224 | **191 (85 %)** | 33 | 19 |
+| **corps de texte** | 88 | **15 (17 %)** | **73** | **23** |
+
+**La couleur et l'espacement sont tenus ; la typographie ne l'est pas.** Le
+système existe donc en creux sur deux axes sur trois, et le troisième est le
+seul chantier réel du §1.
+
+### Le rendu testé — la garde contre un balisage cassé
+
+Six fichiers de test lisent la feuille ou le rendu. Trois sont des gardes
+directes :
+
+- `test_le_theme_clair_ne_redeclare_que_des_tokens` — **le bloc clair ne peut
+  porter que des `--jetons`**. C'est la contrainte la plus serrée du lot :
+  aucune règle de composant ne peut y entrer ;
+- `test_chaque_sport_porte_sa_bande_et_son_filet` — chaque sport doit avoir sa
+  bande `tr.sportrow-{sport}{` **et** son filet `td:first-child`, dans les deux
+  thèmes ;
+- `test_chaque_pictogramme_vise_un_symbole_existant` — tout identifiant de
+  `CONTEXT_ICONS` doit exister dans le sprite ;
+- `test_la_police_est_servie_en_local` — aucun `https://` dans la feuille.
+
+**Témoin d'entrée : 2 448 tests au vert.**
+
+## §0 bis — Les sept prémisses du brief que la mesure renverse
+
+| Le brief dit | La mesure dit |
+| --- | --- |
+| « du texte gris de 12 pixels » | le corps du board est à **14,4 px** et celui de Compétitions à **13,6 px**. Le plus petit corps rendu est 11,2 px, sur **9 éléments** — les en-têtes de tableau |
+| « tout est au même corps, ce qui oblige la couleur grise à faire le travail de la hiérarchie » | **l'inverse** : 6 tailles déclarées, **11 rendues** sur le board, 14 sur l'écran de pose. `14 px`, `14,08 px` et `14,4 px` y coexistent — trois crans à 3 % l'un de l'autre, donc de la dispersion qui a l'air d'une hiérarchie |
+| « Chiffres tabulaires pour toutes les cotes » | **déjà fait**, 14 fois, dont `table.board` en entier |
+| « Espacement sur une échelle unique » | **déjà fait à 85 %** — `--s1` à `--s6` |
+| « les paliers portent déjà un code couleur cohérent **du vert au rouge** » | l'échelle est 🟢 🔵 🟠 🔴 💥 : **le deuxième cran est bleu**. La rampe n'est pas monotone en teinte, et FUN se lit plus froid que SAFE |
+| « En-têtes collants » (à faire) | **déjà fait** — `position: sticky` sur `table.board th`, calé sur `--topbar-h` |
+| « Le gris actuel sur fond blanc est probablement sous le seuil » | `--muted` vaut **4,95 sur blanc — il passe**. Il vaut **4,49 sur `--panel-2`**, soit sous AA **d'un centième**. Le défaut est réel, mais il est à la troisième décimale et il n'est pas là où le brief le cherche |
+
+Deux de ces prémisses auraient conduit à défaire ce qui marche : réduire
+l'échelle typographique « à trois ou quatre tailles » alors que le problème est
+qu'elle n'est pas appliquée, et poser un rythme d'espacement qui existe déjà.
+
+## §0 ter — Les quatre défauts réels, mesurés
+
+### 1. Le filet de ligne est invisible exactement là où il y a des lignes
+
+Le board porte `border-bottom: 1px solid var(--line-soft)` sur chaque `td`.
+Rapport de contraste entre ce filet et le fond de la ligne qu'il sépare :
+
+| Fond de ligne | Thème clair | Thème sombre |
+| --- | ---: | ---: |
+| aucun sport | 1,23 | 1,15 |
+| **football** | **1,09** | **1,03** |
+| **tennis** | **1,14** | **1,03** |
+| **cyclisme** | **1,11** | **1,01** |
+
+La bande de sport recouvre le filet. Or le board **groupe par compétition**,
+donc les lignes de même sport se suivent par paquets de dix à trente : sur 133
+lignes, la lecture d'une ligne large de 1 377 px se fait sans aucun guide
+horizontal. C'est le seul point du §4 que la mesure confirme sans réserve.
+
+### 2. La page Compétitions déborde de 260 px
+
+Mesuré dans le navigateur à 1 440 px : `scrollWidth 1685 / clientWidth 1425`.
+La table fait **1 661 px dans un conteneur de 1 377** — `main` est plafonné à
+1 440 px moins 64 px de rembourrage. La colonne « Fiche » est **coupée**, et
+c'est celle que le §4 demande justement de mieux traiter. À 2 400 px de fenêtre,
+tout tient.
+
+### 3. L'écran de pose demande 1,8 fois la largeur d'un téléphone
+
+Mesuré à 390 px : `scrollWidth 882 / clientWidth 485`. Aucune règle responsive
+ne vise `.picks-table` — les quatre blocs `@media` de la feuille traitent le
+rembourrage de `main`, la barre de navigation, les barres de `/stats` et
+l'en-tête de contexte, et rien d'autre.
+
+**124 cibles tactiles sous 44 px** sur cette page, dont 31 × 4 boutons `.seg` :
+`padding 0.3rem 0.5rem`, `font-size 0.85rem`, `line-height 1` → **≈ 23 × 24 px**,
+soit la moitié du minimum.
+
+### 4. Le bloc de tête de `/stats` a sa hiérarchie inversée — mais pas là où le brief le dit
+
+Le §2 dit que la réserve est « presque au même poids » que le chiffre. Mesure :
+
+| Élément | Rôle | Taille | Couleur | Contraste (clair) |
+| --- | --- | ---: | --- | ---: |
+| `.label` | l'étiquette | 11,5 px | `--muted` | 4,95 |
+| `.hero-figure` | **le chiffre** | **48 px** | `--text` | 18,6 |
+| `.tile-detail` | **ce que le chiffre compte** | **12,8 px** | `--muted` | **4,95** |
+| `.residual-note` | **la réserve** | **16 px** | `--text` | 18,6 |
+
+La réserve n'est pas trop lourde par rapport au chiffre : elle est **25 % plus
+grande et quatre fois plus contrastée que la légende du nombre qu'elle
+qualifie**. L'échelle descend 48 → 12,8 → 16 : le deuxième niveau — celui qui
+dit ce que « 123 pour 138,0 » compte — est **sous** le troisième. C'est bien le
+défaut que le §2 nomme, atteint par l'autre bout.
+
+## §0 quater — Ce que le §1 ne pourra pas faire sans toucher au Jinja
+
+**Les couleurs de palier n'ont aucune prise CSS.** `history.py:1020` construit
+`tier_label = f"{emoji} {label}"` — une **chaîne unique**, et le gabarit écrit
+`<td class="nowrap">{{ pick.tier_label }}</td>`. Il n'existe nulle part de
+classe portant le palier.
+
+Les formaliser en variables demanderait `class="nowrap tier-{{ pick.tier }}"`,
+donc l'introduction d'une variable dans un gabarit — ce que la contrainte du lot
+interdit. **Proposé au §6, non fait.**
+
+Et la formalisation elle-même n'est pas neutre : la rampe stockée est
+🟢 🔵 🟠 🔴 💥. La reproduire en jetons copie une échelle **non monotone** ; la
+rendre monotone changerait un encodage qui est **en base** et que
+`picks_import` doit reconnaître dans un tableau collé à la main. Aucune des deux
+n'est un changement de feuille de style.
