@@ -656,6 +656,25 @@ def played_since(
     )
 
 
+def last_scan(competition_id: int | None, settings: Settings | None = None) -> str | None:
+    """La borne haute de notre fenetre de scans, en ISO 8601.
+
+    Ce que produisent `Repos`, `Parcours` et `Tour` ne vient d'aucun
+    fournisseur : ce sont nos propres relevés, et leur date est celle de la
+    derniere rencontre entree en base sur ce tournoi. `scan_window` en rend la
+    phrase, celle-ci l'horodatage — le payload transporte des dates, jamais des
+    ages.
+    """
+    if not competition_id:
+        return None
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT MAX(created_at) AS moment FROM events WHERE competition_id = ?",
+            (competition_id,),
+        ).fetchone()
+    return str(row["moment"]) if row and row["moment"] else None
+
+
 def scan_window(competition_id: int | None, settings: Settings | None = None) -> str:
     """`scans du 04/08 09:12 au 12/08 06:30 UTC` — les bords de notre fenetre.
 

@@ -48,6 +48,18 @@ et rend **un objet JSON unique**, précédé de rien et suivi de rien.
   d'horodatage de marché — son heure est celle de la frappe, et le projet refuse
   déjà de la présenter comme un relevé. Une colonne `releve_le` apparaît alors,
   `null` sur ces lignes-là.
+- **Des dates, jamais des âges.** Le payload transporte des horodatages ; la
+  fraîcheur se dérive à la lecture. Un âge calculé au rendu est vrai à la seconde
+  où il est écrit et faux pour toujours ensuite : un payload archivé dirait
+  « il y a 59 h » pour un relevé qui en aura 4 000.
+  - **Mesure du 21/08/2026, et elle restreint le chantier** : sur 12 703 faits
+    rendus, cinq libellés portent une durée — `Meteo` (174), `Entraineur` (347),
+    `Calendrier` (343), `Repos` (243), `Historique` (110). **Quatre la comptent
+    depuis le coup d'envoi**, que le payload porte : elles restent vraies et
+    vérifiables. Seule `Meteo` compte depuis `now`, et c'est elle qui a produit
+    les 14 lignes divergentes de la phase 1.
+  - La crainte était générale, le défaut est unique et localisé. C'est la mesure
+    qui le dit, pas l'intuition.
 - Encodage UTF-8, `ensure_ascii=False`, clés triées, indentation 1. Les accents
   coûtent moins que leurs échappements.
 
@@ -218,6 +230,18 @@ Trois raisons, et la troisième est la plus forte :
 - **une suppression est silencieuse, un plafond est lisible.** Un fait absent
   et un fait jamais collecté rendent exactement la même chose — c'est le défaut
   caractéristique de ce projet, rencontré six fois. Un `niveau: 4` se voit.
+
+**Un troisième état, ajouté au contrat v1.2 : sourcé mais non daté.** `niveau`
+réel, `date: null`. Il ne se dégrade pas en niveau 4, mais il ne peut porter
+aucun argument dont la force vient de la récence — forme, confirmation d'absence,
+changement d'entraîneur, congestion de calendrier. Ces arguments tirent leur
+valeur de ce que quelque chose a changé récemment ; sans date, la récence est
+invérifiable. Un fait non daté reste bon pour un argument **structurel** — format
+de compétition, historique long, profil de terrain — où la date ne change rien.
+
+**Et une date manquante ne se remplace jamais par un repli.** Une date fausse est
+pire qu'une date absente : elle a l'apparence d'un fait. La règle a son test, et
+il a fallu une mutation pour s'apercevoir qu'il manquait — voir §8 ter.
 
 La règle de décision (« niveau 4 ne porte pas seul une confiance ≥ 3 ») vit
 dans le `SKILL.md`. Le payload l'énonce comme conséquence, il ne l'applique pas.
@@ -413,6 +437,34 @@ sont séparées d'une minute. Neutraliser cet âge donne deux empreintes égales
   cette vérification, il aurait pu passer pour la mauvaise raison — le défaut
   que ce projet a déjà payé.
 
+## §8 ter — Le jeu de mutations, et ce qu'il a révélé
+
+**Un test vert ne prouve rien tant qu'on n'a pas vu ce qui le fait rougir.** Le
+garde-fou « aucun fait sans source » attrape la tranche oubliée ; il ne dit rien
+d'une tranche attribuée **de travers**, qui sort avec sa source, sa date et son
+niveau — donc parfaitement crédible. Quatre mutations couvrent les quatre façons
+dont l'attribution peut mentir en restant verte :
+
+| Mutation | Ce qu'elle simule | Attrapée par |
+| --- | --- | --- |
+| tranche non attribuée | un producteur ajouté sans `attribue` | `aucun_fait_sans_source` |
+| **mauvais kind** | `Classement` daté du relevé de forme | `chaque_ligne_est_datee_du_type_qui_l_a_produite` |
+| **date = `now()`** | le fait paraît frais pour toujours | 4 tests, dont le dédié |
+| **niveau poussé à 1** | une statistique tierce passe pour l'instance | `un_fournisseur_qui_n_est_pas_l_instance…` |
+
+- **Le test du mauvais kind a dû être renforcé.** Sa première version vérifiait
+  que la date figurait parmi les relevés de l'événement — un kind faux mais
+  **présent** y passait. Il énonce désormais la correspondance libellé → type
+  indépendamment du code, sur trois types seedés à trois dates distinctes. C'est
+  la seconde écriture que le code s'interdit ; dans un test, sa divergence est
+  précisément ce qu'on veut voir échouer.
+- **Une cinquième mutation a révélé un trou** : poser l'horloge **en repli**,
+  quand aucun relevé n'est connu, n'était attrapé par personne — alors que c'est
+  le cas que le contrat interdit nommément. Le cas ne se provoque pas par la
+  base (`fetched_at` est `NOT NULL`), donc il se teste là où la règle vit.
+- **La mutation est ce qui rend l'identité octet pour octet crédible.** Sans
+  elle, 2 449 verts ne prouvaient pas qu'un seul test regardait la bonne chose.
+
 ## §9 — Ce que cette spec ne fait pas
 
 - **Elle ne réécrit pas les 70 libellés.** L'attribution se dérive ; aucun
@@ -423,13 +475,6 @@ sont séparées d'une minute. Neutraliser cet âge donne deux empreintes égales
 - **Elle ne promeut aucun libellé dans le socle nommé.** La règle de promotion
   du §2 s'applique à partir de maintenant, elle ne se rattrape pas sur
   l'existant.
-- **Elle ne date pas encore les tranches hors `context`.** L'attribution de
-  source et de niveau est complète dès la phase 1 ; la **date** ne l'est que pour
-  les douze types de `context`, où le grain est le plus fin. `dossier.load` rend
-  déjà la sienne, `tennis_elo`, `tennis_matches` et les autres portent la
-  colonne : c'est de la propagation, elle vient en phase 2 avec le payload qui
-  la consomme. Un fait non daté sort avec `date: null` — jamais une date de
-  repli, qui se lirait comme un relevé.
 - **Elle ne mesure pas ce que la coupe fera gagner en qualité d'analyse.** Elle
   mesure ce qu'elle libère en tokens. Que le `SKILL.md` chargé automatiquement
   vaille mieux qu'un cadre recollé à chaque session est l'hypothèse du

@@ -517,30 +517,55 @@ def block_facts(
         # Un match que le fournisseur ne donne pas jouable se dit **avant** tout
         # le reste : tout ce qui suit decrit alors une rencontre qui n'aura pas
         # lieu, et l'analyse ne doit pas le decouvrir en fin de bloc.
-        lines = attribue(dossier.status_lines(event_id, commence_time, settings), "dossier") + lines
+        dossier_le = dossier.last_fetch(event_id, settings)
+        lines = (
+            attribue(dossier.status_lines(event_id, commence_time, settings), "dossier", dossier_le)
+            + lines
+        )
         # Le dossier d'equipe se memorise par equipe et non par match : il est
         # relu ici, comme le reste, sans un appel.
         lines += attribue(
-            dossier.dossier_lines(event_id, home, away, commence_time, settings), "dossier"
+            dossier.dossier_lines(event_id, home, away, commence_time, settings),
+            "dossier",
+            dossier_le,
         )
     # La meteo vaut pour les deux sports, donc avant leur separation : une alerte
     # aux orages arrete un tournoi de tennis comme une soiree de coupe. Relue en
     # base, sans aucun appel.
-    lines += attribue(weather.lines(event_id, settings), "weather")
+    lines += attribue(
+        weather.lines(event_id, settings), "weather", weather.last_fetch(event_id, settings)
+    )
     if sport_key == "tennis":
         # Le tour se deduit du nombre de joueurs encore en lice, donc de nos
         # propres scans : aucune source ne le publie a temps. Il vient en tete
         # du bloc parce qu'il situe tout le reste — une forme moyenne ne se lit
         # pas pareil en finale et au premier tour.
+        # `Repos`, `Parcours` et `Tour` ne viennent d'aucun fournisseur : ce sont
+        # nos propres scans, et leur date est celle du dernier evenement entre en
+        # base sur ce tournoi.
+        scans_le = tennis_load.last_scan(competition_id, settings)
+        # Une cle qui ne nomme pas son circuit ne date rien : `tour_for` rend
+        # None, et une requete sur None ramenerait un vide qu'on lirait comme
+        # « jamais collecte ». Le fait sort alors non date, ce qui est son etat
+        # exact — source connue, date inconnue.
+        circuit = elo.tour_for(oddsapi_key)
         lines += attribue(
-            tennis_round.lines(competition_id, commence_time, settings, home, away), "tennis_round"
+            tennis_round.lines(competition_id, commence_time, settings, home, away),
+            "tennis_round",
+            scans_le,
         )
-        lines += attribue(elo.lines(home, away, oddsapi_key, surface, settings), "elo")
+        lines += attribue(
+            elo.lines(home, away, oddsapi_key, surface, settings),
+            "elo",
+            elo.last_fetch(circuit, settings) if circuit else None,
+        )
         # Repos et charge sortent de nos propres lignes : les tours precedents
         # du meme tournoi ont ete scannes les jours d'avant. Aucun appel, aucune
         # cle — et c'est l'information que l'analyse allait chercher a la main.
         lines += attribue(
-            tennis_load.lines(home, away, competition_id, commence_time, settings), "tennis_load"
+            tennis_load.lines(home, away, competition_id, commence_time, settings),
+            "tennis_load",
+            scans_le,
         )
         # Qui a ete rencontre ici, et a quel niveau. Aucun appel : les tours
         # precedents ont ete scannes les jours d'avant, et l'Elo est deja en base.
@@ -549,6 +574,7 @@ def block_facts(
                 home, away, competition_id, commence_time, oddsapi_key, settings
             ),
             "tennis_load",
+            scans_le,
         )
         # Ce que le `Parcours` vient d'ecarter, et pourquoi. La ligne suit
         # immediatement celle qu'elle complete : un forfait retire un nom du
@@ -558,6 +584,7 @@ def block_facts(
                 home, away, competition_id, commence_time, oddsapi_key, settings
             ),
             "tennis_load",
+            scans_le,
         )
         # **Ce que `Parcours` ne peut pas dire.** Il nomme les adversaires et
         # jamais les resultats, parce qu'il sort de nos propres scans, qui
@@ -579,6 +606,7 @@ def block_facts(
                 oddsapi_key,
             ),
             "serve_stats",
+            serve_stats.last_fetch(serve_stats.circuit_of(oddsapi_key or ""), settings),
         )
         # L'historique des matchs joues : confrontations directes, palmares dans
         # ce tournoi, forme, bilan de surface et abandons.
@@ -595,6 +623,7 @@ def block_facts(
                 now,
             ),
             "tennis_history",
+            tennis_history.last_fetch({circuit} if circuit else set(), settings),
         )
     return lines
 

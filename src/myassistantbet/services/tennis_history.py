@@ -772,6 +772,28 @@ def _level_fragment(
     return fragment + (f" · meilleur battu {max(beaten):.0f}" if beaten else "")
 
 
+def last_fetch(tours: set[str], settings: Settings | None = None) -> str | None:
+    """Quand ces circuits ont-ils ete **collectes** ? Distinct de `horizon`.
+
+    `horizon` donne la date du dernier match *joue* que le fichier porte ;
+    celle-ci donne la date ou le fichier a ete telecharge. Les deux different
+    toujours — la source parait apres coup — et confondre les deux ferait dater
+    un fait de la veille d'un match vieux de dix jours.
+
+    Lue sur `tennis_history_state`, qui date **meme une collecte vide** : sans
+    elle, une saison sans match n'aurait pas de date du tout.
+    """
+    if not tours:
+        return None
+    marks = ", ".join("?" for _ in tours)
+    with connect(settings) as conn:
+        row = conn.execute(
+            f"SELECT MAX(fetched_at) AS moment FROM tennis_history_state WHERE tour IN ({marks})",
+            tuple(sorted(tours)),
+        ).fetchone()
+    return str(row["moment"]) if row and row["moment"] else None
+
+
 def horizon(tours: set[str], settings: Settings | None = None) -> str | None:
     """Date du match le plus recent collecte sur ces circuits.
 

@@ -17,6 +17,18 @@ Chaque fait porte `source`, `date`, `niveau`. L'attribution se dérive **à l'as
 | Attribution dérivable | Fait normal, `niveau` réel |
 | Non dérivable | Émis, `niveau: 4`, `date: null` |
 
+Un troisième état existe : **sourcé mais non daté** — `niveau` réel, `date: null`. Il ne se dégrade pas en niveau 4, mais il ne peut pas porter d'argument dont la force vient de la récence : forme, confirmation d'absence, changement d'entraîneur, congestion de calendrier. Ces arguments tirent leur valeur du fait que quelque chose a changé récemment ; sans date, la récence est invérifiable. Un fait non daté reste utilisable pour un argument structurel — format de compétition, historique long, profil de terrain — où la date ne change rien.
+
+Une date manquante ne se remplace jamais par une date de repli. Une date fausse est pire qu'une date absente : elle a l'apparence d'un fait.
+
+## Des dates, jamais des âges
+
+Le payload transporte des **horodatages**. La fraîcheur se dérive à la lecture, elle ne s'expédie pas.
+
+Un âge calculé au rendu — « relevé il y a 59 h » — est vrai à la seconde où il est écrit et faux pour toujours ensuite : un payload archivé relu dans six mois afficherait 59 h pour un relevé qui en aura 4 000. Aucune valeur du bloc ne porte donc de durée comptée depuis l'instant du rendu.
+
+Les durées comptées depuis le **coup d'envoi** ne sont pas concernées : le payload porte `debut_local`, donc elles restent vraies et vérifiables.
+
 Le bloc plafonne à **niveau 3** : aucun fournisseur du pipeline n'est l'instance qui publie. Seule exception, une alerte d'un service météo national recopiée telle quelle. Les niveaux 1 et 2 relèvent de la vérification, pas de la collecte.
 
 ## Discriminant obligatoire
@@ -34,7 +46,7 @@ Pour la même raison, le conteneur générique ne s'appelle pas `faits` : ce lib
 ```json
 {
   "origine": "myassistantbet",
-  "framework_version": "1.1",
+  "framework_version": "1.2",
   "genere_le": "2026-08-21T09:12:00+02:00",
   "sports": ["football", "tennis"],
   "nb_matchs": 6,

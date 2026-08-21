@@ -1746,6 +1746,25 @@ class SyncReport:
         )
 
 
+def last_fetch(circuit: str, settings: Settings | None = None) -> str | None:
+    """Quand les agregats de service de ce circuit ont-ils ete calcules ?
+
+    **Le plus ancien des deux joueurs serait plus juste, et il n'est pas
+    atteignable ici** : la ligne se resout sur la graphie canonique du
+    fournisseur, que ce module rapproche plus bas. Le grain est donc le circuit,
+    et il borne du bon cote — un agregat plus ancien que la date rendue est
+    impossible, le `MIN` etant pris sur tout le circuit.
+    """
+    if not circuit:
+        return None
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT MIN(computed_at) AS quand FROM player_serve_agg WHERE circuit = ?",
+            (circuit,),
+        ).fetchone()
+    return str(row["quand"]) if row and row["quand"] else None
+
+
 def _is_fresh(player: str, circuit: str, settings: Settings, now: datetime | None = None) -> bool:
     """Un agregat ecrit recemment ne se redemande pas.
 

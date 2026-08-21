@@ -27,7 +27,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from ..config import Settings, get_settings
 from ..providers.base import ProviderError
 from ..providers.weather import METEOALARM_FEEDS, WeatherClient
-from .context import load, store
+from .context import load, payload_of, store
 
 logger = logging.getLogger(__name__)
 
@@ -348,6 +348,24 @@ def _alert(row: dict[str, Any]) -> dict[str, Any]:
         "severity": (row.get("severity") or "").strip(),
         "ends": row.get("ends") or "",
     }
+
+
+def last_fetch(event_id: int, settings: Settings | None = None) -> str | None:
+    """Quand la prevision a-t-elle ete relevee ?
+
+    **C'est la seule ligne du bloc dont la valeur se calcule sur l'horloge du
+    rendu** : au-dela de `TTL_HOURS`, la mention devient « releve il y a N h ».
+    Mesure du 21/08/2026 sur 12 703 faits rendus — cinq libelles portent une
+    duree, et quatre la comptent depuis le coup d'envoi, donc restent vraies
+    pour toujours. Celle-ci est la cinquieme, et la seule a vieillir.
+
+    Le payload transporte donc l'horodatage, et la fraicheur se derive a la
+    lecture : un age fige dans un archive dirait « 59 h » pour un releve qui en
+    aura quatre mille.
+    """
+    payload = payload_of(event_id, KIND_WEATHER, settings) or {}
+    moment = payload.get("fetched_at")
+    return str(moment) if moment else None
 
 
 def lines(

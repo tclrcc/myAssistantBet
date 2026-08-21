@@ -33,7 +33,7 @@ from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.apifootball import CALL_COST, PROVIDER, APIFootballClient
 from ..providers.base import ProviderError, last_known_quota
-from .context import KIND_SHEETS, KIND_TEAMS
+from .context import KIND_SHEETS, KIND_TEAMS, payload_of
 from .context import load as load_context
 from .labels import sort_key
 
@@ -321,6 +321,30 @@ def teams_of(event_id: int, settings: Settings | None = None) -> dict[str, Any]:
     """
     payload = load_context(event_id, settings).get(KIND_TEAMS)
     return payload if isinstance(payload, dict) else {}
+
+
+def last_fetch(event_id: int, settings: Settings | None = None) -> str | None:
+    """Quand le dossier des deux equipes a-t-il ete releve ? **Le plus ancien.**
+
+    Le dossier melange plusieurs types — entraineur, saison, buteurs, absences
+    longue duree — et deux equipes. La date qui borne ce que le bloc garantit est
+    donc la plus ancienne : annoncer la plus recente surestimerait la fraicheur
+    de tout le reste, meme regle que les lignes qui melangent deux relevés.
+
+    Rien sans rapprochement memorise : le dossier n'existe pas, et une date sans
+    fait ne dit rien.
+    """
+    teams = payload_of(event_id, KIND_TEAMS, settings) or {}
+    ids = [int(teams[side]) for side in ("home", "away") if teams.get(side)]
+    if not ids:
+        return None
+    marks = ", ".join("?" for _ in ids)
+    with connect(settings) as conn:
+        row = conn.execute(
+            f"SELECT MIN(fetched_at) AS moment FROM team_context WHERE team_id IN ({marks})",
+            tuple(ids),
+        ).fetchone()
+    return str(row["moment"]) if row and row["moment"] else None
 
 
 def status_lines(

@@ -405,6 +405,30 @@ def load(event_id: int, settings: Settings | None = None) -> Context:
     )
 
 
+def fetched_at_of(event_id: int, kind: str, settings: Settings | None = None) -> str | None:
+    """La date d'un seul type de releve, sans charger le reste.
+
+    **`load` desérialise toutes les charges utiles de l'evenement** — jusqu'a
+    quinze objets JSON, dont des historiques de saison — et deux appelants n'en
+    voulaient qu'une date. Mesure du 21/08/2026 : le bloc passait de 201 a
+    226 ms par match, soit +12 %, pour deux valeurs lues de cette facon.
+    """
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT fetched_at FROM context WHERE event_id = ? AND kind = ?", (event_id, kind)
+        ).fetchone()
+    return str(row["fetched_at"]) if row else None
+
+
+def payload_of(event_id: int, kind: str, settings: Settings | None = None) -> Any:
+    """Une seule charge utile, sans desérialiser les autres. Meme raison."""
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT payload_json FROM context WHERE event_id = ? AND kind = ?", (event_id, kind)
+        ).fetchone()
+    return json.loads(row["payload_json"]) if row else None
+
+
 def record_outcome(event_id: int, cause: str, settings: Settings | None = None) -> None:
     """Journalise l'issue d'une tentative de contexte.
 
