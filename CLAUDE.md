@@ -2852,7 +2852,39 @@ l'avait franchi depuis des mois sans que rien ne bronche.
   archive et affiche, jamais oppose a quoi que ce soit. Mesure sur les 92 prompts
   archives : le plus gros pese **21 707 tokens pour 21 blocs** — une soiree de Conference
   League — soit pres du double de `PROMPT_BUDGET`, sans que rien ne s'y oppose ni n'ait a
-  s'y opposer. Un bloc enrichi coute environ **750 tokens**, le cadre en coute ~6 100.
+  s'y opposer.
+  - **Le cadre a change de regime, et le chiffre ci-dessus decrit l'ancien : mesure du
+    21/08/2026 sur les 172 prompts archives.** Un bloc enrichi coute **493 tokens** en
+    moyenne sur toute la base, 665 sur les huit derniers prompts ; le cadre, lui, coute
+    **8 000 tokens en moyenne et 12 257 a 18 498 sur les huit derniers**. Le chiffre
+    precedent — ~6 100, releve sur 92 prompts — decrivait le regime d'avant le 10/08.
+    - **Les deux nombres ne se comparent pas directement**, et c'est la seconde moitie
+      du meme piege : 6 100 et 8 000 sont deux **moyennes**, soit +31 % ; 6 100 et
+      15 232 sont une moyenne et un **regime courant**, soit x2,5. Dire « a triple »
+      revient a comparer l'ancienne moyenne au nouveau maximum.
+    - **La croissance est lineaire, environ 700 tokens par jour, et le dire ainsi
+      change la conclusion.** 8 048 tokens de cadre le 10/08, 12 160 le 15/08, 15 232 le
+      20/08 : deux fenetres de cinq jours, **+4 112 puis +3 072**. Les increments sont
+      constants et plutot decroissants — c'est une droite, pas une exponentielle.
+      - Le ratio invite a lire « double tous les dix jours », et c'est le piege : a
+        trente jours le modele lineaire donne **~36k**, l'exponentiel **~120k**, et
+        **seul le second justifierait une refonte a lui seul**. La refonte se justifie
+        par la part du cadre — 65,4 %, 80 % sur le dernier gros lot — pas par une
+        urgence de croissance qui n'existe pas.
+      - Regle generale : **une suite de mesures se decrit par ses increments, jamais par
+        le rapport de ses bornes.** Deux points suffisent a fabriquer un doublement ; il
+        en faut trois pour voir une pente.
+    - **Rien ne s'y oppose, et c'est la vraie cause** : les deux budgets vivent dans
+      `tests/`, s'appliquent a des fixtures de six et trois matchs, et ne voient jamais
+      un lot reel. La derive etait integralement archivee dans `prompts.fixed_tokens`,
+      et personne ne la regardait. L'alarme se pose donc a `save_prompt`, sur le prompt
+      reellement produit — voir `SPEC-PAYLOAD.md` §7 bis.
+    - **Rapporte au volume, le cadre est desormais l'essentiel de ce qui part** : 65,4 %
+      des tokens archives, et 80 % sur le prompt 171 — 18 498 de cadre pour 4 677 de
+      faits. Cote gabarit, 26 lignes sur 1 411 sont factuelles.
+    - C'est la mesure qui fonde le chantier du bloc de donnees (`SPEC-PAYLOAD.md`) : ce
+      qui decide de la sortie part dans le `SKILL.md`, et le prompt ne porte plus que
+      des faits attribues.
   - La confusion est facile et elle a ete faite : « 7 482 tokens pour un lot de six,
     contre 11 500 permis » se lit comme une marge de securite sur la production, alors que
     c'est la mesure d'une fixture contre son alarme de non-regression.

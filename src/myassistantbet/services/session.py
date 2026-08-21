@@ -23,12 +23,14 @@ from . import (
     tennis_round,
     weather,
 )
+from .attribution import Fait, attribue
+from .attribution import lignes as lignes_de
 from .competitions import is_knockout
 from .context import (
     CAUSE_BLOCK_NOTES,
     CAUSE_UI_NOTES,
     COLLECTION_FAULTS,
-    context_lines,
+    context_facts,
     failure_causes,
 )
 from .labels import (
@@ -454,7 +456,43 @@ def context_block(
     cache: dict[str, Any] | None = None,
     now: datetime | None = None,
 ) -> list[tuple[str, str]]:
-    """Lignes du bloc CONTEXTE, toutes sources confondues.
+    """Lignes du bloc CONTEXTE, sous la forme que le rendu texte consomme.
+
+    **Adaptateur, et non un second assemblage** : `block_facts` fait tout le
+    travail. Meme regle que `context.context_lines` un cran plus bas.
+    """
+    return lignes_de(
+        block_facts(
+            event_id,
+            home,
+            away,
+            commence_time,
+            sport_key,
+            oddsapi_key=oddsapi_key,
+            surface=surface,
+            competition_id=competition_id,
+            settings=settings,
+            cache=cache,
+            now=now,
+        )
+    )
+
+
+def block_facts(
+    event_id: int,
+    home: str,
+    away: str,
+    commence_time: str,
+    sport_key: str,
+    *,
+    oddsapi_key: str | None = None,
+    surface: str | None = None,
+    competition_id: int | None = None,
+    settings: Settings | None = None,
+    cache: dict[str, Any] | None = None,
+    now: datetime | None = None,
+) -> list[Fait]:
+    """Faits du bloc CONTEXTE, toutes sources confondues, **chacun attribue**.
 
     **Seul assembleur.** Le prompt et la fiche d'un match doivent porter le meme
     bloc : deux assemblages paralleles ont diverge deux fois — la fiche d'un match
@@ -465,40 +503,61 @@ def context_block(
     Aucun appel reseau : tout est relu en base, quelle que soit la source.
     """
     settings = settings or get_settings()
-    lines = context_lines(event_id, home, away, commence_time, settings, competition_id)
+    # **L'attribution se pose ici, par tranche.** Chaque producteur connait sa
+    # source ; une table `libelle -> source` posee a cote aurait diverge au
+    # premier libelle ajoute — le piege deja paye par `markets.py` et
+    # `render.py`, ou un marche ajoute d'un seul cote sortait en cle brute.
+    #
+    # `context` date deja ses lignes **par type de releve**, plus finement que la
+    # tranche ne saurait le faire : `attribue` ne reprend pas ce qui l'est deja.
+    lines = attribue(
+        context_facts(event_id, home, away, commence_time, settings, competition_id), "context"
+    )
     if sport_key == "football":
         # Un match que le fournisseur ne donne pas jouable se dit **avant** tout
         # le reste : tout ce qui suit decrit alors une rencontre qui n'aura pas
         # lieu, et l'analyse ne doit pas le decouvrir en fin de bloc.
-        lines = dossier.status_lines(event_id, commence_time, settings) + lines
+        lines = attribue(dossier.status_lines(event_id, commence_time, settings), "dossier") + lines
         # Le dossier d'equipe se memorise par equipe et non par match : il est
         # relu ici, comme le reste, sans un appel.
-        lines += dossier.dossier_lines(event_id, home, away, commence_time, settings)
+        lines += attribue(
+            dossier.dossier_lines(event_id, home, away, commence_time, settings), "dossier"
+        )
     # La meteo vaut pour les deux sports, donc avant leur separation : une alerte
     # aux orages arrete un tournoi de tennis comme une soiree de coupe. Relue en
     # base, sans aucun appel.
-    lines += weather.lines(event_id, settings)
+    lines += attribue(weather.lines(event_id, settings), "weather")
     if sport_key == "tennis":
         # Le tour se deduit du nombre de joueurs encore en lice, donc de nos
         # propres scans : aucune source ne le publie a temps. Il vient en tete
         # du bloc parce qu'il situe tout le reste — une forme moyenne ne se lit
         # pas pareil en finale et au premier tour.
-        lines += tennis_round.lines(competition_id, commence_time, settings, home, away)
-        lines += elo.lines(home, away, oddsapi_key, surface, settings)
+        lines += attribue(
+            tennis_round.lines(competition_id, commence_time, settings, home, away), "tennis_round"
+        )
+        lines += attribue(elo.lines(home, away, oddsapi_key, surface, settings), "elo")
         # Repos et charge sortent de nos propres lignes : les tours precedents
         # du meme tournoi ont ete scannes les jours d'avant. Aucun appel, aucune
         # cle — et c'est l'information que l'analyse allait chercher a la main.
-        lines += tennis_load.lines(home, away, competition_id, commence_time, settings)
+        lines += attribue(
+            tennis_load.lines(home, away, competition_id, commence_time, settings), "tennis_load"
+        )
         # Qui a ete rencontre ici, et a quel niveau. Aucun appel : les tours
         # precedents ont ete scannes les jours d'avant, et l'Elo est deja en base.
-        lines += tennis_load.path_lines(
-            home, away, competition_id, commence_time, oddsapi_key, settings
+        lines += attribue(
+            tennis_load.path_lines(
+                home, away, competition_id, commence_time, oddsapi_key, settings
+            ),
+            "tennis_load",
         )
         # Ce que le `Parcours` vient d'ecarter, et pourquoi. La ligne suit
         # immediatement celle qu'elle complete : un forfait retire un nom du
         # parcours, et le lecteur doit voir les deux d'un coup d'oeil.
-        lines += tennis_load.unplayed_lines(
-            home, away, competition_id, commence_time, oddsapi_key, settings
+        lines += attribue(
+            tennis_load.unplayed_lines(
+                home, away, competition_id, commence_time, oddsapi_key, settings
+            ),
+            "tennis_load",
         )
         # **Ce que `Parcours` ne peut pas dire.** Il nomme les adversaires et
         # jamais les resultats, parce qu'il sort de nos propres scans, qui
@@ -508,20 +567,34 @@ def context_block(
         # Posee **apres** `Non joue` et non entre lui et `Parcours` : ces deux-la
         # se completent et doivent rester adjacents — un forfait retire un nom du
         # parcours, et le lecteur doit voir les deux d'un coup d'oeil.
-        lines += serve_stats.here_lines(
-            home,
-            away,
-            serve_stats.circuit_of(oddsapi_key or ""),
-            competition_id,
-            commence_time,
-            settings,
-            None,
-            oddsapi_key,
+        lines += attribue(
+            serve_stats.here_lines(
+                home,
+                away,
+                serve_stats.circuit_of(oddsapi_key or ""),
+                competition_id,
+                commence_time,
+                settings,
+                None,
+                oddsapi_key,
+            ),
+            "serve_stats",
         )
         # L'historique des matchs joues : confrontations directes, palmares dans
         # ce tournoi, forme, bilan de surface et abandons.
-        lines += tennis_history.lines(
-            home, away, surface, commence_time, settings, competition_id, cache, oddsapi_key, now
+        lines += attribue(
+            tennis_history.lines(
+                home,
+                away,
+                surface,
+                commence_time,
+                settings,
+                competition_id,
+                cache,
+                oddsapi_key,
+                now,
+            ),
+            "tennis_history",
         )
     return lines
 

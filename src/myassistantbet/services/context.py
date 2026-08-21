@@ -23,6 +23,8 @@ from ..db import connect, utcnow
 from ..providers.apifootball import APIFootballClient
 from ..providers.base import ProviderError
 from ..providers.weather import WeatherClient
+from .attribution import TRANCHES, Fait
+from .attribution import lignes as lignes_de
 from .labels import sort_key
 from .matching import Resolution, resolve_team
 from .render import UNAVAILABLE
@@ -364,13 +366,43 @@ def store(event_id: int, kind: str, payload: Any, settings: Settings | None = No
         )
 
 
-def load(event_id: int, settings: Settings | None = None) -> dict[str, Any]:
-    """Tout le contexte connu d'un evenement, indexe par type."""
+class Context(dict[str, Any]):
+    """Le contexte d'un evenement, indexe par type, **avec la date de son releve**.
+
+    Un `dict` par heritage : tous les appelants lisent `data.get(KIND_X)` et rien
+    d'autre, donc aucun n'a a changer. Ce qui s'ajoute est `fetched_at`, la seule
+    chose que la lecture jetait — la colonne est en base depuis toujours, sur les
+    3 278 releves de la table.
+
+    **Sans elle, aucun fait du bloc ne pouvait porter sa date.** Mesure du
+    21/08/2026 sur 17 538 lignes de contexte archivees : 20 % portaient une date,
+    8 % une source. Ce n'etait pas un defaut de collecte — l'information dormait
+    ici, et la lecture s'en debarrassait.
+    """
+
+    def __init__(self, payloads: dict[str, Any], dates: dict[str, str]) -> None:
+        super().__init__(payloads)
+        self._dates = dates
+
+    def fetched_at(self, kind: str) -> str | None:
+        """Quand ce type a-t-il ete releve ? None s'il ne l'a jamais ete.
+
+        **None et jamais une date de repli.** Une date inventee se lirait comme un
+        releve, et c'est exactement ce qu'un fait date doit permettre de verifier.
+        """
+        return self._dates.get(kind)
+
+
+def load(event_id: int, settings: Settings | None = None) -> Context:
+    """Tout le contexte connu d'un evenement, indexe par type, **date**."""
     with connect(settings) as conn:
         rows = conn.execute(
-            "SELECT kind, payload_json FROM context WHERE event_id = ?", (event_id,)
+            "SELECT kind, payload_json, fetched_at FROM context WHERE event_id = ?", (event_id,)
         ).fetchall()
-    return {row["kind"]: json.loads(row["payload_json"]) for row in rows}
+    return Context(
+        {row["kind"]: json.loads(row["payload_json"]) for row in rows},
+        {row["kind"]: row["fetched_at"] for row in rows},
+    )
 
 
 def record_outcome(event_id: int, cause: str, settings: Settings | None = None) -> None:
@@ -2143,6 +2175,51 @@ def referee_served(competition_id: int | None, settings: Settings | None = None)
     return int(row["releves"] or 0) < REFEREE_MIN_SAMPLE
 
 
+class _Faits:
+    """Collecteur des lignes de contexte, **date par type de releve**.
+
+    `context` porte un `fetched_at` par type, et douze types alimentent les
+    vingt-neuf lignes de ce bloc : la date fine est donc atteignable, et c'est
+    elle qui rend un fait verifiable.
+
+    **Une ligne qui melange deux relevés prend la plus ancienne des deux.** Une
+    ligne comme `Forme 5` tire ses lettres de `form` et ses buts de `recent` ;
+    annoncer la plus recente surestimerait la fraicheur de l'autre moitie. Meme
+    regle que partout ici — une estimation qui borne se trompe du bon cote.
+    """
+
+    def __init__(self, data: Context) -> None:
+        self._data = data
+        self.items: list[Fait] = []
+
+    def add(self, label: str, valeur: str, *kinds: str) -> None:
+        """Ajoute une ligne, datee des types qui l'ont produite."""
+        self.items.append(
+            Fait(
+                label=label,
+                valeur=valeur,
+                source=TRANCHE.source,
+                date=self._date(*kinds),
+                niveau=TRANCHE.niveau,
+            )
+        )
+
+    def _date(self, *kinds: str) -> str | None:
+        """La plus ancienne des dates connues. None si aucune ne l'est.
+
+        None **et jamais une date de repli** : une date inventee se lirait comme
+        un releve, alors que tout l'objet de l'attribution est de pouvoir aller
+        verifier quand la chose a ete vue.
+        """
+        dates = [date for date in (self._data.fetched_at(kind) for kind in kinds) if date]
+        return min(dates) if dates else None
+
+
+#: La tranche a laquelle ce module appartient. Ecrite une fois : deux ecritures
+#: auraient diverge au premier fournisseur ajoute.
+TRANCHE = TRANCHES["context"]
+
+
 def context_lines(
     event_id: int,
     home: str,
@@ -2151,7 +2228,24 @@ def context_lines(
     settings: Settings | None = None,
     competition_id: int | None = None,
 ) -> list[tuple[str, str]]:
-    """Lignes du bloc CONTEXTE, pretes pour `render_event`.
+    """Les lignes du bloc CONTEXTE, sous la forme que le rendu texte consomme.
+
+    **Adaptateur, et non un second assemblage** : `context_facts` fait tout le
+    travail. Deux assemblages paralleles ont deja diverge deux fois dans ce
+    projet, et la fiche d'un match y a perdu son dossier d'equipe.
+    """
+    return lignes_de(context_facts(event_id, home, away, commence_time, settings, competition_id))
+
+
+def context_facts(
+    event_id: int,
+    home: str,
+    away: str,
+    commence_time: str,
+    settings: Settings | None = None,
+    competition_id: int | None = None,
+) -> list[Fait]:
+    """Faits du bloc CONTEXTE, chacun date du type de releve qui l'a produit.
 
     Une donnee absente produit une ligne omise ; une donnee dont on sait qu'elle
     n'est pas couverte produit une ligne explicite.
@@ -2162,7 +2256,7 @@ def context_lines(
     """
     settings = settings or get_settings()
     data = load(event_id, settings)
-    lines: list[tuple[str, str]] = []
+    faits = _Faits(data)
 
     # **En tete du bloc, parce qu'elle qualifie tout ce qui suit** : rien de ce
     # qui manque en dessous n'est un fait de couverture. Les autres lignes
@@ -2170,7 +2264,7 @@ def context_lines(
     # lui a rien demande.
     aborted = data.get(KIND_ABORTED) or {}
     if aborted.get("reason"):
-        lines.append(("Collecte", f"non collecte — {aborted['reason']}"))
+        faits.add("Collecte", f"non collecte — {aborted['reason']}", KIND_ABORTED)
 
     # Saisie manuelle : profil d'etape, startlist et references d'abord, car
     # c'est tout ce dont dispose un evenement qu'aucune API ne couvre.
@@ -2178,9 +2272,9 @@ def context_lines(
     for label, key in (("Profil", "profile"), ("Startlist", "startlist"), ("Infos", "notes")):
         value = (manual.get(key) or "").strip()
         if value:
-            lines.append((label, value))
+            faits.add(label, value, KIND_MANUAL_NOTE)
     if manual.get("links"):
-        lines.append(("References", " ".join(manual["links"])))
+        faits.add("References", " ".join(manual["links"]), KIND_MANUAL_NOTE)
 
     # **Sur un match de coupe, les agregats viennent d'ailleurs, et chacun le
     # dit.** Le nom de l'equipe porte sa competition d'origine dans toutes les
@@ -2193,11 +2287,11 @@ def context_lines(
     if domestic:
         note = _domestic_note(home, away, domestic)
         if note:
-            lines.append(("Agregats", note))
+            faits.add("Agregats", note, KIND_DOMESTIC)
 
     standings = data.get(KIND_STANDINGS) or {}
     if standings and not standings.get("available", True):
-        lines.append(("Classement", UNAVAILABLE))
+        faits.add("Classement", UNAVAILABLE, KIND_STANDINGS)
         standings = {}
 
     # **Sur un match de coupe, la division se nomme meme sans rang.** Deux
@@ -2219,7 +2313,7 @@ def context_lines(
 
     ranked = _pair(_ranked(home_agg, "home"), _ranked(away_agg, "away"))
     if ranked:
-        lines.append(("Classement", ranked))
+        faits.add("Classement", ranked, KIND_STANDINGS, KIND_DOMESTIC)
 
     # **L'enjeu ne suit pas le classement hors de sa competition.** Un
     # championnat declare « Relegation » ou « Play-offs » : ce n'est pas l'enjeu
@@ -2232,7 +2326,7 @@ def context_lines(
             _stake_fragment(away, standings.get("away")),
         )
         if stakes:
-            lines.append(("Enjeu", stakes))
+            faits.add("Enjeu", stakes, KIND_STANDINGS)
 
     form = data.get(KIND_FORM) or {}
     recent = data.get(KIND_RECENT) or {}
@@ -2244,14 +2338,14 @@ def context_lines(
         _form_fragment(away_agg, form.get("away"), recent.get("away")),
     )
     if forms:
-        lines.append(("Forme 5", forms))
+        faits.add("Forme 5", forms, KIND_FORM, KIND_RECENT)
 
     sides = _pair(
         _prefix(home_agg, _side_record(form.get("home"), "home")),
         _prefix(away_agg, _side_record(form.get("away"), "away")),
     )
     if sides:
-        lines.append(("Dom/Ext", sides))
+        faits.add("Dom/Ext", sides, KIND_FORM)
 
     # Statistiques de saison, deja payees avec la forme. Chacune sert un marche
     # que l'etage B achete : buts d'equipe, BTTS, premiere mi-temps, cartons.
@@ -2267,7 +2361,7 @@ def context_lines(
     ):
         rendered = _pair(fragment(home_agg, form.get("home")), fragment(away_agg, form.get("away")))
         if rendered:
-            lines.append((label, rendered))
+            faits.add(label, rendered, KIND_FORM)
 
     venue = data.get(KIND_VENUE) or {}
     # Lu avant le bloc des confrontations : « Scenario » s'en sert pour ne pas
@@ -2278,33 +2372,37 @@ def context_lines(
         # surprise revenait a faire passer pour un domicile ordinaire un match
         # dont le lieu n'avait pas ete recupere — un domicile suppose qui n'en
         # est pas coute plus qu'une ligne de plus par bloc.
-        lines.append(("Lieu", _venue_line(venue, home)))
+        faits.add("Lieu", _venue_line(venue, home), KIND_VENUE)
         surface = (venue.get("surface") or "").strip().lower()
         if surface and "grass" not in surface:
-            lines.append(("Pelouse", SURFACE_LABELS.get(surface, surface)))
+            faits.add("Pelouse", SURFACE_LABELS.get(surface, surface), KIND_VENUE)
 
     arbitre = data.get(KIND_REFEREE)
     if arbitre is not None:
-        lines.append(("Arbitre", _referee_line(arbitre, referee_served(competition_id, settings))))
+        faits.add(
+            "Arbitre",
+            _referee_line(arbitre, referee_served(competition_id, settings)),
+            KIND_REFEREE,
+        )
 
     profile = data.get(KIND_PROFILE) or {}
     if profile and not profile.get("available", True):
         # Le fournisseur ne sert pas les statistiques de match sur cette
         # competition. Une seule ligne le dit, plutot que trois absences
         # (corners, cartons, tirs) qu'on chercherait a expliquer une par une.
-        lines.append(("Stats match", UNAVAILABLE))
+        faits.add("Stats match", UNAVAILABLE, KIND_PROFILE)
         profile = {}
     corners = _pair(
         _corner_fragment(home, profile.get("home")), _corner_fragment(away, profile.get("away"))
     )
     if corners:
-        lines.append(("Corners", corners))
+        faits.add("Corners", corners, KIND_PROFILE)
 
     cards = _pair(
         _card_fragment(home, profile.get("home")), _card_fragment(away, profile.get("away"))
     )
     if cards:
-        lines.append(("Cartons", cards))
+        faits.add("Cartons", cards, KIND_PROFILE)
 
     # Juste apres la moyenne par match : meme sujet, autre grandeur.
     card_timing = _pair(
@@ -2312,30 +2410,30 @@ def context_lines(
         _card_timing_fragment(away_agg, form.get("away")),
     )
     if card_timing:
-        lines.append(("Cartons tps", card_timing))
+        faits.add("Cartons tps", card_timing, KIND_FORM)
 
     fouls = _pair(
         _fouls_fragment(home, profile.get("home")), _fouls_fragment(away, profile.get("away"))
     )
     if fouls:
-        lines.append(("Fautes", fouls))
+        faits.add("Fautes", fouls, KIND_PROFILE)
 
     shots = _pair(
         _shot_fragment(home, profile.get("home")), _shot_fragment(away, profile.get("away"))
     )
     if shots:
-        lines.append(("Tirs", shots))
+        faits.add("Tirs", shots, KIND_PROFILE)
 
     xg = _pair(_xg_fragment(home, profile.get("home")), _xg_fragment(away, profile.get("away")))
     if xg:
-        lines.append(("xG", xg))
+        faits.add("xG", xg, KIND_PROFILE)
 
     possession = _pair(
         _possession_fragment(home, profile.get("home")),
         _possession_fragment(away, profile.get("away")),
     )
     if possession:
-        lines.append(("Possession", possession))
+        faits.add("Possession", possession, KIND_PROFILE)
 
     # Avant les absents, qu'elle complete et parfois remplace : sur une
     # competition ou `injuries` est faux, la composition est la seule facon de
@@ -2345,7 +2443,7 @@ def context_lines(
         _lineup_fragment(home, lineups.get("home")), _lineup_fragment(away, lineups.get("away"))
     )
     if composed:
-        lines.append(("Compos", composed))
+        faits.add("Compos", composed, KIND_LINEUPS)
 
     injuries = data.get(KIND_INJURIES)
     if injuries is not None:
@@ -2354,15 +2452,18 @@ def context_lines(
             # anterieurs a cette distinction, et le plus prudent des deux — il
             # envoie chercher au lieu d'affirmer qu'on a regarde.
             etat = injuries.get("state") or INJURIES_NOT_ASKED
-            lines.append(("Absents", INJURIES_NOTES.get(etat, INJURIES_NOTES[INJURIES_NOT_ASKED])))
+            faits.add(
+                "Absents",
+                INJURIES_NOTES.get(etat, INJURIES_NOTES[INJURIES_NOT_ASKED]),
+                KIND_INJURIES,
+            )
         else:
-            lines.append(
-                (
-                    "Absents",
-                    _injuries_for(injuries.get("home") or [], home)
-                    + "\n"
-                    + _injuries_for(injuries.get("away") or [], away),
-                )
+            faits.add(
+                "Absents",
+                _injuries_for(injuries.get("home") or [], home)
+                + "\n"
+                + _injuries_for(injuries.get("away") or [], away),
+                KIND_INJURIES,
             )
 
     # Effectif reconstruit : il ne parait que la ou « Absents » est muet, et il
@@ -2374,7 +2475,7 @@ def context_lines(
             _sheets_for(sheets.get("away") or [], away, sheets.get("away_window")),
         )
         if rendered:
-            lines.append(("Effectif", rendered))
+            faits.add("Effectif", rendered, KIND_SHEETS)
 
     h2h = data.get(KIND_H2H)
     if h2h:
@@ -2384,26 +2485,26 @@ def context_lines(
         league = (data.get(KIND_TEAMS) or {}).get("league")
         aller = _return_leg_line(h2h, league, away, commence_time)
         if aller:
-            lines.append(("Aller", aller))
+            faits.add("Aller", aller, KIND_H2H)
         # L'arithmetique de la double confrontation, juste sous le fait dont
         # elle se deduit : cumul, qui est qualifie en l'etat, ce qu'il faut a
         # l'autre. Vingt-quatre manches retour en une semaine ont demande ce
         # meme calcul refait a la main, et il est deterministe.
         scenario = _scenario_line(h2h, league, home, away, commence_time, neutre)
         if scenario:
-            lines.append(("Scenario", scenario))
+            faits.add("Scenario", scenario, KIND_H2H)
         rendered = _h2h_line(h2h, settings)
         if rendered:
-            lines.append((f"H2H ({len(h2h.get('matches') or [])})", rendered))
+            faits.add(f"H2H ({len(h2h.get('matches') or [])})", rendered, KIND_H2H)
 
     rest = _pair(
         _prefix(home, _rest_days(recent.get("home"), commence_time)),
         _prefix(away, _rest_days(recent.get("away"), commence_time)),
     )
     if rest:
-        lines.append(("Repos", rest))
+        faits.add("Repos", rest, KIND_RECENT)
 
-    return lines
+    return faits.items
 
 
 def _prefix(team: str, value: str) -> str:
