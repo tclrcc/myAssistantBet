@@ -5471,6 +5471,43 @@ l'application a l'ecriture, depuis sa propre constante.
   est la verite, et `AUDITED_COLUMNS` compte les nulles posterieures a la
   migration — une colonne muette depuis sa naissance doit se voir.
 
+## De quel lot une selection est sortie (`picks.prompt_id`)
+
+Une selection n'etait reliee qu'a une **session**, qui porte 1 a 20 prompts.
+`combos.prompt_id` est `NOT NULL` depuis la migration 047, et pour une raison
+qui vaut ici aussi : les selections de deux prompts n'ont jamais ete comparees
+entre elles — chaque instance a choisi dans son lot, avec son quota et son
+budget propres.
+
+Mesure du 21/08/2026 sur les 312 selections de section C, par reconstruction :
+
+| Candidats via `prompt_events` | Lignes | Part |
+| --- | ---: | ---: |
+| un seul | 121 | 38,8 % |
+| deux ou trois | 66 | 21,2 % |
+| quatre et plus | 14 | 4,5 % |
+| aucun prompt archive | 111 | 35,6 % |
+
+- **A l'ecriture, le prompt qui a valide.** La colonne se remplit depuis
+  `PromptBlocks`, le prompt dont les en-tetes de blocs ont apparie le tableau
+  colle — **le meme objet** qui donne son identifiant a un combine. Deux lectures
+  paralleles auraient fini par designer deux prompts differents, et l'appariement
+  porte sa somme de controle (le champ `match` de chaque bloc) : c'est une
+  verification, pas une deduction.
+- **Verifie contre la session, jamais pris au mot.** Un identifiant inconnu ou
+  pointant sur une autre session vaut `NULL` : un lien faux serait pire que nul,
+  puisqu'il servirait ensuite a comparer des selections qui n'ont pas ete
+  produites ensemble.
+- **Sans bloc de confiance, aucun prompt ne valide et le lien reste nul.** En cas
+  de doute, rien — la regle du projet, appliquee au rattachement d'un lot.
+- **La reprise ne prend que le candidat unique** (121 en section C, 32 en C-bis).
+  Une reconstruction sur 21 % de candidats multiples serait une **fausse
+  certitude** : le lien parait pose, rien ne dit qu'il designe le bon lot.
+  `Analysis.picks_sans_prompt` compte les autres — un compte se lit, un lien
+  invente ne se voit plus.
+- La clause de reprise s'indexe sur `prompt_id IS NULL`, donc sur la colonne
+  qu'elle corrige : idempotente et complete par construction, la lecon de la 049.
+
 ## Les controles du cadre, comptes a l'import (`services/controls.py`)
 
 Le cadre enonce dix controles « a passer systematiquement, dans l'ordre ».

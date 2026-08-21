@@ -482,6 +482,12 @@ class ImportPreview:
     #: Le compte des controles du cadre, recalcule a l'import depuis le collage
     #: conserve. Voir `services/controls.py`.
     controls: Any = None
+    #: Le prompt dont les en-tetes de blocs ont apparie ce tableau. **Le meme
+    #: objet qui donne son `prompt_id` a un combine** : deux lectures paralleles
+    #: de la meme chose auraient fini par designer deux prompts differents. Et
+    #: l'appariement porte sa somme de controle — le champ `match` de chaque
+    #: bloc — donc c'est une verification, pas une deduction.
+    prompt_id: int | None = None
 
     @property
     def count(self) -> int:
@@ -1025,6 +1031,7 @@ def parse_table(
                 "en-tête compris (« Match | Marché | Sélection | … »).",
             )
     valide = _attach_claims(preview, raw, headers)
+    preview.prompt_id = valide.prompt_id if valide is not None else None
     _apply_research(preview, raw, headers or [], valide)
     _attach_combos(preview, raw, valide, headers)
     _attach_scores(preview, raw, rows, nearby, valide, headers)

@@ -1995,6 +1995,12 @@ def add_pick(
     #: Une reprise passe par un rapprochement, donc par une regle faillible ;
     #: une captation recopie une cellule. Les deux ne se lisent pas pareil.
     prose_source: str = PROSE_FROM_IMPORT,
+    #: Le prompt d'ou cette selection est sortie. **Verifie contre la session**,
+    #: jamais pris au mot : un lien vers le prompt d'une autre session serait
+    #: pire que nul — il servirait ensuite a comparer des selections qui n'ont
+    #: pas ete produites ensemble, ce que `combos.prompt_id NOT NULL` interdit
+    #: deja pour les jambes d'un combine.
+    prompt_id: str | int = "",
     late_reason: str = "",
     claim: str = "",
     opened: bool | None = None,
@@ -2093,6 +2099,17 @@ def add_pick(
         # atteindre un quota est une facon deguisee de remplir un palier avec du
         # vide — et rien d'autre ne permet de distinguer deux angles vraiment
         # independants de deux facons de dire la meme chose.
+        # **Le lot d'origine, verifie et jamais pris au mot.** Un identifiant
+        # inconnu ou pointant sur une autre session vaut « on ne sait pas » :
+        # `NULL` se compte, un lien faux ne se voit plus.
+        lot = None
+        if str(prompt_id).strip().isdigit():
+            trouve = conn.execute(
+                "SELECT session_id FROM prompts WHERE id = ?", (int(prompt_id),)
+            ).fetchone()
+            if trouve is not None and int(trouve["session_id"]) == int(session_id):
+                lot = int(prompt_id)
+
         note = (independence_note or "").strip()
         if attached is not None and not note:
             already = conn.execute(
@@ -2158,9 +2175,9 @@ def add_pick(
             "                   research_override_cause, exploratoire, tardive, import_id, "
             "                   offset_start, offset_end, claim_offset_start, "
             "                   claim_offset_end, angle_note, invalidation, prose_source, "
-            "                   framework_version, created_at) "
+            "                   framework_version, prompt_id, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-            "        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 attached,
@@ -2205,6 +2222,7 @@ def add_pick(
                 # ajouterait un chemin de perte a une valeur que l'application
                 # connait deja.
                 FRAMEWORK_VERSION,
+                lot,
                 utcnow(),
             ),
         )
@@ -3216,6 +3234,15 @@ class Analysis:
     #: chercher un defaut qui ne se produira plus — meme regle que les motifs de
     #: saisie tardive anterieurs a la garde d'ecriture.
     settled_undated: int = 0
+    #: Selections qu'aucun prompt ne rattache a son lot.
+    #:
+    #: **Une reconstruction a 21 % de candidats multiples serait une fausse
+    #: certitude** : le lien parait pose, rien ne dit qu'il designe le bon lot,
+    #: et il servirait ensuite a comparer des selections qui n'ont pas ete
+    #: produites ensemble. La migration 076 n'a repris que les lignes a candidat
+    #: unique ; les autres se comptent. Un compte se lit, un lien invente ne se
+    #: voit plus.
+    picks_sans_prompt: int = 0
     #: Les memes, **par motif declare**. Un seul compte les melangeait, et les
     #: trois cas n'appellent pas la meme lecture ni le meme geste :
     #:
@@ -5420,6 +5447,8 @@ def analysis(settings: Settings | None = None) -> Analysis:
             # pre-resultat, celle sans laquelle une relecture ne peut pas
             # prouver qu'elle ne retrospecte pas.
             "       k.result_at, "
+            # Le lot d'origine, quand il est etabli sans discussion.
+            "       k.prompt_id, "
             # L'affiche, pour **nommer** les rencontres qui portent plus d'une
             # selection. Le compte seul disait qu'il faut elargir les
             # intervalles, jamais ou aller regarder.
@@ -5504,6 +5533,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
     # **Compte sur la population entiere, tardives comprises.** La borne haute
     # ne depend pas de l'anteriorite : une ligne ecartee du bloc de tete reste
     # une ligne dont on aimerait savoir quand son issue a ete sue.
+    report.picks_sans_prompt = sum(1 for row in (*rows, *tardifs) if not _column(row, "prompt_id"))
     report.settled_undated = sum(
         1
         for row in (*rows, *tardifs)

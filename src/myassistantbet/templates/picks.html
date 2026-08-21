@@ -347,6 +347,13 @@
          qu'aucune trace ne dise pourquoi. Mais un compte qu'un avertissement
          porte se franchit sans être lu — mesuré sur la section absente, 20 fois
          sur 20 — d'où la case, obligatoire, et le refus serveur sans elle. #}
+      {#- Le lot d'origine, une fois pour le formulaire : c'est un fait sur le
+          collage entier, pas sur chaque ligne. Il vient du prompt dont les
+          en-têtes de blocs ont apparié le tableau — le même que celui qui donne
+          son identifiant à un combiné. -#}
+      {% if preview.prompt_id %}
+      <input type="hidden" name="prompt_id" value="{{ preview.prompt_id }}">
+      {% endif %}
       {% if preview.controls and preview.controls.blocking %}
       <p class="notice notice-warn">
         <label>

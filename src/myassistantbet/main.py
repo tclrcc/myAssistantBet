@@ -1332,6 +1332,9 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
                 # rejeu devrait re-parser tout un collage et rapprocher les
                 # resultats a la main.
                 import_id=import_id,
+                # Le lot d'origine : un fait sur le collage, donc un champ pour
+                # tout le formulaire et non un par ligne.
+                prompt_id=form.get("prompt_id", ""),
                 offsets=form.get(f"offsets_{index}", ""),
                 claim_offsets=form.get(f"claim_offsets_{index}", ""),
                 settings=settings,

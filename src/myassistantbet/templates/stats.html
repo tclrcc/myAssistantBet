@@ -283,6 +283,19 @@
       depuis sont datés à l'écriture, et rien ne se reconstitue en arrière.
     </p>
     {% endif %}
+    {#- **Une reconstruction à 21 % de candidats multiples serait une fausse
+        certitude.** Le lien paraîtrait posé, rien ne dirait qu'il désigne le bon
+        lot, et il servirait ensuite à comparer des sélections qui n'ont pas été
+        produites ensemble. La migration 076 n'a repris que les lignes à
+        candidat unique. -#}
+    {% if analysis.picks_sans_prompt %}
+    <p class="chart-note">
+      <strong>{{ analysis.picks_sans_prompt }} sélection(s) ne sont rattachées à
+      aucun lot</strong> : leur session porte plusieurs prompts et rien ne dit
+      lequel les a produites. Elles comptent partout ailleurs — seule une lecture
+      qui compare des sélections d'un même lot doit les écarter.
+    </p>
+    {% endif %}
 
     {# Le recouvrement vit **sous le pli**, avec les axes qu'il concerne : il les
        annonçait au-dessus alors qu'ils sont repliés, donc il commentait des

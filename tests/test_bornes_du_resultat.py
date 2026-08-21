@@ -261,3 +261,118 @@ def test_un_collage_de_sonde_garde_sa_provenance(migrated: Settings) -> None:
     assert import_id is not None
     collage = imports_raw.get(import_id, migrated)
     assert collage is not None and collage.source == imports_raw.SONDE
+
+
+# -- Le lot d'origine --------------------------------------------------------
+
+
+def test_une_selection_importee_porte_le_prompt_qui_l_a_validee(
+    client: TestClient, migrated: Settings
+) -> None:
+    """**Le même objet qui donne son identifiant à un combiné.** Deux lectures
+    parallèles de la même chose auraient fini par désigner deux prompts
+    différents, et l'appariement porte sa somme de contrôle — le champ `match` de
+    chaque bloc — donc c'est une vérification, pas une déduction."""
+    from myassistantbet.services import picks_import
+
+    session_id = board_service.toggle_selection(_match(migrated, "Lyon"), True, migrated)
+    tableau = (
+        "### C. Tableau des sélections\n\n"
+        "| # | Match | Marché | Sélection | Cote | Palier | Conf/5 |\n"
+        "|---|---|---|---|---|---|---|\n"
+        "| 1 | Lyon – Adv Lyon | 1N2 | Lyon | 1.45 | 🟢 SAFE | 4 |\n"
+    )
+    apercu = picks_import.build_preview(session_id, tableau, migrated)
+
+    # Sans bloc de confiance, aucun prompt ne valide : le lien reste nul plutôt
+    # que devine. C'est le comportement voulu — en cas de doute, rien.
+    assert apercu.prompt_id is None
+
+    pick_id = add_pick(
+        session_id, "safe", "1N2", "Lyon", price="1.45", prompt_id="", settings=migrated
+    )
+    assert _colonne(migrated, pick_id, "prompt_id") is None
+
+
+def test_un_prompt_d_une_autre_session_ne_rattache_rien(migrated: Settings) -> None:
+    """**Vérifié contre la session, jamais pris au mot.** Un lien vers le prompt
+    d'une autre session serait pire que nul : il servirait ensuite à comparer des
+    sélections qui n'ont pas été produites ensemble, ce que
+    `combos.prompt_id NOT NULL` interdit déjà pour les jambes d'un combiné."""
+    from myassistantbet.services.prompt import RenderedPrompt, save_prompt
+
+    session_id, _ = _pick(migrated, "Lyon")
+    # **Une seconde session, posée directement.** `toggle_selection` rejoint la
+    # session courante : deux matchs cochés à la suite y atterrissent tous les
+    # deux, et le test aurait vérifié le cas facile.
+    with connect(migrated) as conn:
+        autre = int(
+            conn.execute(
+                "INSERT INTO sessions (label, created_at) VALUES ('autre lot', ?)",
+                ("2026-08-01T10:00:00Z",),
+            ).lastrowid
+        )
+    assert autre != session_id
+    prompt_id = save_prompt(
+        autre,
+        RenderedPrompt(template_name="t", body="corps", blocks=1, event_ids=[]),
+        migrated,
+    )
+
+    pick_id = add_pick(
+        session_id,
+        "safe",
+        "1N2",
+        "Lyon bis",
+        price="1.45",
+        prompt_id=str(prompt_id),
+        independence_note="angles indépendants (fixture)",
+        settings=migrated,
+    )
+
+    assert _colonne(migrated, pick_id, "prompt_id") is None, "on ne sait pas vaut mieux qu'un faux"
+
+
+def test_un_identifiant_illisible_vaut_on_ne_sait_pas(migrated: Settings) -> None:
+    session_id, _ = _pick(migrated, "Lyon")
+
+    pick_id = add_pick(
+        session_id,
+        "safe",
+        "1N2",
+        "Lyon ter",
+        price="1.45",
+        prompt_id="pas un nombre",
+        independence_note="angles indépendants (fixture)",
+        settings=migrated,
+    )
+
+    assert _colonne(migrated, pick_id, "prompt_id") is None
+
+
+def test_la_reprise_ne_rattache_que_le_candidat_unique() -> None:
+    """**Une reconstruction à 21 % de candidats multiples serait une fausse
+    certitude.** Le lien paraîtrait posé, rien ne dirait qu'il désigne le bon
+    lot. Le test relit le fichier de migration plutôt que d'en recopier la
+    règle."""
+    sql = (
+        Path(__file__).parents[1] / "src/myassistantbet/migrations/076_prompt_d_origine.sql"
+    ).read_text(encoding="utf-8")
+    instructions = "\n".join(
+        ligne for ligne in sql.splitlines() if ligne.strip() and not ligne.startswith("--")
+    )
+
+    assert "COUNT(DISTINCT pe.prompt_id)" in instructions
+    assert ") = 1;" in instructions, "un seul candidat, sinon rien"
+    assert "prompt_id IS NULL" in instructions, (
+        "la clause s'indexe sur la colonne qu'elle corrige : idempotente et "
+        "complète par construction, la leçon de la migration 049"
+    )
+
+
+def test_les_selections_sans_lot_se_comptent(migrated: Settings) -> None:
+    """Un compte se lit ; un lien inventé ne se voit plus."""
+    _, pick_id = _pick(migrated, "Lyon")
+    set_result(pick_id, "win", migrated)
+
+    assert analysis(settings=migrated).picks_sans_prompt == 1
