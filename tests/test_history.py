@@ -47,6 +47,7 @@ from myassistantbet.services.history import (
     set_real_price,
     set_result,
     stats,
+    tier_drift,
     tier_for_price,
     tier_scope,
     tier_usage,
@@ -2827,6 +2828,113 @@ def test_les_trois_lectures_de_bande_disent_la_meme_chose(migrated: Settings) ->
         )
         assert tier_for_price(price, migrated) == par_covers, f"cote {price}"
         assert par_in_band == par_covers, f"cote {price}"
+
+
+def test_le_journal_d_analyse_recalcule_le_palier_depuis_la_cote_declaree(
+    migrated: Settings,
+) -> None:
+    """**L'emoji colle ne classe plus.** Il porte le bareme en vigueur le jour du
+    collage : le lire comme un classement faisait entrer dans la mesure d'analyse
+    toute derive entre le cadre publie et la configuration servie.
+
+    La ligne ci-dessous est declaree FUN sur une cote qui tombe en SAFE — ce que
+    produit exactement un modele qui lit encore l'ancienne frontiere.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    add_pick(
+        session_id,
+        tier="fun",
+        market="1N2",
+        selection="Lyon",
+        event_id=str(event_id),
+        price="1.72",
+        confidence="3",
+        settings=migrated,
+    )
+    set_result(1, "win", migrated)
+
+    rapport = analysis(migrated)
+
+    assert [row.key for row in rapport.by_tier] == ["safe"], "recalcule, pas l'emoji"
+
+
+def test_le_journal_de_mise_garde_la_cote_obtenue(migrated: Settings) -> None:
+    """Le palier de la cote **obtenue** y est legitime : le pari a ete pose a ce
+    prix-la. C'est la seule des deux lectures ou une donnee d'execution a sa
+    place."""
+    from myassistantbet.services.coupons import create as create_coupon
+
+    session_id, event_id = _session_avec_match(migrated)
+    pick_id = add_pick(
+        session_id,
+        tier="safe",
+        market="1N2",
+        selection="Lyon",
+        event_id=str(event_id),
+        price="1.45",
+        settings=migrated,
+    )
+    # La cote obtenue tombe dans une autre bande que la cote declaree.
+    set_real_price(pick_id, "2.40", migrated)
+    set_result(pick_id, "win", migrated)
+    create_coupon(session_id, [pick_id], stake="10", settings=migrated)
+
+    assert [row.key for row in stats(migrated).by_tier] == ["ultra_fun"], "cote obtenue"
+    assert [row.key for row in analysis(migrated).by_tier] == ["safe"], "cote declaree"
+
+
+def test_l_ecart_entre_palier_emis_et_recalcule_se_compte(migrated: Settings) -> None:
+    """L'emoji cesse d'etre un classement et devient un **signal d'adherence** :
+    son ecart au recalcul dit si le modele classe comme l'application classe.
+
+    Un compte, jamais un taux — donc aucun seuil ne le garde.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    add_pick(
+        session_id,
+        tier="fun",
+        market="1N2",
+        selection="Lyon",
+        event_id=str(event_id),
+        price="1.72",
+        settings=migrated,
+    )
+    add_pick(
+        session_id,
+        tier="safe",
+        market="O/U 2.5",
+        selection="Over 2.5",
+        event_id=str(event_id),
+        price="1.45",
+        independence_note="angles indépendants",
+        settings=migrated,
+    )
+
+    ecart = tier_drift(migrated)
+
+    assert (ecart.comparable, ecart.agreed, ecart.disagreed) == (2, 1, 1)
+    assert ecart.transitions == [("fun", "safe", 1)]
+    assert "1 écart(s)" in ecart.line
+
+
+def test_une_selection_sans_cote_n_est_pas_un_desaccord(migrated: Settings) -> None:
+    """Rien a recalculer n'est pas un ecart : le repli est nomme (`unpriced`)
+    plutot que compte avec les desaccords — la confusion ferait crier a la derive
+    sur les selections anterieures a la colonne `price`."""
+    session_id, event_id = _session_avec_match(migrated)
+    add_pick(
+        session_id,
+        tier="fun",
+        market="1N2",
+        selection="Lyon",
+        event_id=str(event_id),
+        settings=migrated,
+    )
+
+    ecart = tier_drift(migrated)
+
+    assert (ecart.comparable, ecart.unpriced, ecart.disagreed) == (0, 1, 0)
+    assert ecart.line == "", "rien de comparable, rien a dire"
 
 
 def test_la_confiance_n_entre_pas_dans_le_classement(migrated: Settings) -> None:

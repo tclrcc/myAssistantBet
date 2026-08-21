@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from math import ceil
@@ -2353,9 +2354,73 @@ def _reference_priced(row: Any) -> bool:
     return _column(row, "price_source") == PRICE_REFERENCE and _column(row, "price_real") is None
 
 
-def _tier_of(row: Any) -> str:
-    """Le palier qui fait foi : celui de la cote obtenue, sinon le provisoire."""
-    return _column(row, "tier_real") or row["tier"]
+#: Le palier **recalcule depuis la cote declaree**, celle que l'analyse avait
+#: sous les yeux. C'est la lecture du journal d'analyse.
+TIER_DECLARED = "declared"
+
+#: Le palier de la cote **obtenue** quand elle existe, sinon le provisoire.
+#: C'est la lecture du journal de mise.
+TIER_EXECUTED = "executed"
+
+
+def _bands(conn: Any) -> list[tuple[str, float, float | None]]:
+    """Les bandes reglees, dans l'ordre de parcours, lues **une fois**.
+
+    `tier_for_price` ouvre une connexion par appel : la passer sur quelques
+    centaines de lignes en ouvrirait autant. La convention de borne, elle, reste
+    celle de `in_band` — c'est la lecture qui change, pas la regle.
+    """
+    return [
+        (str(row["key"]), float(row["min_price"]), _optional_float(row["max_price"]))
+        for row in conn.execute("SELECT key, min_price, max_price FROM tiers ORDER BY position")
+    ]
+
+
+def _optional_float(value: Any) -> float | None:
+    return None if value is None else float(value)
+
+
+def _tier_of(row: Any, source: str, bands: Sequence[tuple[str, float, float | None]] = ()) -> str:
+    """Le palier d'une selection, **selon le journal qui la lit**.
+
+    Les deux lectures existaient deja, fondues dans une seule fonction qui
+    rendait `tier_real or tier`. Le melange n'etait pas neutre : la cote obtenue
+    est une donnee d'**execution**, et elle entrait dans la mesure d'**analyse**
+    — une ligne changeait de palier dans le journal d'analyse parce qu'on avait
+    saisi le prix paye. Latent tant que `price_real` ne couvre que neuf lignes ;
+    la fenetre s'ouvre a mesure que la couverture monte.
+
+    · `TIER_EXECUTED` — `stats()`, les paris **poses**. Le palier de la cote
+      obtenue y est legitime : le pari a ete pose a ce prix-la.
+    · `TIER_DECLARED` — `analysis()` et `exploratory()`, ce que vaut
+      l'**analyse**. Le palier s'y recalcule depuis la cote declaree, et jamais
+      depuis `picks.tier` : cette colonne porte l'emoji colle par le modele,
+      donc le barme en vigueur le jour du collage. La recalculer rend toute
+      derive entre le cadre et la configuration inoffensive **pour la mesure**,
+      celle-ci comme les suivantes.
+
+    L'emoji reste en base et cesse d'etre lu comme un classement : il devient un
+    signal d'audit, l'ecart entre emis et recalcule mesurant l'adherence du
+    cadre (`tier_drift`).
+
+    **Deux replis, tous deux nommes plutot que silencieux** : une selection sans
+    cote ne se recalcule pas, et une cote hors de toutes les bandes non plus.
+    Les deux rendent le palier declare — la seule reponse disponible. Le second
+    ne peut pas arriver sur une ecriture recente, `_reject_out_of_band` le
+    refusant a la source, et le premier decrit les selections anterieures a la
+    colonne `price`.
+    """
+    if source == TIER_EXECUTED:
+        return str(_column(row, "tier_real") or row["tier"])
+    if source != TIER_DECLARED:
+        raise ValueError(f"Lecture de palier inconnue : {source!r}")
+    price = _column(row, "price")
+    if price is None:
+        return str(row["tier"])
+    for key, minimum, maximum in bands:
+        if in_band(float(price), minimum, maximum):
+            return key
+    return str(row["tier"])
 
 
 def _count(entry: RateRow, result: str, row: Any = None) -> None:
@@ -2406,7 +2471,9 @@ def _tally(rows: list[Any], key_field: str, labels: dict[str, str]) -> list[Rate
         # `tier_effective` n'est pas une colonne : c'est le palier de la cote
         # obtenue quand elle existe, sinon le provisoire. Le resoudre ici evite
         # de dupliquer la regle dans chaque appelant.
-        key = (_tier_of(row) if key_field == "tier_effective" else row[key_field]) or NO_SPORT
+        key = (
+            _tier_of(row, TIER_EXECUTED) if key_field == "tier_effective" else row[key_field]
+        ) or NO_SPORT
         entry = grouped.setdefault(key, RateRow(key=key, label=labels.get(key, key)))
         _count(entry, row["result"] or "pending", row)
     return list(grouped.values())
@@ -2848,6 +2915,10 @@ class Analysis:
     by_confidence_computed: list[RateRow] = field(default_factory=list)
     #: L'accord entre les deux crans. Voir `Notation`.
     notation: Notation = field(default_factory=lambda: Notation())
+    #: L'ecart entre l'emoji colle et le palier recalcule. Depuis que le journal
+    #: d'analyse recalcule, cet emoji n'est plus lu comme un classement : il
+    #: devient un signal d'adherence du cadre.
+    tier_drift: TierDrift = field(default_factory=lambda: TierDrift())
     #: Les selections ramenees en lecture faute de dossier ouvert. Tenu **hors**
     #: de `notation` : ce sont deux fautes distinctes, et les melanger ferait
     #: designer toujours la meme clause du gabarit.
@@ -3843,6 +3914,7 @@ def exploratory(settings: Settings | None = None) -> Exploratory:
     with connect(settings) as conn:
         tier_labels = _tier_labels(conn)
         tier_order = [row["key"] for row in conn.execute("SELECT key FROM tiers ORDER BY position")]
+        bandes = _bands(conn)
         rows = conn.execute(
             "SELECT k.id, k.tier, k.tier_real, k.result, k.price, k.event_id, k.created_at, "
             "       k.confidence, k.confidence_computed, k.research_overridden, "
@@ -3859,8 +3931,9 @@ def exploratory(settings: Settings | None = None) -> Exploratory:
     report.won = sum(1 for row in tranchees if str(row["result"]) == "win")
     report.by_tier = _rate_tally(
         [
-            (_tier_of(row), tier_labels.get(_tier_of(row), _tier_of(row)), str(row["result"]), row)
+            (cle, tier_labels.get(cle, cle), str(row["result"]), row)
             for row in lignes
+            for cle in (_tier_of(row, TIER_DECLARED, bandes),)
         ],
         readable=report.minimum_rows,
     )
@@ -4934,6 +5007,110 @@ def _notation(rows: list[Any], results: list[str], minimum: int) -> Notation:
     return found
 
 
+#: La migration qui a deplace la frontiere SAFE/FUN. Sa date d'application est
+#: la borne entre les selections emises sous l'ancien barme et celles emises sous
+#: le nouveau — **la seule borne dont la base dispose**, `framework_version` etant
+#: emis dans le payload et persiste nulle part.
+TIER_PARTITION_MIGRATION = "071_partition_dure.sql"
+
+
+@dataclass
+class TierDrift:
+    """L'ecart entre le palier **emis** et le palier **recalcule**.
+
+    Depuis que le journal d'analyse recalcule le palier depuis la cote declaree,
+    l'emoji colle par le modele n'est plus lu comme un classement. Il n'est pas
+    pour autant sans usage : son ecart au recalcul mesure **l'adherence du cadre**
+    — le modele classe-t-il comme l'application classe.
+
+    Mesure du 21/08/2026, avant le deplacement de frontiere : **6 ecarts sur
+    352**, soit 1,7 %. L'adherence etait donc excellente, et c'est ce qui rend le
+    compteur lisible — au-dela du bruit, un ecart designe une derive entre le
+    cadre publie et la configuration servie, jamais une distraction.
+
+    **Un pic sur les lignes anterieures est attendu et n'est pas une
+    regression** : elles ont ete emises sous l'ancien barme. C'est pour le dire
+    que la repartition se coupe a la date d'application de la migration.
+    """
+
+    #: Selections portant une cote, donc recalculables.
+    comparable: int = 0
+    agreed: int = 0
+    #: Selections sans cote : rien a recalculer, et ce n'est pas un desaccord.
+    unpriced: int = 0
+    #: Ecarts anterieurs au deplacement de frontiere, et posterieurs.
+    before: int = 0
+    after: int = 0
+    #: `(emis, recalcule, compte)`, du plus frequent au moins frequent. Un ecart
+    #: disperse est du bruit ; un ecart concentre sur un passage designe la
+    #: frontiere qui a bouge.
+    transitions: list[tuple[str, str, int]] = field(default_factory=list)
+
+    @property
+    def disagreed(self) -> int:
+        return self.comparable - self.agreed
+
+    @property
+    def line(self) -> str:
+        """« 39 écarts sur 352 comparables — 37 avant le 21/08, 2 après »."""
+        if not self.comparable:
+            return ""
+        if not self.disagreed:
+            return f"palier émis et recalculé d'accord sur {self.comparable}"
+        return (
+            f"{self.disagreed} écart(s) entre palier émis et recalculé "
+            f"sur {self.comparable} — {self.before} avant le déplacement de frontière, "
+            f"{self.after} après"
+        )
+
+
+def tier_drift(settings: Settings | None = None) -> TierDrift:
+    """Combien de fois l'emoji colle differe du palier recalcule.
+
+    **Un compte, jamais un taux**, donc aucun seuil ne le garde : il est juste a
+    tout effectif, meme regle que le compte des non-classees.
+
+    La coupe se fait sur la date d'application de la migration qui a deplace la
+    frontiere, et non sur `framework_version` : ce champ est emis dans le payload
+    et **persiste nulle part**. La date d'une migration, elle, est en base depuis
+    toujours — meme idiome que l'audit des colonnes muettes.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        bandes = _bands(conn)
+        borne = conn.execute(
+            "SELECT applied_at FROM schema_migrations WHERE name = ?",
+            (TIER_PARTITION_MIGRATION,),
+        ).fetchone()
+        rows = conn.execute("SELECT tier, price, created_at FROM picks").fetchall()
+
+    bascule = str(borne["applied_at"]) if borne else ""
+    found = TierDrift()
+    passages: dict[tuple[str, str], int] = {}
+    for row in rows:
+        if row["price"] is None:
+            found.unpriced += 1
+            continue
+        found.comparable += 1
+        recalcule = _tier_of(row, TIER_DECLARED, bandes)
+        emis = str(row["tier"])
+        if emis == recalcule:
+            found.agreed += 1
+            continue
+        passages[(emis, recalcule)] = passages.get((emis, recalcule), 0) + 1
+        # Sans borne — la migration n'a pas encore tourne — tout est « avant » :
+        # aucune selection n'a pu etre emise sous un barme qui n'existe pas.
+        if not bascule or str(row["created_at"]) < bascule:
+            found.before += 1
+        else:
+            found.after += 1
+    found.transitions = sorted(
+        ((emis, recalcule, compte) for (emis, recalcule), compte in passages.items()),
+        key=lambda item: (-item[2], item[0], item[1]),
+    )
+    return found
+
+
 def analysis(settings: Settings | None = None) -> Analysis:
     """Taux de reussite de **toutes** les selections, jouees ou non.
 
@@ -4944,6 +5121,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
     with connect(settings) as conn:
         tier_order = [row["key"] for row in conn.execute("SELECT key FROM tiers ORDER BY position")]
         tier_labels = _tier_labels(conn)
+        bandes = _bands(conn)
         sport_labels = {
             row["key"]: row["label"] for row in conn.execute("SELECT key, label FROM sports")
         }
@@ -5089,8 +5267,9 @@ def analysis(settings: Settings | None = None) -> Analysis:
     )
     report.by_tier = _rate_tally(
         [
-            (_tier_of(row), tier_labels.get(_tier_of(row), _tier_of(row)), result, row)
+            (cle, tier_labels.get(cle, cle), result, row)
             for row, result in zip(rows, results, strict=True)
+            for cle in (_tier_of(row, TIER_DECLARED, bandes),)
         ],
         readable=report.minimum_rows,
     )
@@ -5412,7 +5591,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
         resultat = str(row["result"])
         if resultat not in ("win", "loss") or row["confidence"] is None:
             continue
-        cle = (_tier_of(row), row["confidence"])
+        cle = (_tier_of(row, TIER_DECLARED, bandes), row["confidence"])
         compte = croise.setdefault(cle, [0, 0])
         compte[0] += resultat == "win"
         compte[1] += 1
@@ -5990,8 +6169,14 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
     # lui-meme. Plus personne n'attend un prix reel qui ne viendra pas.
     report.by_tier = _feedback_tally(
         [
-            (_tier_of(row), tier_labels.get(_tier_of(row), _tier_of(row)), row["result"])
+            # **Lecture executee, et c'est l'etat d'avant conserve tel quel.** Ce
+            # bloc nourrit le prompt et se dit juge de l'analyse, mais il sert
+            # aussi `played_only=True` pour les paris poses : de quel journal il
+            # releve est une question ouverte, et la trancher en passant serait
+            # changer une mesure sans le decider.
+            (cle, tier_labels.get(cle, cle), row["result"])
             for row in rows
+            for cle in (_tier_of(row, TIER_EXECUTED),)
         ],
         minimum_rows,
     )

@@ -574,6 +574,10 @@ def report(settings: Settings | None = None) -> StatsReport:
     # route : la matrice se derive du meme releve, elle ne se releve pas a part.
     sets = set_scores_service.report(settings)
     principale = history_service.analysis(settings)
+    # L'adherence du cadre : combien de fois l'emoji colle differe du palier que
+    # l'application recalcule. Assemblee ici comme le reste — un second point de
+    # calcul aurait fini par ne plus dire la meme chose que la page.
+    principale.tier_drift = history_service.tier_drift(settings)
     # **La comparaison se cable ici**, seul endroit qui voit les deux
     # populations : « fait date contre lecture, a palier fixe » est la mesure que
     # toute la section C-bis existe pour rendre possible, et la calculer dans
@@ -940,6 +944,18 @@ def as_json(found: StatsReport) -> dict[str, Any]:
             "by_confidence": [_rate(row) for row in analysis.by_confidence],
             "by_confidence_computed": [_rate(row) for row in analysis.by_confidence_computed],
             "by_tier": [_rate(row) for row in analysis.by_tier],
+            "tier_drift": {
+                "comparable": analysis.tier_drift.comparable,
+                "agreed": analysis.tier_drift.agreed,
+                "disagreed": analysis.tier_drift.disagreed,
+                "unpriced": analysis.tier_drift.unpriced,
+                "before": analysis.tier_drift.before,
+                "after": analysis.tier_drift.after,
+                "transitions": [
+                    {"declared": declared, "recomputed": recomputed, "count": count}
+                    for declared, recomputed, count in analysis.tier_drift.transitions
+                ],
+            },
             "by_sport": [_rate(row) for row in analysis.by_sport],
             "by_category": [_rate(row) for row in analysis.by_category],
             "by_family": [

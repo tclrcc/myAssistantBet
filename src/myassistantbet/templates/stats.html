@@ -487,16 +487,26 @@
        attente sans terme, qui coûtait 20 sélections tranchées sur 178 à l'axe
        le plus fourni de la page. La différence se mesure maintenant sur son
        propre axe, « Par origine du prix ». #}
+    {# Le palier se lit ici sur la cote **déclarée**, recalculée. L'emoji collé
+       porte le barème du jour du collage : le lire comme un classement faisait
+       entrer dans la mesure d'analyse la dérive entre le cadre et la
+       configuration. La cote obtenue, elle, est une donnée d'exécution et ne
+       décide du palier que dans « Paris posés ». #}
     {{ card("Par palier", analysis.by_tier,
-            note=(analysis.quarantined ~ " sélection(s) tranchée(s) portent une cote de
-                   référence — elles comptent ici, et se lisent à part sous « Par origine
-                   du prix ».") if analysis.quarantined else "",
-            reason=("Lu sur la cote obtenue quand elle est saisie, sinon sur la cote du bloc,
-                     qui fait autorité. Ces sélections attendaient un prix réel qui ne viendra
-                     jamais : il ne peut venir que d'une mise, et aucun pari n'est posé. Les
-                     écarter était une attente sans terme ; leur origine se mesure désormais
-                     sur son propre axe.")
-                   if analysis.quarantined else "",
+            note=" · ".join([analysis.tier_drift.line,
+                             (analysis.quarantined ~ " sélection(s) tranchée(s) portent une
+                              cote de référence — elles comptent ici, et se lisent à part
+                              sous « Par origine du prix ».") if analysis.quarantined else ""]
+                            | select | list),
+            reason="Recalculé depuis la cote déclarée, jamais lu sur l'emoji collé : cette
+                    colonne porte le barème en vigueur le jour du collage, et le recalcul
+                    rend toute dérive entre le cadre et la configuration inoffensive pour la
+                    mesure. L'emoji reste en base comme signal d'adhérence — son écart au
+                    recalcul est le compte ci-dessus, et un pic sur les lignes antérieures à
+                    un déplacement de frontière est attendu, pas une régression. La cote
+                    obtenue est une donnée d'exécution : elle décide du palier dans « Paris
+                    posés », et nulle part ici — les sélections qui attendent un prix réel
+                    comptent donc normalement, et leur origine se mesure sur son propre axe.",
             comparison=analysis.tier_comparison) }}
     {{ card("Par sport", analysis.by_sport) }}
     {# Le niveau est la seule dimension qui tienne entre le sport, trop large, et
