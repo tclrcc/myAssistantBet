@@ -93,17 +93,21 @@ THRESHOLDS: dict[str, Threshold] = {
     "combo_solo_min_lot": Threshold(
         key="combo_solo_min_lot",
         label="Lot minimum pour un combiné",
-        default=8,
+        default=9,
         low=2,
         high=20,
         note=(
             "En dessous, le prompt ne demande **aucun** combiné. La règle est "
             "`lot × taux de sélection ≥ jambes`, jamais un chiffre : la section D réclame "
-            "trois jambes disjointes, et il en faut environ quatre en espérance pour qu'une "
-            "cause commune ne rende pas le lot court une fois sur deux. Au taux médian mesuré "
-            "sur le régime courant — **51,7 %**, contre 42,6 % avant le 16/08 — quatre "
-            "sélections attendues demandent un lot de 8. Mieux vaut supprimer la demande que "
-            "faire écrire qu'elle était insatisfiable."
+            "trois jambes disjointes. **Ce qui se garde n'est pas l'espérance mais la "
+            "probabilité d'en avoir vraiment trois** — une espérance de 4,1 laisse 12 % des "
+            "lots à moins de trois, avant même les exclusions pour cause commune. Au taux "
+            "médian mesuré sur le régime courant (51,7 %, contre 42,6 % avant le 16/08), un "
+            "lot de 8 tient 88 % du temps et un lot de 9 en tient 93 %. Le taux repose sur "
+            "cinq sessions et son intervalle couvre 42 %, où les mêmes lots tombent à 74 % et "
+            "81 % : le seuil se pose donc du côté prudent. Se tromper vers le bas produit la "
+            "demande insatisfiable que ce seuil existe pour empêcher ; se tromper vers le "
+            "haut ne produit qu'un silence."
         ),
         measured_on="5 sessions (17-20/08/2026), médiane par lot de session",
         remeasure_on="2026-09-20",

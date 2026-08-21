@@ -2986,6 +2986,19 @@ qui les rend chercheuses.
   un taux de selection median de 36 %, la sortie attendue tourne autour de deux
   selections. Sous `combo_min_lot`, le prompt n'en demande qu'un, et les deux
   paragraphes qui supposent deux combines se gardent avec.
+  - **Ce 36 % est date, et il a deja fait deriver un seuil.** Il vaut pour l'etat de la
+    base a la mi-aout 2026 ; **il n'est plus le taux courant**. Re-mesure du 21/08/2026,
+    sur la part du lot de **session** (`prompt_events`) effectivement retenue en
+    section C, mediane par session : **42,6 %** sur les 7 sessions anterieures au 16/08
+    et **51,7 %** sur les 5 posterieures. Le dénominateur n'est pas tout a fait celui de
+    `_selection_median`, qui lit les `FEEDBACK_SESSIONS` dernieres et passe par `lots()`
+    — donc les lots reconstruits : l'ecart de ~9 points entre les deux regimes tient,
+    l'absolu est a quelques points pres.
+  - **Tout seuil derive de ce chiffre se re-derive avec lui.** `combo_solo_min_lot` a ete
+    releve a 11 sur les 36 %, puis ramene a 9 quand la re-mesure a montre le taux
+    courant : le seuil n'est pas un nombre, c'est `lot x taux >= jambes`, et changer le
+    seuil sans re-mesurer le taux revient a garder la conclusion en jetant la premisse.
+    Le taux vit dans la base, pas ici — ce paragraphe ne fait que le dater.
 
 ## Les fiches de competition, et ce qui manque doit se voir
 

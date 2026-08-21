@@ -3020,6 +3020,13 @@ def test_l_ecart_se_compte_par_population(migrated: Settings) -> None:
 
     assert (principale.comparable, principale.disagreed) == (1, 1)
     assert (exploratoire.comparable, exploratoire.disagreed) == (1, 0)
+    # **Un zero force et un zero gagne ne se lisent pas pareil.** Les bornes des
+    # cotes comparees sont ce qui les distingue : sur la base servie, C-bis rend
+    # 0 ecart sur 40 lignes qui vont de 2.34 a 9.86 — aucune ne tombe dans la
+    # bande deplacee, donc l'intersection est vide et le zero ne mesure aucune
+    # adherence. Sans elles, personne ne le reverra dans six mois.
+    assert "(cotes de 4.50 à 4.50)" in exploratoire.line
+    assert exploratoire.low_price == 4.50
 
 
 def test_une_selection_sans_cote_n_est_pas_un_desaccord(migrated: Settings) -> None:

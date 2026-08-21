@@ -5058,10 +5058,15 @@ class TierDrift:
     cadre publie et la configuration servie, jamais une distraction.
 
     Apres le deplacement : **39 ecarts sur 312** en section C, dont 37 par le
-    seul passage de la frontiere SAFE/FUN a 1.80, et **0 sur 40** en C-bis — les
-    selections exploratoires vivent dans les paliers hauts, que la frontiere n'a
-    pas touches. Deux populations, deux comptes : c'est exactement ce que
-    l'agregat cachait.
+    seul passage de la frontiere SAFE/FUN a 1.80. Deux populations, deux comptes :
+    c'est exactement ce que l'agregat cachait.
+
+    **Et le zero de C-bis ne mesure rien**, ce qui est le piege de ce compteur.
+    Ses 40 lignes vont de 2.34 a 9.86 : **aucune ne tombe sous 2.30**, donc
+    aucune ne pouvait differer d'un deplacement de la frontiere SAFE/FUN.
+    L'intersection est vide, le zero est **force** et non gagne, et il se lisait
+    pourtant « le modele classe juste ici ». D'ou `low_price` et `high_price`,
+    rendus a cote du compte : ce sont eux qui distinguent les deux zeros.
 
     **Un pic sur les lignes anterieures est attendu et n'est pas une
     regression** : elles ont ete emises sous l'ancien barme. C'est pour le dire
@@ -5080,18 +5085,34 @@ class TierDrift:
     #: disperse est du bruit ; un ecart concentre sur un passage designe la
     #: frontiere qui a bouge.
     transitions: list[tuple[str, str, int]] = field(default_factory=list)
+    #: Bornes des cotes comparees. **Ce qui distingue un zero gagne d'un zero
+    #: force**, et la distinction n'est pas theorique : C-bis rendait 0 ecart sur
+    #: 40, ce qui se lisait « le modele classe juste ici » — alors que ses 40
+    #: lignes vont de 2.34 a 9.86 et qu'aucune ne tombe dans la bande deplacee.
+    #: L'intersection etait vide, donc le zero ne mesurait aucune adherence. Un
+    #: lecteur qui compare ces bornes a la frontiere qui a bouge le voit d'un
+    #: coup d'oeil ; sans elles, personne ne le reverra dans six mois.
+    low_price: float | None = None
+    high_price: float | None = None
 
     @property
     def disagreed(self) -> int:
         return self.comparable - self.agreed
 
     @property
+    def _span(self) -> str:
+        """« (cotes de 2.34 à 9.86) », ou rien s'il n'y a pas de quoi comparer."""
+        if self.low_price is None or self.high_price is None:
+            return ""
+        return f" (cotes de {self.low_price:.2f} à {self.high_price:.2f})"
+
+    @property
     def line(self) -> str:
-        """« 39 écarts sur 352 comparables — 37 avant le 21/08, 2 après »."""
+        """« 39 écarts sur 312 comparables — 39 avant le déplacement, 0 après »."""
         if not self.comparable:
             return ""
         if not self.disagreed:
-            return f"palier émis et recalculé d'accord sur {self.comparable}"
+            return f"palier émis et recalculé d'accord sur {self.comparable}{self._span}"
         return (
             f"{self.disagreed} écart(s) entre palier émis et recalculé "
             f"sur {self.comparable} — {self.before} avant le déplacement de frontière, "
@@ -5138,6 +5159,9 @@ def tier_drift(settings: Settings | None = None, *, exploratory: bool = False) -
             found.unpriced += 1
             continue
         found.comparable += 1
+        prix = float(row["price"])
+        found.low_price = prix if found.low_price is None else min(found.low_price, prix)
+        found.high_price = prix if found.high_price is None else max(found.high_price, prix)
         recalcule = _tier_of(row, TIER_DECLARED, bandes)
         emis = str(row["tier"])
         if emis == recalcule:
