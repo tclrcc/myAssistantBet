@@ -385,6 +385,24 @@ L'alarme se pose donc **sur le prompt réellement produit**, à `save_prompt`, o
 mesurera ce que la coupe fait gagner, et une alarme posée après n'aurait aucun
 point de comparaison sur un lot réel.
 
+**Sa ligne est coupée à l'écran jusqu'à la coupe du gabarit**
+(`FRAME_ALERT_MUTED`). À 20 dépassements sur 20, elle paraîtrait à chaque
+génération et deviendrait du décor — le défaut qu'elle existe pour corriger. Ce
+qui se coupe est l'**affichage** et rien d'autre : `fixed_tokens` s'écrit,
+`frame_history` compte, le journal avertit.
+
+- **Le seuil ne bouge pas.** Le déplacer pour faire taire l'alarme fabriquerait
+  un « avant » incomparable avec l'« après » : le nombre suivrait le confort au
+  lieu de suivre la réalité.
+- **Une constante et non un réglage**, même forme que `FEEDBACK_SUSPENDED` : ce
+  n'est pas une préférence d'affichage mais un état d'exploitation daté, et sa
+  bascule ne se produira pas toute seule.
+- **Le test qui gardait « une alarme qui ne mord pas ne dit rien » a dû être
+  repris** : avec la coupure, sa ligne était vide pour deux raisons, et il
+  passait pour la mauvaise. Il construit désormais son objet sans la coupure —
+  un test qui change de cause en gardant son résultat est un test mort qui en a
+  l'air vivant.
+
 ## §7 ter — La taxonomie des causes ne décrivait pas le régime réel
 
 Mesure du 21/08/2026 sur les 378 tentatives journalisées : `served` **340**,
@@ -446,11 +464,21 @@ gabarit avant que les lecteurs sachent lire le payload produit exactement la
 panne silencieuse du §7.
 
 **Et le gabarit ne se supprime pas pour autant.** L'identité octet pour octet
-prouve que le refactor est un no-op ; elle ne prouve **rien** sur « payload +
-`SKILL.md` vaut gabarit ». C'est l'hypothèse de valeur de toute la migration, et
-elle est encore non testée : le gabarit reste le repli jusqu'à ce qu'un test la
-tranche. Un no-op vérifié et une hypothèse vérifiée ne sont pas la même chose,
-et les confondre est la façon la plus simple de perdre ce qui marche.
+prouve que le refactor est un no-op ; elle ne prouve **rien** sur ce que la
+migration vaut. Le gabarit reste le repli jusqu'à ce que le protocole ait
+tranché — voir [`PROTOCOLE-COMPARAISON.md`](PROTOCOLE-COMPARAISON.md), écrit
+avant le premier résultat, par construction.
+
+**« Payload + SKILL vaut gabarit » est un mauvais énoncé, et le test qui en
+sortirait échouerait pour la mauvaise raison.** Il suppose une équivalence de
+sortie, alors que la Skill v1.2 diffère **volontairement** : C-bis ouvert, cinq
+crans ancrés, tableau principal fermé aux sélections non vérifiées. **Une sortie
+identique au gabarit prouverait que la Skill ne s'applique pas.**
+
+Ce qui se teste est donc **asymétrique** : non-régression sur ce que le gabarit
+faisait bien, amélioration sur ce qu'il cassait — confiance 3 par défaut, PASSE
+à zéro, doublons — et réduction du cadre. Dix critères, dont deux barrières
+dures : traçabilité des faits, et aucun match disparu.
 
 ## §8 bis — Comment se vérifie une phase à sortie inchangée
 

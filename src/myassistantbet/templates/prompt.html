@@ -50,7 +50,7 @@
   <p class="empty">Aucun match dans cette session : le prompt ne contient aucun bloc.</p>
 {% endif %}
 
-{% if frame_alert and frame_alert.exceeded %}
+{% if frame_alert and frame_alert.visible %}
   {# Le cadre est ce qui se paie une fois par prompt, quel que soit le lot : une
      alarme posee sur le total se declencherait sur la taille du lot, donc sur ce
      qui n'est pas un defaut. Rien n'est refuse — un prompt long ne gene pas. #}

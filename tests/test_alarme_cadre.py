@@ -14,7 +14,12 @@ from __future__ import annotations
 
 from myassistantbet import db
 from myassistantbet.config import Settings
-from myassistantbet.services.prompt import FrameAlert, frame_alert, frame_history
+from myassistantbet.services.prompt import (
+    FRAME_ALERT_MUTED,
+    FrameAlert,
+    frame_alert,
+    frame_history,
+)
 from myassistantbet.services.thresholds import save as save_threshold
 
 
@@ -54,21 +59,61 @@ def test_l_alarme_porte_sur_le_cadre_et_jamais_sur_le_total(migrated: Settings) 
 
 
 def test_l_alarme_mord_quand_le_cadre_grossit(migrated: Settings) -> None:
+    """**Le depassement se constate meme quand l'ecran se tait.** C'est la
+    distinction qui compte : `exceeded` decrit le prompt, `visible` decrit ce que
+    l'interface en montre."""
     save_threshold("cadre_max", "1000", migrated)
 
     alerte = frame_alert("cadre " * 2_000 + "\n### M1 · foot · X – Y · 18h\nbloc", migrated)
 
     assert alerte.exceeded
-    assert "Cadre du prompt" in alerte.line
-    assert str(alerte.ceiling) in alerte.line
 
 
-def test_une_alarme_qui_ne_mord_pas_ne_dit_rien(migrated: Settings) -> None:
+def test_la_ligne_se_tait_sans_que_la_mesure_s_arrete() -> None:
+    """**Un signal toujours actif ne se distingue pas d'un signal absent.**
+
+    A 20 depassements sur 20, la ligne paraitrait a chaque generation et
+    deviendrait du decor — le defaut qu'elle existe pour corriger. Elle se coupe
+    donc a l'ecran **jusqu'a la coupe du gabarit**, et rien d'autre ne s'arrete :
+    `fixed_tokens` s'ecrit, `frame_history` compte, le journal avertit.
+
+    Couper la mesure avec l'affichage ferait perdre l'« avant » que l'alarme
+    vient d'etre livree pour se donner.
+    """
+    tue = FrameAlert(fixed=20_000, ceiling=1_000, muted=True)
+
+    assert tue.exceeded, "le depassement reste un fait"
+    assert not tue.visible
+    assert tue.line == ""
+
+    rallumee = FrameAlert(fixed=20_000, ceiling=1_000, muted=False)
+    assert rallumee.visible
+    assert "Cadre du prompt" in rallumee.line
+    assert str(rallumee.ceiling) in rallumee.line
+
+
+def test_l_etat_de_coupure_descend_dans_l_objet(migrated: Settings) -> None:
+    """**Un champ, jamais une propriete qui irait lire la constante.**
+
+    Relue a chaque acces, deux releves du meme prompt deviendraient
+    indiscernables des qu'elle change, et l'etat d'exploitation serait invisible
+    a la verification — le piege deja paye par `Feedback.suspended`.
+    """
+    save_threshold("cadre_max", "1000", migrated)
+
+    assert frame_alert("cadre " * 2_000 + "\n### M1 · x\nbloc", migrated).muted is FRAME_ALERT_MUTED
+
+
+def test_une_alarme_qui_ne_mord_pas_ne_dit_rien() -> None:
     """**Rien, et surtout pas « cadre normal ».** Une ligne rassurante a chaque
-    generation deviendrait du decor, et c'est ce qui a fait manquer la derive."""
-    save_threshold("cadre_max", "50000", migrated)
+    generation deviendrait du decor, et c'est ce qui a fait manquer la derive.
 
-    assert frame_alert("cadre\n### M1 · x\nbloc", migrated).line == ""
+    **Construit sans la coupure, et c'est indispensable** : passer par
+    `frame_alert` rendrait une ligne vide de toute facon tant que l'affichage est
+    suspendu, et le test passerait pour la mauvaise raison — un test mort qui en
+    a l'air vivant.
+    """
+    assert FrameAlert(fixed=800, ceiling=10_000, muted=False).line == ""
 
 
 def test_l_alarme_ne_refuse_jamais_un_prompt() -> None:

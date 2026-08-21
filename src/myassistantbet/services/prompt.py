@@ -1635,6 +1635,28 @@ def split_cost(body: str) -> PromptCost:
     )
 
 
+#: L'alarme de cadre se **tait a l'ecran** jusqu'a la coupe du gabarit.
+#:
+#: **Un signal toujours actif ne se distingue pas d'un signal absent.** Mesure du
+#: 21/08/2026 : 20 prompts sur 20 depassent le seuil sur la fenetre courante, 49
+#: sur 50 — la ligne paraitrait a chaque generation et deviendrait du decor,
+#: exactement le defaut qu'elle existe pour corriger.
+#:
+#: **Ce qui se coupe est l'affichage, et rien d'autre.** `frame_history` continue
+#: de mesurer, `fixed_tokens` continue de s'ecrire, le journal continue d'avertir :
+#: c'est cette observation-la qui rendra la coupe interpretable, et l'interrompre
+#: reviendrait a perdre l'« avant » qu'on vient de se donner.
+#:
+#: **Le seuil, lui, ne bouge pas.** Le deplacer pour faire taire l'alarme
+#: fabriquerait un « avant » incomparable avec l'« apres » — le nombre suivrait le
+#: confort au lieu de suivre la realite.
+#:
+#: Une **constante et non un reglage**, meme forme que `FEEDBACK_SUSPENDED` : ce
+#: n'est pas une preference d'affichage mais un etat d'exploitation date, et sa
+#: bascule ne se produira pas toute seule. Elle se rallume avec la coupe.
+FRAME_ALERT_MUTED = True
+
+
 @dataclass(frozen=True)
 class FrameAlert:
     """Le cadre d'un prompt, oppose a ce que l'utilisateur accepte d'en payer.
@@ -1653,15 +1675,30 @@ class FrameAlert:
 
     fixed: int
     ceiling: int
+    #: L'affichage est-il suspendu ? **Un champ et non une propriete qui irait
+    #: lire la constante** : relue a chaque acces, deux releves du meme prompt
+    #: deviendraient indiscernables des qu'elle change, et la classe ne serait
+    #: plus testable hors de son module. Le piege deja paye par
+    #: `Feedback.suspended`.
+    muted: bool = False
 
     @property
     def exceeded(self) -> bool:
         return self.fixed > self.ceiling
 
     @property
+    def visible(self) -> bool:
+        """Le depassement se dit-il a l'ecran ? **Distinct de `exceeded`.**
+
+        Le premier decrit le prompt, le second decrit ce que l'interface en
+        montre. Les confondre ferait disparaitre la mesure avec l'affichage.
+        """
+        return self.exceeded and not self.muted
+
+    @property
     def line(self) -> str:
-        """Ce que l'ecran affiche, ou rien quand le cadre tient."""
-        if not self.exceeded:
+        """Ce que l'ecran affiche, ou rien quand le cadre tient — ou se tait."""
+        if not self.visible:
             return ""
         return (
             f"Cadre du prompt : {self.fixed} tokens pour {self.ceiling} acceptes "
@@ -1672,7 +1709,11 @@ class FrameAlert:
 
 def frame_alert(body: str, settings: Settings | None = None) -> FrameAlert:
     """Confronte le cadre d'un prompt au seuil regle. Aucun effet de bord."""
-    return FrameAlert(fixed=split_cost(body).fixed, ceiling=threshold("cadre_max", settings))
+    return FrameAlert(
+        fixed=split_cost(body).fixed,
+        ceiling=threshold("cadre_max", settings),
+        muted=FRAME_ALERT_MUTED,
+    )
 
 
 @dataclass(frozen=True)
