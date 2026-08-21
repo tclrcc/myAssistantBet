@@ -6427,3 +6427,80 @@ marches ne tombent nulle part.
   `markets_for` ne le demande que sur `KNOCKOUT_CATEGORIES`, donc il n'a pas a
   figurer dans une liste de marches demandes et non revenus. Les blocs de coupe du
   meme lot le portent bien.
+
+## Une seconde copie qu'aucun mecanisme n'oblige a concorder derive sans bruit
+
+**Motif du 21/08/2026, trouve trois fois dans la meme session, dans trois couches
+qui n'ont rien a voir.** C'est la forme que prend ici le defaut caracteristique
+du projet — une sortie identique pour l'echec et pour le cas ordinaire — quand il
+porte sur une **decision** plutot que sur une donnee.
+
+| Les deux copies | Ce qui les separait | Comment ca s'est vu |
+| --- | --- | --- |
+| le cadre publie et la table `tiers` | plafond SAFE, chevauchement, arbitrage | par une relecture, apres des semaines |
+| le seed de la migration 003 et la base servie | 1.70/2.60/5.00/15.0 contre 1.70/2.30/3.60/8.00 | en ecrivant la migration 071 |
+| le selfcheck et le refus qu'il exploitait | la garde de palier C-bis, retiree | par un test rouge, et c'est le seul des trois |
+| `tier_for_price`, `Tier.covers`, `tier_offers` | rien — les trois s'accordaient | en cherchant, pas en cassant |
+| `FEEDBACK_MIN_ROWS` et le seuil reglé | 8 contre 25 apres relevement | un test de parite, sur un lot vide |
+
+**Le symptome commun : les deux copies s'accordent longtemps.** C'est ce qui rend
+le motif couteux — un desaccord immediat se verrait, une convergence entretenue a
+la main tient jusqu'au jour ou elle cede, et ce jour-la personne ne cherche de ce
+cote. Les trois premieres lignes ci-dessus ont diverge en silence ; la quatrieme
+n'avait **pas encore** diverge, et c'est exactement pourquoi elle a ete fusionnee.
+
+**La question a se poser devant toute valeur ecrite deux fois** : *qu'est-ce qui
+force ces deux-la a rester d'accord ?* Il y a trois reponses, et une seule est
+bonne.
+
+1. **Une seule ecriture, les autres l'appellent.** C'est le traitement de
+   `history.in_band`, de `markets.py` et de `session.context_block`. Toujours
+   preferable quand la valeur n'a qu'un sens.
+2. **Un test qui compare les deux ecritures.** Quand un cycle d'import ou une
+   frontiere de couche interdit la premiere : `SAFE_BANDS` contre
+   `QUOTA_FLOOR_TIERS`, la table des familles de marches contre sa migration,
+   `Tier.covers` contre `tier_for_price` avant leur fusion. Le test **doit lire
+   les deux sources**, jamais recopier la regle.
+3. **Rien.** Alors la copie derivera, et la seule question est quand. Le cadre
+   publie et la configuration servie sont dans ce cas par construction — l'un
+   vit chez le fournisseur de Skill, l'autre en base — et c'est pourquoi le
+   journal d'analyse recalcule desormais le palier au lieu de lire l'emoji colle.
+   **Quand on ne peut pas forcer l'accord, on cesse de dependre de la copie.**
+
+**Corollaire pour un exemplaire de test** : `selfcheck` choisissait, parmi
+plusieurs refus possibles, celui qu'il montrait. Un exemplaire choisi se perime
+avec ce qu'il exploite, et le repointer sur un autre refus reproduit la meme
+fragilite decalee d'un cran. La forme robuste est de **ne plus choisir** : que le
+controle enumere les chemins de refus et exige de chacun sa ligne de journal.
+
+### L'incident du 21/08/2026 : une migration partie sur la base servie
+
+**Consigne ici parce que l'etat est le bon et que seule sa provenance est
+fausse** — une provenance se repare par une note, pas par une seconde ecriture
+non planifiee.
+
+- **Ce qui s'est passe** : un script de controle a cru isoler sa base par
+  `MYASSISTANTBET_DB`. Le champ s'appelle `db_path`, donc la variable est
+  `DB_PATH` : l'override n'a rien fait, `get_settings()` a rendu les parametres
+  servis, et `run_migrations()` a applique la migration 071 sur
+  `data/myassistantbet.db` a **18:41:33Z**.
+- **Perimetre exact** : les cinq lignes de `tiers`, plus la ligne 71 de
+  `schema_migrations`. Les migrations 001 a 070 etaient deja appliquees. Aucune
+  ligne de `picks`, d'`odds` ou de `context` n'a ete touchee — la derniere
+  selection datait de 12:24Z.
+- **Le deploiement a venir traite la 071 en no-op**, verifie : `run_migrations`
+  saute toute version deja presente dans `schema_migrations`
+  (`if version in done: continue`), et les cinq bornes en base sont deja celles
+  que la migration ecrit. Rien ne sera rejoue, rien ne bougera.
+- **Ce qui empeche la recidive** : `db.scratch_copy()` donne au chemin d'ecriture
+  l'equivalent du `VACUUM INTO` de lecture, et `run_migrations(deliberate=)`
+  refuse un appel non declare hors de la suite de tests. `extra="forbid"` sur les
+  parametres attrape une cle inconnue dans `.env` — **et pas** une variable
+  d'environnement inconnue, mesure le meme jour : pydantic-settings ne lit
+  l'environnement que pour les champs declares.
+- **Ce qui n'a pas ete fait, et pourquoi** : restaurer 1.70. La table injectee
+  disait 1.70 pendant que le cadre disait 1.80, et le modele suit la table — 1,7 %
+  d'ecart entre l'emoji colle et la cote sur 352 selections. Restaurer aurait fait
+  produire une session du soir sous l'ancienne regle ; et supprimer la ligne de
+  `schema_migrations` aurait fait mentir le registre en datant la 071 d'un
+  deploiement qui n'a pas eu lieu.
