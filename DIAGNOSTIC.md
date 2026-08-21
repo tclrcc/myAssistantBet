@@ -10022,3 +10022,102 @@ le voir : elle compare sur l'identifiant, puis sur le nom replié — et
 divergence annoncée à tort envoie vérifier ; une divergence tue laisse croire.
 Le coût est une recherche de plus, le gain serait une affirmation de moins — le
 mauvais échange sur une ligne dont le préambule dit qu'elle est une piste.
+
+## §2 — Un fait daté en section C-bis
+
+### §2a — La mesure, et ce n'est pas marginal
+
+**32 sélections exploratoires en base** — le brief en annonce 30 ; l'écart vient
+de la session 18.
+
+| Déclaration | Compte |
+| --- | ---: |
+| `source_level` **numérique** (1, 2, 3 ou 4) | **26 sur 32 (81 %)** |
+| `source_level: lecture` | 6 |
+| bloc `conf` apparié | 7 |
+| dont **`faits` non vides** | **5** |
+
+Le détail des cinq : picks 281, 282, 286 (`source_level: 2`, 2/2/1 faits, s17),
+315 (`2`, 1 fait, s18), 340 (`3`, 1 fait, s18).
+
+**Deux lectures, et il faut les deux.** `source_level_effective` est à `lecture`
+sur 25 des 32 — mais c'est **l'écrasement** qui l'y met (`research_overridden`
+sur 25 lignes, faute de ligne `dossiers_ouverts` collée). Sur les **7 lignes où
+l'écrasement n'a pas tiré** — c'est-à-dire les seules où l'on voit ce que
+l'analyse a réellement déclaré — **5 portent des faits datés**.
+
+Donc : là où c'est observable, le fait daté est le cas **majoritaire**. La
+description « produites sans fait daté, par construction » n'est pas
+approximative, elle est fausse.
+
+### §2b — L'option retenue : corriger les descriptions
+
+**Refuser un fait daté en C-bis est écarté**, et pour trois raisons dont la
+première suffit :
+
+1. **le gabarit ne l'interdit pas, et il a raison** — « `Source` y vaudra **le
+   plus souvent** `lecture` ». Un refus rendrait faux un texte qui décrit
+   correctement ce qui se passe ;
+2. **la conséquence écrite dans le brief est inacceptable** : un PASSE en
+   section B sur un match qui porte un fait daté ne produirait alors **plus
+   rien**. On détruirait l'observation la plus intéressante que ce circuit
+   puisse rendre — un fait daté qui n'a pas suffi à porter une sélection en C ;
+3. **il faudrait un refus à l'import**, donc jeter une ligne que l'analyse a
+   produite légitimement. Le module ne refuse que deux choses, la note
+   d'indépendance et l'antériorité, et les deux protègent une mesure. Ici on
+   protégerait une phrase.
+
+### Le nouveau motif de l'absence de mise, et il tient
+
+« Lecture seule » n'était pas seulement inexact : c'était un motif **de
+qualité**, et il ne survit pas à la mesure. Le motif juste est **de rôle** :
+
+> Les sélections de C-bis ne reçoivent aucune mise **parce qu'elles sont la
+> population témoin** : elles existent pour être comparées à la section C à
+> palier égal, et c'est cette comparaison qui donne son sens à la page. Leur
+> mettre un montant en ferait un pari plutôt qu'un point de mesure.
+
+Ce motif a trois propriétés que l'ancien n'avait pas :
+
+- **il est vrai quelle que soit la ligne.** Il ne dépend pas de ce qu'une
+  sélection déclare, donc il ne peut pas être démenti par un cas particulier ;
+- **il dit ce que la section est**, pas ce qui lui manque. C-bis lève
+  l'exigence d'un fait daté ; elle n'interdit pas qu'il y en ait un, et le
+  plancher d'exigence est ce qui la distingue, jamais le contenu ;
+- **il rejoint ce que le code fait déjà** — `CONTRIBUTING.md` : « `principale`,
+  `exploratoire` et `tardive` sont comptées séparément de bout en bout […] Un
+  indicateur qui les mélangerait détruirait les deux comparaisons que ces
+  populations existent pour rendre possibles : **fait daté contre lecture**, et
+  prix d'avant-match contre prix écrit en connaissant le début du match. »
+
+Et la description de la population devient : **les sélections que la section C
+n'a pas retenues, produites sans exigence de fait daté.** « Sans exigence » et
+non « sans fait » — c'est la règle qui définit la population, pas son contenu.
+
+### Les six endroits, corrigés ensemble
+
+Une description corrigée à un seul endroit est pire que pas de correction. Les
+occurrences, trouvées par `grep` sur « sans fait daté » et « lecture seule » :
+
+| Fichier | Ce qui change |
+| --- | --- |
+| `templates/prompts/session_default.md.j2` | section G, le motif de l'absence de mise |
+| `templates/stats.html` | sous-titre du bloc et sa note de tête |
+| `services/stats_export.py` | la même note, côté fichier — **la parité l'exige** |
+| `services/history.py` | docstring d'`Exploratory`, et le commentaire d'`analysis()` |
+| `templates/picks.html` | l'infobulle du badge C-bis |
+| `migrations/053_population_tardive.sql` | **non touchée** — une migration appliquée ne se modifie jamais |
+
+### Le coût, mesuré
+
+| Ce qui change | Coût |
+| --- | ---: |
+| section G du gabarit — le motif de l'absence de mise | **+41 tokens**, et seulement si le suivi d'argent est ouvert |
+| les cinq autres surfaces | **0** — aucune n'entre dans un prompt |
+
+Un test existant a été réaligné : il assertait « produites sans fait daté, par
+construction ». **Ce n'est pas une assertion fragile réalignée sur la sortie du
+jour** — la phrase a changé de **fond**, parce qu'elle était fausse là où elle
+était vérifiable. Le test énonce désormais la règle qu'il doit garder : la
+population se définit par l'exigence levée, jamais par son contenu, et il refuse
+explicitement le retour de l'ancienne formule.

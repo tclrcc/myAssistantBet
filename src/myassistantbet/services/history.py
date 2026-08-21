@@ -3679,12 +3679,20 @@ class Notation:
 
 @dataclass
 class Exploratory:
-    """Ce que valent les selections **produites sans fait date**.
+    """Ce que valent les selections que la section C n'a pas retenues.
+
+    **Produites sans *exigence* de fait date, jamais « sans fait date ».** C'est
+    la regle qui definit la population, pas son contenu, et la nuance n'est pas
+    de style : mesure du 21/08/2026 sur les 32 lignes en base, **26 declarent un
+    niveau de source numerique** et **5 des 7 blocs lisibles portent des faits**.
+    La description d'origine etait donc fausse la ou elle etait verifiable.
 
     **Un taux faible y est le resultat attendu, pas un defaut de la methode.**
-    Cette population existe pour mesurer ce que vaut une lecture seule sur les
-    cotes hautes, pas pour etre bonne — et c'est ecrit sur la page, pas seulement
-    ici.
+    Cette population est le **temoin** : elle existe pour etre comparee a la
+    section C a palier egal, pas pour etre bonne — et c'est ecrit sur la page,
+    pas seulement ici. C'est aussi ce qui justifie qu'elle ne recoive aucune
+    mise : un montant en ferait un pari plutot qu'un point de mesure, et ce
+    motif-la tient quelle que soit la ligne.
 
     Elle est **entierement separee** de la population principale, et c'est tout
     l'objet du chantier : la comparaison qui donne son sens a la page — une
@@ -4891,7 +4899,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
             "LEFT JOIN sports s ON s.id = e.sport_id "
             "LEFT JOIN competitions c ON c.id = e.competition_id "
             # **La population principale, et elle seule.** Les selections
-            # exploratoires sont produites sans fait date, par construction : les
+            # exploratoires sont produites sans **exigence** de fait date : les
             # melanger detruirait la comparaison que cette section existe pour
             # rendre possible — une selection adossee a un fait date tient-elle
             # mieux qu'une lecture. Elles ont leur propre bloc.

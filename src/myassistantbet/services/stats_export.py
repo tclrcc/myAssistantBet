@@ -202,8 +202,10 @@ class StatsReport:
     #: date de la migration 033 — et le taire laisserait croire a une couverture
     #: complete.
     tier_scope: tuple[int, int] = (0, 0)
-    #: Le second circuit — les selections produites **sans fait date**, par la
-    #: section C-bis. Un taux faible y est le resultat attendu.
+    #: Le second circuit — les selections que la section C n'a pas retenues,
+    #: produites **sans exigence** de fait date. C'est la regle qui definit la
+    #: population, jamais son contenu : 26 des 32 declarent un niveau de source
+    #: numerique. Un taux faible y est le resultat attendu.
     exploratory: history_service.Exploratory = field(default_factory=history_service.Exploratory)
     #: Les selections ecrites apres le coup d'envoi. **Une population, pas une
     #: reserve de lecture** : la page les presentait comme un manque, et le
@@ -1494,11 +1496,13 @@ def as_markdown(found: StatsReport) -> str:
             "",
             f"## {EXPLORATORY_BLOCK}",
             "",
-            "**Ces sélections sont produites sans fait daté, par construction.** Un taux "
-            "faible y est le résultat attendu, pas un défaut de la méthode : cette "
-            "population existe pour mesurer ce que vaut une lecture seule sur les cotes "
-            "hautes, pas pour être bonne. Elle n'entre dans aucun autre chiffre de ce "
-            "fichier.",
+            "**Ces sélections sont produites sans *exigence* de fait daté.** C'est la "
+            "règle qui définit la population, pas son contenu : 26 des 32 déclarent un "
+            "niveau de source numérique, et 5 des 7 blocs lisibles portent des faits. Un "
+            "taux faible y est le résultat attendu, pas un défaut de la méthode : cette "
+            "population est le **témoin**, et elle existe pour être comparée à la section C "
+            "à palier égal — pas pour être bonne. Elle n'entre dans aucun autre chiffre de "
+            "ce fichier.",
             "",
             f"- **Tranchées** : {lot.won} sur {lot.settled}"
             + (f" · {lot.pending} en attente" if lot.pending else "")

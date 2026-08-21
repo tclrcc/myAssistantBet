@@ -410,7 +410,15 @@ def test_la_page_avertit_que_le_taux_faible_est_attendu(
     client: TestClient, migrated: Settings
 ) -> None:
     """Sans cette phrase, le bloc se lirait comme un constat d'echec de la
-    methode, alors qu'il mesure exactement ce qu'il annonce."""
+    methode, alors qu'il mesure exactement ce qu'il annonce.
+
+    **La phrase a change de fond, pas de forme.** Elle disait « produites sans
+    fait date, par construction » ; mesure du 21/08/2026 sur les 32 lignes en
+    base, **26 declarent un niveau de source numerique** et 5 des 7 blocs
+    lisibles portent des faits. Ce qui definit la population est la **regle** —
+    l'exigence levee — jamais son contenu, et la description d'origine etait
+    fausse la ou elle etait verifiable.
+    """
     session_id, events = _lot(migrated, ["Lyon"])
     pick_id = add_pick(
         session_id,
@@ -426,8 +434,11 @@ def test_la_page_avertit_que_le_taux_faible_est_attendu(
 
     page = client.get("/stats")
 
-    assert "produites sans fait daté, par construction" in page.text
-    assert "pas pour être bonne" in page.text
+    plat = " ".join(page.text.split())
+    assert "sans <em>exigence</em> de fait daté" in plat, "la regle, jamais le contenu"
+    assert "C'est la règle qui définit la population, pas son contenu" in plat
+    assert "pas pour être bonne" in plat
+    assert "produites sans fait daté, par construction" not in plat
 
 
 def test_les_lignes_c_bis_portent_leur_propre_bloc_conf(migrated: Settings) -> None:
