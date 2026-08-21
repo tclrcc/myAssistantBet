@@ -26,6 +26,7 @@ dev = [
 
 [project.scripts]
 myassistantbet-backup = "myassistantbet.backup:main"
+myassistantbet-cadre = "myassistantbet.cadre:main"
 myassistantbet-replay = "myassistantbet.replay:main"
 myassistantbet-replay-api = "myassistantbet.replay_api:main"
 myassistantbet-selfcheck = "myassistantbet.selfcheck:main"

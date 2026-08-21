@@ -6650,6 +6650,61 @@ compte affirmait ce qu'il ignorait.
   defaut de collage identifie. Le total cesse de surestimer sans se mettre a
   sous-estimer.
 
+### Treizieme occurrence : un numero bumpe sur une declaration
+
+**Le 21/08/2026, `FRAMEWORK_VERSION` est passe a `1.4` sur une annonce de
+publication.** Le cadre servi disait encore `1.3` — six copies du cache de
+plugin le disaient, et elles disaient vrai. Le prealable avait ete annonce au
+futur, la sequence executee au present.
+
+**Portee reelle : nulle, et il faut le dire ainsi.** Aucun prompt n'a ete
+produit dans la fenetre — le dernier date de `16:35:35Z`, le redemarrage de
+`21:24:36Z` — et **aucun des 180 prompts archives ne porte le champ**, le
+producteur actif etant le gabarit et non le payload. Deux raisons independantes,
+et aucune des deux n'est un garde-fou : la premiere est une coincidence
+d'horaire, la seconde une etape de migration qui finira par tomber.
+
+- **Ce que la faute coute n'est pas la sortie, c'est le champ.** Il n'a qu'une
+  utilite — ne pas melanger deux regimes dans une population — et un numero pose
+  en avance la lui retire entierement : deux sorties du meme cadre s'y liraient
+  sous deux numeros, ce qui est exactement le desordre qu'il existe pour eviter.
+- **Elle n'etait detectable ni par le code ni par les tests**, et c'est ce qui la
+  distingue des douze precedentes. Le cadre vit chez le fournisseur de Skill, la
+  constante en base : rien dans le depot ne pouvait les confronter, donc le
+  troisieme cas de la regle s'appliquait — la copie derive, et la seule question
+  est quand.
+
+**Le garde qui en sort ferme le troisieme cas au lieu de s'y resigner**
+(`services/framework.py`, `myassistantbet-cadre`). Le cadre publie **est**
+lisible sur la machine qui l'emploie : ce qui manquait n'etait pas une source,
+c'etait de la lire.
+
+- **Le cadre lu fait foi, sans appel.** A defaut — depot frais, CI, machine sans
+  le plugin — la **preuve enregistree** (`deploy/cadre-lu.json`) prend le relais.
+  Elle est ecrite par `--relire`, qui lit le fichier reel : c'est ce qui la
+  distingue d'une affirmation, et elle est versionnee, donc elle voyage dans le
+  commit qui bouge le numero.
+- **L'ordre n'est pas negociable.** Laisser la preuve primer rendrait le garde
+  vert sur une machine qui a le vrai fichier sous les yeux et le contredit —
+  litteralement la situation du 21/08.
+- **Sans lecture ni preuve, rouge.** Un garde qui se tait quand il ne peut pas
+  verifier est indiscernable d'un garde qui a verifie : le defaut caracteristique
+  du projet, applique au dispositif de verification lui-meme.
+- **Il ne releve pas le numero a la place de qui exploite**, et il est
+  **symetrique** : un cadre publie en `1.4` sous une constante a `1.3` le rend
+  rouge comme l'inverse. Dans les deux cas deux ecritures ont diverge, et c'est
+  ca qu'on veut voir.
+- **Le fichier de preuve se retouche a la main, et le module le dit.** Ce n'est
+  pas la faille qu'on croit : ce qui a produit l'erreur n'est pas une
+  falsification mais un raccourci de bonne foi. Le garde retire le raccourci ; il
+  ne pretend pas resister a une intention contraire, et l'ecrire vaut mieux que
+  de laisser croire l'inverse.
+
+**La regle generale** : une valeur qui declare l'etat d'un systeme exterieur ne
+se change que sur une lecture de ce systeme. Une declaration en conversation est
+la meme chose qu'un commentaire « a ne pas oublier » — vraie au moment ou elle
+est faite, et sans aucun mecanisme derriere.
+
 ### Douzieme occurrence : la suite de tests en portait une version
 
 **Quatre tests sont tombes en corrigeant le typage des ecrasements, et tous les

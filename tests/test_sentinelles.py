@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from datetime import date
 
+from myassistantbet.services import framework
 from myassistantbet.services.history import (
     DEFERRAL_TELL,
     FEEDBACK_SUSPENDED,
@@ -29,6 +30,7 @@ from myassistantbet.services.history import (
 from myassistantbet.services.prompt import (
     ACTIVE_PRODUCER,
     FRAME_ALERT_MUTED,
+    FRAMEWORK_VERSION,
     PRODUCER_PAYLOAD,
     PRODUCER_TEMPLATE,
 )
@@ -169,3 +171,85 @@ def test_les_reports_s_empilent_et_portent_leur_raison() -> None:
     for pose, raison in FEEDBACK_SUSPENDED_DEFERRALS:
         assert date.fromisoformat(pose)
         assert raison.strip(), f"report du {pose} sans raison ecrite"
+
+
+# -- Le numero de cadre ------------------------------------------------------
+
+
+def test_le_numero_de_cadre_s_appuie_sur_une_lecture_et_non_sur_une_declaration() -> None:
+    """**L'erreur du 21/08/2026, et elle n'etait detectable ni par le code ni par
+    les tests.**
+
+    `FRAMEWORK_VERSION` est passe a `1.4` sur une déclaration de publication ; le
+    cadre servi disait encore `1.3`, et six copies du cache de plugin le disaient.
+    Aucune sortie n'a été produite dans la fenêtre — mais la faute n'est pas là :
+    ce champ n'a qu'une utilité, ne pas mélanger deux régimes dans une population,
+    et un numéro posé en avance la lui retire entièrement.
+
+    Le garde se prononce sur **une lecture**. Le cadre lisible fait foi ; à défaut
+    la preuve enregistrée par `myassistantbet-cadre --relire` prend le relais.
+    Sans aucun des deux il est **rouge**, et c'est le cœur du dispositif : un
+    garde qui se tait quand il ne peut pas vérifier est indiscernable d'un garde
+    qui a vérifié.
+    """
+    lu = framework.evidence()
+
+    assert lu is not None, (
+        "aucun cadre publié lisible et aucune preuve enregistrée : "
+        "lance « uv run myassistantbet-cadre --relire » et commite deploy/cadre-lu.json"
+    )
+    assert lu.version == FRAMEWORK_VERSION, (
+        f"le cadre lu déclare {lu.version} et la constante dit {FRAMEWORK_VERSION}. "
+        "Deux écritures de la même chose ont divergé : soit le cadre a été publié "
+        "et la constante n'a pas suivi, soit elle a été bumpée en avance. "
+        f"Source lue : {lu.path}"
+    )
+
+
+def test_la_preuve_enregistree_ne_prend_le_relais_qu_a_defaut(tmp_path) -> None:
+    """**L'ordre n'est pas négociable.** Un exemplaire lisible est la source ; la
+    preuve n'est qu'un souvenir de lecture. Lui laisser la priorité rendrait le
+    garde vert sur une machine qui a le vrai fichier sous les yeux et le
+    contredit — exactement la situation du 21/08."""
+    faux_home = tmp_path / "home"
+    cadre = faux_home / ".claude" / "skills" / "myassistantbet-framework"
+    cadre.mkdir(parents=True)
+    (cadre / "SKILL.md").write_text("**Version 9.9.** cadre publié\n", encoding="utf-8")
+    preuve = tmp_path / "cadre-lu.json"
+    framework.record(framework.Published(version="1.3", sha256="x", path="ancien"), preuve)
+
+    retenu = framework.evidence(home=faux_home, path=preuve)
+
+    assert retenu is not None
+    assert retenu.version == "9.9", "le fichier lu l'emporte sur le souvenir"
+
+
+def test_sans_cadre_lisible_la_preuve_repond(tmp_path) -> None:
+    """Un dépôt frais, une CI, une machine sans le plugin : la preuve versionnée
+    est ce qui reste, et elle porte sa date de lecture."""
+    preuve = tmp_path / "cadre-lu.json"
+    framework.record(
+        framework.Published(version="1.3", sha256="x", path="p", read_at="2026-08-21T21:53:42Z"),
+        preuve,
+    )
+
+    retenu = framework.evidence(home=tmp_path / "vide", path=preuve)
+
+    assert retenu is not None
+    assert retenu.version == "1.3"
+    assert retenu.read_at == "2026-08-21T21:53:42Z", "une preuve dit quand elle a ete faite"
+
+
+def test_sans_lecture_ni_preuve_le_garde_est_rouge(tmp_path) -> None:
+    """**Un garde qui se tait quand il ne peut pas vérifier est indiscernable
+    d'un garde qui a vérifié.** C'est le défaut caractéristique du projet,
+    appliqué au dispositif de vérification lui-même."""
+    assert framework.evidence(home=tmp_path / "vide", path=tmp_path / "absente.json") is None
+
+
+def test_une_preuve_illisible_vaut_une_preuve_absente(tmp_path) -> None:
+    """La traiter autrement ferait passer un fichier cassé pour une vérification."""
+    casse = tmp_path / "cadre-lu.json"
+    casse.write_text("{ pas du json", encoding="utf-8")
+
+    assert framework.recorded(casse) is None
