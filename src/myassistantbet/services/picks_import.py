@@ -54,13 +54,11 @@ from .ingestion import (
     EXPLORATOIRE,
     FENCE_NOT_FOUND,
     MATCH_REF_UNRESOLVED,
-    SCHEMA_INVALID,
     SCORE_SETS,
     Reject,
     to_payload,
     unnumber,
 )
-from .prompt import QUOTA_FLOOR_TIERS
 from .set_scores import FROM_PROSE, ParsedScore, _positioned
 from .set_scores import read as read_scores
 
@@ -851,11 +849,6 @@ def parse_table(
     # lignes du meme rendu sur une meme affiche sont le cas que le prompt
     # encadre, et le second des deux doit se justifier.
     events = set(taken or ())
-    # Les paliers **hauts** : ceux qui sortent des deux bandes les plus sures,
-    # les seuls que la section C-bis puisse porter. La frontiere est celle du
-    # gabarit, lue une fois — la recopier ici l'aurait fait diverger au premier
-    # reglage de bande.
-    hauts = {tier["key"] for tier in tiers[QUOTA_FLOOR_TIERS:]}
     # Les matchs deja retenus **en section C** : une ligne exploratoire sur l'un
     # d'eux est refusee. « Une seule selection par match, tous tableaux
     # confondus » est une contrainte qui ne tombe pas.
@@ -900,21 +893,22 @@ def parse_table(
         event_id = found.event_id if found else None
         tier = _resolve_tier(values["tier"], tiers)
 
-        # **Deux refus propres a la section C-bis**, et ils ne se rattrapent pas
-        # a la main : une ligne en palier sur n'y a rien a faire, et un match
-        # deja retenu en section C ne peut pas reparaitre. Elles ne sont pas
-        # proposees du tout — les corriger sur place reviendrait a inventer une
-        # decision que le rendu n'a pas prise — mais elles sont **journalisees**.
-        if exploratoire and tier and tier not in hauts:
-            _lost(
-                preview,
-                EXPLORATOIRE,
-                SCHEMA_INVALID,
-                f"Ligne exploratoire en palier sûr ({values['tier'] or tier}) : ce tableau "
-                "est réservé aux paliers hauts, elle n'est pas importée.",
-                payload=line.strip(),
-            )
-            continue
+        # **Un seul refus propre a la section C-bis**, et il ne se rattrape pas a
+        # la main : un match deja retenu en section C ne peut pas reparaitre. La
+        # ligne n'est pas proposee du tout — la corriger sur place reviendrait a
+        # inventer une decision que le rendu n'a pas prise — mais elle est
+        # **journalisee**.
+        #
+        # **Le refus d'une ligne en palier sur a saute, et c'etait un rejet
+        # silencieux a l'ecriture.** Il exigeait qu'une ligne exploratoire sorte
+        # des deux bandes les plus sures, donc qu'elle soit chere. Or
+        # l'appartenance a C-bis se decide par la **confiance** et le caractere
+        # speculatif, jamais par le prix : le cadre y envoie toute confiance 2
+        # sans exception, et une confiance 2 a 1.72 n'avait donc **aucun endroit
+        # ou etre ecrite** — refusee du tableau principal par le cadre, refusee
+        # de C-bis par cette ligne-ci. Meme famille que le defaut
+        # `EXPLORATORY_HEAD` : rien ne casse, la ligne disparait, et le lot perd
+        # une selection sans que la sortie en porte trace.
         if exploratoire and event_id is not None and event_id in principaux:
             _lost(
                 preview,

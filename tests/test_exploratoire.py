@@ -240,20 +240,25 @@ def test_un_bloc_qui_ne_correspond_a_aucune_population_est_refuse(
     assert any("ne correspondent à aucun prompt" in note for note in preview.notes)
 
 
-def test_une_ligne_c_bis_en_palier_sur_est_refusee_et_journalisee(
-    migrated: Settings,
-) -> None:
-    """« Ce tableau est réservé aux paliers hauts. » Elle n'est pas proposee du
-    tout — la corriger sur place reviendrait a inventer une decision que le rendu
-    n'a pas prise — mais elle laisse sa trace."""
+def test_une_ligne_c_bis_en_palier_sur_est_acceptee(migrated: Settings) -> None:
+    """**L'appartenance a C-bis se decide par la confiance, jamais par le prix.**
+
+    Le refus d'origine — « ce tableau est réservé aux paliers hauts » — etait un
+    rejet silencieux a l'ecriture : le cadre envoie **toute** confiance 2 en
+    C-bis, sans exception, et une confiance 2 sur une cote sure n'avait alors
+    aucun endroit ou etre ecrite. Refusee du tableau principal par le cadre,
+    refusee de C-bis par l'application. La ligne disparaissait, et la sortie n'en
+    portait aucune trace — meme famille que le defaut `EXPLORATORY_HEAD`.
+    """
     session_id, _ = _lot(migrated, ["Lyon", "Nice"])
-    rendu = RENDU.replace("| 7.50 | 🔴 GIGA FUN | 1 |", "| 1.60 | 🟢 SAFE | 1 |")
+    rendu = RENDU.replace("| 7.50 | 🔴 GIGA FUN | 1 |", "| 1.60 | 🟢 SAFE | 2 |")
 
     preview = picks_import.build_preview(session_id, rendu, migrated)
 
-    assert [pick.exploratory for pick in preview.picks] == [False]
-    motifs = {(reject.block_type, reject.reason) for reject in preview.rejects}
-    assert (ingestion.EXPLORATOIRE, ingestion.SCHEMA_INVALID) in motifs
+    assert [pick.exploratory for pick in preview.picks] == [False, True]
+    assert [pick.tier for pick in preview.picks] == ["safe", "safe"]
+    motifs = {reject.block_type for reject in preview.rejects}
+    assert ingestion.EXPLORATOIRE not in motifs, "aucun refus sur le palier"
 
 
 def test_une_ligne_c_bis_sur_un_match_deja_pris_est_refusee(migrated: Settings) -> None:

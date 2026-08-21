@@ -73,15 +73,22 @@ BROKEN: dict[str, tuple[str, str]] = {
         "| 2 | Lyon – Adv Lyon | O/U 2.5 | Over 2.5 | 1.90 | 🟢 SAFE | 4 |\n",
         ingestion_service.SELECTION,
     ),
-    # Une ligne de section C-bis **en palier sur** : ce tableau est reserve aux
-    # paliers hauts, donc elle est refusee. Malformee au sens de la section, et
-    # non du JSON — c'est la seule forme que cette famille puisse prendre, et
-    # c'est le registre qui a exige qu'elle soit couverte.
+    # Une ligne de section C-bis sur un match **deja retenu en section C** :
+    # « une seule selection par match, tous tableaux confondus » est une
+    # contrainte qui ne tombe pas, donc elle est refusee. Malformee au sens de la
+    # section et non du JSON — c'est la seule forme que cette famille puisse
+    # prendre, et c'est le registre qui a exige qu'elle soit couverte.
+    #
+    # **L'exemplaire d'origine etait une ligne C-bis en palier sur**, et ce
+    # refus-la a saute : l'appartenance a C-bis se decide par la confiance et le
+    # caractere speculatif, jamais par le prix. Un exemplaire choisi parmi
+    # plusieurs refus possibles se perime avec celui qu'il exploite — le controle
+    # a bien signale sa disparition, ce qui est exactement son role.
     "exploratoire": (
         "\n### C-bis. Sélections exploratoires\n\n"
         "| # | Match | Marché | Sélection | Cote | Palier | Conf/5 |\n"
         "|---|-------|--------|-----------|------|--------|--------|\n"
-        "| 1 | Nice – Adv Nice | 1N2 | Nice | 1.45 | 🟢 SAFE | 1 |\n",
+        "| 1 | Lyon – Adv Lyon | 1N2 | Lyon | 3.20 | 🟠 ULTRA FUN | 2 |\n",
         ingestion_service.EXPLORATOIRE,
     ),
 }
