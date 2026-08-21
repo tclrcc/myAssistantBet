@@ -10589,3 +10589,139 @@ disparaît** : le §2 interdit de replier une réserve, et aucune ne l'est.
 - **Aucune dépendance ajoutée** : pas de framework, pas d'icônes, pas de police
   distante. Le test qui interdit tout `https://` dans la feuille reste vert.
 - **Aucun graphique, aucune courbe, aucune sparkline.**
+
+## §2 — Séparer la mesure de sa réserve : ce qui a changé, et l'inversion qui restait
+
+Trois registres, et le §2 en demandait exactement trois. Aucune réserve n'est
+repliée — **le pli est réservé à ce qui explique une méthode**, jamais à ce qui
+décrit une absence ou nuance un chiffre.
+
+| Niveau | Qui | Avant | Après |
+| --- | --- | --- | --- |
+| 1 — le nombre | `.hero-figure` | 48 px, `--text` | inchangé |
+| 2 — sa réserve | `.tile-detail` | 12,8 px, `--muted` (4,95) | **13,1 px, `--text-dim` (9,69)** |
+| 2 — sa réserve | `.residual-note` | 16 px, `--text` (18,6) | **13,1 px, `--text-dim`** |
+| 3 — la méthode | `details.why` | 13,1 px `--muted`, repliée | inchangé |
+
+**Ce qui décide garde le ton du texte** : `.residual-note strong` reste en
+`--text` — la marge qui expliquerait l'écart, le nombre de résultats qui
+l'effacerait. Sans ce contraste interne, descendre la réserve d'un cran l'aurait
+rendue uniformément grise, ce qui est l'autre façon de la faire disparaître.
+
+Test des extrémités, celui que fait toute lecture rapide : la première ligne
+donne `123 pour 138,0`, la dernière visible donne « 3 résultat(s) suffiraient à
+l'effacer ». C'est ce que le bloc doit dire.
+
+## §3 — L'écran de pose sur téléphone
+
+**Mesure avant / après, à 390 px :**
+
+| | Avant | Après |
+| --- | ---: | ---: |
+| largeur demandée par la page | **882 / 485** (1,8 écran) | **485 / 485** |
+| cibles tactiles sous 44 px | **124** | **32**, toutes des cases à cocher à 24 × 24 |
+| corps de texte distincts | 14 | 8, dont 3 hérités d'un parent en `em` |
+
+La table à huit colonnes devient une carte par sélection, **par la grille CSS et
+sans toucher au Jinja**. L'ordre est celui du geste, pas celui du tableau :
+
+```
+21:00  Rayo Vallecano – Alavés                    ✕
+changer
+Alavés ou nul  DC              ← le libellé exact à chercher
+1.66                           ← la cote
+[obtenue]   🟢 SAFE      CONF 3
+(ref.)
+[  ✓  ][  ✗  ][  ∅  ][  ·  ]   ← 44 px
+jouer
+```
+
+- **Les cellules sont nommées par une classe, jamais par `nth-child`.** Sept
+  attributs `class` ont été ajoutés à `_worksheet.html` — et rien d'autre :
+  aucune variable, aucune condition, aucune accolade. Encoder « la sixième
+  colonne est le résultat » aurait fait basculer la mise en page sur la mauvaise
+  cellule le jour d'une insertion, **sans que rien ne casse**. C'est le défaut
+  caractéristique du dépôt, il n'a pas sa place ici.
+- **Une seule exception au « aucun texte » : `data-col="Conf"`.** Une fois sortie
+  de sa colonne, la confiance est un chiffre nu — `3`, sans rien qui dise
+  quoi. Le libellé est **recopié mot pour mot du `<th>` de la même colonne** et
+  rendu par CSS sous le seul point de rupture téléphone. Ce n'est pas un libellé
+  nouveau, c'est l'en-tête existant déplacé. Les six autres colonnes se
+  décrivent seules : une heure, une affiche, un nombre à deux décimales, un
+  palier qui porte son nom, quatre glyphes qui portent leur `aria-label`.
+- **La cote obtenue recule sans partir.** Fond transparent, filet pointillé,
+  5,5 rem — mais 44 px de haut, donc atteignable d'un tap. Le bandeau de la page
+  dit « 31 sur 31 sans cote obtenue » et le palier se lit sur la cote du bloc
+  depuis le lot 16 : elle n'a pas à peser autant que le prix qu'elle vérifie.
+- **`.link-quiet` était `color: transparent`, visible au seul survol.** Juste à
+  la souris ; sur un écran tactile il n'y a pas de survol, donc le bouton
+  « changer » était **invisible pour toujours** — et depuis qu'il porte 44 px il
+  occupait en plus une ligne par carte sans rien montrer. Même famille que la
+  règle « un état ne repose jamais sur la seule couleur » : ici l'affordance
+  reposait sur le seul survol.
+- Le liseré de résultat passe du premier `<td>` au bord de la carte : en grille
+  il n'y a plus de première cellule qui coure sur toute la hauteur.
+
+**Le reste de l'application n'est pas touché** : board, compétitions et
+statistiques restent des écrans de bureau, et le §3 le dit.
+
+## §4 — Les tables longues
+
+| | Avant | Après |
+| --- | ---: | ---: |
+| filet contre le fond de sa ligne, board football | **1,09** (clair) / **1,03** (sombre) | **1,64** / **1,66** |
+| débordement de `/competitions` à 1 440 px | **1 685 / 1 425** | **1 425 / 1 425** |
+| largeur de la table Compétitions | 1 661 dans 1 377 | **1 377 dans 1 377** |
+
+- **Un filet, pas une alternance.** Le §4 offrait les deux ; le fond porte déjà
+  la **teinte de sport**, qui est un encodage sémantique. Une alternance
+  s'ajouterait par-dessus et deux grandeurs se disputeraient le même canal — ce
+  que le §1 interdit. C'est donc le filet qui remonte, par un jeton calculé
+  contre les quatre fonds possibles.
+- **Aucun `overflow` sur les tables, et ce n'est pas négociable** : il en ferait
+  un conteneur de défilement, l'en-tête `position: sticky` s'y ancrerait au lieu
+  de la fenêtre, et il recouvrirait la première ligne. Le piège est déjà
+  documenté et il a déjà coûté une session d'historique. Ce qui cède est donc la
+  largeur de quatre colonnes — la clé Odds API se replie sur deux lignes,
+  l'identifiant de ligue et deux rembourrages se resserrent. **Rien n'est masqué,
+  rien n'est tronqué**, et le menu « Niveau » a été rendu à 11 rem après avoir
+  tronqué sa propre valeur à 9,5.
+- **En-têtes collants et alignement : déjà en place**, vérifié — `position:
+  sticky` calé sur `--topbar-h`, `.num { text-align: right }`, et
+  `font-variant-numeric: tabular-nums` sur toute la table.
+- **Le point d'une cote absente se distingue d'un zéro**, mesuré : il sort en
+  `--muted` quand un prix sort en `--text`, dans une cellule à chasse fixe où il
+  occupe seul la largeur de quatre chiffres, et sans séparateur décimal. Il gagne
+  au passage le contraste du §1 — 4,95 → 5,81 sur blanc.
+
+## §5 — L'accessibilité minimale
+
+| Point | Avant | Après |
+| --- | --- | --- |
+| `--muted`, le registre de toutes les réserves | 4,49 – 4,95 selon la surface | **4,81 – 5,94**, dans les deux thèmes |
+| texte des boutons de résultat actifs, thème sombre | **2,17 – 2,84** | **6,09 – 8,97** |
+| cibles tactiles de l'écran de pose | 124 sous 44 px | 0, hors cases à cocher |
+| cases à cocher | 15 × 15 | **24 × 24** |
+
+- **Les cases à cocher s'arrêtent à 24 px, et c'est écrit.** Une case de 44 px
+  n'est plus une case, c'est un pavé ; 24 px est le minimum de la norme (2.5.8)
+  là où 44 est le niveau renforcé (2.5.5). L'écart est assumé, pas subi.
+- **Aucun état ne repose sur la seule couleur, vérifié** : un palier porte son
+  libellé (`🟢 SAFE`), un résultat porte son glyphe **et** son `aria-label`
+  (`✓ Gagné`, `✗ Perdu`, `∅ Annulé`, `· En attente`), un coupon porte
+  `result_label`, une jambe porte `leg_result`. Rien à ajouter.
+
+### Ce qui reste sous le seuil, mesuré et non corrigé
+
+**`button.primary` : blanc sur l'accent, 3,19 en thème sombre** (4,01 sur le bas
+du dégradé), pour un seuil AA de 4,5 — le texte est gras mais à 14,4 px, donc il
+ne relève pas du régime « grand texte ».
+
+Ce n'est pas corrigé, et la raison n'est pas le coût : **le seul correctif propre
+change l'apparence de la commande la plus visible du produit**. `--accent` sert
+aussi de couleur de lien, où il vaut 5,61 sur `--panel` — le foncer casserait ce
+qui marche. Il faudrait donc soit un jeton de fond dédié (`#2a69f8` fait passer
+le blanc à 4,69), soit poser `--on-accent` sur le bouton, ce qui donne un texte
+sombre sur bleu clair — lisible à 6,09, et franchement différent. C'est une
+décision d'apparence, pas une réparation, et elle appartient à l'utilisateur. La
+mesure et les deux valeurs sont ici pour que ce soit une ligne de travail.
