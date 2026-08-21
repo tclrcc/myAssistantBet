@@ -846,6 +846,38 @@ table.board select { padding: 0.2rem 0.35rem; font-size: var(--text-sm); }
    plus long de ses libelles, pas davantage. */
 table.board select.niveau { max-width: 11rem; }
 
+/* --- Competitions : la table tenait 1 683 px dans 1 377 -------------------
+   Mesure du 21/08/2026 a 1 440 px de fenetre : `scrollWidth 1685 / clientWidth
+   1425`, donc **260 px de debordement de la page entiere** et la colonne
+   « Fiche » coupee — celle qu'on vient justement de reclamer quand elle manque.
+
+   **Aucun `overflow` ici, et ce n'est pas negociable** : il ferait de la table
+   un conteneur de defilement, l'en-tete `position: sticky` s'y ancrerait au
+   lieu de la fenetre, et il recouvrirait la premiere ligne. Le piege est deja
+   documente. Ce qui cede est donc la largeur des quatre colonnes qui la
+   prennent sans en avoir besoin — rien n'est masque, rien n'est tronque.
+
+   Largeurs mesurees, avant -> apres : cle 360, ligue 224, niveau 200,
+   priorite 91. */
+#competitions table.board td:nth-child(4) {
+  /* La cle est un identifiant d'un seul tenant — `soccer_uefa_europa_conference
+     _league_qualification` fait 49 caracteres et refusait de se couper. Elle se
+     replie sur deux lignes plutot que de pousser tout le reste dehors : une cle
+     sur deux lignes se lit, une colonne hors ecran non. */
+  overflow-wrap: anywhere;
+  max-width: 10.5rem;
+}
+#competitions .ligue-form input { width: 5.5rem; }
+/* Le menu garde sa largeur d'origine : sous 11 rem il tronque sa propre
+   valeur — « 1re division — top ! » — et un menu qui cache ce qu'il affiche
+   est exactement l'inverse de ce qu'on repare ici. La place se prend sur la
+   cle, qui se replie sans rien perdre. */
+#competitions table.board select.niveau { max-width: 11rem; }
+#competitions table.board th:nth-child(8),
+#competitions table.board td:nth-child(8),
+#competitions table.board th:nth-child(9),
+#competitions table.board td:nth-child(9) { padding-left: var(--s2); padding-right: var(--s2); }
+
 /* --- Historique et picks --------------------------------------------------- */
 
 .stats { display: flex; gap: var(--s5); flex-wrap: wrap; align-items: flex-start; }
