@@ -4140,6 +4140,30 @@ etablie, exposition reconstituee pour les 103.
   est mesure ailleurs. Le deficit de `conf 3` vaut `-11,1` sur 53 ; un biais d'exposition
   de la taille observee ne le deplacerait pas de facon perceptible.
 
+## Une mesure d'amelioration suppose que l'outil mesure etait bien celui qu'on croit
+
+**Regle de revue, du 21/08/2026, et elle a invalide une conclusion deja tiree.**
+Trois lots ont ete analyses et compares a l'etat anterieur ; la lecture qu'on en
+a faite — cran de confiance decoince, taux de PASSE remonte — attribuait
+l'amelioration au gabarit revise. Elle ne lui est pas attribuable : la Skill
+etait installee, et **sa description l'active des qu'un bloc de matchs est
+soumis**. Ces trois lots etaient donc deja « gabarit + Skill ».
+
+- **Les corrections qui en sortent restent bonnes** : une confiance 2 en section
+  C etait bien une violation, un plancher de cote infere etait bien une regle
+  manquante. Ce sont des observations sur la **sortie**, et elles ne dependent
+  pas de savoir qui l'a produite.
+- **C'est la mesure d'amelioration qui tombe**, et elle seule : elle compare deux
+  etats en supposant qu'un seul facteur a change.
+- **Le piege est invisible parce que l'outil s'active tout seul.** Un
+  interrupteur qu'on n'a pas mis n'est pas un interrupteur qu'on a laisse a
+  zero : une Skill se declenche sur sa description, sans etre appelee.
+
+**La question a se poser avant d'attribuer une amelioration** : *sur quel etat de
+l'outil cette mesure a-t-elle ete prise, et cet etat est-il verifiable ?* Le
+transcript le dit — une invocation y est visible. La sortie, non : deux versions
+qui demandent les memes sections portent les memes signes.
+
 ## Une chose a ne pas oublier se transforme en chose qui refuse de l'etre
 
 **Regle de revue, du 21/08/2026, et son precedent est dans ce fichier depuis des

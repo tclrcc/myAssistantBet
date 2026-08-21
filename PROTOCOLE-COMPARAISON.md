@@ -21,9 +21,14 @@ Le gabarit peut-il être retiré ?
 3. **Les deux versions tournent avant le coup d'envoi du premier match du lot.** L'antériorité s'applique au test comme à une session normale.
 4. **Sessions séparées.** Générer les deux sorties dans une même conversation contamine la seconde.
 5. **La Skill est désactivée pendant la session gabarit**, et réactivée pour la session payload. Sans ce geste, la Skill se déclenche aussi sur le prompt gabarit — sa description l'active dès qu'un bloc de matchs est soumis — et la comparaison devient « gabarit + Skill » contre « payload + Skill », deux colonnes partageant la moitié de leur contenu. Le test mesurerait alors l'écart de format et rien d'autre. Vérifier l'état de l'interrupteur **avant** chaque session, pas après.
+
+   **Vérification** : après la session gabarit, relire le transcript et confirmer qu'aucune invocation de Skill n'y apparaît. C'est un fait observable, pas un souvenir. Ne pas tenter de détecter la contamination par les marqueurs de la sortie — le gabarit demande déjà C-bis et les blocs `conf`, les deux colonnes porteraient donc les mêmes signes.
+
+   **Si une invocation apparaît, la session est jetée.** Elle ne se corrige pas et le lot est rejoué. Et la vérification se fait **avant** le classement à l'aveugle : découvrir la contamination après avoir classé, c'est avoir déjà été influencé.
 6. **Ne pas lire les sorties entre les deux exécutions.** Les produire, puis extraire et mélanger les angles.
-7. **Aucune retouche manuelle** d'aucun des deux prompts.
-8. `framework_version` consigné avec chaque sortie.
+7. **Fenêtre de gel.** Du tirage du premier lot jusqu'au classement du second, ni la Skill ni le format du payload ne bougent. Si les deux lots sont séparés de plusieurs jours — le lot tennis peut attendre un tournoi — c'est une durée à planifier, pas un effet secondaire. Toute correction identifiée pendant la fenêtre s'écrit et attend.
+8. **Aucune retouche manuelle** d'aucun des deux prompts.
+9. `framework_version` consigné avec chaque sortie.
 
 ## Contrôle amont
 
