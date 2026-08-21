@@ -10891,3 +10891,32 @@ base servie ; aucun de mes processus n'a ouvert `data/myassistantbet.db`
 - **2 448 tests au vert**, avant comme après ;
 - **les trois populations sont identiques au caractère près** — 245 principales,
   32 exploratoires, 52 tardives, mêmes résultats, mêmes sommes de cotes.
+
+## Comment refaire ces mesures
+
+Elles sont toutes reproductibles sans rien installer, et **aucune ne touche la
+base servie**. C'est le seul moyen de ne pas refaire le §0 à la main la
+prochaine fois.
+
+1. **Copier la base, jamais la servir.** `VACUUM INTO` sous `~/`, pas dans
+   `/tmp` — elle pèse 324 Mo et le tmpfs en a 5,8 Go pour tout le monde.
+2. **Servir la copie sur un quatrième port.** `DB_PATH=<copie>
+   SCHEDULER_ENABLED=0 uv run uvicorn … --port 8099`. La feuille de style est
+   relue sur le disque à chaque requête : **une modification CSS ne demande
+   aucun redémarrage**, seuls les gabarits et le Python en demandent un.
+3. **Mesurer dans le navigateur, pas dans la feuille.** Rejouer la page servie
+   avec un `<base href>` et un script de sonde, puis lire le résultat par
+   `chromium --dump-dom`. C'est ce qui donne `scrollWidth / clientWidth`, les
+   corps réellement rendus, et les cibles sous 44 px avec leur chemin DOM.
+4. **Le thème sombre ne se capture pas directement.**
+   `--force-prefers-color-scheme` n'existe pas dans ce Chromium et le *headless*
+   rend en clair : il faut rejouer la page avec la feuille inlinée, bloc clair
+   retiré. Deux captures « clair » et « sombre » identiques sont un symptôme
+   connu — les comparer par `md5sum` avant de conclure.
+5. **Une capture à la fois.** Sept Chromium lancés à la suite ont épuisé la
+   mémoire et fait tuer le processus.
+
+Les contrastes se calculent en dix lignes de Python (luminance relative WCAG),
+et **le fond d'une ligne de tableau se compose** : la teinte de sport est un
+`rgba` posé sur `--panel`, donc c'est le mélange qu'il faut comparer au filet,
+jamais `--panel` seul. C'est cette composition qui a fait apparaître le 1,03.
