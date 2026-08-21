@@ -258,6 +258,28 @@ THRESHOLDS: dict[str, Threshold] = {
             "centile, pas par sa valeur."
         ),
     ),
+    "cadre_max": Threshold(
+        key="cadre_max",
+        label="Cadre maximum d'un prompt (tokens)",
+        default=10_000,
+        low=1_000,
+        high=60_000,
+        note=(
+            "Au-dela, la generation previent. **Le cadre est ce qui se paie une fois par "
+            "prompt quel que soit le lot** — preambule, mode d'emploi, sections de sortie — "
+            "et c'est lui seul qui doit alerter : un lot de vingt-et-un blocs pese "
+            "legitimement 21 707 tokens, et une alarme posee sur le total se declencherait "
+            "sur la taille du lot. **Rien n'est refuse** : un prompt long ne gene pas, et "
+            "refuser de servir une page pour un depassement serait hors de proportion."
+        ),
+        measured_on=(
+            "172 prompts archives — cadre de 8 048 tokens le 10/08, 12 160 le 15/08, "
+            "15 232 le 20/08, soit environ 700 par jour. Le defaut mord donc sur le "
+            "regime courant, et c'est le constat qu'il existe pour porter : jusqu'ici "
+            "les deux budgets vivaient dans les tests et ne voyaient jamais un lot reel."
+        ),
+        remeasure_on="apres la coupe du gabarit — son extinction en sera la preuve",
+    ),
     "mise_combine_pct": Threshold(
         key="mise_combine_pct",
         label="Mise d'un combiné (% d'une unité)",

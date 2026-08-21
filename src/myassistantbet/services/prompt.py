@@ -1255,6 +1255,13 @@ def save_prompt(session_id: int, prompt: RenderedPrompt, settings: Settings | No
     mesure en lecture seule, faute de pouvoir toucher ce chemin.
     """
     cout = split_cost(prompt.body)
+    # **L'alarme se prononce ici, sur le prompt reellement produit.** Elle ne
+    # refuse rien : elle journalise, et la generation continue. Sans ce point,
+    # `fixed_tokens` etait archive depuis toujours et personne ne le regardait —
+    # le cadre a double en dix jours sans qu'une ligne le signale.
+    alerte = FrameAlert(fixed=cout.fixed, ceiling=threshold("cadre_max", settings))
+    if alerte.exceeded:
+        logger.warning("cadre du prompt %d tokens, seuil %d", alerte.fixed, alerte.ceiling)
     moment = utcnow()
     with connect(settings) as conn:
         cursor = conn.execute(
@@ -1625,6 +1632,102 @@ def split_cost(body: str) -> PromptCost:
         blocks=len(entetes),
         fixed=max(0, total - blocs),
         block_tokens=blocs,
+    )
+
+
+@dataclass(frozen=True)
+class FrameAlert:
+    """Le cadre d'un prompt, oppose a ce que l'utilisateur accepte d'en payer.
+
+    **Les deux budgets du projet n'ont jamais rien vu passer** : ils vivent dans
+    `tests/`, s'appliquent a des fixtures de six et trois matchs, et rien ne les
+    lit a l'execution. C'est ce qui a laisse le cadre passer de 8 048 a 15 232
+    tokens en dix jours sans qu'une seule alarme se declenche — la derive etait
+    integralement archivee dans `prompts.fixed_tokens`, et personne ne la
+    regardait.
+
+    Une **alarme et non un refus** : un prompt long ne gene pas l'utilisateur, et
+    refuser de servir une page pour un depassement serait hors de proportion —
+    meme arbitrage qu'un seuil illisible qui revient au defaut.
+    """
+
+    fixed: int
+    ceiling: int
+
+    @property
+    def exceeded(self) -> bool:
+        return self.fixed > self.ceiling
+
+    @property
+    def line(self) -> str:
+        """Ce que l'ecran affiche, ou rien quand le cadre tient."""
+        if not self.exceeded:
+            return ""
+        return (
+            f"Cadre du prompt : {self.fixed} tokens pour {self.ceiling} acceptes "
+            f"(+{self.fixed - self.ceiling}). Ce qui se paie une fois par prompt, "
+            "quel que soit le nombre de matchs."
+        )
+
+
+def frame_alert(body: str, settings: Settings | None = None) -> FrameAlert:
+    """Confronte le cadre d'un prompt au seuil regle. Aucun effet de bord."""
+    return FrameAlert(fixed=split_cost(body).fixed, ceiling=threshold("cadre_max", settings))
+
+
+@dataclass(frozen=True)
+class FrameHistory:
+    """Combien de fois l'alarme a mordu, sur les derniers prompts rendus.
+
+    **C'est cette lecture qui rendra la coupe interpretable, et elle seule.**
+    Apres la migration, une alarme muette aura deux causes indiscernables : le
+    cadre a fondu, ou l'alarme n'a jamais mordu. La seule facon de les separer
+    est d'avoir mesure **avant**, sur des lots reels et non sur les archives —
+    d'ou l'ordre de livraison : l'alarme d'abord, la coupe ensuite.
+    """
+
+    prompts: int
+    exceeded: int
+    worst: int
+    ceiling: int
+
+    @property
+    def share(self) -> float | None:
+        """Part des prompts qui depassent. None sans prompt — jamais zero, qui
+        se lirait comme « aucun depassement »."""
+        return None if not self.prompts else self.exceeded / self.prompts
+
+    @property
+    def line(self) -> str:
+        if not self.prompts:
+            return "Aucun prompt rendu : l'alarme de cadre n'a rien mesure."
+        return (
+            f"Cadre : {self.exceeded} prompt(s) sur {self.prompts} au-dela de "
+            f"{self.ceiling} tokens, maximum {self.worst}."
+        )
+
+
+#: Sur combien de prompts la lecture porte. **Une fenetre et non tout
+#: l'historique** : le cadre a change de regime deux fois en deux semaines, et
+#: une moyenne sur 172 prompts decrirait surtout le regime d'avant.
+FRAME_WINDOW = 20
+
+
+def frame_history(settings: Settings | None = None, window: int = FRAME_WINDOW) -> FrameHistory:
+    """Ce que l'alarme a vu sur les derniers prompts rendus."""
+    ceiling = threshold("cadre_max", settings)
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT fixed_tokens FROM prompts WHERE fixed_tokens IS NOT NULL "
+            "ORDER BY id DESC LIMIT ?",
+            (window,),
+        ).fetchall()
+    cadres = [int(row["fixed_tokens"]) for row in rows]
+    return FrameHistory(
+        prompts=len(cadres),
+        exceeded=sum(1 for cadre in cadres if cadre > ceiling),
+        worst=max(cadres, default=0),
+        ceiling=ceiling,
     )
 
 

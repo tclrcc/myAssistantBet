@@ -228,6 +228,45 @@ CAUSE_UNMAPPED = "unmapped"
 #: Le rapprochement de noms n'a pas abouti, et il se resout a la main.
 CAUSE_UNRESOLVED = "unresolved"
 
+#: Les trois formes d'une rencontre non resolue. **Elles n'appellent pas la meme
+#: decision de budget de recherche**, et le mot unique les confondait.
+#:
+#: Mesure du 21/08/2026 sur les 378 tentatives journalisees : `served` 340,
+#: `unresolved` **35**, `unmapped` 3, et **zero** `not_covered` comme
+#: `unreachable`. La taxonomie declaree ne decrivait donc pas le regime reel —
+#: deux causes qui ne se produisent jamais, et la seule qui se produise reduite a
+#: un mot. Ce sont ces 35 instances qui meritaient d'etre separees.
+#:
+#: **Les trois se distinguent par construction et non par heuristique** : ce sont
+#: trois points de sortie differents de `resolve_fixture`, chacun sur un fait
+#: connu a cet instant. Rien n'est devine.
+#:
+#: Une equipe que le rapprochement n'a pas su apparier. Le fournisseur sert bien
+#: la journee, la rencontre y est peut-etre : c'est **notre** lecture des noms
+#: qui bloque, et une saisie d'alias la debloque pour toujours.
+CAUSE_TEAM_UNMATCHED = "unresolved_team"
+#: Les deux equipes sont appariees, et **aucune rencontre ne les oppose** ce
+#: jour-la chez le fournisseur. Report non repercute, erreur de date, match
+#: deplace : la recherche web tranche, la saisie d'alias n'y peut rien.
+CAUSE_FIXTURE_ABSENT = "unresolved_fixture"
+#: Le fournisseur ne sert **aucune rencontre** pour cette journee et cette ligue.
+#: Ni nos noms ni notre date ne sont en cause : il n'y a rien a apparier, et
+#: c'est le seul des trois qui se retente utilement plus tard.
+CAUSE_PROVIDER_EMPTY = "unresolved_empty"
+
+#: Les trois formes rendent la ligne d'origine : une lecture qui ne connait que
+#: `unresolved` continue de les compter ensemble.
+UNRESOLVED_FORMS = frozenset({CAUSE_TEAM_UNMATCHED, CAUSE_FIXTURE_ABSENT, CAUSE_PROVIDER_EMPTY})
+
+#: Ou `resolve_fixture` depose la forme de son echec, a l'intention de son
+#: appelant. **Le cache de l'enrichissement et non une valeur de retour** : la
+#: fonction rend `None` depuis trois endroits, et changer sa signature aurait
+#: touche les quatre appelants pour une information qu'un seul lit.
+#:
+#: La cle porte un prefixe qui ne peut pas entrer en collision avec les cles de
+#: memoisation, toutes formees `type:identifiant`.
+_FAILURE = "__echec_de_rapprochement"
+
 #: **Le nom d'une cause, ecrit une seule fois.** Les deux redactions ci-dessous
 #: le reprennent : ce sont deux facons de s'adresser a deux lecteurs, pas deux
 #: vocabulaires. Les deux causes deja nommees sur la ligne `Absents` gardent
@@ -235,6 +274,9 @@ CAUSE_UNRESOLVED = "unresolved"
 CAUSE_LABELS = {
     CAUSE_UNMAPPED: "compétition non rattachée",
     CAUSE_UNRESOLVED: "fixture non résolue",
+    CAUSE_TEAM_UNMATCHED: "équipe non appariée",
+    CAUSE_FIXTURE_ABSENT: "rencontre introuvable chez le fournisseur",
+    CAUSE_PROVIDER_EMPTY: "le fournisseur ne sert rien ce jour-là",
     CAUSE_NOT_COVERED: "non interrogés",
     CAUSE_UNREACHABLE: "source injoignable",
 }
@@ -250,6 +292,22 @@ CAUSE_BLOCK_NOTES = {
     CAUSE_UNRESOLVED: (
         "la rencontre n'a pas été rapprochée chez le fournisseur de contexte : "
         "rien n'a pu être lu, et l'absence ne parle pas des équipes"
+    ),
+    # Les trois formes disent la meme chose a l'analyse — rien n'a pu etre lu,
+    # et l'absence ne parle pas des equipes — mais **pas ce qu'une recherche y
+    # gagnerait**. C'est cette seconde moitie qui decide du budget.
+    CAUSE_TEAM_UNMATCHED: (
+        "une des deux équipes n'a pas été appariée chez le fournisseur de contexte : "
+        "la rencontre existe probablement, c'est notre lecture des noms qui bloque — "
+        "ce qui manque se trouve en ligne sans difficulté"
+    ),
+    CAUSE_FIXTURE_ABSENT: (
+        "les deux équipes sont reconnues et aucune rencontre ne les oppose ce jour-là "
+        "chez le fournisseur : vérifie d'abord que le match a bien lieu à cette date"
+    ),
+    CAUSE_PROVIDER_EMPTY: (
+        "le fournisseur ne sert aucune rencontre pour cette journée : ni les noms ni "
+        "la date ne sont en cause, et la recherche est le seul chemin"
     ),
     CAUSE_NOT_COVERED: (
         "le fournisseur ne couvre pas cette compétition : la recherche est le seul "
@@ -268,6 +326,15 @@ CAUSE_BLOCK_NOTES = {
 CAUSE_REPAIRS = {
     CAUSE_UNMAPPED: "à relier depuis /competitions",
     CAUSE_UNRESOLVED: "à trancher depuis /mapping",
+    CAUSE_TEAM_UNMATCHED: "à trancher depuis /mapping — un alias débloque tous les matchs à venir",
+    CAUSE_FIXTURE_ABSENT: (
+        "les deux équipes sont reconnues, aucune rencontre ne les oppose ce jour-là — "
+        "report non répercuté, ou date à vérifier"
+    ),
+    CAUSE_PROVIDER_EMPTY: (
+        "aucune rencontre servie pour cette journée et cette ligue — rien à apparier, "
+        "à retenter plus tard"
+    ),
     CAUSE_NOT_COVERED: "le fournisseur ne couvre pas cette compétition, rien à réparer",
     CAUSE_UNREACHABLE: "au dernier relevé, à retenter",
 }
@@ -280,7 +347,7 @@ CAUSE_UI_NOTES = {
 #: s'en sert : un bloc vide parce que **personne n'a demande** ne vaut aucun
 #: budget de recherche — il vaut une saisie — quand un bloc vide parce que le
 #: fournisseur ne couvre pas est le meilleur dossier du lot.
-COLLECTION_FAULTS = frozenset({CAUSE_UNMAPPED, CAUSE_UNRESOLVED})
+COLLECTION_FAULTS = frozenset({CAUSE_UNMAPPED, CAUSE_UNRESOLVED}) | UNRESOLVED_FORMS
 #: Championnat domestique de chaque equipe, sur les competitions ou les agregats
 #: de saison se lisent ailleurs que dans la competition du match.
 #:
@@ -582,8 +649,20 @@ async def resolve_fixture(
     home = resolve_team(event["home"], teams, settings)
     away = resolve_team(event["away"], teams, settings)
 
+    # **Trois sorties, trois causes, et elles se lisent sur un fait connu ici.**
+    # Le mot unique « fixture non resolue » les confondait, alors qu'elles
+    # n'appellent pas la meme decision : un alias a saisir, une date a verifier,
+    # ou un fournisseur muet. Elles ne se devinent pas apres coup — c'est
+    # maintenant, et seulement maintenant, qu'on sait laquelle s'est produite.
+    #
+    # **Le flux ne change pas pour autant, et c'est deliberе.** Un premier jet
+    # sortait avant `_record_pending` sur un fournisseur muet : l'evenement
+    # quittait alors `/mapping` et `failure_causes` ne le voyait plus, donc le
+    # bloc perdait la cause qu'on venait de preciser. Seule la **cause** se
+    # raffine ; ce qui s'ecrit en base est identique a ce qu'il etait.
     if not home.resolved or not away.resolved:
         _record_pending(event, [home, away], settings)
+        cache[_FAILURE] = CAUSE_PROVIDER_EMPTY if not fixtures else CAUSE_TEAM_UNMATCHED
         return None
 
     fixture = _find_fixture(fixtures, home.matched.apifootball_id, away.matched.apifootball_id)
@@ -591,6 +670,7 @@ async def resolve_fixture(
         _record_pending(
             event, [home, away], settings, reason="aucun match ne reunit ces deux equipes"
         )
+        cache[_FAILURE] = CAUSE_FIXTURE_ABSENT
         return None
 
     set_mapping_pending(int(event["id"]), False, settings)
@@ -1143,7 +1223,10 @@ async def fetch_context(
 
     if mapping is None:
         report.mapping_pending = True
-        report.cause = CAUSE_UNRESOLVED
+        # La forme precise quand `resolve_fixture` a pu la nommer, le mot
+        # d'origine sinon. **Jamais un repli devine** : une cause inventee
+        # enverrait reparer la mauvaise chose.
+        report.cause = cache.pop(_FAILURE, CAUSE_UNRESOLVED)
         record_outcome(report.event_id, report.cause, settings)
         return report
 

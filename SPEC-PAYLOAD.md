@@ -60,6 +60,14 @@ et rend **un objet JSON unique**, précédé de rien et suivi de rien.
     les 14 lignes divergentes de la phase 1.
   - La crainte était générale, le défaut est unique et localisé. C'est la mesure
     qui le dit, pas l'intuition.
+  - **Mais « ancré au coup d'envoi » ne veut pas dire « stable », et c'est une
+    correction du 21/08/2026.** `statut: "reporte"` existe : **177 événements sur
+    1 022 (17,3 %)** ont vu leur horaire bouger, jusqu'à 24 h de décalage. Un
+    report rend les 1 043 durées fausses **sans qu'aucune n'en ait l'air**.
+  - **Règle de construction, pas de contrat** : le payload expédie l'ancre brute
+    — `depuis: "2025-09-08"`, la date du prochain match, celle du dernier match
+    connu — et jamais la durée calculée. La durée devient une affaire de rendu,
+    et le lecteur la recalcule sur l'ancre qu'il a sous les yeux.
 - Encodage UTF-8, `ensure_ascii=False`, clés triées, indentation 1. Les accents
   coûtent moins que leurs échappements.
 
@@ -377,6 +385,36 @@ L'alarme se pose donc **sur le prompt réellement produit**, à `save_prompt`, o
 mesurera ce que la coupe fait gagner, et une alarme posée après n'aurait aucun
 point de comparaison sur un lot réel.
 
+## §7 ter — La taxonomie des causes ne décrivait pas le régime réel
+
+Mesure du 21/08/2026 sur les 378 tentatives journalisées : `served` **340**,
+`unresolved` **35**, `unmapped` **3** — et **zéro** `not_covered`, **zéro**
+`unreachable`. Deux causes déclarées ne se produisent jamais ; la seule qui se
+produise vraiment était réduite à un mot.
+
+**Ce sont les 35 `unresolved` (9 %) qui méritaient d'être typés**, parce qu'ils
+recouvrent trois situations qui n'appellent pas la même décision de budget :
+
+| Forme | Ce qui s'est passé | Ce que ça décide |
+| --- | --- | --- |
+| `unresolved_team` | une équipe n'a pas été appariée | un alias, et il débloque tous ses matchs à venir |
+| `unresolved_fixture` | les deux équipes reconnues, aucune rencontre ce jour-là | vérifier la date — report non répercuté |
+| `unresolved_empty` | le fournisseur ne sert rien ce jour-là | rien à apparier, se retente plus tard |
+
+- **Les trois se distinguent par construction, pas par heuristique** : ce sont
+  trois points de sortie de `resolve_fixture`, chacun sur un fait connu à cet
+  instant. Rien n'est deviné, et rien ne se reconstitue après coup.
+- **Le flux d'écriture ne bouge pas.** Un premier jet sortait avant
+  `_record_pending` sur un fournisseur muet : l'événement quittait `/mapping` et
+  `failure_causes` ne le voyait plus — le bloc perdait la cause qu'on venait de
+  préciser. Seule la cause se raffine.
+- **`fournisseur expiré` n'est pas construit, et c'est une mesure qui le dit.**
+  La notion aurait demandé de comparer `fetched_at` à un TTL ; or les **75**
+  relevés de contexte des matchs à venir ont **tous moins de 24 h**. Le critère
+  ne se déclencherait jamais — « pire qu'absent, il donne l'apparence d'un filtre
+  actif ». Réserve : 75 relevés, et un lot monté sur des matchs enrichis trois
+  jours plus tôt changerait le tableau.
+
 ## §8 — Ordre des phases
 
 Une phase, un commit, `ruff` et `pytest` verts, puis validation.
@@ -385,21 +423,34 @@ Une phase, un commit, `ruff` et `pytest` verts, puis validation.
    annotent leurs lignes de leur kind. Aucun changement de sortie : le rendu
    texte actuel est reconstruit à l'identique depuis les faits attribués.
    **Livrée le 21/08/2026** — voir §8 bis pour la vérification.
-2. **Le payload, à côté du prompt.** `build_payload()` rend l'objet JSON. Le
+2. **L'alarme de budget d'abord** (§7 bis), et elle doit enregistrer deux ou
+   trois lots réels **avant** la coupe. Le « avant » des archives ne suffit pas :
+   sans observation par l'alarme elle-même, une alarme muette après la migration
+   se lira « le cadre a fondu » aussi bien que « elle n'a jamais mordu ».
+   **Livrée le 21/08/2026** — et elle mord : 20 prompts sur 20 dépassent le
+   seuil de 10 000 tokens sur la fenêtre courante, 49 sur 50, contre 67 sur 172
+   sur tout l'historique. Ce contraste est la mesure du changement de régime.
+3. **Le payload, à côté du prompt.** `build_payload()` rend l'objet JSON. Le
    gabarit ne bouge pas encore. Les deux coexistent, ce qui rend la comparaison
-   possible sur un lot réel — et l'alarme de budget du §7 bis se pose ici, pour
-   que cette comparaison ait un avant.
-3. **Le discriminant.** `is_claim` exclut `origine`, test de non-régression sur
+   possible sur un lot réel.
+4. **Le discriminant.** `is_claim` exclut `origine`, test de non-régression sur
    un collage complet.
-4. **Les lecteurs.** `sections`, `history`, `confidence`, `split_cost`,
+5. **Les lecteurs.** `sections`, `history`, `confidence`, `split_cost`,
    `read_research_budget` apprennent la forme payload, sans perdre l'ancienne.
-5. **La coupe.** Le gabarit se réduit aux faits ; les phrases méthodologiques
+6. **La coupe.** Le gabarit se réduit aux faits ; les phrases méthodologiques
    partent dans le `SKILL.md`. Les tests qui les gardaient migrent avec elles —
    ils gardent une décision, et la décision n'a pas disparu, elle a déménagé.
 
-**La phase 5 est la dernière, et l'ordre n'est pas négociable** : couper le
+**La dernière phase l'est vraiment, et l'ordre n'est pas négociable** : couper le
 gabarit avant que les lecteurs sachent lire le payload produit exactement la
 panne silencieuse du §7.
+
+**Et le gabarit ne se supprime pas pour autant.** L'identité octet pour octet
+prouve que le refactor est un no-op ; elle ne prouve **rien** sur « payload +
+`SKILL.md` vaut gabarit ». C'est l'hypothèse de valeur de toute la migration, et
+elle est encore non testée : le gabarit reste le repli jusqu'à ce qu'un test la
+tranche. Un no-op vérifié et une hypothèse vérifiée ne sont pas la même chose,
+et les confondre est la façon la plus simple de perdre ce qui marche.
 
 ## §8 bis — Comment se vérifie une phase à sortie inchangée
 

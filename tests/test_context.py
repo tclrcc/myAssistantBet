@@ -16,6 +16,7 @@ from myassistantbet.services.context import (
     CAUSE_BLOCK_NOTES,
     CAUSE_LABELS,
     CAUSE_NOT_COVERED,
+    CAUSE_PROVIDER_EMPTY,
     CAUSE_SERVED,
     CAUSE_UI_NOTES,
     CAUSE_UNMAPPED,
@@ -35,6 +36,7 @@ from myassistantbet.services.context import (
     KIND_TEAMS,
     REFEREE_MIN_SAMPLE,
     SHEETS_LAST,
+    UNRESOLVED_FORMS,
     context_lines,
     failure_causes,
     fetch_context,
@@ -2900,8 +2902,13 @@ async def test_une_competition_non_rattachee_nomme_sa_cause(
 async def test_une_fixture_non_resolue_nomme_sa_cause(
     api_client: APIFootballClient, migrated: Settings, load_fixture: Any
 ) -> None:
-    """La ligue est connue, la rencontre non : c'est un defaut de collecte, et
-    il se resout a la main plutot qu'en cherchant sur le web."""
+    """La ligue est connue, la rencontre non : c'est un defaut de collecte.
+
+    **Et la forme compte autant que le fait**, depuis que les trois sont
+    separees : ici le fournisseur ne sert **aucune** rencontre ce jour-la, donc
+    ni nos noms ni notre date ne sont en cause — un alias n'y changerait rien, et
+    c'est le seul des trois cas qui se retente utilement plus tard.
+    """
     _seed_event(migrated)
     routes = _mock_all(load_fixture)
     # **Apres les routes generiques, et non avant.** respx retrouve une route
@@ -2914,7 +2921,12 @@ async def test_une_fixture_non_resolue_nomme_sa_cause(
     report = await fetch_context(api_client, dict(EVENT), migrated)
 
     assert report.mapping_pending
-    assert report.cause == CAUSE_UNRESOLVED
+    assert report.cause == CAUSE_PROVIDER_EMPTY
+    assert report.cause in COLLECTION_FAULTS, "ca se repare, ca ne se cherche pas"
+    # `failure_causes` se relit sur l'etat de la base, qui ne porte que le
+    # drapeau `mapping_pending` : elle rend donc la forme generique. Les deux
+    # lectures ne mentent pas l'une sur l'autre — l'une dit ce qui s'est passe a
+    # l'appel, l'autre ce que la base sait aujourd'hui.
     assert failure_causes([1], migrated) == {1: CAUSE_UNRESOLVED}
 
 
@@ -2970,8 +2982,12 @@ def test_les_deux_formulations_ne_se_recopient_pas() -> None:
     for cause, nom in CAUSE_LABELS.items():
         assert nom in CAUSE_UI_NOTES[cause], "l'ecran nomme la cause puis le geste"
         assert CAUSE_UI_NOTES[cause] != CAUSE_BLOCK_NOTES[cause]
-    # Les deux causes qui se reparent d'un geste, et elles seules.
-    assert {CAUSE_UNMAPPED, CAUSE_UNRESOLVED} == COLLECTION_FAULTS
+    # Les causes qui se reparent d'un geste, et elles seules. Les trois formes
+    # d'une rencontre non resolue en font partie : elles precisent le geste, elles
+    # ne changent pas sa nature.
+    assert {CAUSE_UNMAPPED, CAUSE_UNRESOLVED} | UNRESOLVED_FORMS == COLLECTION_FAULTS
+    assert CAUSE_NOT_COVERED not in COLLECTION_FAULTS, "rien a reparer : le fournisseur ne sert pas"
+    assert CAUSE_UNREACHABLE not in COLLECTION_FAULTS, "rien a reparer : ca se retente"
 
 
 # -- L'arbitre : trois etats, et le troisieme se mesure ----------------------

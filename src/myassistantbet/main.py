@@ -939,6 +939,10 @@ def prompt_page(
             "started": rendered.started,
             "competitions": session_service.competitions_of(session_id, settings),
             "competition_id": competition_id,
+            # Ce que le cadre a coute, oppose a ce que l'utilisateur accepte
+            # d'en payer. Rien ne se refuse : c'est une alarme, et elle ne
+            # parait que lorsqu'elle mord.
+            "frame_alert": prompt_service.frame_alert(rendered.body, settings),
         },
     )
 
