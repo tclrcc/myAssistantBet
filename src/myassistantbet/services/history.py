@@ -3529,11 +3529,36 @@ FEEDBACK_SUSPENDED = True
 #: pour trait — le defaut caracteristique de ce projet, applique cette fois a une
 #: decision plutot qu'a une donnee.
 #:
-#: Un test devient donc rouge passe cette date. Il ne demande pas de lever le
-#: drapeau : il demande de **choisir**, et de reecrire la date avec la raison si
-#: le choix est de le garder. Meme idiome que `Threshold.remeasure_on` — « un
-#: provisoire non date devient permanent par oubli ».
+#: Un test devient donc rouge passe cette date. **Et la question qu'il pose n'est
+#: pas « faut-il lever ce drapeau »** : celle-la fait choisir entre lever et
+#: reporter, deux reponses qui supposent toutes deux un provisoire. La question
+#: est *ce drapeau a-t-il jamais eu une condition de sortie* — et si la reponse
+#: est non, ni le lever ni le reporter ne convient : il faut retirer le mot
+#: provisoire et assumer une decision de conception.
+#:
+#: Meme idiome que `Threshold.remeasure_on` — « un provisoire non date devient
+#: permanent par oubli » — augmente de la pile ci-dessous.
 FEEDBACK_SUSPENDED_REVIEW = "2026-11-21"
+
+#: Les reports deja consentis : `(date posee, raison)`, **empiles et jamais
+#: remplaces**.
+#:
+#: **Une date remplacee ne garde aucune trace, et c'est ce qui rend la troisieme
+#: branche invisible.** Chaque report parait raisonnable pris seul ; trois
+#: raisons cote a cote disent ce qu'aucune date ne dit — que le drapeau n'attend
+#: pas un evenement, et n'en a jamais attendu. **La liste est le diagnostic**, pas
+#: l'historique.
+#:
+#: Vide aujourd'hui : le rendez-vous est le premier, il n'a jamais ete repousse.
+FEEDBACK_SUSPENDED_DEFERRALS: tuple[tuple[str, str], ...] = ()
+
+#: A partir de combien de reports la liste parle d'elle-meme.
+#:
+#: **Trois, et le nombre n'est pas un seuil de patience** : un report peut suivre
+#: un evenement exterieur, deux peuvent etre une coincidence, trois disent que la
+#: question posee n'est pas la bonne. Au-dela, le test cesse de proposer le report
+#: comme une reponse valable.
+DEFERRAL_TELL = 3
 
 
 def load_bands(settings: Settings | None = None, reference: float | None = None) -> dict[int, Band]:

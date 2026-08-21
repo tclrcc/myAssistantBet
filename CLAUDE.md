@@ -4114,8 +4114,36 @@ le commentaire ne tient pas une decision. **Un test, si.**
   n'y a plus rien a re-decider.
 
 **La question a se poser en ecrivant un commentaire qui dit « a ne pas oublier »**
-est : *quelle condition rendra ceci faux, et un test peut-il la voir ?* Si oui,
-le commentaire explique et le test garde. Si non, il faut une date.
+est : *quelle condition rendra ceci faux, et un test peut-il la voir ?* Elle a
+**trois** reponses, et la troisieme est celle qu'on saute.
+
+1. **Une condition existe et un test la voit** — le commentaire explique, le test
+   garde. C'est le cas de l'alarme de cadre.
+2. **Une condition existe mais aucun test ne la voit** — il faut une date de
+   re-decision, et la raison de chaque report.
+3. **Aucune condition n'existe.** Le drapeau n'est pas provisoire : il l'a
+   seulement ete **dans l'intention de quelqu'un**. Un « a ne pas oublier » sans
+   condition de falsification est une **decision de conception permanente
+   deguisee en provisoire**, et le traitement n'est ni un test ni une date : c'est
+   de retirer le mot provisoire et d'assumer la decision.
+
+**La troisieme branche est celle qui coute le plus a ne pas voir**, parce qu'elle
+se confond avec la deuxieme : on reporte, la date passe, on reporte encore, et
+chaque report parait raisonnable pris seul. Ce n'est pas un oubli — c'est une
+question mal posee, indefiniment.
+
+- **D'ou les raisons de report qui s'empilent au lieu de se remplacer.** Une date
+  remplacee ne garde aucune trace ; trois raisons cote a cote disent ce
+  qu'aucune date ne dit — le drapeau n'attend pas un evenement, il n'en a jamais
+  attendu. La liste est le diagnostic.
+- **Et la question du rendez-vous n'est donc pas « faut-il lever ce drapeau »**
+  mais *ce drapeau a-t-il jamais eu une condition de sortie*. Poser la premiere
+  fait choisir entre lever et reporter, deux reponses qui supposent toutes deux
+  un provisoire ; la seconde ouvre la troisieme branche.
+
+**C'est le diagnostic que `FEEDBACK_SUSPENDED` attend**, et le reporter en
+novembre serait la mauvaise reponse s'il s'avere qu'il n'a jamais eu de condition
+de sortie.
 
 ## Un rythme de saisie n'est pas un resultat
 

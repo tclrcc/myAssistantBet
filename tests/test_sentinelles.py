@@ -20,7 +20,12 @@ from __future__ import annotations
 
 from datetime import date
 
-from myassistantbet.services.history import FEEDBACK_SUSPENDED, FEEDBACK_SUSPENDED_REVIEW
+from myassistantbet.services.history import (
+    DEFERRAL_TELL,
+    FEEDBACK_SUSPENDED,
+    FEEDBACK_SUSPENDED_DEFERRALS,
+    FEEDBACK_SUSPENDED_REVIEW,
+)
 from myassistantbet.services.prompt import (
     ACTIVE_PRODUCER,
     FRAME_ALERT_MUTED,
@@ -53,29 +58,56 @@ def test_l_etat_de_migration_reste_l_un_des_deux_declares() -> None:
     assert ACTIVE_PRODUCER in (PRODUCER_TEMPLATE, PRODUCER_PAYLOAD)
 
 
+def _rendez_vous_echu(today: date | None = None) -> bool:
+    return FEEDBACK_SUSPENDED and (today or date.today()) > date.fromisoformat(
+        FEEDBACK_SUSPENDED_REVIEW
+    )
+
+
+def _question(reports: int) -> str:
+    """Ce que le test demande, et la question change avec la pile.
+
+    **Elle n'est jamais « faut-il lever ce drapeau »** : celle-la fait choisir
+    entre lever et reporter, deux reponses qui supposent toutes deux un
+    provisoire. Au troisieme report, elle cesse meme de proposer le report.
+    """
+    tete = (
+        f"FEEDBACK_SUSPENDED est leve depuis le rendez-vous du {FEEDBACK_SUSPENDED_REVIEW}. "
+        "La question n'est pas « faut-il le lever » mais « ce drapeau a-t-il jamais eu une "
+        "condition de sortie ». "
+    )
+    if reports >= DEFERRAL_TELL:
+        return tete + (
+            f"Il a deja ete reporte {reports} fois : la liste dit ce que la date ne dit pas. "
+            "Un drapeau sans condition de falsification n'est pas provisoire — c'est une "
+            "decision de conception, et le traitement est de retirer le mot provisoire et "
+            "de l'assumer. Reporter une quatrieme fois serait la mauvaise reponse."
+        )
+    return tete + (
+        "Trois reponses valables : lever le drapeau ; retirer le mot provisoire si aucune "
+        "condition de sortie n'existe ; ou **empiler** une entree dans "
+        "FEEDBACK_SUSPENDED_DEFERRALS avec la raison, puis reecrire la date. Empiler et "
+        "non remplacer : une date remplacee ne garde aucune trace."
+    )
+
+
 def test_la_suspension_du_retour_d_experience_se_re_decide(
     today: date | None = None,
 ) -> None:
     """**Un rendez-vous, et non une echeance qui leverait le drapeau.**
 
     Le test ne dit pas que la suspension a trop dure : il dit que personne ne
-    l'a re-examinee depuis la date qu'elle porte. Garder le drapeau est une
-    reponse parfaitement valable — elle demande seulement d'etre ecrite, avec
-    sa raison et une nouvelle date.
+    l'a re-examinee depuis la date qu'elle porte.
+
+    **Et il pose la question qui ouvre la troisieme branche.** « Faut-il le
+    lever » fait choisir entre lever et reporter, et les deux supposent un
+    provisoire ; « a-t-il jamais eu une condition de sortie » laisse place a la
+    reponse que ce drapeau attend peut-etre — qu'il n'est pas provisoire du tout.
 
     **Il ne se declenche que si le drapeau est encore leve** : une fois la
-    suspension retiree, il n'y a plus rien a re-decider et le rendez-vous n'a
-    plus d'objet.
+    suspension retiree, il n'y a plus rien a re-decider.
     """
-    echeance = date.fromisoformat(FEEDBACK_SUSPENDED_REVIEW)
-    aujourd_hui = today or date.today()
-
-    assert not (FEEDBACK_SUSPENDED and aujourd_hui > echeance), (
-        f"FEEDBACK_SUSPENDED est leve depuis le rendez-vous du {FEEDBACK_SUSPENDED_REVIEW}. "
-        "Deux reponses valables : lever le drapeau, ou reecrire "
-        "FEEDBACK_SUSPENDED_REVIEW avec la raison de le garder. Ne pas repousser la date "
-        "sans ecrire la raison — c'est ainsi qu'un provisoire devient permanent."
-    )
+    assert not _rendez_vous_echu(today), _question(len(FEEDBACK_SUSPENDED_DEFERRALS))
 
 
 def test_le_rendez_vous_devient_rouge_quand_la_date_passe() -> None:
@@ -100,3 +132,40 @@ def test_le_rendez_vous_porte_une_date_lisible() -> None:
     """Une date illisible ferait passer la sentinelle en erreur plutot qu'en
     echec, et le message qui dit quoi faire serait perdu."""
     assert date.fromisoformat(FEEDBACK_SUSPENDED_REVIEW)
+
+
+def test_au_troisieme_report_la_question_cesse_de_proposer_le_report() -> None:
+    """**La liste est le diagnostic, pas l'historique.**
+
+    Un report peut suivre un evenement exterieur, deux peuvent etre une
+    coincidence, trois disent que la question posee n'est pas la bonne : le
+    drapeau n'attend pas un evenement, et n'en a jamais attendu. Le message cesse
+    alors de presenter le report comme une reponse valable.
+
+    Sans ce basculement, chaque report parait raisonnable pris seul — et c'est
+    exactement ainsi qu'une decision de conception reste deguisee en provisoire.
+    """
+    tot = _question(DEFERRAL_TELL - 1)
+    tard = _question(DEFERRAL_TELL)
+
+    assert "empiler" in tot.lower(), "sous le seuil, le report reste une reponse valable"
+    assert "reporter une quatrieme fois" in tard.lower()
+    assert "decision de conception" in tard
+
+
+def test_la_question_posee_ouvre_la_troisieme_branche() -> None:
+    """« Faut-il le lever » fait choisir entre lever et reporter, et les deux
+    supposent un provisoire. La question doit laisser place a la reponse que ce
+    drapeau attend peut-etre : qu'il n'en est pas un."""
+    for reports in (0, DEFERRAL_TELL):
+        message = _question(reports)
+        assert "condition de sortie" in message
+        assert "faut-il le lever" not in message.replace("« faut-il le lever »", "")
+
+
+def test_les_reports_s_empilent_et_portent_leur_raison() -> None:
+    """Une date remplacee ne garde aucune trace. Chaque entree porte la date
+    posee **et** la raison — sans elle, la pile compte sans rien dire."""
+    for pose, raison in FEEDBACK_SUSPENDED_DEFERRALS:
+        assert date.fromisoformat(pose)
+        assert raison.strip(), f"report du {pose} sans raison ecrite"
