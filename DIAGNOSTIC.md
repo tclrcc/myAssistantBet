@@ -10481,3 +10481,111 @@ Et la formalisation elle-même n'est pas neutre : la rampe stockée est
 rendre monotone changerait un encodage qui est **en base** et que
 `picks_import` doit reconnaître dans un tableau collé à la main. Aucune des deux
 n'est un changement de feuille de style.
+
+## §1 — Le système, écrit avant d'être appliqué
+
+**Le §1 du brief demande de poser un système. La mesure dit qu'il est posé sur
+deux axes sur trois et qu'il faut l'appliquer sur le troisième.** Ce chapitre
+n'invente donc presque rien : il écrit la règle d'application, et les deux
+seules valeurs qui bougent le font contre une mesure.
+
+### Décision 1 — L'échelle typographique ne change pas de valeurs, elle change de taux d'application
+
+Les six crans restent : `--text-xs` 0,72 · `--text-sm` 0,82 · `--text-md` 0,9 ·
+`--text-lg` 1 · `--text-xl` 1,25 · `--text-2xl` 1,7 rem.
+
+**Le brief demandait « trois ou quatre tailles, pas davantage ». On garde six**,
+et la raison est mesurée : les six ont chacune un rôle écrit et un emploi réel,
+et le défaut n'est pas leur nombre — c'est que **73 déclarations sur 88 ne les
+utilisent pas**. Descendre à quatre reviendrait à réécrire une décision
+documentée pour corriger un symptôme qui a une autre cause.
+
+Correction à porter au passage : le commentaire de l'échelle affirme que « les
+valeurs montent d'environ un cinquième à chaque cran ». **C'est faux** — les
+rapports réels sont 1,14 · 1,10 · 1,11 · 1,25 · 1,36. Un docstring faux coûte
+plus qu'un docstring absent : il fait re-dériver la même conclusion fausse.
+
+Règle d'arrondi, **biaisée vers le haut** partout où le cran le plus proche
+rétrécirait du texte lu en phrases — le §5 demande plus de lisibilité, pas
+moins :
+
+| En dur | px | Cran | px | Écart |
+| ---: | ---: | --- | ---: | ---: |
+| 0,68 · 0,70 · 0,72 rem | 10,9 – 11,5 | `--text-xs` | 11,5 | +5 % à 0 |
+| 0,75 rem, **étiquette en capitales** | 12,0 | `--text-xs` | 11,5 | −4 % |
+| 0,75 rem, **mention lue** | 12,0 | `--text-sm` | 13,1 | +9 % |
+| 0,78 · 0,80 · 0,82 · 0,85 · 0,86 rem | 12,5 – 13,8 | `--text-sm` | 13,1 | +5 % à −5 % |
+| 0,87 · 0,88 · 0,90 · 0,92 rem | 13,9 – 14,7 | `--text-md` | 14,4 | +4 % à −2 % |
+| 0,95 rem | 15,2 | `--text-lg` | 16,0 | +5 % |
+
+**Ce qui reste en dur, et pourquoi** : les valeurs en `em` (`code`, `kbd`,
+`.rejected`) suivent leur parent et n'appartiennent à aucun cran ; les chiffres
+d'affichage (`.tile-figure` 2 rem, `.hero-figure` 3 rem, `.chart-figure b`
+1,5 rem) ne sont pas du texte mais des **figures**, et l'échelle de texte ne
+les décrit pas.
+
+### Décision 2 — L'espacement ne bouge pas
+
+191 déclarations sur 224 sont déjà sur `--s1`…`--s6`. Les 33 restantes sont
+sous `--s1` (0,02 à 0,45 rem) : ce sont des ajustements optiques — un crénage,
+un décalage de ligne de base — et **l'une d'elles est une décision mesurée** :
+`table.board td { padding: 0.45rem }` a été choisi contre 0,75 rem parce qu'il
+fait tenir seize lignes à l'écran contre treize. La forcer sur `--s2` (0,5 rem)
+défait une mesure pour satisfaire une règle de forme.
+
+### Décision 3 — Une seule dimension par canal, et un seul canal libéré
+
+- **Le palier** garde son encodage — 🟢 🔵 🟠 🔴 💥, stocké en base, reconnu par
+  `picks_import`. Aucune couleur CSS n'est inventée : voir §0 quater, la prise
+  n'existe pas sans toucher au Jinja.
+- **La confiance ne reçoit aucune couleur.** Vérifié : elle n'en a aucune
+  aujourd'hui, et rien n'est ajouté.
+- **Le résultat** garde la sienne — `--ok` / `--alert` / `--warn` — et chaque
+  état porte **aussi** son glyphe (✓ ✗ ∅ ·) et son `aria-label`.
+- **Les barres de `/stats` restent d'une seule teinte.** Les taux mesurent tous
+  la même chose ; les distinguer par la couleur inventerait des catégories.
+
+### Décision 4 — Deux valeurs bougent, chacune contre une mesure
+
+| Jeton | Avant | Après | Pourquoi |
+| --- | --- | --- | --- |
+| `--muted` (clair) | `#67717f` | `#5d6673` | 4,49 sur `--panel-2`, sous AA **d'un centième**. Après : 4,82 – 5,81 sur les quatre surfaces |
+| `--muted` (sombre) | `#7c8698` | `#8c95a5` | 4,48 sur `--panel-2`. Après : 4,81 – 5,94 |
+
+**On ne s'arrête pas à 4,5.** La leçon du `50,011 %` de `/stats` vaut ici :
+une valeur qui passe sur la troisième décimale n'est pas un fait. La cible est
+**4,8 sur la surface la moins favorable**, ce qui laisse de la marge à un
+`--panel-3` qui bougerait.
+
+### Décision 5 — Deux jetons apparaissent
+
+| Jeton | Sombre | Clair | Ce qu'il résout |
+| --- | --- | --- | --- |
+| `--on-accent` | `#0b0d12` | `#ffffff` | le texte posé **sur** un aplat d'accent. `.seg.is-on` écrivait `#fff` en dur : blanc sur `--ok` sombre vaut **2,21**, sur `--warn` **2,17**. Le même blanc est juste en clair (4,52 – 4,88) — c'est donc un jeton, pas une couleur |
+| `--row-line` | `#3c445b` | `#bac3d3` | le filet entre deux lignes de tableau, calculé pour se voir **par-dessus la bande de sport** : 1,56 – 1,85 contre les quatre fonds, au lieu de 1,01 – 1,23 |
+
+Les deux respectent la garde `test_le_theme_clair_ne_redeclare_que_des_tokens` :
+ce sont des `--jetons`, pas des règles de composant.
+
+### Décision 6 — La hiérarchie de `/stats` devient monotone
+
+Trois registres, et le §2 en demande exactement trois :
+
+| Niveau | Qui | Après |
+| --- | --- | --- |
+| 1 — le nombre | `.hero-figure` | 3 rem, `--text` — inchangé |
+| 2 — **sa réserve** | `.tile-detail` **et** `.residual-note` | `--text-sm`, `--text-dim` (contraste 8,8 – 9,7) — **jamais repliées** |
+| 3 — la méthode | `details.why` | `--text-sm`, `--muted`, repliée |
+
+`.tile-detail` monte de 12,8 px `--muted` (4,95) à 13,1 px `--text-dim` (9,69) ;
+`.residual-note` descend de 16 px `--text` à 13,1 px `--text-dim`. Les deux
+disent la même chose — ce que le chiffre compte, ce qu'il suppose — et **rien ne
+disparaît** : le §2 interdit de replier une réserve, et aucune ne l'est.
+
+### Ce que le système ne fait pas
+
+- **Aucun texte modifié**, nulle part.
+- **Aucune condition Jinja touchée** — le §6 liste ce que ça bloque.
+- **Aucune dépendance ajoutée** : pas de framework, pas d'icônes, pas de police
+  distante. Le test qui interdit tout `https://` dans la feuille reste vert.
+- **Aucun graphique, aucune courbe, aucune sparkline.**
