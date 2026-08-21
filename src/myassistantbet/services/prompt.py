@@ -1755,7 +1755,16 @@ def split_cost(body: str) -> PromptCost:
 #: Elle **suit la Skill** et non le code de cette application : c'est le cadre qui
 #: decide de ce qui est rendu. 1.3 — plancher de cote explicite, regle
 #: d'agregation du niveau de source, deux controles de plus en fin de checklist.
-FRAMEWORK_VERSION = "1.3"
+#: 1.4 — publiee le 21/08/2026, en meme temps que le deploiement du lot A.
+#:
+#: **Cette constante est declarative, et c'est structurel.** Le cadre vit chez le
+#: fournisseur de Skill, cette valeur en base : rien ne peut forcer les deux a
+#: concorder depuis ici, et le troisieme cas de la regle des copies s'applique —
+#: quand on ne peut pas forcer l'accord, on cesse de dependre de la copie. Ce
+#: numero ne prouve donc pas quel cadre a produit une sortie ; il dit sous quel
+#: cadre elle etait **cense** l'etre, ce qui suffit a ne pas melanger deux
+#: regimes dans une meme population et ne suffit a rien d'autre.
+FRAMEWORK_VERSION = "1.4"
 
 #: Ce qui part reellement a l'analyse. **Un seul endroit le dit**, et c'est lui
 #: que les garde-fous de migration interrogent : « le gabarit produit-il encore »
