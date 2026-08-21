@@ -82,10 +82,23 @@ Le jugement humain porte sur **les arguments, pas sur la structure**.
 
 L'aveuglement complet est impossible : la structure de sortie trahit immédiatement quelle version a produit quoi. La procédure contourne le problème plutôt que de prétendre l'ignorer.
 
-1. Extraire de chaque sortie la liste des angles — un angle par ligne, sans étiquette de section, sans palier, sans cran de confiance.
+1. Extraire de chaque sortie la liste des angles — un angle par ligne, sans étiquette de section, sans palier, sans cran de confiance, sans nature ni niveau de source.
 2. Mélanger les deux listes, ordre aléatoire.
 3. Juger chaque angle isolément sur une seule question : **cet argument aurait-il tenu si le match avait mal tourné pour une raison prévisible ?**
 4. Ne défaire l'anonymat qu'après le classement complet.
+
+**Les étapes 1, 2 et 4 sont outillées**, parce que les faire à la main obligerait à lire les deux sorties — l'anonymat serait fictif avant d'avoir commencé :
+
+```bash
+uv run python -m myassistantbet.blind gabarit.md payload.md --graine 4712
+```
+
+rend la liste numérotée nue. La même commande avec `--lever` rejoue le mélange et donne l'origine de chaque numéro.
+
+- **La graine est la clé.** Le mélange se rejoue à l'identique, donc rien n'est écrit à côté et il n'existe aucun fichier qu'il faille s'interdire d'ouvrir. Consigner le nombre suffit.
+- **Les tableaux se reconnaissent par le lecteur qui les importe** — `EXPLORATORY_HEAD`, `SECTION_HEAD`, `_cells`, `_map_columns` — et non par une seconde expression posée à côté, qui finirait par ne plus désigner les mêmes lignes.
+- **Les deux sections sont lues.** C-bis porte la population témoin ; l'écarter comparerait deux ensembles construits sous des exigences différentes.
+- Une colonne « Angle » absente ne fait lire aucune autre colonne : en cas de doute, rien.
 
 ## Règle de décision
 
