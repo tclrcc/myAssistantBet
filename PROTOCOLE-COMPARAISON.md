@@ -2,7 +2,7 @@
 
 Ce document fixe la règle de décision **avant** de produire le premier résultat. Il est écrit à ce moment précisément parce qu'après quatre phases de migration, la tentation de lire un résultat ambigu comme un succès est maximale.
 
-Version de la Skill au moment de l'écriture : **1.3** — plancher de cote 1,25 explicite, règle d'agrégation du niveau de source, deux contrôles remontés dans la checklist finale.
+Version de la Skill au moment de l'écriture : **1.3** — plancher de cote 1,25 explicite, règle d'agrégation du niveau de source, deux contrôles remontés dans la checklist finale. **12 847 octets**, soit ~3 570 tokens chargés à chaque session.
 
 ## La question
 
@@ -20,8 +20,10 @@ Le gabarit peut-il être retiré ?
 2. **Taille minimale : quatre matchs.** Sous ce seuil, un lot ne peut ni faire varier les crans de confiance, ni remplir C-bis, ni produire une Section F lisible. Un lot plus court n'est pas rejeté par choix : il ne compte pas comme lot, et la désignation passe au suivant. Cette clause est écrite avant de connaître le calendrier, précisément pour qu'elle ne puisse pas servir à écarter un lot décevant.
 3. **Les deux versions tournent avant le coup d'envoi du premier match du lot.** L'antériorité s'applique au test comme à une session normale.
 4. **Sessions séparées.** Générer les deux sorties dans une même conversation contamine la seconde.
-5. **Aucune retouche manuelle** d'aucun des deux prompts.
-6. `framework_version` consigné avec chaque sortie.
+5. **La Skill est désactivée pendant la session gabarit**, et réactivée pour la session payload. Sans ce geste, la Skill se déclenche aussi sur le prompt gabarit — sa description l'active dès qu'un bloc de matchs est soumis — et la comparaison devient « gabarit + Skill » contre « payload + Skill », deux colonnes partageant la moitié de leur contenu. Le test mesurerait alors l'écart de format et rien d'autre. Vérifier l'état de l'interrupteur **avant** chaque session, pas après.
+6. **Ne pas lire les sorties entre les deux exécutions.** Les produire, puis extraire et mélanger les angles.
+7. **Aucune retouche manuelle** d'aucun des deux prompts.
+8. `framework_version` consigné avec chaque sortie.
 
 ## Contrôle amont
 
@@ -54,7 +56,7 @@ Les critères 1 et 2 sont des barrières : un manquement sur l'un des deux arrê
 
 Le critère 9 porte sur le **coût total**, pas sur le cadre. Le payload n'a pas de cadre par construction : mesurer celui-ci reviendrait à vérifier une tautologie. Le cadre n'a pas disparu, il a changé de porteur — la Skill se charge à chaque session et son poids appartient au total. Le point d'équilibre en nombre de matchs se déclare avec la mesure : un gain qui s'inverse au-delà de la taille de lot habituelle n'est pas un gain.
 
-**Mesure du 21/08/2026, avant le premier tir** — lot réel de 4 matchs, `SKILL.md` à 3 159 tokens :
+**Mesure du 21/08/2026, avant le premier tir** — lot réel de 4 matchs. Le tableau ci-dessous est calculé sur la **v1.2** mesurée (3 159 tokens) ; la v1.3 en pèse ~410 de plus, ce qui déplace le point d'équilibre de 17,7 à **~17,3** et ne change aucune ligne de la conclusion.
 
 | taille du lot | prompt | payload + Skill | écart |
 | ---: | ---: | ---: | ---: |
