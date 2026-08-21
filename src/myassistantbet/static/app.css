@@ -1513,8 +1513,20 @@ details.readout > .why-body { padding: 0 var(--s4) var(--s4); margin-top: 0; }
    cote au lieu de dessous. */
 .kpi > .tile:only-child { max-width: 26rem; }
 
+/* **La regle nommait `.hero-figure`, et il n'y en a plus dans `.kpi`.** Depuis
+   que le residu a sa propre tuile, la seule tuile seule de `/stats` est le
+   decompte, qui porte `.tile-figure`. Elle n'etait donc placee par personne :
+   elle tombait en placement automatique dans la colonne de droite et s'y
+   etalait sur **1 087 px** pour un chiffre de 32, laissant la case sous
+   l'etiquette **vide**. Mesure du 21/08/2026, et rien ne cassait — la tuile
+   avait seulement l'air mal reglee.
+
+   Deux corrections, et la seconde est la vraie : les deux figures sont nommees,
+   **et la mise en page a deux colonnes est reservee aux tuiles qui portent une
+   barre**. Sans barre il n'y a rien a mettre a droite, et se coucher n'a plus
+   de raison — c'etait la barre qui la justifiait. */
 @media (min-width: 900px) {
-  .kpi > .tile:only-child {
+  .kpi > .tile:only-child:has(.track) {
     max-width: none;
     display: grid;
     grid-template-columns: minmax(auto, 14rem) minmax(0, 1fr);
@@ -1522,13 +1534,14 @@ details.readout > .why-body { padding: 0 var(--s4) var(--s4); margin-top: 0; }
     column-gap: var(--s6);
     row-gap: var(--s1);
   }
-  .kpi > .tile:only-child .label { grid-column: 1; grid-row: 1; align-self: end; }
-  .kpi > .tile:only-child .hero-figure { grid-column: 1; grid-row: 2; align-self: start; }
-  .kpi > .tile:only-child .track { grid-column: 2; grid-row: 1; margin: 0; align-self: end; }
-  .kpi > .tile:only-child .tile-detail { grid-column: 2; grid-row: 2; align-self: start; }
+  .kpi > .tile:only-child:has(.track) .label { grid-column: 1; grid-row: 1; align-self: end; }
+  .kpi > .tile:only-child:has(.track) .hero-figure,
+  .kpi > .tile:only-child:has(.track) .tile-figure { grid-column: 1; grid-row: 2; align-self: start; }
+  .kpi > .tile:only-child:has(.track) .track { grid-column: 2; grid-row: 1; margin: 0; align-self: end; }
+  .kpi > .tile:only-child:has(.track) .tile-detail { grid-column: 2; grid-row: 2; align-self: start; }
   /* La note eventuelle reprend toute la largeur : elle commente l'ensemble,
      pas la colonne de droite. */
-  .kpi > .tile:only-child > .muted { grid-column: 1 / -1; }
+  .kpi > .tile:only-child:has(.track) > .muted { grid-column: 1 / -1; }
 }
 .tile {
   display: flex;
