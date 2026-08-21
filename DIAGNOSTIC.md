@@ -10252,3 +10252,93 @@ C'est le comportement voulu et documenté — « ailleurs le marché ne serait j
 servi, et le réclamer coûterait un crédit par match pour un constat vide ». Les
 deux blocs de coupe du lot le portent, les quatre blocs de championnat non :
 **aucun rapport avec le trou de M4.**
+
+## Le coût du lot, par modification de gabarit
+
+Deux modifications, mesurées séparément puis ensemble sur le lot réel.
+
+| § | Ce qui change dans le gabarit | Coût isolé |
+| --- | --- | ---: |
+| 1 | chapitre COMMENT LIRE LES BLOCS — cinq mentions définies au lieu de trois, et ce que vaut une ligne nue | **+110 tokens**, une fois par prompt portant la ligne `Entraîneur` |
+| 1 | la mention `— fiche seule, aucune feuille servie ici` | **+11 tokens** par fragment, sur **4 %** des événements |
+| 2 | section G — le motif de l'absence de mise | **+41 tokens**, et seulement si le suivi d'argent est ouvert |
+
+**Mesure de bout en bout, même lot, même base, deux gabarits** — le prompt 171
+régénéré avec le gabarit d'avant le lot et avec celui d'après :
+
+```
+avant le lot 20 : 22 416 tokens (7 blocs)
+après           : 22 567 tokens (7 blocs)
+écart réel      :    +151 tokens
+```
+
+Dont **22 pour les deux fragments** qui portent la nouvelle mention — M1 et M2,
+les deux blocs de DFB-Pokal. Le reste est du coût fixe, payé une fois.
+
+## Vérification sur le prompt réel
+
+Le lot 171 régénéré avec le code du lot, sur une copie de la base servie :
+
+```
+M1 : Waldhof Mannheim D. Glawogger (…) — fiche seule, aucune feuille servie ici | …
+M2 : SC Preußen Münster K. Schulze-Marmeling (…) — fiche seule, aucune feuille servie ici | …
+M3 : Al-Riyadh Mauricio Dulac (…) — vu sur la feuille du 14/08 | …
+M4 : Al-Hazem feuille du 13/08 : Jalel Kadri | fiche : Jalal Qaderi (…) — divergence
+M5 : IK Sirius Andreas Engelmark (…) | BK Hacken Jens Gustafsson (…)
+M7 : Ried feuille du 14/08 : … — divergence | Grazer AK Ferdinand Feldhofer (…) — feuille du 16/08, apparié sur l'initiale du prénom
+```
+
+La mention paraît sur **M1 et M2 et sur eux seuls** — les deux blocs de
+DFB-Pokal, la compétition où `lineups` n'est pas servi. **M2 est le bloc dont les
+deux entraîneurs étaient faux.** M5, bien couvert par `/injuries`, reste nu : la
+mention n'y serait que du décor. Les trois mentions existantes n'ont pas bougé.
+
+## Ce que la mesure contredit dans ce brief
+
+| Affirmé | Mesuré |
+| --- | --- |
+| §1 — « **les trois** mentions » | **cinq** : le code produit aussi « non confirmé » (6 % des fragments) et « (feuille du JJ/MM) », **définies nulle part** dans le chapitre |
+| §1a — « si le cas muet est **rare**, ne construis rien » | il est **majoritaire** : 59 % des fragments, 45 % depuis le 17/08 |
+| §1b — « si la ligne peut porter **la date de la fiche** » | **elle n'existe pas** : `/coachs` ne sert ni `update`, ni `updated`, ni `last_*`, ni `modified` |
+| §1b — « `fiche non rafraîchie dans notre fenêtre` » | la fiche **est** rafraîchie ; c'est le fournisseur qui ne referme pas ses étapes |
+| §1 — le cas muet = les compétitions bien couvertes *(docstring)* | **deux causes opposées** : 34 % `injuries` couvert, **4 % `lineups` non servi** — et M2 est dans les 4 % |
+| §2a — « sur les **30** sélections exploratoires » | **32** |
+| §2a — « si c'est marginal, la correction est un mot » | **26 sur 32** déclarent un niveau numérique, et **5 des 7** blocs lisibles portent des faits |
+| §3 — « la rencontre a-t-elle été interrogée ? » | **oui**, à 23:36:40, et le fournisseur a répondu **vide** (coût 0) |
+| §3 — « les **deux autres** matchs de Saudi Pro League du lot » | il n'y en a qu'**un**, M3 — M5 est de l'Allsvenskan |
+| §3 — `Se qualifie` : « le même mécanisme ? » | **non** : exclusion volontaire sur les championnats, et les deux blocs de coupe le portent bien |
+
+### Deux défauts que le brief ne demandait pas
+
+1. **Le chapitre était déjà en retard sur le code de deux mentions.** « non
+   confirmé » se rend sur 6 % des fragments et n'était définie nulle part — le
+   défaut que ce prompt évite partout ailleurs, et il était là avant ce lot.
+2. **La divergence de M4 est probablement un faux positif.** `Jalel Kadri` et
+   `Jalal Qaderi` sont deux translittérations du même nom arabe, et
+   `_coach_match` ne peut pas le voir. **Rien n'est fait, et c'est délibéré** :
+   le sens de l'erreur est le bon — une divergence annoncée à tort envoie
+   vérifier, une divergence tue laisse croire.
+
+## Récapitulatif du lot 20
+
+**Trois commits, aucune migration, schéma inchangé à 70** — donc aucune
+sauvegarde requise. Toutes les mesures portent sur une copie `VACUUM INTO` de la
+base servie, et la base servie n'a pas été touchée.
+
+| § | Ce qui a changé | Ce que ça coûte |
+| --- | --- | --- |
+| 1 | une quatrième mention là où aucune feuille ne peut recouper la fiche ; le chapitre définit les cinq et dit ce que vaut une ligne nue | +110 tokens fixes, +11 sur 4 % des fragments |
+| 2 | C-bis décrite par sa règle et non par son contenu, aux six endroits à la fois ; le motif de l'absence de mise devient « population témoin » | +41 tokens en section G, si le suivi d'argent est ouvert |
+| 3 | **rien** — cause établie, quatrième état nommé, correction proposée | 0 |
+
+**Ce qui reste ouvert, et pourquoi ça ne se ferme pas ici** :
+
+- **la marque d'appel d'étage B** (§3) : elle demande une colonne et une
+  migration, et tout signal disponible sans elle ré-introduit le faux positif
+  que la garde existe pour empêcher. Premier point du prochain lot — il a touché
+  la moitié des blocs de football de cette session ;
+- **les 34 % de lignes `Entraîneur` muettes parce qu'`/injuries` couvre** : la
+  fiche y est tout aussi seule, mais la mention y paraîtrait sur un bloc sur
+  trois. Ce qui change pour elles est la phrase du chapitre, pas la ligne ;
+- **le faux positif de translittération** sur `divergence` : mesuré, laissé, et
+  la raison est écrite.

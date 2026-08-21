@@ -6152,3 +6152,99 @@ matin vaut mieux qu'un refus, meme arbitrage qu'un seuil illisible qui revient a
 defaut ; recharger le code a chaud ; mettre le gabarit en cache — c'est la
 relecture disque qui rend l'edition immediate, et c'est voulu. Le probleme n'est
 pas qu'on relise le disque, c'est qu'on ne dise pas quand il a bouge.
+
+## La fiche d'entraineur muette : deux causes opposees, et une seule se dit
+
+Mesure du 21/08/2026 sur les fragments d'equipe reellement rendus : **59 % des
+lignes `Entraineur` ne portent aucune mention** (45 % depuis le 17/08). Le cas
+muet est donc le cas **majoritaire**, et la valeur y vient de la **fiche seule** —
+`_coach_fragment` ne rend une mention que si une feuille a ete lue.
+
+- **Les mentions ne sont pas trois mais cinq**, et deux n'etaient definies nulle
+  part dans le chapitre : « non confirme » (6 % des fragments) et « (feuille du
+  JJ/MM) ». C'est le defaut que ce prompt evite partout ailleurs, et il etait la
+  avant qu'on le cherche.
+- **Le cas muet a deux causes opposees.** Sur 257 evenements de football partis
+  en prompt : 62 % portent une mention, **34 % sont muets parce qu'`/injuries`
+  couvre** — les feuilles ne servent alors a rien d'autre — et **4 % parce que
+  `lineups` n'est pas servi**, ou elles sont impossibles. Le docstring ne nommait
+  que le premier, en le situant « sur les grands championnats » ; le second est
+  l'exact contraire — DFB-Pokal, La Liga 2, Supercoupe d'Europe, ni absents ni
+  compositions.
+- **Seule la seconde se dit** (`— fiche seule, aucune feuille servie ici`), meme
+  discipline que les trois etats d'`Absents` : une chose qu'on n'a pas verifiee et
+  une chose qu'on ne **peut pas** verifier ne s'ecrivent pas pareil. Sur les 34 %
+  la mention paraitrait sur un bloc sur trois et cesserait d'etre un signal.
+- **Une couverture inconnue ne rend rien** : on n'affirme pas une absence qu'on
+  n'a pas lue.
+- **La date de fiche n'existe pas, et c'est verifie** : `/coachs` sert `age`,
+  `birth`, `career`, `firstname`, `height`, `id`, `lastname`, `name`,
+  `nationality`, `photo`, `team`, `weight` — et `career` n'a que `start`, `end`,
+  `team`. Ni `update`, ni `updated`, ni `last_*`, ni `modified`. La seule date
+  disponible est **notre** date de lecture, et l'ecrire donnerait l'assurance
+  d'une fraicheur qui ne decrit que nous. Meme porte que celle deja fermee par le
+  cas Utrecht.
+- **Deux autres signaux mesures et ecartes comme decor** : « fiche seule » sur
+  tout cas muet (45-59 %), et « choix heuristique entre etapes ouvertes » —
+  **83 % des 421 fiches en base**, 68 seulement portant une etape unique. Le
+  chiffre de 92 clubs sur 110 du dossier tient toujours, en proportion.
+- Faux positif connu et **laisse** : `Jalel Kadri` contre `Jalal Qaderi` sont deux
+  translitterations du meme nom, et `_coach_match` ne peut pas le voir. Le sens de
+  l'erreur est le bon — une divergence annoncee a tort envoie verifier, une
+  divergence tue laisse croire.
+
+## La section C-bis se decrit par sa regle, jamais par son contenu
+
+**« Produites sans fait date, par construction » etait faux la ou c'etait
+verifiable.** Mesure du 21/08/2026 sur les 32 selections exploratoires : **26
+declarent un `source_level` numerique**, 6 seulement `lecture` ; sept portent un
+bloc `conf` apparie et **cinq de ces sept portent des faits dates**.
+
+- Nuance a tenir : `source_level_effective` est a `lecture` sur 25 des 32, mais
+  c'est l'**ecrasement** qui l'y met faute de ligne `dossiers_ouverts`. Sur les 7
+  lignes ou l'ecrasement n'a pas tire — les seules ou l'on voit ce que l'analyse a
+  declare — le fait date est majoritaire.
+- **Refuser un fait date en C-bis a ete ecarte** : le gabarit ne l'interdit pas et
+  il a raison (« `Source` y vaudra **le plus souvent** `lecture` ») ; un PASSE en
+  section B sur un match portant un fait date ne produirait alors plus rien du
+  tout ; et il faudrait un refus a l'import, donc jeter une ligne legitime pour
+  proteger une phrase.
+- **Le motif de l'absence de mise change de nature.** « Lecture seule » etait un
+  motif de **qualite** et ne survit pas a la mesure ; le motif juste est de
+  **role** — ces selections sont la **population temoin**, elles existent pour
+  etre comparees a la section C a palier egal, et un montant en ferait un pari
+  plutot qu'un point de mesure. Il est vrai quelle que soit la ligne.
+- La description est donc « les selections que la section C n'a pas retenues,
+  produites **sans exigence** de fait date ». Corrigee **aux six endroits a la
+  fois** — gabarit, page, export, docstring, commentaire, infobulle : une
+  description corrigee a un seul endroit est pire que pas de correction.
+
+## Un quatrieme etat de « Non servis » : l'etage B a tourne et n'a rien rapporte
+
+`session._is_enriched` deduit le passage de l'etage B de la **presence d'un
+marche profond**. Sur une reponse **vide**, il n'y en a aucun : la garde rend
+faux, la cause « demande pour ce match et non revenu » ne s'applique pas, et les
+marches ne tombent nulle part.
+
+- **Le repli annonce ne joue pas** : « ce constat est deja memorise par
+  `coverage` » est faux, `coverage.record` ecrivant `MAX(served, ...)` — un marche
+  vu servi une fois sur la competition l'est pour toujours. Sur M4 le memo dit
+  `alternate_spreads` et `alternate_totals` **servis**, 31 verifications, quand le
+  match n'en porte aucun.
+- **La rencontre avait bien ete interrogee** : appel a 23:36:40, **cout 0**, donc
+  reponse vide — les reponses vides ne sont pas facturees. Ni match saute, ni
+  plancher de credit, ni panne.
+- **Portee** : 29 appels vides sur 1 107 (3 %), 23 evenements, dont **3 partis en
+  prompt** — et les trois sont dans le meme lot, soit la moitie de ses blocs de
+  football. Rare dans l'absolu, entierement concentre.
+- **Ce qui manque est un fait persiste, pas une inference.** Retirer la garde
+  ferait lister tous les marches d'un evenement jamais enrichi ; le memo
+  `coverage` est une union par competition ; le contexte s'ecrit aussi par le
+  balayage des compositions ; `api_usage` est un registre de quota. Il faut une
+  **marque d'appel par evenement**, ecrite par `enrich` au moment ou il appelle,
+  independante de ce qui revient. La deuxieme cause couvre alors le cas sans
+  nouveau libelle — son texte est deja juste — et le cout en tokens est nul.
+- `Se qualifie` absent d'un bloc de championnat n'a **aucun rapport** :
+  `markets_for` ne le demande que sur `KNOCKOUT_CATEGORIES`, donc il n'a pas a
+  figurer dans une liste de marches demandes et non revenus. Les blocs de coupe du
+  meme lot le portent bien.
