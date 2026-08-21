@@ -400,7 +400,7 @@ class _temporary:
         os.environ["DB_PATH"] = str(self.dossier / "selfcheck.db")
         get_settings.cache_clear()
         self.settings = get_settings()
-        db.run_migrations(self.settings)
+        db.run_migrations(self.settings, deliberate=True)
         return self.settings
 
     def __exit__(self, *exc: object) -> None:

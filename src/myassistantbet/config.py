@@ -20,10 +20,22 @@ class Settings(BaseSettings):
     un etat normal (phases 0 a 1) qui doit rester visible.
     """
 
+    #: **`forbid` et non `ignore`**, et le commentaire de `rapidapi_key` disait
+    #: deja pourquoi : sous `ignore`, une cle non declaree est indiscernable
+    #: d'une cle absente — la cle RapidAPI est restee des semaines dans `.env`
+    #: sans atteindre nulle part, septieme forme du defaut caracteristique du
+    #: projet. Une faute de frappe dans `.env` leve desormais au demarrage.
+    #:
+    #: **Ce qu'il n'attrape pas, mesure le 21/08/2026** : une variable
+    #: d'**environnement** inconnue. pydantic-settings ne lit l'environnement que
+    #: pour les champs declares, donc `MYASSISTANTBET_DB=...` n'est ni lu ni
+    #: refuse — il ne fait rien, en silence. C'est exactement par la qu'une
+    #: migration est partie sur la base servie ce jour-la, et c'est
+    #: `db.run_migrations(deliberate=)` qui porte ce cas, pas celui-ci.
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
-        extra="ignore",
+        extra="forbid",
     )
 
     # --- Secrets -----------------------------------------------------------

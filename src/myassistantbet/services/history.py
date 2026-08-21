@@ -6119,8 +6119,12 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
         sport_labels = {
             row["key"]: row["label"] for row in conn.execute("SELECT key, label FROM sports")
         }
+        bandes = _bands(conn)
         rows = conn.execute(
             "SELECT k.tier, k.result, k.market, k.confidence, k.created_at, s.key AS sport_key, "
+            # La cote declaree : c'est elle qui donne le palier de ce bloc. Voir
+            # `_tier_of` et le choix de journal ci-dessous.
+            "       k.price, "
             "       k.price_source, k.price_real, k.tier_real, "
             "       c.category, COALESCE(c.label, '') AS competition FROM picks k "
             "LEFT JOIN events e ON e.id = k.event_id "
@@ -6169,14 +6173,18 @@ def feedback(settings: Settings | None = None, played_only: bool = False) -> Fee
     # lui-meme. Plus personne n'attend un prix reel qui ne viendra pas.
     report.by_tier = _feedback_tally(
         [
-            # **Lecture executee, et c'est l'etat d'avant conserve tel quel.** Ce
-            # bloc nourrit le prompt et se dit juge de l'analyse, mais il sert
-            # aussi `played_only=True` pour les paris poses : de quel journal il
-            # releve est une question ouverte, et la trancher en passant serait
-            # changer une mesure sans le decider.
+            # **Journal d'analyse, sans condition.** Ce bloc est le retour
+            # d'experience injecte au prompt : il affiche la cible de chaque cran
+            # et l'ecart au taux constate, donc il juge la notation. Le palier s'y
+            # recalcule depuis la cote declaree, comme dans `analysis()`.
+            #
+            # La variante « declare par defaut, execute sous `played_only` » a ete
+            # ecartee : elle couplerait la source du palier a un filtre de
+            # population, donc une meme ligne se classerait differemment selon
+            # l'appelant — le motif a plusieurs verites que ce lot vient de fermer.
             (cle, tier_labels.get(cle, cle), row["result"])
             for row in rows
-            for cle in (_tier_of(row, TIER_EXECUTED),)
+            for cle in (_tier_of(row, TIER_DECLARED, bandes),)
         ],
         minimum_rows,
     )

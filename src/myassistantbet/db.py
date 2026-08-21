@@ -5,6 +5,8 @@ from __future__ import annotations
 import logging
 import re
 import sqlite3
+import sys
+import tempfile
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -120,15 +122,89 @@ def applied_versions(conn: sqlite3.Connection) -> set[int]:
     return {row["version"] for row in conn.execute("SELECT version FROM schema_migrations")}
 
 
+def scratch_copy(settings: Settings | None = None, into: Path | None = None) -> Settings:
+    """Une copie **jetable et inscriptible** de la base servie, et ses parametres.
+
+    Le pendant du `VACUUM INTO` de lecture, pour tout ce qui doit ecrire —
+    migrer, rejouer un import, mesurer un correctif. La regle du depot n'avait
+    que la moitie lecture, et c'est par la moitie manquante qu'une migration est
+    partie sur la production le 21/08/2026.
+
+    `VACUUM INTO` et non une copie de fichier : en mode WAL, copier le `.db` seul
+    livrerait une base incomplete — meme raison que `backup.py`.
+
+    Rend des `Settings` **derives** plutot que de poser une variable
+    d'environnement : c'est le detour par l'environnement qui a echoue, et un
+    objet passe en argument ne peut pas se tromper de nom.
+    """
+    settings = settings or get_settings()
+    cible = Path(into) if into else Path(tempfile.mkdtemp(prefix="mab-copie-")) / "copie.db"
+    cible.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(settings.db_path_absolute)
+    try:
+        conn.execute("VACUUM INTO ?", (str(cible),))
+    finally:
+        conn.close()
+    logger.info("Copie de travail : %s", cible)
+    return settings.model_copy(update={"db_path": cible})
+
+
+class MigrationRefused(RuntimeError):
+    """Une migration a ete demandee hors du demarrage de l'application."""
+
+
+def _under_test() -> bool:
+    """Vrai sous pytest. La suite migre des bases isolees, par construction.
+
+    Lu sur `sys.modules` et non sur `PYTEST_CURRENT_TEST`, qui n'est pose que
+    pendant l'execution d'un test : une fixture de portee session tombe entre
+    deux, et se ferait refuser une migration parfaitement legitime.
+    """
+    return "pytest" in sys.modules
+
+
 def run_migrations(
-    settings: Settings | None = None, migrations_dir: Path | None = None
+    settings: Settings | None = None,
+    migrations_dir: Path | None = None,
+    *,
+    deliberate: bool = False,
 ) -> list[str]:
     """Applique les migrations non encore appliquees. Renvoie les noms appliques.
 
     Chaque migration est jouee dans sa propre transaction : une migration qui
     echoue laisse la base dans l'etat de la derniere migration reussie.
+
+    **`deliberate` est une garde, et elle a ete payee.** Le 21/08/2026, un script
+    de controle a cru isoler sa base par une variable d'environnement inexistante
+    (`MYASSISTANTBET_DB`, quand le champ s'appelle `db_path` donc `DB_PATH`) :
+    l'override n'a rien fait, `get_settings()` a rendu les parametres servis, et
+    la migration du jour est partie sur la **base de production**. Le projet
+    avait deja paye une fois d'avoir laisse un `TestClient` toucher la
+    production, et le commentaire de `selfcheck` le disait.
+
+    La regle du depot — « toute lecture se fait sur une copie » — avait son
+    reflexe pour lire (`VACUUM INTO`) et **aucun equivalent pour ecrire**. Elle
+    en a un : `scratch_copy()`. Ici, l'appel se declare.
+
+    L'exemption sous pytest n'est pas une porte laissee ouverte : la suite migre
+    une base temporaire par test, et exiger le drapeau sur trente fixtures aurait
+    fait du bruit sans rien garder de plus.
+
+    Ce que la garde **n'attrape pas**, et il faut le savoir : un mauvais nom de
+    variable d'environnement reste sans effet et sans message. `extra="forbid"`
+    ne couvre que les cles inconnues d'un `.env`, pas celles de l'environnement —
+    mesure du 21/08/2026, pydantic-settings ne regarde l'environnement que pour
+    les champs declares. C'est donc **cette garde-ci** qui porte le cas, et elle
+    seule.
     """
     settings = settings or get_settings()
+    if not deliberate and not _under_test():
+        raise MigrationRefused(
+            f"run_migrations() refuse : appel non declare sur {settings.db_path_absolute}. "
+            "Un script d'exploration ne migre pas une base servie — prends une copie "
+            "jetable avec db.scratch_copy(). Si l'appel est bien celui du demarrage ou "
+            "d'un deploiement, passe deliberate=True."
+        )
     migrations_dir = migrations_dir or settings.migrations_dir
     migrations = discover_migrations(migrations_dir)
     if not migrations:

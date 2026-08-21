@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import sys
 from pathlib import Path
 
 import pytest
@@ -58,6 +59,50 @@ EXPECTED_TABLES = {
     "tennis_matches",
     "tiers",
 }
+
+
+def test_une_migration_non_declaree_est_refusee(isolated_settings: Settings, monkeypatch) -> None:
+    """**Garde payee le 21/08/2026.** Un script de controle a cru isoler sa base
+    par `MYASSISTANTBET_DB` — le champ s'appelle `db_path`, donc la variable est
+    `DB_PATH` — et l'override n'a rien fait : `get_settings()` a rendu les
+    parametres servis, et la migration du jour est partie sur la production.
+
+    Le test simule l'absence de pytest, sans quoi l'exemption couvrirait
+    l'appel : c'est la seule facon de verifier la garde depuis la suite qu'elle
+    exempte.
+    """
+    monkeypatch.delitem(sys.modules, "pytest", raising=False)
+
+    with pytest.raises(db.MigrationRefused, match="deliberate"):
+        db.run_migrations(isolated_settings)
+
+
+def test_un_demarrage_declare_migre(isolated_settings: Settings, monkeypatch) -> None:
+    """L'autre moitie : une garde qui refuserait aussi l'appel legitime serait
+    pire qu'absente."""
+    monkeypatch.delitem(sys.modules, "pytest", raising=False)
+
+    assert db.run_migrations(isolated_settings, deliberate=True), "les migrations passent"
+
+
+def test_une_copie_de_travail_est_inscriptible_et_detachee(isolated_settings: Settings) -> None:
+    """Le pendant du `VACUUM INTO` de lecture. La regle du depot n'avait que la
+    moitie lecture, et c'est par la moitie manquante qu'une migration est partie
+    sur la base servie.
+
+    Les parametres sont **derives**, jamais poses dans l'environnement : c'est le
+    detour par l'environnement qui a echoue.
+    """
+    db.run_migrations(isolated_settings)
+    copie = db.scratch_copy(isolated_settings)
+
+    assert copie.db_path_absolute != isolated_settings.db_path_absolute
+    assert copie.db_path_absolute.exists()
+    with db.connect(copie) as conn:
+        conn.execute("UPDATE tiers SET max_price = 9.99 WHERE key = 'safe'")
+    with db.connect(isolated_settings) as conn:
+        intact = conn.execute("SELECT max_price FROM tiers WHERE key = 'safe'").fetchone()
+    assert float(intact["max_price"]) != 9.99, "la base d'origine n'a pas bouge"
 
 
 def test_migrations_creent_toutes_les_tables(isolated_settings: Settings) -> None:

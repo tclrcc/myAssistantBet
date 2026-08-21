@@ -81,7 +81,7 @@ templates.env.filters["context_icon"] = labels_service.context_icon
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
 
-    applied = db.run_migrations(settings)
+    applied = db.run_migrations(settings, deliberate=True)
     if applied:
         logger.info("Migrations appliquees au demarrage : %s", ", ".join(applied))
     else:
