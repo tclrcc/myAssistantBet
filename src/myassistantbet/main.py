@@ -58,6 +58,7 @@ from .services import stats_export as stats_export_service
 from .services import tennis_history as tennis_history_service
 from .services import tennis_load as tennis_load_service
 from .services import thresholds as thresholds_service
+from .services.matching import ReserveMismatch
 from .services.scan import run_scan
 
 logging.basicConfig(
@@ -876,7 +877,35 @@ def resolve_mapping(
         if oddsapi_name:
             choices[oddsapi_name] = (apifootball_id, apifootball_name)
 
-    mapping_service.resolve_manually(event_id, choices, settings)
+    erreur = ""
+    try:
+        mapping_service.resolve_manually(event_id, choices, settings)
+    except ReserveMismatch as refus:
+        # Le refus se dit **la ou le choix a ete fait**, jamais en 500 : c'est une
+        # saisie humaine, elle se corrige en rechoisissant.
+        erreur = str(refus)
+    return templates.TemplateResponse(
+        request,
+        "_mapping_list.html",
+        {"events": mapping_service.pending_events(settings), "erreur": erreur},
+    )
+
+
+#: Nom d'equipe dont on oublie le rattachement.
+DETACH_FIELD = Form(default="")
+
+
+@app.post("/mapping/{event_id}/detacher", response_class=HTMLResponse)
+def detach_mapping(
+    request: Request, event_id: int, oddsapi_name: str = DETACH_FIELD
+) -> HTMLResponse:
+    """Oublie le rattachement memorise pour un nom, et rouvre sa resolution.
+
+    `event_id` ne sert qu'a designer la ligne dans l'ecran : un alias est global
+    a son nom, et le detacher vaut pour tous les evenements qui le portent.
+    """
+    settings = get_settings()
+    mapping_service.detach(oddsapi_name, settings)
     return templates.TemplateResponse(
         request, "_mapping_list.html", {"events": mapping_service.pending_events(settings)}
     )

@@ -15,7 +15,13 @@ from myassistantbet.services.context import (
     KIND_MAPPING,
 )
 from myassistantbet.services.mapping_ui import pending_count, pending_events, resolve_manually
-from myassistantbet.services.matching import lookup_alias
+from myassistantbet.services.matching import (
+    ReserveMismatch,
+    is_reserve,
+    lookup_alias,
+    reserve_mismatch,
+    save_alias,
+)
 
 CANDIDATES = [
     {"id": 376, "name": "BK Hacken", "score": 0.62},
@@ -206,11 +212,22 @@ def _seed_sans_rien_a_trancher(settings: Settings) -> int:
         settings=settings,
     )
     event_id = int(db.query_one("SELECT id FROM events ORDER BY id DESC", settings=settings)["id"])
+    # **La forme reelle** : un nom resolu par alias porte ce seul alias comme
+    # candidat memorise. Verifie sur la base servie le 22/08/2026 — c'est la que
+    # le rattachement dort, et c'est pourquoi il peut se rendre.
     payload = {
         "reason": "aucun match ne reunit ces deux equipes",
         "teams": [
-            {"oddsapi_name": "Motherwell", "resolved": True, "candidates": []},
-            {"oddsapi_name": "Aberdeen", "resolved": True, "candidates": []},
+            {
+                "oddsapi_name": "Motherwell",
+                "resolved": True,
+                "candidates": [{"id": 256, "name": "Motherwell", "score": 1.0}],
+            },
+            {
+                "oddsapi_name": "Aberdeen",
+                "resolved": True,
+                "candidates": [{"id": 252, "name": "Aberdeen", "score": 1.0}],
+            },
         ],
     }
     db.execute(
@@ -237,8 +254,40 @@ def test_un_evenement_sans_nom_a_trancher_ne_propose_aucun_bouton(
 
     assert "Motherwell – Aberdeen" in page
     assert "aucun match ne reunit ces deux equipes" in page
-    assert "<form" not in page, "aucun formulaire quand il n'y a rien a saisir"
+    assert 'name="choice"' not in page, "aucun choix a saisir, donc aucun menu"
     assert CAUSE_REPAIRS[CAUSE_FIXTURE_ABSENT] in page, "l'ecran doit nommer le geste utile"
+
+
+def test_le_rattachement_en_vigueur_se_lit_sur_l_ecran(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """**Un alias faux etait invisible, et c'est ce qui l'a rendu definitif.**
+
+    L'ecran ne montrait que les noms non resolus. Le 22/08/2026, `Celta Vigo`
+    pointait sur `Celta de Vigo II` — la reserve — depuis une semaine, et il a
+    fallu lire la base pour le voir. Le rattachement en vigueur se rend donc,
+    surtout quand il n'y a rien a saisir : c'est la seule chose qui distingue
+    « le match n'a pas lieu » de « on regarde la mauvaise equipe ».
+    """
+    _seed_sans_rien_a_trancher(isolated_settings)
+
+    page = client.get("/mapping").text
+
+    assert "Motherwell" in page and "(256)" in page
+    assert "Aberdeen" in page and "(252)" in page
+    assert "détacher" in page
+
+
+def test_detacher_oublie_le_rattachement(client: TestClient, isolated_settings: Settings) -> None:
+    """Le seul chemin de correction d'un alias faux, et il n'en existait aucun."""
+    event_id = _seed_sans_rien_a_trancher(isolated_settings)
+    save_alias("Motherwell", 256, "Motherwell", "manual", isolated_settings)
+    assert lookup_alias("Motherwell", isolated_settings) is not None
+
+    response = client.post(f"/mapping/{event_id}/detacher", data={"oddsapi_name": "Motherwell"})
+
+    assert response.status_code == 200
+    assert lookup_alias("Motherwell", isolated_settings) is None
 
 
 def test_le_formulaire_reste_la_ou_il_y_a_un_nom_a_trancher(
@@ -251,3 +300,46 @@ def test_le_formulaire_reste_la_ou_il_y_a_un_nom_a_trancher(
 
     assert "<form" in page
     assert "BK Hacken (62 %)" in page
+
+
+def test_un_alias_ne_traverse_pas_le_statut_de_reserve(migrated: Settings) -> None:
+    """**Un seul alias sur 517 traversait ce statut, et c'etait le defaut.**
+
+    Mesure du 22/08/2026 : `Celta Vigo` rattache a `Celta de Vigo II`. Valencia -
+    Celta Vigo etait servi par les deux fournisseurs, apparie a 1.00 des deux
+    cotes, et restait introuvable pour cette seule raison.
+
+    Le score ne l'arretait pas : `is_confident` refusait deja de le poser tout
+    seul (0.62), c'est un choix manuel qui l'a pose. Le refus vit donc a
+    l'ecriture, seul endroit que les deux chemins traversent.
+    """
+    with pytest.raises(ReserveMismatch):
+        save_alias("Celta Vigo", 9571, "Celta de Vigo II", "manual", migrated)
+
+    assert lookup_alias("Celta Vigo", migrated) is None
+
+
+def test_deux_reserves_se_rattachent_toujours(migrated: Settings) -> None:
+    """**Zero faux positif, et ce sont les deux cas que la base porte.**
+
+    `B` et `II` disent la meme chose chez deux fournisseurs differents : les
+    separer couperait un rapprochement juste. Et « Willem II » est une premiere
+    equipe dont le chiffre fait partie du nom — elle se lit reserve des deux
+    cotes, donc elle concorde.
+    """
+    save_alias("Real Sociedad B", 9585, "Real Sociedad II", "auto", migrated)
+    save_alias("Willem II", 195, "Willem II", "auto", migrated)
+
+    assert lookup_alias("Real Sociedad B", migrated) is not None
+    assert lookup_alias("Willem II", migrated) is not None
+    assert not reserve_mismatch("Real Sociedad B", "Real Sociedad II")
+    assert not reserve_mismatch("Willem II", "Willem II")
+    assert reserve_mismatch("Celta Vigo", "Celta de Vigo II")
+
+
+def test_le_marqueur_ne_se_lit_qu_en_fin_de_nom() -> None:
+    """Un chiffre au milieu d'un nom ne designe pas une reserve."""
+    assert is_reserve("Celta de Vigo II")
+    assert is_reserve("Real Sociedad B")
+    assert not is_reserve("Bayer 04 Leverkusen")
+    assert not is_reserve("Valencia")

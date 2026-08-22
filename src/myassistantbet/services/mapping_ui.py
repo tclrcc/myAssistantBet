@@ -14,7 +14,7 @@ from ..config import Settings, get_settings
 from ..db import connect
 from .context import CAUSE_FIXTURE_ABSENT, CAUSE_REPAIRS, KIND_MAPPING
 from .labels import affiche
-from .matching import save_alias
+from .matching import lookup_alias, save_alias
 
 
 @dataclass
@@ -24,6 +24,21 @@ class PendingTeam:
     oddsapi_name: str
     resolved: bool
     candidates: list[dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def binding(self) -> dict[str, Any] | None:
+        """L'equipe a laquelle ce nom est rattache, quand il l'est.
+
+        **La donnee etait deja la et rien ne la montrait.** Un nom resolu par
+        alias porte ce seul alias comme candidat memorise : le rattachement est
+        donc en base depuis toujours, et l'ecran n'affichait que les noms **non**
+        resolus — si bien qu'un alias faux etait invisible. Mesure du
+        22/08/2026 : `Celta Vigo` etait rattache a `Celta de Vigo II`, et il a
+        fallu lire la base pour le voir.
+        """
+        if not self.resolved or not self.candidates:
+            return None
+        return self.candidates[0]
 
 
 @dataclass
@@ -47,6 +62,15 @@ class PendingEvent:
         return [team for team in self.teams if not team.resolved]
 
     @property
+    def bindings(self) -> list[PendingTeam]:
+        """Les noms deja rattaches, avec l'equipe qu'ils designent.
+
+        Montres **meme quand il n'y a rien a saisir**, et surtout la : c'est le
+        seul endroit ou un alias faux se voit.
+        """
+        return [team for team in self.teams if team.binding]
+
+    @property
     def actionable(self) -> bool:
         """Vrai s'il reste vraiment un nom a trancher sur cet ecran.
 
@@ -63,11 +87,17 @@ class PendingEvent:
 
     @property
     def guidance(self) -> str:
-        """Ce qu'il y a a faire quand cet ecran ne peut rien faire.
+        """Ce que dit l'ecran quand aucun nom n'est a saisir.
 
         Le libelle est **relu** dans `CAUSE_REPAIRS` et jamais recopie : deux
         redactions du meme geste auraient diverge, et c'est le meme texte que
         porte deja la shortlist.
+
+        **Il ne dit plus « rien a trancher ici », et c'etait trop fort.** Deux
+        causes produisent cet etat et une seule est sans recours : la rencontre
+        n'a pas lieu — report, reprogrammation — ou **un rattachement est faux**.
+        Le second se repare, et l'affirmation d'avant fermait la porte a la
+        reparation le jour ou elle etait le seul geste utile.
         """
         return CAUSE_REPAIRS[CAUSE_FIXTURE_ABSENT]
 
@@ -152,3 +182,25 @@ def _teams_of(event_id: int, settings: Settings) -> list[PendingTeam]:
         if event.event_id == event_id:
             return event.teams
     return []
+
+
+def detach(oddsapi_name: str, settings: Settings | None = None) -> bool:
+    """Oublie le rattachement memorise pour ce nom. Vrai s'il en existait un.
+
+    **Le seul chemin de correction d'un alias faux**, et il n'en existait aucun :
+    un alias vaut pour toujours, l'ecran ne proposait de choix que pour les noms
+    **non** resolus, donc un rattachement errone etait definitif et muet. Mesure
+    du 22/08/2026 : `Celta Vigo` pointait sur la reserve depuis le 15/08, et
+    Valencia - Celta Vigo est reste sans contexte pour cette seule raison.
+
+    Detacher plutot que rechoisir sur place : les candidats memorises pour un nom
+    resolu par alias se reduisent a cet alias, donc l'ecran n'a rien d'autre a
+    proposer. Le prochain enrichissement refait la resolution — il rattache tout
+    seul quand le nom tombe juste, et redemande sinon, avec cette fois la vraie
+    liste de la journee.
+    """
+    if lookup_alias(oddsapi_name, settings) is None:
+        return False
+    with connect(settings) as conn:
+        conn.execute("DELETE FROM team_aliases WHERE oddsapi_name = ?", (oddsapi_name,))
+    return True

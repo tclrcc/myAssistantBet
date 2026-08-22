@@ -1,4 +1,8 @@
 <div id="mapping-list">
+  {% if erreur %}
+    <p class="alert">{{ erreur }}</p>
+  {% endif %}
+
   {% if not events %}
     <p class="empty">Aucune correspondance en attente.</p>
   {% endif %}
@@ -29,12 +33,38 @@
       <button type="submit" class="primary">Enregistrer</button>
     </form>
     {% else %}
-    {# Les deux equipes sont appariees : il n'y a aucun alias a saisir, donc
-       aucun bouton a proposer. Un formulaire rendu ici n'ecrivait rien et
-       rerendait la page a l'identique. #}
+    {# Aucun nom a saisir : pas de formulaire de choix, il n'ecrirait rien. Mais
+       le rattachement en vigueur se montre — un alias faux etait invisible, et
+       c'est la seule chose qui distingue « le match n'a pas lieu » de « on
+       regarde la mauvaise equipe ». #}
+    <p class="muted small">{{ event.guidance }}.</p>
+    {% endif %}
+
+    {% if event.bindings %}
+    <table class="board">
+      <thead>
+        <tr><th>Nom du bookmaker</th><th>Rattaché à</th><th></th></tr>
+      </thead>
+      <tbody>
+        {% for team in event.bindings %}
+        <tr>
+          <td>{{ team.oddsapi_name }}</td>
+          <td>{{ team.binding.name }} <span class="muted">({{ team.binding.id }})</span></td>
+          <td>
+            <form hx-post="/mapping/{{ event.event_id }}/detacher"
+                  hx-target="#mapping-list"
+                  hx-swap="outerHTML">
+              <input type="hidden" name="oddsapi_name" value="{{ team.oddsapi_name }}">
+              <button type="submit" class="link">détacher</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
     <p class="muted small">
-      Les deux équipes sont reconnues : rien à trancher ici.
-      {{ event.guidance }}.
+      Détacher oublie le rattachement : le prochain enrichissement le refait,
+      seul quand le nom tombe juste, en redemandant sinon.
     </p>
     {% endif %}
   </section>

@@ -83,6 +83,52 @@ CLUB_TOKENS = frozenset(
 )
 
 
+#: Derniers mots qui designent une equipe **reserve** et non la premiere. « B »
+#: et « II » disent la meme chose chez deux fournisseurs differents, d'ou un
+#: statut et non un marqueur litteral : `Real Sociedad B` et `Real Sociedad II`
+#: sont bien le meme club, et les separer couperait un rapprochement juste.
+RESERVE_TOKENS = frozenset({"ii", "iii", "b", "2", "u19", "u21", "u23", "reserve", "reserves"})
+
+
+def is_reserve(name: str) -> bool:
+    """Vrai si le nom designe une equipe reserve.
+
+    Le marqueur se lit **en fin de nom seulement** : « Willem II » est une
+    premiere equipe dont le chiffre fait partie du nom — il se lit reserve des
+    deux cotes, donc il concorde, donc il passe. C'est la concordance qui decide,
+    jamais le statut pris seul.
+    """
+    mots = re.sub(r"[^a-z0-9\s]", " ", name.lower()).split()
+    return bool(mots) and mots[-1] in RESERVE_TOKENS
+
+
+def reserve_mismatch(oddsapi_name: str, apifootball_name: str) -> bool:
+    """Vrai si l'un des deux noms designe une reserve et l'autre non.
+
+    **Un rattachement qui traverse ce statut est une erreur, et il est
+    definitif.** Mesure du 22/08/2026 sur les 517 alias en base : **un seul**
+    traverse le statut, et c'est le defaut — `Celta Vigo` rattache manuellement a
+    `Celta de Vigo II`, la reserve. Consequence : Valencia - Celta Vigo, servi
+    par les deux fournisseurs et apparie a 1.00 des deux cotes, restait
+    introuvable — `_find_fixture` cherchait Valencia contre la reserve.
+
+    Les deux autres cas que la base porte sont concordants et ne bougent pas :
+    `Real Sociedad B` vers `Real Sociedad II`, deux ecritures de la meme reserve,
+    et `Willem II` vers `Willem II`. Zero faux positif mesure.
+
+    Le score ne suffisait pas a l'arreter : `celta vigo` contre `celta de vigo ii`
+    vaut 0.62, donc `is_confident` refusait deja de le poser tout seul. C'est un
+    **choix manuel** qui l'a pose, depuis une liste de candidats ou la reserve
+    etait le meilleur des mauvais. La regle vit donc a l'ecriture, seul endroit
+    que les deux chemins traversent.
+    """
+    return is_reserve(oddsapi_name) != is_reserve(apifootball_name)
+
+
+class ReserveMismatch(ValueError):
+    """Un rattachement qui lie une premiere equipe a une reserve, ou l'inverse."""
+
+
 @dataclass
 class Candidate:
     """Une equipe API-Football envisagee pour un nom The Odds API."""
@@ -211,7 +257,18 @@ def save_alias(
     source: str = "auto",
     settings: Settings | None = None,
 ) -> None:
-    """Memorise une correspondance. Une resolution manuelle ecrase l'automatique."""
+    """Memorise une correspondance. Une resolution manuelle ecrase l'automatique.
+
+    **Refuse un rattachement qui traverse le statut de reserve** — voir
+    `reserve_mismatch`. C'est le seul refus de ce module, et il porte sur le seul
+    geste que rien d'autre ne rattrape : un alias est definitif, et il n'existait
+    aucune surface pour en corriger un faux.
+    """
+    if reserve_mismatch(oddsapi_name, apifootball_name):
+        raise ReserveMismatch(
+            f"{oddsapi_name!r} et {apifootball_name!r} ne designent pas la meme equipe : "
+            "l'un est une reserve, l'autre non"
+        )
     with connect(settings) as conn:
         conn.execute(
             "INSERT INTO team_aliases (oddsapi_name, apifootball_id, apifootball_name, "
