@@ -78,10 +78,15 @@ def mock_context_routes(
         )
 
     return {
+        # **Une plage et non une date** : le rapprochement cherche la rencontre
+        # sur `FIXTURE_WINDOW_DAYS` jours de part et d'autre, parce que les deux
+        # fournisseurs ne datent pas toujours un match du meme jour. Le
+        # selecteur suit, sans quoi la route ne repond plus et chaque test qui
+        # enrichit tombe sur un appel non simule.
         "fixtures_date": _mock(
             "/fixtures",
             "apifootball_fixtures_date.json",
-            params__contains={"date": "2026-08-03"},
+            params__contains={"from": "2026-08-02", "to": "2026-08-04"},
         ),
         "standings": _mock("/standings", "apifootball_standings.json"),
         # Le pays d'un stade : ni `/fixtures` ni `/teams` ne le servent, et le

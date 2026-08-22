@@ -364,10 +364,14 @@ async def test_la_saison_accompagne_toujours_la_recherche_de_match(
 
     await fetch_context(api_client, EVENT, migrated)
 
+    # La recherche de rapprochement se reconnait a ses bornes de plage : elle
+    # couvre `FIXTURE_WINDOW_DAYS` jours de part et d'autre depuis que les deux
+    # fournisseurs peuvent dater un meme match de deux jours differents. C'est
+    # l'identification qui change, pas la propriete verifiee.
     recherche = next(
         call.request
         for call in respx.calls
-        if call.request.url.path.endswith("/fixtures") and "date" in call.request.url.params
+        if call.request.url.path.endswith("/fixtures") and "from" in call.request.url.params
     )
     assert recherche.url.params["season"] == "2026"
     assert recherche.url.params["league"] == "113"
@@ -2923,11 +2927,16 @@ async def test_une_fixture_non_resolue_nomme_sa_cause(
     assert report.mapping_pending
     assert report.cause == CAUSE_PROVIDER_EMPTY
     assert report.cause in COLLECTION_FAULTS, "ca se repare, ca ne se cherche pas"
-    # `failure_causes` se relit sur l'etat de la base, qui ne porte que le
-    # drapeau `mapping_pending` : elle rend donc la forme generique. Les deux
-    # lectures ne mentent pas l'une sur l'autre — l'une dit ce qui s'est passe a
-    # l'appel, l'autre ce que la base sait aujourd'hui.
-    assert failure_causes([1], migrated) == {1: CAUSE_UNRESOLVED}
+    # **`failure_causes` rend la meme forme, et la phrase d'avant se trompait.**
+    # Elle disait que la base « ne porte que le drapeau `mapping_pending` », donc
+    # que la forme generique etait tout ce qu'on pouvait relire. C'etait faux
+    # depuis la migration 044 : `context_outcomes` persiste une ligne par
+    # tentative, la requete la lit deja, et la branche l'ecrasait.
+    #
+    # Mesure du 22/08/2026 sur la base servie : des 10 evenements en attente,
+    # **6 portaient une cause fine** qui n'atteignait aucune surface, et 4 n'en
+    # ont aucune — ce sont eux, et eux seuls, que le repli generique couvre.
+    assert failure_causes([1], migrated) == {1: CAUSE_PROVIDER_EMPTY}
 
 
 @respx.mock

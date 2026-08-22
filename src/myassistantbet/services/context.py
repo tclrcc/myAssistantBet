@@ -552,7 +552,19 @@ def failure_causes(event_ids: list[int], settings: Settings | None = None) -> di
         if row["apifootball_league_id"] is None:
             found[int(row["id"])] = CAUSE_UNMAPPED
         elif row["mapping_pending"]:
-            found[int(row["id"])] = CAUSE_UNRESOLVED
+            # **La cause fine est deja la, et elle etait jetee.** `resolve_fixture`
+            # distingue trois echecs de rapprochement depuis la migration 044, les
+            # journalise, et cette requete lit deja `dernier` — mais la branche
+            # ecrasait les trois par le mot generique. Consequence mesuree le
+            # 22/08/2026 : quatre matchs dont les deux equipes etaient parfaitement
+            # appariees annoncaient « a trancher depuis /mapping », c'est-a-dire le
+            # seul ecran ou il n'y avait rien a trancher.
+            #
+            # `CAUSE_UNRESOLVED` reste le repli : un evenement marque en attente par
+            # un releve anterieur a la migration n'a pas de forme fine, et le mot
+            # large est alors exact.
+            dernier = str(row["dernier"] or "")
+            found[int(row["id"])] = dernier if dernier in UNRESOLVED_FORMS else CAUSE_UNRESOLVED
         elif row["dernier"] in (CAUSE_UNREACHABLE, CAUSE_NOT_COVERED):
             found[int(row["id"])] = str(row["dernier"])
     return found
@@ -568,6 +580,30 @@ def set_mapping_pending(event_id: int, pending: bool, settings: Settings | None 
 # -- Mapping ----------------------------------------------------------------
 
 
+#: Demi-largeur, en jours, de la fenetre ou l'on cherche la rencontre chez le
+#: fournisseur de contexte. **Le jour civil exact ne suffit pas, et c'est
+#: mesure** : le 22/08/2026, The Odds API datait FC Thun - Servette du 22 a
+#: 14h30 quand API-Football le datait du 23 a 15h00. Les deux servaient le
+#: match, les deux equipes s'appariaient parfaitement, et le rapprochement
+#: echouait sur la seule date — sans qu'aucune saisie puisse le debloquer.
+#:
+#: C'est le prolongement direct de la regle deja posee sur les reports : le
+#: rapprochement se fait sur la journee et jamais sur l'heure, parce qu'un
+#: report deplace l'horaire. Un report deplace aussi le **jour**, et exiger le
+#: jour exact fait manquer exactement le cas cherche.
+#:
+#: **Le garde-fou n'est pas la fenetre, c'est la paire d'equipes** : on ne
+#: retient une rencontre que si les deux camps correspondent, dans le meme
+#: sens. Deux clubs ne se rencontrent pas deux fois a domicile en trois jours,
+#: et si cela arrivait c'est la plus proche du coup d'envoi qui est prise.
+#:
+#: **Cout nul** : l'appel de plage remplace l'appel de date, sur le meme
+#: endpoint et le meme fournisseur — donc aucun credit The Odds API. Memorise
+#: par ligue, il en economise meme : les quatre matchs d'une journee de
+#: Premiership ecossaise payaient quatre fois la meme liste.
+FIXTURE_WINDOW_DAYS = 1
+
+
 def _teams_from_fixtures(fixtures: list[dict[str, Any]]) -> list[tuple[int, str]]:
     teams: dict[int, str] = {}
     for fixture in fixtures:
@@ -579,15 +615,60 @@ def _teams_from_fixtures(fixtures: list[dict[str, Any]]) -> list[tuple[int, str]
 
 
 def _find_fixture(
-    fixtures: list[dict[str, Any]], home_id: int, away_id: int
+    fixtures: list[dict[str, Any]], home_id: int, away_id: int, kickoff: str = ""
 ) -> dict[str, Any] | None:
+    """La rencontre qui oppose ces deux camps, dans ce sens, la plus proche.
+
+    **La fenetre est verifiee ici et pas seulement demandee au fournisseur.**
+    `fixtures_by_range` borne deja la plage, mais rien dans ce module ne le
+    garantissait : une plage mal interpretee de l'autre cote attacherait le
+    contexte d'un match joue trois semaines plus tard, en silence — et c'est
+    exactement ce qui serait arrive le 22/08/2026, ou trois matchs de Premiership
+    ecossaise etaient reprogrammes au 15/09 avec les memes clubs dans le meme
+    sens. Un rapprochement au mauvais match est l'erreur la plus couteuse que ce
+    module puisse produire ; l'invariant se tient donc en local.
+
+    Une date illisible **n'ecarte pas** la rencontre : on ne sait pas juger, et
+    refuser sur ce qu'on ignore ferait perdre un rapprochement par ailleurs sur.
+    Elle ne departage rien non plus.
+    """
+    fenetre = FIXTURE_WINDOW_DAYS * 86400
+    candidats = []
     for fixture in fixtures:
         teams = fixture.get("teams") or {}
-        if (teams.get("home") or {}).get("id") == home_id and (teams.get("away") or {}).get(
-            "id"
-        ) == away_id:
-            return fixture
-    return None
+        if (teams.get("home") or {}).get("id") != home_id:
+            continue
+        if (teams.get("away") or {}).get("id") != away_id:
+            continue
+        ecart = _kickoff_gap(fixture, kickoff)
+        if ecart is not None and ecart > fenetre:
+            continue
+        candidats.append((ecart if ecart is not None else float("inf"), fixture))
+
+    if not candidats:
+        return None
+    return min(candidats, key=lambda item: item[0])[1]
+
+
+def _kickoff_gap(fixture: dict[str, Any], kickoff: str) -> float | None:
+    """Ecart absolu, en secondes, entre le coup d'envoi annonce et le notre.
+
+    `None` quand l'un des deux instants ne se lit pas : c'est « on ne sait
+    pas », jamais « c'est loin » — les deux n'appellent pas la meme decision.
+    """
+    brut = str((fixture.get("fixture") or {}).get("date") or "")
+    if not brut or not kickoff:
+        return None
+    try:
+        leur = datetime.fromisoformat(brut)
+        notre = datetime.fromisoformat(kickoff.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if leur.tzinfo is None:
+        leur = leur.replace(tzinfo=UTC)
+    if notre.tzinfo is None:
+        notre = notre.replace(tzinfo=UTC)
+    return abs((leur - notre).total_seconds())
 
 
 @dataclass
@@ -643,7 +724,17 @@ async def resolve_fixture(
     season, coverage = await _memoized(
         cache, f"season:{league_id}", lambda: client.season_coverage(league_id)
     )
-    fixtures = await client.fixtures_by_date(date_iso, league_id, season)
+    # **Une fenetre et non un jour** : voir `FIXTURE_WINDOW_DAYS`. Memorisee par
+    # ligue et par fenetre, elle coute moins que l'appel par date qu'elle
+    # remplace — quatre matchs d'une meme journee ne la paient plus qu'une fois.
+    jour = datetime.fromisoformat(date_iso).date()
+    debut = (jour - timedelta(days=FIXTURE_WINDOW_DAYS)).isoformat()
+    fin = (jour + timedelta(days=FIXTURE_WINDOW_DAYS)).isoformat()
+    fixtures = await _memoized(
+        cache,
+        f"fixtures:{league_id}:{season}:{debut}:{fin}",
+        lambda: client.fixtures_by_range(league_id, season, debut, fin),
+    )
     teams = _teams_from_fixtures(fixtures)
 
     home = resolve_team(event["home"], teams, settings)
@@ -665,7 +756,12 @@ async def resolve_fixture(
         cache[_FAILURE] = CAUSE_PROVIDER_EMPTY if not fixtures else CAUSE_TEAM_UNMATCHED
         return None
 
-    fixture = _find_fixture(fixtures, home.matched.apifootball_id, away.matched.apifootball_id)
+    fixture = _find_fixture(
+        fixtures,
+        home.matched.apifootball_id,
+        away.matched.apifootball_id,
+        str(event["commence_time"]),
+    )
     if fixture is None:
         _record_pending(
             event, [home, away], settings, reason="aucun match ne reunit ces deux equipes"
