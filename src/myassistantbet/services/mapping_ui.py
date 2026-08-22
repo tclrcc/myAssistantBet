@@ -12,7 +12,7 @@ from typing import Any
 
 from ..config import Settings, get_settings
 from ..db import connect
-from .context import KIND_MAPPING
+from .context import CAUSE_FIXTURE_ABSENT, CAUSE_REPAIRS, KIND_MAPPING
 from .labels import affiche
 from .matching import save_alias
 
@@ -45,6 +45,31 @@ class PendingEvent:
     @property
     def unresolved(self) -> list[PendingTeam]:
         return [team for team in self.teams if not team.resolved]
+
+    @property
+    def actionable(self) -> bool:
+        """Vrai s'il reste vraiment un nom a trancher sur cet ecran.
+
+        **Faux est le cas qui a coute une session** : les deux equipes peuvent
+        etre parfaitement appariees et la rencontre rester introuvable — un
+        report non repercute, une date qui differe d'un fournisseur a l'autre.
+        L'evenement reste `mapping_pending`, donc il figure ici, mais il n'y a
+        aucun alias a saisir. Le formulaire rendait alors un bouton seul, qui
+        n'ecrivait rien et rerendait la page a l'identique : une promesse
+        d'action inexistante, exactement la sortie identique pour l'echec et
+        pour le cas ordinaire que ce projet retire partout.
+        """
+        return bool(self.unresolved)
+
+    @property
+    def guidance(self) -> str:
+        """Ce qu'il y a a faire quand cet ecran ne peut rien faire.
+
+        Le libelle est **relu** dans `CAUSE_REPAIRS` et jamais recopie : deux
+        redactions du meme geste auraient diverge, et c'est le meme texte que
+        porte deja la shortlist.
+        """
+        return CAUSE_REPAIRS[CAUSE_FIXTURE_ABSENT]
 
 
 def pending_events(settings: Settings | None = None) -> list[PendingEvent]:

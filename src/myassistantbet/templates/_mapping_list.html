@@ -8,12 +8,12 @@
     <h2>{{ event.affiche }} <span class="muted">· {{ event.competition }}</span></h2>
     {% if event.reason %}<p class="muted small">{{ event.reason }}</p>{% endif %}
 
+    {% if event.actionable %}
     <form class="mapping-form"
           hx-post="/mapping/{{ event.event_id }}"
           hx-target="#mapping-list"
           hx-swap="outerHTML">
-      {% for team in event.teams %}
-        {% if not team.resolved %}
+      {% for team in event.unresolved %}
         <label>
           {{ team.oddsapi_name }}
           <select name="choice">
@@ -25,10 +25,18 @@
             {% endfor %}
           </select>
         </label>
-        {% endif %}
       {% endfor %}
       <button type="submit" class="primary">Enregistrer</button>
     </form>
+    {% else %}
+    {# Les deux equipes sont appariees : il n'y a aucun alias a saisir, donc
+       aucun bouton a proposer. Un formulaire rendu ici n'ecrivait rien et
+       rerendait la page a l'identique. #}
+    <p class="muted small">
+      Les deux équipes sont reconnues : rien à trancher ici.
+      {{ event.guidance }}.
+    </p>
+    {% endif %}
   </section>
   {% endfor %}
 </div>
