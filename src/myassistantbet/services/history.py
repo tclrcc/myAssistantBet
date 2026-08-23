@@ -77,6 +77,12 @@ OPEN_STATES = (OPEN_READ, OPEN_EMPTY, OPEN_ABSENT, OPEN_MALFORMED)
 
 
 RESULTS = ("pending", "win", "loss", "void")
+
+#: Les resultats qui **ferment** une selection. Ecrit une seule fois : la regle
+#: se lisait dans `Pick.settled` et le compte des lignes en attente la
+#: rejouait en SQL — deux ecritures que rien n'obligeait a rester d'accord, et
+#: le motif que ce depot paie le plus cher.
+SETTLED_RESULTS = ("win", "loss", "void")
 RESULT_LABELS = {
     "pending": "en attente",
     "win": "gagné",
@@ -351,7 +357,7 @@ class Pick:
     @property
     def settled(self) -> bool:
         """Le resultat est connu. Un pari annule l'est : il n'y a plus rien a saisir."""
-        return self.result in ("win", "loss", "void")
+        return self.result in SETTLED_RESULTS
 
     @property
     def result_label(self) -> str:
@@ -1304,6 +1310,28 @@ def _grouped(picks: list[Pick]) -> list[tuple[str, list[Pick]]]:
     for pick in ordered:
         groups.setdefault(pick.group, []).append(pick)
     return list(groups.items())
+
+
+def pending_count(session_id: int, settings: Settings | None = None) -> int:
+    """Combien de selections attendent encore un resultat.
+
+    Un `COUNT` plutot que `worksheet().pending_count` : la feuille charge la
+    session entiere, ses combines et ses coupons, et ce compte se redemande a
+    chaque saisie de resultat — quarante fois de suite sur une soiree de coupe.
+
+    `void` compte comme tranche : un pari annule n'attend plus rien. La regle
+    vit dans `Pick.settled`, et la recopier en SQL l'aurait fait diverger au
+    premier resultat ajoute au vocabulaire.
+    """
+    settings = settings or get_settings()
+    marques = ",".join("?" for _ in SETTLED_RESULTS)
+    row = query_one(
+        f"SELECT COUNT(*) AS n FROM picks "
+        f"WHERE session_id = ? AND COALESCE(result, 'pending') NOT IN ({marques})",
+        (session_id, *SETTLED_RESULTS),
+        settings=settings,
+    )
+    return 0 if row is None else int(row["n"])
 
 
 def worksheet(session_id: int, settings: Settings | None = None) -> Worksheet:

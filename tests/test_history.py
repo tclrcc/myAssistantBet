@@ -410,13 +410,22 @@ def test_saisie_refusee_affiche_le_motif(client: TestClient, isolated_settings: 
 
 
 def test_resultat_via_htmx(client: TestClient, isolated_settings: Settings) -> None:
+    """Une saisie de resultat rend **sa ligne**, jamais la feuille.
+
+    L'assertion a ete retournee le 23/08/2026, et c'est un durcissement et non
+    un assouplissement : elle exigeait `<div id="worksheet">` en tete, ce qui
+    est exactement le remount qui ramenait `window.scrollY` a 181 px a chaque
+    resultat saisi. Elle exige desormais son absence. Le detail du contrat vit
+    dans `tests/test_saisie_resultat.py`.
+    """
     session_id, _ = _session_avec_match(isolated_settings)
     pick_id = add_pick(session_id, "safe", "O/U", "Over", settings=isolated_settings)
 
     response = client.post(f"/picks/{pick_id}/result", data={"result": "win"})
 
     assert response.status_code == 200
-    assert response.text.strip().startswith('<div id="worksheet">')
+    assert 'id="worksheet"' not in response.text
+    assert response.text.strip().startswith(f'<tr id="pick-row-{pick_id}"')
     assert list_picks(session_id, isolated_settings)[0].result == "win"
 
 

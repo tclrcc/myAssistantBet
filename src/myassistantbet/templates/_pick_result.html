@@ -1,0 +1,10 @@
+{# **La reponse a une saisie de resultat : une ligne, et un compteur.**
+
+   Elle ne porte volontairement **aucun** `id="worksheet"` : le jour ou elle en
+   porterait un, le bloc entier serait remonte et le saut de `scrollY` mesure le
+   23/08/2026 reviendrait avec lui. Un test verifie cette absence — c'est la
+   propriete qui tient le correctif, pas le nombre de pixels du jour. #}
+{% from "_pick_row.html" import pick_row %}
+{{ pick_row(pick, coupon_tracking, stakes, settlements,
+            resolved=resolved, previous=previous, error=error) }}
+<span id="worksheet-pending-count" hx-swap-oob="true">{{ pending_count }}</span>

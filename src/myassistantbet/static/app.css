@@ -982,6 +982,27 @@ details.panel .pick-form { margin-bottom: 0; }
 .picks-table.is-settled .group-row td { background: var(--panel-3); }
 tr.result-void td:first-child { box-shadow: inset 3px 0 0 var(--muted); }
 
+/* **Une ligne tranchee en place, dans le bloc « A trancher ».** Elle y reste
+   jusqu'au prochain chargement : la saisie ne reorganise plus la feuille, parce
+   que remonter le bloc entier ramenait `scrollY` a 181 px a chaque resultat
+   (mesure du 23/08/2026, hauteur de document inchangee). Elle doit donc se lire
+   comme faite sans disparaitre — elle reste corrigeable par « annuler ».
+
+   L'attenuation porte sur le **texte** et non sur l'opacite de la ligne : une
+   opacite ferait aussi palir les pastilles de resultat et le bouton qui defait,
+   c'est-a-dire exactement ce qu'il faut continuer de voir. */
+tr.is-resolved td { color: var(--text-dim); }
+tr.is-resolved .pick-match,
+tr.is-resolved .pick-selection { opacity: 0.65; }
+tr.is-resolved .seg[disabled] { cursor: default; opacity: 0.5; }
+tr.is-resolved .badge.ok,
+tr.is-resolved .link-quiet { opacity: 1; }
+
+/* Un refus se voit sur sa ligne, et ses controles restent actifs : la route
+   journalisait le refus et re-rendait la feuille inchangee, donc rien a l'ecran
+   ne distinguait un resultat enregistre d'un resultat refuse. */
+tr.has-error td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+
 /* Rattacher un match : « rattacher » se voit, « changer » ne se voit que si on
    le cherche. Une selection sans match est un travail a finir ; une selection
    deja rattachee n'a pas a porter un appel a l'action sur chaque ligne. */

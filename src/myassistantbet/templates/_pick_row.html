@@ -1,0 +1,220 @@
+{# **La ligne d'une selection, isolee pour pouvoir etre rendue seule.**
+
+   Elle vivait dans `picks_table`, donc la seule facon de rafraichir une ligne
+   etait de re-rendre la feuille entiere. Mesure du 23/08/2026, au navigateur,
+   sur une session de 59 selections : saisir un resultat faisait passer
+   `window.scrollY` de 3000 a **181 px** — la hauteur du document, elle, ne
+   bougeait pas d'un pixel (8183 avant, 8183 apres).
+
+   La cause n'est donc pas celle qu'on croit : ce n'est pas la ligne qui quitte
+   la liste et raccourcit la page, c'est le **detachement transitoire** du bloc
+   `#worksheet` pendant un `hx-swap="outerHTML"`. Le temps que le div sorte du
+   document et que le nouveau y entre, la page ne fait plus que sa hauteur
+   residuelle, le navigateur ramene `scrollY` a ce qu'elle permet, et la valeur
+   ne remonte pas quand le contenu revient. Un `scrollTo` compensatoire serait
+   un pansement sur un remount ; on supprime le remount.
+
+   Consequence pour qui ajoute un controle ici : viser `closest tr` rend une
+   ligne, viser `#worksheet` reconstruit tout et fait sauter la page. Les deux
+   restent legitimes — une suppression ou un rattachement reorganisent vraiment
+   la feuille — mais un geste qu'on repete quarante fois de suite ne peut pas
+   passer par le second.
+#}
+{% macro pick_row(pick, coupon_tracking, stakes, settlements, resolved=false, previous='pending', error='') %}
+    {#- `id` sur la ligne : c'est l'ancre d'un swap cible, et elle sert aussi a
+        retrouver une ligne resolue apres coup. -#}
+    <tr id="pick-row-{{ pick.pick_id }}"
+        class="result-{{ pick.result }}{% if resolved %} is-resolved{% endif %}{% if error %} has-error{% endif %}">
+      {# Un match qui a commence quitte le board : il n'a jamais pu etre coche,
+         donc l'import n'a rien eu a quoi rattacher la selection. Le menu se
+         charge a la demande — cent matchs sur quinze lignes alourdiraient
+         chaque rafraichissement de la feuille. #}
+      <td class="pick-match">
+        {% if pick.commence_local %}
+          <span class="pick-hour">{{ pick.commence_local.strftime('%H:%M') }}</span>
+        {% endif %}
+        {% if pick.event_id %}
+          {{ pick.event_label }}
+          <button type="button" class="link-quiet"
+                  hx-get="/picks/{{ pick.pick_id }}/event"
+                  hx-target="closest td" hx-swap="innerHTML"
+                  title="Rattacher cette sélection à un autre match">changer</button>
+        {% else %}
+          <span class="muted">{{ pick.event_label }}</span>
+          <button type="button" class="link-action"
+                  hx-get="/picks/{{ pick.pick_id }}/event"
+                  hx-target="closest td" hx-swap="innerHTML"
+                  title="Choisir le match, y compris hors de la shortlist">rattacher</button>
+        {% endif %}
+      </td>
+      <td class="nowrap pick-tier">{{ pick.tier_label }}</td>
+      <td class="affiche pick-selection">
+        {{ pick.selection }}
+        <span class="muted small">{{ pick.market }}</span>
+        {# La justification d'une seconde sélection sur le même match. Rendue ici
+           et pas seulement stockée : c'est en la relisant qu'on voit si deux
+           angles étaient vraiment indépendants ou deux façons de dire la même
+           chose — et une donnée que rien ne lit finit par se retirer. #}
+        {%- if pick.independence_note %}
+        <span class="muted small" title="Justification d'indépendance">
+          ↳ {{ pick.independence_note }}
+        </span>
+        {%- endif %}
+        {# La prose du tableau rendu. Elle a traversé chaque import depuis le
+           début et se perdait faute de colonne où l'écrire. Rendue ici pour la
+           même raison que la note ci-dessus, et pour une de plus : la condition
+           d'invalidation a été écrite **avant** le coup d'envoi, donc c'est en
+           la relisant après le résultat qu'on voit si l'angle a cédé par où
+           l'analyse l'avait annoncé. #}
+        {%- if pick.angle_note %}
+        <span class="muted small" title="Angle déclaré{% if pick.prose_source == 'reconstruit' %} — reconstruit depuis le collage archivé{% endif %}">
+          ↳ {{ pick.angle_note }}
+        </span>
+        {%- endif %}
+        {%- if pick.invalidation %}
+        <span class="muted small" title="Ce qui la tue{% if pick.prose_source == 'reconstruit' %} — reconstruit depuis le collage archivé{% endif %}">
+          ✕ {{ pick.invalidation }}
+        </span>
+        {%- endif %}
+        {# Le motif d'une saisie postérieure au coup d'envoi. Rendu ici pour la
+           même raison que la note ci-dessus : une donnée que rien ne lit finit
+           par se retirer. Et celle-ci décide de la lecture du prix — une
+           sélection `live` porte une cote qui n'a jamais été un prix
+           d'avant-match, ce qu'aucune autre ligne de la feuille ne dit. #}
+        {%- if pick.late_label %}
+        <span class="muted small" title="Sélection posée après le coup d'envoi">
+          ↳ {{ pick.late_label }}
+        </span>
+        {%- endif %}
+      </td>
+      <td class="num pick-price">
+        {{ '%.2f'|format(pick.price) if pick.price else '·' }}
+        {# La cote **obtenue**, saisie après avoir posé le pari — elle ne se
+           relève jamais toute seule, ce serait une intégration transactionnelle
+           avec un bookmaker. Réclamée là où elle manque et où elle décide : une
+           sélection assise sur un prix de référence sort des taux par bande de
+           cote tant qu'elle n'est pas renseignée. #}
+        {# **Réclamée seulement si le suivi des paris est ouvert.** Cette cote ne
+           se relève jamais toute seule — ce serait une intégration
+           transactionnelle avec un bookmaker — donc elle ne peut venir que
+           d'une mise. Sans mise, la case demanderait une valeur qui n'existera
+           jamais, et le palier se lit désormais sur la cote du bloc. #}
+        {% if coupon_tracking and pick.price_source == 'reference' %}
+        <form hx-post="/picks/{{ pick.pick_id }}/real-price"
+              hx-target="#worksheet" hx-swap="outerHTML">
+          <input class="tiny" type="text" name="price" inputmode="decimal"
+                 value="{{ '%.2f'|format(pick.price_real) if pick.price_real else '' }}"
+                 placeholder="obtenue"
+                 aria-label="Cote obtenue — {{ pick.selection }}"
+                 title="Cote obtenue chez le bookmaker principal">
+        </form>
+        {# Le montant **réellement posé**. Il ne se relève jamais tout seul —
+           intégration transactionnelle, interdit n°7 — et il va dans `mises`,
+           jamais dans `picks` : le résidu au prix ne connaît aucun montant.
+           La mise proposée est affichée à côté, en gris : c'est l'écart entre
+           les deux qui se lit, comme la cote déclarée d'un combiné. #}
+        {% set mise = stakes.get(pick.pick_id) %}
+        {% if coupon_tracking and mise %}
+        <form hx-post="/picks/{{ pick.pick_id }}/stake"
+              hx-target="#worksheet" hx-swap="outerHTML">
+          <input class="tiny" type="text" name="montant" inputmode="decimal"
+                 value="{{ '%.2f'|format(mise.montant_joue) if mise.montant_joue is not none else '' }}"
+                 placeholder="{{ '%.2f'|format(mise.montant) if mise.montant is not none else 'misé' }}"
+                 aria-label="Montant réellement posé — {{ pick.selection }}"
+                 title="Montant posé chez le bookmaker. Proposé : {{ '%.2f'|format(mise.montant) if mise.montant is not none else '—' }}">
+        </form>
+        {% endif %}
+        {% if pick.tier_real and pick.tier_real != pick.tier %}
+        <span class="badge warn" title="Le palier a changé une fois le prix relevé">
+          palier revu
+        </span>
+        {% elif pick.quarantined %}
+        <span class="badge" title="Sort des taux par bande de cote tant qu'elle manque">
+          (ref.)
+        </span>
+        {% endif %}
+        {% endif %}
+      </td>
+      <td class="num muted pick-conf" data-col="Conf">{{ pick.confidence or '·' }}</td>
+      <td class="pick-result">
+        {# **La saisie ne rend que sa propre ligne**, jamais la feuille. C'est
+           tout le correctif : `closest tr` au lieu de `#worksheet`, donc aucun
+           detachement du bloc et aucun clamp de `scrollY`. La ligne tranchee
+           **reste ici** — elle ne migre vers « Tranchees » qu'au prochain
+           chargement, ou sur « Rafraichir ». Un tri qui se reorganise sous la
+           main pendant qu'on saisit quarante lignes coute plus qu'il n'apporte. #}
+        <div class="segmented" role="group" aria-label="Résultat">
+          {% for value, symbole, titre in [('win', '✓', 'Gagné'), ('loss', '✗', 'Perdu'), ('void', '∅', 'Annulé'), ('pending', '·', 'En attente')] %}
+          <button type="button" title="{{ titre }}" aria-label="{{ titre }}"
+                  class="seg seg-{{ value }}{% if pick.result == value %} is-on{% endif %}"
+                  {% if resolved %}disabled{% else %}
+                  hx-post="/picks/{{ pick.pick_id }}/result"
+                  hx-vals='{"result": "{{ value }}"}'
+                  hx-target="closest tr" hx-swap="outerHTML"
+                  {% endif %}>{{ symbole }}</button>
+          {% endfor %}
+        </div>
+        {% if resolved %}
+        {# **Annuler restaure l'etat d'avant, pas « en attente ».** Les deux se
+           confondent sur une ligne de « A trancher », jamais sur une ligne
+           qu'on corrige depuis « Tranchees » — et une annulation qui efface un
+           resultat qu'on n'avait pas pose serait une perte silencieuse. #}
+        <span class="badge ok" title="Enregistrée. Elle rejoindra « Tranchées » au prochain chargement.">
+          {{ pick.result_label }}
+        </span>
+        <button type="button" class="link-quiet"
+                hx-post="/picks/{{ pick.pick_id }}/result"
+                hx-vals='{"result": "{{ previous }}"}'
+                hx-target="closest tr" hx-swap="outerHTML"
+                title="Revenir à l'état précédent : {{ previous }}">annuler</button>
+        {% endif %}
+        {% if error %}
+        {# L'echec et le cas ordinaire rendaient la **meme** sortie : la route
+           journalisait le refus et re-rendait la feuille inchangee, donc rien a
+           l'ecran ne distinguait un resultat enregistre d'un resultat refuse.
+           La ligne le dit maintenant, et ses controles restent actifs. #}
+        <span class="badge warn" role="alert">{{ error }}</span>
+        {% endif %}
+        {# **Le règlement automatique propose, il n'écrit pas d'autorité.** Une
+           proposition se promeut d'un geste ; une divergence — le calcul
+           contredit un résultat déjà saisi — ne se promeut pas du tout et se
+           voit, avec le score qui la fonde. C'est la leçon de
+           `set_open_dossiers` au lot 14 : un signal qui écrase n'est pas un
+           signal, c'est une perte. #}
+        {% set reglement = settlements.get(pick.pick_id) %}
+        {% if reglement %}
+          {% if reglement.etat == 'divergent' %}
+        <span class="badge warn"
+              title="Le calcul lit « {{ reglement.verdict }} » sur {{ reglement.detail }}, la saisie dit « {{ reglement.manuel }} ». Rien n'a été écrasé.">
+          divergence : {{ reglement.detail }}
+        </span>
+          {% else %}
+        <button type="button" class="link-action"
+                hx-post="/picks/{{ pick.pick_id }}/settle"
+                hx-target="#worksheet" hx-swap="outerHTML"
+                title="Proposé d'après {{ reglement.source }} — {{ reglement.detail }}">
+          proposé : {{ reglement.verdict }}
+        </button>
+          {% endif %}
+        {% endif %}
+      </td>
+      <td class="nowrap pick-play">
+        {% if pick.coupon_id %}
+          <a class="badge ok" href="#coupon-{{ pick.coupon_id }}">coupon {{ pick.coupon_id }}</a>
+        {% elif coupon_tracking %}
+          <button type="button" class="link-action"
+                  hx-post="/picks/{{ pick.pick_id }}/play"
+                  hx-target="#worksheet" hx-swap="outerHTML"
+                  title="Enregistre un pari simple sur cette sélection">jouer</button>
+        {% else %}
+          <span class="muted">·</span>
+        {% endif %}
+      </td>
+      <td class="tight pick-drop">
+        <button type="button" class="link-danger"
+                hx-post="/picks/{{ pick.pick_id }}/delete"
+                hx-target="#worksheet" hx-swap="outerHTML"
+                hx-confirm="Supprimer cette sélection ?">✕</button>
+      </td>
+    </tr>
+{% endmacro %}

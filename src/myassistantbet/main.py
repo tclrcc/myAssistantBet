@@ -1712,18 +1712,80 @@ def _coupon_session(coupon_id: int) -> int:
     return int(row["session_id"])
 
 
+@app.get("/history/{session_id}/worksheet", response_class=HTMLResponse)
+def worksheet_fragment(request: Request, session_id: int) -> HTMLResponse:
+    """La feuille de session, rendue seule — le « Rafraichir » de la saisie.
+
+    Une saisie de resultat ne reorganise plus la feuille : la ligne tranchee
+    reste ou elle est jusqu'a ce qu'on le demande. Ce geste-la est ce qui la
+    range, et il est explicite parce qu'un tri qui se refait sous la main
+    pendant qu'on saisit quarante lignes coute plus qu'il n'apporte.
+    """
+    _require_session(session_id)
+    return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
+
+
 @app.post("/picks/{pick_id}/result", response_class=HTMLResponse)
 def set_pick_result(
     request: Request, pick_id: int, result: str = Form(default="pending")
 ) -> HTMLResponse:
-    """Met a jour le resultat d'un pick, depuis le selecteur de la ligne."""
+    """Met a jour le resultat d'un pick, et **ne rend que sa ligne**.
+
+    Elle rendait la feuille entiere. Mesure du 23/08/2026 au navigateur, sur une
+    session de 59 selections : `window.scrollY` passait de 3000 a **181 px** a
+    chaque saisie, pour une hauteur de document **inchangee** — ce n'est pas la
+    ligne qui quitte la liste et raccourcit la page, c'est le detachement
+    transitoire de `#worksheet` pendant le swap. Sur quarante lignes a trancher,
+    il fallait remonter quarante fois.
+
+    Deux consequences tenues ici et dans `_pick_result.html` :
+
+    - la reponse ne porte **aucun** `id="worksheet"`, donc rien ne se remonte ;
+    - la ligne tranchee **reste dans « A trancher »** jusqu'au prochain
+      chargement ou au bouton « Rafraichir ». Seul le compteur suit, hors bande.
+
+    **Un refus se voit desormais.** Il etait journalise et la feuille re-rendue
+    inchangee : l'echec et le cas ordinaire rendaient la meme sortie, et rien a
+    l'ecran ne les distinguait. La ligne porte le message et garde ses controles
+    actifs — c'est le rollback demande, sans etat a tenir cote navigateur.
+    """
     settings = get_settings()
     session_id = _pick_session(pick_id)
+    # L'etat d'avant, lu avant d'ecrire : c'est lui que « annuler » restaure.
+    # Revenir en dur a « en attente » effacerait un resultat qu'on n'avait pas
+    # pose, sur une ligne corrigee depuis le bloc « Tranchees ».
+    avant = history_service.get_pick(pick_id, settings)
+    previous = avant.result if avant is not None else "pending"
+    error = ""
     try:
         history_service.set_result(pick_id, result, settings)
     except history_service.HistoryError as exc:
         logger.warning("Resultat refuse : %s", exc)
-    return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
+        error = str(exc)
+    pick = history_service.get_pick(pick_id, settings)
+    if pick is None:
+        raise HTTPException(status_code=404, detail="Pick inconnu")
+    return templates.TemplateResponse(
+        request,
+        "_pick_result.html",
+        {
+            "session_id": session_id,
+            "pick": pick,
+            # Resolue seulement si l'ecriture a abouti **et** a ferme la ligne :
+            # une annulation rend une ligne ordinaire, controles actifs.
+            "resolved": not error and pick.settled,
+            "previous": previous,
+            "error": error,
+            "pending_count": history_service.pending_count(session_id, settings),
+            "coupon_tracking": thresholds_service.toggle_of(
+                thresholds_service.COUPON_TRACKING, settings
+            ),
+            "stakes": {
+                row.pick_id: row for row in stakes_service.rows_for_session(session_id, settings)
+            },
+            "settlements": {row.pick_id: row for row in settlement_service.pending(settings)},
+        },
+    )
 
 
 @app.post("/picks/{pick_id}/real-price", response_class=HTMLResponse)

@@ -2611,6 +2611,50 @@ se deduit donc, ou ne se dit pas.
     rien des matchs, alors que le compte, lui, est juste. Sans lui, des selections
     quittaient le regroupement sans qu'une seule ligne ne le signale.
 
+## Un remount n'est pas un raccourcissement, et le correctif n'est pas le meme
+
+**Mesure du 23/08/2026, au navigateur, sur une session de 59 selections.** Saisir un
+resultat faisait passer `window.scrollY` de 3000 a **181 px**, et il fallait remonter
+avant chaque ligne suivante — bloquant sur les lots de quarante.
+
+La cause **evidente est fausse, et c'est ce qui decide du correctif** : on lit « la ligne
+quitte la liste, le document raccourcit, le navigateur clampe `scrollY` ». Or la hauteur
+du document **ne bouge pas d'un pixel** — 8183 avant, 8183 apres — et le fragment rendu ne
+perd que 222 caracteres sur 238 000. Ce qui clampe, c'est le **detachement transitoire**
+du bloc pendant un `hx-swap="outerHTML"` sur `#worksheet` : le temps que le div sorte du
+document et que le nouveau y entre, la page ne fait plus que sa hauteur residuelle, le
+navigateur ramene `scrollY` a ce qu'elle permet, et la valeur ne remonte pas quand le
+contenu revient.
+
+- **Les deux diagnostics menent a deux correctifs differents.** Un raccourcissement
+  s'ancre — on note la position, on la restaure. Un remount ne s'ancre pas : il se
+  supprime. `scrollTo` aurait rendu la mesure verte en laissant la cause en place, et le
+  premier autre swap l'aurait fait revenir.
+- **La saisie ne rend donc que sa ligne** (`_pick_row.html`, `hx-target="closest tr"`), et
+  la ligne tranchee **reste dans « A trancher »** jusqu'au prochain chargement ou au bouton
+  « Rafraichir ». Un tri qui se refait sous la main pendant qu'on saisit quarante lignes
+  coute plus qu'il n'apporte. Mesure apres correctif : **0 px d'ecart sur dix saisies**.
+- **La propriete se teste, le pixel non.** La suite n'a pas de navigateur — section 9.4,
+  aucun `node_modules` — donc elle verifie ce qui produit le saut : la reponse ne porte
+  aucun `id="worksheet"`, et elle rend exactement une ligne. Un test qui recopierait
+  « 0 px » ne tiendrait que jusqu'au prochain changement de gabarit.
+- **Le compteur suit hors bande** (`hx-swap-oob` sur un `span`), sans quoi le reste a
+  trancher resterait celui de l'ouverture. Un swap sur un element inline ne change aucune
+  hauteur, donc ne peut pas reproduire ce qu'on vient de corriger.
+- **Le refus se voit enfin.** La route journalisait un resultat refuse et re-rendait la
+  feuille **inchangee** : l'echec et le cas ordinaire rendaient la meme sortie, sur le seul
+  geste qu'on repete quarante fois. La ligne porte desormais le message et garde ses
+  controles actifs.
+- **« Annuler » restaure l'etat d'avant, jamais « en attente » en dur.** Les deux se
+  confondent sur une ligne de « A trancher », jamais sur une ligne qu'on corrige depuis
+  « Tranchees ».
+- **Ce qui n'a pas ete touche, et il faut le savoir** : cote obtenue, montant pose,
+  reglement propose, « jouer » et la suppression visent toujours `#worksheet` et font donc
+  toujours sauter la page. Deux d'entre eux reorganisent vraiment la feuille, ce qui les
+  justifie ; les deux champs de saisie, non — ils se remplissent en serie eux aussi, et
+  `Worksheet.coverage_line` reclame justement la cote obtenue ligne apres ligne. **Dette
+  nommee, non corrigee**, parce qu'elle n'etait pas dans le perimetre demande.
+
 ## Le budget de recherche borne les paliers hauts
 
 Tout palier **au-dela des deux plus surs** reclame un fait nomme et date de la
