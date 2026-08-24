@@ -29,6 +29,10 @@ htmlcov/
 .env.*
 !.env.example
 
-# Copies de travail de l audit (360 Mo) : les livrables .md sont suivis, pas les bases.
+# Audit : les rapports .md sont suivis, le reste ne l'est pas.
+# Les copies de base pesent 360 Mo ; les scripts sont de l'analyse jetable, et
+# la CI lance `ruff check .` sur tout le depot.
 audit/data/
 audit/*.db
+audit/*.py
+audit/sql/
