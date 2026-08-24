@@ -266,13 +266,23 @@ La couverture blessures d'API-Football est irrégulière selon les ligues. Un co
 
 ---
 
-## 5 bis. Intégration — tennis-api.com : les tableaux de qualification
+## 5 bis. Intégration — tennis-api.com : ce que The Odds API ne sert pas
 
-Un tableau de qualification de Grand Chelem n'a **aucune clé chez The Odds
-API** — mesure du 24/08/2026 sur `/sports?all=true` : 176 clés, dont 44 au
-tennis, et pas une seule qualification, sur aucun des quatre tournois. Ses
-rencontres n'entraient donc que par la saisie manuelle, une par une.
-`tennis-api.com`, déjà sous contrat, les sert.
+Mesure du 24/08/2026 sur `/sports?all=true` — 176 clés, dont **44 au tennis** :
+
+- **aucun tableau de qualification de Grand Chelem** n'y figure, sur aucun des
+  quatre tournois ;
+- **un tournoi entier peut n'y figurer pas non plus** : le Winston-Salem Open,
+  ATP 250 en cours ce jour-là, n'a aucune clé — ni « winston », ni « salem ».
+
+Les deux entrent par ce chemin ; leurs rencontres n'arrivaient sinon que par la
+saisie manuelle. `tennis-api.com`, déjà sous contrat, les sert.
+
+**Ce n'est pas le cas général, et le confondre coûterait les cotes.** Une
+compétition que The Odds API sert arrive par le scan **avec ses prix** ; le seul
+geste correct pour elle est de l'activer. Le WTA Monterrey Open est dans ce cas
+— il était au catalogue, inactif, et c'est la seule clé de tennis que le
+fournisseur servait ce jour-là.
 
 `GET /tennis/v2/{atp|wta}/fixtures/{AAAA-MM-JJ}?pageSize=100&page=N`
 
@@ -290,9 +300,15 @@ partagent la clé de la phase de ligue. Les deux discriminants disponibles sont
 faux — `roundId` a une sémantique invisible (l'endpoint ne servant rien au-delà
 de J+1, aucune rencontre de tableau principal n'est là pour trancher) et la date
 de fiche du tournoi annonce le 31/08 quand le tableau principal débute le 30/08.
-`competitions.qualif_debut` / `qualif_fin` sont donc une **saisie**, lue sur le
-calendrier officiel, et une rencontre datée dedans est une qualification par
-définition. Ce qui tombe dehors est **compté et rapporté**, jamais jeté en
+`competitions.fenetre_debut` / `fenetre_fin` sont donc une **saisie**, lue sur le
+calendrier officiel. Elles portent les dates pendant lesquelles les rencontres de
+ce tournoi appartiennent à cette compétition : sur un tournoi entier c'est le
+tournoi, sur un tableau de qualification c'en est une partie. Elles restent
+**obligatoires même quand elles ne discriminent rien** — les rendre facultatives
+ferait qu'une fenêtre oubliée sur un Grand Chelem importerait le tableau
+principal sous le nom des qualifications, en silence. La migration 078 les a
+renommées : `qualif_*` se lisait « les qualifications vont du 23 au 29 » sur un
+tableau principal, ce qui est faux. Ce qui tombe dehors est **compté et rapporté**, jamais jeté en
 silence : c'est ce qui autorise une fenêtre serrée, un report de pluie se lisant
 dans le rapport.
 

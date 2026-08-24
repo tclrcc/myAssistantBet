@@ -71,7 +71,7 @@ def qualifs(migrated: Settings) -> int:
         "tennis",
         "qualifications",
         migrated,
-        qualification=FENETRE,
+        fenetre=FENETRE,
     )
 
 
@@ -311,7 +311,7 @@ async def test_sans_fenetre_l_import_refuse_et_dit_pourquoi(
     """Sans elle, rien ne distingue une qualification du tableau principal.
 
     **Etat inatteignable par l'interface**, et c'est pour ca qu'il est monte a
-    la main : `set_qualification` et `create_manual` posent les quatre champs
+    la main : `set_fenetre` et `create_manual` posent les quatre champs
     ensemble ou aucun. Il reste atteignable en base — une competition rattachee
     a la main, une retouche — et un import qui partirait alors sans fenetre
     importerait le tableau principal sous le nom des qualifications.
@@ -325,7 +325,7 @@ async def test_sans_fenetre_l_import_refuse_et_dit_pourquoi(
 
     report = await tennis_fixtures.import_day(tennis_client, competition_id, "2026-08-24", migrated)
 
-    assert "aucune fenetre de qualification" in (report.error or "")
+    assert "aucune fenetre du tournoi" in (report.error or "")
     assert report.created == 0
 
 

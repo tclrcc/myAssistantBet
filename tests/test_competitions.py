@@ -1189,16 +1189,16 @@ def test_le_formulaire_propose_les_niveaux_de_tennis_et_pas_ceux_du_football(
     assert "/competitions/manuelle" in page
 
 
-# -- La fenetre de qualification ----------------------------------------------
+# -- La fenetre du tournoi ----------------------------------------------
 
 TENNISAPI_URL = "https://tennis-api-atp-wta-itf.p.rapidapi.com"
-QUALIF_TUPLE = ("2026-08-24", "2026-08-27", "atp", "21349")
-QUALIF_FORM = {
+FENETRE_TUPLE = ("2026-08-24", "2026-08-27", "atp", "21349")
+FENETRE_FORM = {
     "label": "ATP US Open Qualifications",
     "sport_key": "tennis",
     "category": "qualifications",
-    "qualif_debut": "2026-08-24",
-    "qualif_fin": "2026-08-27",
+    "fenetre_debut": "2026-08-24",
+    "fenetre_fin": "2026-08-27",
     "tennisapi_tour": "atp",
     "tennisapi_tournament_id": "21349",
 }
@@ -1208,18 +1208,18 @@ def test_la_fenetre_se_pose_a_la_creation_via_le_formulaire(
     client: TestClient, isolated_settings: Settings
 ) -> None:
     """Le service et sa surface se livrent ensemble : on poste et on relit."""
-    response = client.post("/competitions/manuelle", data=QUALIF_FORM)
+    response = client.post("/competitions/manuelle", data=FENETRE_FORM)
 
     assert response.status_code == 200
     row = db.query_one(
-        "SELECT qualif_debut, qualif_fin, tennisapi_tour, tennisapi_tournament_id "
+        "SELECT fenetre_debut, fenetre_fin, tennisapi_tour, tennisapi_tournament_id "
         "  FROM competitions WHERE label = ?",
         ("ATP US Open Qualifications",),
         settings=isolated_settings,
     )
     assert (
-        row["qualif_debut"],
-        row["qualif_fin"],
+        row["fenetre_debut"],
+        row["fenetre_fin"],
         row["tennisapi_tour"],
         row["tennisapi_tournament_id"],
     ) == ("2026-08-24", "2026-08-27", "atp", 21349)
@@ -1232,7 +1232,7 @@ def test_une_fenetre_illisible_ne_laisse_aucune_competition_a_moitie_creee(
     competition creee dont l'import ne peut pas tourner — l'etat exact que
     cette fenetre existe pour eviter."""
     response = client.post(
-        "/competitions/manuelle", data={**QUALIF_FORM, "qualif_fin": "pas-une-date"}
+        "/competitions/manuelle", data={**FENETRE_FORM, "fenetre_fin": "pas-une-date"}
     )
 
     assert "Date illisible" in response.text
@@ -1252,7 +1252,7 @@ def test_une_fenetre_inversee_est_refusee(migrated: Settings) -> None:
             "Tournoi",
             "tennis",
             settings=migrated,
-            qualification=("2026-08-27", "2026-08-24", "atp", "21349"),
+            fenetre=("2026-08-27", "2026-08-24", "atp", "21349"),
         )
 
 
@@ -1264,20 +1264,18 @@ def test_un_circuit_inconnu_est_refuse(migrated: Settings) -> None:
             "Tournoi",
             "tennis",
             settings=migrated,
-            qualification=("2026-08-24", "2026-08-27", "xyz", "21349"),
+            fenetre=("2026-08-24", "2026-08-27", "xyz", "21349"),
         )
 
 
 def test_les_quatre_champs_s_effacent_ensemble(migrated: Settings) -> None:
     """Un rattachement a moitie retire est un piege pour le prochain import."""
-    competition_id = create_manual(
-        "Tournoi", "tennis", settings=migrated, qualification=QUALIF_TUPLE
-    )
+    competition_id = create_manual("Tournoi", "tennis", settings=migrated, fenetre=FENETRE_TUPLE)
 
-    competitions_module.set_qualification(competition_id, "", "", "", "", migrated)
+    competitions_module.set_fenetre(competition_id, "", "", "", "", migrated)
 
     row = db.query_one(
-        "SELECT qualif_debut, qualif_fin, tennisapi_tour, tennisapi_tournament_id "
+        "SELECT fenetre_debut, fenetre_fin, tennisapi_tour, tennisapi_tournament_id "
         "  FROM competitions WHERE id = ?",
         (competition_id,),
         settings=migrated,
@@ -1292,13 +1290,13 @@ def test_le_bouton_d_import_ne_parait_que_si_les_quatre_champs_sont_la(
     condition reprend mot pour mot les gardes de `import_day`."""
     nu = create_manual("Tournoi nu", "tennis", settings=isolated_settings)
     regle = create_manual(
-        "Tournoi regle", "tennis", settings=isolated_settings, qualification=QUALIF_TUPLE
+        "Tournoi regle", "tennis", settings=isolated_settings, fenetre=FENETRE_TUPLE
     )
 
     page = " ".join(client.get("/competitions").text.split())
 
-    assert f"/competitions/{regle}/qualification/import" in page
-    assert f"/competitions/{nu}/qualification/import" not in page
+    assert f"/competitions/{regle}/fenetre/import" in page
+    assert f"/competitions/{nu}/fenetre/import" not in page
 
 
 @respx.mock
@@ -1307,7 +1305,7 @@ def test_import_via_htmx(client: TestClient, isolated_settings: Settings) -> Non
         "ATP US Open Qualifications",
         "tennis",
         settings=isolated_settings,
-        qualification=QUALIF_TUPLE,
+        fenetre=FENETRE_TUPLE,
     )
     respx.get(url__startswith=TENNISAPI_URL).mock(
         return_value=httpx.Response(
@@ -1318,7 +1316,7 @@ def test_import_via_htmx(client: TestClient, isolated_settings: Settings) -> Non
     )
 
     response = client.post(
-        f"/competitions/{competition_id}/qualification/import", data={"day": "2026-08-24"}
+        f"/competitions/{competition_id}/fenetre/import", data={"day": "2026-08-24"}
     )
 
     assert response.status_code == 200
@@ -1333,7 +1331,7 @@ def test_un_refus_d_import_ne_part_pas_sur_le_reseau(
     competition_id = create_manual("Tournoi nu", "tennis", settings=isolated_settings)
 
     response = client.post(
-        f"/competitions/{competition_id}/qualification/import", data={"day": "2026-08-24"}
+        f"/competitions/{competition_id}/fenetre/import", data={"day": "2026-08-24"}
     )
 
     assert "aucun tournoi tennis-api rattache" in response.text

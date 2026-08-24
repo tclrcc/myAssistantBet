@@ -36,14 +36,14 @@
 
   {# Le formulaire de qualification vit dans le tableau, sans panneau a ouvrir :
      son refus se rend donc en tete, sinon il n'aurait nulle part ou paraitre. #}
-  {% if error_form == 'qualification' %}
+  {% if error_form == 'fenetre' %}
   <div class="report report-warn">{{ error }}</div>
   {% endif %}
 
-  {% if qualif_report %}
-  <div class="report {% if qualif_report.error %}report-warn{% endif %}">
-    Import des qualifications : {{ qualif_report.note }} Aucun crédit Odds API consommé.
-    {% if qualif_report.created or qualif_report.updated %}
+  {% if fenetre_report %}
+  <div class="report {% if fenetre_report.error %}report-warn{% endif %}">
+    Import des qualifications : {{ fenetre_report.note }} Aucun crédit Odds API consommé.
+    {% if fenetre_report.created or fenetre_report.updated %}
       <br><span class="muted small">
         Ces rencontres arrivent <b>sans cotes</b> — aucune source ne sert les prix d'un
         tableau de qualification. Elles se saisissent depuis la fiche de chaque match, et
@@ -287,11 +287,11 @@
          competition ordinaire. #}
       <label>
         Qualifications — du
-        <input type="date" name="qualif_debut" value="{{ typed.get('qualif_debut', '') }}">
+        <input type="date" name="fenetre_debut" value="{{ typed.get('fenetre_debut', '') }}">
       </label>
       <label>
         au
-        <input type="date" name="qualif_fin" value="{{ typed.get('qualif_fin', '') }}">
+        <input type="date" name="fenetre_fin" value="{{ typed.get('fenetre_fin', '') }}">
       </label>
       <label>
         Circuit
@@ -506,14 +506,14 @@
              renseigné fait échouer l'import sans dire lequel manque. Vider les
              quatre efface le rattachement. #}
           <form class="notes-form qualif-form"
-                hx-post="/competitions/{{ competition.id }}/qualification"
+                hx-post="/competitions/{{ competition.id }}/fenetre"
                 hx-target="#competitions" hx-swap="outerHTML">
-            <input type="date" name="qualif_debut"
+            <input type="date" name="fenetre_debut"
                    aria-label="Début des qualifications, pour {{ competition.label }}"
-                   value="{{ competition.qualif_debut or '' }}">
-            <input type="date" name="qualif_fin"
+                   value="{{ competition.fenetre_debut or '' }}">
+            <input type="date" name="fenetre_fin"
                    aria-label="Fin des qualifications, pour {{ competition.label }}"
-                   value="{{ competition.qualif_fin or '' }}">
+                   value="{{ competition.fenetre_fin or '' }}">
             <select name="tennisapi_tour"
                     aria-label="Circuit tennis-api, pour {{ competition.label }}">
               <option value="">—</option>
@@ -533,16 +533,16 @@
              au-delà de J+1. La condition reprend mot pour mot les gardes du
              service : un bouton qui propose ce que le service refuse est pire
              qu'absent. #}
-          {% if competition.active and competition.qualif_debut and competition.qualif_fin
+          {% if competition.active and competition.fenetre_debut and competition.fenetre_fin
                 and competition.tennisapi_tour and competition.tennisapi_tournament_id %}
           <form class="notes-form"
-                hx-post="/competitions/{{ competition.id }}/qualification/import"
+                hx-post="/competitions/{{ competition.id }}/fenetre/import"
                 hx-target="#competitions" hx-swap="outerHTML"
                 hx-indicator="#qualif-{{ competition.id }}">
             <input type="date" name="day"
                    aria-label="Jour à importer, pour {{ competition.label }}"
-                   min="{{ competition.qualif_debut }}" max="{{ competition.qualif_fin }}"
-                   value="{{ competition.qualif_debut }}">
+                   min="{{ competition.fenetre_debut }}" max="{{ competition.fenetre_fin }}"
+                   value="{{ competition.fenetre_debut }}">
             <button type="submit" class="link-action"
                     title="Importer l'ordre du jour depuis tennis-api, sans cotes">
               importer ce jour

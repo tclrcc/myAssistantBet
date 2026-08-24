@@ -1,10 +1,20 @@
-"""Import des rencontres d'un tableau de qualification (`tennis-api.com`).
+"""Import des rencontres d'un tournoi que The Odds API ne sert pas (`tennis-api.com`).
 
-Un tableau de qualification de Grand Chelem n'a **aucune cle chez The Odds
-API** — mesure du 24/08/2026 sur `/sports?all=true` : 176 cles, dont 44 au
-tennis, et pas une seule qualification, sur aucun des quatre tournois. Ses
-rencontres n'entraient donc que par la saisie manuelle, une par une, quand
-`tennis-api.com` les sert deja et que le contrat est en cours.
+Deux familles de cas, mesurees le 24/08/2026 sur `/sports?all=true` — 176 cles,
+dont **44 au tennis** :
+
+- **un tableau de qualification de Grand Chelem** n'y a aucune cle, sur aucun
+  des quatre tournois ;
+- **un tournoi entier** peut n'y figurer pas davantage : le Winston-Salem Open,
+  ATP 250 en cours ce jour-la, n'a **aucune cle** — ni « winston », ni « salem ».
+
+Les deux entrent par ici. Leurs rencontres n'arrivaient sinon que par la saisie
+manuelle, une par une, quand `tennis-api.com` les sert deja et que le contrat est
+en cours.
+
+**Ce n'est pas le cas general** : une competition que The Odds API sert n'a rien
+a faire ici — elle arrive par le scan, **avec ses cotes**. Le WTA Monterrey Open
+est dans ce cas, et le seul chemin correct pour lui est de l'activer.
 
 ## Ce que ce module ne fait pas, et c'est delibere
 
@@ -20,18 +30,25 @@ rencontres n'entraient donc que par la saisie manuelle, une par une, quand
 
 ## La fenetre decide, pas le fournisseur
 
-Les rencontres de qualification portent l'identifiant du **tableau principal**
-(21349 ATP, 16743 WTA, `tier: Grand Slam`) : meme piege que les qualifications
-europeennes chez The Odds API, qui partagent la cle de la phase de ligue. Les
-deux discriminants qui viennent a l'esprit sont faux, et la migration 077 porte
-la mesure : `roundId` a une semantique **invisible** — l'endpoint ne servant
-rien au-dela de J+1, aucune rencontre de tableau principal n'est la pour
-trancher — et la date de fiche du tournoi est fausse d'un jour (31/08 annonce
-pour un tableau principal qui debute le 30/08).
+`fenetre_debut` / `fenetre_fin` portent **les dates pendant lesquelles les
+rencontres de ce tournoi appartiennent a cette competition**. Sur un tournoi
+entier c'est le tournoi ; sur un tableau de qualification c'en est une partie,
+et la fenetre est alors le seul discriminant possible.
 
-`qualif_debut` / `qualif_fin` sont donc une **saisie**, lue sur le calendrier
-officiel. Une rencontre rattachee au tournoi et datee dedans est une
-qualification par definition.
+Le cas qui l'impose : les rencontres de qualification portent l'identifiant du
+**tableau principal** (21349 ATP, 16743 WTA, `tier: Grand Slam`) — meme piege
+que les qualifications europeennes chez The Odds API, qui partagent la cle de la
+phase de ligue. Les deux discriminants qui viennent a l'esprit sont faux, et la
+migration 077 porte la mesure : `roundId` a une semantique **invisible**
+— l'endpoint ne servant rien au-dela de J+1, aucune rencontre de tableau
+principal n'est la pour trancher — et la date de fiche du tournoi est fausse
+d'un jour (31/08 annonce pour un tableau principal qui debute le 30/08).
+
+**Elle reste obligatoire meme quand elle ne discrimine rien**, et c'est un
+arbitrage : elle ne coute rien a saisir, elle borne l'edition, et elle rend
+visible un tour repousse. La rendre facultative ferait qu'une fenetre oubliee
+sur un Grand Chelem importerait le tableau principal sous le nom des
+qualifications, en silence.
 
 **Et ce qui tombe dehors est compte, jamais jete en silence.** C'est ce qui
 permet a la fenetre d'etre serree sans risque : un report de pluie qui pousse le
@@ -165,7 +182,7 @@ DOUBLES_MARK = "/"
 
 
 @dataclass
-class QualifImport:
+class ImportJour:
     """Ce qu'un import a produit, y compris quand il n'a rien produit."""
 
     competition: str
@@ -210,7 +227,7 @@ class QualifImport:
 def _competition(competition_id: int, settings: Settings) -> dict[str, Any] | None:
     with connect(settings) as conn:
         row = conn.execute(
-            "SELECT c.id, c.label, c.sport_id, c.qualif_debut, c.qualif_fin, "
+            "SELECT c.id, c.label, c.sport_id, c.fenetre_debut, c.fenetre_fin, "
             "       c.tennisapi_tour, c.tennisapi_tournament_id, s.key AS sport_key "
             "  FROM competitions c JOIN sports s ON s.id = c.sport_id WHERE c.id = ?",
             (competition_id,),
@@ -321,7 +338,7 @@ async def import_day(
     competition_id: int,
     day: str,
     settings: Settings | None = None,
-) -> QualifImport:
+) -> ImportJour:
     """Importe les rencontres d'un tableau de qualification pour **un jour**.
 
     Un jour et pas la fenetre entiere : l'endpoint est l'ordre du jour publie,
@@ -332,18 +349,16 @@ async def import_day(
     settings = settings or get_settings()
     competition = _competition(competition_id, settings)
     if competition is None:
-        return QualifImport(competition=str(competition_id), day=day, error="competition inconnue")
+        return ImportJour(competition=str(competition_id), day=day, error="competition inconnue")
 
     label = competition["label"]
     if competition["sport_key"] != "tennis":
-        return QualifImport(
-            competition=label, day=day, error="ce fournisseur ne sert que le tennis"
-        )
+        return ImportJour(competition=label, day=day, error="ce fournisseur ne sert que le tennis")
 
     tour = (competition["tennisapi_tour"] or "").strip().lower()
     tournoi = competition["tennisapi_tournament_id"]
     if not tour or tournoi is None:
-        return QualifImport(
+        return ImportJour(
             competition=label,
             day=day,
             error=(
@@ -352,30 +367,29 @@ async def import_day(
             ),
         )
 
-    debut = _iso_day(competition["qualif_debut"])
-    fin = _iso_day(competition["qualif_fin"])
+    debut = _iso_day(competition["fenetre_debut"])
+    fin = _iso_day(competition["fenetre_fin"])
     if debut is None or fin is None:
-        return QualifImport(
+        return ImportJour(
             competition=label,
             day=day,
             error=(
-                "aucune fenetre de qualification renseignee : c'est elle qui distingue "
+                "aucune fenetre du tournoi renseignee : c'est elle qui distingue "
                 "une qualification du tableau principal, et elle ne se devine pas"
             ),
         )
     if debut > fin:
-        return QualifImport(competition=label, day=day, error="fenetre de qualification inversee")
+        return ImportJour(competition=label, day=day, error="fenetre du tournoi inversee")
 
     jour = _iso_day(day)
     if jour is None:
-        return QualifImport(competition=label, day=day, error=f"date illisible : {day}")
+        return ImportJour(competition=label, day=day, error=f"date illisible : {day}")
     if not (debut <= jour <= fin):
-        return QualifImport(
+        return ImportJour(
             competition=label,
             day=day,
             error=(
-                f"le {jour:%d/%m} est hors de la fenetre de qualification "
-                f"({debut:%d/%m} au {fin:%d/%m})"
+                f"le {jour:%d/%m} est hors de la fenetre du tournoi ({debut:%d/%m} au {fin:%d/%m})"
             ),
         )
 
@@ -383,9 +397,9 @@ async def import_day(
         lignes = await _all_pages(client, tour, day)
     except ProviderError as exc:
         logger.warning("Import des qualifications impossible pour %s : %s", label, exc)
-        return QualifImport(competition=label, day=day, error=str(exc))
+        return ImportJour(competition=label, day=day, error=str(exc))
 
-    report = QualifImport(competition=label, day=day)
+    report = ImportJour(competition=label, day=day)
     inconnus: list[str] = []
     a_ecrire: list[dict[str, Any]] = []
 
