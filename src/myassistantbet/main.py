@@ -659,6 +659,7 @@ def _competitions_context(
     import_report: object | None = None,
     error: str | None = None,
     typed: dict[str, str] | None = None,
+    error_form: str | None = None,
 ) -> dict[str, object]:
     settings = get_settings()
     return {
@@ -670,7 +671,13 @@ def _competitions_context(
         # Une saisie refusee revient avec son texte : retaper un libelle et un
         # identifiant de ligue parce qu'un champ manquait est une punition.
         "error": error,
+        # Deux portes de creation cohabitent : sans ce nom, un refus sur l'une
+        # ouvrirait les deux panneaux et afficherait son message sous le mauvais
+        # formulaire.
+        "error_form": error_form,
         "typed": typed or {},
+        # Le football est absent : il a sa porte, et elle reclame la ligue.
+        "manual_sports": competitions_service.manual_sports(settings),
         "surfaces": competitions_service.SURFACES,
         # Par sport : les niveaux du tennis et ceux du football ne se proposent
         # pas dans le meme menu, et la saisie refuse deja le melange.
@@ -727,7 +734,37 @@ def competition_create(
         )
     except competitions_service.CompetitionError as exc:
         return templates.TemplateResponse(
-            request, "_competitions.html", _competitions_context(error=str(exc), typed=typed)
+            request,
+            "_competitions.html",
+            _competitions_context(error=str(exc), typed=typed, error_form="apifootball"),
+        )
+    return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
+
+
+@app.post("/competitions/manuelle", response_class=HTMLResponse)
+def competition_create_manual(
+    request: Request,
+    label: str = Form(default=""),
+    sport_key: str = Form(default=""),
+    category: str = Form(default=""),
+) -> HTMLResponse:
+    """Cree une competition qu'aucun fournisseur ne sert, ni en cotes ni en matchs.
+
+    Le cas mesure : The Odds API ne porte **aucune** cle de qualification au
+    tennis — 44 cles tennis au catalogue complet le 24/08/2026, pas une seule —
+    donc la synchronisation ne decouvrira jamais les qualifications d'un Grand
+    Chelem. Sans cette route, elles n'entraient que comme effet de bord d'une
+    saisie manuelle : donc sans niveau, sans surface et sans fuseau, et
+    introuvables tant qu'un match n'avait pas ete tape.
+    """
+    typed = {"label": label, "sport_key": sport_key, "category": category}
+    try:
+        competitions_service.create_manual(label, sport_key, category, get_settings())
+    except competitions_service.CompetitionError as exc:
+        return templates.TemplateResponse(
+            request,
+            "_competitions.html",
+            _competitions_context(error=str(exc), typed=typed, error_form="manuelle"),
         )
     return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
 

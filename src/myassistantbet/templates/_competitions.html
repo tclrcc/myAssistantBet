@@ -167,14 +167,14 @@
      Sans cette porte, elles n'entraient que comme effet de bord d'une saisie
      manuelle : donc sans ligue rattachée, donc muettes, et sans le bouton qui
      ramène leurs matchs. #}
-  <details class="panel" {% if error %}open{% endif %}>
+  <details class="panel" {% if error_form == 'apifootball' %}open{% endif %}>
     <summary>
       Ajouter une compétition absente du catalogue
       <span class="muted small">
         servie par API-Football seule — aucun crédit Odds API, jamais scannée
       </span>
     </summary>
-    {% if error %}<div class="report report-warn">{{ error }}</div>{% endif %}
+    {% if error_form == 'apifootball' %}<div class="report report-warn">{{ error }}</div>{% endif %}
     <form class="competition-form" hx-post="/competitions/apifootball"
           hx-target="#competitions" hx-swap="outerHTML">
       <label>
@@ -207,6 +207,68 @@
       ce qui porte une clé Odds API — et ses matchs s'importent depuis la colonne
       « Servie ? ». Ils arrivent <b>sans cotes</b> : elles se relèvent ou se saisissent
       depuis la fiche de chaque match.
+    </p>
+  </details>
+
+  {# Un cran plus loin que la porte ci-dessus : ici **aucun** fournisseur ne sert
+     la compétition, ni les cotes ni les matchs. Mesuré le 24/08/2026, le jour où
+     les qualifications de l'US Open commencent : 44 clés tennis au catalogue
+     complet de The Odds API, et pas une seule qualification — ni ici ni aux trois
+     autres Grands Chelems. La synchronisation ne les trouvera donc jamais. Sans
+     cette porte, elles n'entraient que comme effet de bord d'une saisie manuelle :
+     sans niveau, sans surface, sans fuseau, et introuvables tant qu'un match
+     n'avait pas été tapé. #}
+  <details class="panel" {% if error_form == 'manuelle' %}open{% endif %}>
+    <summary>
+      Ajouter une compétition qu'aucun fournisseur ne sert
+      <span class="muted small">
+        ni cotes ni matchs — qualifications d'un Grand Chelem, tournoi hors catalogue
+      </span>
+    </summary>
+    {% if error_form == 'manuelle' %}<div class="report report-warn">{{ error }}</div>{% endif %}
+    <form class="competition-form" hx-post="/competitions/manuelle"
+          hx-target="#competitions" hx-swap="outerHTML">
+      <label>
+        Nom
+        <input type="text" name="label" required spellcheck="false"
+               placeholder="ATP — Qualifications US Open"
+               value="{{ typed.get('label', '') }}">
+      </label>
+      <label>
+        Sport
+        <select name="sport_key" required>
+          {% for sport in manual_sports %}
+          <option value="{{ sport.key }}"
+                  {% if typed.get('sport_key') == sport.key %}selected{% endif %}>{{ sport.label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Niveau
+        {# Le menu du sport choisi n'est pas calculable sans JS : on propose les
+           deux taxonomies, et la saisie refuse déjà le mélange — un niveau qui
+           n'est pas celui du sport est ignoré, jamais écrit. Il se corrige de
+           toute façon dans le tableau. #}
+        <select name="category">
+          <option value="">Niveau —</option>
+          {% for sport_key, niveaux in categories.items() %}
+            {% if sport_key != 'football' %}
+              {% for key, label in niveaux.items() %}
+              <option value="{{ key }}" {% if typed.get('category') == key %}selected{% endif %}>{{ label }}</option>
+              {% endfor %}
+            {% endif %}
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit" class="button">Créer</button>
+    </form>
+    <p class="muted small">
+      Le football n'y figure pas : il a la porte ci-dessus, et elle réclame la ligue
+      API-Football sans laquelle la compétition serait muette. Celle-ci est créée
+      <b>active</b> — elle ne coûte rien, le scan ne visite que ce qui porte une clé
+      Odds API — et ses matchs se saisissent <b>un par un</b> depuis « Saisie manuelle » :
+      aucune source ne les sert. Surface, ville et fuseau se renseignent ensuite dans le
+      tableau ; le fuseau date les faits sur place, la ville sert la météo.
     </p>
   </details>
 

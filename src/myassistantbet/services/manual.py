@@ -19,6 +19,7 @@ from zoneinfo import ZoneInfo
 
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
+from .labels import sort_key
 
 logger = logging.getLogger(__name__)
 
@@ -150,17 +151,27 @@ def build(
 
 
 def _competition_id(conn, sport_key: str, label: str) -> int:
-    """Competition manuelle, creee au besoin. Reconnaissable a son `oddsapi_key` nul."""
+    """Competition manuelle, creee au besoin. Reconnaissable a son `oddsapi_key` nul.
+
+    **Le rapprochement ignore la casse et les accents** (`labels.sort_key`),
+    comme les deux portes de creation de `competitions.py`. L'egalite stricte
+    d'origine faisait de « Qualifications US Open » et « qualifications us
+    open » deux competitions distinctes, que rien ne distinguait a l'ecran et
+    qui se partageaient les matchs — le doublon exact que ces portes refusent.
+    Il se voyait d'autant moins que le champ est libre : on retape le libelle a
+    chaque match, et il suffit d'une majuscule pour forger un jumeau.
+    """
     sport = conn.execute("SELECT id FROM sports WHERE key = ?", (sport_key,)).fetchone()
     if sport is None:
         raise ManualError(f"Sport inconnu : {sport_key}")
 
-    row = conn.execute(
-        "SELECT id FROM competitions WHERE sport_id = ? AND label = ? AND oddsapi_key IS NULL",
-        (sport["id"], label),
-    ).fetchone()
-    if row is not None:
-        return int(row["id"])
+    cible = sort_key(label)
+    for row in conn.execute(
+        "SELECT id, label FROM competitions WHERE sport_id = ? AND oddsapi_key IS NULL",
+        (sport["id"],),
+    ).fetchall():
+        if sort_key(row["label"]) == cible:
+            return int(row["id"])
 
     cursor = conn.execute(
         "INSERT INTO competitions (sport_id, oddsapi_key, label, priority, active) "

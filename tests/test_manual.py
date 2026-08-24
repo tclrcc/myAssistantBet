@@ -13,6 +13,7 @@ from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
 from myassistantbet.services import session as session_service
+from myassistantbet.services.competitions import create_manual
 from myassistantbet.services.manual import (
     ManualError,
     attach_odds,
@@ -190,6 +191,86 @@ def test_competition_manuelle_creee_puis_reutilisee(migrated: Settings) -> None:
     rows = db.query("SELECT * FROM competitions WHERE label = 'Tour de France'", settings=migrated)
     assert len(rows) == 1, "la course n'est creee qu'une fois"
     assert rows[0]["oddsapi_key"] is None
+
+
+def test_une_majuscule_ne_forge_pas_une_competition_jumelle(migrated: Settings) -> None:
+    """Le champ est libre et se retape a chaque match : l'egalite stricte faisait
+    de « Qualifications US Open » et « qualifications us open » deux competitions
+    que rien ne distinguait a l'ecran, se partageant les matchs. C'est le doublon
+    que les deux portes de `competitions.py` refusent, et il rentrait par ici.
+
+    Limite connue et assumee : `sort_key` replie la casse et les accents, pas la
+    **ponctuation**. Un tiret cadratin retape en trait d'union forge encore un
+    jumeau. L'etendre demanderait une seconde fonction — celle-ci sert d'abord a
+    trier des libelles a l'ecran — et le cas se voit, contrairement a une
+    majuscule."""
+    save(
+        build(
+            "tennis",
+            "ATP — Qualifications US Open",
+            "Joueur A",
+            "Joueur B",
+            "2026-08-24",
+            "18:00",
+            "",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+    save(
+        build(
+            "tennis",
+            "atp — qualifications us open",
+            "Joueur C",
+            "Joueur D",
+            "2026-08-24",
+            "20:00",
+            "",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+
+    rows = db.query(
+        "SELECT id, label FROM competitions WHERE oddsapi_key IS NULL", settings=migrated
+    )
+    assert len(rows) == 1, "une seule competition, celle du premier libelle saisi"
+    assert rows[0]["label"] == "ATP — Qualifications US Open"
+
+
+def test_une_competition_creee_a_l_avance_recoit_les_matchs_saisis(migrated: Settings) -> None:
+    """C'est ce qui rend la porte de `/competitions` utile : sans ce
+    rapprochement, une competition creee a l'avance — avec son niveau, sa
+    surface et son fuseau — restait une ligne decorative pendant que la saisie
+    manuelle en forgeait une seconde, nue."""
+    competition_id = create_manual(
+        "ATP — Qualifications US Open", "tennis", "qualifications", migrated
+    )
+
+    event_id = save(
+        build(
+            "tennis",
+            "ATP — Qualifications US Open",
+            "Joueur A",
+            "Joueur B",
+            "2026-08-24",
+            "18:00",
+            "",
+            "",
+            "",
+            settings=migrated,
+        ),
+        migrated,
+    )
+
+    row = db.query_one(
+        "SELECT competition_id FROM events WHERE id = ?", (event_id,), settings=migrated
+    )
+    assert row["competition_id"] == competition_id
 
 
 def test_references_et_profil_persistes(migrated: Settings) -> None:

@@ -23,6 +23,7 @@ from myassistantbet.services.competitions import (
     SPORT_PREFIXES,
     categories_for,
     create_apifootball,
+    create_manual,
     list_all,
     set_active,
     set_apifootball_league,
@@ -1073,6 +1074,119 @@ def test_une_competition_hors_catalogue_propose_l_import(
 
     assert "hors catalogue" in page
     assert "importer les matchs" in page
+
+
+# -- Une competition qu'aucun fournisseur ne sert ------------------------------
+
+
+def test_une_competition_sans_fournisseur_est_active_et_hors_catalogue(
+    migrated: Settings,
+) -> None:
+    """`api_active = 0` s'ecrit explicitement — la colonne vaut 1 par defaut et
+    n'est mise a jour que par la synchronisation, qui s'indexe sur `oddsapi_key`.
+    Sans lui, la colonne « Servie ? » annoncerait l'inverse de la verite. Active,
+    en revanche : `scan.active_competitions` filtre sur `oddsapi_key IS NOT NULL`,
+    donc elle ne coutera jamais un credit."""
+    competition_id = create_manual(
+        "ATP — Qualifications US Open", "tennis", "qualifications", migrated
+    )
+
+    row = db.query_one(
+        "SELECT oddsapi_key, active, api_active, category FROM competitions WHERE id = ?",
+        (competition_id,),
+        settings=migrated,
+    )
+    assert row["oddsapi_key"] is None
+    assert row["active"] == 1
+    assert row["api_active"] == 0
+    assert row["category"] == "qualifications"
+
+    assert all(c["id"] != competition_id for c in active_competitions(migrated))
+
+
+def test_le_football_est_refuse_sur_cette_porte(migrated: Settings) -> None:
+    """Il a la sienne, et elle reclame la ligue API-Football. Le laisser passer
+    ici rouvrirait le trou que `create_apifootball` a bouche : une competition
+    muette, ni classement, ni forme, ni absents."""
+    with pytest.raises(competitions_module.CompetitionError, match="identifiant de ligue"):
+        create_manual("Supercoupe d'Europe", "football", settings=migrated)
+
+
+def test_un_nom_deja_pris_est_refuse_casse_et_accents_ignores(migrated: Settings) -> None:
+    """Meme cle naturelle que les deux autres chemins de creation : deux
+    competitions au meme nom que rien ne distingue a l'ecran se partageraient
+    les matchs."""
+    create_manual("ATP — Qualifications US Open", "tennis", settings=migrated)
+
+    with pytest.raises(competitions_module.CompetitionError, match="existe déjà"):
+        create_manual("atp — qualifications us open", "tennis", settings=migrated)
+
+
+def test_un_niveau_d_un_autre_sport_vaut_non_renseigne(migrated: Settings) -> None:
+    """La saisie valide contre la taxonomie du sport et non contre la liste a
+    plat : « Coupe nationale » sur un tournoi de tennis produirait un
+    regroupement que plus rien ne distinguerait."""
+    competition_id = create_manual(
+        "ATP — Qualifications US Open", "tennis", "coupe_nationale", migrated
+    )
+
+    row = db.query_one(
+        "SELECT category FROM competitions WHERE id = ?", (competition_id,), settings=migrated
+    )
+    assert row["category"] is None
+
+
+def test_le_football_ne_figure_pas_dans_les_sports_proposes(migrated: Settings) -> None:
+    cles = {sport["key"] for sport in competitions_module.manual_sports(migrated)}
+
+    assert "tennis" in cles
+    assert "football" not in cles
+
+
+def test_creation_via_le_formulaire_rendu(client: TestClient, isolated_settings: Settings) -> None:
+    """Le service et sa surface se livrent ensemble : on poste le formulaire et
+    on relit la base. Un test qui appelle le service ne voit pas un defaut dans
+    la porte."""
+    response = client.post(
+        "/competitions/manuelle",
+        data={
+            "label": "ATP — Qualifications US Open",
+            "sport_key": "tennis",
+            "category": "qualifications",
+        },
+    )
+
+    assert response.status_code == 200
+    assert "<html" not in response.text, "une route ciblee par HTMX rend le fragment"
+
+    row = db.query_one(
+        "SELECT active, api_active, category FROM competitions WHERE label = ?",
+        ("ATP — Qualifications US Open",),
+        settings=isolated_settings,
+    )
+    assert row is not None
+    assert (row["active"], row["api_active"], row["category"]) == (1, 0, "qualifications")
+
+
+def test_un_refus_n_ouvre_que_son_propre_panneau(client: TestClient) -> None:
+    """Deux portes de creation cohabitent : un message affiche sous le mauvais
+    formulaire enverrait corriger le mauvais champ."""
+    response = client.post("/competitions/manuelle", data={"label": "  ", "sport_key": "tennis"})
+    page = " ".join(response.text.split())
+
+    assert "obligatoire" in page
+    # Le panneau football garde le sien ferme et ne porte pas le message.
+    ouverts = re.findall(r'<details class="panel"([^>]*)>', page)
+    assert sum("open" in attributs for attributs in ouverts) == 1
+
+
+def test_le_formulaire_propose_les_niveaux_de_tennis_et_pas_ceux_du_football(
+    client: TestClient,
+) -> None:
+    page = " ".join(client.get("/competitions").text.split())
+
+    assert "Qualifications</option>" in page
+    assert "/competitions/manuelle" in page
 
 
 # -- Le fuseau du lieu --------------------------------------------------------

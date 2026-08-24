@@ -46,6 +46,13 @@ TENNIS_CATEGORIES = {
     "level_500": "ATP/WTA 500",
     "level_250": "ATP/WTA 250",
     "challenger": "Challenger / WTA 125",
+    # Un tableau de qualification n'est pas le tournoi qu'il precede : chez les
+    # hommes il se joue au meilleur des trois manches quand le tableau principal
+    # d'un Grand Chelem se joue en cinq, et son plateau est celui des 100e-250e
+    # mondiaux. Les ranger ensemble produirait un taux qui ne decrit ni l'un ni
+    # l'autre — l'argument meme de cette table. Sa place ici, entre le Challenger
+    # et l'ITF, suit le plateau et non le prestige du tournoi hote.
+    "qualifications": "Qualifications",
     "itf": "ITF",
 }
 
@@ -1106,6 +1113,114 @@ def create_apifootball(
         name,
         raw,
         value if value in FOOTBALL_CATEGORIES else "non renseigne",
+    )
+    return competition_id
+
+
+def manual_sports(settings: Settings | None = None) -> list[dict[str, str]]:
+    """Sports ou une competition peut se creer sans aucun fournisseur.
+
+    Le football en est exclu : il a sa porte, et elle reclame l'identifiant de
+    ligue qui rend la competition bavarde. La liste se lit dans la table plutot
+    que d'etre ecrite ici — un sport ajoute demain apparaitrait sans qu'on y
+    pense, et une seconde liste aurait diverge de la premiere.
+    """
+    with connect(settings) as conn:
+        return [
+            {"key": row["key"], "label": row["label"]}
+            for row in conn.execute("SELECT key, label FROM sports ORDER BY id").fetchall()
+            if row["key"] != "football"
+        ]
+
+
+def create_manual(
+    label: str, sport_key: str, category: str = "", settings: Settings | None = None
+) -> int:
+    """Cree une competition qu'**aucun fournisseur** ne sert, ni en cotes ni en matchs.
+
+    Soeur de `create_apifootball`, et la difference tient a ce qui manque.
+    La-bas The Odds API ne sert pas les cotes mais API-Football sert les matchs,
+    donc l'identifiant de ligue est obligatoire : sans lui la competition ne
+    recevrait jamais un match, c'est-a-dire tout ce pour quoi on la cree. Ici il
+    n'existe **aucun** chemin automatique — `fixtures.py` est football seulement,
+    et le tennis n'a pas d'equivalent — donc exiger un identifiant reviendrait a
+    reclamer une preuve qui n'existe pas. Les matchs se saisissent un par un
+    depuis `/manual`, et c'est la seule facon.
+
+    **Mesure du 24/08/2026, faite avant d'ecrire une ligne**, le jour ou les
+    qualifications de l'US Open commencent : `/sports?all=true` rend 176 cles,
+    dont **44 au tennis**, et **aucune ne porte une qualification** — ni a l'US
+    Open ni aux trois autres Grands Chelems. Les tableaux de qualification sont
+    donc absents du catalogue au sens de `create_apifootball` : ils n'y figurent
+    **a aucun moment**, et la synchronisation ne les decouvrira jamais. Verifie
+    dans le meme geste et pour zero credit, `/events` rendant **zero evenement**
+    sur `tennis_atp_us_open` comme sur `tennis_wta_us_open` — le fournisseur ne
+    sert rien de l'US Open ce jour-la, pas meme le tableau principal.
+
+    Le football est **refuse ici** : il a sa porte, et elle reclame la ligue. Le
+    laisser passer rouvrirait exactement le trou que `create_apifootball` a
+    bouche — une competition muette, ni classement, ni forme, ni absents.
+
+    Deux choix repris tels quels de la porte football, pour les memes raisons :
+
+    - **`api_active = 0` est ecrit explicitement.** La colonne vaut 1 par defaut
+      et n'est mise a jour que par la synchronisation, qui s'indexe sur
+      `oddsapi_key` : une competition sans cle garderait 1 pour toujours, et la
+      colonne « Servie ? » annoncerait l'inverse de la verite.
+    - **Elle est creee active.** La regle « rien ne se met a couter sans
+      decision » protege le quota ; sa raison ne s'applique pas ici,
+      `scan.active_competitions` filtrant sur `oddsapi_key IS NOT NULL` — cette
+      competition ne coutera jamais un credit Odds API. Et la creer **est** la
+      decision : elle se tape a la main, une par une.
+
+    La surface, la ville et le fuseau ne sont pas demandes ici : ils se
+    corrigent dans le tableau, champ par champ, et rien ne se deduit du libelle.
+    """
+    name = (label or "").strip()
+    if not name:
+        raise CompetitionError("Le nom de la compétition est obligatoire.")
+
+    key = (sport_key or "").strip().lower()
+    if key == "football":
+        raise CompetitionError(
+            "Une compétition de football se crée avec son identifiant de ligue "
+            "API-Football : sans lui elle serait muette — ni classement, ni forme, "
+            "ni absents."
+        )
+
+    value = (category or "").strip().lower()
+    with connect(settings) as conn:
+        sport = conn.execute("SELECT id FROM sports WHERE key = ?", (key,)).fetchone()
+        if sport is None:
+            raise CompetitionError(f"Sport inconnu : {sport_key}")
+
+        # Meme cle naturelle que `manual._competition_id` et que la porte
+        # football — (sport, libelle), casse et accents ignores. C'est ce qui
+        # evite le doublon le plus couteux : deux competitions au meme nom que
+        # rien ne distingue a l'ecran, se partageant les matchs.
+        for row in conn.execute(
+            "SELECT id, label FROM competitions WHERE sport_id = ?", (sport["id"],)
+        ).fetchall():
+            if sort_key(row["label"]) == sort_key(name):
+                raise CompetitionError(
+                    f"« {row['label']} » existe déjà : son niveau, sa surface et son "
+                    "fuseau se corrigent dans le tableau."
+                )
+
+        niveaux = CATEGORIES_BY_SPORT.get(key, {})
+        cursor = conn.execute(
+            "INSERT INTO competitions (sport_id, oddsapi_key, label, priority, active, "
+            "                          api_active, category) "
+            "VALUES (?, NULL, ?, 0, 1, 0, ?)",
+            (sport["id"], name, value if value in niveaux else None),
+        )
+        competition_id = int(cursor.lastrowid)
+
+    logger.info(
+        "Competition sans fournisseur creee : %s (%s, niveau %s)",
+        name,
+        key,
+        value if value in CATEGORIES_BY_SPORT.get(key, {}) else "non renseigne",
     )
     return competition_id
 
