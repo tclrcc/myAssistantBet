@@ -34,7 +34,7 @@
   </div>
   {% endif %}
 
-  {# Le formulaire de qualification vit dans le tableau, sans panneau a ouvrir :
+  {# Le formulaire de fenêtre vit dans le tableau, sans panneau a ouvrir :
      son refus se rend donc en tete, sinon il n'aurait nulle part ou paraitre. #}
   {% if error_form == 'fenetre' %}
   <div class="report report-warn">{{ error }}</div>
@@ -42,12 +42,13 @@
 
   {% if fenetre_report %}
   <div class="report {% if fenetre_report.error %}report-warn{% endif %}">
-    Import des qualifications : {{ fenetre_report.note }} Aucun crédit Odds API consommé.
+    Import des rencontres : {{ fenetre_report.note }} Aucun crédit Odds API consommé.
     {% if fenetre_report.created or fenetre_report.updated %}
       <br><span class="muted small">
-        Ces rencontres arrivent <b>sans cotes</b> — aucune source ne sert les prix d'un
-        tableau de qualification. Elles se saisissent depuis la fiche de chaque match, et
-        tant qu'elles manquent le bloc n'est pas exploitable.
+        Ces rencontres arrivent <b>sans cotes</b> : ce chemin ne sert que les compétitions
+        que The Odds API ne connaît pas, donc aucune source n'en donne les prix. Elles se
+        saisissent depuis la fiche de chaque match, et tant qu'elles manquent le bloc n'est
+        pas exploitable.
       </span>
     {% endif %}
   </div>
@@ -241,7 +242,7 @@
     <summary>
       Ajouter une compétition qu'aucun fournisseur ne sert
       <span class="muted small">
-        ni cotes ni matchs — qualifications d'un Grand Chelem, tournoi hors catalogue
+        ni cotes ni matchs — tournoi absent du catalogue, tableau de qualification
       </span>
     </summary>
     {% if error_form == 'manuelle' %}<div class="report report-warn">{{ error }}</div>{% endif %}
@@ -280,13 +281,13 @@
         </select>
       </label>
       {# Les quatre champs vont ensemble et se posent **a la creation**, seul
-         reglage a l'etre : sans fenetre, un tableau de qualification ne se
-         distingue pas du tournoi principal — les deux portent le meme
-         identifiant chez le fournisseur — donc la competition existerait dans un
-         etat ou son import ne peut pas tourner. Laisser vide pour une
-         competition ordinaire. #}
+         reglage a l'etre : sans elle l'import ne peut pas tourner, et sur un
+         tableau de qualification rien ne distinguerait les rencontres de celles
+         du tournoi principal, les deux portant le meme identifiant chez le
+         fournisseur. Laisser vide pour une competition servie par The Odds API,
+         qui arrive par le scan avec ses cotes. #}
       <label>
-        Qualifications — du
+        Fenêtre — du
         <input type="date" name="fenetre_debut" value="{{ typed.get('fenetre_debut', '') }}">
       </label>
       <label>
@@ -317,11 +318,13 @@
       Odds API — et ses matchs se saisissent <b>un par un</b> depuis « Saisie manuelle » :
       aucune source ne les sert. Surface, ville et fuseau se renseignent ensuite dans le
       tableau ; le fuseau date les faits sur place, la ville sert la météo.
-      <br>La <b>fenêtre de qualification</b> est l'exception : elle décide de ce que la
-      compétition est. Les rencontres d'un tableau de qualification portent l'identifiant
-      du <b>tableau principal</b> chez tennis-api — 21349 côté ATP, 16743 côté WTA — donc
-      rien d'autre ne les distingue. L'identifiant se vérifie à la main sur
-      <code>/{circuit}/tournament/info/{id}</code>, jamais déduit d'un libellé.
+      <br>La <b>fenêtre</b> est l'exception : elle décide de ce que la compétition est.
+      Elle porte les dates pendant lesquelles les rencontres de ce tournoi lui
+      appartiennent — le tournoi entier pour un ATP 250 hors catalogue, une partie
+      seulement pour un tableau de qualification, dont les rencontres portent
+      l'identifiant du <b>tableau principal</b> chez tennis-api. L'identifiant se vérifie
+      à la main sur <code>/{circuit}/tournament/info/{id}</code>, jamais déduit d'un
+      libellé.
     </p>
   </details>
 
@@ -509,10 +512,10 @@
                 hx-post="/competitions/{{ competition.id }}/fenetre"
                 hx-target="#competitions" hx-swap="outerHTML">
             <input type="date" name="fenetre_debut"
-                   aria-label="Début des qualifications, pour {{ competition.label }}"
+                   aria-label="Début de la fenêtre, pour {{ competition.label }}"
                    value="{{ competition.fenetre_debut or '' }}">
             <input type="date" name="fenetre_fin"
-                   aria-label="Fin des qualifications, pour {{ competition.label }}"
+                   aria-label="Fin de la fenêtre, pour {{ competition.label }}"
                    value="{{ competition.fenetre_fin or '' }}">
             <select name="tennisapi_tour"
                     aria-label="Circuit tennis-api, pour {{ competition.label }}">
@@ -526,7 +529,7 @@
                    aria-label="Tournoi tennis-api, pour {{ competition.label }}"
                    placeholder="21349"
                    value="{{ competition.tennisapi_tournament_id or '' }}">
-            <button type="submit" class="link-action">qualifications</button>
+            <button type="submit" class="link-action">fenêtre</button>
           </form>
           {# Un jour à la fois, et c'est le fournisseur qui l'impose : son
              endpoint est l'ordre du jour publié, pas un calendrier — rien
