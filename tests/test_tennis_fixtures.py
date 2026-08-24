@@ -269,11 +269,12 @@ async def test_un_joueur_hors_classement_est_nomme_et_sa_rencontre_creee(
     rencontre entre quand meme — refuser la creerait un trou dans `Parcours`
     pour une raison qui n'est pas sportive.
 
-    Le libelle dit « sans ligne Elo » et non « joueur inconnu » : mesure sur
-    l'import reel du 24/08, trois des cinq refus sont le meme joueur sous une
-    autre graphie. Le seuil de `elo.lookup` ne bouge pas pour autant — il n'y a
-    aucune resolution manuelle cote tennis, et un rating attribue au mauvais
-    joueur est pire qu'une ligne absente."""
+    Le libelle dit « sans ligne Elo » et non « joueur inconnu », parce qu'il
+    recouvre deux cas que rien ne separe d'ici : sur l'import reel du 24/08,
+    trois des cinq refus sont le meme joueur sous une autre graphie et deux sont
+    de vraies absences. Le seuil de `elo.lookup` ne bouge pas pour autant — il
+    n'y a aucune resolution manuelle cote tennis, et un rating attribue au
+    mauvais joueur est pire qu'une ligne absente."""
     _classement(migrated)
     _servir(load_fixture)
 

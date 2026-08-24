@@ -66,17 +66,29 @@ ferait perdre 4 % des rencontres d'un lot pour une raison qui n'est pas
 sportive : le joueur existe, c'est notre classement qui s'arrete avant lui. Ce
 que le rapport dit, c'est de quels blocs le contexte sera pauvre.
 
-**Et le refus est le plus souvent un quasi-homonyme, pas une absence** — mesure
-sur l'import reel du 24/08 : sur les cinq non rapproches des deux tableaux,
-trois sont le meme joueur sous une autre graphie (« Greetje Minnen » contre
-« Greet Minnen », « Chak Lam Coleman Wong » contre « Coleman Wong », « Diego
-Dedura » contre « Diego Dedura Palomero »), un est un vrai homonyme qu'il fallait
-refuser (« Jordan Lee » contre « Gerard Campana Lee ») et un est une vraie
-absence. **Le seuil ne bouge pas pour autant** : `MIN_SCORE` vaut 0.88 par
-mesure, il n'existe aucune resolution manuelle cote tennis, et attribuer a un
-joueur le rating d'un autre serait pire qu'une ligne absente. Regler un seuil
-documente sur l'echantillon d'un jour est la faute que ce depot a deja payee
-deux fois.
+**Le refus recouvre deux cas, et le libelle ne les separe pas** — releve sur
+l'import reel du 24/08, scores de `elo.similarity` contre le meilleur candidat :
+
+  * **trois quasi-homonymes**, le meme joueur sous une autre graphie —
+    « Greetje Minnen » contre « Greet Minnen » (0.857), « Chak Lam Coleman
+    Wong » contre « Coleman Wong » (0.571), « Diego Dedura » contre « Diego
+    Dedura Palomero » (0.571) ;
+  * **deux absences franches** — « Spencer Johnson » et « Jordan Lee », dont
+    les meilleurs candidats sont « Alexander Donski » (0.438) et « Johan
+    Nikles » (0.500), c'est-a-dire personne.
+
+Aucun n'est une affaire de ponctuation ni de translitteration : `elo.normalize`
+replie deja casse, accents et ponctuation. Ce qui separe est le **nombre de
+prenoms** — un nom d'usage contre un etat civil complet — et `similarity`
+compare des chaines entieres.
+
+**Le seuil ne bouge pas pour autant.** `MIN_SCORE` vaut 0.88 par mesure, et le
+cas le plus tentant est « Greetje Minnen » a 0.857, soit 0.023 sous la barre :
+descendre pour l'attraper rapprocherait aussi des paires que le projet refuse
+exprès — les freres Zverev tiennent sur cet ecart. Il n'existe aucune resolution
+manuelle cote tennis, et attribuer a un joueur le rating d'un autre serait pire
+qu'une ligne absente. Regler un seuil documente sur l'echantillon d'un jour est
+la faute que ce depot a deja payee deux fois.
 
 C'est le libelle du rapport qui porte la nuance : **« sans ligne Elo »** et non
 « joueur inconnu ». Les deux etats appellent le meme comportement — verifier a
