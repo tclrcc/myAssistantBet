@@ -3262,6 +3262,20 @@ class Analysis:
     #: chercher un defaut qui ne se produira plus — meme regle que les motifs de
     #: saisie tardive anterieurs a la garde d'ecriture.
     settled_undated: int = 0
+    #: Les selections du residu dont la session ne porte **aucun** releve fige.
+    #:
+    #: `prompt_odds` n'existe que depuis la migration 033 : avant elle, le prix
+    #: du bloc est enregistre mais l'etat du marche a l'instant de l'analyse
+    #: n'existe nulle part, et rien ne permet de le recouper. Mesure du
+    #: 24/08/2026 : 20,3 % du volume total, definitivement — `odds` ne conserve
+    #: que le dernier releve. Cette part porte par ailleurs le plus gros deficit
+    #: du jeu de donnees, sans qu'il y soit attribuable a quoi que ce soit.
+    #:
+    #: **Un compte, jamais une correction.** Retirer une marge de bookmaker
+    #: demanderait de la reconstruire, c'est-a-dire de devigger : interdit n°1.
+    #: Ce que la page peut faire est de dire que son chiffre de tete agrege deux
+    #: populations qui ne se comparent pas.
+    residual_unfrozen: int = 0
     #: Selections qu'aucun prompt ne rattache a son lot.
     #:
     #: **Une reconstruction a 21 % de candidats multiples serait une fausse
@@ -5519,6 +5533,13 @@ def analysis(settings: Settings | None = None) -> Analysis:
             "  s.open_dossiers "
             "FROM sessions s ORDER BY s.created_at DESC, s.id DESC"
         ).fetchall()
+        # Les sessions qui ont fige un releve de marche. Lu ici parce que la
+        # connexion y est ouverte, et parce que c'est une seule ligne par
+        # session — pas de quoi rouvrir la base plus loin.
+        figees = {
+            int(ligne["session_id"])
+            for ligne in conn.execute("SELECT DISTINCT session_id FROM prompt_odds")
+        }
 
     report = Analysis()
     report.minimum, report.minimum_days, report.minimum_competitions = reach(settings)
@@ -5917,6 +5938,18 @@ def analysis(settings: Settings | None = None) -> Analysis:
 
     gagnees, implicites = _releve(rows)
     report.residual = Residual(observed=gagnees, implied=implicites)
+    # **La frontiere se lit sur la session, pas sur le marche.** Rattacher chaque
+    # selection a son releve demanderait d'apparier un libelle de marche a une
+    # cle figee, donc de rejouer `MERGED_MARKETS` ici — une seconde ecriture
+    # d'une regle qui vit dans `render`. La question qu'on pose se tranche bien
+    # plus haut : cette session a-t-elle fige quoi que ce soit ?
+    report.residual_unfrozen = sum(
+        1
+        for ligne in rows
+        if str(ligne["result"]) in ("win", "loss")
+        and (_column(ligne, "price") or 0) > 1.0
+        and int(ligne["session_id"]) not in figees
+    )
     # Groupees par match, pour la borne conservatrice du bloc de tete.
     par_match: dict[Any, list[float]] = {}
     for row in rows:

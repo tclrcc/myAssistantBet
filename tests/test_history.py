@@ -3763,3 +3763,42 @@ def test_les_taux_transmis_le_disent_sans_reserve() -> None:
 
     assert recul.enough
     assert recul.missing_line == "Les taux sont transmis au prompt."
+
+
+def test_le_residu_de_tete_annonce_qu_il_agrege_deux_regimes(migrated: Settings) -> None:
+    """**Le chiffre le plus visible de la page melange deux regimes.**
+
+    `prompt_odds` fige le marche a l'archivage du prompt, et il n'existe que
+    depuis la session 8 de la base servie. Les selections anterieures ont bien
+    un prix — celui du bloc — mais **rien ne permet de le recouper** : ni
+    l'etat du marche a l'instant de l'analyse, ni ce qu'un book en offrait
+    ailleurs. Mesure du 24/08/2026 : 20,3 % du volume total est dans ce cas,
+    definitivement, et cette part porte le plus gros deficit du jeu de donnees.
+
+    La page ne peut pas corriger ce qu'elle ne mesure pas — calculer une marge
+    de bookmaker pour la retirer serait un devigging, interdit n°1. Elle peut,
+    et elle doit, **dire que le chiffre agrege deux populations qui ne se
+    comparent pas**. Un compte, aucune deduction.
+    """
+    session_id, event_id = _session_avec_match(migrated)
+    # Un prix, sinon la selection n'entre pas dans le residu — c'est lui la
+    # matiere du chiffre, et `_joue` n'en pose pas.
+    for tier, price, result in (("safe", "1.80", "win"), ("fun", "2.40", "loss")):
+        pick_id = add_pick(
+            session_id,
+            tier,
+            "O/U",
+            "Over",
+            event_id=str(event_id),
+            price=price,
+            independence_note="angles indépendants (fixture)",
+            settings=migrated,
+        )
+        set_result(pick_id, result, migrated)
+
+    report = history.analysis(settings=migrated)
+
+    assert report.residual_unfrozen == 2, (
+        "aucun releve fige n'existe : les deux selections sont dans ce cas"
+    )
+    assert report.residual.settled == 2, "le residu lui-meme ne bouge pas"

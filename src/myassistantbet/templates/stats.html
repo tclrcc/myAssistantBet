@@ -174,6 +174,21 @@
         aucun verdict ne bascule, mais le chiffre suppose quelque chose de faux.
       </p>
       {%- endif %}
+      {%- if analysis.residual_unfrozen %}
+      {# **Deux régimes sous un seul chiffre.** `prompt_odds` ne fige le marché
+         que depuis la migration 033 : avant elle, le prix du bloc est bien
+         enregistré, mais rien ne le recoupe — ni l'état du marché à l'instant
+         de l'analyse, ni ce qu'un autre book en offrait. La page ne corrige
+         pas, elle le dit : reconstruire une marge pour la retirer serait un
+         dévigging, et c'est l'interdit n°1. #}
+      <p>
+        <strong>{{ analysis.residual_unfrozen }} sélection(s)</strong> viennent de
+        sessions dont aucun relevé de marché n'a été figé : leur attendu repose
+        sur le seul prix du bloc, que rien ne recoupe. Ce chiffre agrège donc deux
+        régimes qui ne se comparent pas, et cette part ne se réduira plus — un
+        relevé manquant ne se reconstitue pas.
+      </p>
+      {%- endif %}
       <p>
         Aucun dévig, aucun marché complet, aucune projection, aucune mise : des
         issues déjà tranchées comparées à des prix déjà enregistrés.

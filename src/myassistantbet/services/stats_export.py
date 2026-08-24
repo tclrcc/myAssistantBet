@@ -426,6 +426,26 @@ class StatsReport:
                 "antérieures à la garde d'écriture — cette population est close, elle "
                 "ne grandira plus et ne se répare pas."
             )
+        if analysis.residual_unfrozen:
+            # **Le chiffre de tete agrege deux regimes.** `prompt_odds` fige le
+            # marche depuis la migration 033 seulement : avant elle le prix du
+            # bloc est enregistre, mais l'etat du marche a l'instant de
+            # l'analyse n'existe nulle part et rien ne permet de le recouper.
+            #
+            # La page ne corrige pas — reconstruire une marge de bookmaker pour
+            # la retirer serait un devigging, interdit n°1. Elle dit que le
+            # chiffre melange deux populations qui ne se comparent pas, et sur
+            # quelle part. C'est un compte, aucune deduction.
+            part = 100 * analysis.residual_unfrozen / max(analysis.residual.settled, 1)
+            notes.append(
+                f"{analysis.residual_unfrozen} sélection(s) du résidu, soit {part:.0f} %, "
+                "viennent de sessions dont aucun relevé de marché n'a été figé. Leur "
+                "attendu repose sur le seul prix du bloc, que rien ne recoupe — ni "
+                "l'état du marché à l'instant de l'analyse, ni ce qu'un autre book en "
+                "offrait. Le résidu global agrège donc deux régimes qui ne se comparent "
+                "pas, et cette part ne se réduira plus : les relevés manquants ne se "
+                "reconstituent pas."
+            )
         for gap in analysis.column_gaps:
             # **Une reserve qui voyage.** Un fichier relu ailleurs doit dire
             # qu'une de ses colonnes n'a jamais rien recu : sans elle, un
