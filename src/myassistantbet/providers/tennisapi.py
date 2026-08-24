@@ -107,7 +107,8 @@ TOURS = ("atp", "wta", "itf")
 SEARCH = "profile/search"
 MATCHES_PLAYED = "profile/matches-played"
 EVENT = "event/get"
-FAMILIES = (SEARCH, MATCHES_PLAYED, EVENT)
+FIXTURES = "fixtures"
+FAMILIES = (SEARCH, MATCHES_PLAYED, EVENT, FIXTURES)
 
 #: **Interdits d'ingestion, definitivement.** Le test cite cette liste ; elle
 #: existe pour qu'un endpoint de pronostic ajoute par le fournisseur ne se glisse
@@ -285,6 +286,31 @@ class TennisAPIClient(BaseHTTPClient):
         return await self.get(
             f"/profile/{name}/matches-played",
             MATCHES_PLAYED,
+            params={"pageSize": PAGE_SIZE, "page": max(1, int(page))},
+        )
+
+    async def fixtures(self, tour: str, day: str, page: int = 1) -> ProviderResponse:
+        """Rencontres programmees un jour donne, sur un circuit.
+
+        **La reponse est paginee et le defaut est 10.** Un premier releve fait
+        sans `pageSize` a rendu dix lignes et fait croire a un flux minuscule ;
+        cote WTA, `hasNextPage` etait encore vrai a cent. L'appelant doit
+        parcourir les pages, et `PAGE_SIZE` (100) suffit a tenir une journee de
+        Grand Chelem en une ou deux.
+
+        **Ce n'est pas un calendrier : c'est l'ordre du jour publie.** Mesure du
+        24/08/2026 — 12 lignes le 20/08, 72 le 23/08, 98 le 24/08, 62 le 25/08,
+        puis **zero** le 26/08 et au-dela, tous tournois confondus. Le passe
+        repond, l'avenir s'arrete a J+1 parce que les tournois publient la veille.
+        Un import qui voudrait tout un tableau de qualification doit donc tourner
+        **chaque jour** ; il ne peut pas rattraper quatre jours d'avance, et il
+        peut en revanche rattraper un jour manque.
+        """
+        if tour not in TOURS:
+            raise ProviderError(PROVIDER, "fixtures", f"circuit inconnu : {tour}")
+        return await self.get(
+            f"/{tour}/fixtures/{day}",
+            FIXTURES,
             params={"pageSize": PAGE_SIZE, "page": max(1, int(page))},
         )
 

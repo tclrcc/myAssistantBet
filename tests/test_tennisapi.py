@@ -245,6 +245,39 @@ async def test_deux_endpoints_voisins_ne_se_confondent_pas(
     assert familles == {tennisapi.SEARCH}, "le circuit n'est pas une famille d'appel"
 
 
+@pytest.mark.anyio
+async def test_un_circuit_inconnu_ne_part_pas_sur_le_reseau(
+    tennis_client: TennisAPIClient,
+) -> None:
+    """Aucun mock n'est monte : le moindre appel sortant ferait echouer ce test."""
+    with pytest.raises(ProviderError, match="circuit inconnu"):
+        await tennis_client.fixtures("itf2", "2026-08-24")
+
+
+@pytest.mark.anyio
+@respx.mock
+async def test_l_ordre_du_jour_demande_une_page_pleine(
+    tennis_client: TennisAPIClient,
+) -> None:
+    """**Le defaut du fournisseur est 10 lignes**, et un premier releve fait sans
+    `pageSize` a rendu dix rencontres et fait croire a un flux minuscule. Demander
+    la page pleine n'est pas une optimisation : c'est ce qui separe une journee
+    lue d'une journee amputee en silence.
+    """
+    route = respx.get(url__startswith=BASE_URL).mock(
+        return_value=httpx.Response(
+            200, json={"data": [], "hasNextPage": False}, headers=QUOTA_HEADERS
+        )
+    )
+
+    await tennis_client.fixtures("atp", "2026-08-24", page=3)
+
+    url = route.calls[0].request.url
+    assert url.path == f"{PREFIX}/atp/fixtures/2026-08-24"
+    assert url.params["pageSize"] == str(tennisapi.PAGE_SIZE)
+    assert url.params["page"] == "3"
+
+
 async def test_une_famille_non_declaree_est_refusee(tennis_client: TennisAPIClient) -> None:
     """Un compte se fait sur une enumeration, sinon deux orthographes le cassent."""
     with pytest.raises(ProviderError):

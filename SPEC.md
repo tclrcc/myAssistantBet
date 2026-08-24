@@ -266,6 +266,87 @@ La couverture blessures d'API-Football est irrégulière selon les ligues. Un co
 
 ---
 
+## 5 bis. Intégration — tennis-api.com : les tableaux de qualification
+
+Un tableau de qualification de Grand Chelem n'a **aucune clé chez The Odds
+API** — mesure du 24/08/2026 sur `/sports?all=true` : 176 clés, dont 44 au
+tennis, et pas une seule qualification, sur aucun des quatre tournois. Ses
+rencontres n'entraient donc que par la saisie manuelle, une par une.
+`tennis-api.com`, déjà sous contrat, les sert.
+
+`GET /tennis/v2/{atp|wta}/fixtures/{AAAA-MM-JJ}?pageSize=100&page=N`
+
+**Ce n'est pas un calendrier, c'est l'ordre du jour publié.** Mesuré le même
+jour : 12 lignes le 20/08, 72 le 23/08, 98 le 24/08, 62 le 25/08, puis **zéro**
+le 26/08 et au-delà, tous tournois confondus. Le passé répond, l'avenir s'arrête
+à J+1 — les tournois publient la veille. L'import se relance donc **chaque
+jour** ; il ne peut pas prendre quatre jours d'avance, et il peut rattraper un
+jour manqué.
+
+**La fenêtre décide, pas le fournisseur.** Les rencontres de qualification
+portent l'identifiant du **tableau principal** (21349 côté ATP, 16743 côté WTA,
+`tier: Grand Slam`) : même piège que les qualifications européennes, qui
+partagent la clé de la phase de ligue. Les deux discriminants disponibles sont
+faux — `roundId` a une sémantique invisible (l'endpoint ne servant rien au-delà
+de J+1, aucune rencontre de tableau principal n'est là pour trancher) et la date
+de fiche du tournoi annonce le 31/08 quand le tableau principal débute le 30/08.
+`competitions.qualif_debut` / `qualif_fin` sont donc une **saisie**, lue sur le
+calendrier officiel, et une rencontre datée dedans est une qualification par
+définition. Ce qui tombe dehors est **compté et rapporté**, jamais jeté en
+silence : c'est ce qui autorise une fenêtre serrée, un report de pluie se lisant
+dans le rapport.
+
+### L'antériorité ne se garde pas à l'import — décision du 24/08/2026
+
+Les qualifications commencent à 11h00 à New York, soit 17h00 à Paris : un import
+lancé le soir touche des rencontres déjà jouées. **Elles entrent quand même**,
+et rien n'est filtré sur l'heure de début. Trois raisons, la dernière étant
+décisive :
+
+1. la garde d'antériorité porte sur l'**écriture d'une sélection**
+   (`history.add_pick`), pas sur l'existence d'un match. Elle refuse déjà un
+   pari posé sur une rencontre commencée, et rien de ce qui est importé ici ne
+   la contourne ;
+2. `session.has_started()` retire déjà du prompt, de l'enrichissement et du
+   compteur de sélection tout événement dont l'heure est passée. Une rencontre
+   importée en retard est donc **visible et marquée**, jamais jouable ;
+3. `tennis_load` calcule `Repos`, `Parcours` et `Fraîcheur` sur **nos propres
+   relevés**. Un tour manquant y produit un parcours faux — défaut déjà payé sur
+   Norrie, dont le premier tour manquait et que seule une recherche extérieure a
+   rattrapé. Filtrer à l'import abîmerait les lignes du lendemain pour protéger
+   une garde qui existe ailleurs.
+
+**Limite à connaître : l'heure est un créneau de session, pas un horaire.** Les
+28 rencontres du 24/08 se répartissent sur quatre valeurs exactes (18:00, 19:30,
+21:00, 22:30 UTC) ; le 25/08, 32 des 36 portent 18:00 pile. `Repos` et
+`has_started` s'appuient donc dessus à une demi-journée près, et deux rencontres
+du même créneau ne se départagent pas.
+
+**Le plancher `rapidapi_call_floor` ne s'y applique pas**, et c'est l'arbitrage
+déjà rendu pour `APIFOOTBALL_CALL_FLOOR` : il garde le bonus, jamais la fonction
+première. `serve_stats` dépense un appel par joueur ; cet import en coûte deux
+par compétition et par jour — quatre pour tout l'US Open, sur 139 244 appels
+restants au relevé du 24/08/2026.
+
+### Ce que cet import ne fait pas
+
+- **Aucune cote, et aucune valeur par défaut.** Personne ne sert les prix d'une
+  qualification : les rencontres arrivent nues et le restent jusqu'à une saisie
+  à la main. Un prix jamais relevé qui entrerait dans un palier fausserait le
+  résidu au prix de `/stats`, la mesure centrale du projet.
+- **Aucun double.** Le flux les sert — trois le 24/08, sur d'autres tournois —
+  et le projet ne les modélise nulle part. Ils se reconnaissent au nom
+  (`Jesse Delaney/Emile Hudd`), faute de champ pour le dire. Le risque n'est pas
+  théorique : la Fan Week héberge un championnat de double mixte.
+- **Aucun joueur créé.** Le rapprochement passe par `elo.lookup`, qui refuse
+  plutôt que de deviner ; les non rapprochés sont **nommés dans le rapport** et
+  leur rencontre est créée quand même. Mesure du 24/08/2026 sur les 112 joueurs
+  du jour : `elo.lookup` en rapproche 108 (96 %), une égalité stricte sur
+  `labels.sort_key` 106 (94 %) — et c'est `elo.normalize` qui est écrite pour
+  des noms de joueurs, `sort_key` servant à trier des libellés à l'écran.
+
+---
+
 ## 6. Écrans
 
 ### 6.1 Board (`/`)

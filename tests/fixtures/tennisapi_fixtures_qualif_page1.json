@@ -1,0 +1,141 @@
+{
+ "data": [
+  {
+   "id": 1278,
+   "date": "2026-08-24T22:30:00.000Z",
+   "roundId": 1,
+   "player1Id": 20465,
+   "player2Id": 18094,
+   "tournamentId": 21349,
+   "timeGame": null,
+   "seed1": null,
+   "seed2": null,
+   "live": null,
+   "player1": {
+    "id": 20465,
+    "name": "Stefano Napolitano",
+    "countryAcr": "ITA"
+   },
+   "player2": {
+    "id": 18094,
+    "name": "Mackenzie Mcdonald",
+    "countryAcr": "USA"
+   }
+  },
+  {
+   "id": 1288,
+   "date": "2026-08-24T22:30:00.000Z",
+   "roundId": 1,
+   "player1Id": 33904,
+   "player2Id": 36858,
+   "tournamentId": 21349,
+   "timeGame": null,
+   "seed1": null,
+   "seed2": null,
+   "live": null,
+   "player1": {
+    "id": 33904,
+    "name": "Raul Brancaccio",
+    "countryAcr": "ITA"
+   },
+   "player2": {
+    "id": 36858,
+    "name": "Thiago Seyboth Wild",
+    "countryAcr": "BRA"
+   }
+  },
+  {
+   "id": 1297,
+   "date": "2026-08-24T22:30:00.000Z",
+   "roundId": 1,
+   "player1Id": 51853,
+   "player2Id": 86351,
+   "tournamentId": 21349,
+   "timeGame": null,
+   "seed1": null,
+   "seed2": null,
+   "live": null,
+   "player1": {
+    "id": 51853,
+    "name": "Pol Martin Tiffon",
+    "countryAcr": "ESP"
+   },
+   "player2": {
+    "id": 86351,
+    "name": "Tom Gentzsch",
+    "countryAcr": "GER"
+   }
+  },
+  {
+   "id": 1302,
+   "date": "2026-08-24T22:30:00.000Z",
+   "roundId": 1,
+   "player1Id": 56211,
+   "player2Id": 39043,
+   "tournamentId": 21349,
+   "timeGame": null,
+   "seed1": null,
+   "seed2": null,
+   "live": null,
+   "player1": {
+    "id": 56211,
+    "name": "Keegan Smith",
+    "countryAcr": "USA"
+   },
+   "player2": {
+    "id": 39043,
+    "name": "Alexis Galarneau",
+    "countryAcr": "CAN"
+   }
+  },
+  {
+   "id": 1308,
+   "date": "2026-08-24T22:30:00.000Z",
+   "roundId": 1,
+   "player1Id": 63021,
+   "player2Id": 73608,
+   "tournamentId": 21349,
+   "timeGame": null,
+   "seed1": null,
+   "seed2": null,
+   "live": null,
+   "player1": {
+    "id": 63021,
+    "name": "Francesco Passaro",
+    "countryAcr": "ITA"
+   },
+   "player2": {
+    "id": 73608,
+    "name": "Felix Gill",
+    "countryAcr": "GBR"
+   }
+  },
+  {
+   "id": 1224,
+   "date": "2026-08-24T22:30:00.000Z",
+   "roundId": 4,
+   "player1Id": 26421,
+   "player2Id": 96765,
+   "tournamentId": 21348,
+   "timeGame": null,
+   "seed1": null,
+   "seed2": "q",
+   "live": null,
+   "player1": {
+    "id": 26421,
+    "name": "Jan Choinski",
+    "countryAcr": "GBR"
+   },
+   "player2": {
+    "id": 96765,
+    "name": "Mees Rottgering",
+    "countryAcr": "NED"
+   }
+  }
+ ],
+ "hasNextPage": true,
+ "page": 1,
+ "pageNo": 1,
+ "pageSize": 100,
+ "limit": 100
+}

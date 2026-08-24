@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from ..config import Settings, get_settings
 from ..db import connect
 from ..providers.oddsapi import OddsAPIClient
+from ..providers.tennisapi import TOURS as _TENNISAPI_TOURS
 from .labels import sort_key
 
 logger = logging.getLogger(__name__)
@@ -30,6 +32,11 @@ SPORT_PREFIXES = {"soccer_": "football", "tennis_": "tennis"}
 #: bloc CONTEXTE ; laissee vide, seul l'Elo general apparait. Aucune deduction
 #: automatique depuis le libelle du tournoi : ce serait une invention.
 SURFACES = {"hard": "Dur", "clay": "Terre battue", "grass": "Gazon"}
+
+#: Circuits acceptes par le fournisseur de rencontres. **Lue chez le client**
+#: plutot que retapee : deux listes se seraient contredites au premier circuit
+#: ajoute, et l'ecran aurait propose un choix que le service refuse.
+TENNISAPI_TOURS = _TENNISAPI_TOURS
 
 #: Niveaux de tournoi, du plus releve au plus modeste. Un Grand Chelem se joue
 #: au meilleur des cinq manches chez les hommes sur un tableau de 128 ; un 250
@@ -304,6 +311,8 @@ def list_all(settings: Settings | None = None) -> list[dict[str, Any]]:
             "SELECT c.id, c.label, c.oddsapi_key, c.apifootball_league_id, c.priority, "
             "       c.active, c.api_active, c.notes, c.surface, c.category, "
             "       c.tennisdata_tournaments, c.timezone, c.city, "
+            "       c.qualif_debut, c.qualif_fin, c.tennisapi_tour, "
+            "       c.tennisapi_tournament_id, "
             "       s.id AS sport_order, s.key AS sport_key, s.label AS sport_label "
             "FROM competitions c JOIN sports s ON s.id = c.sport_id"
         ).fetchall()
@@ -413,6 +422,106 @@ def set_city(competition_id: int, city: str, settings: Settings | None = None) -
             "UPDATE competitions SET city = ? WHERE id = ?", (value or None, competition_id)
         )
     logger.info("Ville de la competition %d : %s", competition_id, value or "non renseignee")
+
+
+def check_qualification(
+    debut: str, fin: str, tour: str, tournament_id: str
+) -> tuple[str, str, str, int]:
+    """Valide une fenetre de qualification et son rattachement, ou leve.
+
+    **Ecrite a part parce qu'elle est appelee avant une ecriture et pendant une
+    autre.** `create_manual` doit pouvoir refuser une fenetre illisible *avant*
+    d'inserer la competition : valider apres l'insertion laisserait une
+    competition creee et a moitie reglee, c'est-a-dire exactement l'etat que
+    cette fenetre existe pour eviter. Deux validations recopiees auraient
+    diverge au premier circuit ajoute.
+    """
+    debut_value = (debut or "").strip()
+    fin_value = (fin or "").strip()
+    tour_value = (tour or "").strip().lower()
+    id_raw = (tournament_id or "").strip()
+
+    for value in (debut_value, fin_value):
+        try:
+            date.fromisoformat(value)
+        except ValueError as exc:
+            raise CompetitionError(
+                f"Date illisible : « {value} ». Format attendu AAAA-MM-JJ."
+            ) from exc
+    if date.fromisoformat(debut_value) > date.fromisoformat(fin_value):
+        raise CompetitionError("La fin de la fenêtre précède son début.")
+    if tour_value not in TENNISAPI_TOURS:
+        raise CompetitionError(
+            f"Circuit inconnu : « {tour} ». Attendu : {', '.join(TENNISAPI_TOURS)}."
+        )
+    if not id_raw.isdigit() or int(id_raw) <= 0:
+        raise CompetitionError(
+            "L'identifiant de tournoi tennis-api est obligatoire : sans lui, la fenêtre "
+            "ne désigne aucun flux."
+        )
+    return debut_value, fin_value, tour_value, int(id_raw)
+
+
+def set_qualification(
+    competition_id: int,
+    debut: str,
+    fin: str,
+    tour: str,
+    tournament_id: str,
+    settings: Settings | None = None,
+) -> None:
+    """Fenetre de qualification et rattachement au fournisseur de rencontres.
+
+    **Les quatre champs se posent ensemble parce qu'aucun ne sert seul** : sans
+    la fenetre, rien ne distingue une qualification du tableau principal — les
+    deux portent le meme identifiant de tournoi chez le fournisseur ; sans le
+    rattachement, la fenetre ne designe aucun flux. Un formulaire par champ
+    aurait laisse la competition dans un etat a moitie renseigne ou l'import
+    echoue sans que l'ecran dise lequel des quatre manque.
+
+    Rien n'est deduit d'un libelle, meme regle que la surface, le fuseau et la
+    ligue API-Football : l'identifiant de tournoi se verifie a la main sur
+    `/{tour}/tournament/info/{id}`, les dates se lisent sur le calendrier
+    officiel.
+
+    **Une saisie vide efface les quatre**, elle n'en garde pas trois : un
+    rattachement a moitie retire est un piege pour le prochain import.
+    """
+    debut_value = (debut or "").strip()
+    fin_value = (fin or "").strip()
+    tour_value = (tour or "").strip().lower()
+    id_raw = (tournament_id or "").strip()
+
+    if not any((debut_value, fin_value, tour_value, id_raw)):
+        with connect(settings) as conn:
+            conn.execute(
+                "UPDATE competitions SET qualif_debut = NULL, qualif_fin = NULL, "
+                "       tennisapi_tour = NULL, tennisapi_tournament_id = NULL "
+                " WHERE id = ?",
+                (competition_id,),
+            )
+        logger.info("Qualification de la competition %d : effacee", competition_id)
+        return
+
+    debut_value, fin_value, tour_value, numero = check_qualification(
+        debut_value, fin_value, tour_value, id_raw
+    )
+    id_raw = str(numero)
+
+    with connect(settings) as conn:
+        conn.execute(
+            "UPDATE competitions SET qualif_debut = ?, qualif_fin = ?, "
+            "       tennisapi_tour = ?, tennisapi_tournament_id = ? WHERE id = ?",
+            (debut_value, fin_value, tour_value, int(id_raw), competition_id),
+        )
+    logger.info(
+        "Qualification de la competition %d : %s au %s, %s %s",
+        competition_id,
+        debut_value,
+        fin_value,
+        tour_value,
+        id_raw,
+    )
 
 
 def set_tennisdata_tournaments(
@@ -1134,7 +1243,12 @@ def manual_sports(settings: Settings | None = None) -> list[dict[str, str]]:
 
 
 def create_manual(
-    label: str, sport_key: str, category: str = "", settings: Settings | None = None
+    label: str,
+    sport_key: str,
+    category: str = "",
+    settings: Settings | None = None,
+    *,
+    qualification: tuple[str, str, str, str] | None = None,
 ) -> int:
     """Cree une competition qu'**aucun fournisseur** ne sert, ni en cotes ni en matchs.
 
@@ -1175,6 +1289,16 @@ def create_manual(
 
     La surface, la ville et le fuseau ne sont pas demandes ici : ils se
     corrigent dans le tableau, champ par champ, et rien ne se deduit du libelle.
+
+    `qualification` — `(debut, fin, circuit, identifiant de tournoi)` — est en
+    revanche proposee **a la creation**, et c'est le seul des reglages a
+    l'etre. La raison est qu'elle decide de ce que la competition *est* : sans
+    fenetre, un tableau de qualification ne se distingue pas du tournoi
+    principal, les deux portant le meme identifiant chez le fournisseur. La
+    laisser au tableau ferait exister la competition dans un etat ou son import
+    ne peut pas tourner, ce qui est precisement l'etat qu'on vient de quitter.
+    Vide, elle ne pose rien — une competition sans qualification est le cas
+    ordinaire.
     """
     name = (label or "").strip()
     if not name:
@@ -1189,6 +1313,13 @@ def create_manual(
         )
 
     value = (category or "").strip().lower()
+
+    # Valide **avant** d'inserer : une fenetre illisible doit refuser la
+    # creation entiere, pas laisser une competition a moitie reglee.
+    fenetre = qualification if qualification and any(c.strip() for c in qualification) else None
+    if fenetre is not None:
+        check_qualification(*fenetre)
+
     with connect(settings) as conn:
         sport = conn.execute("SELECT id FROM sports WHERE key = ?", (key,)).fetchone()
         if sport is None:
@@ -1215,6 +1346,10 @@ def create_manual(
             (sport["id"], name, value if value in niveaux else None),
         )
         competition_id = int(cursor.lastrowid)
+
+    if fenetre is not None:
+        # Deja validee ci-dessus : cet appel ne peut plus lever.
+        set_qualification(competition_id, *fenetre, settings=settings)
 
     logger.info(
         "Competition sans fournisseur creee : %s (%s, niveau %s)",

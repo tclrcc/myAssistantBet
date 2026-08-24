@@ -1,0 +1,97 @@
+{
+ "data": [
+  {
+   "id": 1309,
+   "date": "2026-08-24T22:30:00.000Z",
+   "roundId": 1,
+   "player1Id": 63299,
+   "player2Id": 36617,
+   "tournamentId": 21349,
+   "timeGame": null,
+   "seed1": null,
+   "seed2": null,
+   "live": null,
+   "player1": {
+    "id": 63299,
+    "name": "Dalibor Svrcina",
+    "countryAcr": "CZE"
+   },
+   "player2": {
+    "id": 36617,
+    "name": "Felipe Meligeni Alves",
+    "countryAcr": "BRA"
+   }
+  },
+  {
+   "id": 1313,
+   "date": "2026-08-24T22:30:00.000Z",
+   "roundId": 1,
+   "player1Id": 71166,
+   "player2Id": 81189,
+   "tournamentId": 21349,
+   "timeGame": null,
+   "seed1": null,
+   "seed2": null,
+   "live": null,
+   "player1": {
+    "id": 71166,
+    "name": "Chak Lam Coleman Wong",
+    "countryAcr": "HKG"
+   },
+   "player2": {
+    "id": 81189,
+    "name": "Elmer Moller",
+    "countryAcr": "DEN"
+   }
+  },
+  {
+   "id": 90001,
+   "date": "2026-08-24T15:05:00.000Z",
+   "roundId": 4,
+   "player1Id": 125351,
+   "player2Id": 131475,
+   "tournamentId": 21349,
+   "timeGame": null,
+   "seed1": null,
+   "seed2": "3",
+   "live": null,
+   "player1": {
+    "id": 125351,
+    "name": "Jesse Delaney/Emile Hudd",
+    "countryAcr": "N/A"
+   },
+   "player2": {
+    "id": 131475,
+    "name": "Mark Whitehouse/Patrick Zahraj",
+    "countryAcr": "N/A"
+   }
+  },
+  {
+   "id": 90002,
+   "date": "2026-08-30T18:00:00.000Z",
+   "roundId": 1,
+   "player1Id": 83314,
+   "player2Id": 50133,
+   "tournamentId": 21349,
+   "timeGame": null,
+   "seed1": null,
+   "seed2": null,
+   "live": null,
+   "player1": {
+    "id": 83314,
+    "name": "Lukas Neumayer",
+    "countryAcr": "AUT"
+   },
+   "player2": {
+    "id": 50133,
+    "name": "Oliver Crawford",
+    "countryAcr": "USA"
+   }
+  }
+ ],
+ "hasNextPage": false,
+ "page": 2,
+ "pageNo": 2,
+ "pageSize": 100,
+ "limit": 100
+}

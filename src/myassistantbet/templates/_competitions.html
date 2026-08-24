@@ -34,6 +34,25 @@
   </div>
   {% endif %}
 
+  {# Le formulaire de qualification vit dans le tableau, sans panneau a ouvrir :
+     son refus se rend donc en tete, sinon il n'aurait nulle part ou paraitre. #}
+  {% if error_form == 'qualification' %}
+  <div class="report report-warn">{{ error }}</div>
+  {% endif %}
+
+  {% if qualif_report %}
+  <div class="report {% if qualif_report.error %}report-warn{% endif %}">
+    Import des qualifications : {{ qualif_report.note }} Aucun crédit Odds API consommé.
+    {% if qualif_report.created or qualif_report.updated %}
+      <br><span class="muted small">
+        Ces rencontres arrivent <b>sans cotes</b> — aucune source ne sert les prix d'un
+        tableau de qualification. Elles se saisissent depuis la fiche de chaque match, et
+        tant qu'elles manquent le bloc n'est pas exploitable.
+      </span>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {% if import_report %}
   <div class="report {% if import_report.error %}report-warn{% endif %}">
     Import des matchs : {{ import_report.note }} Aucun crédit Odds API consommé.
@@ -260,6 +279,35 @@
           {% endfor %}
         </select>
       </label>
+      {# Les quatre champs vont ensemble et se posent **a la creation**, seul
+         reglage a l'etre : sans fenetre, un tableau de qualification ne se
+         distingue pas du tournoi principal — les deux portent le meme
+         identifiant chez le fournisseur — donc la competition existerait dans un
+         etat ou son import ne peut pas tourner. Laisser vide pour une
+         competition ordinaire. #}
+      <label>
+        Qualifications — du
+        <input type="date" name="qualif_debut" value="{{ typed.get('qualif_debut', '') }}">
+      </label>
+      <label>
+        au
+        <input type="date" name="qualif_fin" value="{{ typed.get('qualif_fin', '') }}">
+      </label>
+      <label>
+        Circuit
+        <select name="tennisapi_tour">
+          <option value="">—</option>
+          {% for tour in tennisapi_tours %}
+          <option value="{{ tour }}"
+                  {% if typed.get('tennisapi_tour') == tour %}selected{% endif %}>{{ tour|upper }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label>
+        Tournoi tennis-api
+        <input type="text" inputmode="numeric" name="tennisapi_tournament_id"
+               placeholder="21349" value="{{ typed.get('tennisapi_tournament_id', '') }}">
+      </label>
       <button type="submit" class="button">Créer</button>
     </form>
     <p class="muted small">
@@ -269,6 +317,11 @@
       Odds API — et ses matchs se saisissent <b>un par un</b> depuis « Saisie manuelle » :
       aucune source ne les sert. Surface, ville et fuseau se renseignent ensuite dans le
       tableau ; le fuseau date les faits sur place, la ville sert la météo.
+      <br>La <b>fenêtre de qualification</b> est l'exception : elle décide de ce que la
+      compétition est. Les rencontres d'un tableau de qualification portent l'identifiant
+      du <b>tableau principal</b> chez tennis-api — 21349 côté ATP, 16743 côté WTA — donc
+      rien d'autre ne les distingue. L'identifiant se vérifie à la main sur
+      <code>/{circuit}/tournament/info/{id}</code>, jamais déduit d'un libellé.
     </p>
   </details>
 
@@ -449,6 +502,54 @@
                    value="{{ competition.tennisdata_tournaments or '' }}">
             <button type="submit" class="link-action">rattacher</button>
           </form>
+          {# Les quatre champs d'un seul geste : un rattachement à moitié
+             renseigné fait échouer l'import sans dire lequel manque. Vider les
+             quatre efface le rattachement. #}
+          <form class="notes-form qualif-form"
+                hx-post="/competitions/{{ competition.id }}/qualification"
+                hx-target="#competitions" hx-swap="outerHTML">
+            <input type="date" name="qualif_debut"
+                   aria-label="Début des qualifications, pour {{ competition.label }}"
+                   value="{{ competition.qualif_debut or '' }}">
+            <input type="date" name="qualif_fin"
+                   aria-label="Fin des qualifications, pour {{ competition.label }}"
+                   value="{{ competition.qualif_fin or '' }}">
+            <select name="tennisapi_tour"
+                    aria-label="Circuit tennis-api, pour {{ competition.label }}">
+              <option value="">—</option>
+              {% for tour in tennisapi_tours %}
+              <option value="{{ tour }}"
+                      {% if competition.tennisapi_tour == tour %}selected{% endif %}>{{ tour|upper }}</option>
+              {% endfor %}
+            </select>
+            <input type="text" inputmode="numeric" name="tennisapi_tournament_id"
+                   aria-label="Tournoi tennis-api, pour {{ competition.label }}"
+                   placeholder="21349"
+                   value="{{ competition.tennisapi_tournament_id or '' }}">
+            <button type="submit" class="link-action">qualifications</button>
+          </form>
+          {# Un jour à la fois, et c'est le fournisseur qui l'impose : son
+             endpoint est l'ordre du jour publié, pas un calendrier — rien
+             au-delà de J+1. La condition reprend mot pour mot les gardes du
+             service : un bouton qui propose ce que le service refuse est pire
+             qu'absent. #}
+          {% if competition.active and competition.qualif_debut and competition.qualif_fin
+                and competition.tennisapi_tour and competition.tennisapi_tournament_id %}
+          <form class="notes-form"
+                hx-post="/competitions/{{ competition.id }}/qualification/import"
+                hx-target="#competitions" hx-swap="outerHTML"
+                hx-indicator="#qualif-{{ competition.id }}">
+            <input type="date" name="day"
+                   aria-label="Jour à importer, pour {{ competition.label }}"
+                   min="{{ competition.qualif_debut }}" max="{{ competition.qualif_fin }}"
+                   value="{{ competition.qualif_debut }}">
+            <button type="submit" class="link-action"
+                    title="Importer l'ordre du jour depuis tennis-api, sans cotes">
+              importer ce jour
+            </button>
+            <span id="qualif-{{ competition.id }}" class="htmx-indicator">import…</span>
+          </form>
+          {% endif %}
           {% endif %}
           {% if competition.active %}
           <form class="notes-form" hx-post="/competitions/{{ competition.id }}/notes"

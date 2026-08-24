@@ -24,6 +24,7 @@ from .providers.apifootball import APIFootballClient
 from .providers.base import ProviderError
 from .providers.oddsapi import OddsAPIClient
 from .providers.tennisabstract import TennisAbstractClient
+from .providers.tennisapi import TennisAPIClient
 from .providers.tennisdata import TennisDataClient
 from .providers.weather import WeatherClient
 from .scheduler import build_scheduler
@@ -55,6 +56,7 @@ from .services import set_scores as set_scores_service
 from .services import settlement as settlement_service
 from .services import stakes as stakes_service
 from .services import stats_export as stats_export_service
+from .services import tennis_fixtures as tennis_fixtures_service
 from .services import tennis_history as tennis_history_service
 from .services import tennis_load as tennis_load_service
 from .services import thresholds as thresholds_service
@@ -657,6 +659,7 @@ def _competitions_context(
     report: object | None = None,
     elo_report: object | None = None,
     import_report: object | None = None,
+    qualif_report: object | None = None,
     error: str | None = None,
     typed: dict[str, str] | None = None,
     error_form: str | None = None,
@@ -668,6 +671,9 @@ def _competitions_context(
         "report": report,
         "elo_report": elo_report,
         "import_report": import_report,
+        "qualif_report": qualif_report,
+        # Le circuit se propose depuis la liste du client, jamais retapee.
+        "tennisapi_tours": competitions_service.TENNISAPI_TOURS,
         # Une saisie refusee revient avec son texte : retaper un libelle et un
         # identifiant de ligue parce qu'un champ manquait est une punition.
         "error": error,
@@ -747,6 +753,10 @@ def competition_create_manual(
     label: str = Form(default=""),
     sport_key: str = Form(default=""),
     category: str = Form(default=""),
+    qualif_debut: str = Form(default=""),
+    qualif_fin: str = Form(default=""),
+    tennisapi_tour: str = Form(default=""),
+    tennisapi_tournament_id: str = Form(default=""),
 ) -> HTMLResponse:
     """Cree une competition qu'aucun fournisseur ne sert, ni en cotes ni en matchs.
 
@@ -757,9 +767,23 @@ def competition_create_manual(
     saisie manuelle : donc sans niveau, sans surface et sans fuseau, et
     introuvables tant qu'un match n'avait pas ete tape.
     """
-    typed = {"label": label, "sport_key": sport_key, "category": category}
+    typed = {
+        "label": label,
+        "sport_key": sport_key,
+        "category": category,
+        "qualif_debut": qualif_debut,
+        "qualif_fin": qualif_fin,
+        "tennisapi_tour": tennisapi_tour,
+        "tennisapi_tournament_id": tennisapi_tournament_id,
+    }
     try:
-        competitions_service.create_manual(label, sport_key, category, get_settings())
+        competitions_service.create_manual(
+            label,
+            sport_key,
+            category,
+            get_settings(),
+            qualification=(qualif_debut, qualif_fin, tennisapi_tour, tennisapi_tournament_id),
+        )
     except competitions_service.CompetitionError as exc:
         return templates.TemplateResponse(
             request,
@@ -850,6 +874,61 @@ def competition_tennisdata(
         competition_id, tennisdata_tournaments, get_settings()
     )
     return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
+
+
+@app.post("/competitions/{competition_id}/qualification", response_class=HTMLResponse)
+def competition_qualification(
+    request: Request,
+    competition_id: int,
+    qualif_debut: str = Form(default=""),
+    qualif_fin: str = Form(default=""),
+    tennisapi_tour: str = Form(default=""),
+    tennisapi_tournament_id: str = Form(default=""),
+) -> HTMLResponse:
+    """Fenetre de qualification et rattachement au fournisseur de rencontres.
+
+    Les quatre champs se posent ensemble : aucun ne sert seul, et un
+    rattachement a moitie renseigne fait echouer l'import sans dire lequel des
+    quatre manque.
+    """
+    try:
+        competitions_service.set_qualification(
+            competition_id,
+            qualif_debut,
+            qualif_fin,
+            tennisapi_tour,
+            tennisapi_tournament_id,
+            get_settings(),
+        )
+    except competitions_service.CompetitionError as exc:
+        return templates.TemplateResponse(
+            request,
+            "_competitions.html",
+            _competitions_context(error=str(exc), error_form="qualification"),
+        )
+    return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
+
+
+@app.post("/competitions/{competition_id}/qualification/import", response_class=HTMLResponse)
+async def competition_qualification_import(
+    request: Request, competition_id: int, day: str = Form(default="")
+) -> HTMLResponse:
+    """Importe l'ordre du jour d'un tableau de qualification.
+
+    **Un jour a la fois, et c'est le fournisseur qui l'impose** : son endpoint
+    est l'ordre du jour publie, pas un calendrier — il ne sert rien au-dela de
+    J+1. L'import se relance chaque jour du tableau ; relance sur un jour deja
+    importe, il ne cree rien.
+
+    Aucun credit Odds API. Les rencontres arrivent **sans cotes** : personne ne
+    sert les prix d'une qualification, elles se saisissent depuis la fiche.
+    """
+    settings = get_settings()
+    client = TennisAPIClient(request.app.state.http, settings)
+    report = await tennis_fixtures_service.import_day(client, competition_id, day, settings)
+    return templates.TemplateResponse(
+        request, "_competitions.html", _competitions_context(qualif_report=report)
+    )
 
 
 @app.post("/competitions/{competition_id}/apifootball", response_class=HTMLResponse)
