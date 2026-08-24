@@ -1970,3 +1970,44 @@ def test_l_apercu_emet_la_case_quand_la_ligne_manque(
 
     assert 'name="confirm_partial"' in rendu
     assert "required" in rendu
+
+
+def test_la_carte_du_cran_calcule_ecarte_les_defauts_de_collage(
+    migrated: Settings,
+) -> None:
+    """**Un cran force par un collage perdu n'est pas une observation.**
+
+    `by_confidence_computed` ne filtrait que sur `confidence_computed IS NOT
+    NULL`, quand `_override` et `changelog` — deux autres lectures de la meme
+    colonne — ecartent deja les defauts de collecte. Deux ecritures que rien
+    n'obligeait a rester d'accord, et c'est celle qui est **publiee** qui se
+    trompait.
+
+    Mesure du 24/08/2026 sur la base servie : le cran 1 de cette carte affichait
+    **n = 140 a 53,5 %**, dont **134 forces** par une ligne `dossiers_ouverts`
+    jamais collee. Six etaient reels. Le plus gros regroupement de la carte etait
+    a 96 % un artefact de collage, et il se lisait comme un taux de reussite.
+
+    Un cran force ne dit rien du modele : la question ne lui a pas ete
+    transmise. Il garde son compte dans `Override`, avec sa cause — c'est la
+    separation qui vaut, pas le masquage.
+    """
+    session_id = _session(migrated)
+    lecture = _bloc(source_level=1, faits=[], manque_touche_facteur=False)
+    # Un cran 1 REEL : le dossier a ete ouvert, la recherche n'a rien donne.
+    _tranchee(migrated, session_id, "1", lecture)
+    # Deux crans 1 FORCES : la ligne `dossiers_ouverts` n'a jamais ete collee,
+    # et le repere n'a pas pu etre resolu. Deux defauts de collecte distincts.
+    trois = _bloc(source_level=1, faits=[_fait()], manque_touche_facteur=True)
+    _ecrasee(migrated, session_id, "3", trois, cause=OVERRIDE_LIGNE_ABSENTE)
+    _ecrasee(migrated, session_id, "3", trois, cause=OVERRIDE_REPERES)
+
+    report = analysis(settings=migrated)
+
+    cran1 = next(row for row in report.by_confidence_computed if row.key == "1")
+    assert cran1.total == 1, "les deux crans forces ne sont pas des observations"
+    assert sum(row.total for row in report.by_confidence_computed) == 1, (
+        "et elles n'ont pas fuite vers un autre cran de la carte"
+    )
+    faults = sum(row.override_faults for row in report.by_session)
+    assert faults == 2, "elles restent comptees comme defauts de collecte, jamais masquees"

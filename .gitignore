@@ -28,3 +28,7 @@ htmlcov/
 .env.bak-*
 .env.*
 !.env.example
+
+# Copies de travail de l audit (360 Mo) : les livrables .md sont suivis, pas les bases.
+audit/data/
+audit/*.db

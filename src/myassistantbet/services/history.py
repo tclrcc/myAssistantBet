@@ -5652,6 +5652,33 @@ def analysis(settings: Settings | None = None) -> Analysis:
                 )
                 for row, result in zip(rows, results, strict=True)
                 if _column(row, "confidence_computed") is not None
+                # **Un cran force par un collage perdu n'est pas une
+                # observation.** `_override` et `changelog` ecartent deja les
+                # defauts de collecte ; cette carte-ci ne le faisait pas, et
+                # c'est elle qui est publiee. Mesure du 24/08/2026 : le cran 1 y
+                # affichait n = 140 a 53,5 %, dont 134 forces faute d'une ligne
+                # `dossiers_ouverts` collee. Six etaient reels. Le plus gros
+                # regroupement de la carte etait a 96 % un artefact de collage,
+                # et il se lisait comme un taux de reussite.
+                #
+                # Ce n'est pas un masquage : ces selections gardent leur compte
+                # dans `Override` et dans `SessionRate.override_faults`, avec
+                # leur cause. C'est la separation qui vaut — un defaut de
+                # collecte et une notation sont deux questions.
+                #
+                # **L'ordre des deux gardes n'est pas indifferent**, et c'est
+                # `_override` qui le fixe : `is_unknown_cause(None)` vaut vrai —
+                # c'est ce qui ferme le trou des lignes anterieures au typage —
+                # donc l'appliquer sans tester `research_overridden` d'abord
+                # ecarterait le cas ORDINAIRE, ou aucune cause n'a lieu d'etre.
+                # Trouve en ecrivant le test, qui ne trouvait plus aucun cran.
+                and not (
+                    _column(row, "research_overridden")
+                    and (
+                        is_collection_fault(_column(row, "research_override_cause"))
+                        or is_unknown_cause(_column(row, "research_override_cause"))
+                    )
+                )
             ],
             readable=report.minimum_rows,
         ),
