@@ -411,6 +411,8 @@ async def run_scan(
     # change sans qu'on regarde : le scan vient d'ecrire les cotes du jour. Seules
     # les **transitions** sont datees — un instantane a chaque passage grossirait
     # le journal sans rien apprendre, et noierait la bascule au milieu du bruit.
+    # S'y ajoute, une fois, la mise en service : sans elle un journal muet dirait
+    # « rien n'a bascule » et « la regle n'a jamais tourne » du meme silence.
     for libelle, competition in competitions.note_price_coverage(settings):
         logger.info("%s : %s", libelle, competition)
     return report

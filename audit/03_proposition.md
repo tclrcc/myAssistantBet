@@ -529,6 +529,38 @@ trois reponses a la question, pas deux.
    quand — c'est le cas du cadre publie et de la configuration servie, et c'est
    pourquoi le journal d'analyse a cesse de dependre de l'emoji colle.
 
+### Le motif jumeau : une propriete qui ne peut pas etre fausse
+
+**Deux proprietes ont ete retirees dans ce lot, et pour la meme raison.** Toutes
+deux encodaient un etat que le modele ne peut pas atteindre.
+
+| La propriete | Le cas qu'elle voulait nommer | Ce qu'il etait |
+| --- | --- | --- |
+| `confidence_floor` | un cran 5 declare sans ses deux editeurs distincts | **0 sur 211 blocs**, declare comme calcule |
+| `HiddenEvent.priced` | une rencontre masquee qui porte deja un prix | **contradictoire avec la regle qui la produit** : elle opere par competition, donc une seule cote ramene la competition entiere, avec toutes ses rencontres |
+
+**Les deux ne se ferment pas au meme titre, et la difference decide de ce qu'on
+en retient.** Le premier est **vide a la mesure** — rien n'interdit qu'il se
+remplisse un jour, et c'est un resultat sur la population. Le second est
+**impossible par construction** : aucun volume de donnees ne l'aurait rempli, et
+aucune mesure ne l'aurait dit.
+
+**C'est un test qui l'a montre, pas une relecture** — en echouant sur un
+`KeyError`, la liste etant vide a l'endroit exact ou le drapeau devait
+s'afficher. Le code se relisait sans surprise : la propriete rendait faux sur le
+cas ordinaire comme sur le cas qu'elle etait censee attraper, donc la surface
+avait l'air normale et le garde l'air pose. Signature du defaut caracteristique
+du projet, transposee d'une donnee a un garde-fou.
+
+> **La regle d'ecriture, symetrique de celle qui precede** : avant d'ajouter une
+> propriete, **nommer le cas ou elle est vraie et le cas ou elle est fausse**. Si
+> l'un des deux ne se construit pas, elle n'a pas d'objet.
+
+Les deux regles posent la meme question a la meme minute — a l'ecriture, pas a
+la relecture ni au test. L'une demande *qu'est-ce qui oblige ces deux lectures a
+concorder*, l'autre *a quoi ressemblent mes deux cas*. Et le cout d'un garde qui
+ne peut pas mordre n'est pas sa maintenance : c'est l'assurance qu'il donne.
+
 ### Une sortie dit ce que le lecteur peut en faire, rien de plus
 
 **Principe tire de trois decisions du meme lot, qui semblaient sans rapport.**
@@ -711,10 +743,16 @@ juger les autres.
 | 6 | **au premier scan qui l'evalue** | filtrage des competitions sans prix |
 
 Le sixieme se date tout seul, et par le meme mecanisme : `note_price_coverage`
-ecrit une entree de journal a la **premiere transition** qu'il constate, au scan.
-Pas a la livraison du code, pas au deploiement — au moment ou une competition
-sort effectivement du board. Tant qu'aucune ne sort, il n'y a pas de rupture a
-dater : la population cible etait vide le jour de la livraison.
+ecrit une entree de journal au **premier scan qui l'evalue**. Pas a la livraison
+du code, pas au deploiement — au moment ou la composition des lots devient
+soumise a la regle, **meme si ce scan-la ne retire rien**.
+
+**Cette entree de mise en service est ce qui rend la formule vraie**, et elle a
+manque au premier jet : le journal n'ecrivait que des transitions, si bien qu'un
+journal muet disait « aucune competition n'a bascule » et « la regle n'a jamais
+tourne » du meme silence. Deux causes, une observation — la premiere se lit et
+n'appelle rien, la seconde est une panne de deploiement. Les transitions, elles,
+continuent de dater les **effets**, dans les deux sens.
 
 **Ce qu'il change, et ce qu'il ne change pas.** Il modifie la composition des
 lots analyses a partir de la — donc toute comparaison de residu qui le traverse

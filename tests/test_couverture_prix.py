@@ -297,6 +297,7 @@ def test_le_journal_date_les_deux_sens_et_ne_repete_pas_un_etat(migrated: Settin
     """
     from myassistantbet.services import changelog
     from myassistantbet.services.competitions import (
+        UNPRICED_ARMED,
         UNPRICED_ENTERED,
         UNPRICED_LEFT,
         note_price_coverage,
@@ -306,8 +307,9 @@ def test_le_journal_date_les_deux_sens_et_ne_repete_pas_un_etat(migrated: Settin
     event_id = _event(migrated, tournoi, heures=10)
 
     assert note_price_coverage(migrated, MAINTENANT) == [
-        (UNPRICED_ENTERED, "ATP Winston-Salem Open")
-    ]
+        (UNPRICED_ARMED, "1 compétition(s) déjà dans l'état"),
+        (UNPRICED_ENTERED, "ATP Winston-Salem Open"),
+    ], "la mise en service precede les transitions du meme passage"
     assert note_price_coverage(migrated, MAINTENANT) == [], "un etat stable n'ecrit rien"
 
     _prix(migrated, event_id, jours=1)
@@ -324,6 +326,51 @@ def test_le_journal_date_les_deux_sens_et_ne_repete_pas_un_etat(migrated: Settin
     assert "1 match(s) à venir" in entree.description
     assert "aucun prix connu" in entree.description
     assert f"fenêtre de {PRICE_WINDOW_DAYS} jours" in entree.description
+
+
+def test_le_journal_separe_aucune_transition_de_jamais_evaluee(migrated: Settings) -> None:
+    """**Deux causes, une observation**, et c'est ce que la mise en service rompt.
+
+    Sans elle, un journal sans entree dit « aucune competition n'a bascule » et
+    « la regle n'a jamais tourne » du meme silence — l'une se lit et ne demande
+    rien, l'autre est une panne de deploiement. Elle est donc datee au **premier
+    scan qui l'evalue**, meme quand ce scan ne retire rien : c'est aussi ce qui
+    rend vraie la formule du sixieme point de rupture, qui porte sur l'instant ou
+    la composition des lots devient soumise a la regle.
+    """
+    from myassistantbet.services import changelog
+    from myassistantbet.services.competitions import (
+        UNPRICED_ARMED,
+        UNPRICED_ENTERED,
+        UNPRICED_LEFT,
+        note_price_coverage,
+    )
+
+    libelles = {UNPRICED_ARMED, UNPRICED_ENTERED, UNPRICED_LEFT}
+
+    def journal_de_la_regle() -> list[str]:
+        return [e.label for e in changelog.journal(migrated).entries if e.label in libelles]
+
+    servie = _competition(migrated, "Coupe servie", cle="soccer_coupe_servie")
+    _prix(migrated, _event(migrated, servie, heures=10), jours=1)
+
+    assert journal_de_la_regle() == [], "avant toute evaluation, le journal est muet"
+
+    assert note_price_coverage(migrated, MAINTENANT) == [
+        (UNPRICED_ARMED, "aucune compétition dans l'état")
+    ], "la regle a tourne sans rien retirer, et ca se date quand meme"
+    assert journal_de_la_regle() == [UNPRICED_ARMED]
+
+    assert note_price_coverage(migrated, MAINTENANT) == [], "une fois et une seule"
+    assert journal_de_la_regle() == [UNPRICED_ARMED], "la garde se lit sur le journal lui-meme"
+
+    # La fenetre appliquee voyage avec la mise en service comme avec les
+    # transitions : une entree qui ne dit pas sous quelle regle elle a ete
+    # ecrite ne se relit plus, et celle-ci sert de borne a toutes les autres.
+    mise_en_service = next(
+        e for e in changelog.journal(migrated).entries if e.label == UNPRICED_ARMED
+    )
+    assert f"fenêtre de {PRICE_WINDOW_DAYS} jours" in mise_en_service.description
 
 
 def test_une_panne_de_cotes_ne_vide_pas_le_board(migrated: Settings) -> None:

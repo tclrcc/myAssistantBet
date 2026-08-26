@@ -333,7 +333,34 @@ sans elle, le nombre deviendra dans six mois une constante que personne ne saura
 justifier. Le dossier porte deja quatre chiffres qui ont survecu a la disparition
 de leur raison ; celui-ci ne doit pas etre le cinquieme.
 
-## C.16 — Ce qui reste ouvert et n'a pas ete instruit
+## C.16 — Une propriete qui ne peut pas etre fausse ne se voit pas a la relecture
+
+**Deux gardes retires dans le meme lot, et aucune relecture ne les avait vus.**
+`confidence_floor` — un cran 5 declare sans ses deux editeurs distincts — vaut
+**0 sur 211 blocs**. `HiddenEvent.priced` — une rencontre masquee portant deja un
+prix — est **contradictoire avec la regle qui la produit** : elle opere par
+competition, donc une seule cote ramene la competition entiere.
+
+Les deux ne se ferment pas au meme titre. Le premier est **vide a la mesure**, et
+peut se remplir un jour. Le second est **impossible par construction** : aucun
+volume de donnees ne l'aurait rempli, et **aucune mesure ne l'aurait dit** — c'est
+la limite de ce dossier sur ce point, qui n'est pas une limite de population.
+
+Ce qui l'a montre est un **test**, en echouant sur un `KeyError` : la liste etait
+vide a l'endroit exact ou le drapeau devait s'afficher. Le code, lui, se relisait
+sans surprise — la propriete rendait faux sur le cas ordinaire comme sur le cas
+qu'elle etait censee attraper. C'est la signature du defaut caracteristique du
+projet, transposee d'une donnee a un garde-fou, et c'est la **troisieme famille**
+de cette forme que le dossier rencontre, apres les deux copies qu'aucun mecanisme
+n'oblige a concorder et les comptes faibles qui sont des defauts d'appariement.
+
+**La regle de forme qui en sort**, ecrite en §8 de la proposition : avant
+d'ajouter une propriete, nommer le cas ou elle est vraie et le cas ou elle est
+fausse ; si l'un des deux ne se construit pas, elle n'a pas d'objet. Le cout d'un
+garde qui ne peut pas mordre n'est pas sa maintenance, c'est l'assurance qu'il
+donne — et cette assurance-la, elle, ne se mesure nulle part.
+
+## C.17 — Ce qui reste ouvert et n'a pas ete instruit
 
 - **Phase 4** — le generateur de prompts : variables injectees non utilisees,
   erreurs factuelles de bloc remontees a leur source sur trois cas, conformite du

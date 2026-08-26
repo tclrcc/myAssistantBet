@@ -1611,11 +1611,33 @@ def unpriced(
 UNPRICED_ENTERED = "compétition retirée du board — aucun prix"
 UNPRICED_LEFT = "compétition revenue au board — prix servis"
 
+#: Libelle de l'entree qui date la **mise en service** de la regle, au premier
+#: scan qui l'evalue.
+#:
+#: **Sans elle, deux causes rendent la meme observation.** Un journal sans
+#: transition dit « aucune competition n'a bascule » et « la regle n'a jamais
+#: tourne » du meme silence — et les deux n'appellent pas le meme geste : la
+#: premiere se lit, la seconde se repare. C'est le defaut caracteristique du
+#: projet, pose cette fois sur le dispositif qui date les autres.
+#:
+#: C'est aussi elle qui rend vraie la formule du point de rupture : **date au
+#: premier scan qui l'evalue**, et non a la premiere bascule. Le sujet n'est pas
+#: la premiere competition retiree mais l'instant a partir duquel la composition
+#: des lots est soumise a la regle — meme s'il ne retire rien ce jour-la.
+#:
+#: **Une fois et une seule**, et la garde se lit sur le journal lui-meme : idiome
+#: de `changelog.note_feedback`. Un compteur en memoire ne survivrait pas au
+#: redemarrage, un drapeau de plus en base serait une seconde ecriture de ce que
+#: le journal dit deja.
+UNPRICED_ARMED = "filtre des compétitions sans prix — en service"
+
 
 def note_price_coverage(
     settings: Settings | None = None, now: datetime | None = None
 ) -> list[tuple[str, str]]:
-    """Date les **transitions** de l'etat « sans prix ». Rend `(libelle, competition)`.
+    """Date la mise en service, puis les **transitions** de l'etat « sans prix ».
+
+    Rend les entrees de journal ecrites, `(libelle, detail)`.
 
     **Les transitions, jamais un instantane periodique.** Un releve a chaque scan
     grossirait sans porter d'information et noierait la bascule au milieu du
@@ -1628,6 +1650,11 @@ def note_price_coverage(
     seconde, la regle ne serait reversible que dans un sens et le journal
     laisserait croire qu'une exclusion est definitive.
 
+    **Et une entree de mise en service, une fois et une seule.** Sans elle, un
+    journal sans transition confond « aucune competition n'a bascule » avec « la
+    regle n'a jamais tourne » : deux causes, une observation. Elle est ecrite
+    avant les transitions du meme passage, pour que la chronologie se relise.
+
     Appelee au scan, seul moment ou l'etat peut avoir change sans qu'on regarde.
     """
     settings = settings or get_settings()
@@ -1638,7 +1665,7 @@ def note_price_coverage(
     from .changelog import INGESTION
     from .changelog import add as note
 
-    transitions: list[tuple[str, str]] = []
+    entrees: list[tuple[str, str]] = []
     with connect(settings) as conn:
         marquees = {
             int(row["id"]): str(row["label"])
@@ -1646,12 +1673,36 @@ def note_price_coverage(
                 "SELECT id, label FROM competitions WHERE unpriced_since IS NOT NULL"
             )
         }
+        armee = (
+            conn.execute(
+                "SELECT 1 FROM changelog_mesure WHERE label = ? LIMIT 1", (UNPRICED_ARMED,)
+            ).fetchone()
+            is not None
+        )
         entrantes = [cid for cid in courantes if cid not in marquees]
         sortantes = [cid for cid in marquees if cid not in courantes]
         for cid in entrantes:
             conn.execute("UPDATE competitions SET unpriced_since = ? WHERE id = ?", (moment, cid))
         for cid in sortantes:
             conn.execute("UPDATE competitions SET unpriced_since = NULL WHERE id = ?", (cid,))
+
+    if not armee:
+        etat = (
+            f"{len(courantes)} compétition(s) déjà dans l'état"
+            if courantes
+            else "aucune compétition dans l'état"
+        )
+        note(
+            jour,
+            UNPRICED_ARMED,
+            f"Première évaluation de la règle au scan — {etat}, fenêtre de "
+            f"{PRICE_WINDOW_DAYS} jours. À partir d'ici, un journal sans transition "
+            "dit qu'aucune compétition n'a basculé ; avant cette date, il ne disait "
+            "que l'absence d'évaluation.",
+            scope=INGESTION,
+            settings=settings,
+        )
+        entrees.append((UNPRICED_ARMED, etat))
 
     for cid in entrantes:
         entree = courantes[cid]
@@ -1668,11 +1719,11 @@ def note_price_coverage(
             scope=INGESTION,
             settings=settings,
         )
-        transitions.append((UNPRICED_ENTERED, entree.label))
+        entrees.append((UNPRICED_ENTERED, entree.label))
     for cid in sortantes:
         note(jour, UNPRICED_LEFT, marquees[cid], scope=INGESTION, settings=settings)
-        transitions.append((UNPRICED_LEFT, marquees[cid]))
-    return transitions
+        entrees.append((UNPRICED_LEFT, marquees[cid]))
+    return entrees
 
 
 @dataclass
