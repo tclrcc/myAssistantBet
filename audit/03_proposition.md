@@ -208,20 +208,67 @@ d'admission **attribue un niveau faux**, ce qui est le defaut qu'on repare.
 
 Le cadre nomme la categorie et sa raison : *« elles vendent un operateur : leur
 choix de faits sert un argumentaire, et un fait retenu pour convaincre ne vaut
-pas un fait rapporte »*. Elle est reconnaissable par motif — operateur,
-comparateur de cotes, site de pronostics.
+pas un fait rapporte »*.
 
-Rendement mesure : **4 faits sur 271** — `betfair.es` ×2, `sportytrader.com` ×2
-— **tous posterieurs au 21/08**, aucun avant. `[HYPOTHESE]` sur la
-significativite (p = 0,32, quatre faits ne prouvent rien) ; certitude sur
-l'appartenance a la categorie que le cadre dit d'ecarter.
+### Correction : mon premier releve sous-comptait d'un facteur trois
 
-**Un signalement, jamais un refus** : trois des quatre sont correctement
-etiquetees niveau 4 et tombent en cran 2. Le modele n'a pas menti sur leur
-niveau. Ce qui se signale est leur **entree dans le faisceau**, pas leur
-etiquetage.
+**A rectifier au rapport, et la cause est une regle du projet appliquee a ma
+propre mesure.** Le sondage d'instruction annoncait « 4 faits, tous posterieurs
+au 21/08 ». Il employait une expression reguliere batie sur les noms
+d'operateurs que j'avais **devines**, et elle n'a trouve que ceux-la. Une
+relecture a l'oeil des 181 domaines en rend **sept** :
 
----
+| domaine | faits |
+| --- | ---: |
+| `betfair.es` | 4 |
+| `sportytrader.com` | 3 |
+| `freetips.com` | 1 |
+| `footballpredictions.net` | 1 |
+| `etoto.pl` | 1 |
+| `extra.toto.nl` | 1 |
+| `betmines.com` | 1 |
+| **total** | **12 sur 271, soit 4,4 %** |
+
+`scores24.live` a ete examine et **ecarte** : c'est un agregateur de scores qui
+publie aussi des pronostics, donc un niveau 3 au sens de la table, pas une page
+adossee a un operateur. Le doute se tranche vers l'exclusion — un faux negatif
+de liste de refus ne coute qu'un signal.
+
+### Ce que la correction detruit, et c'est le point
+
+| | avant le 21/08 12:24Z | apres | p |
+| --- | ---: | ---: | ---: |
+| releve d'instruction (regex devinee) | **0 / 72** | 4 / 165 | 0,32 |
+| **releve corrige** | **3 / 86 = 3,5 %** | **9 / 185 = 4,9 %** | **0,76** |
+
+**Le contraste avant/apres n'existe pas.** Des pages d'operateur etaient citees
+**avant** la rupture aussi ; le zero d'origine etait un artefact de la sonde, pas
+une propriete des donnees. L'observation « elles n'apparaissent qu'apres » est
+retiree du rapport.
+
+C'est la troisieme fois dans ce dossier qu'un compte faible sur un rapprochement
+se revele etre un defaut d'appariement, et la premiere ou il porte sur **ma
+propre mesure**. La regle vaut donc pour l'auditeur : *un compte faible sur un
+rapprochement est un defaut d'appariement jusqu'a preuve du contraire, et la
+preuve se fait avant de le rapporter.*
+
+### Ce que l'instrument vaut malgre tout
+
+**Sa valeur est prospective, pas retrospective.** Il n'existe pas pour trier ce
+qui est deja entre — 12 faits, sans contraste temporel, dont la plupart sont
+d'ailleurs correctement etiquetes niveau 4 par le modele. Il existe pour que ces
+pages **cessent d'entrer**, et pour que leur part soit lisible dans la serie du
+faisceau le jour ou elle bougera.
+
+**Un signalement, jamais un refus.** Le modele n'a pas menti sur leur niveau dans
+la majorite des cas ; ce qui se signale est leur **entree dans le faisceau**, pas
+leur etiquetage.
+
+**La liste est curee, et son incompletude est assumee** — c'est ce qui la
+distingue d'une liste d'admission. Elle porte des marques d'operateurs et de
+pronostiqueurs, comparees au **label** du domaine et jamais en sous-chaine :
+`betterrugby.com` ne doit pas se faire prendre pour un operateur parce qu'il
+contient « bet ».
 
 ## 5. Instrument 4 — l'accuse d'appariement
 
@@ -436,14 +483,35 @@ et ce lot en a rencontre deux de plus le jour meme de sa livraison :
 | `Claim.rung` et le niveau declare | `source_level` lu comme une entree, jamais confronte aux faits | par cet audit, §3 |
 | **un second `json.loads` dans `history`** | rien encore — il venait d'etre ecrit | **avant le commit**, en relisant ce que `confidence.parse` fait deja |
 
-La derniere ligne est la seule attrapee **avant** de couter quelque chose, et
-c'est la seule ou la question a ete posee a l'ecriture plutot qu'a la relecture :
-*qu'est-ce qui force ces deux-la a rester d'accord ?* La reponse etait rien, donc
-le second lecteur est parti.
+Le chantier `source_drift` en a produit une cinquieme le meme jour, et elle n'a
+rien coute pour la meme raison : compter les editeurs par un rapprochement de
+domaines ecrit sur place, quand `Fact.source` tranche deja cette question pour
+compter les facteurs independants. Un agregateur qui relaie un communique de club
+se serait compte sous `onefootball.com` d'un cote et sous `arsenal.com` de
+l'autre — **et l'ecart n'aurait jamais fait echouer un test**, les deux lectures
+etant justes chacune de son cote.
 
-**La regle a appliquer devant toute valeur ou tout format ecrit deux fois** — une
-seule ecriture que les autres appellent ; a defaut un test qui lit les deux
-sources ; a defaut, la copie derivera et la seule question est quand.
+### La regle d'ecriture, et c'est une regle et non un constat
+
+**Avant d'ecrire une seconde lecture d'une donnee deja lue ailleurs, nommer le
+mecanisme qui les oblige a concorder.** S'il n'y en a pas, reutiliser le lecteur
+existant.
+
+Le motif a cinq occurrences dans ce dossier. **Les deux qui n'ont rien coute sont
+les deux ou la question a ete posee a l'ecriture** — pas a la relecture, pas au
+test, pas trois semaines plus tard. Les trois autres ont ete trouvees apres coup,
+et l'une d'elles a mal classe 35 selections.
+
+Le corollaire est celui de la troisieme branche des « a ne pas oublier » : il y a
+trois reponses a la question, pas deux.
+
+1. **Une seule ecriture, les autres l'appellent.** Le cas de
+   `session.context_block`, de `markets.py`, et des deux corrections de ce lot.
+2. **Un test qui lit les deux sources.** Quand un cycle d'import ou une frontiere
+   de couche interdit la premiere.
+3. **Rien ne les oblige.** Alors la copie derivera, et la seule question est
+   quand — c'est le cas du cadre publie et de la configuration servie, et c'est
+   pourquoi le journal d'analyse a cesse de dependre de l'emoji colle.
 
 ### Deriver le niveau d'un domaine par rapprochement de noms — **ferme, mesure le 26/08/2026**
 
@@ -500,6 +568,24 @@ Un seul lot, un seul point de rupture. L'ordre interne est celui du rendement.
 | 4 | accuse d'appariement | un collage dans une session sans prompt est refuse avec son motif ; un appariement qui echoue nomme sa cause et les deux libelles |
 | 5 | retrait de la section G, de la bankroll, du « 79 % » | le prompt rendu ne porte plus `mises:` ni de pourcentage ; **la consigne « un lot ou tu selectionnes tout… » y est toujours** |
 | 6 | retour de la conduite de la recherche, controles 3 et 11, vigilance tennis | les six regles gardees mot pour mot sont dans le rendu ; **aucun parametre Firecrawl n'y figure** |
+
+### L'etat de la suite a la livraison — un echec connu, date, et volontaire
+
+**`tests/test_sentinelles.py::test_le_numero_de_cadre_s_appuie_sur_une_lecture_et_non_sur_une_declaration`
+echoue, et ce n'est pas une regression.**
+
+| | |
+| --- | --- |
+| depuis | le **22/08/2026 15:23**, date de publication du cadre 1.4 |
+| ce qu'il dit | cadre publie **1.4**, `FRAMEWORK_VERSION` **1.3** |
+| verifie le | 26/08/2026, sur l'arbre **remise** — il echoue sans aucun changement de ce lot |
+| pourquoi il reste rouge | sa resolution depend de **D3**, qui attend le lot complet ; le module ne releve pas le numero a la place de qui exploite |
+
+**Il doit etre porte au rapport final comme tel.** Dans trois mois, un test rouge
+sans provenance sera traite comme un bug ou desactive — et c'est le troisieme
+chemin vers une carte fausse, apres les deux copies qui divergent et la valeur
+limite lue comme une absence. Le garde fait exactement son travail : il refuse de
+se taire sur une divergence qu'il ne peut pas corriger seul.
 
 Regle de test du projet, applicable a chacun : une assertion enonce ce qui doit
 etre vrai, jamais ce qui est sorti. Le test 5 se pose sur le **prompt rendu** et

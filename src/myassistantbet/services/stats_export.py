@@ -609,6 +609,11 @@ def report(settings: Settings | None = None) -> StatsReport:
     # l'application recalcule. Assemblee ici comme le reste — un second point de
     # calcul aurait fini par ne plus dire la meme chose que la page.
     principale.tier_drift = history_service.tier_drift(settings)
+    # Et l'adherence de l'echelle de sources : un editeur qui change de niveau
+    # d'un fait a l'autre, un niveau declare qu'aucun fait cite n'atteint. Assemble
+    # ici pour la meme raison que le palier — un second point de calcul aurait fini
+    # par ne plus dire la meme chose que la page.
+    principale.source_drift = history_service.source_drift(settings)
     # **La comparaison se cable ici**, seul endroit qui voit les deux
     # populations : « fait date contre lecture, a palier fixe » est la mesure que
     # toute la section C-bis existe pour rendre possible, et la calculer dans
@@ -1029,6 +1034,22 @@ def as_json(found: StatsReport) -> dict[str, Any]:
             "by_market": [_rate(row) for row in analysis.by_market],
             "by_angle": [_rate(row) for row in analysis.by_angle],
             "by_source": [_rate(row) for row in analysis.by_source],
+            "source_drift": {
+                "comparable": analysis.source_drift.comparable,
+                "reading": analysis.source_drift.reading,
+                "unreadable": analysis.source_drift.unreadable,
+                "facts": analysis.source_drift.facts,
+                "publishers": analysis.source_drift.publishers,
+                "unsupported": len(analysis.source_drift.unsupported),
+                "conflicts": [
+                    {
+                        "publisher": conflit.publisher,
+                        "levels": {str(level): count for level, count in conflit.levels},
+                        "facts": conflit.facts,
+                    }
+                    for conflit in analysis.source_drift.conflicts
+                ],
+            },
             "by_price_source": [_rate(row) for row in analysis.by_price_source],
             "carried": [_rate(row) for row in analysis.carried_rows],
             "folded": analysis.folded_rows,
@@ -1467,6 +1488,41 @@ def as_markdown(found: StatsReport) -> str:
         out += _card(found, ANALYSIS_BLOCK, "Par marché", analysis.by_market)
         out += _card(found, ANALYSIS_BLOCK, "Par type d'angle", analysis.by_angle)
         out += _card(found, ANALYSIS_BLOCK, "Par niveau de source", analysis.by_source)
+        drift = analysis.source_drift
+        if drift.line:
+            out += [
+                "",
+                f"**Niveau de source déclaré — ce que les blocs se contredisent.** {drift.line}.",
+                "",
+                "Le niveau est une **propriété de l'éditeur** : un domaine ne peut pas être "
+                "à la fois niveau 1 et niveau 4, donc au moins une des deux déclarations est "
+                "fausse — et cela se détecte *sans savoir laquelle*. Aucune table "
+                "d'attribution n'est nécessaire, et rien n'est corrigé.",
+                "",
+                "Le second compte porte sur les sélections dont **aucun fait cité n'atteint "
+                "le niveau déclaré**. Le contrôle demande qu'un fait soit au moins aussi bon "
+                "que la déclaration, jamais qu'il soit le meilleur des faits cités : le "
+                "niveau d'une sélection est celui du fait qui porte l'angle, et un faisceau "
+                "qui mélange les niveaux est le cas ordinaire.",
+            ]
+            if drift.conflicts:
+                out += [
+                    "",
+                    "Les comptes se lisent seuls, et le tableau n'en tire rien. Une "
+                    "distribution fortement asymétrique ne se lit pas comme une répartition "
+                    "proche de moitié-moitié, ni comme un partage un-un sur deux faits — le "
+                    "cas le plus fréquent ici. Les trois se voient dans les comptes ; aucune "
+                    "n'est nommée, et aucune ne désigne un côté comme fautif. Aucun ratio "
+                    "non plus : un taux sans son compte ne se lit pas, et ici le compte est "
+                    "le sujet.",
+                    "",
+                    "| Éditeur | Niveaux déclarés | Faits |",
+                    "| --- | --- | ---: |",
+                ]
+                out += [
+                    f"| {conflit.publisher} | {conflit.label} | {conflit.facts} |"
+                    for conflit in drift.conflicts
+                ]
         out += _card(found, ANALYSIS_BLOCK, "Par origine du prix", analysis.by_price_source)
         # Les trois cartes ci-dessus ventilent des **taux bruts** ; celles-ci
         # comparent chaque selection a son prix. Les deux se lisent ensemble, et

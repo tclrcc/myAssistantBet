@@ -30,6 +30,7 @@ from .confidence import (
     OVERRIDE_CAUSES,
     OVERRIDE_INCONNUE,
     OVERRIDE_SANS_FAIT,
+    READING,
     Claim,
     ClaimError,
     is_collection_fault,
@@ -3112,6 +3113,12 @@ class Analysis:
     #: d'analyse recalcule, cet emoji n'est plus lu comme un classement : il
     #: devient un signal d'adherence du cadre.
     tier_drift: TierDrift = field(default_factory=lambda: TierDrift())
+    #: L'ecart entre le niveau de source **declare** et ce que les faits portent.
+    #: Meme role que `tier_drift` sur le palier, un cran plus loin : la ou le
+    #: palier se recalcule depuis la cote, le niveau ne se calcule pas — 181
+    #: domaines pour 271 faits interdisent toute table d'attribution — donc il
+    #: s'expose au lieu de se corriger.
+    source_drift: SourceDrift = field(default_factory=lambda: SourceDrift())
     #: Les selections ramenees en lecture faute de dossier ouvert. Tenu **hors**
     #: de `notation` : ce sont deux fautes distinctes, et les melanger ferait
     #: designer toujours la meme clause du gabarit.
@@ -4824,6 +4831,192 @@ def evidence_shift(settings: Settings | None = None) -> list[EvidenceMix]:
     for session_id, entree in faisceaux.items():
         entree.day = jours.get(session_id, "")
     return sorted(faisceaux.values(), key=lambda entry: (entry.day, entry.session_id))
+
+
+@dataclass
+class PublisherConflict:
+    """Un editeur dont le niveau declare change d'un fait a l'autre.
+
+    **Le rendu montre la distribution et rien d'autre.** Une version intermediaire
+    designait un niveau « dominant » et comptait ce qui « s'en ecarte » : le
+    calcul etait juste et le libelle contredisait l'instrument, qui ne sait pas
+    laquelle des deux declarations est la bonne — c'est tout son principe, et
+    c'est ce qui le separe d'un correcteur. « S'ecarter » suppose une norme et
+    designe des fautifs ; deux comptes cote a cote ne supposent rien.
+
+    Porte fermee, avec la mesure qui l'a fait ouvrir puis refermer. Sur les 14
+    editeurs concernes au 26/08/2026, la distribution prend **trois formes**, et
+    les comptes bruts les rendent toutes les trois lisibles sans les nommer :
+
+    · `atptour.com` — niveau 1 dix fois, niveau 2 une fois. Fortement asymetrique ;
+    · `sportsmole.co.uk` — niveau 2 sept fois, niveau 4 cinq fois. Proche de
+      moitie-moitie ;
+    · **neuf editeurs sur quatorze** — un fait de chaque, sur deux faits. Un
+      libelle bati sur une norme en faisait un cas particulier (« aucun niveau
+      dominant ») alors que c'est une distribution a deux modes egaux, et le cas
+      **majoritaire**.
+
+    **Aucun ratio non plus, et c'est mesure** : `whoscored.com` (1 sur 4) et
+    `mlssoccer.com` (3 sur 12) donnent 25 % tous les deux, alors que le premier
+    tient sur un fait unique. Un taux sans son compte ne se lit pas, et ici le
+    compte est le sujet. Un test verifie qu'aucun pourcentage n'entre dans le
+    libelle.
+    """
+
+    publisher: str
+    #: `(niveau, compte)`, du plus frequent au moins frequent. **L'ordre est le
+    #: seul traitement applique** : il rend l'asymetrie visible d'un coup d'oeil
+    #: sans affirmer que le premier soit le juste.
+    levels: list[tuple[int, int]] = field(default_factory=list)
+    facts: int = 0
+
+    @property
+    def label(self) -> str:
+        return " · ".join(f"niveau {level} ×{count}" for level, count in self.levels)
+
+
+@dataclass
+class SourceDrift:
+    """L'ecart entre le niveau de source declare et ce que les faits portent.
+
+    **Ce module expose, il ne corrige pas** — meme forme que `TierDrift`, et pour
+    la meme raison : on sait dire qu'une declaration se contredit, on ne sait pas
+    dire laquelle des deux est juste.
+
+    **Ce qu'il n'est pas, et la mesure l'a ferme.** Le chantier visait un niveau
+    **calcule** depuis une table d'attribution par domaine, transposee du cadre.
+    Mesure du 26/08/2026 : 181 domaines distincts pour 271 faits, soit 1,50 fait
+    par domaine ; une table des domaines vus au moins deux fois couvre 47,6 %, au
+    moins trois fois 29,2 %. La queue est precisement la ou vivent les niveaux 1
+    — les sites de clubs, cites une fois chacun. Et la deriver des noms d'equipes
+    deja en base rend 33,9 % avec des faux positifs visibles (`sportsmole.co.uk`
+    rapproche de « sport »), soit le piege du rapprochement automatique des
+    ligues, deja essaye et rejete. Un domaine inconnu ne recoit donc **aucun
+    niveau** : un defaut a 3 classerait les clubs, un defaut a 1 les agregateurs.
+    """
+
+    #: Blocs dont le niveau declare est un chiffre, donc confrontable aux faits.
+    comparable: int = 0
+    #: Blocs declares `lecture`. **Rien a confronter, et ce n'est pas un ecart** :
+    #: le gabarit la presente comme une reponse normale et frequente, et un bloc
+    #: sans fait l'impose.
+    reading: int = 0
+    #: Blocs que `parse` n'a pas su relire. Comptes a part : un defaut de lecture
+    #: n'est pas une declaration fausse.
+    unreadable: int = 0
+    facts: int = 0
+    publishers: int = 0
+    #: Selections dont **aucun** fait cite n'atteint le niveau declare.
+    unsupported: list[int] = field(default_factory=list)
+    conflicts: list[PublisherConflict] = field(default_factory=list)
+
+    @property
+    def empty(self) -> bool:
+        return self.comparable == 0 and self.reading == 0
+
+    @property
+    def conflicting_facts(self) -> int:
+        return sum(conflit.facts for conflit in self.conflicts)
+
+    @property
+    def line(self) -> str:
+        """La note d'une ligne, rendue a cote de la carte des niveaux.
+
+        **Un compte, jamais un taux** : il est juste a tout effectif, meme regle
+        que le compte des non classees. Vide quand rien ne se contredit — un
+        « 0 sur 0 » ferait chercher un probleme absent.
+        """
+        parts: list[str] = []
+        if self.conflicts:
+            parts.append(
+                f"{len(self.conflicts)} éditeur(s) sur {self.publishers} portent plusieurs "
+                f"niveaux déclarés, sur {self.conflicting_facts} fait(s)"
+            )
+        if self.unsupported:
+            parts.append(
+                f"{len(self.unsupported)} sélection(s) sur {self.comparable} déclarent un "
+                "niveau qu'aucun de leurs faits n'atteint"
+            )
+        return " · ".join(parts)
+
+
+def source_drift(settings: Settings | None = None) -> SourceDrift:
+    """Ce que les blocs disent de leur propre niveau de source.
+
+    Deux constats, et **aucun des deux ne demande de savoir classer un domaine** :
+
+    · **un editeur qui change de niveau d'un fait a l'autre.** Le niveau est une
+      propriete de l'editeur — les deux documents le disent — donc un domaine ne
+      peut pas etre a la fois 1 et 4. Par construction au moins une declaration
+      est fausse, et ca se detecte sans savoir laquelle. Mesure du 26/08/2026 :
+      14 domaines sur 181, portant 60 faits, dont quatre sites officiels de club
+      — la categorie qui produit les niveaux 1, et celle ou le modele est le plus
+      instable ;
+    · **un niveau declare qu'aucun fait cite n'atteint.** `Claim.rung` lit
+      `source_level` comme une **entree** et ne le confronte jamais aux faits :
+      un `2` pose sur un unique fait de niveau 4 y donne un cran 3 la ou un `4`
+      declare aurait donne 2. Mesure : 2 blocs sur 211.
+
+    **Le controle demande qu'un fait soit au moins aussi bon que la declaration,
+    jamais qu'il soit le meilleur des faits cites.** Le niveau d'une selection est
+    celui du fait qui **porte l'angle** : un faisceau qui melange les niveaux est
+    le cas ordinaire, et exiger l'accord avec le maximum declarerait le faux a
+    chaque bloc de ce genre. Le releve reel qui fixe la regle est une selection du
+    24/08/2026 citant deux faits de niveau 2 et un de niveau 4 sous une
+    declaration `2` : elle est conforme, et un test la garde en negatif.
+
+    **Les deux sections comptent.** La C-bis leve l'exigence d'un fait date, elle
+    ne change pas ce qu'un niveau veut dire — et la coherence d'un editeur est une
+    propriete de l'editeur, pas de la population qui le cite.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT id, claim_raw_json FROM picks WHERE claim_raw_json IS NOT NULL"
+        ).fetchall()
+
+    drift = SourceDrift()
+    par_editeur: dict[str, dict[int, int]] = {}
+    for row in rows:
+        try:
+            claim = parse_claim(str(row["claim_raw_json"]))
+        except ClaimError:
+            drift.unreadable += 1
+            continue
+        niveaux = [fait.level for fait in claim.facts]
+        drift.facts += len(claim.facts)
+        for fait in claim.facts:
+            # **L'origine prime sur le relais**, comme pour compter les facteurs
+            # independants : `Fact.source` tranche deja cette question, et la
+            # recopier ici l'aurait fait diverger au premier cas d'agregateur.
+            compte = par_editeur.setdefault(fait.source, {})
+            compte[fait.level] = compte.get(fait.level, 0) + 1
+        if claim.source_level == READING:
+            drift.reading += 1
+            continue
+        if not claim.source_level.isdigit():
+            continue
+        drift.comparable += 1
+        declare = int(claim.source_level)
+        # `min` parce qu'un niveau **plus petit** est une meilleure source : la
+        # declaration est tenue des qu'un fait l'egale ou la depasse.
+        if not niveaux or min(niveaux) > declare:
+            drift.unsupported.append(int(row["id"]))
+
+    drift.publishers = len(par_editeur)
+    drift.conflicts = sorted(
+        (
+            PublisherConflict(
+                publisher=editeur,
+                levels=sorted(compte.items(), key=lambda item: (-item[1], item[0])),
+                facts=sum(compte.values()),
+            )
+            for editeur, compte in par_editeur.items()
+            if len(compte) > 1
+        ),
+        key=lambda conflit: (-conflit.facts, conflit.publisher),
+    )
+    return drift
 
 
 def _rate_tally(

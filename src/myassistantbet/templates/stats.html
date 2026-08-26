@@ -613,12 +613,72 @@
     {% endif %}
     {% if analysis.by_source %}
       {{ card("Par niveau de source", analysis.by_source,
-              note=(analysis.unlabelled_source ~ " sélection(s) tranchée(s) n'en portent
+              note=" · ".join([
+                    (analysis.unlabelled_source ~ " sélection(s) tranchée(s) n'en portent
                      pas : elles sont antérieures à la colonne.")
                     if analysis.unlabelled_source else "",
+                    analysis.source_drift.line] | select | list),
               reason="Le fait principal venait-il d'une source officielle, de la presse,
                       de statistiques, d'un agrégateur — ou d'aucun fait daté ? C'est la
                       seule question de cette page dont la réponse changerait la méthode.") }}
+    {% endif %}
+    {# **Ce que le niveau ne se calcule pas, et pourquoi il s'expose quand même.**
+       Le palier se recalcule depuis la cote ; le niveau de source, non — 181
+       domaines distincts pour 271 faits interdisent toute table d'attribution, et
+       la dériver des noms d'équipes déjà en base rend un tiers avec des faux
+       positifs visibles. Reste ce qui est décidable sans classer personne. #}
+    {% if analysis.source_drift.conflicts or analysis.source_drift.unsupported %}
+    {% call why("Niveau de source déclaré : ce que les blocs se contredisent") %}
+    <p>
+      <strong>Le niveau est une propriété de l'éditeur</strong> — le cadre le dit,
+      le préambule aussi. Un domaine ne peut donc pas être à la fois niveau 1 et
+      niveau 4 : par construction, au moins une des deux déclarations est fausse.
+      Et cela se détecte <em>sans savoir laquelle</em>, ce qui est tout l'intérêt —
+      aucune table n'est nécessaire, et rien n'est corrigé.
+    </p>
+    {% if analysis.source_drift.conflicts %}
+    <table class="board">
+      <thead>
+        <tr><th>Éditeur</th><th>Niveaux déclarés</th><th class="num">Faits</th></tr>
+      </thead>
+      <tbody>
+        {% for conflit in analysis.source_drift.conflicts %}
+        <tr>
+          <td class="affiche">{{ conflit.publisher }}</td>
+          {# **Les comptes bruts, et rien d'autre.** Une version intermédiaire
+             désignait un niveau dominant et comptait ce qui « s'en écarte » : le
+             calcul était juste, le libellé contredisait l'instrument. « S'écarter »
+             suppose une norme et désigne des fautifs, alors qu'on ne sait pas
+             laquelle des deux déclarations est la bonne — c'est tout son principe.
+             Deux comptes côte à côte ne supposent rien. Aucun ratio non plus :
+             `whoscored.com` (1 sur 4) et `mlssoccer.com` (3 sur 12) donnent 25 %
+             tous les deux, et le premier tient sur un fait unique. #}
+          <td>{{ conflit.label }}</td>
+          <td class="num">{{ conflit.facts }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% endif %}
+    <p>
+      La seconde ligne du compte porte sur les sélections dont <strong>aucun fait
+      cité n'atteint le niveau déclaré</strong>. Le contrôle demande qu'un fait
+      soit au moins aussi bon que la déclaration, <em>jamais</em> qu'il soit le
+      meilleur des faits cités : le niveau d'une sélection est celui du fait qui
+      porte l'angle, et un faisceau qui mélange les niveaux est le cas ordinaire.
+      Exiger l'accord avec le maximum déclarerait le faux à chaque bloc de ce
+      genre.
+    </p>
+    <p>
+      <strong>Les comptes se lisent seuls, et le tableau n'en tire rien.</strong>
+      Une distribution fortement asymétrique — un niveau porté dix fois, un autre
+      une fois — ne se lit pas comme une répartition proche de moitié-moitié, ni
+      comme un partage un-un sur deux faits, qui est ici le cas le plus fréquent.
+      Les trois se voient dans les comptes ; aucune n'est nommée, et aucune ne
+      désigne un côté comme fautif — c'est ce qui sépare cet instrument d'un
+      correcteur.
+    </p>
+    {% endcall %}
     {% endif %}
     {# **L'axe qui remplace la quarantaine.** Ces sélections sortaient du
        regroupement par palier « en attendant leur prix réel » — un prix qui
