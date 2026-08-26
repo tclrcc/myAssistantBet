@@ -103,14 +103,19 @@ Quatre grandeurs, par session, sur la **section C** — la population que la pag
 mesure. Y melanger C-bis ferait entrer une population sans exigence de fait
 date. Requete : `audit/sql/20_faisceau.sql`.
 
-| session | depuis | blocs | faits | faits/bloc | niveau 1 | niveau 4 | domaines refuses |
+| session | depuis | blocs | faits | faits/bloc | niveau 1 | niveau 4 | pages d'operateur |
 | ---: | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| 17 | 18/08 | 17 | 38 | **2,24** | **47,4 %** | 5,3 % | 0 |
+| 17 | 18/08 | 17 | 38 | **2,24** | **47,4 %** | 5,3 % | 1 |
 | 18 | 20/08 | 4 | 7 | 1,75 | 28,6 % | 0,0 % | 0 |
 | 19 | 21/08 | 15 | 27 | 1,80 | 25,9 % | 3,7 % | 0 |
-| 20 | 22/08 | 58 | 95 | 1,64 | 18,9 % | **14,7 %** | 1 |
-| 21 | 22/08 | 43 | 56 | **1,30** | 25,0 % | 12,5 % | 2 |
-| 22 | 24/08 | 6 | 14 | 2,33 | **7,1 %** | **28,6 %** | 1 |
+| 20 | 22/08 | 58 | 95 | 1,64 | 18,9 % | **14,7 %** | 2 |
+| 21 | 22/08 | 43 | 56 | **1,30** | 25,0 % | 12,5 % | 4 |
+| 22 | 24/08 | 6 | 14 | 2,33 | **7,1 %** | **28,6 %** | 2 |
+
+> **La derniere colonne a ete recalculee le 26/08** avec la liste de refus reelle
+> et non avec la sonde d'instruction. Elle valait `0 0 0 1 2 1` ; elle vaut
+> `1 0 0 2 4 2`. **La session 17 — la plus ancienne, anterieure a la rupture —
+> en porte une**, ce qui suffit a defaire l'observation ci-dessous.
 
 ### Ce qu'il aurait montre le 21/08
 
@@ -122,7 +127,12 @@ Agrege de part et d'autre de la rupture, sur les memes donnees :
 | part de niveau 1 | 37,5 % | 20,0 % | −17,5 pts | **0,0058** |
 | part de niveau 1-2 | 90,3 % | 78,2 % | −12,1 pts | **0,028** |
 | part de niveau 4 | 4,2 % | 15,2 % | +11,0 pts | **0,016** |
-| domaines de la liste de refus | 0 / 72 | 4 / 165 | — | 0,32 |
+
+**La quatrieme grandeur ne figure pas dans ce tableau, et c'est le resultat.**
+Le sondage d'instruction annoncait `0 / 72` avant contre `4 / 165` apres. Recompte
+avec la liste reelle : **3 / 86 contre 9 / 185**, soit 3,5 % et 4,9 %, p = 0,76.
+Il n'y a pas de rupture a montrer sur cette grandeur-la — voir §4. Elle reste au
+moniteur pour ce qu'elle dira **plus tard**, pas pour ce qu'elle dit du 21/08.
 
 ### Trois regles de forme, et elles ne sont pas negociables
 
@@ -241,6 +251,10 @@ de liste de refus ne coute qu'un signal.
 | releve d'instruction (regex devinee) | **0 / 72** | 4 / 165 | 0,32 |
 | **releve corrige** | **3 / 86 = 3,5 %** | **9 / 185 = 4,9 %** | **0,76** |
 
+**L'observation est retiree, pas nuancee.** « Elles n'apparaissent qu'apres la
+rupture » etait un artefact de sonde, et rien n'en subsiste : la session 17, la
+plus ancienne du moniteur, en porte deja une.
+
 **Le contraste avant/apres n'existe pas.** Des pages d'operateur etaient citees
 **avant** la rupture aussi ; le zero d'origine etait un artefact de la sonde, pas
 une propriete des donnees. L'observation « elles n'apparaissent qu'apres » est
@@ -260,9 +274,11 @@ d'ailleurs correctement etiquetes niveau 4 par le modele. Il existe pour que ces
 pages **cessent d'entrer**, et pour que leur part soit lisible dans la serie du
 faisceau le jour ou elle bougera.
 
-**Un signalement, jamais un refus.** Le modele n'a pas menti sur leur niveau dans
-la majorite des cas ; ce qui se signale est leur **entree dans le faisceau**, pas
-leur etiquetage.
+**Un signalement, jamais un refus, et la mesure le rend plus net qu'attendu** :
+**les 12 faits sont declares niveau 4, tous les douze.** Le modele ne se trompe
+jamais sur ce que sont ces pages. Ce qui se signale est donc leur **entree dans
+le faisceau**, jamais leur etiquetage — et c'est precisement ce qui interdit d'en
+faire un refus. Repartition : 9 en section C, 3 en C-bis.
 
 **La liste est curee, et son incompletude est assumee** — c'est ce qui la
 distingue d'une liste d'admission. Elle porte des marques d'operateurs et de
@@ -513,6 +529,23 @@ trois reponses a la question, pas deux.
    quand — c'est le cas du cadre publie et de la configuration servie, et c'est
    pourquoi le journal d'analyse a cesse de dependre de l'emoji colle.
 
+### La regle vaut pour les documents, et l'audit l'a apprise sur lui-meme
+
+**Sixieme occurrence, produite par la correction d'une cinquieme.** Le releve de
+la liste de refus a ete corrige dans le code, dans le docstring et dans le message
+de commit — **et pas dans le document**, qui a porte le chiffre faux a deux
+endroits de plus jusqu'a ce qu'une relecture le demande.
+
+C'est la plus utile des occurrences, parce qu'elle montre ce dont la regle ne
+protege pas : **sa propre version paresseuse.** Corriger « la » copie n'a de sens
+que si l'on sait combien il y en a, et un chiffre publie a quatre endroits est un
+chiffre a **quatre copies** — code, docstring, surface, document — qu'aucun
+mecanisme n'oblige a concorder.
+
+Corollaire operationnel : apres toute correction de mesure, **compter les copies
+avant de declarer la correction faite**. `grep` sur le chiffre, pas sur le
+souvenir de l'avoir ecrit.
+
 ### Deriver le niveau d'un domaine par rapprochement de noms — **ferme, mesure le 26/08/2026**
 
 Piste evidente pour couvrir la queue des 181 domaines : les sites de clubs se
@@ -591,6 +624,54 @@ Regle de test du projet, applicable a chacun : une assertion enonce ce qui doit
 etre vrai, jamais ce qui est sorti. Le test 5 se pose sur le **prompt rendu** et
 non sur le service — le defaut du lot 19 vivait dans la porte, pas dans le
 calcul.
+
+---
+
+## 9 bis. Le critere d'admission d'un champ importe
+
+**Ecrit avant le chantier d'enrichissement, et pas pendant.** Un critere pose
+apres avoir vu ce que l'API offre se calibre sur l'offre ; pose avant, il se
+calibre sur le besoin.
+
+### Le referent n'est pas la conduite de la recherche
+
+Elle dit **ou** chercher et **a quel niveau de source** — que le site de
+l'instance est un niveau 1. Elle ne dit pas **quels faits comptent** : elle ne
+tranchera jamais si le style de jeu d'un joueur est exploitable.
+
+Le referent est la **section B** du gabarit : « l'angle sportif dominant, sa
+nature en un mot — issue ou maniere — puis le marche qui la traduit ».
+
+> **Le test, et il est concret** : pour chaque champ envisage, ecrire la phrase de
+> section B qu'il permettrait. **Si la phrase ne vient pas, le champ ne rentre
+> pas.**
+
+Un champ vaut l'import s'il peut **porter un angle ou l'invalider**. Sinon c'est
+du contexte decoratif, qui coute des tokens dans chaque bloc et ajoute une surface
+d'erreur factuelle — les erreurs de bloc de la section F viennent deja de la.
+
+### Un champ de niveau 4 n'a pas sa place dans le bloc
+
+**Critere que la methode ne fournit pas, et qu'il faut poser explicitement.** Les
+12 faits de la liste de refus sont entres parce qu'ils ont ete **cherches** ; un
+champ d'API importe systematiquement entre **sans avoir ete cherche du tout**, sur
+chaque bloc et sans decision.
+
+Si un fournisseur sert des donnees qui relevent de la categorie « ecarter » —
+pronostics, cotes agregees, formes calculees par un tiers — elles ne figurent pas
+au bloc, **quelle que soit leur commodite**.
+
+### Le classement : niveau 1, date, verifiable, et deja dans le prix
+
+Cas particulier tranche **d'avance**, parce qu'il se presentera. Un classement
+officiel coche toutes les cases de la table des sources : l'instance le publie, il
+est date, il se verifie. Et **un angle bati sur un ecart de classement ne dit rien
+que le marche ne sache deja** — il est integralement dans le prix.
+
+Il vaut donc comme **borne de contexte, jamais comme facteur**, et le bloc doit
+l'ecrire avec ce statut. Sans cette mention il servira d'angle par defaut le jour
+ou rien d'autre ne se presente — et le gabarit a deja une consigne pour ce cas :
+c'est un PASSE.
 
 ---
 
