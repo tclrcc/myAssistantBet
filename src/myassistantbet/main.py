@@ -665,6 +665,11 @@ def _competitions_context(
     error_form: str | None = None,
 ) -> dict[str, object]:
     settings = get_settings()
+    # **Un seul calcul par rendu.** La liste sert deux fois — le bandeau qui
+    # nomme les competitions retirees, et les rencontres qu'elles portent — et
+    # elle valait 30 ms l'appel apres l'index de la migration 081. Ce n'est pas
+    # un cache : rien ne survit a la requete.
+    ecartees = competitions_service.unpriced(settings)
     return {
         "competitions": competitions_service.list_all(settings),
         "coverage": coverage_service.by_competition(settings),
@@ -700,8 +705,8 @@ def _competitions_context(
         # exception laissee visible au board finit par y rester ; ici les
         # rencontres retirees restent atteignables pour la saisie manuelle de
         # cotes, au niveau ou la regle opere.
-        "unpriced": competitions_service.unpriced(settings),
-        "hidden_events": competitions_service.hidden_events(settings),
+        "unpriced": ecartees,
+        "hidden_events": competitions_service.hidden_events(settings, entries=ecartees),
         "elo_state": elo_service.state(settings),
     }
 

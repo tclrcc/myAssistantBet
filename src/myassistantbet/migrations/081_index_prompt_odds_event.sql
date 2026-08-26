@@ -1,0 +1,43 @@
+-- 081_index_prompt_odds_event.sql — `prompt_odds` etait scannee en entier par evenement.
+--
+-- **Mesure du 26/08/2026, sur deux copies identiques de la base servie.** Le
+-- board passait de 0,043 s a **18,36 s** et `/competitions` de 0,040 s a
+-- **18,98 s** ; `/stats`, qui ne touche pas a cette requete, ne bougeait pas —
+-- c'est ce temoin qui a rendu la mesure concluante.
+--
+-- Ce n'etait **pas un N+1 applicatif** : deux appels a `unpriced()` par rendu,
+-- 28 requetes SQL en tout. Le N+1 etait **dans une requete**, et le plan le
+-- disait seul :
+--
+--     |--LEFT-MOST SUBQUERY
+--     |  `--SEARCH o USING INDEX idx_odds_event_market (event_id=?)
+--     `--UNION ALL
+--        `--SCAN q
+--
+-- `odds` porte `idx_odds_event_market(event_id, market_key)`, dont la colonne de
+-- tete est `event_id` : elle fait un `SEARCH`. `prompt_odds` ne portait que
+-- `idx_prompt_odds_lot(session_id, event_id)`, **dont la colonne de tete est
+-- `session_id`** — un predicat sur `event_id` seul ne peut pas s'en servir.
+--
+-- Cout : **697 evenements** dans les 69 competitions non servies, x **43 751
+-- lignes** de `prompt_odds` a chaque fois, soit **~30,5 millions de lignes par
+-- appel** et deux appels par rendu.
+--
+-- ## Couvrant, et c'est mesure
+--
+-- `(event_id)` seul rend la requete chaude en 0,07 s pour 460 Ko ;
+-- `(event_id, fetched_at)` la rend en **0,03 s** pour 1,4 Mo, le plan devenant
+-- `SEARCH ... USING COVERING INDEX` — la valeur lue sort de l'index sans toucher
+-- la table. Un mega-octet pour un facteur deux sur **la table qui grossit le plus
+-- vite du projet** (~35 Mo/an) : l'ecart se creusera du bon cote.
+--
+-- ## Ce que ce correctif n'est pas
+--
+-- **Ni un cache, ni une colonne materialisee.** Les deux auraient introduit une
+-- seconde copie de la verite, avec sa question — qu'est-ce qui la force a
+-- concorder, et que se passe-t-il quand une cote arrive entre deux
+-- invalidations. La regle continue de se relire sur l'etat reel a chaque
+-- affichage : un prix ramene la competition immediatement, rien n'est fige.
+--
+-- La conception n'etait pas fausse, la requete l'etait.
+CREATE INDEX IF NOT EXISTS idx_prompt_odds_event ON prompt_odds(event_id, fetched_at);

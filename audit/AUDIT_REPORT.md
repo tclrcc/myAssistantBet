@@ -392,7 +392,52 @@ invisible. C'est pour ca que l'entree existe, et c'est le troisieme compte faibl
 de ce dossier qui se revele etre un artefact de mesure. Les deux premiers ont
 produit une observation erronee ; celui-ci aurait produit un **refus definitif**.
 
-## C.18 — Ce qui reste ouvert et n'a pas ete instruit
+## C.18 — Un axe non indexe est invisible en test et catastrophique en production
+
+**La classe, pas l'incident.** Une requete qui filtre une colonne sur un axe que
+rien n'indexe **passe tous les tests** : les fixtures portent quelques dizaines de
+lignes, et le cout est proportionnel au volume. Elle ne se voit qu'a l'usage, et
+elle se voit alors comme une page qui ne repond plus.
+
+Mesure du 26/08/2026, sur deux copies identiques de la base servie : le board
+passe de **0,043 s a 18,36 s** (x427) et `/competitions` de **0,040 s a 18,98 s**
+(x475). `/stats`, qui ne touche pas a la requete en cause, ne bouge pas — **c'est
+ce temoin qui rend la mesure concluante**, sans lui deux surfaces lentes
+n'auraient designe personne.
+
+**La suite etait verte a 2 698 tests.** Ce qui a trouve le defaut est une plainte
+d'utilisateur.
+
+**C'est la meme famille que tout ce dossier** — la sortie de l'echec identique a
+la sortie du cas ordinaire — a une difference pres qui la rend plus facile a
+manquer : le signal n'est pas un chiffre faux mais un **temps d'attente**. Rien
+n'est errone a l'ecran, la page finit par s'afficher, et le seul symptome est
+qu'on cesse de l'ouvrir. Une page qu'on n'ouvre pas ne dit plus rien, ce qui est
+l'etat final que ce dossier passe son temps a eviter.
+
+**Ce que la mesure a ecarte, et il fallait l'ecarter pour trouver.** Ce n'etait
+pas un N+1 applicatif : deux appels a la fonction par rendu, 28 requetes SQL en
+tout. Le N+1 etait **a l'interieur d'une requete** — une sous-requette correlee
+par evenement, 697 evenements x 43 751 lignes, ~30,5 millions de lignes lues par
+appel. `EXPLAIN QUERY PLAN` a repondu seul : `SEARCH` sur `odds`, **`SCAN` sur
+`prompt_odds`**, dont le seul index portait `(session_id, event_id)` — colonne de
+tete `session_id`, donc inutilisable pour un predicat sur `event_id`.
+
+**Le correctif n'est ni un cache ni une colonne materialisee**, et c'est ce qui le
+rend acceptable : les deux auraient introduit une **seconde copie de la verite**
+avec sa question — qu'est-ce qui la force a concorder, et que se passe-t-il quand
+une cote arrive entre deux invalidations. Un index couvrant ramene le calcul en
+direct a 30 ms, donc il n'y a plus rien a echanger contre de la fraicheur. **La
+conception n'etait pas fausse, la requete l'etait.**
+
+**Le geste preventif, a reprendre en section E** : toute nouvelle requete sur
+`prompt_odds`, `odds`, `events` ou `picks` passe par `EXPLAIN QUERY PLAN` **avant**
+d'etre ecrite. Ce sont les quatre tables qui grossissent. Il est porte par
+`CONTRIBUTING.md`, et garde pour la requete en cause par
+`tests/test_plan_requetes.py` — sur le **plan** et jamais sur le temps, un test
+chronometre etant instable et desactive au premier faux positif.
+
+## C.19 — Ce qui reste ouvert et n'a pas ete instruit
 
 - **Phase 4** — le generateur de prompts : variables injectees non utilisees,
   erreurs factuelles de bloc remontees a leur source sur trois cas, conformite du
@@ -407,6 +452,13 @@ produit une observation erronee ; celui-ci aurait produit un **refus definitif**
   score et jeux joues des tours de qualification, servis sous `singles` par un
   endpoint deja appele. Non conduit. Le rattachement, lui, est livre (migration 080)
   et n'importait aucun champ.
+- **`/stats` repond en 7,6 s**, et ce n'est **pas** une regression : la mesure du
+  26/08 la trouve identique avant et apres le lot, et c'est ce qui en fait le
+  temoin de la mesure ci-dessus. C'est un probleme en soi — sept secondes sur la
+  page qui porte tous les instruments de mesure, donc la page qu'on finit par ne
+  plus ouvrir. Non instruit : aucun profil n'a ete fait, et rien ne dit encore si
+  la cause est une requete, leur nombre, ou le calcul exact des tables de Fisher.
+  A reprendre quand le chemin critique sera degage.
 - **La verification du rattachement contre le tableau reel** — il est livre avant
   que le tableau principal de l'US Open soit entre, donc contre des donnees montees
   a la main. Le controle empirique se fait a l'entree du tableau, en recomptant un

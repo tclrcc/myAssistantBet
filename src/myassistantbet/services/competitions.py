@@ -12,6 +12,7 @@ credits sans une decision explicite.
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
@@ -1898,7 +1899,9 @@ class HiddenEvent:
 
 
 def hidden_events(
-    settings: Settings | None = None, now: datetime | None = None
+    settings: Settings | None = None,
+    now: datetime | None = None,
+    entries: Sequence[UnpricedCompetition] | None = None,
 ) -> dict[int, list[HiddenEvent]]:
     """Les rencontres a venir des competitions retirees du board, par competition.
 
@@ -1914,7 +1917,14 @@ def hidden_events(
     """
     settings = settings or get_settings()
     moment = (now or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    cibles = [entree.competition_id for entree in unpriced(settings, now)]
+    # **`entries` est la liste deja calculee par l'appelant.** L'ecran des
+    # competitions la demandait pour son bandeau puis la faisait recalculer ici :
+    # deux fois la meme requete dans le meme rendu. Absente, elle se calcule — un
+    # parametre optionnel plutot qu'une seconde source, et la fonction reste
+    # appelable seule.
+    if entries is None:
+        entries = unpriced(settings, now)
+    cibles = [entree.competition_id for entree in entries]
     if not cibles:
         return {}
     marques = ", ".join("?" * len(cibles))

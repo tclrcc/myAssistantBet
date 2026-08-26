@@ -123,6 +123,34 @@ Un indicateur qui les melangerait detruirait les deux comparaisons que ces
 populations existent pour rendre possibles : fait date contre lecture, et prix
 d'avant-match contre prix ecrit en connaissant le debut du match.
 
+## Toute requete sur une table qui grossit passe par `EXPLAIN QUERY PLAN`
+
+**Quatre tables grossissent** : `prompt_odds`, `odds`, `events`, `picks`. Une
+requete qui en filtre une sur un axe que rien n'indexe **passe tous les tests** —
+les fixtures sont petites, le cout est proportionnel au volume — et rend la page
+inutilisable en production.
+
+Mesure du 26/08/2026 : le board est passe de **0,043 s a 18,36 s** et
+`/competitions` de **0,040 s a 18,98 s**, sur une requete nouvelle qui filtrait
+`prompt_odds` par `event_id` seul quand le seul index disponible portait
+`(session_id, event_id)`. **La suite etait verte a 2 698 tests.** Ce qui l'a
+trouve est une plainte d'utilisateur, pas un garde-fou.
+
+Le geste, avant d'ecrire la requete et pas apres :
+
+```sql
+EXPLAIN QUERY PLAN <la requete>;
+```
+
+Un `SCAN` sur l'une de ces quatre tables se justifie ou se corrige. Un `SEARCH …
+USING INDEX` n'appelle rien. Et **un index ne sert que si sa colonne de tete est
+celle du predicat** : c'est exactement ce qui manquait ici.
+
+`tests/test_plan_requetes.py` garde la propriete pour `unpriced()` — le **plan**,
+jamais le temps : un test chronometre est instable et finit desactive au premier
+faux positif. Il lit la SQL reellement executee plutot que d'en garder une copie,
+et il verifie qu'il mordrait encore si l'index disparaissait.
+
 ## Le disque est une panne d'exploitation, et rien ne la surveille
 
 `/tmp` est un **tmpfs de 5,8 Go**, donc de la mémoire vive. Relevé du

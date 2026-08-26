@@ -5,6 +5,7 @@ Ne fait aucun appel externe : uniquement des lectures et ecritures locales.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
@@ -284,15 +285,17 @@ def list_rows(
     filters: Filters | None = None,
     settings: Settings | None = None,
     now: datetime | None = None,
+    unpriced: Sequence[competitions_service.UnpricedCompetition] | None = None,
 ) -> list[BoardRow]:
     """Evenements de la fenetre courante, avec leurs cotes 1N2 et O/U principales."""
-    return _collect(filters, settings, now)[0]
+    return _collect(filters, settings, now, unpriced)[0]
 
 
 def _collect(
     filters: Filters | None = None,
     settings: Settings | None = None,
     now: datetime | None = None,
+    unpriced: Sequence[competitions_service.UnpricedCompetition] | None = None,
 ) -> tuple[list[BoardRow], list[tournament_day.Day]]:
     """Lignes du board, et les journees de tournoi proposees au filtre.
 
@@ -333,10 +336,16 @@ def _collect(
     # la mesure du 26/08 tenait Lyon - Fenerbahce a dix heures du coup d'envoi.
     # Il porte son badge « aucun prix » et c'est tout — un fait affiche, pas un
     # filtre applique.
-    ecartees = [
-        entree.competition_id
-        for entree in competitions_service.unpriced(settings, now or datetime.now(UTC))
-    ]
+    #
+    # **La liste se calcule une fois par rendu et descend ici.** Elle valait
+    # 30 ms l'appel apres l'index de la migration 081, et `build_view` la
+    # demandait jusqu'a trois fois — une par `_collect`, qui se rejoue quand le
+    # filtre de date tombe hors fenetre, plus une pour le bandeau. Ce n'est pas
+    # un cache : rien n'est garde entre deux requetes, on ne calcule simplement
+    # pas deux fois la meme chose dans le meme rendu.
+    if unpriced is None:
+        unpriced = competitions_service.unpriced(settings, now or datetime.now(UTC))
+    ecartees = [entree.competition_id for entree in unpriced]
     if ecartees:
         sql.append(f"AND e.competition_id NOT IN ({', '.join('?' * len(ecartees))})")
         params.extend(ecartees)
@@ -514,8 +523,17 @@ def coherent(filters: Filters, options: dict[str, list[dict[str, Any]]]) -> Filt
     return replace(filters, competition_id=None)
 
 
-def banner(settings: Settings | None = None, now: datetime | None = None) -> Banner:
-    """Etat du bandeau : credits restants, dernier scan, nombre de matchs coches."""
+def banner(
+    settings: Settings | None = None,
+    now: datetime | None = None,
+    unpriced: Sequence[competitions_service.UnpricedCompetition] | None = None,
+) -> Banner:
+    """Etat du bandeau : credits restants, dernier scan, nombre de matchs coches.
+
+    `unpriced` est la liste deja calculee par l'appelant. Absente, elle se
+    calcule — le bandeau reste appelable seul, et c'est un parametre optionnel
+    plutot qu'une seconde source.
+    """
     settings = settings or get_settings()
     state = Banner(
         credit_floor=settings.odds_api_credit_floor,
@@ -550,7 +568,11 @@ def banner(settings: Settings | None = None, now: datetime | None = None) -> Ban
     # **Ce que le board ne montre plus se dit**, avec son compte : un retrait
     # silencieux ne se distingue pas d'une absence de matchs, et c'est le defaut
     # que ce projet retire partout.
-    state.unpriced_competitions = competitions_service.unpriced(settings, now or datetime.now(UTC))
+    state.unpriced_competitions = (
+        list(unpriced)
+        if unpriced is not None
+        else competitions_service.unpriced(settings, now or datetime.now(UTC))
+    )
     return state
 
 
@@ -602,12 +624,19 @@ def build_view(
     filters = filters or Filters()
     options: dict[str, list[Any]] = dict(filter_options(settings, filters.sport))
     filters = coherent(filters, options)
-    rows, days = _collect(filters, settings, now)
+    # **Un seul calcul par rendu**, partage par les lignes et par le bandeau.
+    ecartees = competitions_service.unpriced(settings, now or datetime.now(UTC))
+    rows, days = _collect(filters, settings, now, ecartees)
     if filters.date and filters.date not in {day.key for day in days}:
         # Une journee sortie de la fenetre viderait le board sans que le menu
         # montre le filtre en cause : on l'oublie, exactement comme une
         # competition qui n'appartient pas au sport choisi.
         filters = replace(filters, date="")
-        rows, days = _collect(filters, settings, now)
+        rows, days = _collect(filters, settings, now, ecartees)
     options["days"] = days
-    return BoardView(rows=rows, banner=banner(settings, now), options=options, filters=filters)
+    return BoardView(
+        rows=rows,
+        banner=banner(settings, now, ecartees),
+        options=options,
+        filters=filters,
+    )
