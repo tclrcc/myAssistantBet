@@ -87,6 +87,102 @@ def publisher_of(raw: str) -> str:
     return value if DOMAIN.match(value) else ""
 
 
+#: Marques d'operateurs et de pronostiqueurs, comparees au **label** d'un domaine.
+#:
+#: **Le cadre en nomme la categorie et la raison** : « site de pronostics, page
+#: adossee a un operateur — niveau 4, ecarter », parce qu'« elles vendent un
+#: operateur : leur choix de faits sert un argumentaire, et un fait retenu pour
+#: convaincre ne vaut pas un fait rapporte ».
+#:
+#: **Curee et incomplete par construction, et c'est ce qui la rend admissible.**
+#: Une liste de **refus** n'a pas la meme exigence qu'une liste d'admission : son
+#: faux negatif ne coute qu'un signal manquant, quand un faux positif d'admission
+#: attribuerait un niveau faux. C'est precisement l'argument qui a fait renoncer a
+#: une table d'attribution — 181 domaines pour 271 faits — et qui autorise ici la
+#: meme forme.
+#:
+#: Elle s'enrichit au fil des releves ; elle ne se complete jamais.
+REFUSED_PUBLISHERS = frozenset(
+    {
+        # Operateurs
+        "1xbet",
+        "888sport",
+        "bet-at-home",
+        "bet365",
+        "betano",
+        "betclic",
+        "betfair",
+        "betfred",
+        "betsson",
+        "betway",
+        "bwin",
+        "etoto",
+        "ladbrokes",
+        "leovegas",
+        "netbet",
+        "paddypower",
+        "parionssport",
+        "pinnacle",
+        "pmu",
+        "skybet",
+        "tipico",
+        # `toto` est le nom de l'operateur d'Etat neerlandais (`extra.toto.nl`,
+        # releve en base). Ambiguite connue et assumee : d'autres enseignes
+        # portent ce nom hors du domaine sportif, et un faux positif ne coute
+        # ici qu'un signal de trop sur une ligne qui s'importe quand meme.
+        "toto",
+        "unibet",
+        "vbet",
+        "williamhill",
+        "winamax",
+        "zebet",
+        # Pronostiqueurs et comparateurs de cotes
+        "betexplorer",
+        "betmines",
+        "bettingexpert",
+        "blogabet",
+        "coteur",
+        "footballpredictions",
+        "forebet",
+        "freetips",
+        "goalpredictions",
+        "oddschecker",
+        "olbg",
+        "predictz",
+        "pronostic",
+        "pronostics",
+        "soccervista",
+        "sportytrader",
+        "tipsterarea",
+        "windrawwin",
+    }
+)
+
+
+def is_refused(publisher: str) -> bool:
+    """L'editeur est-il une page d'operateur ou de pronostics ?
+
+    **La comparaison porte sur le label du domaine, jamais en sous-chaine.**
+    `betterrugby.com` contient « bet » et n'est pas un operateur ; `leparisien.fr`
+    contient « paris » et c'est un journal. Une liste de refus qui se declenche
+    sur une sous-chaine attribuerait un soupcon a des editeurs legitimes, et un
+    faux positif se lit ici comme une accusation.
+
+    **Un signalement, jamais un refus** : la ligne s'importe, le fait entre au
+    faisceau, et c'est sa **part** qui se lit dans la serie. Sur les quatre
+    premiers releves, trois etaient d'ailleurs correctement etiquetes niveau 4 par
+    le modele — ce qui se signale est leur entree, pas leur etiquetage.
+
+    **Sa valeur est prospective.** Mesure du 26/08/2026 : 12 faits sur 271, et
+    **aucun contraste avant/apres** la rupture du 21/08 — 3,5 % contre 4,9 %,
+    p = 0,76. Elle n'existe pas pour trier ce qui est deja entre.
+    """
+    domaine = publisher_of(publisher)
+    if not domaine:
+        return False
+    return any(label in REFUSED_PUBLISHERS for label in domaine.split("."))
+
+
 @dataclass(frozen=True)
 class Fact:
     """Un fait date, tel que l'analyse le declare.

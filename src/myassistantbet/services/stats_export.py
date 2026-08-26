@@ -784,6 +784,7 @@ def _evidence(entry: history_service.EvidenceMix) -> dict[str, Any]:
         "facts": entry.facts,
         "facts_per_block": entry.facts_per_block,
         "levels": {str(level): entry.levels.get(level, 0) for level in history_service.FACT_LEVELS},
+        "refused": entry.refused,
         "shares": {str(level): entry.share(level) for level in history_service.FACT_LEVELS},
         "thin": entry.thin,
         "minimum": entry.minimum,
@@ -1916,17 +1917,27 @@ def as_markdown(found: StatsReport) -> str:
             "elle n'en a pas. Les colonnes marquées « maigre » portent trop peu de faits "
             "pour qu'une variation y veuille dire quelque chose.",
             "",
-            "| Journée | Session | Blocs | Faits | Faits/bloc | n1 | n2 | n3 | n4 | Maigre |",
-            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: |",
+            "| Journée | Session | Blocs | Faits | Faits/bloc | n1 | n2 | n3 | n4 "
+            "| Pages d'opérateur | Maigre |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: |",
         ]
         for entry in found.evidence_shift:
             parts = " | ".join(entry.share_label(level) for level in history_service.FACT_LEVELS)
             out.append(
                 f"| {entry.day} | {entry.session_id} | {entry.blocks} | {entry.facts} | "
                 f"{entry.facts_per_block if entry.facts_per_block is not None else '—'} | "
-                f"{parts} | {'oui' if entry.thin else '—'} |"
+                f"{parts} | {entry.refused_label} | {'oui' if entry.thin else '—'} |"
             )
         out += [
+            "",
+            "« Pages d'opérateur » compte les faits cités depuis une page adossée à un "
+            "opérateur ou un site de pronostics — la catégorie que le cadre dit d'écarter. "
+            "**Un compte, jamais un refus** : la ligne s'importe. La colonne est "
+            "**prospective** — 12 faits sur 271 au 26/08/2026, sans contraste avant/après "
+            "la rupture du 21/08, 3,5 % contre 4,9 % — et elle existe pour que ces pages "
+            "cessent d'entrer, pas pour trier ce qui est déjà entré. La liste des marques "
+            "reconnues est curée et incomplète par construction : un faux négatif ne coûte "
+            "qu'un signal manquant, quand un faux positif se lirait comme une accusation.",
             "",
             f"« Maigre » : moins de {found.evidence_shift[0].minimum} fait(s) cité(s) sur "
             "la session. Le seuil est celui de la page — sous quel compte une proportion "

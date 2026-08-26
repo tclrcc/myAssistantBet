@@ -33,6 +33,7 @@ from .confidence import (
     OVERRIDE_CAUSES,
     Claim,
     Opened,
+    is_refused,
     read_blocks,
     read_opened,
 )
@@ -1413,6 +1414,32 @@ def _attach_claims(
     reading = read_blocks(raw)
     preview.notes.extend(reading.rejected)
     preview.rejects.extend(reading.rejects)
+    # **Les pages d'operateur se signalent, elles ne se refusent pas.** Le cadre
+    # dit de les ecarter — « elles vendent un operateur : leur choix de faits sert
+    # un argumentaire, et un fait retenu pour convaincre ne vaut pas un fait
+    # rapporte ». Sur les quatre premiers releves, trois etaient pourtant
+    # correctement etiquetes niveau 4 par le modele : ce qui se signale est leur
+    # **entree dans le faisceau**, pas leur etiquetage. Refuser la ligne la ferait
+    # disparaitre sans laisser de trace, ce qui est le rejet silencieux que ce
+    # projet retire partout.
+    #
+    # **Le signal se lit sur les blocs lus, jamais sur les blocs apparies**, et la
+    # difference decide : pose apres l'appariement, il se taisait exactement quand
+    # celui-ci echoue — c'est-a-dire sur les collages qu'il faut le plus regarder.
+    # Une page citee reste citee, que son bloc trouve sa ligne ou non.
+    #
+    # Il passe par `notes` et non par `ignored` : ce qui accompagne un apercu
+    # lisible n'est pas ce qui empeche de le lire.
+    marques = sorted(
+        {fait.source for claim in reading.claims for fait in claim.facts if is_refused(fait.source)}
+    )
+    if marques:
+        preview.notes.append(
+            f"{len(marques)} page(s) d'opérateur ou de pronostics citée(s) en source : "
+            + ", ".join(marques)
+            + ". Le cadre les écarte — leur choix de faits sert un argumentaire. "
+            "Les lignes s'importent, et la part se lit dans la série du faisceau."
+        )
     if not reading.claims:
         # **La seule branche muette du module, et c'est celle qui a servi.** Un
         # bloc pour trois lignes avertissait ; zero bloc ne disait rien, si bien

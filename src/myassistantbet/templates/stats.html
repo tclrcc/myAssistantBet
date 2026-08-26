@@ -2053,6 +2053,10 @@
         <th class="num">n2</th>
         <th class="num">n3</th>
         <th class="num">n4</th>
+        {# **Pages d'opérateur** : la catégorie que le cadre dit d'écarter, parce
+           qu'« elles vendent un opérateur : leur choix de faits sert un
+           argumentaire ». Un compte, jamais un refus — la ligne s'importe. #}
+        <th class="num">Pages d'opérateur</th>
       </tr>
     </thead>
     <tbody>
@@ -2072,6 +2076,7 @@
         {% for niveau in [1, 2, 3, 4] %}
         <td class="num{% if not entry.levels.get(niveau) %} muted{% endif %}">{{ entry.share_label(niveau) }}</td>
         {% endfor %}
+        <td class="num{% if not entry.refused %} muted{% endif %}">{{ entry.refused_label }}</td>
       </tr>
       {% endfor %}
     </tbody>
@@ -2094,6 +2099,15 @@
     est trop courte pour en calibrer un, et il se déclencherait sur du bruit
     saisonnier. La question du seuil se rouvrira avec sa mesure, pas avec un nombre
     choisi.
+  </p>
+  <p>
+    <strong>La colonne « Pages d'opérateur » est prospective.</strong> Elle n'existe
+    pas pour trier ce qui est déjà entré : au 26/08/2026 elle compte 12 faits sur
+    271, et sans aucun contraste de part et d'autre de la rupture du 21/08 —
+    3,5 % avant, 4,9 % après. Elle existe pour que ces pages cessent d'entrer, et
+    pour que leur part soit lisible le jour où elle bougera. La liste des marques
+    reconnues est curée et incomplète par construction : un faux négatif ne coûte
+    qu'un signal manquant, quand un faux positif se lirait comme une accusation.
   </p>
   <p>
     Une session sans aucun bloc n'y figure pas : elle n'a pas un faisceau vide, elle

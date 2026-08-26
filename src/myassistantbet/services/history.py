@@ -34,6 +34,7 @@ from .confidence import (
     Claim,
     ClaimError,
     is_collection_fault,
+    is_refused,
     is_unknown_cause,
 )
 from .confidence import parse as parse_claim
@@ -4718,6 +4719,10 @@ class EvidenceMix:
     facts: int = 0
     #: Comptes par niveau declare, sur les faits cites.
     levels: dict[int, int] = field(default_factory=dict)
+    #: Faits cites depuis une page d'operateur ou de pronostics — la categorie
+    #: que le cadre dit d'ecarter. **Un compte, jamais un refus** : la ligne
+    #: s'importe, et c'est sa part dans la serie qui se lit.
+    refused: int = 0
     #: Seuil de lecture, **descendu dans l'objet** et jamais relu a l'acces : une
     #: ligne qui irait chercher son propre reglage rendrait deux releves du meme
     #: lot indiscernables des que la valeur change entre les deux. Lecon payee
@@ -4731,6 +4736,18 @@ class EvidenceMix:
     def share(self, level: int) -> float | None:
         """Part des faits cites qui portent ce niveau."""
         return None if self.facts == 0 else self.levels.get(level, 0) / self.facts
+
+    @property
+    def refused_share(self) -> float | None:
+        return None if self.facts == 0 else self.refused / self.facts
+
+    @property
+    def refused_label(self) -> str:
+        """La part, avec son compte. **Jamais un taux seul** — meme regle que
+        partout : `1 sur 4` et `3 sur 12` valent 25 % tous les deux."""
+        if self.facts == 0:
+            return "—"
+        return f"{self.refused}" if self.refused else "—"
 
     def share_label(self, level: int) -> str:
         """La part, formatee comme partout ailleurs sur la page.
@@ -4827,6 +4844,11 @@ def evidence_shift(settings: Settings | None = None) -> list[EvidenceMix]:
             entree.facts += 1
             if fait.level in FACT_LEVELS:
                 entree.levels[fait.level] = entree.levels.get(fait.level, 0) + 1
+            # **L'origine prime sur le relais**, par `Fact.source` : un operateur
+            # relaye par un agregateur reste un operateur, un club relaye par un
+            # operateur reste un club.
+            if is_refused(fait.source):
+                entree.refused += 1
 
     for session_id, entree in faisceaux.items():
         entree.day = jours.get(session_id, "")
