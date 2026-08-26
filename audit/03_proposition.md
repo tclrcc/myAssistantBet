@@ -714,6 +714,38 @@ Si un fournisseur sert des donnees qui relevent de la categorie « ecarter » �
 pronostics, cotes agregees, formes calculees par un tiers — elles ne figurent pas
 au bloc, **quelle que soit leur commodite**.
 
+### La forme admissible d'un agregat, et c'est un critere et non un verdict
+
+**Ecrit apres le §9 ter, qui a renverse le verdict par famille.** Le premier jet
+disait « un agregat de saison est un fait sans date, donc refuse ». La regle
+condamnait ce qui est **deja en production** : `Service`, `Retour`, `Jeux` et
+`Ecart` sont des agregats de 52 semaines, ils sont livres, et ils tiennent.
+
+Ce qui les rend lisibles n'est pas leur nature, c'est leur **forme de rendu**.
+Trois conditions, et il faut les trois :
+
+1. **la fenetre et les denominateurs sont ecrits** — `52 sem., 2 083 pts de
+   service, arretees au 16/08`. Un agregat qui porte ses bornes ne se lit pas
+   comme un fait du jour, et sa peremption se voit ;
+2. **il est rendu en contraste entre les deux joueurs** de la rencontre. C'est ce
+   qui le rend specifique a ce match : un chiffre qui decrit un joueur decrit
+   toutes ses rencontres, donc aucune ;
+3. **le contraste se tait sous le bruit** — il n'est nomme que si son intervalle
+   de Newcombe exclut zero. C'est cette condition qui fait le travail qu'on
+   attribuait a l'invariance : un agregat rendu avec son incertitude, et tu quand
+   elle englobe zero, **ne peut pas porter un angle qu'il ne soutient pas**.
+
+> **Le critere n'est donc pas « agregat de saison, refuse » mais « agregat qui ne
+> se rend pas sous ces trois conditions, refuse ».**
+
+Formule ainsi, il decide sans qu'on ait a trancher famille par famille — et il
+ferme au passage la variante qui aurait defait un verdict par famille : une
+grandeur refusee comme « non datee » revient sous forme de **serie temporelle**,
+recalculee chaque semaine donc datee, et l'objection tombe alors qu'aucune
+information n'a ete ajoutee. Une serie temporelle d'une grandeur qui ne varie pas
+entre deux matchs reste invariante ; rendue sans contraste ni intervalle, elle
+tombe sous la condition 2 ou la 3.
+
 ### Le classement : niveau 1, date, verifiable, et deja dans le prix
 
 Cas particulier tranche **d'avance**, parce qu'il se presentera. Un classement
@@ -788,9 +820,12 @@ contre 2. Bundesliga, Coupe de Malaisie contre MLS, toutes trois avec un score
 maximal. « ATP US Open Qualifications » contre « ATP US Open » est le meme piege
 sous une forme plus tentante, parce que le prefixe est exact.
 
-**Qui le renseigne : la main, au meme geste que la fenetre.** Pas le scan — il
-ne cree pas ces competitions, `tennis_fixtures` le fait sur une saisie. Le champ
-se pose donc la ou la fenetre se pose deja, et il herite de sa garde.
+**Qui le renseigne : la main, sur la meme ligne que la fenetre — et pas dans le
+meme formulaire.** Pas le scan : il ne cree pas ces competitions,
+`tennis_fixtures` le fait sur une saisie. Mais les quatre champs de `set_fenetre`
+se posent **ensemble parce qu'aucun ne sert seul**, et celui-ci sert seul —
+Winston-Salem a une fenetre et aucune phase. En cinquieme champ de ce groupe, il
+s'effacerait avec la fenetre. Formulaire a part, meme ligne.
 
 **Ce qu'il ne peut pas etre, et c'est ce qui en fait un chantier.** Une
 extension d'etendue appliquee aux six lecteurs **casse `Tour`** : le compte des
@@ -855,21 +890,16 @@ serie temporelle — un agregat glissant, recalcule chaque semaine, donc date �
 l'objection tombe alors qu'aucune information n'a ete ajoutee. Une serie
 temporelle d'une grandeur invariante reste invariante.
 
-**Et il faut porter la tension avec, plutot que la taire** : `Service`, `Retour`,
-`Jeux` et `Ecart` **sont** des agregats de saison, ils sont livres, et ils
-passent. Ce qui les separe tient en trois conditions, et c'est la forme
-admissible :
+**Et la tension se porte, plutot que de se taire** : `Service`, `Retour`, `Jeux`
+et `Ecart` **sont** des agregats de saison, ils sont livres, et ils passent. Ce
+qui les separe n'est pas leur nature mais leur forme de rendu — fenetre et
+denominateurs ecrits, contraste entre les deux joueurs, silence quand
+l'intervalle englobe zero.
 
-- ils portent leur **fenetre** et leurs **denominateurs** — `52 sem., 2 083 pts
-  de service, arretees au 16/08` — donc ils ne se lisent pas comme un fait du
-  jour ;
-- ils sont rendus en **contraste entre les deux joueurs du match**, ce qui les
-  rend specifiques a la rencontre ;
-- le contraste ne se nomme que si son **intervalle exclut zero** (Newcombe), donc
-  il se tait sous le bruit.
-
-Un agregat de saison de plus n'entre qu'a ces trois conditions. Sans elles il
-tombe sous la raison 2 : il decrit un joueur, pas une rencontre.
+**C'est cette forme qui est devenue le critere**, et elle a remplace le verdict
+par famille : voir « La forme admissible d'un agregat » au §9 bis. Un agregat qui
+s'y conforme entre, quelle que soit la famille dont il vient ; un agregat qui ne
+s'y conforme pas decrit un joueur et pas une rencontre.
 
 **4. Style de jeu — refuse, et il n'y avait meme pas de quoi refuser.** La
 raison 2 s'y applique en entier : une caracteristique permanente est dans le prix
@@ -904,7 +934,7 @@ en ecartant les huit colonnes de cotes de cloture.
 | Classements | **refuse** — borne de contexte, deja en base a 99,6 % | rien |
 | Matchs precedents · dates | **hors sujet** — deja en base | le rattachement |
 | Matchs precedents · score et charge | **admis** — phrase de section B obtenue | un appel par joueur, deja budgete |
-| Statistiques | **refuse hors des trois conditions** de la forme livree | rien |
+| Statistiques | **admis a la forme du §9 bis**, refuse hors d'elle | rien de nouveau |
 | Style de jeu | **refuse**, et sans substrat mesurable | rien |
 
 **Trois familles sur quatre sortent, et c'est le critere qui fonctionne** — le

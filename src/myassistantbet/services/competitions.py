@@ -312,7 +312,7 @@ def list_all(settings: Settings | None = None) -> list[dict[str, Any]]:
             "       c.active, c.api_active, c.notes, c.surface, c.category, "
             "       c.tennisdata_tournaments, c.timezone, c.city, "
             "       c.fenetre_debut, c.fenetre_fin, c.tennisapi_tour, "
-            "       c.tennisapi_tournament_id, "
+            "       c.tennisapi_tournament_id, c.phase_de, "
             "       s.id AS sport_order, s.key AS sport_key, s.label AS sport_label "
             "FROM competitions c JOIN sports s ON s.id = c.sport_id"
         ).fetchall()
@@ -520,6 +520,153 @@ def set_fenetre(
         tour_value,
         id_raw,
     )
+
+
+def phase_scope(competition_id: int | None, settings: Settings | None = None) -> tuple[int, ...]:
+    """Les competitions a lire pour le parcours d'un joueur dans celle-ci.
+
+    Rend la competition demandee, suivie de celles qui se declarent une **phase**
+    d'elle. Un tableau principal ramene donc ses qualifications ; une
+    qualification lue pour elle-meme ne ramene qu'elle — le tableau principal ne
+    s'est pas encore joue, et un joueur n'y a pas de parcours.
+
+    **Une seule ecriture, et c'est le point.** Deux lecteurs filtrent par
+    competition et le second n'est pas `tennis_load.load_for` :
+    `serve_stats._scanned_here` lit `events` directement, pour eviter une
+    recursion avec `_tournament_id`. Recopier la resolution des deux cotes
+    serait la septieme occurrence du motif du dossier — deux copies qu'aucun
+    mecanisme n'oblige a concorder.
+
+    **Et tous les lecteurs ne l'appellent pas.** `tennis_round._edition_in_base`
+    doit s'en tenir a la competition seule : le compte des joueurs y decide du
+    tour, et 128 + 256 n'est la taille d'aucun tableau. Suivre le lien y ferait
+    taire la ligne. Le lien est une relation entre competitions, pas une etendue
+    a appliquer partout.
+
+    **Profondeur un, garantie a l'ecriture.** `set_phase` refuse une chaine, donc
+    une seule requete suffit et rien ne se tronque en silence.
+    """
+    if not competition_id:
+        return ()
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT id FROM competitions WHERE phase_de = ? ORDER BY id", (competition_id,)
+        ).fetchall()
+    return (int(competition_id), *(int(row["id"]) for row in rows))
+
+
+def set_phase(
+    competition_id: int, phase_de: str | int | None, settings: Settings | None = None
+) -> None:
+    """Declare que cette competition est une **phase** d'une autre, ou l'efface.
+
+    **Un formulaire a part, sur la meme ligne que la fenetre.** Les quatre champs
+    de `set_fenetre` se posent ensemble parce qu'aucun ne sert seul ; celui-ci
+    sert seul — Winston-Salem a une fenetre et aucune phase — et les fondre
+    ferait effacer le rattachement en effacant la fenetre.
+
+    Rien n'est deduit d'un libelle, meme regle que la ligue API-Football, la
+    surface et le fuseau. Le piege est plus tentant ici qu'ailleurs, le prefixe
+    d'une qualification etant exactement celui de son tableau principal.
+
+    Quatre refus, et chacun evite un lien qui se lirait comme un fait :
+
+      * une competition **inconnue** — un identifiant qui ne designe rien ;
+      * **elle-meme** — le scope se lirait deux fois et le compte doublerait ;
+      * un **autre sport** — une qualification de tennis n'est pas une phase d'un
+        championnat de football, et rien d'autre n'attraperait la faute de frappe ;
+      * une **chaine**, dans les deux sens : la cible est deja une phase, ou la
+        source en porte deja. `phase_scope` lit **un** niveau ; une chaine s'y
+        tronquerait sans un mot, et un silence vaut moins qu'un refus.
+    """
+    brut = str(phase_de or "").strip()
+    if not brut:
+        with connect(settings) as conn:
+            conn.execute("UPDATE competitions SET phase_de = NULL WHERE id = ?", (competition_id,))
+        logger.info("Phase de la competition %d : effacee", competition_id)
+        return
+
+    try:
+        cible = int(brut)
+    except ValueError as exc:
+        raise CompetitionError(f"Identifiant de competition illisible : {brut!r}") from exc
+
+    if cible == competition_id:
+        raise CompetitionError("Une competition ne peut pas etre une phase d'elle-meme.")
+
+    with connect(settings) as conn:
+        source = conn.execute(
+            "SELECT sport_id, label FROM competitions WHERE id = ?", (competition_id,)
+        ).fetchone()
+        parent = conn.execute(
+            "SELECT sport_id, label, phase_de FROM competitions WHERE id = ?", (cible,)
+        ).fetchone()
+        if source is None:
+            raise CompetitionError(f"Competition inconnue : {competition_id}")
+        if parent is None:
+            raise CompetitionError(f"Competition inconnue : {cible}")
+        if int(source["sport_id"]) != int(parent["sport_id"]):
+            raise CompetitionError(
+                f"« {parent['label']} » n'est pas du meme sport que « {source['label']} »."
+            )
+        if parent["phase_de"] is not None:
+            raise CompetitionError(
+                f"« {parent['label']} » est deja une phase d'une autre competition : "
+                "une phase de phase ne se lit pas."
+            )
+        enfants = conn.execute(
+            "SELECT COUNT(*) AS n FROM competitions WHERE phase_de = ?", (competition_id,)
+        ).fetchone()
+        if int(enfants["n"]):
+            raise CompetitionError(
+                f"« {source['label']} » porte deja des phases : elle ne peut pas en etre une."
+            )
+        conn.execute("UPDATE competitions SET phase_de = ? WHERE id = ?", (cible, competition_id))
+    logger.info(
+        "Phase de la competition %d : rattachee a %d (%s)", competition_id, cible, parent["label"]
+    )
+
+
+def phase_options(settings: Settings | None = None) -> dict[int, list[dict[str, Any]]]:
+    """Pour chaque competition, celles dont elle peut se declarer une phase.
+
+    **Le menu reprend les gardes de `set_phase`**, et un menu qui propose ce que
+    le service refuse est pire qu'absent — meme regle que le bouton d'import de
+    `/competitions`. Les deux ecritures ne peuvent pas etre fondues : l'une leve
+    avec un message, l'autre filtre une liste. C'est donc la seconde branche de
+    la regle du dossier — **un test lit les deux sources** et verifie que tout ce
+    qui est propose est accepte, et que rien d'accepte ne manque au menu.
+
+    Une seule lecture pour tout l'ecran : la version par competition faisait une
+    requete par ligne sur une page qui en porte plus de cent.
+    """
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT id, sport_id, label, phase_de FROM competitions ORDER BY label"
+        ).fetchall()
+    toutes = [
+        {
+            "id": int(row["id"]),
+            "sport_id": int(row["sport_id"]),
+            "label": str(row["label"]),
+            "phase_de": row["phase_de"],
+        }
+        for row in rows
+    ]
+    parents = {int(row["phase_de"]) for row in toutes if row["phase_de"] is not None}
+    options: dict[int, list[dict[str, Any]]] = {}
+    for competition in toutes:
+        if competition["id"] in parents:
+            options[competition["id"]] = []
+            continue
+        options[competition["id"]] = [
+            {"id": autre["id"], "label": autre["label"]}
+            for autre in toutes
+            if autre["id"] != competition["id"]
+            and autre["sport_id"] == competition["sport_id"]
+            and autre["phase_de"] is None
+        ]
+    return options
 
 
 def set_tennisdata_tournaments(

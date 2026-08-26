@@ -127,6 +127,62 @@ FORBIDDEN = (
 )
 
 
+#: **Les champs interdits d'ingestion, a l'interieur d'un endpoint autorise.**
+#:
+#: `FORBIDDEN` garde les **chemins** ; ces deux-la arrivent par un chemin permis
+#: et deja appele quotidiennement. Mesure du 26/08/2026 sur les 106 701 matchs
+#: archives de `profile/matches-played` :
+#:
+#:   * `playerN.odd` — une **cote de bookmaker**, servie sur **49,2 %** des
+#:     matchs ;
+#:   * `poll_vote` — un **sondage de pronostic**, servi sur **100 %**.
+#:
+#: **Ce n'est pas une precaution de principe.** Un prix qui entre sans avoir ete
+#: releve fausserait le residu au prix de `/stats` au meme titre que les cotes de
+#: bloc optimistes deja mesurees — le seul chiffre interpretable de la page se
+#: calcule sur `picks.price`, et sa seule verification est `price_real`. Et la
+#: section 9 interdit tout pronostic : celui-ci arrive gratuitement, a cote d'une
+#: donnee qu'on veut, ce qui est exactement la forme sous laquelle un interdit se
+#: leve par commodite.
+#:
+#: Ils restent **archives** dans `api_responses` avec le reste du corps : c'est la
+#: regle de l'archive, et ce qui y est jete ne se recupere plus. Ce qui est
+#: interdit est de les **lire**.
+FORBIDDEN_FIELDS = ("odd", "poll_vote")
+
+#: **Les champs que l'application a le droit de lire** dans un match de
+#: `profile/matches-played`. Liste blanche et non liste noire : une liste noire
+#: laisse entrer ce que le fournisseur ajoutera demain, et c'est precisement par
+#: la qu'un pronostic entrerait. Meme regle que `tennisdata.COLUMNS`.
+READ_FIELDS = (
+    # Les qualifications sont servies **ici**, sous `singles`. La cle
+    # `qualifying` existe et vaut la liste vide sur 962 reponses sur 962 : lue
+    # comme une reponse, elle ferme une famille sur un zero credible.
+    "singles",
+    "date",
+    "result",
+    "roundId",
+    "tournament",
+    "tournamentId",
+    "player1",
+    "player2",
+    "name",
+    "stats",
+    "firstServe",
+    "firstServeOf",
+    "aces",
+    "doubleFaults",
+    "winningOnFirstServe",
+    "winningOnFirstServeOf",
+    "winningOnSecondServe",
+    "winningOnSecondServeOf",
+    "breakPointsConverted",
+    "breakPointsConvertedOf",
+    "totalPointsWon",
+    "court",
+)
+
+
 class ForbiddenEndpoint(RuntimeError):
     """Un endpoint de cote ou de pronostic a ete demande.
 

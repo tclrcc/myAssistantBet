@@ -674,6 +674,9 @@ def _competitions_context(
         "fenetre_report": fenetre_report,
         # Le circuit se propose depuis la liste du client, jamais retapee.
         "tennisapi_tours": competitions_service.TENNISAPI_TOURS,
+        # Les phases : une qualification se declare phase de son tableau
+        # principal, et le menu ne propose que ce que `set_phase` accepte.
+        "phase_options": competitions_service.phase_options(settings),
         # Une saisie refusee revient avec son texte : retaper un libelle et un
         # identifiant de ligue parce qu'un champ manquait est une punition.
         "error": error,
@@ -911,6 +914,29 @@ def competition_fenetre(
             request,
             "_competitions.html",
             _competitions_context(error=str(exc), error_form="fenetre"),
+        )
+    return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
+
+
+@app.post("/competitions/{competition_id}/phase", response_class=HTMLResponse)
+def competition_phase(
+    request: Request,
+    competition_id: int,
+    phase_de: str = Form(default=""),
+) -> HTMLResponse:
+    """Declare une competition comme phase d'une autre, ou efface le lien.
+
+    **Un formulaire a part de la fenetre, sur la meme ligne.** Les quatre champs
+    de la fenetre se posent ensemble parce qu'aucun ne sert seul ; celui-ci sert
+    seul, et les fondre ferait effacer le rattachement en effacant la fenetre.
+    """
+    try:
+        competitions_service.set_phase(competition_id, phase_de, get_settings())
+    except competitions_service.CompetitionError as exc:
+        return templates.TemplateResponse(
+            request,
+            "_competitions.html",
+            _competitions_context(error=str(exc), error_form="phase"),
         )
     return templates.TemplateResponse(request, "_competitions.html", _competitions_context())
 

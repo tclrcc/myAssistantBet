@@ -214,6 +214,22 @@ def _edition_in_base(
     Lecture unique, partagee par les trois sorties du module : la ligne, le
     booleen de troncature et le tour lui-meme les tiraient chacun de leur propre
     requete, sur la meme table et pour le meme resultat.
+
+    **La competition seule, et surtout pas `competitions.phase_scope`.** C'est le
+    seul lecteur du projet qui doit s'en tenir la, et la raison est arithmetique :
+    tout le module repose sur « joueurs en lice = joueurs vus moins matchs joues »,
+    donc sur un compte qui doit etre une taille de tableau. Un tableau principal
+    de 128 joueurs augmente de ses 256 qualifies en compte 384, qui n'est dans
+    `PLAUSIBLE_DRAWS` d'aucune façon : `is_bracket` rendrait faux, `truncated`
+    vrai, et `Tour` passerait en « phase non renseignee » sur toute la quinzaine.
+
+    Le lien n'est donc pas une etendue a appliquer partout mais une relation que
+    chaque lecteur suit ou non. Un test monte les deux tableaux et verifie que
+    celui-ci ne la suit pas.
+
+    `_rounds_played`, lui, passe par `tennis_load.load_for` et la suit — « au
+    moins 4 tours disputes » compte bien les tours de qualification, et c'est ce
+    qu'on veut lire.
     """
     if not competition_id or not commence_time:
         return Edition()

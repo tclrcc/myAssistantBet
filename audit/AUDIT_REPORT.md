@@ -360,7 +360,39 @@ fausse ; si l'un des deux ne se construit pas, elle n'a pas d'objet. Le cout d'u
 garde qui ne peut pas mordre n'est pas sa maintenance, c'est l'assurance qu'il
 donne — et cette assurance-la, elle, ne se mesure nulle part.
 
-## C.17 — Ce qui reste ouvert et n'a pas ete instruit
+## C.17 — Le champ `qualifying` est vide, et on ne saura pas s'il le restera
+
+**Le zero le plus credible du dossier, et il ne conclut rien.** La charge utile de
+`profile/matches-played` porte une cle `qualifying` : elle est presente dans
+**962 reponses archivees sur 962**, et vide dans toutes. Lue comme une reponse,
+elle etablit que le fournisseur ne sert pas les tableaux de qualification — avec
+un denominateur de 106 701 matchs, ce qui suffit a fermer une famille.
+
+**Le denominateur la demolit.** Les 47 qualifies de l'US Open presents en base
+portent 131 reponses, **toutes relevees les 18 et 19/08**, six jours avant que
+leurs rencontres soient jouees. Le zero mesurait notre fenetre de collecte.
+Sonde du 26/08 : `qualifying` toujours vide, et le match du 24/08 present sous
+`singles`, avec son score et ses statistiques.
+
+**Ce qui reste indecidable, et c'est le sujet de cette section** : personne ne
+peut dire aujourd'hui si ce champ est mort ou dormant. Il n'existe aucune
+observation qui distingue « le fournisseur ne le remplit jamais » de « il ne le
+remplit pas encore », et aucun volume de collecte n'y changera rien — un champ
+vide reste vide dans les deux cas.
+
+**La consequence a porter est une fragilite, pas une inconnue de plus.** Notre
+lecture se fait sur `singles`. Le jour ou le fournisseur y deplacerait les
+qualifications, nos lignes raccourciraient **sans qu'aucune erreur soit levee** :
+un `Parcours` plus court, une `Usure` plus basse, et rien qui casse. C'est la
+forme de defaut la plus couteuse du projet, transposee a une source.
+
+Et elle se reproduira a la lecture : **une prochaine session relira cette cle,
+verra 962 sur 962, et conclura la meme chose** — avec le meme denominateur
+invisible. C'est pour ca que l'entree existe, et c'est le troisieme compte faible
+de ce dossier qui se revele etre un artefact de mesure. Les deux premiers ont
+produit une observation erronee ; celui-ci aurait produit un **refus definitif**.
+
+## C.18 — Ce qui reste ouvert et n'a pas ete instruit
 
 - **Phase 4** — le generateur de prompts : variables injectees non utilisees,
   erreurs factuelles de bloc remontees a leur source sur trois cas, conformite du
@@ -371,10 +403,11 @@ donne — et cette assurance-la, elle, ne se mesure nulle part.
 - **B1** — la couverture des cotes, dont la mesure est cadree et non conduite.
 - **D3** — ce que `framework_version` etiquette desormais, et le sort du test
   rouge qui en depend.
-- **Le rattachement qualification → tableau principal** — instruit au §9 ter de la
-  proposition, non conduit. `load_for` filtre sur `competition_id` et six lignes du
-  bloc tennis en descendent ; les 128 rencontres de qualification de l'US Open sont
-  en base sous deux competitions que rien ne relie au tableau principal. Le chantier
-  n'importe aucun champ et a une **fenetre** : le tableau principal entre dans les
-  jours qui viennent, et c'est le seul moment de l'annee ou la matiere, le besoin et
-  des donnees fraiches a verifier coexistent.
+- **La charge de qualification** — le seul champ que le §9 ter autorise a entrer :
+  score et jeux joues des tours de qualification, servis sous `singles` par un
+  endpoint deja appele. Non conduit. Le rattachement, lui, est livre (migration 080)
+  et n'importait aucun champ.
+- **La verification du rattachement contre le tableau reel** — il est livre avant
+  que le tableau principal de l'US Open soit entre, donc contre des donnees montees
+  a la main. Le controle empirique se fait a l'entree du tableau, en recomptant un
+  parcours de qualifie a la main ; passe cette quinzaine, il attend Melbourne.

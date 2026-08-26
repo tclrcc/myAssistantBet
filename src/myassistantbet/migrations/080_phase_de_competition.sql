@@ -1,0 +1,44 @@
+-- 080_phase_de_competition.sql — une competition peut etre une phase d'une autre.
+--
+-- Les rencontres de qualification d'un Grand Chelem entrent sous leur propre
+-- competition — 116 et 117 le 26/08/2026, quand le tableau principal entrera
+-- sous 11 et 15. Rien ne reliait les deux, et `tennis_load.load_for` filtre sur
+-- `competition_id` : un qualifie arrivant au tableau principal perdait ses trois
+-- tours sur les six lignes qui en descendent — `Repos`, `Parcours`, `Non joue`,
+-- `Fraicheur`, `Tour`, `Ici`.
+--
+-- **La matiere etait deja en base** : 128 rencontres, 256 joueurs, avec
+-- adversaire et horaire. Et rien d'autre ne la porte — `tennis_matches` compte
+-- huit tours distincts sur 14 239 lignes, aucun de qualification. La source
+-- hebdomadaire ignore les tableaux de qualification, structurellement.
+--
+-- ## Ce que la colonne porte, et pourquoi ce nom
+--
+-- « Les rencontres de cette competition sont **une phase** de ce tournoi-la. »
+-- Le sens vaut a toute date et ne privilegie pas le premier cas servi : la
+-- migration 078 a du renommer `qualif_debut` parce que le nom devenait faux au
+-- deuxieme cas, et l'occasion de refaire la meme faute est ici. Winston-Salem,
+-- tournoi entier entre par le meme chemin, porte donc `NULL`.
+--
+-- Le sens va de la **partie vers le tout** : la qualification designe le
+-- tableau principal. L'inverse aurait demande de savoir, en lisant le tableau
+-- principal, qu'une phase existe — c'est-a-dire une seconde lecture.
+--
+-- ## Trois choses qu'elle n'est pas
+--
+--   * **Pas une deduction de libelle.** Le dossier a refuse trois fois le
+--     rapprochement par nom — Championship ecossaise contre anglaise, Bundesliga
+--     contre 2. Bundesliga, Coupe de Malaisie contre MLS, toutes trois avec un
+--     score maximal. « ATP US Open Qualifications » contre « ATP US Open » est le
+--     meme piege sous un prefixe exact, donc plus tentant.
+--   * **Pas un cinquieme champ de `set_fenetre`.** Ces quatre-la se posent
+--     ensemble parce qu'aucun ne sert seul ; celui-ci sert seul et se tait seul.
+--     Les fondre ferait effacer le rattachement en effacant la fenetre.
+--   * **Pas une extension d'etendue uniforme.** Appliquee a `tennis_round`, elle
+--     ferait decider le compte des joueurs sur 128 + 256 = 384, taille d'aucun
+--     tableau : `is_bracket` rendrait faux et `Tour` passerait en « phase non
+--     renseignee ». Chaque lecteur declare s'il suit le lien.
+--
+-- Rien n'est retro-rempli : la colonne se saisit, et une valeur nulle dit la
+-- verite — aucune phase declaree.
+ALTER TABLE competitions ADD COLUMN phase_de INTEGER REFERENCES competitions(id);

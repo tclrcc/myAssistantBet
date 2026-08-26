@@ -2579,17 +2579,27 @@ def _scanned_here(
     appelle `contested_days`, qui appelle `_tournament_id` : passer par lui
     ferait une recursion. La date civile suffit ici — on ne date rien, on
     corrobore.
+
+    **L'etendue, elle, vient de `competitions.phase_scope`**, comme celle de
+    `load_for` : les tours de qualification sont des matchs joues ici, et un
+    identifiant de tournoi source qu'ils corroborent est correctement corrobore.
+    C'est la seule ecriture partagee — la recopier ici l'aurait fait diverger du
+    jour ou un second cas de phase se presente.
     """
     if not player or not competition_id or not until:
         return set(), set()
     cle = sort_key(player)
     noms: set[str] = set()
     jours: set[str] = set()
+    from .competitions import phase_scope
+
+    cibles = phase_scope(competition_id, settings)
+    marques = ", ".join("?" * len(cibles))
     with connect(settings) as conn:
         rows = conn.execute(
             "SELECT home, away, commence_time FROM events "
-            " WHERE competition_id = ? AND commence_time < ?",
-            (competition_id, until),
+            f" WHERE competition_id IN ({marques}) AND commence_time < ?",
+            (*cibles, until),
         ).fetchall()
     for row in rows:
         if cle not in (sort_key(row["home"]), sort_key(row["away"])):

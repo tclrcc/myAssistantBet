@@ -160,19 +160,35 @@ def load_for(
     de la meme facon d'un tour a l'autre, mais la casse et les accents peuvent
     varier. Aucun rapprochement flou ici — deux joueurs differents ne doivent
     jamais partager un parcours.
+
+    **Le tournoi inclut ses phases** (`competitions.phase_scope`). Un qualifie
+    arrivant au tableau principal y a joue trois tours, sous une competition
+    distincte : sans le lien, `Repos` le donnait frais, `Parcours` le donnait
+    entrant et `Fraicheur` ne signalait rien. La matiere etait en base et c'est
+    l'identifiant qui ne la designait pas.
+
+    **Le regroupement en journees, lui, se fait sous une seule cle.**
+    `tournament_day.day_keys` separe par competition pour que deux tournois joues
+    sur deux continents ne partagent pas leurs coupures ; une qualification et son
+    tableau principal se jouent au meme endroit, donc leurs journees doivent se
+    decouper ensemble. Les lignes des deux entrent sous la competition demandee.
     """
     if not competition_id or not player:
         return Load()
     settings = settings or get_settings()
     key = sort_key(player)
 
+    from .competitions import phase_scope
+
+    cibles = phase_scope(competition_id, settings)
+    marques = ", ".join("?" * len(cibles))
     with connect(settings) as conn:
         # Toute la competition, match du jour compris : le regroupement en
         # journees de tournoi a besoin de la suite pour placer ses coupures.
         toutes = conn.execute(
             "SELECT id, home, away, commence_time, created_at, match_outcome_type "
-            "FROM events WHERE competition_id = ? ORDER BY commence_time",
-            (competition_id,),
+            f"FROM events WHERE competition_id IN ({marques}) ORDER BY commence_time",
+            cibles,
         ).fetchall()
     rows = [row for row in toutes if row["commence_time"] < commence_time]
 

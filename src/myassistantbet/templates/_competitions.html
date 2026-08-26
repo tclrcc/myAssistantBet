@@ -36,7 +36,7 @@
 
   {# Le formulaire de fenêtre vit dans le tableau, sans panneau a ouvrir :
      son refus se rend donc en tete, sinon il n'aurait nulle part ou paraitre. #}
-  {% if error_form == 'fenetre' %}
+  {% if error_form == 'fenetre' or error_form == 'phase' %}
   <div class="report report-warn">{{ error }}</div>
   {% endif %}
 
@@ -557,6 +557,27 @@
                    value="{{ competition.tennisapi_tournament_id or '' }}">
             <button type="submit" class="link-action">fenêtre</button>
           </form>
+          {# Un formulaire à part, sur la même ligne : les quatre champs de la
+             fenêtre se posent ensemble parce qu'aucun ne sert seul, celui-ci
+             sert seul — un tournoi entier a une fenêtre et aucune phase. Le
+             menu ne propose que ce que `set_phase` accepte. #}
+          {% if phase_options.get(competition.id) %}
+          <form class="notes-form" hx-post="/competitions/{{ competition.id }}/phase"
+                hx-target="#competitions" hx-swap="outerHTML">
+            <select name="phase_de"
+                    aria-label="Tournoi dont {{ competition.label }} est une phase">
+              <option value="">— phase d'aucun tournoi —</option>
+              {% for candidat in phase_options.get(competition.id) %}
+              <option value="{{ candidat.id }}"
+                      {% if competition.phase_de == candidat.id %}selected{% endif %}>{{ candidat.label }}</option>
+              {% endfor %}
+            </select>
+            <button type="submit" class="link-action"
+                    title="Ses rencontres comptent dans le parcours d'un joueur dans ce tournoi">
+              phase de
+            </button>
+          </form>
+          {% endif %}
           {# Un jour à la fois, et c'est le fournisseur qui l'impose : son
              endpoint est l'ordre du jour publié, pas un calendrier — rien
              au-delà de J+1. La condition reprend mot pour mot les gardes du
