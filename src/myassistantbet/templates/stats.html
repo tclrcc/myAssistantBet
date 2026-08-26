@@ -1971,6 +1971,78 @@
     raccourcir, pas les sélections qu'il faudra y pousser.
   </p>
   {% endcall %}
+
+  {# **L'instrument que le résidu ne remplace pas.** À n = 281, l'effet détectable
+     du résidu au prix est de l'ordre de huit points : il ne bougera pas avant des
+     trimestres. Quand la procédure de recherche a cessé d'être transmise, le
+     21/08/2026, le résidu n'a rien vu — le faisceau, lui, perdait un quart de son
+     volume et voyait tripler sa part de niveau 4, tous au seuil. La santé
+     mesurable de cette application se lit sur ses **intrants**. #}
+  {% if evidence_shift %}
+  <h3>Faisceau session par session</h3>
+  {# Hors du pli comme le titre voisin : c'est une section du relevé, et l'export
+     en porte une du même nom. #}
+  <table class="board">
+    <thead>
+      <tr>
+        <th>Journée</th>
+        <th class="num">Blocs</th>
+        <th class="num">Faits</th>
+        <th class="num">Faits/bloc</th>
+        <th class="num">n1</th>
+        <th class="num">n2</th>
+        <th class="num">n3</th>
+        <th class="num">n4</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for entry in evidence_shift %}
+      {# **Un point maigre se voit, il ne se lit pas comme les autres.** L'effectif
+         affiché à côté ne suffit pas : sur une série, un point à sept faits a la
+         même allure qu'un point à quatre-vingt-quinze. La ligne entière est donc
+         palie, même traitement qu'une barre sous le seuil de lecture. #}
+      <tr{% if entry.thin %} class="muted"{% endif %}>
+        <td class="affiche">
+          {{ entry.day }}
+          {%- if entry.thin %} <span class="badge">maigre</span>{% endif %}
+        </td>
+        <td class="num">{{ entry.blocks }}</td>
+        <td class="num">{{ entry.facts }}</td>
+        <td class="num">{{ entry.facts_per_block if entry.facts_per_block is not none else '—' }}</td>
+        {% for niveau in [1, 2, 3, 4] %}
+        <td class="num{% if not entry.levels.get(niveau) %} muted{% endif %}">{{ entry.share_label(niveau) }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% call why("Ce que le faisceau dit, et ce qu'il ne dit pas") %}
+  <p>
+    Ces grandeurs décrivent la <strong>matière première</strong> d'une analyse —
+    combien de faits, de quel niveau — jamais le jugement qui s'exerce dessus.
+  </p>
+  <p>
+    <strong>Une hausse ne prouve rien.</strong> Elles se dégradent quand la matière
+    se dégrade ; elles ne montent pas quand la compétence monte. La dissymétrie est
+    le cœur du sujet : un faisceau qui baisse retire au jugement de quoi s'exercer,
+    donc c'est une alarme ; un faisceau qui monte dit seulement qu'il y avait plus à
+    lire ce jour-là — un lot de championnat en pleine saison porte plus de faits
+    publiés qu'un tour préliminaire estival.
+  </p>
+  <p>
+    <strong>Un compte, jamais un refus, et aucun seuil d'alarme.</strong> La série
+    est trop courte pour en calibrer un, et il se déclencherait sur du bruit
+    saisonnier. La question du seuil se rouvrira avec sa mesure, pas avec un nombre
+    choisi.
+  </p>
+  <p>
+    Une session sans aucun bloc n'y figure pas : elle n'a pas un faisceau vide, elle
+    n'en a pas. Les lignes marquées <strong>maigre</strong> portent moins de
+    {{ evidence_shift[0].minimum }} faits — le seuil de lecture de la page, appliqué
+    au compte de faits parce que trois des quatre colonnes en sont des parts.
+  </p>
+  {% endcall %}
+  {% endif %}
 </section>
 {% endif %}
 

@@ -4687,6 +4687,145 @@ def scale_shift(settings: Settings | None = None) -> list[ScaleShift]:
     return echelles
 
 
+#: Les niveaux de l'echelle de sources, dans l'ordre du preambule. `lecture` n'y
+#: figure pas : c'est un etat de la **selection**, jamais d'un fait.
+FACT_LEVELS = (1, 2, 3, 4)
+
+
+@dataclass
+class EvidenceMix:
+    """Le faisceau d'une session : ce que l'analyse avait sous la main.
+
+    Trois grandeurs, et aucune n'est un taux de reussite. Elles decrivent la
+    **matiere premiere** — combien de faits, de quel niveau — jamais le jugement
+    qui s'exerce dessus.
+    """
+
+    session_id: int
+    #: Journee d'analyse : la date de la premiere selection de la session. Meme
+    #: convention que `SessionMix` — la journee de decision, jamais celle des
+    #: matchs.
+    day: str
+    #: Blocs de confiance apparies, section C seule.
+    blocks: int = 0
+    facts: int = 0
+    #: Comptes par niveau declare, sur les faits cites.
+    levels: dict[int, int] = field(default_factory=dict)
+    #: Seuil de lecture, **descendu dans l'objet** et jamais relu a l'acces : une
+    #: ligne qui irait chercher son propre reglage rendrait deux releves du meme
+    #: lot indiscernables des que la valeur change entre les deux. Lecon payee
+    #: sur `RateRow.minimum` et sur `Feedback.suspended`.
+    minimum: int = ANALYSIS_MIN_ROWS
+
+    @property
+    def facts_per_block(self) -> float | None:
+        return None if self.blocks == 0 else round(self.facts / self.blocks, 2)
+
+    def share(self, level: int) -> float | None:
+        """Part des faits cites qui portent ce niveau."""
+        return None if self.facts == 0 else self.levels.get(level, 0) / self.facts
+
+    def share_label(self, level: int) -> str:
+        """La part, formatee comme partout ailleurs sur la page.
+
+        Ecrite **ici** et non dans chaque surface : deux formatages de la meme
+        grandeur auraient fini par arrondir differemment, et la page et l'export
+        auraient annonce deux chiffres pour un seul.
+        """
+        part = self.share(level)
+        return "—" if part is None else f"{part * 100:.0f} %"
+
+    @property
+    def thin(self) -> bool:
+        """Trop peu de faits pour qu'une variation veuille dire quelque chose.
+
+        **Le seuil porte sur le compte de faits, pas sur celui de blocs** : deux
+        des trois grandeurs sont des parts de faits, et c'est ce denominateur-la
+        qui gouverne leur precision. Mesure du 26/08/2026 : les sessions 18 et 22
+        portent 7 et 14 faits, et une variation y est indistinguable du bruit.
+
+        Il **reutilise** `feedback_min_rows` plutot que d'en inventer un second :
+        sous quel compte une proportion ne veut plus rien dire est une propriete
+        des donnees, pas de la surface qui les montre. Les deux surfaces n'en
+        font pas le meme usage, et c'est la meme regle qu'ailleurs — la page
+        pallit le point, elle ne le retire pas.
+        """
+        return self.facts < self.minimum
+
+
+def evidence_shift(settings: Settings | None = None) -> list[EvidenceMix]:
+    """La serie du faisceau, session par session, de la plus ancienne a la plus recente.
+
+    **L'instrument que le residu ne remplace pas.** A n = 281, l'effet detectable
+    du residu au prix est de l'ordre de huit points : il ne bougera pas avant des
+    trimestres. Quand la procedure de recherche a cesse d'etre transmise au
+    modele, le 21/08/2026, le residu n'a rien vu — et le faisceau perdait un quart
+    de son volume (2,00 a 1,54 fait par bloc), la moitie de sa part de niveau 1
+    (37,5 a 20,0 %) et voyait tripler sa part de niveau 4 (4,2 a 15,2 %), tous au
+    seuil. La sante mesurable de cette application se lit sur ses **intrants**.
+
+    **Un compte, jamais un refus.** Aucune de ces grandeurs ne peut faire rejeter
+    un collage, et aucun seuil d'alarme n'est pose : six sessions ne suffisent pas
+    a en calibrer un, et il declencherait sur du bruit saisonnier — intersaison,
+    Grand Chelem et fenetre de mercato n'ont pas la meme densite de faits publies.
+    La question du seuil se rouvre avec sa mesure, pas avec un nombre choisi.
+
+    **Et une hausse ne prouve rien.** Ces grandeurs se degradent quand la matiere
+    se degrade ; elles ne montent pas quand la competence monte. Un faisceau qui
+    baisse retire au jugement de quoi s'exercer, donc c'est une alarme ; un
+    faisceau qui monte dit seulement qu'il y avait plus a lire ce jour-la.
+
+    Population principale seule, comme `scale_shift` et `labelling()` : une
+    selection exploratoire est produite **sans exigence de fait date**, et l'y
+    compter ferait lire une regle du cadre comme une degradation de la collecte.
+
+    Une session **sans aucun bloc n'y figure pas**. Elle n'a pas un faisceau
+    vide : elle n'en a pas. Les seize premieres sessions de la base sont dans ce
+    cas — le gabarit ne demandait pas les blocs avant le 18/08 — et leur preter un
+    faisceau de zero inventerait une degradation qui n'a pas eu lieu.
+    """
+    settings = settings or get_settings()
+    minimum = threshold_value("feedback_min_rows", settings)
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT session_id, created_at, claim_raw_json FROM picks "
+            "WHERE exploratoire = 0 AND claim_raw_json IS NOT NULL"
+        ).fetchall()
+
+    jours: dict[int, str] = {}
+    faisceaux: dict[int, EvidenceMix] = {}
+    for row in rows:
+        session_id = int(row["session_id"])
+        jour = str(row["created_at"] or "")[:10]
+        if jour and (session_id not in jours or jour < jours[session_id]):
+            jours[session_id] = jour
+        entree = faisceaux.setdefault(
+            session_id, EvidenceMix(session_id=session_id, day="", minimum=minimum)
+        )
+        # **Un bloc illisible compte comme un bloc sans fait**, jamais comme une
+        # absence de bloc : le modele a repondu, c'est la lecture qui a echoue, et
+        # confondre les deux ferait disparaitre un defaut d'ingestion dans une
+        # baisse de matiere premiere.
+        entree.blocks += 1
+        # **Le bloc se relit par `confidence.parse`**, jamais par un second
+        # `json.loads` pose ici : le format du bloc a un seul lecteur, et une
+        # seconde ecriture aurait fini par ne plus reconnaitre les memes faits que
+        # celle qui calcule le cran. Verifie sur la base servie le 26/08/2026 :
+        # les 211 blocs stockes se lisent tous, pour 271 faits.
+        try:
+            bloc = parse_claim(str(row["claim_raw_json"]))
+        except ClaimError:
+            continue
+        for fait in bloc.facts:
+            entree.facts += 1
+            if fait.level in FACT_LEVELS:
+                entree.levels[fait.level] = entree.levels.get(fait.level, 0) + 1
+
+    for session_id, entree in faisceaux.items():
+        entree.day = jours.get(session_id, "")
+    return sorted(faisceaux.values(), key=lambda entry: (entry.day, entry.session_id))
+
+
 def _rate_tally(
     entries: list[tuple[str, str, str, Any]],
     minimum: int = 1,

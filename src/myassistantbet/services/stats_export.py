@@ -128,6 +128,7 @@ SECTIONS: tuple[Section, ...] = (
     Section(LABELLING_BLOCK, "Par confiance annoncée"),
     Section(LABELLING_BLOCK, "Par palier"),
     Section(LABELLING_BLOCK, "Session par session"),
+    Section(LABELLING_BLOCK, "Faisceau session par session"),
     Section("", BETS_BLOCK),
     Section(BETS_BLOCK, "Par palier"),
     Section(BETS_BLOCK, "Par sport"),
@@ -153,6 +154,14 @@ class StatsReport:
     #: qu'il faudra lire le jour ou les taux entreront dans le prompt. Un
     #: instrument, jamais une mesure : aucun verdict n'en sort.
     scale_shift: list[history_service.ScaleShift] = field(default_factory=list)
+    #: La **matiere premiere** d'une analyse, session par session : combien de
+    #: faits, de quel niveau. C'est l'instrument que le residu ne remplace pas —
+    #: a n = 281 l'effet detectable du residu est de l'ordre de huit points, donc
+    #: il ne bougera pas avant des trimestres, quand le faisceau montre en jours
+    #: qu'une procedure a cesse d'etre transmise. Un compte, jamais un refus, et
+    #: **une hausse ne prouve rien** : ces grandeurs se degradent avec la matiere,
+    #: elles ne montent pas avec la competence.
+    evidence_shift: list[history_service.EvidenceMix] = field(default_factory=list)
     #: Ou en est le recul, et ce qui bloque la transmission des taux au prompt.
     #: **Il vit a cote de la serie**, seul endroit ou il decide de quelque chose :
     #: c'est le jour de la bascule que la serie devra montrer, et un lecteur qui
@@ -237,6 +246,7 @@ class StatsReport:
             "equivalence_margin": self.equivalence_margin,
             "labelling": self.labelling,
             "scale_shift": self.scale_shift,
+            "evidence_shift": self.evidence_shift,
             "feedback": self.feedback,
             "stats": self.stats,
             "coupon_rates": self.coupon_rates,
@@ -369,6 +379,7 @@ class StatsReport:
                 Section(LABELLING_BLOCK, "Session par session"),
                 any(not block.empty for block in self.scale_shift),
             ),
+            (Section(LABELLING_BLOCK, "Faisceau session par session"), bool(self.evidence_shift)),
             # **Le bloc est rendu meme vide**, et ses cartes ne le sont pas :
             # l'absence de pari pose est une information, l'absence d'une carte
             # a l'interieur n'en est pas une.
@@ -618,6 +629,7 @@ def report(settings: Settings | None = None) -> StatsReport:
         analysis=principale,
         labelling=history_service.labelling(settings),
         scale_shift=history_service.scale_shift(settings),
+        evidence_shift=history_service.evidence_shift(settings),
         feedback=history_service.feedback(settings),
         stats=history_service.stats(settings),
         coupon_rates=coupons_service.rates(settings),
@@ -750,6 +762,26 @@ def _shift(block: history_service.ScaleShift) -> dict[str, Any]:
             }
             for entry in block.sessions
         ],
+    }
+
+
+def _evidence(entry: history_service.EvidenceMix) -> dict[str, Any]:
+    """Le faisceau d'une session. `thin` voyage avec la ligne, jamais recalcule.
+
+    Un consommateur qui refarait le seuil de son cote lirait deux releves du meme
+    lot differemment des que le reglage bouge entre les deux — la lecon de
+    `RateRow.minimum`, appliquee a l'export.
+    """
+    return {
+        "session_id": entry.session_id,
+        "day": entry.day,
+        "blocks": entry.blocks,
+        "facts": entry.facts,
+        "facts_per_block": entry.facts_per_block,
+        "levels": {str(level): entry.levels.get(level, 0) for level in history_service.FACT_LEVELS},
+        "shares": {str(level): entry.share(level) for level in history_service.FACT_LEVELS},
+        "thin": entry.thin,
+        "minimum": entry.minimum,
     }
 
 
@@ -1099,6 +1131,7 @@ def as_json(found: StatsReport) -> dict[str, Any]:
         },
         "labelling": [_mix(block) for block in found.labelling],
         "scale_shift": [_shift(block) for block in found.scale_shift],
+        "evidence_shift": [_evidence(entry) for entry in found.evidence_shift],
         "feedback_gate": {
             "settled": found.feedback.settled,
             "minimum": found.feedback.minimum,
@@ -1800,6 +1833,52 @@ def as_markdown(found: StatsReport) -> str:
                         f"| {entry.day} | {entry.session_id} | {entry.total} | "
                         f"{'oui' if entry.feedback else '—'} | {cases} |"
                     )
+
+    if found.evidence_shift:
+        out += [
+            "",
+            "### Faisceau session par session",
+            "",
+            "Ce que l'analyse avait sous la main : combien de faits par sélection, et "
+            "de quel niveau. **La santé mesurable de cette application se lit sur ses "
+            "intrants.** À n = 281, l'effet détectable du résidu au prix est de l'ordre "
+            "de huit points — il ne bougera pas avant des trimestres ; le faisceau, lui, "
+            "montre en jours qu'une procédure a cessé d'être transmise.",
+            "",
+            "**Une hausse ne prouve rien.** Ces grandeurs mesurent la matière première, "
+            "jamais le jugement qui s'exerce dessus : elles se dégradent quand la matière "
+            "se dégrade, elles ne montent pas quand la compétence monte. Une baisse est "
+            "une alarme — elle retire au jugement de quoi s'exercer ; une hausse dit "
+            "seulement qu'il y avait plus à lire ce jour-là.",
+            "",
+            "**Un compte, jamais un refus, et aucun seuil d'alarme** : la série est trop "
+            "courte pour en calibrer un, et il se déclencherait sur du bruit saisonnier — "
+            "intersaison, Grand Chelem et fenêtre de mercato n'ont pas la même densité de "
+            "faits publiés.",
+            "",
+            "Une session sans aucun bloc n'y figure pas : elle n'a pas un faisceau vide, "
+            "elle n'en a pas. Les colonnes marquées « maigre » portent trop peu de faits "
+            "pour qu'une variation y veuille dire quelque chose.",
+            "",
+            "| Journée | Session | Blocs | Faits | Faits/bloc | n1 | n2 | n3 | n4 | Maigre |",
+            "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | :---: |",
+        ]
+        for entry in found.evidence_shift:
+            parts = " | ".join(entry.share_label(level) for level in history_service.FACT_LEVELS)
+            out.append(
+                f"| {entry.day} | {entry.session_id} | {entry.blocks} | {entry.facts} | "
+                f"{entry.facts_per_block if entry.facts_per_block is not None else '—'} | "
+                f"{parts} | {'oui' if entry.thin else '—'} |"
+            )
+        out += [
+            "",
+            f"« Maigre » : moins de {found.evidence_shift[0].minimum} fait(s) cité(s) sur "
+            "la session. Le seuil est celui de la page — sous quel compte une proportion "
+            "ne veut plus rien dire est une propriété des données, pas de la surface qui "
+            "les montre — et il porte sur le **compte de faits** : deux des trois "
+            "grandeurs sont des parts de faits, et c'est ce dénominateur-là qui gouverne "
+            "leur précision.",
+        ]
 
     # **Le bloc n'est plus rendu quand le suivi est ferme**, et le pied de page
     # reste : il decrit la definition du taux, qui vaut pour tout le fichier.
