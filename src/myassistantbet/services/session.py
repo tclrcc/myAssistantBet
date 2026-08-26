@@ -13,6 +13,7 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from ..db import connect
 from ..providers.oddsapi import DEFAULT_BOOKMAKER, SCAN_MARKETS
+from . import competitions as competitions_service
 from . import (
     coverage,
     dossier,
@@ -812,6 +813,16 @@ def renderable_events(
             (session_id, competition_id) if competition_id else (session_id,),
         ).fetchall()
 
+    # **Le prompt ecarte ce que le board ecarte, par la meme fonction.** Deux
+    # surfaces qui filtrent la meme chose et chacune sa regle divergeraient sans
+    # qu'aucun test n'echoue, les deux etant justes de leur cote — le motif que ce
+    # depot paie le plus cher. Un match reste dans la shortlist : c'est le rendu
+    # qui le retire, comme `competition_id` restreint sans decocher.
+    ecartees = {
+        entree.competition_id
+        for entree in competitions_service.unpriced(settings, now or datetime.now(UTC))
+    }
+    rows = [row for row in rows if row["competition_id"] not in ecartees]
     upcoming = [row for row in rows if not has_started(row["commence_time"], now)]
     # Ce que l'API a deja refuse de servir sur ces competitions. Une absence
     # constatee est une information : le bloc doit la porter, pas la taire.

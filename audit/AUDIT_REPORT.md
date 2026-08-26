@@ -312,7 +312,28 @@ sessions ne suffisent pas a en calibrer un, et il declencherait sur du bruit
 saisonnier — intersaison, Grand Chelem et fenetre de mercato n'ont pas la meme
 densite de faits publies.
 
-## C.15 — Ce qui reste ouvert et n'a pas ete instruit
+## C.15 — Un seuil majore, pas calibre, et il faut le rouvrir
+
+`PRICE_WINDOW_DAYS = 21` — la fenetre glissante sur laquelle une competition est
+jugee servie. **Sa borne basse est mesuree ; sa borne haute ne l'est pas.**
+
+- **Borne basse, 14 jours** : la Leagues Cup porte des matchs a venir et son
+  dernier prix date de **13,5 jours** — elle se joue par phases, et huit de ses
+  quarante evenements sont cotes. Sous quinze jours, elle serait masquee a tort.
+- **Borne haute, inconnue** : la base entiere couvre vingt-deux jours. Elle **ne
+  peut pas departager trois semaines de quatre**, ni de six.
+
+Vingt-et-un est donc **majore**, choisi sur une asymetrie de cout et non sur une
+mesure : masquer une competition servie coute une soiree d'analyse, laisser
+paraitre une competition morte coute quelques lignes de board — et le badge
+« aucun prix » le dit deja.
+
+**A rouvrir des qu'il y aura de quoi mesurer**, et cette entree existe pour ca :
+sans elle, le nombre deviendra dans six mois une constante que personne ne saura
+justifier. Le dossier porte deja quatre chiffres qui ont survecu a la disparition
+de leur raison ; celui-ci ne doit pas etre le cinquieme.
+
+## C.16 — Ce qui reste ouvert et n'a pas ete instruit
 
 - **Phase 4** — le generateur de prompts : variables injectees non utilisees,
   erreurs factuelles de bloc remontees a leur source sur trois cas, conformite du

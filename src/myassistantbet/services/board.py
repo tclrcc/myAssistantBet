@@ -15,6 +15,7 @@ from ..db import connect, utcnow
 from ..providers.apifootball import PROVIDER as APIFOOTBALL_PROVIDER
 from ..providers.base import last_known_quota
 from ..providers.oddsapi import PROVIDER as ODDSAPI_PROVIDER
+from . import competitions as competitions_service
 from . import tennis_round, tournament_day
 from .competitions import category_label, category_rank
 from .labels import affiche, sort_key
@@ -68,6 +69,30 @@ class BoardRow:
     round_label: str | None = None
 
     @property
+    def unpriced(self) -> bool:
+        """Aucun prix sur ce match. **Un fait affiche, jamais un filtre.**
+
+        Mesure du 26/08/2026 : 141 evenements sans prix vivent dans des
+        competitions **servies** — EFL Cup 43 sur 57, Leagues Cup 32 sur 40 — et
+        douze rencontres a venir n'en avaient aucun, dont Lyon - Fenerbahce a dix
+        heures du coup d'envoi. A l'echelle de l'evenement, rien ne distingue
+        « ne sera pas cote » de « pas encore cote ».
+
+        Les cacher aurait donc masque une affiche majeure ; les laisser muets
+        aurait fait chercher une panne de scan. La ligne le **dit**, comme la
+        densite dit un bloc pauvre et comme `tier_drift` expose sans arbitrer.
+        """
+        return not any(
+            (
+                self.home_price,
+                self.draw_price,
+                self.away_price,
+                self.over_price,
+                self.under_price,
+            )
+        )
+
+    @property
     def affiche(self) -> str:
         return affiche(self.home, self.away)
 
@@ -104,6 +129,18 @@ class Banner:
     #: servent leurs premiers matchs ; cette ligne les garde sous les yeux
     #: jusqu'a ce que ce soit fait.
     unmapped_competitions: list[str] = field(default_factory=list)
+    #: Competitions retirees du board faute de prix. **Nommees avec leur compte**,
+    #: contrairement aux non rattachees : celles-la attendent une saisie et le nom
+    #: dit laquelle, celles-ci disparaissent avec leurs matchs et le compte dit
+    #: **ce qu'on ne voit plus**. Un retrait silencieux serait le defaut que ce
+    #: projet retire partout.
+    unpriced_competitions: list[competitions_service.UnpricedCompetition] = field(
+        default_factory=list
+    )
+
+    @property
+    def hidden_events(self) -> int:
+        return sum(entree.upcoming for entree in self.unpriced_competitions)
 
     @property
     def below_floor(self) -> bool:
@@ -289,6 +326,20 @@ def _collect(
         sql.append("AND (e.home LIKE ? OR e.away LIKE ? OR c.label LIKE ?)")
         needle = f"%{filters.text}%"
         params.extend([needle, needle, needle])
+
+    # **Le filtre porte sur la competition, jamais sur l'evenement.** Un match a
+    # venir sans prix dans une competition servie reste au board : a cette
+    # echelle, rien ne distingue « ne sera pas cote » de « pas encore cote », et
+    # la mesure du 26/08 tenait Lyon - Fenerbahce a dix heures du coup d'envoi.
+    # Il porte son badge « aucun prix » et c'est tout — un fait affiche, pas un
+    # filtre applique.
+    ecartees = [
+        entree.competition_id
+        for entree in competitions_service.unpriced(settings, now or datetime.now(UTC))
+    ]
+    if ecartees:
+        sql.append(f"AND e.competition_id NOT IN ({', '.join('?' * len(ecartees))})")
+        params.extend(ecartees)
 
     sql.append("ORDER BY e.commence_time, c.priority DESC")
 
@@ -496,6 +547,10 @@ def banner(settings: Settings | None = None, now: datetime | None = None) -> Ban
     state.selected_count, state.started_count = selection_counts(settings, now)
     state.mapping_pending = pending_count(settings)
     state.unmapped_competitions = unmapped_competitions(settings, now)
+    # **Ce que le board ne montre plus se dit**, avec son compte : un retrait
+    # silencieux ne se distingue pas d'une absence de matchs, et c'est le defaut
+    # que ce projet retire partout.
+    state.unpriced_competitions = competitions_service.unpriced(settings, now or datetime.now(UTC))
     return state
 
 

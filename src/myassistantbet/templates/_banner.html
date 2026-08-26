@@ -63,6 +63,23 @@
   </div>
   {% endif %}
 
+  {# **Nommées ET comptées**, contrairement aux précédentes, et la différence est
+     le sujet : une compétition sans contexte attend une saisie, et c'est le nom
+     qui dit laquelle ; une compétition sans prix **disparaît du board avec ses
+     matchs**, et c'est le compte qui dit ce qu'on ne voit plus. Un retrait
+     silencieux ne se distingue pas d'une absence de matchs.
+
+     La règle se relit à chaque affichage sur l'état réel — un seul prix, par
+     n'importe quel chemin, la ramène. Rien n'est figé dans une liste. #}
+  {% if banner.unpriced_competitions %}
+  <div class="banner-item">
+    <span class="label">Sans prix</span>
+    <a class="value alert" href="/competitions">
+      {{ banner.unpriced_competitions | map(attribute='label') | join(', ') }}
+      ({{ banner.hidden_events }} match(s) masqué(s)) →</a>
+  </div>
+  {% endif %}
+
   {# Les deux actions dans un seul groupe : separees, la seconde se retrouvait
      seule sur une ligne des que le bandeau debordait, alors qu'elles se lisent
      ensemble. #}

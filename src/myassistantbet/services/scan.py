@@ -21,6 +21,7 @@ from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.base import ProviderError
 from ..providers.oddsapi import SCAN_MARKETS, OddsAPIClient
+from . import competitions
 from .history import _LATE_RULE
 from .render import LEAD_TIME_MIN_MINUTES
 
@@ -406,4 +407,10 @@ async def run_scan(
             item.oddsapi_key,
             item.events,
         )
+    # **La couverture de prix se reevalue ici**, seul moment ou elle peut avoir
+    # change sans qu'on regarde : le scan vient d'ecrire les cotes du jour. Seules
+    # les **transitions** sont datees — un instantane a chaque passage grossirait
+    # le journal sans rien apprendre, et noierait la bascule au milieu du bruit.
+    for libelle, competition in competitions.note_price_coverage(settings):
+        logger.info("%s : %s", libelle, competition)
     return report

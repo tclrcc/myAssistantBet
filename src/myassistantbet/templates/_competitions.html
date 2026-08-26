@@ -134,6 +134,32 @@
   </div>
   {% endif %}
 
+  {# **L'entrée par la compétition, et pas une porte dans le filtre.** Une
+     exception laissée visible au board finit par y rester, et le filtre cesse
+     d'en être un ; l'entrée par la compétition est le bon niveau puisque la règle
+     opère là. Ces rencontres restent atteignables pour la saisie manuelle de
+     cotes sans encombrer le board — sans ce chemin, « les fixtures entrent »
+     serait vrai en base et faux en pratique. #}
+  {% if unpriced %}
+  <div class="report">
+    <b>{{ unpriced | length }} compétition(s) retirée(s) du board, faute de prix.</b>
+    Aucun book interrogé ne les cote et le fournisseur ne les sert pas — clé absente
+    ou compétition déclarée inactive. La règle se relit à chaque affichage sur l'état
+    réel : un seul prix, par n'importe quel chemin, les ramène. Leurs rencontres
+    restent cotables à la main ici.
+    {% for entree in unpriced %}
+    <h4>{{ entree.label }} — {{ entree.upcoming }} match(s) à venir</h4>
+    <ul class="failures">
+      {% for match in hidden_events.get(entree.competition_id, []) %}
+      <li>
+        <a href="/events/{{ match.event_id }}">{{ match.affiche }}</a>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   <div class="filters">
     <label class="grow">
       Rechercher une compétition

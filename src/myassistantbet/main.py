@@ -693,6 +693,12 @@ def _competitions_context(
         # prompt : une competition passee a l'analyse sans fiche est une analyse
         # muette sur le format, et le compte dit combien il y en a eu.
         "missing_notes": competitions_service.without_notes(settings),
+        # **L'entree par la competition, et pas une porte dans le filtre.** Une
+        # exception laissee visible au board finit par y rester ; ici les
+        # rencontres retirees restent atteignables pour la saisie manuelle de
+        # cotes, au niveau ou la regle opere.
+        "unpriced": competitions_service.unpriced(settings),
+        "hidden_events": competitions_service.hidden_events(settings),
         "elo_state": elo_service.state(settings),
     }
 

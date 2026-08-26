@@ -1,0 +1,23 @@
+-- 079_competition_sans_prix.sql — dater l'entree et la sortie de l'etat « sans prix ».
+--
+-- Le board et la generation de prompt ecartent les competitions qu'aucun book ne
+-- cote. La regle se relit a chaque affichage sur l'etat reel — `odds` et
+-- `prompt_odds`, donc releve de substitution et saisie manuelle compris — et
+-- **rien n'est fige dans une liste** : un seul prix ramene la competition, un
+-- releve plus vieux que la fenetre la fait partir.
+--
+-- **Ce qui manque a une regle calculee est sa chronologie.** Sans elle, personne
+-- ne saura plus tard si la regle a ete trop large : on verra l'etat du jour et
+-- jamais le moment ou il a bascule. Or c'est la bascule qui informe — Monterrey,
+-- le 24/08/2026, etait au catalogue et simplement inactive, et le geste correct
+-- y etait d'activer, pas d'importer.
+--
+-- **Une colonne, pas une table de releves.** Un instantane periodique grossirait
+-- sans porter d'information et noierait la bascule au milieu du bruit : ce sont
+-- les **transitions** qui sont le sujet. `unpriced_since` porte l'instant
+-- d'entree dans l'etat et redevient NULL a la sortie ; le journal des mesures
+-- garde la trace des deux, avec le compte de matchs concernes.
+--
+-- Rien n'est retro-rempli : les etats d'hier ne se reconstituent pas, et une
+-- colonne nulle dit la verite — la mesure commence a la mise en service.
+ALTER TABLE competitions ADD COLUMN unpriced_since TEXT;

@@ -529,6 +529,27 @@ trois reponses a la question, pas deux.
    quand — c'est le cas du cadre publie et de la configuration servie, et c'est
    pourquoi le journal d'analyse a cesse de dependre de l'emoji colle.
 
+### Une sortie dit ce que le lecteur peut en faire, rien de plus
+
+**Principe tire de trois decisions du meme lot, qui semblaient sans rapport.**
+
+| Sortie | Ce qu'elle rend | Pourquoi |
+| --- | --- | --- |
+| competitions sans contexte | le **nom**, sans compte | elles attendent un geste, et le nom dit lequel saisir |
+| competitions sans prix | le nom **et le compte** | elles retirent des lignes, et le compte dit ce qui disparait |
+| conflits d'editeur | les **comptes bruts**, sans dominant | on ne sait pas laquelle des deux declarations est juste |
+
+Dans les trois cas la donnee sous-jacente permettait d'en rendre plus. Ce qui a
+tranche n'est pas ce qu'on **pouvait** afficher mais **l'action attendue du
+lecteur** : un compte se lit comme une file d'attente, un nom comme une tache, un
+niveau dominant comme un verdict. C'est le meme raisonnement qui a fait retirer
+`dominant` du modele et pas seulement du libelle.
+
+**La question a se poser devant toute sortie** : *qu'est-ce que le lecteur fera de
+ceci ?* Ce qui ne sert a aucune action se retire, meme quand c'est calculable — et
+surtout quand c'est calculable, parce que la disponibilite se prend facilement
+pour une raison.
+
 ### La regle vaut pour les documents, et l'audit l'a apprise sur lui-meme
 
 **Sixieme occurrence, produite par la correction d'une cinquieme.** Le releve de
@@ -686,7 +707,20 @@ juger les autres.
 | 2 | 11/08 18:52 | migration 033 — `market_key` figee a l'ecriture |
 | 3 | 17/08 | migration 053 — la garde d'anteriorite marque au lieu de refuser |
 | 4 | **21/08 12:24Z ± 19 h** | desactivation de la Skill — `[HYPOTHESE]` sur l'attribution, `[CONFIRME]` sur la rupture |
-| 5 | **a l'activation de ce lot** | ce document |
+| 5 | **a l'activation de ce lot** | faisceau, `source_drift`, liste de refus, accuse d'appariement |
+| 6 | **au premier scan qui l'evalue** | filtrage des competitions sans prix |
+
+Le sixieme se date tout seul, et par le meme mecanisme : `note_price_coverage`
+ecrit une entree de journal a la **premiere transition** qu'il constate, au scan.
+Pas a la livraison du code, pas au deploiement — au moment ou une competition
+sort effectivement du board. Tant qu'aucune ne sort, il n'y a pas de rupture a
+dater : la population cible etait vide le jour de la livraison.
+
+**Ce qu'il change, et ce qu'il ne change pas.** Il modifie la composition des
+lots analyses a partir de la — donc toute comparaison de residu qui le traverse
+est confondue. Il ne touche **aucune** selection passee : rien n'est supprime,
+les evenements restent en base, et les selections deja prises restent dans la
+population de calibration.
 
 Il se date **a l'activation, pas a la livraison** — idiome de
 `changelog.note_feedback`, qui date deja la bascule des taux sur le premier

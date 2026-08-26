@@ -157,6 +157,14 @@
         </td>
         <td class="affiche">
           <a href="/events/{{ row.event_id }}">{{ row.affiche }}</a>
+          {#- **Un fait affiché, jamais un filtre.** 141 événements sans prix
+              vivent dans des compétitions servies, et douze rencontres à venir
+              n'en avaient aucun au relevé du 26/08 — dont Lyon – Fenerbahce à dix
+              heures du coup d'envoi. À cette échelle, rien ne distingue « ne sera
+              pas coté » de « pas encore coté » : les cacher aurait masqué une
+              affiche majeure, les laisser muets ferait chercher une panne de
+              scan. La ligne le dit. -#}
+          {% if row.unpriced %} <span class="badge">aucun prix</span>{% endif %}
         </td>
         <td class="num group">{{ '%.2f'|format(row.home_price) if row.home_price else '·' }}</td>
         <td class="num">{{ '%.2f'|format(row.draw_price) if row.draw_price else '·' }}</td>

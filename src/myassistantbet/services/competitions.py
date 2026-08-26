@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -1487,3 +1487,254 @@ async def sync_from_api(client: OddsAPIClient, settings: Settings | None = None)
         report.dormant,
     )
     return report
+
+
+#: Fenetre glissante sur laquelle une competition est jugee servie, en jours.
+#:
+#: **Une borne basse mesuree, une borne haute que la base ne peut pas donner.**
+#: Releve du 26/08/2026 : la Leagues Cup porte deux rencontres a venir et son
+#: dernier prix date de **13,5 jours** — elle se joue par phases, et huit de ses
+#: quarante evenements sont cotes. Une fenetre de sept jours l'aurait donc
+#: masquee a tort. La borne mesuree est « plus de quatorze jours » ; au-dela, la
+#: base entiere ne couvre que vingt-deux jours et **ne permet pas de departager
+#: trois semaines de quatre**.
+#:
+#: Le choix se fait du cote sur. Masquer une competition servie coute une soiree
+#: d'analyse ; en laisser paraitre une qui ne l'est plus coute quelques lignes de
+#: board, et le badge « aucun prix » le dit deja.
+PRICE_WINDOW_DAYS = 21
+
+
+@dataclass
+class UnpricedCompetition:
+    """Une competition dont aucun prix ne remonte, et qui porte des matchs a venir."""
+
+    competition_id: int
+    label: str
+    sport: str
+    upcoming: int
+    #: Dernier releve de prix connu, tous chemins confondus. `None` quand la
+    #: competition n'en a **jamais** porte — le cas des trois tournois du 24/08.
+    last_price_at: str | None = None
+
+    @property
+    def never_priced(self) -> bool:
+        return self.last_price_at is None
+
+
+def unpriced(
+    settings: Settings | None = None, now: datetime | None = None
+) -> list[UnpricedCompetition]:
+    """Les competitions qu'aucun book ne cote, et qui ont des matchs a venir.
+
+    **La regle porte sur la competition, jamais sur l'evenement**, et c'est la
+    mesure qui l'impose. Au 26/08/2026, 295 evenements n'avaient jamais porte de
+    prix : 154 dans trois tournois que The Odds API ne sert pas du tout, et 141
+    **dans des competitions servies** — EFL Cup 43 sur 57, Leagues Cup 32 sur 40.
+    Le book y cote certains matchs et pas d'autres.
+
+    Le contre-exemple qui interdit la regle par evenement est dans la base : douze
+    rencontres a venir sans aucun prix, dont **Lyon - Fenerbahce a dix heures du
+    coup d'envoi**. A cette echelle, rien ne distingue « ne sera pas cote » de
+    « pas encore cote » — et en cas de doute, rien.
+
+    **Reversible dans les deux sens, et sur l'etat reel.** Un prix suffit a faire
+    revenir une competition — Monterrey, le 24/08, etait au catalogue et
+    simplement inactive ; et un releve plus vieux que `PRICE_WINDOW_DAYS` la fait
+    partir, sans quoi un tournoi annuel reapparaitrait servi douze mois apres.
+    Rien n'est fige dans une liste.
+
+    **Une competition sans match a venir n'y figure pas** : il n'y a rien a
+    cacher, elle ne parait deja plus au board. C'etait le cas des trois tournois
+    vises le jour meme de la mesure — leurs tableaux etaient termines.
+    """
+    settings = settings or get_settings()
+    moment = (now or datetime.now(UTC)).astimezone(UTC)
+    horizon = (moment - timedelta(days=PRICE_WINDOW_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    borne = moment.strftime("%Y-%m-%dT%H:%M:%SZ")
+    with connect(settings) as conn:
+        rows = conn.execute(
+            # `odds` **et** `prompt_odds` : « aucune cote obtenable par aucun des
+            # deux chemins ». Un releve de substitution ou une saisie manuelle
+            # valent autant qu'un prix du fournisseur — sans quoi la regle
+            # ecarterait les competitions creees a la main, qui portent quatre
+            # selections tranchees reelles.
+            "SELECT c.id, c.label, s.key AS sport,"
+            "       SUM(e.commence_time >= :borne) AS upcoming,"
+            # **`MAX` a deux arguments est scalaire en SQLite, pas agregat** : ecrit
+            # ainsi il rendait le dernier prix d'une ligne arbitraire du groupe au
+            # lieu du dernier de la competition, et une competition servie
+            # ressortait non servie. Le maximum par evenement se calcule donc dans
+            # une sous-requete, et `MAX` a un seul argument agrege le groupe.
+            "       MAX(("
+            "         SELECT MAX(f) FROM ("
+            "           SELECT o.fetched_at AS f FROM odds o WHERE o.event_id = e.id"
+            "           UNION ALL"
+            "           SELECT q.fetched_at FROM prompt_odds q WHERE q.event_id = e.id"
+            "         )"
+            "       )) AS dernier_prix "
+            "FROM competitions c "
+            "JOIN sports s ON s.id = c.sport_id "
+            "JOIN events e ON e.competition_id = c.id "
+            # **L'absence de prix ne suffit pas : il faut que le fournisseur le
+            # dise.** Une competition servie dont l'appel de cotes a echoue n'a
+            # pas de prix non plus, et la masquer viderait le board sur une panne
+            # — defaut que quatre tests de board ont fait apparaitre avant la
+            # livraison. `api_active` est la declaration du fournisseur, ecrite
+            # par `sync_from_api` ; une cle absente dit qu'il ne la connait pas du
+            # tout. Meme regle que partout : on cherche ce que la source dit,
+            # plutot que de le deduire d'un silence.
+            #
+            # Verifie sur la base servie au 25/08/2026 : les trois tournois vises
+            # portent `oddsapi_key` nul **et** `api_active = 0` ; les six autres
+            # competitions a matchs a venir portent les deux a 1.
+            "WHERE c.oddsapi_key IS NULL OR c.api_active = 0 "
+            "GROUP BY c.id "
+            "HAVING upcoming > 0 AND (dernier_prix IS NULL OR dernier_prix < :horizon) "
+            "ORDER BY s.key, c.label",
+            {"borne": borne, "horizon": horizon},
+        ).fetchall()
+    return [
+        UnpricedCompetition(
+            competition_id=int(row["id"]),
+            label=str(row["label"]),
+            sport=str(row["sport"]),
+            upcoming=int(row["upcoming"]),
+            last_price_at=str(row["dernier_prix"]) if row["dernier_prix"] else None,
+        )
+        for row in rows
+    ]
+
+
+#: Libelles du journal des mesures. **Les deux sens sont dates**, sans quoi la
+#: regle ne serait reversible que dans un.
+UNPRICED_ENTERED = "compétition retirée du board — aucun prix"
+UNPRICED_LEFT = "compétition revenue au board — prix servis"
+
+
+def note_price_coverage(
+    settings: Settings | None = None, now: datetime | None = None
+) -> list[tuple[str, str]]:
+    """Date les **transitions** de l'etat « sans prix ». Rend `(libelle, competition)`.
+
+    **Les transitions, jamais un instantane periodique.** Un releve a chaque scan
+    grossirait sans porter d'information et noierait la bascule au milieu du
+    bruit : ce qui informe est le moment ou l'etat change. Monterrey, le
+    24/08/2026, etait au catalogue et simplement inactive — c'est cette bascule-la
+    qu'un journal doit rendre lisible, pas les vingt jours ou rien n'a bouge.
+
+    **Les deux sens.** Une competition qui cesse d'etre servie entre dans l'etat,
+    une competition qui recoit un prix en sort, et les deux s'ecrivent. Sans la
+    seconde, la regle ne serait reversible que dans un sens et le journal
+    laisserait croire qu'une exclusion est definitive.
+
+    Appelee au scan, seul moment ou l'etat peut avoir change sans qu'on regarde.
+    """
+    settings = settings or get_settings()
+    moment = (now or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    jour = moment[:10]
+    courantes = {entree.competition_id: entree for entree in unpriced(settings, now)}
+
+    from .changelog import INGESTION
+    from .changelog import add as note
+
+    transitions: list[tuple[str, str]] = []
+    with connect(settings) as conn:
+        marquees = {
+            int(row["id"]): str(row["label"])
+            for row in conn.execute(
+                "SELECT id, label FROM competitions WHERE unpriced_since IS NOT NULL"
+            )
+        }
+        entrantes = [cid for cid in courantes if cid not in marquees]
+        sortantes = [cid for cid in marquees if cid not in courantes]
+        for cid in entrantes:
+            conn.execute("UPDATE competitions SET unpriced_since = ? WHERE id = ?", (moment, cid))
+        for cid in sortantes:
+            conn.execute("UPDATE competitions SET unpriced_since = NULL WHERE id = ?", (cid,))
+
+    for cid in entrantes:
+        entree = courantes[cid]
+        note(
+            jour,
+            UNPRICED_ENTERED,
+            f"{entree.label} — {entree.upcoming} match(s) à venir, "
+            + (
+                "aucun prix connu"
+                if entree.never_priced
+                else f"dernier prix {entree.last_price_at}"
+            )
+            + f", fenêtre de {PRICE_WINDOW_DAYS} jours",
+            scope=INGESTION,
+            settings=settings,
+        )
+        transitions.append((UNPRICED_ENTERED, entree.label))
+    for cid in sortantes:
+        note(jour, UNPRICED_LEFT, marquees[cid], scope=INGESTION, settings=settings)
+        transitions.append((UNPRICED_LEFT, marquees[cid]))
+    return transitions
+
+
+@dataclass
+class HiddenEvent:
+    """Une rencontre retiree du board faute de prix.
+
+    **Elle ne porte pas de drapeau « deja cotee », et c'est structurel** : la
+    regle opere au niveau de la competition, donc une seule cote — manuelle,
+    de substitution, peu importe — la ramene au board avec toutes ses rencontres.
+    Aucun evenement listé ici ne peut donc etre cote.
+
+    Le drapeau avait ete ecrit puis retire : un test l'a montre inatteignable, et
+    un garde qui ne peut pas mordre donne l'apparence d'un garde. Meme sort que
+    le plancher de confiance, pour la meme raison.
+    """
+
+    event_id: int
+    home: str
+    away: str
+    commence_time: str
+
+    @property
+    def affiche(self) -> str:
+        return f"{self.home} – {self.away}" if self.away else self.home
+
+
+def hidden_events(
+    settings: Settings | None = None, now: datetime | None = None
+) -> dict[int, list[HiddenEvent]]:
+    """Les rencontres a venir des competitions retirees du board, par competition.
+
+    **L'entree propre par la competition, et pas une porte dans le filtre.** Une
+    exception laissee visible au board finit par y rester, et le filtre cesse
+    d'en etre un ; l'entree par la competition est le bon niveau puisque la regle
+    opere la. Les rencontres restent atteignables pour la saisie manuelle de
+    cotes sans encombrer le board.
+
+    C'est aussi ce qui rend « les fixtures entrent » vrai en pratique et pas
+    seulement en base : sans ce chemin, un tournoi importe deviendrait invisible
+    et incotable, ce qui reviendrait a couper a l'ingestion par un detour.
+    """
+    settings = settings or get_settings()
+    moment = (now or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    cibles = [entree.competition_id for entree in unpriced(settings, now)]
+    if not cibles:
+        return {}
+    marques = ", ".join("?" * len(cibles))
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT e.id, e.competition_id, e.home, e.away, e.commence_time "
+            f"FROM events e WHERE e.competition_id IN ({marques}) AND e.commence_time >= ? "
+            "ORDER BY e.commence_time, e.id",
+            (*cibles, moment),
+        ).fetchall()
+    groupes: dict[int, list[HiddenEvent]] = {}
+    for row in rows:
+        groupes.setdefault(int(row["competition_id"]), []).append(
+            HiddenEvent(
+                event_id=int(row["id"]),
+                home=str(row["home"]),
+                away=str(row["away"] or ""),
+                commence_time=str(row["commence_time"]),
+            )
+        )
+    return groupes
