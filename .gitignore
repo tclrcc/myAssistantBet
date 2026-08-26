@@ -29,10 +29,15 @@ htmlcov/
 .env.*
 !.env.example
 
-# Audit : les rapports .md sont suivis, le reste ne l'est pas.
-# Les copies de base pesent 360 Mo ; les scripts sont de l'analyse jetable, et
-# la CI lance `ruff check .` sur tout le depot.
+# Audit : les rapports .md et leurs requetes sont suivis, le reste ne l'est pas.
+# Les copies de base pesent 360 Mo, et les scripts sont de l'analyse jetable que
+# la CI passerait au `ruff check .` du depot entier.
+#
+# `audit/sql/` fait exception et **doit rester suivi** : la regle de conduite de
+# cet audit est que toute affirmation chiffree s'accompagne de sa requete. Une
+# requete restee locale rend le rapport invérifiable des que la copie de travail
+# disparait — et la copie de travail est, par construction, jetable. Ce sont des
+# lectures seules sur un schema deja versionne : aucun secret, aucune donnee.
 audit/data/
 audit/*.db
 audit/*.py
-audit/sql/
