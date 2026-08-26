@@ -371,3 +371,10 @@ donne — et cette assurance-la, elle, ne se mesure nulle part.
 - **B1** — la couverture des cotes, dont la mesure est cadree et non conduite.
 - **D3** — ce que `framework_version` etiquette desormais, et le sort du test
   rouge qui en depend.
+- **Le rattachement qualification → tableau principal** — instruit au §9 ter de la
+  proposition, non conduit. `load_for` filtre sur `competition_id` et six lignes du
+  bloc tennis en descendent ; les 128 rencontres de qualification de l'US Open sont
+  en base sous deux competitions que rien ne relie au tableau principal. Le chantier
+  n'importe aucun champ et a une **fenetre** : le tableau principal entre dans les
+  jours qui viennent, et c'est le seul moment de l'annee ou la matiere, le besoin et
+  des donnees fraiches a verifier coexistent.

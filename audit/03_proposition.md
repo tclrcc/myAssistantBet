@@ -728,6 +728,193 @@ c'est un PASSE.
 
 ---
 
+## 9 ter. Les quatre familles, instruites
+
+Le critere du §9 bis applique. Mesures du 26/08/2026 sur la copie d'audit, plus
+**trois appels en direct** a `profile/{nom}/matches-played` — endpoint deja en
+service, quota mensuel a 139 090 sur 150 000 apres les trois.
+
+### Quatre premisses renversees avant la premiere ligne d'instruction
+
+| Premisse | Ce que la mesure dit |
+| --- | --- |
+| le rattachement est un prerequis de l'import | **chantier autonome** : la matiere est en base, 154 evenements, et six lignes du bloc en dependent |
+| la famille « matchs precedents » vient de Tennis API | les **dates** y sont deja ; ce qui manque est le **score** et la **charge** |
+| le champ `qualifying` porte les qualifications | **vide sur 962 reponses archivees et sur trois sondes en direct** — elles sont servies sous `singles` |
+| le style de jeu est une caracteristique permanente, donc a refuser | **il n'existe pas** : `hand`, `ht`, `age`, `best_of` sont nuls sur **106 701 matchs sur 106 701** |
+
+### La quatrieme aurait ferme une famille sur un zero credible
+
+**Sixieme occurrence du motif de lecture, et la premiere sur une instruction
+d'admission.** Le champ `qualifying` est present dans la charge utile — 962
+reponses sur 962 — et vide partout. Lu comme une reponse, il dit « le
+fournisseur ne sert pas les qualifications », et la famille se ferme.
+
+Le denominateur le dementait : les 47 qualifies de l'US Open presents dans
+`player_alias` portent **131 reponses archivees, toutes relevees les 18 et
+19/08** — six jours **avant** que leurs rencontres soient jouees. Le zero ne
+mesurait pas la source, il mesurait notre fenetre de collecte.
+
+Sonde du 26/08, deux profils de qualifies : `qualifying` toujours vide, et le
+match de qualification du 24/08 **present sous `singles`** —
+`tournamentId: 21349`, `roundId: 1`, `result: "6-1 6-3"`, statistiques de match
+completes. C'est exactement notre evenement 1168, Gonzalo Bueno – Billy Harris.
+
+Meme famille que le `score` lu a la place de `result` au lot 16 et que le segment
+de chemin du lot 17 : **le champ dont le nom decrit le besoin n'est pas celui qui
+porte la donnee.**
+
+### A. Le rattachement — chantier autonome, et sa fenetre se ferme
+
+**L'etat mesure.** Les qualifications vivent sous les competitions **116** et
+**117**, le tableau principal sous **11** et **15** — presentes au catalogue,
+`api_active = 0`, aucun evenement encore. **Aucune colonne ne relie les deux** :
+`competitions` porte `fenetre_debut` / `fenetre_fin` et rien d'autre.
+
+**Ce qu'il repare sans importer un champ.** `tennis_load.load_for` filtre sur
+`competition_id`, et six lignes du bloc en descendent — `Repos`, `Parcours`,
+`Non joue`, `Fraicheur`, `Tour`, `Ici`. Un qualifie entrant au tableau principal
+les perd toutes sur ses trois tours. La matiere est deja la : 128 rencontres,
+256 joueurs, avec adversaire et horaire.
+
+**Et rien d'autre ne la porte** : `tennis_matches` compte 14 239 lignes et
+**huit tours distincts, aucun de qualification** — la source hebdomadaire ignore
+les tableaux de qualification, structurellement et pas par retard.
+
+**La question posee, et elle a une reponse.** Un champ explicite sur la
+competition, jamais une convention de nommage : le dossier a refuse trois fois
+la deduction par libelle — Championship ecossaise contre anglaise, Bundesliga
+contre 2. Bundesliga, Coupe de Malaisie contre MLS, toutes trois avec un score
+maximal. « ATP US Open Qualifications » contre « ATP US Open » est le meme piege
+sous une forme plus tentante, parce que le prefixe est exact.
+
+**Qui le renseigne : la main, au meme geste que la fenetre.** Pas le scan — il
+ne cree pas ces competitions, `tennis_fixtures` le fait sur une saisie. Le champ
+se pose donc la ou la fenetre se pose deja, et il herite de sa garde.
+
+**Ce qu'il ne peut pas etre, et c'est ce qui en fait un chantier.** Une
+extension d'etendue appliquee aux six lecteurs **casse `Tour`** : le compte des
+joueurs vus deciderait sur 128 + 256 = 384, qui n'est la taille d'aucun tableau
+(`PLAUSIBLE_DRAWS`), donc `is_bracket` rendrait faux et la ligne passerait en
+« phase non renseignee ». Les six lecteurs ne veulent pas la meme etendue :
+`Repos`, `Fraicheur` et la charge veulent l'union ; `Tour` veut le tableau seul.
+Le lien est donc une **relation entre competitions**, et chaque lecteur declare
+s'il la suit — jamais un `IN (…)` recopie dans six requetes.
+
+**Deux lecteurs filtrent deja par competition, et le second n'est pas
+`load_for`** : `serve_stats` lit `events` directement, pour eviter une recursion
+avec `_tournament_id`. Ecrire la resolution du lien deux fois serait la
+**septieme** occurrence du motif du §8 — une seule fonction rend l'ensemble des
+competitions a lire, les deux l'appellent.
+
+**La fenetre.** Le tableau principal de l'US Open entre dans les jours qui
+viennent, et c'est le seul moment de l'annee ou la matiere, le besoin et des
+donnees fraiches a verifier coexistent. Passe cette date, le chantier se teste
+sur un cas mort jusqu'a Melbourne.
+
+### B. Les quatre familles au test de la phrase de section B
+
+**1. Classements — ferme, et deux fois plutot qu'une.** Le §9 bis l'avait tranche
+d'avance : integralement dans le prix, donc borne de contexte et jamais facteur.
+La mesure ajoute qu'il n'y a **rien a importer** — `tennis_elo.tour_rank` porte
+le classement officiel sur 1 096 des 1 101 lignes, et `player1.currentRank` est
+servi sur **99,6 %** des matchs de la charge utile que nous recevons deja.
+
+**2. Matchs precedents — la famille se coupe en deux, et une moitie passe.**
+
+- **Les dates et les adversaires sont deja en base.** Ils relevent du
+  rattachement, pas de l'import. Aucun champ nouveau.
+- **Le score et la charge n'y sont pas**, et aucune autre source ne les porte.
+  Ils sont servis aujourd'hui, sous `singles`, par un endpoint deja appele.
+
+> *Phrase de section B* : « X arrive du tableau de qualification avec trois tours
+> en cinq jours et 39 jeux joues, dont deux en trois sets — **maniere** — total de
+> jeux, ou handicap jeux. »
+
+Elle vient, elle est specifique a ce match, et elle vise un marche que le bloc
+n'eclaire pas autrement. **La famille passe** — et elle ne coute pas un
+abonnement : un appel par joueur, deja budgete.
+
+**3. Statistiques — deux raisons de refus, et elles ne portent pas sur la meme
+chose.**
+
+> **Raison 1 — un agregat de saison est un fait sans date.** Le gabarit exige des
+> faits dates, et le controle 11 vient d'etre restaure pour cela. « X gagne 68 %
+> des points derriere sa premiere » ne se verifie contre aucune journee, ne
+> s'invalide par aucune annonce, et ne peut pas entrer dans la section A comme un
+> fait.
+
+> **Raison 2 — une grandeur qui ne varie pas entre deux matchs ne peut ni porter
+> ni invalider un angle.** Elle est vraie de toutes les rencontres du joueur
+> depuis un an, donc elle est dans le prix de toutes. C'est le raisonnement qui
+> ferme deja le classement, applique a une grandeur continue.
+
+**La seconde est la plus forte, et c'est elle qui ferme les variantes datees.**
+Sans elle, une statistique refusee comme « non datee » revient sous forme de
+serie temporelle — un agregat glissant, recalcule chaque semaine, donc date — et
+l'objection tombe alors qu'aucune information n'a ete ajoutee. Une serie
+temporelle d'une grandeur invariante reste invariante.
+
+**Et il faut porter la tension avec, plutot que la taire** : `Service`, `Retour`,
+`Jeux` et `Ecart` **sont** des agregats de saison, ils sont livres, et ils
+passent. Ce qui les separe tient en trois conditions, et c'est la forme
+admissible :
+
+- ils portent leur **fenetre** et leurs **denominateurs** — `52 sem., 2 083 pts
+  de service, arretees au 16/08` — donc ils ne se lisent pas comme un fait du
+  jour ;
+- ils sont rendus en **contraste entre les deux joueurs du match**, ce qui les
+  rend specifiques a la rencontre ;
+- le contraste ne se nomme que si son **intervalle exclut zero** (Newcombe), donc
+  il se tait sous le bruit.
+
+Un agregat de saison de plus n'entre qu'a ces trois conditions. Sans elles il
+tombe sous la raison 2 : il decrit un joueur, pas une rencontre.
+
+**4. Style de jeu — refuse, et il n'y avait meme pas de quoi refuser.** La
+raison 2 s'y applique en entier : une caracteristique permanente est dans le prix
+de toutes les rencontres du joueur depuis le debut de sa carriere. Mais la mesure
+va plus loin que l'argument — **la famille n'a aucun substrat** :
+`winner_hand`, `winner_ht`, `winner_age` et `best_of` sont nuls sur **106 701
+matchs sur 106 701**, et aucun champ de style, de tendance ou de profil ne figure
+dans la charge utile. Il n'y a pas de champ a instruire.
+
+### C. Un champ interdit entre par une porte autorisee
+
+`FORBIDDEN` garde les **chemins**, et son commentaire annonce que « la barriere
+se pose en amont du parsing, pour que la donnee ne puisse pas entrer ». Mesure :
+`player1.odd` — une cote de bookmaker — est servi sur **52 533 des 106 701
+matchs (49,2 %)** de `profile/matches-played`, un endpoint autorise et deja
+appele quotidiennement.
+
+**Rien ne le lit** : aucun module ne reference ce champ, et il n'atteint aucune
+table de lecture. Mais il est **archive integralement** dans `api_responses`, ce
+qui est la regle de l'archive et ne doit pas changer.
+
+Ce que ca corrige est le critere, pas le code : **l'admission se prononce par
+champ et non par endpoint.** Un endpoint autorise peut porter une donnee
+interdite, et c'est deja le cas. Toute extension de lecture sur cette charge
+utile enumere les champs qu'elle prend, comme `tennisdata.COLUMNS` le fait deja
+en ecartant les huit colonnes de cotes de cloture.
+
+### D. Le bilan, et le critere a fait son travail
+
+| Famille | Verdict | Ce qu'il en coute |
+| --- | --- | --- |
+| Classements | **refuse** — borne de contexte, deja en base a 99,6 % | rien |
+| Matchs precedents · dates | **hors sujet** — deja en base | le rattachement |
+| Matchs precedents · score et charge | **admis** — phrase de section B obtenue | un appel par joueur, deja budgete |
+| Statistiques | **refuse hors des trois conditions** de la forme livree | rien |
+| Style de jeu | **refuse**, et sans substrat mesurable | rien |
+
+**Trois familles sur quatre sortent, et c'est le critere qui fonctionne** — le
+§9 bis a ete ecrit pour ca, et un critere qui n'exclut jamais rien n'en est pas
+un. Ce que le chantier vaut se reduit a deux gestes qui n'ont pas la meme nature :
+le **rattachement**, qui repare six lignes sans importer un champ, et la **charge
+de qualification**, qui est le seul champ que la mesure autorise a entrer.
+
+---
+
 ## 10. Le point de rupture
 
 Cinquieme de la fenetre, et le premier qui porte sur les colonnes servant a
