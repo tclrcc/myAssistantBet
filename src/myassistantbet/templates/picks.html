@@ -366,6 +366,22 @@
          question qu'on n'a pas pu poser, et le taire le ferait lire comme tenu. #}
       <p class="notice">{{ preview.controls.note }}</p>
       {% endif %}
+      {# **L'appariement, et c'est un troisième défaut.** Le collage partiel s'est
+         éteint le 20/08 ; ce qui reste vient de collages **complets** dont les
+         repères ne s'apparient à aucun prompt — 18 sélections les 24 et 25/08.
+         Un marqueur de format n'y peut rien : les deux collages annoncent
+         correctement leur contenu. Même conséquence que la ligne manquante — le
+         lot entier perd ses crans — donc même mécanisme, et une case distincte :
+         cocher pour une section absente ferait passer au même geste une perte
+         qu'on n'aurait pas lue. #}
+      {% if claims_guard and claims_guard.blocking %}
+      <p class="notice notice-warn">
+        <label>
+          <input type="checkbox" name="confirm_claims" value="1" required>
+          {{ claims_guard.note }} Je confirme importer sans les crans.
+        </label>
+      </p>
+      {% endif %}
       <button type="submit" class="primary">Importer les lignes cochées</button>
     </div>
   </form>

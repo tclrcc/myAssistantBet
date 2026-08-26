@@ -169,13 +169,14 @@ def is_refused(publisher: str) -> bool:
     faux positif se lit ici comme une accusation.
 
     **Un signalement, jamais un refus** : la ligne s'importe, le fait entre au
-    faisceau, et c'est sa **part** qui se lit dans la serie. Sur les quatre
-    premiers releves, trois etaient d'ailleurs correctement etiquetes niveau 4 par
-    le modele — ce qui se signale est leur entree, pas leur etiquetage.
+    faisceau, et c'est sa **part** qui se lit dans la serie. La mesure le rend
+    plus net qu'attendu — **les 12 faits concernes sont declares niveau 4, tous
+    les douze**. Le modele ne se trompe donc jamais sur ce que sont ces pages ; ce
+    qui se signale est leur **entree dans le faisceau**, jamais leur etiquetage.
 
-    **Sa valeur est prospective.** Mesure du 26/08/2026 : 12 faits sur 271, et
-    **aucun contraste avant/apres** la rupture du 21/08 — 3,5 % contre 4,9 %,
-    p = 0,76. Elle n'existe pas pour trier ce qui est deja entre.
+    **Sa valeur est prospective.** Mesure du 26/08/2026 : 12 faits sur 271, sur
+    7 domaines, et **aucun contraste avant/apres** la rupture du 21/08 — 3,5 %
+    contre 4,9 %, p = 0,76. Elle n'existe pas pour trier ce qui est deja entre.
     """
     domaine = publisher_of(publisher)
     if not domaine:

@@ -1367,6 +1367,13 @@ async def preview_picks_import(request: Request, session_id: int) -> HTMLRespons
             # celui-ci un bloc jamais arrive — et c'est ici, pas une semaine plus
             # tard, que l'information sert encore a quelque chose.
             missing_sections=sections_service.for_paste(session_id, raw, settings),
+            # **Le troisieme defaut de collage, et le seul encore actif.** Le
+            # partiel s'eteint le 20/08 ; ce qui reste vient de collages complets
+            # dont les reperes ne s'apparient a aucun prompt. L'apercu tient
+            # l'objet sous la main — l'import, lui, le relira depuis
+            # `imports_raw`, une condition ne pouvant pas venir de la page
+            # qu'elle garde.
+            claims_guard=picks_import_service.claims_for_preview(session_id, preview, settings),
         ),
     )
 
@@ -1415,6 +1422,29 @@ async def confirm_picks_import(request: Request, session_id: int) -> HTMLRespons
                 request,
                 "picks.html",
                 _picks_context(session_id, f"{controls_service.BLOCKED_NOTE} {compte.note}."),
+            )
+    # **L'appariement, meme mecanisme et troisieme case.** Un collage complet dont
+    # aucun bloc ne s'apparie ramene tout le lot au cran 1 — meme consequence que
+    # la ligne `dossiers_ouverts` absente, et c'est la consequence qui justifie de
+    # retenir : ce n'est pas une ligne qui manque, c'est la mesure du lot qui
+    # disparait. Une case distincte, parce que cocher pour une section absente
+    # ferait passer au meme geste une perte qu'on n'aurait pas lue.
+    #
+    # Le collage partiel n'est plus le sujet : il s'est eteint le 20/08. Les
+    # dix-huit crans forces qui restent viennent de collages **complets**, et un
+    # compte annonce en tete de rendu n'en aurait sauve aucun.
+    if form.get("confirm_claims") != "1":
+        appariement = picks_import_service.claims_guard(
+            session_id, form.get("import_id", ""), settings
+        )
+        if appariement is not None and appariement.blocking:
+            return templates.TemplateResponse(
+                request,
+                "picks.html",
+                _picks_context(
+                    session_id,
+                    f"{picks_import_service.CLAIMS_BLOCKED_NOTE} {appariement.note}",
+                ),
             )
     # La liste entiere se garde a **l'import** et non a l'apercu, qui n'ecrit
     # rien : elle inclut les dossiers ouverts qui n'ont produit aucune

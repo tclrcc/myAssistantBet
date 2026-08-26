@@ -3,7 +3,7 @@
 **Sa valeur est prospective, pas retrospective**, et c'est la seule facon de la
 lire honnetement. Elle n'existe pas pour trier ce qui est deja entre — 12 faits
 sur 271 au 26/08/2026, **sans contraste avant/apres** (3,5 % contre 4,9 %,
-p = 0,76) et le plus souvent correctement etiquetes niveau 4 par le modele. Elle
+p = 0,76) et **tous declares niveau 4** par le modele, sans exception. Elle
 existe pour que ces pages **cessent d'entrer**, et pour que leur part soit
 lisible dans la serie du faisceau le jour ou elle bougera.
 
@@ -140,10 +140,9 @@ def test_un_domaine_ambigu_reste_dehors() -> None:
 
 
 def test_un_fait_d_operateur_entre_quand_meme_et_se_compte(migrated: Settings) -> None:
-    """**La ligne s'importe.** Le modele n'a pas menti sur le niveau dans la
-    majorite des cas — trois des quatre premiers releves sont correctement
-    etiquetes 4 et tombent en cran 2. Ce qui se signale est leur **entree dans le
-    faisceau**, pas leur etiquetage.
+    """**La ligne s'importe.** Le modele n'a jamais menti sur le niveau : les 12
+    faits concernes de la base sont declares niveau 4, **tous les douze**. Ce qui
+    se signale est leur **entree dans le faisceau**, pas leur etiquetage.
 
     Refuser la ligne la ferait disparaitre sans laisser de trace, ce qui est le
     rejet silencieux que ce projet retire partout.

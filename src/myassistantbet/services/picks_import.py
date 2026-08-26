@@ -437,6 +437,16 @@ class ImportPreview:
     #: pas du tout** : c'est la porte du gabarit, et y verser une remarque ferait
     #: disparaitre l'import entier pour un detail.
     ignored: list[str] = field(default_factory=list)
+    #: Blocs de confiance **lus** dans le collage, et **apparies** a une ligne.
+    #: Comptes ici plutot que recalcules par le garde-fou : `_attach_claims` les
+    #: connait deja, et une seconde lecture du format aurait fini par ne plus
+    #: reconnaitre les memes blocs que celle qui calcule le cran.
+    claim_blocks: int = 0
+    claim_matched: int = 0
+    #: La premiere paire qui bloque, nommee — expliquee la ou elle est calculee.
+    #: Sans elle, « ca se rattrape en recollant » n'est pas un chemin de reprise :
+    #: recoller le meme texte echoue a l'identique.
+    mismatch: str = ""
     #: Ce qui accompagne un apercu **lisible** : blocs rejetes, appariement
     #: refuse, dossiers non ouverts. La distinction n'est pas cosmetique — un
     #: bloc de confiance illisible ne doit pas couter la possibilite d'importer
@@ -1412,14 +1422,16 @@ def _attach_claims(
     les paires : une seule qui ne correspond pas, et rien n'est rattache.
     """
     reading = read_blocks(raw)
+    preview.claim_blocks = len(reading.claims)
     preview.notes.extend(reading.rejected)
     preview.rejects.extend(reading.rejects)
     # **Les pages d'operateur se signalent, elles ne se refusent pas.** Le cadre
     # dit de les ecarter — « elles vendent un operateur : leur choix de faits sert
     # un argumentaire, et un fait retenu pour convaincre ne vaut pas un fait
-    # rapporte ». Sur les quatre premiers releves, trois etaient pourtant
-    # correctement etiquetes niveau 4 par le modele : ce qui se signale est leur
-    # **entree dans le faisceau**, pas leur etiquetage. Refuser la ligne la ferait
+    # rapporte ». Or **les 12 faits concernes de la base sont declares niveau 4,
+    # tous les douze** : le modele ne se trompe jamais sur ce que sont ces pages.
+    # Ce qui se signale est donc leur **entree dans le faisceau**, jamais leur
+    # etiquetage — et c'est ce qui interdit d'en faire un refus. Refuser la ligne la ferait
     # disparaitre sans laisser de trace, ce qui est le rejet silencieux que ce
     # projet retire partout.
     #
@@ -1473,6 +1485,7 @@ def _attach_claims(
     # pas se relire ne doit toujours pas pouvoir s'ecrire.
     choix = _select(preview.picks, reading.claims, headers or [])
     if choix is None:
+        preview.mismatch = _mismatch(preview.picks, reading.claims, headers or []) or ""
         _lost(
             preview,
             CONF,
@@ -1480,12 +1493,13 @@ def _attach_claims(
             "Les repères de match des blocs (M1, M2…) ne correspondent à aucun prompt de "
             "cette session. Rien n'est rattaché — un cran posé sur la mauvaise ligne "
             "serait faux sans se voir. "
-            + (_mismatch(preview.picks, reading.claims, headers or []) or "")
+            + preview.mismatch
             + "Corrige l'affiche dans le tableau, telle qu'elle est écrite en tête du "
             "bloc, et recolle.",
         )
         return None
     valide, apparie = choix
+    preview.claim_matched = len(apparie)
     for index, claim in apparie.items():
         pick = preview.picks[index]
         pick.claim = claim
@@ -1511,6 +1525,121 @@ def _attach_claims(
             "dans le rendu, section C-bis comprise.",
         )
     return valide
+
+
+#: Ce que la page ecrit quand l'appariement retient l'import. La cause, elle,
+#: voyage dans `ClaimsGuard.note` : elle change le geste a faire.
+CLAIMS_BLOCKED_NOTE = (
+    "Ce collage perd les crans de tout son lot : aucun de ses blocs de confiance ne "
+    "s'apparie. Coche la case pour importer quand même — les sélections restent "
+    "valables, c'est leur cran calculé qui manquera."
+)
+
+
+@dataclass
+class ClaimsGuard:
+    """Ce qu'un collage a perdu a l'appariement, et pourquoi.
+
+    **Le collage partiel n'est plus le sujet.** Il s'arrete net le 20/08/2026 avec
+    le durcissement du refus : 150 crans forces jusque-la, zero depuis. Les
+    dix-huit restants viennent de collages **complets** — blocs presents, ligne
+    `dossiers_ouverts` presente — dont les reperes ne se sont apparies a aucun
+    prompt. Un compte annonce en tete de rendu n'en aurait sauve aucun : les deux
+    collages annoncent deja correctement leur contenu.
+
+    **Le blocage porte sur la perte totale**, jamais sur une ligne isolee. Une
+    ligne sans bloc a deja sa note nominative ; ce qui justifie de retenir
+    l'import est que **le lot entier** perde ses crans, comme pour la ligne
+    `dossiers_ouverts` — ce n'est pas une ligne qui manque, c'est la mesure du lot
+    qui disparait.
+    """
+
+    #: Prompts archives dans la session. **Zero est une cause a part** : rien ne
+    #: peut valider les reperes, le referent manque et pas l'annonce.
+    prompts: int = 0
+    blocks: int = 0
+    matched: int = 0
+    note: str = ""
+
+    @property
+    def blocking(self) -> bool:
+        return self.blocks > 0 and self.matched == 0
+
+
+def claims_guard(
+    session_id: int, import_id: str | int | None, settings: Settings | None = None
+) -> ClaimsGuard | None:
+    """Le diagnostic d'appariement d'un collage **deja conserve**, relu par son id.
+
+    Meme lecture que la garde des sections, et pour la meme raison : ce qui
+    retient l'import ne peut pas voyager par le formulaire qu'il retient.
+    `imports_raw` fait foi.
+
+    Rend `None` quand il n'y a rien a relire — identifiant absent, illisible, ou
+    collage d'une autre session. **On ne bloque pas sur ce qu'on n'a pas vu** : la
+    saisie a la main et le rejeu n'ont pas d'identifiant d'import, et les refuser
+    fermerait deux chemins pour garder le troisieme.
+
+    Le diagnostic passe par `build_preview`, le seul lecteur du collage : compter
+    les blocs ici en aurait ecrit un second, et il aurait fini par ne plus
+    reconnaitre les memes que celui qui calcule le cran.
+    """
+    settings = settings or get_settings()
+    try:
+        numero = int(str(import_id or "").strip())
+    except ValueError:
+        return None
+    with connect(settings) as conn:
+        row = conn.execute(
+            "SELECT raw_text FROM imports_raw WHERE id = ? AND session_id = ?",
+            (numero, session_id),
+        ).fetchone()
+    if row is None:
+        return None
+    return claims_for_preview(
+        session_id, build_preview(session_id, str(row["raw_text"] or ""), settings), settings
+    )
+
+
+def claims_for_preview(
+    session_id: int, preview: ImportPreview, settings: Settings | None = None
+) -> ClaimsGuard:
+    """Le meme diagnostic, sur un apercu deja construit.
+
+    **Deux entrees, une seule regle.** L'apercu tient le collage sous la main ;
+    l'import ne peut pas lui faire confiance et le relit depuis `imports_raw`. Ce
+    qui se decide, en revanche, s'ecrit une fois — deux ecritures auraient fini
+    par retenir l'import sur un motif que l'apercu n'annoncait pas.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        prompts = int(
+            conn.execute(
+                "SELECT COUNT(*) AS n FROM prompts WHERE session_id = ?", (session_id,)
+            ).fetchone()["n"]
+        )
+    garde = ClaimsGuard(prompts=prompts, blocks=preview.claim_blocks, matched=preview.claim_matched)
+    if not garde.blocking:
+        return garde
+    # **Deux causes, deux gestes**, et c'est toute la valeur de cette note. Le
+    # conseil de l'autre defaut — « recolle la reponse entiere » — echouerait a
+    # l'identique sur une session sans prompt : ce n'est pas le collage qui manque
+    # de quelque chose, c'est le referent qui n'existe pas.
+    if prompts == 0:
+        garde.note = (
+            f"Aucun prompt n'a été généré dans cette session : rien ne peut valider les "
+            f"repères des {garde.blocks} bloc(s) collé(s). Génère le prompt de la session, "
+            "puis recolle — recoller ce même texte échouerait à l'identique."
+        )
+    else:
+        garde.note = (
+            f"Les {garde.blocks} bloc(s) de ce collage ne s'apparient à aucun des "
+            f"{prompts} prompt(s) de la session. "
+            + (preview.mismatch or "")
+            + "Corrige l'affiche dans le tableau, telle qu'elle est écrite en tête du "
+            "bloc, et recolle."
+        )
+    return garde
 
 
 def _mismatch(picks: list[ParsedPick], claims: list[Claim], headers: list[PromptBlocks]) -> str:
