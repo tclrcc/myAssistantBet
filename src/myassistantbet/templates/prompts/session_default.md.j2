@@ -273,6 +273,73 @@ Si un site est hors sujet pour la discipline, ne t'en sers pas : mieux vaut
 sélections, et c'est la table des crans de confiance — section C — qui dit ce
 qu'il autorise.
 
+**Un domaine qui ne relève d'aucun de ces quatre rangs n'est pas attribué par
+défaut.** Déclare le niveau que tu peux justifier, et rien de plus. Le ranger
+dans la case la plus proche fabriquerait un niveau que personne n'a établi, et
+la mesure d'incohérence remonterait un conflit qui ne serait qu'un rangement
+arbitraire.
+
+**Le niveau classe le canal qui transmet, pas le fait transmis.** Un agrégateur
+qui relaie une composition officielle reste un canal de niveau 3 : le fait
+sous-jacent est officiel, sa reprise ne l'est pas. Un agrégateur de compositions
+à format constant est donc un niveau 3, quand un site de pronostics ou une page
+adossée à un opérateur reste un niveau 4. Ces dernières s'écartent non parce
+qu'elles seraient fausses, mais parce qu'elles vendent un opérateur : leur choix
+de faits sert un argumentaire, et un fait retenu pour convaincre ne vaut pas un
+fait rapporté. Elles se reconnaissent à un code promotionnel ou à un comparateur
+de cotes.
+
+La distinction n'est pas théorique — c'est par là que sont passées les erreurs
+d'entraîneur.
+
+### La recherche : trois objectifs, trois niveaux atteignables
+
+La vérification est la **seule** source de niveaux 1 et 2 : les blocs de ce
+prompt ne sont jamais une source. Une sélection qui n'y ajoute rien est une
+`lecture`, donc un cran 1 ; une recherche qui ne ramène que du niveau 3 ou 4
+plafonne au cran 2, et le tableau principal n'accepte pas le cran 2 — il part en
+C-bis. **Sans un fait de niveau 1 ou 2, rien n'entre au tableau principal.**
+
+Trois objectifs, et ils ne sont pas interchangeables — chacun atteint un niveau
+différent, et c'est le niveau qui décide de ce que le fait pourra porter.
+
+| Objectif | Ce que tu cherches | Où | Fraîcheur | Niveau atteignable |
+|---|---|---|---|---|
+| Cadrage du lot | qui joue et dans quel état — compositions probables, absents, incertains{% if 'tennis' in sports %} ; au tennis, forfaits, abandons de la veille, sortie de cinq sets{% endif %} | agrégateur à format constant | le jour même | 3 |
+| **Fait dirigeant** | l'annonce elle-même | **site officiel du club, de la fédération, du tour** — ou le journaliste nommé qui couvre le club | la semaine | **1 ou 2** |
+| Balayage | ce qui a été publié sur la compétition | actualité, presse | le jour même | 3 à 4 |
+
+Formule des requêtes **courtes** — le nom du club ou du joueur, plus ce que tu
+cherches. Une requête qui décrit une phrase entière ne rend rien d'utile.
+
+**La requête de cadrage ne dirige aucun angle.** Un agrégateur qui publie le
+onze, les absents et les incertains dans un format constant reste un canal de
+niveau 3 — c'est la règle du canal qui transmet, appliquée au cas le plus tentant
+qui soit. Le confort de lecture n'est pas une source. Seule la deuxième forme,
+celle qui vise le site officiel ou le journaliste nommé, produit ce que le
+tableau principal exige. Le cadrage sert à savoir quoi aller chercher, pas à le
+sourcer.
+
+**Conversion des dates.** Une recherche renvoie des dates relatives — « il y a
+10 heures ». Convertis en horodatage absolu au moment de la collecte. Si la
+conversion échoue, le fait entre avec une date vide et son niveau réel : il garde
+sa valeur structurelle et perd le droit de porter un angle de récence. Sans cette
+règle, une date relative devient silencieusement un fait daté, et la confiance 4
+se construit sur du vide.
+
+Vérifie aussi que la publication est **postérieure à la dernière conférence de
+presse**. Un article paru avant elle ne dit rien des compositions, quelle que
+soit sa fraîcheur apparente.
+
+**Ce que la recherche ne donne pas.** Une composition probable publiée quelques
+heures avant le coup d'envoi est **déjà dans le prix**. Elle ne procure aucune
+avance et n'a pas à être traitée comme telle. Sa fonction est d'**invalider** :
+elle confirme ou détruit un angle déjà formé sur les faits du bloc. Un PASSE
+déclenché par la recherche est un résultat plein, pas un échec de session.
+{% if 'tennis' in sports %}
+**Sur un match de tennis, exige un fait de niveau 1 ou 2 daté de moins de 48 h
+avant d'émettre.** La forme et le H2H seuls ne suffisent pas.
+{% endif %}
 ## MATCHS
 
 Toutes les heures sont en {{ tz }}, horaire de début comme heure de relevé.
@@ -498,6 +565,10 @@ tennis, « Profil » et « Marge » sont là pour ça.{% endif %} Ce n'est pas u
 consigne de l'éviter, encore moins de lui préférer un marché mieux payé : ce
 serait raisonner sur le prix. Si ton angle porte sur l'issue, le vainqueur reste
 le bon marché.
+
+**Pas de sélection sur un H2H seul.** Un historique de confrontations sans
+corroboration de forme actuelle n'est pas un fait dirigeant : il décrit deux
+équipes ou deux joueurs qui ne sont plus tout à fait ceux-là.
 
 ### C. Tableau des sélections
 | # | Match | Marché | Sélection | Cote | Palier | Conf/5 | Type | Source | Angle (1 ligne) | Ce qui la tue |

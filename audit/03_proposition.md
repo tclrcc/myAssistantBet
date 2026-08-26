@@ -344,87 +344,49 @@ n'a jamais ete mesuree ailleurs.
 
 Colle tel quel, le bloc donnerait **l'illusion d'une procedure**. Ce qui est
 **regle** est garde mot pour mot ; ce qui est **syntaxe** est traduit en
-intention. Texte propose, a inserer apres « CE QU'IL FAUT VERIFIER » :
+intention.
 
-> ### La recherche : trois objectifs, trois niveaux atteignables
->
-> La verification est la **seule** source de niveaux 1 et 2 : les blocs de ce
-> prompt ne sont jamais une source, donc une selection qui n'y ajoute rien est
-> une `lecture`. Sans recherche, rien n'entre au tableau principal au-dessus du
-> cran 2.
->
-> Trois objectifs, et ils ne sont pas interchangeables — chacun atteint un
-> niveau different, et c'est le niveau qui decide de ce que le fait pourra
-> porter.
->
-> | Objectif | Ce que tu cherches | Ou | Fraicheur | Niveau atteignable |
-> |---|---|---|---|---|
-> | Cadrage du lot | compos probables, absents, incertains | agregateur a format constant | le jour meme | 3 |
-> | **Fait dirigeant** | l'annonce elle-meme | **site officiel du club, de la federation, du tour** — ou le journaliste nomme qui couvre le club | la semaine | **1 ou 2** |
-> | Balayage | ce qui a ete publie sur la competition | actualite, presse | le jour meme | 3 a 4 |
->
-> Formule des requetes **courtes** — le nom du club ou du joueur, plus ce que tu
-> cherches. Une requete qui decrit une phrase entiere ne rend rien d'utile.
->
-> **La requete de cadrage ne dirige aucun angle.** Un agregateur qui publie le
-> onze, les absents et les incertains dans un format constant reste un canal de
-> niveau 3 — c'est la regle du canal qui transmet, appliquee au cas le plus
-> tentant qui soit. Le confort de lecture n'est pas une source. Seule la
-> deuxieme forme, celle qui vise le site officiel du club ou le journaliste
-> nomme qui le couvre, produit ce que le tableau principal exige. Le cadrage
-> sert a savoir quoi aller chercher, pas a le sourcer.
->
-> **Le niveau classe le canal qui transmet, pas le fait transmis.** Un
-> agregateur qui relaie une composition officielle reste un canal de niveau 3 :
-> le fait sous-jacent est officiel, sa reprise ne l'est pas. La distinction
-> n'est pas theorique — c'est par la que sont passees les erreurs d'entraineur.
->
-> **Attribution par domaine.**
->
-> | Domaine | Niveau |
-> |---|---|
-> | Site officiel de club, de federation, de tour ATP/WTA | 1 |
-> | Presse specialisee a journaliste identifie couvrant le club, presse locale du club | 2 |
-> | Agregateur de compos a format constant | 3 |
-> | Site de pronostics, page adossee a un operateur | 4 — **ecarter** |
->
-> Les pages de pronostics se reconnaissent a un code promotionnel ou a un
-> comparateur de cotes. Elles s'ecartent non parce qu'elles seraient fausses,
-> mais parce qu'elles vendent un operateur : leur choix de faits sert un
-> argumentaire, et un fait retenu pour convaincre ne vaut pas un fait rapporte.
->
-> **Conversion des dates.** Une recherche renvoie des dates relatives — « il y a
-> 10 heures ». Convertis en horodatage absolu au moment de la collecte. Si la
-> conversion echoue, le fait entre avec une date vide et son niveau reel : il
-> garde sa valeur structurelle et perd le droit de porter un angle de recence.
-> Sans cette regle, une date relative devient silencieusement un fait date, et
-> la confiance 4 se construit sur du vide.
->
-> Verifie aussi que la publication est **posterieure a la derniere conference de
-> presse**. Un article paru avant elle ne dit rien des compositions, quelle que
-> soit sa fraicheur apparente.
->
-> **Ce que la recherche ne donne pas.** Une composition probable publiee
-> quelques heures avant le coup d'envoi est **deja dans le prix**. Elle ne
-> procure aucune avance et n'a pas a etre traitee comme telle. Sa fonction est
-> d'**invalider** : elle confirme ou detruit un angle deja forme sur les faits
-> du bloc. Un PASSE declenche par la recherche est un resultat plein, pas un
-> echec de session.
+**Livre le 26/08/2026.** Le texte vit desormais dans
+`templates/prompts/session_default.md.j2` et **pas ici** : une seconde copie
+qu'aucun mecanisme n'oblige a concorder derive, et celle-ci aurait derive au
+premier ajustement de formulation. Ce qui reste ici est ce qu'un gabarit ne peut
+pas porter — les trois corrections apportees avant l'insertion, et leur raison.
 
-S'y ajoutent, dans la liste des controles :
+**1. Le cas majoritaire n'etait pas couvert.** 181 domaines pour 271 faits, neuf
+editeurs sur quatorze a un fait par niveau : la queue de la distribution est le
+regime ordinaire, pas l'exception. Sans regle, un domaine inconnu se range dans
+la case la plus proche, et `source_drift` remonte ensuite un conflit qui n'est
+qu'un rangement arbitraire. Le gabarit dit donc qu'un domaine hors des quatre
+rangs **n'est pas attribue par defaut** — on declare le niveau qu'on peut
+justifier, et rien de plus.
 
-> · **Pas de selection sur H2H seul.** Un historique de confrontations sans
->   corroboration de forme actuelle n'est pas un fait dirigeant.
-> · **Toute date relative issue de la recherche est convertie.** Un fait dont
->   l'horodatage absolu n'a pas pu etre etabli ne porte aucun angle de recence,
->   quel que soit son niveau.
+**2. Le tableau d'attribution propose contredisait l'echelle deja servie**, et
+c'est le motif du §8 sous sa forme la plus banale : le gabarit classait
+« agregateurs » en niveau 4, le texte propose classait « agregateur de compos a
+format constant » en niveau 3. Deux tables cote a cote, la seconde ecrite sans
+relire la premiere. **Une seule echelle subsiste** — celle qui existait — et la
+distinction canal/fait s'y greffe : un agregateur qui relaie une composition
+officielle est un niveau 3, un site de pronostics reste un niveau 4 parce qu'il
+vend un operateur. Le tableau des trois objectifs, lui, ne classe rien : il dit
+ou chercher, et renvoie a l'echelle unique.
 
-Et la vigilance mesuree, gardee par le sport du lot :
+**3. La regle de plafond etait fausse dans les deux sens.** « Sans recherche,
+rien n'entre au tableau principal au-dessus du cran 2 » sous-estimait la
+contrainte et melangeait deux cas. Verifie contre `confidence.Claim.rung` et le
+controle 8 : sans recherche, `reading_only` rend **1** ; une recherche qui ne
+ramene que du niveau 3-4 plafonne a **2** ; et le tableau principal **refuse le
+cran 2**, qui part en C-bis. L'enonce exact est donc plus fort que celui
+propose — *sans un fait de niveau 1 ou 2, rien n'entre au tableau principal*.
 
-> **Le tennis sous-performe.** L'ecart au taux implicite y est nettement plus
-> degrade qu'au football, et le marche Vainqueur est le plus touche. Sur un
-> match de tennis, exige un fait de niveau 1-2 date de moins de 48 h avant
-> d'emettre — la forme et le H2H seuls ne suffisent pas.
+**Le controle « pas de selection sur H2H seul » n'avait pas de liste d'accueil.**
+Les dix controles du cadre vivent dans la Skill, desactivee ; le gabarit n'en
+porte pas d'enumeration. Il est donc pose en **section B**, ou l'angle se choisit,
+qui est l'endroit ou il mord. La regle de conversion des dates, elle, est dans le
+bloc de recherche avec le reste de ce qui gouverne une requete.
+
+**Cout mesure** : **+1 121 tokens** sur un lot reel de onze blocs de football,
+soit +4,4 %. Le paragraphe de vigilance tennis et la mention des forfaits dans la
+ligne de cadrage sont gardes par le sport du lot.
 
 ### Decision 2 — la section G est supprimee
 

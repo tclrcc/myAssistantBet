@@ -63,7 +63,7 @@ SCOPE_LABELS: dict[str, str] = {
 #: gabarit change de facon deliberee, cette constante bouge et une ligne entre au
 #: journal — les deux gestes vont ensemble, et une empreinte qui bouge sans
 #: libelle est le signal qu'on a oublie le second.
-FRAME_VERSION = "lot-3"
+FRAME_VERSION = "lot-4"
 
 
 def fingerprint(paths: list[Path]) -> str:
