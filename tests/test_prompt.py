@@ -2291,6 +2291,29 @@ def test_les_facteurs_independants_se_comptent_par_editeur(migrated: Settings) -
     assert "pas la corrélation des issues" in corps
 
 
+def test_un_refus_d_acces_n_abaisse_pas_le_niveau_d_un_editeur(migrated: Settings) -> None:
+    """**La règle générale au-dessus du cas, sinon elle se rejoue au domaine
+    suivant qui bloque.**
+
+    `atptour.com` refuse nos agents, et les scores d'une journée réelle ont été
+    obtenus par des extraits de recherche pointant vers lui. Le domaine reste
+    l'éditeur, donc le niveau tient — c'est le chemin d'accès qui diffère. Cette
+    déduction vivait dans `CLAUDE.md` et pas dans le prompt : un modèle qui prend
+    un 403 écrivait « non trouvé » ou se rabattait sur un niveau 3, ce qui
+    plafonne le cran à 2, donc C-bis.
+
+    **La tension avec la règle du canal est résolue explicitement**, sans quoi
+    les deux se contrediraient : un agrégateur *republie* en choisissant et en
+    reformatant — niveau 3 — quand un extrait *restitue* ce que l'éditeur a
+    publié.
+    """
+    corps = " ".join(build_prompt(_lot_de(migrated, 2), settings=migrated, now=NOW).body.split())
+
+    assert "Un refus d'accès n'abaisse pas le niveau d'un éditeur" in corps
+    assert "restitue" in corps and "republie" in corps, "les deux règles se départagent"
+    assert "l'accès a été indirect" in corps
+
+
 def test_la_note_d_independance_est_produite_et_localisee(migrated: Settings) -> None:
     """**Une regle tenue une fois sur quatre n'est pas une regle.**
 

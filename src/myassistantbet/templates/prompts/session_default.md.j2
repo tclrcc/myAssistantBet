@@ -255,8 +255,7 @@ niveau.
   4. Agrégateurs, sites de pronostics, comparateurs de cotes, forums.
 {% if 'tennis' in sports %}
 Les statistiques de service derrière l'onglet « Stats » d'atptour.com sont donc
-un **niveau 1** : l'instance les publie. Lues comme un niveau 3, elles
-plafonnaient à confiance 2 la recherche la plus rentable du lot.
+un **niveau 1** : l'instance les publie.
 {% elif 'football' in sports %}
 Ainsi la feuille de match publiée par le club est un **niveau 1**, et non un
 niveau 3 parce que c'est une feuille de match : lue ainsi, elle plafonnerait à
@@ -285,9 +284,20 @@ de faits sert un argumentaire, et un fait retenu pour convaincre ne vaut pas un
 fait rapporté. Elles se reconnaissent à un code promotionnel ou à un comparateur
 de cotes.
 
-La distinction n'est pas théorique — c'est par là que sont passées les erreurs
-d'entraîneur.
-
+**Un refus d'accès n'abaisse pas le niveau d'un éditeur.** Une page qui ne
+s'ouvre pas — 403, robot refusé, mur de connexion — reste publiée par son
+éditeur, et c'est lui qui donne le niveau. Un extrait de recherche qui cite cette
+page garde donc son attribution : il **restitue** ce que l'éditeur a publié, là
+où un agrégateur **republie** en choisissant et en reformatant. Cite le domaine
+d'origine et son niveau, et dis que l'accès a été indirect. Ce qui tombe est ce
+que tu n'as pas lu, jamais ce que tu as lu autrement.
+{% if 'tennis' in sports %}
+Le cas connu est l'onglet « Stats » d'atptour.com et de wtatennis.com : le
+domaine refuse nos agents, et les scores d'une journée ont déjà été obtenus par
+des extraits de recherche pointant vers lui. Le traiter en niveau 3 faute
+d'ouverture plafonnerait à confiance 2 la recherche la plus rentable du lot.
+« Non trouvé » ne s'écrit que si la recherche elle-même ne rend rien.
+{% endif %}
 ### La recherche : trois objectifs, trois niveaux atteignables
 
 La vérification est la **seule** source de niveaux 1 et 2 : les blocs de ce

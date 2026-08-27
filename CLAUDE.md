@@ -1829,6 +1829,14 @@ famille devant chez l'autre), initiales, decoupages multiples.
   y avait 99,75 %, parce que la cle de rapprochement omettait la **date**. Deux
   rencontres du meme couple s'ecrasaient. Un taux qui surprend se re-verifie sur
   sa cle avant d'etre ecrit.
+- **Et le controle le moins cher qui existe : un denominateur identique sur des
+  axes independants est une signature de population, jamais une propriete.**
+  Mesure du 27/08/2026 — « non renseigne » sortait en tete de trois axes du cran
+  3, avec le meme `12/41` et le meme residu `-11,12`. Trois axes qui ne
+  partagent rien ne peuvent pas designer le meme effectif par hasard : c'etait
+  **la meme population**, celle d'avant la migration 026, donc une colonne jeune
+  et non un discriminant. Le controle tient en une comparaison de comptes, et il
+  aurait attrape plusieurs des faux discriminants du dossier.
 - **Et il vaut au-dela des noms : ce n'est pas une regle d'appariement, c'est une
   regle de lecture.** Les deux dernieres occurrences ne portent sur aucun nom.
   Le lot 16 lisait le mauvais **champ** — `score` la ou la source ecrit
