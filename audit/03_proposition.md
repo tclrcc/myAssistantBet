@@ -491,6 +491,36 @@ trois reponses a la question, pas deux.
    quand — c'est le cas du cadre publie et de la configuration servie, et c'est
    pourquoi le journal d'analyse a cesse de dependre de l'emoji colle.
 
+### La copie textuelle est la plus facile a laisser vieillir, parce qu'elle n'echoue jamais
+
+**Trois occurrences dans la meme journee, le 27/08/2026, et les trois sur de la
+prose ou de l'affichage plutot que sur du calcul.**
+
+| Les deux copies | Ce qui les separait | Comment ca s'est vu |
+| --- | --- | --- |
+| `note_price_coverage` et `scan.py` | « seul moment ou l'etat peut avoir change », dementi par un import | en corrigeant l'une des deux |
+| `CLAUDE.md` et la base | « un seul cas » contre **dix-huit** sur une seule edition | en comptant les joueurs |
+| le message de demarrage et les taches posees | il a omis le balayage **le jour de son arrivee** | en lisant les logs du deploiement |
+
+**Aucune n'aurait jamais fait echouer un test**, et c'est la difference avec les
+copies de code. Une valeur dupliquee finit par diverger sur un cas que quelqu'un
+execute ; une phrase dupliquee ne s'execute pas — elle se lit, six mois plus
+tard, avec l'air d'etre fondee, et elle sert alors a justifier un geste.
+L'affirmation du docstring aurait justifie de **retirer** l'appel qu'on venait
+d'ajouter ; « un seul cas » autorisait a ne pas chercher ; le message de
+demarrage aurait menti pendant des mois sur ce que l'application fait toute seule.
+
+> **La regle** : une phrase qui affirme un etat du systeme est une copie de cet
+> etat. Ou elle se **derive** de lui — le message de demarrage enumere desormais
+> les taches posees plutot que de les reciter — ou elle doit etre listee au meme
+> titre qu'un chiffre publie a quatre endroits. Corriger le code sans relire la
+> phrase laisse une affirmation fausse a l'endroit exact ou l'on vient de gagner
+> en justesse.
+
+Le corollaire de forme, quand la derivation est possible : **supprimer la copie
+plutot que la corriger**. C'est ce qui separe le message de demarrage des deux
+autres — les deux docstrings ont ete reecrits, celui-la a cesse d'exister.
+
 ### Un controle de doublon ne prouve rien sur l'entite qu'on croit compter
 
 **Huitieme occurrence, le 27/08/2026, et la premiere trouvee sur un controle que

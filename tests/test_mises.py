@@ -518,18 +518,23 @@ def test_les_unites_engagees_ferment_le_contournement_par_decoupage(
     )
 
 
-def test_la_section_g_se_paie_seulement_si_le_suivi_de_l_argent_est_ouvert(
+def test_la_section_g_ne_se_produit_plus_sur_aucun_lot(
     client: TestClient, isolated_settings: Settings
 ) -> None:
-    """**La porte n'est pas cosmétique : elle vaut 592 tokens de coût fixe.**
+    """**Elle n'a jamais ete produite, et elle coutait 592 tokens a chaque prompt.**
 
-    Le préambule de ce projet ne paie que ce que le lot porte — les sports du
-    lot, les libellés de contexte réellement rendus. Une section de répartition
-    de mise rendue à qui ne mise pas serait exactement ce que ces portes
-    existent pour éviter.
+    Mesure du 26/08/2026 : `mises:` vaut **zero sur les 78 collages archives**, la
+    table `mises` et `bankroll_journee` sont vides, et le cadre publie la
+    contredit. Une section que le modele n'a jamais rendue est une section qu'on
+    paie sans la lire.
 
-    Le nombre est écrit dans la note du réglage ; ce test vérifie que la porte
-    l'économise vraiment, plutôt que de croire la note sur parole.
+    Le controle porte sur les **deux** portes, ouverte comme fermee : la section
+    partait avec le suivi de l'argent, donc un test qui ne verifierait que l'etat
+    ferme passerait sur un gabarit qui la produit encore.
+
+    **Le journal des mises, lui, reste** : ses routes, sa surface sur la feuille
+    de session et ses lecteurs ne bougent pas. Ce qui part est la section du
+    prompt, pas le module.
     """
     from myassistantbet.services.prompt import build_prompt
     from myassistantbet.services.thresholds import COUPON_TRACKING, save_toggle
@@ -537,20 +542,13 @@ def test_la_section_g_se_paie_seulement_si_le_suivi_de_l_argent_est_ouvert(
     session_id, _ = _lot(isolated_settings, ["Lyon", "Nice"])
 
     ouvert = build_prompt(session_id, settings=isolated_settings).body
-    assert "### G. Répartition de mise" in ouvert
-    assert "BANKROLL DE SESSION" in ouvert
-
     save_toggle(COUPON_TRACKING, "0", isolated_settings)
     ferme = build_prompt(session_id, settings=isolated_settings).body
 
-    assert "### G. Répartition de mise" not in ferme
-    assert "BANKROLL DE SESSION" not in ferme
-    # Et la porte économise vraiment : le renvoi ne reste pas seul derrière elle.
-    assert "mises:" not in ferme
-    assert len(ouvert) > len(ferme) + 1500, (
-        "la porte ne retire presque rien : soit la section a fondu, soit elle "
-        "n'est plus gardée là où elle coûte"
-    )
+    for corps, etat in ((ouvert, "suivi ouvert"), (ferme, "suivi ferme")):
+        assert "G. Répartition de mise" not in corps, f"section G rendue, {etat}"
+        assert "BANKROLL DE SESSION" not in corps, f"mention de bankroll rendue, {etat}"
+        assert "mises:" not in corps, f"ligne de report rendue, {etat}"
 
 
 def test_l_etat_de_la_journee_lit_la_bankroll_et_ne_projette_rien(
@@ -681,29 +679,30 @@ def test_l_echeance_entre_au_journal_des_mesures(
     assert "re-mesurer l'unité de mise" in entrees["2026-09-20"]
 
 
-def test_l_etat_de_la_journee_se_rend_meme_a_zero(
+def test_le_journal_des_mises_n_a_plus_d_entree_par_le_prompt(
     client: TestClient, isolated_settings: Settings
 ) -> None:
-    """**Un plafond sans son état ne contraint rien.**
+    """**Le retrait de la section G ferme la seule entree du journal des mises.**
 
-    La ligne ne paraissait qu'à partir de la première mise enregistrée, si bien
-    que le prompt annonçait le plafond nu tout le reste du temps — alors que le
-    docstring de `Brief` promet depuis le lot 17 que « chaque prompt annonce ce
-    qu'il **reste**, pas le plafond nu ». Le service et son docstring se
-    contredisaient, et c'est le docstring qui avait raison.
+    Ce test remplace `test_l_etat_de_la_journee_se_rend_meme_a_zero`, qui gardait
+    une propriete du **prompt** — « un plafond sans son etat ne contraint rien »,
+    la ligne `engage aujourd'hui` rendue meme a zero. Cette ligne vivait dans la
+    section G. Sans section, la propriete n'a plus de sujet, et un test qui
+    l'assertait encore aurait ete realigne sur la nouvelle sortie sans rien
+    verifier.
 
-    Le test lit le **prompt rendu**, jamais la seule propriété : le défaut vivait
-    dans la porte, et un `Brief` correct n'aurait rien montré.
+    Ce qu'il faut garder a la place est le **fait**, parce qu'il n'est pas
+    evident : la chaine du journal est intacte — routes, surface, lecteurs — et
+    elle ne recevra plus rien. Son unique alimentation etait la ligne `mises:`
+    que la section G demandait ; `stakes.read` la lit, `_record_stakes` ecrit, et
+    le champ de montant reel de la feuille de session est garde par l'existence
+    d'une ligne dans `mises`. Plus de ligne, plus de champ.
+
+    « Le module reste » est donc vrai au sens du code et faux au sens de l'usage,
+    et c'est ce que ce test met sous les yeux du prochain lecteur.
     """
-    from myassistantbet.services import stakes
     from myassistantbet.services.prompt import build_prompt
 
     session_id, _ = _lot(isolated_settings, ["Lyon", "Nice"])
-    brief = stakes.brief("2026-08-20", isolated_settings)
-    assert brief.engagees == 0.0, "aucune mise enregistree : c'est le cas a couvrir"
-
     corps = build_prompt(session_id, settings=isolated_settings).body
-
-    ligne = next(row for row in corps.splitlines() if "engagé aujourd'hui" in row)
-    assert f"**0 sur {brief.plafond_unites}**" in ligne
-    assert f"il t'en reste **{brief.restantes}**" in ligne
+    assert "mises:" not in corps, "le prompt ne demande plus la ligne de report"

@@ -495,11 +495,15 @@ class Brief:
     modele convertit avec le montant qu'on a tape, et l'application recalcule a
     l'import en relisant `bankroll=` sur la ligne rendue.
 
-    C'est aussi ce qui rend le plafond de **journee** tenable a travers plusieurs
-    rendus : chaque prompt annonce ce qu'il **reste**, pas le plafond nu. Sans
-    cela, quatre rendus dans la journee auraient chacun cru disposer du plafond
-    entier — exactement le contournement par decoupage que le plafond par
-    journee existe pour fermer.
+    **Plus aucun prompt ne l'annonce depuis le retrait de la section G**, et cette
+    phrase disait le contraire. Elle rendait le plafond de journee tenable a
+    travers plusieurs rendus — chaque prompt annoncait ce qu'il **reste**, pas le
+    plafond nu, sans quoi quatre rendus auraient chacun cru disposer du plafond
+    entier. Le contournement par decoupage qu'elle fermait n'a plus d'objet : le
+    modele ne repartit plus rien.
+
+    **Laissee telle quelle, elle aurait justifie de croire le journal alimente.**
+    Sa seule entree etait la ligne `mises:` que la section G demandait.
     """
 
     table: Table

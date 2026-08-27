@@ -456,14 +456,18 @@ def test_une_remarque_sur_un_apercu_lisible_descend_dans_les_notes() -> None:
     assert lisible.ignored == [] and lisible.notes == ["une remarque"]
 
 
-def test_la_plage_des_titres_de_section_couvre_celles_du_gabarit() -> None:
-    """**Le lecteur de sections suit le gabarit, et rien ne le garantissait.**
+def test_la_plage_du_lecteur_couvre_ce_que_le_gabarit_produit() -> None:
+    """**Le gabarit produit A→F, le lecteur accepte A→G, et ce n'est pas la meme
+    question.**
 
-    `SECTION_HEAD` s'arrêtait à `F` quand la section G était déjà produite : un
-    titre `G.` ne fermait donc aucune section, et une section C-bis laissée
-    ouverte aurait lu la suite sous les règles du mauvais tableau. Ce test lit
-    les titres que le gabarit écrit vraiment et les passe au motif — une section
-    H ajoutée demain sans toucher au lecteur se solde par un test rouge.
+    Le test comparait les deux par egalite, ce qui etait juste tant que les deux
+    listes coincidaient. Depuis le retrait de la section G, elles divergent
+    **legitimement** : ce que le gabarit ecrit aujourd'hui doit etre reconnu, ce
+    que le lecteur reconnait n'a pas a se limiter a ce que le gabarit ecrit
+    aujourd'hui. D'ou un sous-ensemble.
+
+    Une section H ajoutee demain sans toucher au lecteur se solde toujours par un
+    test rouge — c'est le sens qui compte, et il est preserve.
     """
     gabarit = (
         Path(__file__).resolve().parents[1]
@@ -474,10 +478,9 @@ def test_la_plage_des_titres_de_section_couvre_celles_du_gabarit() -> None:
         / "session_default.md.j2"
     ).read_text(encoding="utf-8")
 
-    # Deux des titres sont derriere une porte Jinja — C-bis et G ne sont pas
-    # produites sur tous les lots — donc le motif les accepte en tete de ligne.
+    # C-bis est derriere une porte Jinja et n'est pas produite sur tous les lots.
     titres = re.findall(r"^(?:\{%.*?%\})?#{2,4} ([A-Z](?:-bis)?)\. .+$", gabarit, re.MULTILINE)
-    assert titres == ["A", "B", "C", "C-bis", "D", "E", "F", "G"], (
+    assert titres == ["A", "B", "C", "C-bis", "D", "E", "F"], (
         "le gabarit a changé de sections : le lecteur les découpe sur une plage "
         "de lettres, et une section ajoutée sans lui ne fermerait rien"
     )
@@ -488,6 +491,29 @@ def test_la_plage_des_titres_de_section_couvre_celles_du_gabarit() -> None:
         assert picks_import.SECTION_HEAD.match(f"{lettre}. Titre"), (
             f"le gabarit écrit une section « {lettre}. » que le lecteur ne "
             "reconnaît pas comme un titre : elle ne fermerait aucune section"
+        )
+
+
+def test_le_lecteur_reconnait_encore_les_sections_qu_on_ne_produit_plus() -> None:
+    """**Une section qu'on ne produit plus n'est pas une section qu'on ne lit plus.**
+
+    La section G a ete retiree du gabarit ; elle reste dans des rendus anciens
+    qu'on peut recoller. `imports_raw` ne commence qu'a la session 15, donc ce
+    qui precede est **inconnaissable et non vide** : rien en base ne permet
+    d'affirmer que le cas ne se presentera pas.
+
+    **Ce controle-la n'est pas redondant avec l'import du collage complet, et
+    c'est mesure** : retrecir `SECTION_HEAD` a `[A-F]` laisse les trois tests
+    d'import **verts**, parce que la section G y est la derniere et ne porte
+    aucun tableau — un titre non reconnu n'y ferme rien qui compte. La
+    compatibilite y est donc accidentelle, pas gardee. Celui-ci porte la
+    propriete elle-meme, et il tombe des que la plage se retrecit.
+    """
+    for lettre in ("F", "G"):
+        assert picks_import.SECTION_HEAD.match(f"{lettre}. Répartition de mise"), (
+            f"le lecteur ne reconnaît plus « {lettre}. » comme un titre de section : "
+            "un rendu ancien recollé lirait la suite sous les règles de la section "
+            "précédente"
         )
 
 

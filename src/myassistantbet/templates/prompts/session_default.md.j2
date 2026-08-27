@@ -32,11 +32,7 @@ sélection concernée porte alors la mention « (ref.) » dans la colonne Cote d
 section C, et la liste des prix à relever, calculée sous ce tableau, la reprend.
 Aucune comparaison de prix entre books, jamais.
 
-{% if mise %}**BANKROLL DE SESSION : _______** — remplace ce blanc par ton montant
-avant de coller ce prompt. Sans montant, la section G n'est pas produite, et
-c'est une réponse normale : l'application ne mesure alors que les prédictions.
-
-{% endif %}{% if sports %}Le mode d'emploi des lignes de contexte — ce que dit chaque
+{% if sports %}Le mode d'emploi des lignes de contexte — ce que dit chaque
 libellé d'un bloc, et comment le lire — est en **fin de prompt**, sous
 « COMMENT LIRE LES BLOCS ». Il n'y décide de rien : tout ce qui décide de ce que
 tu rends est ici et dans la section SORTIE ATTENDUE.
@@ -960,46 +956,6 @@ que l'outil demande, qui n'apparaît ni en cote ni en « Non servis » sur ce ma
 précis — là, il manque vraiment quelque chose. Les cotes de référence n'y ont
 pas leur place : elles sont déjà listées sous le tableau C.
 
-{% if mise %}### G. Répartition de mise
-**Produis cette section uniquement si un montant de bankroll figure en tête de
-ce prompt.** S'il n'y en a pas, saute-la entièrement et n'écris pas non plus que
-tu ne l'as pas produite — la question n'est pas posée.
-
-Tu **appliques une table**, tu n'exerces aucun jugement. La mise ne dépend ni de
-la cote, ni du palier, ni de ton cran de confiance, ni d'aucun résultat
-antérieur : ces quatre-là servent à classer et à mesurer, jamais à doser.
-N'écris **aucune justification de mise** — pas de « je mets davantage ici parce
-que ». Ce serait le calcul d'espérance interdit en tête de ce prompt, sous un
-autre nom.
-
-  · unité de référence : **{{ mise.unite_pct }} % de la bankroll**
-  · une sélection de section C : **1 unité**
-  · une sélection de section C-bis : **aucune mise**
-  · un combiné : **{{ mise.combine_unites }} unité**
-  · plafond de la journée : **{{ mise.plafond_unites }} unités**, soit {{ mise.plafond_pct }} % de la bankroll
-  · engagé aujourd'hui, tous rendus confondus : **{{ mise.engagees_unites }} sur {{ mise.plafond_unites }}** — il t'en reste **{{ mise.restantes }}**
-
-Les sélections de C-bis ne reçoivent aucune mise **parce qu'elles sont la
-population témoin** : elles existent pour être comparées à la section C à palier
-égal, et c'est cette comparaison qui donne son sens à la mesure. Leur mettre un
-montant en ferait un pari plutôt qu'un point de mesure. Ce n'est pas un jugement
-sur leur qualité — la section lève l'exigence d'un fait daté, elle n'interdit pas
-qu'il y en ait un — et elles sont enregistrées et tranchées comme les autres.
-
-Si le total des unités dépasse ce qu'il reste, réduis **proportionnellement** et
-dis-le nommément : combien d'unités demandées, combien accordées. Ne l'absorbe
-pas en silence.
-
-Après ta prose, une ligne unique pour tout le lot, hors de tout bloc de code :
-
-    mises: bankroll=200{% for repere in exemple_reperes[:2] %} | {{ repere }}=0.50{% endfor %}{% if event_blocks | length >= combo_solo_min_lot %} | combine_court=0.25{% endif %}
-
-`bankroll` recopie le montant donné en tête de prompt. Puis un repère de bloc par
-sélection de section C, et `combine_court` / `combine_long` s'ils existent, chacun
-avec son montant dans la monnaie de la bankroll, deux décimales. L'application
-recalcule la répartition depuis la même table : ne l'ajuste pas pour qu'elle
-tombe juste, l'écart est ce qui se lit.
-{% endif %}
 {% if sports %}## COMMENT LIRE LES BLOCS
 Mode d'emploi des lignes de contexte, et rien d'autre : **aucune règle de ce
 chapitre ne décide de ce que tu rends**.
