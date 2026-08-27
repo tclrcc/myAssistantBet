@@ -355,14 +355,15 @@ def build_scheduler(client: httpx.AsyncClient, settings: Settings) -> AsyncIOSch
         misfire_grace_time=60,
         coalesce=True,
     )
+    # **La ligne se derive des taches posees, elle ne les enumere pas a la main.**
+    # Ecrite en dur, elle a omis le balayage de couverture le jour meme ou il est
+    # arrive : un message de demarrage qui decrit un etat incomplet est une
+    # seconde copie de la liste des taches, et rien ne l'obligeait a concorder.
     logger.info(
-        "Planifie : scan a %02d:%02d, sources gratuites a %02d:%02d, "
-        "compositions toutes les %d min (%s)",
-        settings.scan_hour,
-        settings.scan_minute,
-        (settings.scan_hour + free_hour) % 24,
-        free_minute,
-        LINEUPS_EVERY_MIN,
+        "Planifie (%s) : %s",
         settings.tz,
+        ", ".join(
+            f"{job.id} {job.trigger}" for job in sorted(scheduler.get_jobs(), key=lambda j: j.id)
+        ),
     )
     return scheduler
