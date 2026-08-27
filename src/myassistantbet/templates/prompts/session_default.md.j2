@@ -725,9 +725,23 @@ section A, donc un dossier ouvert, et **ce prompt** en ouvre
 {{ research_budget }}. Le calcul est fait — il ne te reste rien à en déduire.
 
 Une sélection par match. Deux sélections sur un même match ne se justifient que
-si elles reposent sur des angles réellement indépendants — et tu le dis alors
-explicitement. Multiplier les lignes d'un même match pour atteindre un quota
-est une façon déguisée de remplir un palier avec du vide.
+si elles reposent sur des angles réellement indépendants. Multiplier les lignes
+d'un même match pour atteindre un quota est une façon déguisée de remplir un
+palier avec du vide.
+
+**Deux marchés de la même famille ne sont jamais deux angles indépendants** —
+`Vainqueur` deux fois, ou `O/U 2.5` et `O/U 3.5`, sont la même sélection écrite
+deux fois. `1N2` et un handicap, un total et un marché par équipe, se défendent.
+
+Quand tu en poses deux, une ligne unique sous le tableau, hors de tout bloc de
+code, une entrée par match concerné :
+
+    independance: M4 = les deux angles portent sur des faits distincts, datés du 20 et du 21/08
+
+**Elle est obligatoire dès qu'un match porte deux lignes** : sans elle
+l'application refuse la seconde, et la justification écrite en prose ne l'atteint
+pas. Écris la ligne même vide (`independance:`) : c'est ainsi qu'on distingue un
+lot sans seconde sélection d'un rendu qui a oublié la règle.
 
 Si la matière manque pour remplir un palier, laisse-le vide.
 Ne remplis jamais un palier avec une sélection qui appartient à un palier

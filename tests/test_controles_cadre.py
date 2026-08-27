@@ -44,6 +44,17 @@ EN_ECART = (Path(__file__).parent / "fixtures" / "tableau_section_c_en_ecart.md"
     encoding="utf-8"
 )
 
+#: Les deux formes que prend une seconde selection sur un meme match, et le
+#: controle 1 ne doit en compter qu'une. Toutes deux tirees des 9 paires
+#: reelles de la base au 27/08/2026 : huit ressemblent a la premiere, une seule
+#: a la seconde.
+DEUX_FAMILLES = (Path(__file__).parent / "fixtures" / "tableau_section_c_meme_match.md").read_text(
+    encoding="utf-8"
+)
+MEME_FAMILLE = (Path(__file__).parent / "fixtures" / "tableau_section_c_meme_famille.md").read_text(
+    encoding="utf-8"
+)
+
 
 @pytest.fixture
 def client(migrated: Settings) -> Iterator[TestClient]:
@@ -218,3 +229,72 @@ def test_sans_collage_relisable_on_ne_retient_rien(migrated: Settings) -> None:
 
     assert controls.for_import(session_id, "", migrated) is None
     assert controls.for_import(session_id, "9999", migrated) is None
+
+
+# -- Le controle 1, retreci sur ce que le collage prouve ---------------------
+
+
+def test_deux_angles_sur_un_match_ne_sont_pas_un_ecart(
+    client: TestClient, migrated: Settings
+) -> None:
+    """**Le contrôle mesurait un écart à une règle levée.**
+
+    Le SKILL disait « une seule sélection par événement, sans exception » ; le
+    gabarit en autorise deux « si elles reposent sur des angles réellement
+    indépendants ». Compter toute seconde ligne revenait à compter le
+    comportement voulu, et un compteur qui remonte le conforme cesse d'être lu.
+
+    `1N2` et `Handicap` sont deux familles : huit des neuf paires réelles de la
+    base sont de cette forme.
+    """
+    session_id = _lot(migrated, ["Lyon"])
+
+    rapport = picks_import.build_preview(session_id, DEUX_FAMILLES, migrated).controls
+
+    assert rapport.violations.get("c1", 0) == 0
+
+
+def test_deux_lignes_de_la_meme_famille_se_comptent(client: TestClient, migrated: Settings) -> None:
+    """**La note peut être présente et ne pas pouvoir être vraie.**
+
+    Deux lignes de la même famille ne sont pas deux angles indépendants. Le cas
+    réel est la seule paire sur neuf que le rétrécissement conserve : `Vainqueur`
+    sur Peyton Stearns, écrite deux fois, notée `c4` puis `c3`.
+    """
+    session_id = _lot(migrated, ["Lyon"])
+
+    rapport = picks_import.build_preview(session_id, MEME_FAMILLE, migrated).controls
+
+    assert rapport.violations.get("c1", 0) == 1
+
+
+def test_la_famille_groupe_les_lignes_d_un_meme_marche() -> None:
+    """La famille plutôt que la clé fine, **parce que c'est elle qui groupe** :
+    une ligne est un paramètre du marché, pas un autre marché. Sans ça, `O/U 2.5`
+    et `O/U 3.5` sur le même match passeraient pour deux angles."""
+    from myassistantbet.services.market_families import family_key
+
+    assert family_key("O/U 2.5") == family_key("O/U 3.5")
+    assert family_key("1N2") != family_key("Handicap")
+
+
+def test_la_note_manquante_reste_bloquante_et_ne_se_compte_pas(
+    client: TestClient, migrated: Settings
+) -> None:
+    """**Elle n'existe nulle part où ce compte se lit**, et elle est déjà
+    bloquante ailleurs.
+
+    Le rapport se calcule sur le collage conservé, qui ne porte aucune colonne
+    d'indépendance — la condition ne peut pas voyager par le formulaire qu'elle
+    garde. `add_pick` refuse la ligne sans note, et l'aperçu la décoche avec son
+    motif : la compter ici redirait ce qu'un refus dit déjà.
+    """
+    session_id = _lot(migrated, ["Lyon"])
+
+    apercu = picks_import.build_preview(session_id, DEUX_FAMILLES, migrated)
+
+    seconde = apercu.picks[1]
+    assert seconde.same_event and not seconde.same_family
+    assert not seconde.keep, "décochée tant que sa justification manque"
+    assert any("angle indépendant" in probleme for probleme in seconde.problems)
+    assert apercu.controls.violations.get("c1", 0) == 0, "décochée n'est pas comptée en écart"

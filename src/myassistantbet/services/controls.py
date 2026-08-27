@@ -10,6 +10,7 @@ Mesure du 21/08/2026, avant d'ecrire une ligne — c'est elle qui a leve la
 reserve « ne pas opposer un controle avant d'en connaitre le taux de base » :
 
 - **controle 1** — 16 selections de section C portent un match deja pris ;
+  **retreci le 27/08/2026**, voir plus bas ;
 - **controle 8** — 36 portent une confiance 2, dont la place est en C-bis ;
 - **controle 9** — 39 declarent un niveau 3, 4 ou `lecture`.
 
@@ -34,6 +35,41 @@ l'en-tete et une cellule vide donnent la meme sortie si l'on ne compte que les
 violations : le controle 7 dirait « aucune condition d'invalidation » sur un
 collage a huit colonnes, c'est-a-dire une violation la ou la question n'a pas
 ete posee. Meme vocabulaire que la ligne `Absents` et ses trois etats.
+
+## Le controle 1 compte ce que le gabarit interdit, pas une regle levee
+
+**Il mesurait un ecart au SKILL que le gabarit a leve.** « Une seule selection
+par evenement, sans exception » etait la regle du cadre ; le gabarit en autorise
+deux « si elles reposent sur des angles reellement independants — et tu le dis
+alors explicitement ». Compter toute seconde ligne revenait donc a compter des
+lignes conformes, et un compteur qui remonte le comportement voulu cesse d'etre
+lu.
+
+Mesure du 27/08/2026, faite avant de retrecir : **13 matchs sur 574 portent deux
+selections, 9 en section C** — la permission est utilisee dans 2,3 % des cas, et
+elle n'a pas de file d'attente. Ce qui manque n'est pas de la place : **la note
+d'independance est renseignee sur 5 lignes sur 18**.
+
+Ce qu'il compte desormais : **les deux lignes portent la meme famille de
+marche**. La note d'independance peut alors etre presente et **elle ne peut pas
+etre vraie** — deux lignes de la meme famille ne sont pas deux angles
+independants, et c'est le seul cas que le collage prouve a lui seul.
+
+**La note manquante n'y entre pas, et ce n'est pas un oubli.** Elle n'existe
+nulle part ou ce compte se lit : elle se saisit a l'apercu (`independence_{n}`)
+et le rapport se calcule sur le **collage conserve**, qui ne porte aucune colonne
+d'independance — la condition ne peut pas voyager par le formulaire qu'elle
+garde, meme regle que les sections. Elle est de toute facon deja **bloquante** :
+`add_pick` refuse la ligne sans elle et l'apercu la decoche avec son motif. La
+compter ici redirait ce qu'un refus dit deja, sur une valeur qu'on ne peut pas
+lire.
+
+La famille plutot que la cle fine, parce que c'est elle qui groupe : `O/U 2.5` et
+`O/U 3.5` sur le meme match sont le meme angle a une ligne pres, quand `1N2` et
+`Handicap` sont deux familles et se defendent. Verifie sur les 9 paires reelles :
+huit portent deux familles distinctes, et la neuvieme est **la meme selection
+ecrite deux fois** — `Vainqueur` sur Peyton Stearns, notee `c4` puis `c3`. C'est
+elle que le controle doit attraper, et c'est la seule.
 
 ## Les recouvrements se rendent
 
@@ -104,8 +140,8 @@ CONTROLS: tuple[Control, ...] = (
     Control(
         key="c1",
         number=1,
-        label="une seule sélection par événement",
-        breaks=lambda pick: pick.same_event,
+        label="deux sélections d'une même famille sur un match",
+        breaks=lambda pick: pick.same_event and pick.same_family,
     ),
     Control(
         key="c7",

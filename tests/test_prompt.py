@@ -2291,6 +2291,30 @@ def test_les_facteurs_independants_se_comptent_par_editeur(migrated: Settings) -
     assert "pas la corrélation des issues" in corps
 
 
+def test_la_note_d_independance_est_produite_et_localisee(migrated: Settings) -> None:
+    """**Une regle tenue une fois sur quatre n'est pas une regle.**
+
+    Mesure du 27/08/2026 : 13 matchs sur 574 portent deux selections, 9 en
+    section C, et la note d'independance que le gabarit exige est renseignee sur
+    **5 lignes sur 18**. Elle se saisit a l'import, dans un champ qui existe
+    depuis toujours ; ce qui manquait est qu'elle soit **produite** — il n'y avait
+    rien a recopier.
+
+    Elle prend donc la forme qui n'a jamais rate son transport : une ligne
+    nommee, hors de tout bloc de code, meme idiome que `dossiers_ouverts` et
+    `sets:`. Et le gabarit dit ou elle est refusee, sans quoi la consigne se lit
+    comme une preference.
+    """
+    corps = " ".join(build_prompt(_lot_de(migrated, 2), settings=migrated, now=NOW).body.split())
+
+    assert "independance: M4 =" in corps, "la ligne est montree, pas seulement demandée"
+    assert "hors de tout bloc de code" in corps
+    assert "l'application refuse la seconde" in corps
+    # La regle que le controle 1 compte desormais : la note ne peut pas rendre
+    # vraies deux lignes du meme marche.
+    assert "même famille ne sont jamais deux angles indépendants" in corps
+
+
 def test_la_section_f_porte_trois_rubriques_nommees(migrated: Settings) -> None:
     """Trois demandes heterogenes se disputaient un budget de trois lignes.
 

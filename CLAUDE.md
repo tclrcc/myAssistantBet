@@ -2715,6 +2715,69 @@ contenu revient.
   `Worksheet.coverage_line` reclame justement la cote obtenue ligne apres ligne. **Dette
   nommee, non corrigee**, parce qu'elle n'etait pas dans le perimetre demande.
 
+## Une seconde selection sur un match : ce qui bloque n'est pas le plafond
+
+**Mesure du 27/08/2026, faite avant d'elargir quoi que ce soit.** Sur les
+574 matchs portant au moins une selection, **13 en portent deux** — 9 en
+section C. La permission que le gabarit accorde depuis toujours sert dans
+**2,3 %** des cas : il n'y a pas de file d'attente, et relever le plafond a deux
+ou trois ne debloquerait rien.
+
+Ce qui bloque est ailleurs : **la note d'independance est renseignee sur 5 lignes
+sur 18**. Le champ existe depuis toujours a l'import ; ce qui manquait est
+qu'elle soit **produite** — il n'y avait rien a recopier. Le gabarit la demande
+donc sous la forme qui n'a jamais rate son transport, une ligne nommee hors de
+tout bloc de code, meme idiome que `dossiers_ouverts` et `sets:`.
+
+- **Elargir avant, c'est fabriquer de la correlation non declaree.** Sur les
+  9 paires tranchees de section C, **7 sont tombees entierement du meme cote** ;
+  14 selections sur 393 partagent un match (4 %), et `clustered_p_value` absorbe
+  deja ce cas — a 5 sur 73 l'effet valait `0,0161 → 0,0227`. Il grossit avec la
+  part, et le residu du bloc de tete suppose l'independance.
+- **Le lecteur de la ligne n'est pas livre, et c'est l'ordre voulu.** La surface
+  de saisie existe, donc le chemin est complet ; ecrire un lecteur pour une
+  valeur dont on ne sait pas encore si elle est produite serait construire le
+  consommateur avant le producteur. Il se decide sur deux ou trois sessions, au
+  vu du taux.
+
+### Le combine intra-match : refuse pour une raison structurelle
+
+« X ou nul & +1,5 buts » n'est pas deux selections mais **une seule a une cote
+differente**, et le parametrage ne peut pas la representer. Mesure : `odds` porte
+**20 cles de marche servies**, aucune de cette forme. Une telle selection n'aurait
+donc **aucun prix dans le bloc**, le gabarit interdit d'en inventer un, et un prix
+invente classerait la ligne dans le mauvais palier tout en faussant le taux par
+bande de cote. Cote `combos`, deux jambes sur le meme evenement sont
+structurellement possibles mais leur produit n'est pas ce qu'un book paie pour un
+combine intra-match, lequel est correle.
+
+**Ce n'est pas un arbitrage, c'est une absence d'offre**, et la question se
+rouvrira sur d'autres bases le jour ou le fournisseur sert un tel marche.
+
+### Le controle 1 compte ce que le gabarit interdit, pas une regle levee
+
+Le SKILL disait « une seule selection par evenement, sans exception » ; le
+gabarit en autorise deux si les angles sont independants. Le compteur remontait
+donc le comportement voulu, et un compteur qui compte le conforme cesse d'etre
+lu.
+
+Il se lit desormais sur **la famille de marche** : deux lignes de la meme famille
+ne sont pas deux angles independants, et c'est le seul cas que le collage prouve
+a lui seul. Verifie sur les 9 paires reelles — huit portent deux familles
+distinctes (`1N2` et `Handicap`, `Eq. buts` et `Se qualifie`), la neuvieme est
+**la meme selection ecrite deux fois**, `Vainqueur` sur Peyton Stearns, notee
+`c4` puis `c3`. C'est elle qu'il faut attraper, et c'est la seule.
+
+- **La famille plutot que la cle fine** : `O/U 2.5` et `O/U 3.5` sur un meme
+  match sont le meme angle a une ligne pres. `family_key` retire la valeur de
+  ligne finale et fait exactement ce groupement.
+- **La note manquante n'y entre pas, et ce n'est pas un oubli.** Elle n'existe
+  nulle part ou ce compte se lit : elle se saisit a l'apercu et le rapport se
+  calcule sur le collage conserve, qui ne porte aucune colonne d'independance —
+  la condition ne peut pas voyager par le formulaire qu'elle garde. Elle est de
+  toute facon deja **bloquante**, `add_pick` refusant la ligne sans elle. La
+  compter ici redirait ce qu'un refus dit deja, sur une valeur illisible.
+
 ## Le budget de recherche borne les paliers hauts
 
 Tout palier **au-dela des deux plus surs** reclame un fait nomme et date de la

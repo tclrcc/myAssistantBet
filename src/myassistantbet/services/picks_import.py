@@ -16,6 +16,7 @@ import logging
 import math
 import re
 import unicodedata
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
@@ -62,6 +63,7 @@ from .ingestion import (
     to_payload,
     unnumber,
 )
+from .market_families import family_key
 from .set_scores import FROM_PROSE, ParsedScore, _positioned
 from .set_scores import read as read_scores
 
@@ -183,6 +185,13 @@ class ParsedPick:
     #: ou en base. La ligne reste proposee, mais elle reclame sa justification
     #: d'independance : `add_pick` la refuse sans.
     same_event: bool = False
+    #: Et **la meme famille de marche** que la ligne deja retenue sur ce match.
+    #: Deux lignes de la meme famille ne sont pas deux angles independants : la
+    #: note qui les accompagne ne peut pas etre vraie. Mesure du 27/08/2026 —
+    #: sur les 9 paires de section C de la base, une seule est dans ce cas, et
+    #: c'est **la meme selection ecrite deux fois** (Vainqueur, notee `c4` puis
+    #: `c3`).
+    same_family: bool = False
     independence: str = ""
     #: Le match a **deja commence** au moment de l'import. La ligne reste
     #: proposee — la decision est peut-etre anterieure, seule la saisie est
@@ -878,7 +887,7 @@ def parse_table(
     tiers: list[dict[str, str]],
     known: set[tuple[Any, ...]] | None = None,
     nearby: list[PickableEvent] | None = None,
-    taken: set[int] | None = None,
+    taken: Mapping[int, set[str]] | None = None,
     headers: list[dict[str, str]] | None = None,
 ) -> ImportPreview:
     """Lit le tableau de selections. Ne rapproche jamais un match au hasard.
@@ -907,7 +916,14 @@ def parse_table(
     # Les matchs deja pris, en base **et** plus haut dans le tableau : deux
     # lignes du meme rendu sur une meme affiche sont le cas que le prompt
     # encadre, et le second des deux doit se justifier.
-    events = set(taken or ())
+    #
+    # **La valeur porte les familles de marche deja retenues sur ce match**, et
+    # pas seulement le fait qu'il soit pris : le controle 1 compte une seconde
+    # ligne qui ne se justifie pas, et deux lignes de la meme famille ne sont pas
+    # deux angles independants quelle que soit la note qui les accompagne.
+    events: dict[int, set[str]] = {
+        event_id: set(familles) for event_id, familles in (taken or {}).items()
+    }
     # Les matchs deja retenus **en section C** : une ligne exploratoire sur l'un
     # d'eux est refusee. « Une seule selection par match, tous tableaux
     # confondus » est une contrainte qui ne tombe pas.
@@ -1007,6 +1023,10 @@ def parse_table(
                 invalidation=_prose(values["invalidation"]),
                 duplicate=signature in seen,
                 same_event=event_id is not None and event_id in events,
+                same_family=(
+                    event_id is not None
+                    and family_key(values["market"]) in events.get(event_id, set())
+                ),
                 # Les deux types de match rapproches portent ce drapeau : la
                 # ligne se decoche quelle que soit l'origine du rapprochement.
                 started=bool(found and found.started),
@@ -1017,7 +1037,7 @@ def parse_table(
         )
         seen.add(signature)
         if event_id is not None:
-            events.add(event_id)
+            events.setdefault(event_id, set()).add(family_key(values["market"]))
             if not exploratoire:
                 principaux.add(event_id)
 
@@ -1899,7 +1919,10 @@ def build_preview(
     # Le voisinage rattrape ce que la shortlist ne contient pas : un match qui a
     # commence a quitte le board et n'a jamais pu y etre coche.
     nearby = [event for event in pickable_events(session_id, settings) if not event.in_session]
-    taken = {pick.event_id for pick in list_picks(session_id, settings) if pick.event_id}
+    taken: dict[int, set[str]] = {}
+    for pick in list_picks(session_id, settings):
+        if pick.event_id:
+            taken.setdefault(pick.event_id, set()).add(family_key(pick.market))
     # Les en-tetes des prompts archives : c'est contre eux que l'appariement des
     # blocs de confiance se verifie. L'information dormait deja en base — les
     # corps sont stockes depuis toujours.
