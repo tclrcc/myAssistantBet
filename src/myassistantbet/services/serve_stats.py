@@ -2817,8 +2817,14 @@ def _uncovered(
     matches: list[TournamentMatch],
     oddsapi_key: str | None,
     settings: Settings,
-) -> str:
-    """`1 match non couvert : Aryna Sabalenka (2194)`, ou rien.
+) -> tuple[list[str], int]:
+    """Les adversaires que nos scans placent ici et dont la source ne dit rien,
+    avec le total de ceux qu'ils placent ici.
+
+    **Le total voyage avec la liste**, parce que le seul appel a
+    `tennis_load.load_for` est ici : le recompter chez l'appelant serait la
+    seconde lecture que le projet interdit, et les deux comptes auraient fini par
+    ne plus porter sur la meme fenetre.
 
     **La soustraction est deterministe, donc elle ne se delegue pas.**
     `Parcours` nomme les rencontres que nos scans placent ici ; cette ligne-ci
@@ -2857,7 +2863,7 @@ def _uncovered(
 
     faced = tennis_load.load_for(player, competition_id, until, settings).faced
     if not faced:
-        return ""
+        return [], 0
     adversaires = [item.opponent for item in matches]
     # **Le jour se compare a l'exact, sans la tolerance de `_DAY_SLACK`**, et les
     # deux usages ne sont pas le meme : corroborer un *tournoi* accepte n'importe
@@ -2871,10 +2877,23 @@ def _uncovered(
         for jour, adversaire in faced
         if jour not in jours and not any(_same_player(adversaire, autre) for autre in adversaires)
     ]
+    return manquants, len(faced)
+
+
+def _uncovered_line(
+    manquants: list[str], total: int, oddsapi_key: str | None, settings: Settings
+) -> str:
+    """Le libelle de ce que la source ne couvre pas. **Le compte vit a cote.**
+
+    `_uncovered` rend la liste parce que deux lecteurs en ont besoin et qu'ils
+    n'en veulent pas la meme chose : celui-ci veut la phrase, `_here_for` veut le
+    **nombre**, pour porter la borne inferieure de tours jusqu'a la ligne `Tour`.
+    Formater d'abord et recompter ensuite aurait demande de relire la prose.
+    """
     if not manquants:
         return ""
     compte = f"{len(manquants)} match{'s' if len(manquants) > 1 else ''} {HERE_UNCOVERED}"
-    if len(manquants) == len(faced):
+    if len(manquants) == total:
         # Les nommer recopierait `Parcours` mot pour mot : trois mots suffisent,
         # et ce sont ceux que `Fraicheur` emploie deja pour le meme fait.
         return f"{compte} {WHOLE_PATH}"
@@ -2895,7 +2914,7 @@ def _here_for(
     oddsapi_key: str | None = None,
     first_day: str = "",
 ) -> tuple[list[str], int, str]:
-    """Les fragments d'un joueur, l'identifiant de tournoi et son premier jour.
+    """Fragments, identifiant de tournoi, premier jour connu, et tours joues ici.
 
     **Le premier jour connu voyage sur le canal qui porte deja l'identifiant**,
     et c'est ce qui evite une seconde lecture : il sort du meme appel
@@ -2911,7 +2930,7 @@ def _here_for(
     canonical = identity.canonical if identity and identity.resolved else player
     charge, releve = archived_profile(canonical, settings, cache)
     if charge is None:
-        return [], tournament_id, first_day
+        return [], tournament_id, first_day, 0
     identifiant = tournament_id or _tournament_id(
         charge,
         canonical,
@@ -2920,7 +2939,7 @@ def _here_for(
         declared_tournaments(competition_id, settings),
     )
     if not identifiant:
-        return [], 0, first_day
+        return [], 0, first_day, 0
     matchs = _tournament_matches(charge, canonical, identifiant, until)
     # Le premier jour connu de **cette edition**, tous joueurs du bloc confondus.
     jours = [str(item.played_on)[:10] for item in matchs if item.played_on]
@@ -2930,7 +2949,12 @@ def _here_for(
     # source croit entrant alors que nos scans lui donnent trois tours est le cas
     # ou la ligne a le plus a dire : le taire ferait lire « aucun match » comme
     # un fait sur le joueur.
-    manquants = _uncovered(player, competition_id, until, matchs, oddsapi_key, settings)
+    absents, vus_par_nous = _uncovered(player, competition_id, until, matchs, oddsapi_key, settings)
+    manquants = _uncovered_line(absents, vus_par_nous, oddsapi_key, settings)
+    # **La borne inferieure de tours joues ici**, portee jusqu'a la ligne `Tour` :
+    # ce que la source rapporte, plus ce que nos scans placent ici et qu'elle ne
+    # couvre pas. Elle sort du meme appariement qui produit le fragment.
+    rounds = len(matchs) + len(absents)
     if not matchs:
         # **« aucun match dans ce tournoi » et jamais un silence.** Un joueur qui
         # entre en lice est un fait sur le match — c'est meme le fait dominant
@@ -2954,7 +2978,7 @@ def _here_for(
         fragments = [f"{player} {HERE_NO_INFO if perime else HERE_NO_MATCH}{horodatage}"]
         if manquants:
             fragments.append(manquants)
-        return fragments, identifiant, repere
+        return fragments, identifiant, repere, rounds
     parcours = " | ".join(_here_result(item) for item in matchs)
     # **La ligne porte la date de son releve, comme `Parcours` porte la fenetre
     # de nos scans.** Sans elle, une liste s'arretant la veille se lit comme un
@@ -2971,7 +2995,7 @@ def _here_for(
     service = _here_serve([item for item in matchs if item.contested])
     if service:
         fragments.append(service)
-    return fragments, identifiant, repere
+    return fragments, identifiant, repere, rounds
 
 
 def contested_days(
@@ -3187,8 +3211,15 @@ def here_lines(
     settings: Settings | None = None,
     cache: dict[str, tuple[Any, str]] | None = None,
     oddsapi_key: str | None = None,
+    rounds: dict[str, int] | None = None,
 ) -> list[tuple[str, str]]:
     """La ligne `Ici` : ce que chaque joueur a fait dans **ce** tournoi.
+
+    `rounds`, quand il est fourni, se remplit avec la borne inferieure de tours
+    joues ici par chaque joueur — ce que la source rapporte plus ce que nos scans
+    placent ici et qu'elle ne couvre pas. **C'est un canal de sortie et non un
+    second calcul** : la ligne `Tour` en a besoin, elle se rend avant celle-ci, et
+    refaire ce chemin coute 52 ms par bloc contre 23 pour la ligne entiere.
 
     Aucun appel : la charge utile `matches-played` est deja archivee par la passe
     d'entretien, et c'est elle qu'on relit. Rien n'est rendu tant que le drapeau
@@ -3222,7 +3253,7 @@ def here_lines(
     rendus: dict[str, list[str]] = {}
     for joueur in (home, away):
         if joueur:
-            rendus[joueur], identifiant, premier_jour = _here_for(
+            rendus[joueur], identifiant, premier_jour, tours = _here_for(
                 joueur,
                 circuit,
                 window,
@@ -3234,9 +3265,11 @@ def here_lines(
                 oddsapi_key,
                 premier_jour,
             )
+            if rounds is not None and tours:
+                rounds[joueur] = tours
     for joueur in (home, away):
         if joueur and not rendus.get(joueur) and identifiant:
-            rendus[joueur], _, _ = _here_for(
+            rendus[joueur], _, _, tours = _here_for(
                 joueur,
                 circuit,
                 window,
@@ -3248,6 +3281,8 @@ def here_lines(
                 oddsapi_key,
                 premier_jour,
             )
+            if rounds is not None and tours:
+                rounds[joueur] = tours
     for joueur in (home, away):
         fragments.extend(rendus.get(joueur) or [])
     return [("Ici", "\n".join(fragments))] if fragments else []

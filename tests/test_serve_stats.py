@@ -2542,6 +2542,151 @@ def test_la_phase_inconnue_dit_quand_meme_le_nombre_de_tours(migrated: Settings)
     assert f"{tennis_round.ROUNDS_PLAYED} 2 tours disputes par A, 1 par B" in valeur
 
 
+def test_le_compte_de_tours_prend_le_plus_complet_des_deux_releves(
+    migrated: Settings,
+) -> None:
+    """**Deux bornes inferieures du meme nombre, donc leur maximum.**
+
+    `Tour` compte sur nos scans, bornes par leur fenetre ; `Ici` compte sur la
+    source, bornee par la date de son releve. Aucune des deux n'est fausse — le
+    mot « au moins » est exact des deux cotes — mais la plus basse se lisait
+    seule, a quatre lignes d'une liste qui en portait le double.
+
+    Mesure du 28/08/2026 sur les 31 blocs a phase inconnue du corpus : **5**
+    voient l'asymetrie du bloc **retournee**, de « 1-1 » a « 2-1 » ou « 3-1 ».
+    C'est la ligne dont le gabarit dit qu'elle « dit si l'enjeu est asymetrique »,
+    et elle disait « egalite » la ou le bloc portait le double d'un cote.
+    """
+    from myassistantbet.services import tennis_round
+
+    competition = _tournoi(
+        migrated,
+        [("A", "X", "2026-08-17T12:00:00Z"), ("A", "B", "2026-08-18T12:00:00Z")],
+    )
+    valeur = tennis_round.lines(
+        competition, "2026-08-18T12:00:00Z", migrated, "A", "B", {"A": 3, "B": 1}
+    )[0][1]
+
+    assert f"{tennis_round.ROUNDS_PLAYED} 3 tours disputes par A, 1 par B" in valeur
+
+
+def test_le_compte_de_tours_ne_baisse_jamais_sur_le_releve_de_la_source(
+    migrated: Settings,
+) -> None:
+    """**Le maximum, et jamais le compte de la source seul.**
+
+    Cas reel, prompt 212 : `Parcours` nommait cinq adversaires de Tiafoe, la
+    source quatre, et `_uncovered` n'en signalait aucun de non couvert — son
+    rapprochement par **nom ou jour** est genereux a dessein, et le cinquieme
+    partageait sa journee avec le quatrieme. Cette generosite protege la fiche de
+    recherche ; reprise comme un **compte**, elle perd un tour en silence.
+
+    C'est ce qui interdit l'appariement unique : les deux consommateurs ont
+    besoin d'erreurs de sens opposes — ne pas sur-affirmer un manque d'un cote,
+    ne pas sous-affirmer un compte de l'autre.
+    """
+    from myassistantbet.services import tennis_round
+
+    competition = _tournoi(
+        migrated,
+        [
+            ("A", "X", "2026-08-15T12:00:00Z"),
+            ("A", "Y", "2026-08-16T12:00:00Z"),
+            # Deux joueurs de plus : a quatre, la population forme un tableau et
+            # la ligne nomme « finale », donc ne porte plus de compte.
+            ("P", "Q", "2026-08-16T13:00:00Z"),
+            ("A", "B", "2026-08-18T12:00:00Z"),
+        ],
+    )
+    valeur = tennis_round.lines(competition, "2026-08-18T12:00:00Z", migrated, "A", "B", {"A": 1})[
+        0
+    ][1]
+
+    assert f"{tennis_round.ROUNDS_PLAYED} 2 tours disputes par A" in valeur
+
+
+def test_l_assembleur_porte_le_compte_de_la_source_jusqu_a_la_ligne_tour(
+    migrated: Settings,
+) -> None:
+    """**Le service et sa surface se livrent ensemble.**
+
+    Les deux bancs ci-dessus appellent `tennis_round.lines` directement : ils
+    resteraient verts si l'assembleur ne branchait rien. C'est exactement le
+    defaut du chantier 4 — un banc qui mesure le lecteur ne voit pas un defaut
+    dans la porte — et ici la porte est `session.context_block`, seul endroit ou
+    les deux lignes se rencontrent.
+    """
+    from myassistantbet.services import session as session_service
+
+    competition = _tournoi(
+        migrated,
+        [
+            ("A", "X", "2026-08-15T12:00:00Z"),
+            ("A", "Y", "2026-08-16T12:00:00Z"),
+            ("A", "Z", "2026-08-17T12:00:00Z"),
+            ("B", "W", "2026-08-17T14:00:00Z"),
+            ("A", "B", "2026-08-18T12:00:00Z"),
+        ],
+    )
+    # Nos scans ne voient qu'un tour de B ; la source en connait trois.
+    _profil_tournoi(
+        "A",
+        [
+            _match_source("A", "X", "2026-08-15", "6-3 6-4"),
+            _match_source("A", "Y", "2026-08-16", "6-1 6-2"),
+            _match_source("A", "Z", "2026-08-17", "6-2 6-2"),
+        ],
+        migrated,
+    )
+    _profil_tournoi(
+        "B",
+        [
+            _match_source("B", "U", "2026-08-14", "6-0 6-1"),
+            _match_source("B", "V", "2026-08-15", "6-4 6-4"),
+            _match_source("B", "W", "2026-08-17", "7-5 6-3"),
+        ],
+        migrated,
+    )
+    lignes = dict(
+        session_service.context_block(
+            1,
+            "A",
+            "B",
+            "2026-08-18T12:00:00Z",
+            "tennis",
+            oddsapi_key="tennis_atp_us_open",
+            competition_id=competition,
+            settings=_avec_ligne(migrated),
+        )
+    )
+
+    from myassistantbet.services import tennis_round
+
+    assert f"{tennis_round.ROUNDS_PLAYED} 3 tours disputes par A, 3 par B" in lignes["Tour"]
+
+
+def test_le_mode_d_emploi_du_tour_ne_dit_plus_nos_scans_seuls() -> None:
+    """**Toute condition ajoutee a une ligne se verifie contre la phrase qui
+    l'explique.**
+
+    Le gabarit disait « sur nos propres releves » — vrai tant que le compte ne
+    sortait que de nos scans, faux des que la source y entre. Corriger le rendu
+    sans relire son mode d'emploi laisse une affirmation fausse a l'endroit
+    precis ou l'on vient de gagner en justesse : c'est la regle que `Serie` et
+    `Non joue` ont deja payee.
+    """
+    from pathlib import Path
+
+    from myassistantbet.services.prompt import TEMPLATES_DIR
+
+    texte = " ".join(
+        Path(TEMPLATES_DIR, "session_default.md.j2").read_text(encoding="utf-8").split()
+    )
+
+    assert "les tours déjà joués ici, sur **le plus complet de nos deux relevés**" in texte
+    assert "sur nos propres relevés" not in texte
+
+
 def test_un_tour_nomme_ne_repete_pas_le_compte(migrated: Settings) -> None:
     """`quart de finale` situe deja le joueur : le compte n'ajouterait rien, et
     une ligne qui sort partout cesse d'informer."""

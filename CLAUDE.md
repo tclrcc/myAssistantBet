@@ -2710,6 +2710,82 @@ de tennis archives, avant d'ecrire une ligne :
   faire » — n'aurait pas suffi : la troncature vaut 29 % des blocs a `Parcours`.
   C'est sa **correlation** avec le besoin, et non sa frequence, qui tranche.
 
+## Le compte de tours prend le plus complet des deux releves
+
+**Une prevision ecrite s'est verifiee, et c'est assez rare pour etre note.** Le
+docstring de `_rounds_played` portait depuis le 20/08/2026 : « nos scans seuls,
+et c'est un arbitrage mesure — 11 joueurs sur 192, soit 5,7 %, et toujours d'un
+seul tour. Le jour ou ce taux monte, c'est ici que ca se reprend. » Il a monte.
+
+Rejeu du 28/08/2026 sur les blocs archives portant a la fois `Tour` et `Ici`,
+restreint aux blocs a phase inconnue — les seuls ou la mention se rend :
+
+| | joueurs |
+| --- | ---: |
+| compte juste | 46 |
+| **compte trop bas** | **10** |
+| compte plus haut que la source | 1 |
+
+- **Ce n'est pas le taux qui a decide, c'est son effet.** Sur les 31 blocs
+  concernes, **5 voient l'asymetrie du bloc retournee** — de « 1-1 » a « 2-1 » ou
+  « 3-1 ». C'est la ligne dont le gabarit dit qu'elle « dit si l'enjeu est
+  asymetrique », et elle annoncait une egalite la ou le bloc portait le double
+  d'un cote, quatre lignes plus bas, avec les scores.
+- **Deux bornes inferieures, donc leur maximum.** Nos scans sont bornes par leur
+  fenetre, la source par la date de son releve ; le maximum de deux bornes
+  inferieures en est une. « Au moins » reste le mot exact, et il l'etait deja —
+  la ligne n'a jamais ete fausse, elle etait inutilement basse.
+- **Et surtout pas le compte de la source seul.** Cas reel du prompt 212 :
+  `Parcours` nommait cinq adversaires de Tiafoe, la source quatre, et
+  `_uncovered` n'en declarait aucun non couvert — son rapprochement par **nom ou
+  jour** est genereux a dessein, et le cinquieme partageait sa journee avec le
+  quatrieme.
+  - **C'est ce qui interdit l'appariement unique**, plus pur au sens du §8 : les
+    deux consommateurs ont besoin d'erreurs de **sens opposes** — la fiche de
+    recherche ne doit pas sur-affirmer un manque, le compte ne doit pas
+    sous-affirmer un total. Un seul appariement en servirait un et trahirait
+    l'autre, et le cas Tiafoe est la demonstration.
+- **Le compte voyage par l'assembleur, jamais par un second calcul.**
+  `session.context_block` est le seul endroit ou les deux lignes se rencontrent ;
+  il calcule `Ici` d'abord, passe le compte a `Tour`, et **pose** `Ici` a sa place
+  d'origine, apres `Non joue` qu'elle complete. Seul l'ordre du calcul change.
+  Mesure qui l'impose : le chemin de la source coute **52 ms par bloc** contre 23
+  pour la ligne `Tour` entiere.
+- **`_uncovered` rend la liste et son total**, et `_uncovered_line` formate.
+  Recompter `faced` chez l'appelant aurait ete la seconde lecture que le §8
+  interdit — c'est ce que le premier jet avait ecrit, et les deux comptes
+  auraient fini par ne plus porter sur la meme fenetre.
+- **Le mode d'emploi a ete relu avec le calcul.** Il disait « sur nos propres
+  releves », vrai tant que le compte n'en sortait que ; faux des que la source y
+  entre. Meme regle que `Serie` et `Non joue` — toute condition ajoutee a une
+  ligne se verifie contre la phrase qui l'explique. Un test lit le gabarit.
+- **Le drapeau de la ligne `Ici` garde le correctif** : sans elle le compte de la
+  source n'existe pas, la borne retombe sur nos scans, et c'est le comportement
+  d'avant.
+- Portee : **8 blocs sur 41** changent au rejeu, 33 sont identiques.
+
+### Mon premier compte etait faux deux fois, et c'est la meme regle qui l'attrape
+
+Le releve initial annoncait **33 joueurs sur 82, soit 40 %**. Les deux erreurs
+sont de la famille du zero d'appariement — un chiffre credible, rapporte sans que
+sa cle ait ete verifiee :
+
+- il comptait **16 joueurs dont le bloc nomme la phase**, ou le compte est omis a
+  dessein : « quart de finale » situe mieux qu'« au moins 3 tours », et la ligne
+  ne porte pas les deux ;
+- il comptait **6 joueurs des prompts 166 et 167**, rendus le 20/08 a 10h38 et
+  19h56 UTC, quand `_rounds_played` a ete livre a **20h40**. La mention ne pouvait
+  pas exister.
+
+Un rejeu intermediaire s'est trompe une troisieme fois, en appariant un bloc sur
+`(joueurs)` seuls : Swiatek — Rybakina designe deux editions, et le Canadian Open
+a ete pris pour Cincinnati. **La cle d'un bloc est (joueurs, competition, jour)**,
+et un rejeu qui surprend se reverifie sur sa cle avant d'etre ecrit.
+
+Corollaire pour tout rejeu sur ce corpus : **une fonctionnalite livree en cours de
+periode coupe la population en deux**, et la date de son commit est la borne. La
+regle vaut au-dela de ce cas — le corpus archive porte plusieurs regimes.
+
 ## Le tour d'un match de tennis (`services/tennis_round.py`)
 
 Aucune source ne le donne. The Odds API ne transmet pas le tour, et `tennisdata.co.uk`

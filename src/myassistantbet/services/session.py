@@ -550,8 +550,33 @@ def block_facts(
         # « jamais collecte ». Le fait sort alors non date, ce qui est son etat
         # exact — source connue, date inconnue.
         circuit = elo.tour_for(oddsapi_key)
+        # **`Ici` se calcule avant `Tour`, et se pose apres.** La ligne `Tour`
+        # porte une borne inferieure de tours joues, et nos scans n'en sont
+        # qu'une moitie — la source en est l'autre. Les deux se rencontrent ici
+        # et nulle part ailleurs, cet assembleur etant le seul.
+        #
+        # Le compte voyage donc par `rounds`, rempli par le calcul qui produit
+        # deja les fragments : le refaire depuis `tennis_round` couterait 52 ms
+        # par bloc contre 23 pour la ligne entiere, et serait un second calcul de
+        # la meme grandeur.
+        tours_source: dict[str, int] = {}
+        ici = attribue(
+            serve_stats.here_lines(
+                home,
+                away,
+                serve_stats.circuit_of(oddsapi_key or ""),
+                competition_id,
+                commence_time,
+                settings,
+                None,
+                oddsapi_key,
+                tours_source,
+            ),
+            "serve_stats",
+            serve_stats.last_fetch(serve_stats.circuit_of(oddsapi_key or ""), settings),
+        )
         lines += attribue(
-            tennis_round.lines(competition_id, commence_time, settings, home, away),
+            tennis_round.lines(competition_id, commence_time, settings, home, away, tours_source),
             "tennis_round",
             scans_le,
         )
@@ -595,20 +620,10 @@ def block_facts(
         # Posee **apres** `Non joue` et non entre lui et `Parcours` : ces deux-la
         # se completent et doivent rester adjacents — un forfait retire un nom du
         # parcours, et le lecteur doit voir les deux d'un coup d'oeil.
-        lines += attribue(
-            serve_stats.here_lines(
-                home,
-                away,
-                serve_stats.circuit_of(oddsapi_key or ""),
-                competition_id,
-                commence_time,
-                settings,
-                None,
-                oddsapi_key,
-            ),
-            "serve_stats",
-            serve_stats.last_fetch(serve_stats.circuit_of(oddsapi_key or ""), settings),
-        )
+        # Calculee plus haut, posee **ici** : l'ordre du bloc ne bouge pas, seul
+        # l'ordre du calcul change. Poser la ligne la-haut la separerait de
+        # `Non joue`, qu'elle complete.
+        lines += ici
         # L'historique des matchs joues : confrontations directes, palmares dans
         # ce tournoi, forme, bilan de surface et abandons.
         lines += attribue(

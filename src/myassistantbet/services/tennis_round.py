@@ -286,7 +286,12 @@ ROUNDS_PLAYED = "au moins"
 
 
 def _rounds_played(
-    home: str, away: str, competition_id: int | None, commence_time: str, settings: Settings
+    home: str,
+    away: str,
+    competition_id: int | None,
+    commence_time: str,
+    settings: Settings,
+    source_rounds: dict[str, int] | None = None,
 ) -> str:
     """`au moins 4 tours disputes par Sara Bejlek, 3 par Madison Keys`.
 
@@ -303,20 +308,53 @@ def _rounds_played(
     pourquoi la mention **complete** `phase non renseignee` au lieu de la
     remplacer : le nombre de tours est etabli, la phase ne l'est toujours pas.
 
-    **Nos scans seuls, et c'est un arbitrage mesure.** La source de profils
-    rapporte parfois un tour que nos scans n'ont pas vu — mesure du 20/08/2026 :
-    **11 joueurs sur 192**, soit 5,7 %, et toujours d'un seul tour. Le borne
-    inferieure serait donc un peu meilleure en la lisant ; elle couterait une
-    dependance de plus et une question de drapeau, pour un mot qui reste vrai
-    dans les deux cas. Le jour ou ce taux monte, c'est ici que ca se reprend.
+    **Le plus complet des deux releves, et c'est le taux qui l'a impose.** Nos
+    scans sont bornes par leur fenetre, la source par la date de son releve :
+    deux **bornes inferieures** du meme nombre, dont le maximum est encore une
+    borne inferieure. « Au moins » reste donc le mot exact, et il l'etait deja.
+
+    L'arbitrage precedent — nos scans seuls — reposait sur une mesure du
+    20/08/2026 qui donnait **11 joueurs sur 192, soit 5,7 %, et toujours d'un
+    seul tour**, et se concluait par « le jour ou ce taux monte, c'est ici que ca
+    se reprend ». Il a monte, et la prevision ecrite s'est verifiee : rejeu du
+    28/08/2026 sur les blocs archives portant les deux lignes, **10 joueurs sur
+    57 a phase inconnue** portent un compte trop bas, d'un tour sur 5 et de deux
+    sur 5.
+
+    Ce qui a change la decision n'est pas le taux mais son **effet** : sur les 31
+    blocs concernes, **5 voient l'asymetrie du bloc retournee** — de « 1-1 » a
+    « 2-1 » ou « 3-1 ». C'est la ligne dont le gabarit dit qu'elle « dit si
+    l'enjeu est asymetrique », et elle annoncait une egalite la ou le bloc
+    portait le double d'un cote.
+
+    **Le maximum, et surtout pas le compte de la source seul.** Cas reel du
+    prompt 212 : `Parcours` nommait cinq adversaires de Tiafoe, la source quatre,
+    et `_uncovered` n'en declarait aucun non couvert — son rapprochement par
+    **nom ou jour** est genereux a dessein, et le cinquieme partageait sa journee
+    avec le quatrieme. Cette generosite protege la fiche de recherche ; reprise
+    comme un compte, elle perd un tour en silence.
+
+    **C'est aussi ce qui interdit l'appariement unique**, plus pur au sens du
+    §8 : les deux consommateurs ont besoin d'erreurs de **sens opposes** — ne pas
+    sur-affirmer un manque d'un cote, ne pas sous-affirmer un compte de l'autre.
+    Un seul appariement en servirait un et trahirait l'autre.
+
+    `source_rounds` est **passe par l'assembleur** et jamais relu ici : le chemin
+    de la source coute 52 ms par bloc contre 23 pour cette ligne entiere, donc le
+    rappeler doublerait le cout du bloc de tennis pour recalculer ce que
+    `session.context_block` vient de calculer. Vide quand la ligne `Ici` ne se
+    rend pas — le compte de la source n'existe alors pas, et la borne retombe sur
+    nos scans, qui est le comportement d'avant.
     """
     from . import tennis_load
 
+    vus = source_rounds or {}
     comptes = []
     for joueur in (home, away):
         if not joueur:
             continue
-        tours = len(tennis_load.load_for(joueur, competition_id, commence_time, settings).faced)
+        nos_scans = len(tennis_load.load_for(joueur, competition_id, commence_time, settings).faced)
+        tours = max(nos_scans, vus.get(joueur, 0))
         if tours:
             comptes.append((tours, joueur))
     if not comptes:
@@ -335,6 +373,7 @@ def lines(
     settings: Settings | None = None,
     home: str = "",
     away: str = "",
+    source_rounds: dict[str, int] | None = None,
 ) -> list[tuple[str, str]]:
     """Ligne « Tour », et **deux etats plutot qu'un silence**.
 
@@ -358,6 +397,6 @@ def lines(
         # La valeur porte deja son compte de joueurs entre parentheses, et deux
         # parentheses bout a bout se lisent comme un seul propos — le defaut
         # corrige sur `Classement` et sa reserve de debut de saison.
-        tours = _rounds_played(home, away, competition_id, commence_time, settings)
+        tours = _rounds_played(home, away, competition_id, commence_time, settings, source_rounds)
         return [("Tour", f"{valeur}\n{tours}" if tours else valeur)]
     return []
