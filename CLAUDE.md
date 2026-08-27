@@ -3570,6 +3570,90 @@ l'intervalle. La page arrondit a l'entier (« [47 – 74] »), donc l'ecart y et
 invisible : c'est exactement pourquoi ce module se teste contre des valeurs
 publiees et non contre ce qu'il affiche.
 
+## La confiance en pourcentages : porte fermee, mesuree le 27/08/2026
+
+**Resultat negatif, ecrit sous la forme qui empeche de le refaire.** La demande
+revient naturellement — « ce pari a 80 % de chances, celui-la 76 % » est ce que
+tout le monde veut lire — et sa refutation tient a des chiffres que personne ne
+refera. Quatre arguments, et le troisieme suffit.
+
+**1. Qui produit le nombre : les deux reponses sont fermees.** Au modele, le
+prompt interdit deja en toutes lettres et a deux endroits de convertir un Elo et
+un `xG` en probabilite, « la correspondance existe et tu la connais » — produire
+« 80 % » est la meme operation sur un faisceau au lieu d'un chiffre. A
+l'application, il n'y a rien pour le faire, et en ecrire un est le premier
+interdit du projet, mot pour mot.
+
+**2. L'effectif de calibration, et le delai.** Pour valider **une seule** tranche
+de 10 points, l'intervalle a 95 % doit tenir dedans, soit une demi-largeur de
+5 points : **381 selections par tranche** a 55 %, 350 a 65 %, 246 a 80 %. Le
+denominateur reel est **393** — section C, anteriorite etablie, tranchees,
+cotees — soit 17,9 par jour sur 22 jours. Calees sur la distribution reelle de
+`1/cote` : 1,5 mois pour la tranche 50-59 % (48 % du volume), **6,6 mois** pour
+la tranche 70-79 % (11 %), 39 mois pour 30-39 %. Or `changelog_mesure` porte
+**17 changements de gabarit du 15 au 26/08**, un tous les 1,5 jour : une
+calibration de six mois traverserait une centaine de changements de cadre, et la
+population serait inhomogene par construction — exactement ce que
+`framework_version` existait pour empecher de melanger.
+
+**3. Le prix impose, et c'est l'argument decisif.** La distribution des
+probabilites implicites est **etroite** : sur 446 selections tranchees, **87 %
+tombent entre 40 % et 70 %**, mediane 56,5 %, et **une seule** depasse 80 %.
+L'exemple qui motive la demande decrit une zone ou la base porte un pari. La ou
+elle vit, un pourcentage devrait discriminer 54 % de 58 % avec un intervalle de
+±10 points. Et le dilemme n'a pas de sortie : un nombre qui colle au prix ne dit
+rien de plus que le prix ; un nombre qui s'en ecarte **est** l'estimation de
+probabilite que la section 9 interdit.
+
+**4. Ce qu'on perdrait, et c'est mesure.** L'echelle 1-5 est aujourd'hui
+**orthogonale au prix** : `1/cote` moyenne par cran vaut 0,577 / 0,558 / 0,593 /
+0,577 des crans 2 a 5 — plate — et **V de Cramer confiance x palier = 0,142** sur
+393. Les deux axes sont pratiquement independants. Un pourcentage est une
+grandeur d'echelle de prix : il les fusionne, et le residu au prix — le seul
+chiffre interpretable de `/stats` — perd le second axe contre lequel il se lit.
+
+Ce qui rouvrirait la question, et rien d'autre : un regime ou les selections
+vivraient hors de la bande 40-70 %, c'est-a-dire un tout autre usage de l'outil.
+
+### Le deficit du cran 3 n'est pas une propriete du cran
+
+**Et c'est la cinquieme fois qu'un discriminant se revele etre un artefact.** Le
+cran 3 porte **-8,88 sur -12,78** du deficit global, sur 195 selections : le
+chiffre est juste, et la conclusion qu'on en tire — instruire le cran 3 dans le
+gabarit — ne l'est pas.
+
+La coupe est la date d'application de la **migration 026**, `2026-08-10T11:40`,
+celle qui cree `angle` et `source_level`. Elle n'est pas choisie sur les
+resultats : c'est une borne de schema, deja en base, meme idiome que
+`TIER_PARTITION_MIGRATION`.
+
+| Population | Tranchees | Taux | Residu au prix | Par selection |
+| --- | ---: | ---: | ---: | ---: |
+| conf 3, avant le 10/08 | 41 | 29 % | **-11,12** | -0,271 |
+| conf 3, a partir du 10/08 | 154 | 57 % | **+2,24** | +0,015 |
+| tout, avant le 10/08 | 63 | 44 % | -10,11 | -0,160 |
+| tout, a partir du 10/08 | 330 | 56 % | -2,67 | -0,008 |
+
+**Le deficit vit entierement dans les cinq premiers jours**, et il n'est pas
+propre au cran 3 : toute la population d'avant le 10/08 y est. Ce sont les
+selections que le dossier declare deja non propres par construction — la garde
+d'anteriorite date du 11/08, et « le 11/08/2026 est la borne a partir de laquelle
+une population est propre par construction plutot que par filtrage ».
+
+**Sur la population etiquetee, rien ne distingue les cran 3 gagnants des
+perdants.** Cinq axes testes — palier, type d'angle, niveau de source, sport,
+marche — omnibus exact entre 0,018 et 0,31, et **zero axe ne survit a la
+correction de multiplicite entre axes**. Le residu y vaut +2,24, du bon cote.
+
+- **Le deficit n'est donc pas actionnable, et instruire le cran 3 serait
+  instruire sur un artefact de la premiere semaine.** L'option ecartee est ecrite
+  ici pour qu'elle ne soit pas reprise sur le seul chiffre de tete.
+- **Ce qui a fait tomber la mesure est un compte de denominateur** : les
+  « — non renseigne — » sortaient en tete de trois axes avec le meme `12/41` et
+  le meme residu `-11,12`. C'etait **la meme population**, et une colonne jeune
+  plutot qu'une propriete. Meme regle que le zero d'appariement : compter ce qui
+  **entre** dans un regroupement, pas seulement ce qui en sort.
+
 ## Un taux sans son prix ne mesure rien (le coin SAFE x confiance 4)
 
 **Resultat negatif, et il vaut d'etre ecrit : il a economise sept sessions de
