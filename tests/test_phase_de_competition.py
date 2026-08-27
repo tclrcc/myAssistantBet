@@ -100,6 +100,48 @@ def test_un_qualifie_arrive_au_tableau_principal_avec_ses_trois_tours(migrated: 
     assert len(apres.faced) == 3
 
 
+def test_le_parcours_se_recompte_sur_le_lecteur_et_jamais_sur_la_table(
+    migrated: Settings,
+) -> None:
+    """**`events` compte des publications, pas des rencontres.**
+
+    Le fournisseur publie une entree provisoire a une heure de remplissage, puis
+    la rencontre definitive avec son heure reelle et un identifiant nouveau. Ce
+    n'est pas un accident de reprogrammation : c'est le **regime normal d'un
+    tableau de qualification** — mesure du 27/08/2026 sur l'US Open, 8 affiches
+    en double cote ATP et 10 cote WTA, soit `events` a 111 et 112 lignes pour
+    103 et 102 rencontres reelles.
+
+    `_resolve_duplicates` garde la plus recemment creee et le parcours tombe
+    juste ; un `COUNT(*)` sur la table, lui, compte les deux. **Le controle
+    empirique du rattachement se fait donc sur la sortie de `load_for`**, et ce
+    test existe pour qu'un relecteur qui « simplifierait » en comptant les lignes
+    le voie tomber — sans lui, il aurait tort pour une raison invisible : les deux
+    comptes sont plausibles.
+    """
+    principal = _competition(migrated, PRINCIPAL)
+    qualifs = _competition(migrated, QUALIFS)
+    competitions_service.set_phase(qualifs, principal, migrated)
+    # Le premier tour est publie deux fois : l'entree provisoire a l'heure de
+    # remplissage, puis la rencontre reelle. Le second tour une seule fois.
+    _match(migrated, qualifs, "Billy Harris", "Adv 1", "2026-08-24T18:00:00Z")
+    _match(migrated, qualifs, "Billy Harris", "Adv 1 bis", "2026-08-24T20:45:00Z")
+    _match(migrated, qualifs, "Billy Harris", "Adv 2", "2026-08-25T18:00:00Z")
+
+    lignes = db.query_one(
+        "SELECT COUNT(*) AS n FROM events WHERE competition_id = ? "
+        "  AND (home = 'Billy Harris' OR away = 'Billy Harris')",
+        (qualifs,),
+        settings=migrated,
+    )["n"]
+    parcours = tennis_load.load_for("Billy Harris", principal, "2026-08-30T15:00:00Z", migrated)
+
+    assert lignes == 3, "la table porte trois publications"
+    assert parcours.opponents == ("Adv 1 bis", "Adv 2"), (
+        "le lecteur en resout deux rencontres, et garde la plus recemment creee"
+    )
+
+
 def test_un_qualifie_elimine_plus_tot_rend_moins_de_tours(migrated: Settings) -> None:
     """**Le parcours est celui du joueur, jamais celui du tableau.**
 
