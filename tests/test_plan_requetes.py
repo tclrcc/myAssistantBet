@@ -27,6 +27,8 @@ from myassistantbet.config import Settings
 from myassistantbet.db import connect
 from myassistantbet.services import competitions as competitions_service
 
+from .helpers import alias_de as _alias_de
+
 #: Les tables qui grossissent. Une requete qui les filtre sur un axe que rien
 #: n'indexe est invisible en test et catastrophique en production.
 TABLES_CHAUDES = ("prompt_odds", "odds", "events", "picks")
@@ -61,21 +63,6 @@ def _sql_capturee(settings: Settings, appel: Any) -> list[tuple[str, Any]]:
     finally:
         competitions_service.connect = vrai_connect
     return [(sql, None) for sql in capturees]
-
-
-def _alias_de(sql: str, table: str) -> set[str]:
-    """Les alias sous lesquels `table` est nommee dans cette requete.
-
-    Lu **sur la requete** et non ecrit en dur : `EXPLAIN QUERY PLAN` designe une
-    sous-requete par son alias (`SCAN q`) et non par sa table, et un alias
-    renomme ferait passer le test sans rien verifier.
-    """
-    trouves = {table}
-    for m in re.finditer(rf"\b{table}\b(?:\s+AS)?\s+(\w+)", sql, re.IGNORECASE):
-        mot = m.group(1)
-        if mot.upper() not in {"WHERE", "ON", "SET", "VALUES", "GROUP", "ORDER", "AS"}:
-            trouves.add(mot)
-    return trouves
 
 
 def _scans(plan: list[Any], alias: set[str]) -> list[str]:
@@ -163,3 +150,72 @@ def test_les_tables_chaudes_sont_nommees() -> None:
     """Le geste preventif se lit dans le code : ces quatre-la se verifient au plan."""
     assert set(TABLES_CHAUDES) == {"prompt_odds", "odds", "events", "picks"}
     assert isinstance(sqlite3.sqlite_version, str)
+
+
+# -- Le critere surveille decrit-il encore ce que la regle lit ? -------------
+
+
+def _colonnes_lues(sql: str, tables: dict[str, tuple[str, ...]]) -> set[tuple[str, str]]:
+    """Les couples `(table, colonne)` que cette requete nomme.
+
+    Le rattachement passe par `helpers.alias_de`, le meme lecteur d'alias que le
+    controle de plan : `c.api_active` doit se lire comme
+    `("competitions", "api_active")` et non comme une colonne d'origine inconnue.
+    """
+    par_alias = {alias.lower(): table for table in tables for alias in _alias_de(sql, table)}
+    lues: set[tuple[str, str]] = set()
+    for alias, colonne in re.findall(r"\b(\w+)\.(\w+)\b", sql):
+        table = par_alias.get(alias.lower())
+        if table:
+            lues.add((table, colonne.lower()))
+    return lues
+
+
+def test_le_critere_surveille_decrit_ce_que_la_regle_lit(migrated: Settings) -> None:
+    """**Le §8 applique au garde-fou lui-meme.**
+
+    `PRICE_STATE_SOURCES` declare les tables et colonnes dont depend l'etat
+    « sans prix ». C'est ce critere que surveille le recensement de
+    `write_paths`, et c'est lui qui decide quels chemins d'ecriture peuvent faire
+    basculer l'etat.
+
+    **Deux copies de la meme verite, et rien ne les oblige a concorder.** Le mode
+    de panne est celui du dossier : quelqu'un fait dependre la requete d'une
+    colonne de plus, la declaration devient obsolete **en silence**, et le journal
+    cesse de couvrir un chemin sans qu'aucune erreur ne soit levee.
+
+    Le controle lit le **SQL reellement execute** — une copie de la requete
+    garderait la coherence d'une version que plus personne n'execute.
+    """
+    capturees = _sql_capturee(migrated, lambda: competitions_service.unpriced(migrated))
+    chaudes = [sql for sql, _ in capturees if "prompt_odds" in sql]
+    assert chaudes, "la requete n'a pas ete capturee — le test ne verifie rien"
+
+    declare = {
+        (table, colonne)
+        for table, colonnes in competitions_service.PRICE_STATE_SOURCES.items()
+        for colonne in colonnes
+    }
+    for sql in chaudes:
+        lues = _colonnes_lues(sql, competitions_service.PRICE_STATE_SOURCES)
+        assert lues, "aucune colonne rattachee : le rapprochement d'alias a echoue"
+        manquantes = lues - declare
+        assert not manquantes, (
+            f"la regle lit des colonnes que `PRICE_STATE_SOURCES` ne declare pas : "
+            f"{sorted(manquantes)}. Le recensement des ecritures ne couvre donc plus "
+            "le chemin qui les modifie, et le journal cesserait de dater en silence."
+        )
+
+
+def test_toutes_les_tables_declarees_sont_lues(migrated: Settings) -> None:
+    """La reciproque, et elle garde l'autre sens de la derive.
+
+    Une table declaree que la regle ne lit plus fait surveiller des ecritures qui
+    ne peuvent plus rien faire basculer : le recensement grossit, le balayage
+    reste juste, et la declaration ment sur ce qui compte.
+    """
+    capturees = _sql_capturee(migrated, lambda: competitions_service.unpriced(migrated))
+    sql = next(s for s, _ in capturees if "prompt_odds" in s)
+    lues = {table for table, _ in _colonnes_lues(sql, competitions_service.PRICE_STATE_SOURCES)}
+    declarees = set(competitions_service.PRICE_STATE_SOURCES)
+    assert declarees - lues == set(), f"tables declarees et non lues : {sorted(declarees - lues)}"

@@ -1670,6 +1670,28 @@ class UnpricedCompetition:
         return self.last_price_at is None
 
 
+#: Ce que la regle « sans prix » lit vraiment, table par table.
+#:
+#: **C'est le critere que surveille le recensement de `write_paths`**, et il est
+#: declare ici, a cote de la requete, parce qu'il en decrit le contenu. Les deux
+#: sont deux copies de la meme verite, et rien dans le langage ne les oblige a
+#: concorder : `tests/test_plan_requetes.py` lit les colonnes du **SQL reellement
+#: execute** et les compare a cette table.
+#:
+#: Le mode de panne qu'il ferme : quelqu'un fait dependre la regle d'une colonne
+#: de plus, cette liste devient obsolete **en silence**, le balayage cesse de
+#: couvrir le chemin qui la modifie, et le journal cesse de dater sans qu'aucune
+#: erreur ne soit levee. Encore la sortie de l'echec identique a celle du cas
+#: ordinaire.
+PRICE_STATE_SOURCES: dict[str, tuple[str, ...]] = {
+    "competitions": ("id", "label", "sport_id", "oddsapi_key", "api_active"),
+    "events": ("id", "competition_id", "commence_time"),
+    "odds": ("event_id", "fetched_at"),
+    "prompt_odds": ("event_id", "fetched_at"),
+    "sports": ("id", "key"),
+}
+
+
 def unpriced(
     settings: Settings | None = None, now: datetime | None = None
 ) -> list[UnpricedCompetition]:

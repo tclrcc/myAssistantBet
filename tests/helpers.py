@@ -412,3 +412,24 @@ def repost_import_form(page: str) -> dict[str, object]:
         else:
             envoi[nom] = valeur
     return envoi
+
+
+def alias_de(sql: str, table: str) -> set[str]:
+    """Les alias sous lesquels `table` est nommee dans cette requete.
+
+    **Une seule ecriture, deux lecteurs.** `test_plan_requetes` s'en sert pour
+    savoir si un `SCAN` porte sur une table chaude ; le controle de coherence du
+    critere s'en sert pour rattacher `c.api_active` a `competitions`. Deux
+    analyses paralleles du meme SQL auraient fini par ne plus designer les memes
+    colonnes — le motif du §8, applique a un outil de test.
+
+    Lu **sur la requete** et non ecrit en dur : `EXPLAIN QUERY PLAN` designe une
+    sous-requete par son alias (`SCAN q`) et non par sa table, et un alias
+    renomme ferait passer les deux controles sans rien verifier.
+    """
+    trouves = {table}
+    for m in re.finditer(rf"\b{table}\b(?:\s+AS)?\s+(\w+)", sql, re.IGNORECASE):
+        mot = m.group(1)
+        if mot.upper() not in {"WHERE", "ON", "SET", "VALUES", "GROUP", "ORDER", "AS", "JOIN"}:
+            trouves.add(mot)
+    return trouves

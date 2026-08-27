@@ -12,6 +12,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from myassistantbet.config import Settings
 from myassistantbet.scheduler import (
+    COVERAGE_EVERY_MIN,
+    COVERAGE_JOB_ID,
     FREE_JOB_ID,
     LINEUPS_EVERY_MIN,
     LINEUPS_JOB_ID,
@@ -57,6 +59,7 @@ def test_les_cinq_taches_sont_planifiees(scheduler: AsyncIOScheduler) -> None:
         LINEUPS_JOB_ID,
         TIMELINES_JOB_ID,
         SETTLEMENT_JOB_ID,
+        COVERAGE_JOB_ID,
     }
 
 
@@ -120,3 +123,77 @@ def test_un_passage_manque_de_composition_ne_se_rattrape_pas(
     """La fenetre a bouge et le passage suivant arrive dans dix minutes :
     rejouer un balayage en retard appellerait pour des matchs deja commences."""
     assert _job(scheduler, LINEUPS_JOB_ID).misfire_grace_time <= 60
+
+
+# -- La couverture de prix a son propre balayage -----------------------------
+
+
+def test_la_couverture_de_prix_balaie_a_sa_propre_cadence(scheduler: AsyncIOScheduler) -> None:
+    """**Un balayage unique, parce que « ou appeler » etait la mauvaise question.**
+
+    Quatorze chemins d'ecriture peuvent faire basculer l'etat « sans prix », et
+    la moitie sont des aides appelees en boucle — `scan._upsert_event` tourne une
+    fois par evenement. Leur faire porter l'appel couterait 30 ms par evenement
+    et serait oublie au quinzieme chemin. Un balayage periodique n'a rien a se
+    rappeler.
+    """
+    job = _job(scheduler, COVERAGE_JOB_ID)
+    assert _fields(job)["minute"] == f"*/{COVERAGE_EVERY_MIN}"
+
+
+def test_le_balayage_de_couverture_ne_depend_d_aucune_cle(
+    http_client: httpx.AsyncClient, migrated: Settings
+) -> None:
+    """**C'est la raison pour laquelle il n'est pas accroche aux compositions.**
+
+    Les deux ont la meme cadence, et les fondre aurait ete tentant. Mais
+    `_lineups` commence par `if not settings.apifootball_key: return` : une
+    installation sans cle de contexte aurait cesse de journaliser la couverture
+    **en silence**, et le journal aurait cesse de dater sans qu'aucune erreur ne
+    soit levee — la dependance cachee que ce projet retire partout.
+
+    Le controle monte donc des parametres **sans aucune cle** et verifie que le
+    balayage est planifie quand meme.
+    """
+    sans_cles = migrated.model_copy(
+        update={"apifootball_key": "", "odds_api_key": "", "rapidapi_key": ""}
+    )
+    planifie = build_scheduler(http_client, sans_cles)
+    assert COVERAGE_JOB_ID in {job.id for job in planifie.get_jobs()}
+
+
+def test_le_balayage_de_couverture_date_une_bascule(
+    http_client: httpx.AsyncClient, migrated: Settings
+) -> None:
+    """Le job **fait** ce qu'il annonce, et pas seulement il existe.
+
+    Un test qui verifierait la seule presence du declencheur passerait sur un
+    corps vide. Celui-ci monte une competition sans prix et relit le journal.
+    """
+    import asyncio
+
+    from myassistantbet import db
+    from myassistantbet.services import changelog
+    from myassistantbet.services.competitions import UNPRICED_ENTERED
+
+    sport = db.query_one("SELECT id FROM sports WHERE key = 'tennis'", settings=migrated)
+    db.execute(
+        "INSERT INTO competitions (sport_id, label, active, api_active) VALUES (?, ?, 1, 0)",
+        (sport["id"], "Tournoi sans book"),
+        settings=migrated,
+    )
+    competition = db.query_one("SELECT MAX(id) AS id FROM competitions", settings=migrated)["id"]
+    db.execute(
+        "INSERT INTO events (sport_id, competition_id, home, away, commence_time, source, "
+        "                    created_at) VALUES (?, ?, 'A', 'B', ?, 'tennisapi', ?)",
+        (sport["id"], competition, "2099-01-01T12:00:00Z", "2099-01-01T00:00:00Z"),
+        settings=migrated,
+    )
+
+    planifie = build_scheduler(http_client, migrated)
+    job = _job(planifie, COVERAGE_JOB_ID)
+    asyncio.run(job.func())
+
+    entrees = [e for e in changelog.journal(migrated).entries if e.label == UNPRICED_ENTERED]
+    assert len(entrees) == 1, "la bascule doit etre datee par le balayage seul"
+    assert "Tournoi sans book" in entrees[0].description

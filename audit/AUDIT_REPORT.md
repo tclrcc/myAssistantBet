@@ -450,6 +450,15 @@ une cote arrive entre deux invalidations. Un index couvrant ramene le calcul en
 direct a 30 ms, donc il n'y a plus rien a echanger contre de la fraicheur. **La
 conception n'etait pas fausse, la requete l'etait.**
 
+**Un second garde-fou s'est greffe sur le meme mecanisme, et il traite un autre
+mode de panne** : `test_le_critere_surveille_decrit_ce_que_la_regle_lit` lit les
+**colonnes** du SQL execute et les compare a `PRICE_STATE_SOURCES`, la
+declaration de ce dont l'etat « sans prix » depend. Sans lui, une colonne ajoutee
+a la requete rendrait la declaration obsolete en silence, le recensement des
+ecritures cesserait de couvrir le chemin qui la modifie, et le journal cesserait
+de dater sans qu'aucune erreur ne soit levee. Verifie en ajoutant `c.priority` a
+la requete : rouge, avec la colonne nommee.
+
 **Le geste preventif, a reprendre en section E** : toute nouvelle requete sur
 `prompt_odds`, `odds`, `events` ou `picks` passe par `EXPLAIN QUERY PLAN` **avant**
 d'etre ecrite. Ce sont les quatre tables qui grossissent. Il est porte par

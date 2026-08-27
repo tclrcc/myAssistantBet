@@ -49,6 +49,7 @@ logger = logging.getLogger(__name__)
 SCAN_JOB_ID = "scan_quotidien"
 FREE_JOB_ID = "sources_gratuites"
 LINEUPS_JOB_ID = "compositions"
+COVERAGE_JOB_ID = "couverture_prix"
 TIMELINES_JOB_ID = "timelines_service"
 
 #: Minutes apres le scan pour les sources gratuites. Elles ne dependent pas du
@@ -68,6 +69,26 @@ TIMELINES_JOB_DELAY_MIN = 30
 #: fraiches sans multiplier les passages a vide, qui ne coutent qu'une lecture
 #: en base tant qu'aucun match n'est dans la fenetre.
 LINEUPS_EVERY_MIN = 10
+
+#: Cadence du balayage de la couverture de prix. **Un job propre, et le choix se
+#: prend sur une propriete mesurable de l'autre.**
+#:
+#: L'etat « sans prix » peut basculer par quatorze chemins d'ecriture recenses,
+#: dont la moitie sont des aides appelees en boucle : leur faire porter l'appel
+#: couterait 30 ms par evenement et serait oublie au quinzieme. Un balayage
+#: unique n'a rien a se rappeler.
+#:
+#: Il ne s'accroche pas au balayage des compositions, qui a la meme cadence, et
+#: la raison n'est pas esthetique : `_lineups` commence par
+#: `if not settings.apifootball_key: return`. Une installation sans cle de
+#: contexte cesserait de journaliser la couverture **en silence** — la dependance
+#: cachee que ce projet retire partout. Celui-ci n'appelle aucune API, ne consomme
+#: aucun quota et ne lit aucune cle.
+#:
+#: Dix minutes bornent l'imprecision de l'instant ; ce qui compte pour un point de
+#: rupture est le **jour**, et un scan quotidien pouvait le manquer de vingt-quatre
+#: heures — mesure du 27/08/2026.
+COVERAGE_EVERY_MIN = 10
 
 #: Le reglement automatique. **Trois passages par jour, et ils ne coutent
 #: rien** : la passe ne fait aucun appel reseau, elle relit ce que
@@ -253,6 +274,23 @@ def build_scheduler(client: httpx.AsyncClient, settings: Settings) -> AsyncIOSch
         if sweep.errors:
             logger.warning("Compositions partielles : %s", " ; ".join(sweep.errors))
 
+    async def _coverage() -> None:
+        """Date les bascules de l'etat « sans prix ». Aucun appel externe.
+
+        **Le seul site d'appel periodique**, et c'est la propriete recherchee :
+        un chemin d'ecriture ajoute demain ne peut pas oublier de journaliser,
+        puisque rien n'a a s'en souvenir. Le scan garde son appel — il est le
+        chemin le plus frequent et il date a la seconde ce qu'il vient d'ecrire.
+
+        Un passage manque ne se rattrape pas : l'etat se recalcule a chaque
+        passage depuis la base, donc celui d'apres voit exactement la meme chose.
+        """
+        try:
+            for libelle, detail in competitions_service.note_price_coverage(settings):
+                logger.info("%s : %s", libelle, detail)
+        except Exception:
+            logger.exception("Couverture de prix : echec du balayage")
+
     scheduler.add_job(
         _scan,
         trigger=CronTrigger(
@@ -304,6 +342,16 @@ def build_scheduler(client: httpx.AsyncClient, settings: Settings) -> AsyncIOSch
         replace_existing=True,
         # Un passage manque ne se rattrape pas : la fenetre a bouge, et le
         # passage suivant arrive dans dix minutes.
+        misfire_grace_time=60,
+        coalesce=True,
+    )
+    scheduler.add_job(
+        _coverage,
+        trigger=CronTrigger(minute=f"*/{COVERAGE_EVERY_MIN}", timezone=settings.tz),
+        id=COVERAGE_JOB_ID,
+        replace_existing=True,
+        # Meme raison que les compositions : l'etat se recalcule, donc rien a
+        # rattraper.
         misfire_grace_time=60,
         coalesce=True,
     )
