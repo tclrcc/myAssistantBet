@@ -99,6 +99,38 @@ def test_un_qualifie_arrive_au_tableau_principal_avec_ses_trois_tours(migrated: 
     assert len(apres.faced) == 3
 
 
+def test_un_qualifie_elimine_plus_tot_rend_moins_de_tours(migrated: Settings) -> None:
+    """**Le parcours est celui du joueur, jamais celui du tableau.**
+
+    Cas reel du 27/08/2026, apres rattrapage des deux journees manquantes : dans
+    la meme competition, Svrcina porte trois tours — 24, 26 et 27/08 — et Harris
+    deux, elimine au second. Un lien qui ramenerait le tableau plutot que le
+    parcours rendrait trois a l'un comme a l'autre, et rien ne le signalerait :
+    les deux comptes sont plausibles.
+
+    C'est le cas sur lequel le controle empirique peut tomber, et c'est pour ca
+    qu'il est ici : un parcours court doit se lire comme une elimination, pas
+    comme un rattachement casse.
+    """
+    principal = _competition(migrated, PRINCIPAL)
+    qualifs = _competition(migrated, QUALIFS)
+    competitions_service.set_phase(qualifs, principal, migrated)
+
+    for jour, adversaire in (("24", "Meligeni Alves"), ("26", "Galarneau"), ("27", "Mcdonald")):
+        _match(migrated, qualifs, "Dalibor Svrcina", adversaire, f"2026-08-{jour}T18:00:00Z")
+    for jour, adversaire in (("24", "Gonzalo Bueno"), ("26", "Toby Samuel")):
+        _match(migrated, qualifs, "Billy Harris", adversaire, f"2026-08-{jour}T18:00:00Z")
+
+    quand = "2026-08-30T15:00:00Z"
+    svrcina = tennis_load.load_for("Dalibor Svrcina", principal, quand, migrated)
+    harris = tennis_load.load_for("Billy Harris", principal, quand, migrated)
+
+    assert len(svrcina.faced) == 3, "le qualifie va au bout de son tableau"
+    assert len(harris.faced) == 2, "elimine au second tour, et le parcours le dit"
+    assert svrcina.opponents == ("Meligeni Alves", "Galarneau", "Mcdonald")
+    assert harris.opponents == ("Gonzalo Bueno", "Toby Samuel")
+
+
 def test_la_qualification_lue_pour_elle_meme_ne_ramene_pas_le_tableau_principal(
     migrated: Settings,
 ) -> None:

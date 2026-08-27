@@ -290,6 +290,26 @@ Un chiffre publie a quatre endroits est un chiffre a **quatre copies**. Apres
 toute correction de mesure, compter les copies avant de declarer la correction
 faite.
 
+**Quatrieme occurrence, le 27/08/2026, et elle deplace la regle d'un cran.** Un
+releve annoncait **19 collages archives portant une section G**, chiffre qui
+fondait la contrainte de compatibilite de lecture de D2. Il venait d'un
+`raw_text LIKE '%G.%'`, qui attrape toutes les initiales — « J. Machado »,
+« G. Smith ». Repasse au **lecteur reel**, `picks_import.SECTION_HEAD`, le compte
+est **zero** : les titres presents dans les 78 archives sont `A` 47, `B` 47, `C`
+64, `D` 40, `E` 47, `F` 47.
+
+**Les trois premieres occurrences etaient des comptes bas ; celle-ci est un compte
+haut**, et c'est ce qui l'ajoute au motif plutot que de le repeter. La regle
+n'etait pas « un chiffre bas se verifie » mais **« un chiffre produit par une sonde
+ecrite pour l'occasion se verifie contre le lecteur de production »**. Un `LIKE`
+n'est pas un lecteur de sections, et il n'y a aucun moyen de le savoir depuis son
+resultat.
+
+Ce que ca a change au travail : la contrainte de D2 devient **prospective et non
+retrospective** — elle protege un rendu ancien qu'on recollerait, pas la relecture
+de l'archive — et `imports_raw` ne commencant qu'a la session 15, l'avant reste
+**inconnaissable et non vide**. L'exigence en sort durcie, pas relachee.
+
 ## C.14 — Ce que les instruments livres par ce lot ne mesurent pas
 
 **Le faisceau mesure la matiere premiere, jamais le jugement.** Ces grandeurs se
@@ -437,7 +457,79 @@ d'etre ecrite. Ce sont les quatre tables qui grossissent. Il est porte par
 `tests/test_plan_requetes.py` — sur le **plan** et jamais sur le temps, un test
 chronometre etant instable et desactive au premier faux positif.
 
-## C.19 — Ce qui reste ouvert et n'a pas ete instruit
+## C.19 — La base n'est pas append-only sur la date d'un match
+
+**Constat du 27/08/2026, en rattrapant deux journees de qualification.** L'import
+a ajoute 95 rencontres et **mis a jour 21**, et les comptes par jour des 24 et
+25/08 ont baisse d'exactement 21 : `28 → 22`, `36 → 33`, `28 → 20`, `36 → 32`.
+
+Ce ne sont pas des rencontres perdues. **La source a deplace des dates apres
+publication**, et la cle naturelle `(competition_id, tennisapi_fixture_id)` a mis
+a jour la ligne au lieu d'en creer une seconde — c'est le comportement correct, et
+c'est lui qui garantit qu'un rattrapage ne duplique rien. Verifie : zero doublon
+sur la cle naturelle, zero sur `(jour, affiche)`, zero rencontre sans identifiant
+fournisseur.
+
+**Ce qu'il faut en retenir depasse le cas.** `events.commence_time` est **mutable
+apres coup**, donc toute mesure qui decoupe une population **par date de match**
+ne se rejoue pas a l'identique : la meme requete, passee avant et apres un
+redatage, rend deux resultats sans qu'aucun des deux soit faux. Ca n'invalide rien
+de ce rapport — les decoupages qui portent des verdicts se font par
+`picks.created_at`, la date de **decision**, qui ne bouge pas — mais ca ferme une
+porte : **une reproductibilite ne se demande pas a un axe mutable**.
+
+Les axes surs sont ceux qu'aucune source exterieure ne reecrit :
+`picks.created_at`, `picks.result_at`, `changelog_mesure.day`, `imports_raw`. La
+date de coup d'envoi n'en fait pas partie, et `commence_time` avait deja son
+precedent — la migration 040, qui a du garder l'heure precedente parce que le scan
+l'ecrasait.
+
+## C.20 — L'identifiant du fournisseur designe une publication, pas une rencontre
+
+**Et le controle qui devait le prouver ne le prouvait pas.** Apres rattrapage des
+qualifications de l'US Open, j'ai verifie l'absence de doublons sur deux criteres
+— la cle naturelle `(competition_id, tennisapi_fixture_id)` et le couple
+`(jour, affiche)`. Les deux sont sortis a **zero**, et les deux etaient vrais.
+**La propriete qu'ils devaient etablir etait fausse.**
+
+Le compte des joueurs l'a montre : 119 joueurs distincts cote ATP pour un tableau
+qui en attend 128, et **quatre joueurs a quatre apparitions** la ou trois tours
+en autorisent trois. En regardant leurs lignes :
+
+    fixture 1289   2026-08-25T18:00:00Z   Nicolas Mejia - Liam Draxl
+    fixture 1376   2026-08-26T02:30:00Z   Liam Draxl - Nicolas Mejia
+
+**La meme rencontre, deux identifiants.** Le fournisseur publie d'abord une entree
+provisoire a une **heure de remplissage** — `18:00:00Z`, la meme sur toutes — puis
+la rencontre definitive avec son heure reelle et un **nouvel identifiant**. Les
+deux criteres passaient : les identifiants different, et le jour comme le sens de
+l'affiche different aussi.
+
+Mesure : **8 affiches en double cote ATP, 10 cote WTA**. `events` porte donc 111 et
+112 lignes pour **103 et 102 rencontres reelles**. Et le phenomene **precede le
+rattrapage** — quatre des dix-huit doublons ont leurs deux lignes creees le 24/08,
+avant toute intervention.
+
+**Le lecteur, lui, les absorbe.** `tournament_day` regroupe les deux lignes dans la
+meme journee de tournoi, `_resolve_duplicates` garde la plus recemment creee, et
+`load_for` rend **trois tours** pour Draxl avec la ligne superseded nommee
+`replaced` sur `Non joue`. La chaine fonctionne — et c'est justement pourquoi le
+defaut de comptage etait invisible.
+
+**Ce que ca corrige dans le dossier** : `CLAUDE.md` documente ce cas comme
+**« un seul cas »** en base, celui de JJ Wolf. Il est **systematique sur un tableau
+de qualification** — dix-huit occurrences sur une seule edition.
+
+**Et la regle de verification qui en sort** : un controle de doublon pose sur la
+cle qu'on maitrise ne prouve rien sur l'entite qu'on croit compter. `events` compte
+des **publications** ; le compte des rencontres passe par le lecteur qui les
+resout, jamais par un `COUNT(*)`.
+
+**Consequence pour le controle empirique de `phase_de`** : recompter un parcours a
+la main doit se faire sur la sortie de `load_for`, pas sur `events`. Un joueur a
+quatre lignes n'a pas joue quatre tours.
+
+## C.21 — Ce qui reste ouvert et n'a pas ete instruit
 
 - **Phase 4** — le generateur de prompts : variables injectees non utilisees,
   erreurs factuelles de bloc remontees a leur source sur trois cas, conformite du
