@@ -1591,6 +1591,54 @@ pousse jusqu'aux agregats du bloc.
   a cette date est le **classement**, c'est-a-dire l'ecart de division ; le reste arrive en
   octobre.
 
+## Une colonne livree qui ne se reclame nulle part attend un prompt pour se voir
+
+**Mesure du 27/08/2026, datee d'un jour.** `competitions.phase_de` est livree la
+veille (migration 080) et la saisie n'a pas ete faite : les deux qualifications
+de l'US Open portent `NULL` — 111 et 112 rencontres — quand leurs tableaux
+principaux existent au catalogue et n'ont aucun evenement. Le tableau principal
+entre dans les jours qui suivent, et sans le rattachement **six lignes se taisent
+pour chaque qualifie** — `Repos`, `Parcours`, `Non joue`, `Fraicheur`, `Tour`,
+`Ici`. C'est exactement ce que la 080 a ete ecrite pour empecher.
+
+**Le chantier livre la colonne, la surface et le service ; ce qui manquait est la
+reclamation.** La regle du projet existait deja pour les cles non classees et les
+fiches absentes : ce qui manque doit se voir dans l'interface, pas se decouvrir
+dans le prompt. Elle n'avait pas ete appliquee a celle-ci, et la meme omission se
+reproduirait a Melbourne.
+
+- **Le detecteur evident a ete mesure et refute, avant d'ecrire une ligne.**
+  « Deux competitions qui partagent des joueurs et que rien ne relie » est le
+  fait qui produit le degat, et il ne discrimine rien : sur les dix paires de
+  competitions de tennis de la base, **92 a 94 % de joueurs communs entre deux
+  tournois consecutifs ordinaires** — Canadian Open contre Cincinnati — contre
+  **23 %** sur le cas cherche. Un seuil qui attraperait le second declencherait
+  sur toutes les paires.
+- **L'identifiant non plus, et il faut le savoir avant de le rechercher** :
+  `tennisapi_tournament_id` est porte par la qualification (21349, 16743) et
+  jamais par le tableau principal, qui entre par The Odds API et n'a pas besoin
+  de ce chemin. Les deux ne partagent aucune valeur a comparer.
+- **Le critere est la porte d'entree** : `fenetre_debut IS NOT NULL`. Par
+  definition de la migration 078, une fenetre de rattachement decoupe un tournoi
+  que le fournisseur sert entier — c'est le seul chemin qui pose la question.
+  Rien n'est deduit d'un libelle, et un test monte une competition nommee
+  « … Qualifications » sans fenetre pour verifier qu'elle n'est pas reclamee.
+- **Trois etats, jamais deux** (migration 082). `phase_de IS NULL` confondait
+  « pas encore repondu » et « ce n'est pas une phase » : Winston-Salem est un
+  tournoi entier entre par le meme chemin, et la reclamation l'aurait nomme tous
+  les jours sans qu'aucun geste puisse l'en retirer. Un signal qui ne peut pas
+  s'eteindre devient du decor — le defaut exact que cette reclamation existe pour
+  ne pas etre. `set_phase` ecrit `phase_repondue` dans ses **deux** branches,
+  donc un seul ecrivain et un invariant par construction.
+- Une competition **sans candidat** n'y figure pas : elle porte deja une phase,
+  `set_phase` refuse la chaine, et reclamer une question sans reponse possible
+  serait la faute du cyclisme dans les cles a classer.
+- **Corollaire gratuit, et c'est l'argument pour le faire vite** : le statut dans
+  le tableau — qualifie, wild card, lucky loser — que la checklist tennis fait
+  chercher devient **derivable sans un appel** des que `phase_de` est pose. Un
+  joueur du tableau principal ayant des apparitions sous la competition de
+  qualification *est* un qualifie.
+
 ## Le report d'un horaire, et ce qu'il dit avec l'alerte meteo
 
 **Le fait dominant d'une soiree peut etre un report**, et l'application

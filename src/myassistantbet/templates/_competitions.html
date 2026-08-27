@@ -134,6 +134,31 @@
   </div>
   {% endif %}
 
+  {# `phase_de` est livrée le 26/08 et la saisie ne se réclamait nulle part :
+     les deux qualifications de l'US Open sont restées NULL pendant que le
+     tableau principal approchait, et six lignes se taisent pour chaque qualifié
+     tant que le lien manque. Le critère est la porte d'entrée — une fenêtre de
+     rattachement découpe un tournoi que le fournisseur sert entier — jamais le
+     libellé, « ATP US Open Qualifications » contre « ATP US Open » étant le
+     piège que la migration 080 nomme déjà. Répondre « aucun tournoi » éteint la
+     ligne : sans ce troisième état, Winston-Salem y resterait pour toujours. #}
+  {% if missing_phases %}
+  <div class="report report-warn">
+    <b>{{ missing_phases | length }} compétition(s) sans réponse de phase.</b>
+    Si elle est une phase d'un autre tournoi, ses rencontres comptent dans le parcours
+    d'un joueur qui y passe — sinon, réponds « phase d'aucun tournoi » et la ligne
+    disparaît.
+    <ul class="failures">
+      {% for row in missing_phases %}
+      <li>
+        {{ row.sport_label }} · <b>{{ row.label }}</b>
+        — {{ row.events }} rencontre(s){% if row.window %}, fenêtre du {{ row.window }}{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+
   {# **L'entrée par la compétition, et pas une porte dans le filtre.** Une
      exception laissée visible au board finit par y rester, et le filtre cesse
      d'en être un ; l'entrée par la compétition est le bon niveau puisque la règle

@@ -1,0 +1,67 @@
+-- 082_reponse_de_phase.sql — « pas une phase » est une reponse, pas un silence.
+--
+-- **Mesure du 27/08/2026, et elle est datee d'un jour.** `phase_de` est livree
+-- depuis la veille (migration 080) et la saisie n'a pas ete faite : les deux
+-- competitions de qualification de l'US Open portent `NULL` — 116 pour
+-- 111 rencontres, 117 pour 112 — quand leurs tableaux principaux existent deja
+-- au catalogue (11 et 15) et n'ont encore aucun evenement. Le tableau principal
+-- entre dans les jours qui viennent, et sans le rattachement **six lignes se
+-- taisent pour chaque qualifie** — `Repos`, `Parcours`, `Non joue`,
+-- `Fraicheur`, `Tour`, `Ici` — soit exactement ce que la 080 a ete ecrite pour
+-- empecher. La surface existait, personne ne l'a reclamee.
+--
+-- ## Le detecteur evident a ete mesure, et il est refute
+--
+-- « Deux competitions qui partagent des joueurs et que rien ne relie » parait
+-- etre le signal, et c'est le fait qui produit le degat. Sur les dix paires de
+-- competitions de tennis de la base, il ne discrimine **rien** :
+--
+--     94 %  WTA Canadian Open | WTA Cincinnati Open      <- deux tournois ordinaires
+--     92 %  ATP Canadian Open | ATP Cincinnati Open      <- deux tournois ordinaires
+--     23 %  ATP Cincinnati    | ATP US Open Qualif.      <- le cas cherche
+--
+-- Les joueurs se suivent d'un tournoi a l'autre : un seuil qui attraperait le
+-- cas cherche a 23 % declencherait sur toutes les paires consecutives. Un
+-- critere qui se declenche partout ne classe plus rien.
+--
+-- L'identifiant de tournoi non plus : `tennisapi_tournament_id` est porte par la
+-- qualification (21349, 16743) et **jamais par le tableau principal**, qui entre
+-- par The Odds API et n'a pas besoin de ce chemin. Les deux ne partagent donc
+-- aucune valeur a comparer.
+--
+-- ## Ce qui reste : la porte d'entree, et elle est structurelle
+--
+-- Une competition **entree par la fenetre de rattachement** est, par definition
+-- de la migration 078, « les dates pendant lesquelles les rencontres de ce
+-- tournoi chez le fournisseur appartiennent a cette competition » — c'est le
+-- seul chemin qui decoupe un tournoi que le fournisseur sert entier, donc le
+-- seul qui pose la question « est-ce une phase d'une autre ? ». Rien n'est
+-- deduit d'un libelle : `fenetre_debut IS NOT NULL` est un fait de schema, et le
+-- prefixe « ATP US Open Qualifications » contre « ATP US Open » reste le piege
+-- que la 080 nomme deja.
+--
+-- ## Trois etats, jamais deux
+--
+-- `phase_de IS NULL` confond « pas encore repondu » et « ce n'est pas une
+-- phase ». Winston-Salem est le second cas : un ATP 250 entier, entre par le
+-- meme chemin, qui ne sera jamais la phase de personne. Sans troisieme etat la
+-- reclamation le nommerait tous les jours sans qu'aucun geste puisse l'en
+-- retirer — un signal qui ne s'eteint jamais devient du decor, et c'est
+-- exactement ce que cette reclamation existe pour ne pas etre.
+--
+-- `set_phase` ecrit donc `phase_repondue = 1` **dans ses deux branches**,
+-- rattachement comme effacement : un seul ecrivain, donc l'invariant tient par
+-- construction et non par vigilance. L'option « — phase d'aucun tournoi — » du
+-- menu cesse d'etre un effacement muet pour devenir la reponse qu'elle affiche.
+--
+-- ## La reprise s'indexe sur la colonne qu'elle corrige
+--
+-- Lecon de la 049 : une clause posee sur un etat mutable laisse passer ce qui a
+-- ete ecrit avant lui. Ici la clause est `phase_de IS NOT NULL` — un lien pose
+-- **est** une reponse — donc complete et idempotente par construction. Elle ne
+-- touche aucune ligne aujourd'hui, aucune competition n'etant rattachee ; elle
+-- est ecrite parce qu'elle sera vraie de toute base ou le rattachement a
+-- precede cette migration.
+ALTER TABLE competitions ADD COLUMN phase_repondue INTEGER NOT NULL DEFAULT 0;
+
+UPDATE competitions SET phase_repondue = 1 WHERE phase_de IS NOT NULL;

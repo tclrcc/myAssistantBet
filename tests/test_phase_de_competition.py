@@ -20,6 +20,7 @@ revele la conception, donc c'est le cas qui la garde.
 from __future__ import annotations
 
 from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -324,3 +325,155 @@ def test_un_refus_se_voit_a_l_ecran(client: TestClient, migrated: Settings) -> N
     reponse = client.post(f"/competitions/{qualifs}/phase", data={"phase_de": str(football)})
     assert reponse.status_code == 200
     assert "meme sport" in reponse.text
+
+
+# -- Ce qui reclame la saisie ------------------------------------------------
+
+
+def _avec_fenetre(settings: Settings, label: str, debut: str = "2026-08-24") -> int:
+    """Une competition entree par la **fenetre de rattachement**.
+
+    C'est la porte d'entree qui fait le critere, jamais le libelle : une fenetre
+    decoupe un tournoi que le fournisseur sert entier, donc c'est le seul chemin
+    ou la question « est-ce une phase d'une autre ? » se pose.
+    """
+    competition_id = _competition(settings, label)
+    db.execute(
+        "UPDATE competitions SET fenetre_debut = ?, fenetre_fin = ? WHERE id = ?",
+        (debut, "2026-08-27", competition_id),
+        settings=settings,
+    )
+    return competition_id
+
+
+def test_la_saisie_de_phase_se_reclame_tant_qu_elle_n_a_pas_de_reponse(
+    migrated: Settings,
+) -> None:
+    """**Le defaut du 27/08/2026 : `phase_de` est livree et personne ne la reclame.**
+
+    Les deux qualifications de l'US Open sont restees NULL pendant que leur
+    tableau principal approchait, et six lignes se taisent pour chaque qualifie
+    tant que le lien manque. Ce qui manque doit se voir dans l'interface, pas se
+    decouvrir dans le prompt — meme regle que les cles non classees et les
+    competitions sans fiche.
+    """
+    _competition(migrated, PRINCIPAL)
+    qualifs = _avec_fenetre(migrated, QUALIFS)
+    _match(migrated, qualifs, "Joueur A", "Joueur B", "2026-08-24T18:00:00Z")
+
+    reclamees = competitions_service.without_phase(migrated)
+
+    assert [item.competition_id for item in reclamees] == [qualifs]
+    assert reclamees[0].events == 1
+    assert reclamees[0].window == "2026-08-24 au 2026-08-27"
+
+
+def test_repondre_aucun_tournoi_eteint_la_reclamation(
+    client: TestClient, migrated: Settings
+) -> None:
+    """**Le troisieme etat, et sans lui la reclamation devient du decor.**
+
+    Winston-Salem est un tournoi entier entre par le meme chemin : il ne sera
+    jamais la phase de personne. `phase_de IS NULL` confond « pas encore
+    repondu » et « ce n'est pas une phase », donc la ligne ne s'eteindrait
+    jamais — un signal qui ne peut pas se taire cesse d'etre lu.
+
+    **Poster le formulaire rendu et relire**, jamais appeler le service : c'est
+    la seule facon de tester qu'un service et sa surface se livrent ensemble.
+    """
+    _competition(migrated, PRINCIPAL)
+    entier = _avec_fenetre(migrated, "ATP Winston-Salem Open", debut="2026-08-23")
+    assert [item.competition_id for item in competitions_service.without_phase(migrated)] == [
+        entier
+    ]
+
+    client.post(f"/competitions/{entier}/phase", data={"phase_de": ""})
+
+    assert competitions_service.without_phase(migrated) == []
+    row = db.query_one(
+        "SELECT phase_de, phase_repondue FROM competitions WHERE id = ?",
+        (entier,),
+        settings=migrated,
+    )
+    assert row["phase_de"] is None, "aucun lien n'est pose"
+    assert int(row["phase_repondue"]) == 1, "et pourtant la question a une reponse"
+
+
+def test_rattacher_eteint_aussi_la_reclamation(client: TestClient, migrated: Settings) -> None:
+    """L'autre branche de `set_phase` ecrit la meme reponse. Un seul ecrivain,
+    donc l'invariant tient par construction et non par vigilance."""
+    principal = _competition(migrated, PRINCIPAL)
+    qualifs = _avec_fenetre(migrated, QUALIFS)
+
+    client.post(f"/competitions/{qualifs}/phase", data={"phase_de": str(principal)})
+
+    assert competitions_service.without_phase(migrated) == []
+
+
+def test_le_critere_est_la_porte_d_entree_et_jamais_le_libelle(migrated: Settings) -> None:
+    """**Le piege est plus tentant ici qu'ailleurs**, le prefixe d'une
+    qualification etant exactement celui de son tableau principal — la migration
+    080 le nomme deja, et le dossier porte trois rapprochements par libelle
+    refuses avec un score maximal.
+
+    Une competition qui porte « Qualifications » dans son nom et qui n'est pas
+    entree par la fenetre n'est donc **pas** reclamee.
+    """
+    _competition(migrated, PRINCIPAL)
+    _competition(migrated, "ATP Melbourne Qualifications")
+
+    assert competitions_service.without_phase(migrated) == []
+
+
+def test_une_competition_sans_candidat_ne_se_reclame_pas(migrated: Settings) -> None:
+    """Reclamer une question qui n'a **aucune reponse possible** serait une tache
+    qu'on ne peut pas accomplir — meme regle que le cyclisme, absent des cles a
+    classer parce qu'il n'a pas de taxonomie.
+
+    Le cas se produit des qu'une competition porte deja une phase : `set_phase`
+    refuse alors qu'elle en devienne une, une chaine ne se lisant pas. Elle est
+    entree par la fenetre, elle n'a jamais repondu, et elle ne doit pourtant pas
+    figurer dans la liste — le menu ne lui propose rien.
+    """
+    porteuse = _avec_fenetre(migrated, "ATP Winston-Salem Open", debut="2026-08-23")
+    qualifs = _competition(migrated, QUALIFS)
+    competitions_service.set_phase(qualifs, porteuse, migrated)
+
+    assert competitions_service.phase_options(migrated).get(porteuse) == []
+    assert [item.competition_id for item in competitions_service.without_phase(migrated)] == []
+
+
+def test_la_reclamation_se_voit_a_l_ecran(client: TestClient, migrated: Settings) -> None:
+    """Un service qui produit une valeur que rien n'affiche est la moitie du
+    defaut du 20/08 : le banc mesurait le lecteur et ne voyait pas la porte."""
+    _competition(migrated, PRINCIPAL)
+    _avec_fenetre(migrated, QUALIFS)
+
+    page = client.get("/competitions")
+
+    assert "sans réponse de phase" in page.text
+    assert QUALIFS in page.text
+
+
+def test_la_reprise_s_indexe_sur_la_colonne_qu_elle_corrige() -> None:
+    """**Lecon de la migration 049**, et elle a coute 43 lignes mal typees : une
+    clause posee sur un etat mutable laisse passer ce qui a ete ecrit avant lui.
+    Ici la clause porte sur `phase_de`, donc elle est complete et idempotente par
+    construction.
+
+    Le test relit le fichier plutot que d'en recopier la regle — deux ecritures
+    de la meme decision divergeraient sans un mot.
+    """
+    sql = (
+        Path(__file__).parents[1] / "src/myassistantbet/migrations/082_reponse_de_phase.sql"
+    ).read_text(encoding="utf-8")
+    instructions = [
+        ligne for ligne in sql.splitlines() if ligne.strip() and not ligne.startswith("--")
+    ]
+
+    reprise = [ligne for ligne in instructions if ligne.strip().upper().startswith("UPDATE")]
+    assert len(reprise) == 1
+    assert "phase_repondue = 1" in reprise[0]
+    assert "phase_de IS NOT NULL" in reprise[0], (
+        "la clause s'indexe sur le lien pose, jamais sur un etat qui peut arriver apres"
+    )

@@ -579,12 +579,22 @@ def set_phase(
       * une **chaine**, dans les deux sens : la cible est deja une phase, ou la
         source en porte deja. `phase_scope` lit **un** niveau ; une chaine s'y
         tronquerait sans un mot, et un silence vaut moins qu'un refus.
+
+    **Les deux branches ecrivent `phase_repondue`**, rattachement comme
+    effacement, et c'est ce qui donne son troisieme etat a la question. `phase_de
+    IS NULL` confondait « pas encore repondu » et « ce n'est pas une phase » ;
+    sans la distinction, `without_phase` nommerait Winston-Salem tous les jours
+    sans qu'aucun geste puisse l'en retirer. Un seul ecrivain, donc l'invariant
+    tient par construction — voir la migration 082.
     """
     brut = str(phase_de or "").strip()
     if not brut:
         with connect(settings) as conn:
-            conn.execute("UPDATE competitions SET phase_de = NULL WHERE id = ?", (competition_id,))
-        logger.info("Phase de la competition %d : effacee", competition_id)
+            conn.execute(
+                "UPDATE competitions SET phase_de = NULL, phase_repondue = 1 WHERE id = ?",
+                (competition_id,),
+            )
+        logger.info("Phase de la competition %d : aucune (repondu)", competition_id)
         return
 
     try:
@@ -622,7 +632,10 @@ def set_phase(
             raise CompetitionError(
                 f"« {source['label']} » porte deja des phases : elle ne peut pas en etre une."
             )
-        conn.execute("UPDATE competitions SET phase_de = ? WHERE id = ?", (cible, competition_id))
+        conn.execute(
+            "UPDATE competitions SET phase_de = ?, phase_repondue = 1 WHERE id = ?",
+            (cible, competition_id),
+        )
     logger.info(
         "Phase de la competition %d : rattachee a %d (%s)", competition_id, cible, parent["label"]
     )
@@ -936,6 +949,77 @@ def without_notes(settings: Settings | None = None) -> list[MissingNote]:
     # Les plus couteuses d'abord : une competition deja passee douze fois dans un
     # prompt sans fiche a douze analyses muettes derriere elle.
     found.sort(key=lambda item: (-item.analysed, sort_key(item.label)))
+    return found
+
+
+@dataclass
+class MissingPhase:
+    """Une competition entree par la fenetre dont on n'a pas dit si elle est une phase.
+
+    **Le degat est date et il se compte en lignes tues.** Sans rattachement, un
+    qualifie qui arrive au tableau principal perd ses tours sur les six lignes
+    qui descendent de `tennis_load.load_for` — `Repos`, `Parcours`, `Non joue`,
+    `Fraicheur`, `Tour`, `Ici`. C'est ce que la migration 080 a ete ecrite pour
+    empecher, et elle ne peut rien tant que la saisie n'est pas faite.
+
+    Le critere est la **porte d'entree**, jamais le libelle : une competition qui
+    porte une fenetre de rattachement est un decoupage d'un tournoi que le
+    fournisseur sert entier, donc la seule ou la question se pose. Le detecteur
+    qu'on attend — deux competitions qui partagent des joueurs — a ete mesure et
+    refute : 92 a 94 % de joueurs communs entre deux tournois consecutifs
+    ordinaires contre 23 % sur le cas cherche. Voir la migration 082.
+    """
+
+    competition_id: int
+    label: str
+    sport_label: str
+    #: Rencontres deja entrees sous cette competition. Ce sont elles qui se
+    #: perdront pour un joueur qui passe au tableau principal.
+    events: int = 0
+    #: Bornes de la fenetre, qui disent de quel tournoi il s'agit sans qu'on ait
+    #: a lire le libelle — et qui datent l'urgence : une fenetre close hier veut
+    #: dire que le tableau principal entre maintenant.
+    window: str = ""
+
+
+def without_phase(settings: Settings | None = None) -> list[MissingPhase]:
+    """Competitions entrees par la fenetre dont la question de phase est restee sans reponse.
+
+    Meme forme que `unclassified` et `without_notes` : un champ laisse vide sur
+    une competition ou la question se pose, reclame dans l'interface plutot que
+    decouvert dans le prompt. La difference tient au troisieme etat — « ce n'est
+    pas une phase » est une reponse, et une competition qui l'a donnee sort de la
+    liste pour de bon.
+
+    **Une competition sans candidat n'y figure pas** : la question n'a pas de
+    reponse possible tant qu'aucun autre tournoi du meme sport n'existe au
+    catalogue, et la reclamer serait une tache qu'on ne peut pas accomplir —
+    meme regle que le cyclisme absent des cles a classer.
+    """
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT c.id, c.label, c.fenetre_debut, c.fenetre_fin, s.label AS sport_label, "
+            "  (SELECT COUNT(*) FROM events e WHERE e.competition_id = c.id) AS events "
+            "FROM competitions c JOIN sports s ON s.id = c.sport_id "
+            "WHERE c.fenetre_debut IS NOT NULL AND c.phase_repondue = 0"
+        ).fetchall()
+    candidats = phase_options(settings)
+    found = [
+        MissingPhase(
+            competition_id=row["id"],
+            label=row["label"],
+            sport_label=row["sport_label"],
+            events=int(row["events"] or 0),
+            window=" au ".join(
+                partie for partie in (row["fenetre_debut"], row["fenetre_fin"]) if partie
+            ),
+        )
+        for row in rows
+        if candidats.get(int(row["id"]))
+    ]
+    # Les plus lourdes d'abord : une competition a cent onze rencontres est celle
+    # dont l'omission coutera le plus de lignes tues au premier qualifie.
+    found.sort(key=lambda item: (-item.events, sort_key(item.label)))
     return found
 
 
