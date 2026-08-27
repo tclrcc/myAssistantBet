@@ -11,11 +11,15 @@ Mesure du 21/08/2026 : `picks` ne portait **qu'une seule colonne de date**. Sur
 300 selections tranchees, 148 sont datees par `reglements.observed_at` et 152
 n'ont aucune date.
 
-**`framework_version` n'a jamais rien etiquete.** Le champ etait emis par
-`payload.build_payload` ; la route payload n'a jamais servi en production, et
-`ACTIVE_PRODUCER` vaut le gabarit, qui ne l'ecrit pas. Zero prompt sur 180 porte
-la chaine. L'application l'estampille desormais elle-meme, depuis sa propre
-constante — pas d'aller-retour par le modele pour une valeur qu'elle connait.
+**`framework_version` n'a jamais rien etiquete, et l'estampiller ici etait la
+mauvaise reponse.** Le champ etait emis par `payload.build_payload` ; la route
+payload n'a jamais servi en production, et `ACTIVE_PRODUCER` vaut le gabarit, qui
+ne l'ecrit pas. Zero prompt sur 180 porte la chaine.
+
+Le referent, lui, **existait deja** : `sessions.gabarit_sha` est une empreinte
+mecanique du gabarit rendu — 5 empreintes distinctes sous le seul libelle
+« lot-3 » — et `gabarit_version` nomme la decision. La colonne ne s'ecrit donc
+plus ; elle reste, historique, ni remplie ni reecrite.
 """
 
 from __future__ import annotations
@@ -192,15 +196,43 @@ def test_la_reprise_ne_date_pas_une_ligne_divergente() -> None:
 # -- Le cadre qui etiquette --------------------------------------------------
 
 
-def test_chaque_selection_porte_le_cadre_sous_lequel_elle_est_ecrite(
-    migrated: Settings,
-) -> None:
-    """**L'application l'estampille depuis sa propre constante.** Le faire
-    déclarer par le modèle puis relire à l'import ajouterait un chemin de perte à
-    une valeur locale — et c'est exactement par ce chemin que le champ n'a jamais
-    rien étiqueté : émis par une route payload que rien ne sert, persisté nulle
-    part, zéro prompt sur 180 le portant."""
+def test_le_cadre_ne_s_estampille_plus_sur_la_selection(migrated: Settings) -> None:
+    """**Le référent existait déjà, et il est mécanique.**
+
+    `sessions.gabarit_sha` est l'empreinte du gabarit rendu — elle bouge sur une
+    virgule et ne peut pas diverger, personne ne l'écrivant à la main ;
+    `gabarit_version` nomme la décision qui l'a changée. Mesure du 27/08/2026 sur
+    la base servie : **5 empreintes distinctes sous le seul libellé « lot-3 »**,
+    donc le hash faisait déjà le travail que cette colonne prétendait faire.
+
+    `FRAMEWORK_VERSION`, lui, suit la **Skill** — publiée en 1.4 puis désactivée,
+    quand ce qui produit est le gabarit. L'estampiller ici ajoutait une troisième
+    copie que rien n'oblige à concorder avec les deux autres, et elle enregistrait
+    le mauvais sujet.
+    """
     _, pick_id = _pick(migrated)
+
+    assert _colonne(migrated, pick_id, "framework_version") is None, (
+        "la colonne reste, elle ne se remplit plus : le cadre d'une sortie se lit "
+        "sur sessions.gabarit_sha, écrit par save_prompt sur ce qui produit vraiment"
+    )
+
+
+def test_la_colonne_de_cadre_reste_et_ne_se_reecrit_pas(migrated: Settings) -> None:
+    """**Les 205 lignes écrites entre le 22 et le 27/08/2026 gardent leur `1.3`.**
+
+    Ni supprimée, ni rétro-remplie, ni réécrite : elles ont bien été posées sous
+    ce numéro-là, et l'effacer ferait perdre une borne réelle sur une population
+    réelle. C'est la même règle que partout ici — `NULL` est la vérité pour ce
+    qu'on ignore, et une valeur écrite reste ce qu'elle disait.
+    """
+    _, pick_id = _pick(migrated)
+    with connect(migrated) as conn:
+        conn.execute(
+            "UPDATE picks SET framework_version = ? WHERE id = ?", (FRAMEWORK_VERSION, pick_id)
+        )
+
+    set_result(pick_id, "win", migrated)
 
     assert _colonne(migrated, pick_id, "framework_version") == FRAMEWORK_VERSION
 

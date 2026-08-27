@@ -25,6 +25,22 @@ module : un garde qui se tait quand il ne peut pas verifier est indiscernable
 d'un garde qui a verifie — le defaut caracteristique de ce projet, applique
 cette fois au dispositif de verification lui-meme.
 
+## Le garde suit ce qui produit, et il ne s'est pas tu
+
+**Depuis le 27/08/2026 l'exigence est conditionnee a `ACTIVE_PRODUCER`.** Le
+numero declare ne garde quelque chose que s'il **etiquette une sortie** : tant
+que le gabarit produit, il n'en etiquette aucune — la Skill a ete publiee en 1.4
+puis desactivee, et un ecart entre deux copies dont aucune ne sert n'apprend
+rien. Le referent d'une sortie est `sessions.gabarit_sha`, ecrit par
+`save_prompt` sur ce qui produit vraiment, et il est **mecanique** : rien a
+tenir a jour a la main, donc rien qui puisse diverger.
+
+Ce n'est **pas** un garde tu. La lecture se fait toujours, seule l'exigence est
+conditionnee, et une seconde sentinelle tient l'equivalence dans les deux sens :
+`framework_version` est auditee si et seulement si le payload produit. Le jour
+ou `ACTIVE_PRODUCER` bascule, `build_payload` reemet le champ dans ce qui part,
+et tout ce module redevient exigeant sans que personne ait a s'en souvenir.
+
 ## Ce que le garde ne fait pas
 
 Il ne **releve pas** le numero a la place de qui exploite, et il ne bloque pas
@@ -98,6 +114,18 @@ from pathlib import Path
 #: numero ne prouve donc pas quel cadre a produit une sortie ; il dit sous quel
 #: cadre elle etait **cense** l'etre, ce qui suffit a ne pas melanger deux
 #: regimes dans une meme population et ne suffit a rien d'autre.
+#:
+#: **Elle n'etiquette plus aucune sortie depuis le 27/08/2026, et le referent est
+#: ailleurs.** `add_pick` l'a estampillee sur 205 selections entre le 22 et le
+#: 27/08 ; c'etait une troisieme copie, et du mauvais sujet — elle suit la Skill
+#: quand `ACTIVE_PRODUCER` vaut le gabarit. Ce qui date une sortie est
+#: `sessions.gabarit_sha`, empreinte **mecanique** du gabarit rendu, doublee de
+#: `gabarit_version` qui nomme la decision : mesure du 27/08, **5 empreintes
+#: distinctes sous le seul libelle « lot-3 »**. Le hash faisait deja le travail.
+#:
+#: Elle reste emise par `payload.build_payload`, qui ne sert pas encore — et
+#: c'est ce qui rend le garde de lecture **conditionnel** plutot que retire :
+#: voir `tests/test_sentinelles.py`, ou l'exigence revient avec le payload.
 FRAMEWORK_VERSION = "1.3"
 
 #: Ou le cadre publie se lit sur cette machine. Le cache de plugin range chaque

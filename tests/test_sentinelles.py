@@ -23,6 +23,7 @@ from datetime import date
 from myassistantbet.services import framework
 from myassistantbet.services.framework import FRAMEWORK_VERSION
 from myassistantbet.services.history import (
+    AUDITED_COLUMNS,
     DEFERRAL_TELL,
     FEEDBACK_SUSPENDED,
     FEEDBACK_SUSPENDED_DEFERRALS,
@@ -176,33 +177,79 @@ def test_les_reports_s_empilent_et_portent_leur_raison() -> None:
 # -- Le numero de cadre ------------------------------------------------------
 
 
-def test_le_numero_de_cadre_s_appuie_sur_une_lecture_et_non_sur_une_declaration() -> None:
-    """**L'erreur du 21/08/2026, et elle n'etait detectable ni par le code ni par
-    les tests.**
+def _divergence_du_cadre() -> str | None:
+    """Ce que la lecture reproche au numéro déclaré, ou `None` si elle l'accorde.
 
-    `FRAMEWORK_VERSION` est passe a `1.4` sur une déclaration de publication ; le
-    cadre servi disait encore `1.3`, et six copies du cache de plugin le disaient.
-    Aucune sortie n'a été produite dans la fenêtre — mais la faute n'est pas là :
-    ce champ n'a qu'une utilité, ne pas mélanger deux régimes dans une population,
-    et un numéro posé en avance la lui retire entièrement.
-
-    Le garde se prononce sur **une lecture**. Le cadre lisible fait foi ; à défaut
-    la preuve enregistrée par `myassistantbet-cadre --relire` prend le relais.
-    Sans aucun des deux il est **rouge**, et c'est le cœur du dispositif : un
-    garde qui se tait quand il ne peut pas vérifier est indiscernable d'un garde
-    qui a vérifié.
+    **La lecture se fait toujours**, quel que soit le producteur actif : un garde
+    conditionné ne doit pas devenir un garde qui ne s'exécute plus, sans quoi il
+    se serait tu pour deux raisons dont une seule est écrite.
     """
     lu = framework.evidence()
+    if lu is None:
+        return (
+            "aucun cadre publié lisible et aucune preuve enregistrée : "
+            "lance « uv run myassistantbet-cadre --relire » et commite deploy/cadre-lu.json"
+        )
+    if lu.version != FRAMEWORK_VERSION:
+        return (
+            f"le cadre lu déclare {lu.version} et la constante dit {FRAMEWORK_VERSION}. "
+            "Deux écritures de la même chose ont divergé : soit le cadre a été publié "
+            "et la constante n'a pas suivi, soit elle a été bumpée en avance. "
+            f"Source lue : {lu.path}"
+        )
+    return None
 
-    assert lu is not None, (
-        "aucun cadre publié lisible et aucune preuve enregistrée : "
-        "lance « uv run myassistantbet-cadre --relire » et commite deploy/cadre-lu.json"
+
+def test_le_cadre_declare_n_est_audite_que_s_il_etiquette_quelque_chose() -> None:
+    """**Le référent de cadre existait déjà, et ce n'est pas celui-ci.**
+
+    `sessions.gabarit_sha` est une empreinte **mécanique** du gabarit rendu et
+    `gabarit_version` le libellé de la décision qui l'a changé : les deux sont
+    écrites par `save_prompt` sur ce qui produit vraiment. `FRAMEWORK_VERSION`,
+    lui, suit la Skill — donc il étiquetait le mauvais sujet, et il n'étiquette
+    plus rien depuis que `add_pick` a cessé de l'estampiller.
+
+    L'équivalence est rouge **dans les deux sens**, et c'est ce qui en fait une
+    sentinelle : auditer une colonne que rien ne remplit ferait crier au défaut
+    sur le comportement voulu ; cesser de l'auditer le jour où le payload la
+    réémet la laisserait se vider en silence.
+    """
+    audite = "framework_version" in {colonne.column for colonne in AUDITED_COLUMNS}
+
+    assert audite == (ACTIVE_PRODUCER == PRODUCER_PAYLOAD), (
+        f"le producteur actif est « {ACTIVE_PRODUCER} » et la colonne est "
+        f"{'auditée' if audite else 'hors audit'}. Le payload émet "
+        "`framework_version` dans ce qui part, le gabarit non : l'audit des "
+        "colonnes muettes doit suivre celui des deux qui produit."
     )
-    assert lu.version == FRAMEWORK_VERSION, (
-        f"le cadre lu déclare {lu.version} et la constante dit {FRAMEWORK_VERSION}. "
-        "Deux écritures de la même chose ont divergé : soit le cadre a été publié "
-        "et la constante n'a pas suivi, soit elle a été bumpée en avance. "
-        f"Source lue : {lu.path}"
+
+
+def test_la_lecture_du_cadre_publie_revient_avec_le_payload() -> None:
+    """**Le rouge s'est fermé parce que la question est répondue ailleurs, pas
+    parce qu'elle a été tue.**
+
+    Rappel de l'erreur du 21/08/2026 : `FRAMEWORK_VERSION` est passé à `1.4` sur
+    une déclaration de publication alors que le cadre servi disait encore `1.3`.
+    Le garde qui en est sorti compare la constante à une **lecture** du cadre
+    publié — le fichier lisible fait foi, à défaut la preuve enregistrée par
+    `myassistantbet-cadre --relire`.
+
+    Ce que cette comparaison garde n'existe que si le numéro étiquette une
+    sortie. Tant que le gabarit produit, il n'en étiquette aucune : la Skill a
+    été publiée en 1.4 puis désactivée, le gabarit porte seul la méthode, et un
+    écart entre deux copies dont aucune ne sert n'apprend rien. Le jour où
+    `ACTIVE_PRODUCER` bascule, `build_payload` réémet le champ dans ce qui part
+    et la lecture redevient le seul moyen de savoir sous quel cadre.
+
+    **La lecture est faite dans tous les cas** : seule l'exigence est
+    conditionnée, pas l'exécution.
+    """
+    ecart = _divergence_du_cadre()
+
+    assert not (ACTIVE_PRODUCER == PRODUCER_PAYLOAD and ecart), (
+        "Le payload est devenu le producteur actif : il émet `framework_version` "
+        "dans ce qui part, donc le numéro déclaré étiquette de nouveau une sortie "
+        f"et doit s'appuyer sur une lecture. {ecart}"
     )
 
 

@@ -1104,9 +1104,7 @@ def test_la_consigne_sur_le_tri_survit_au_retrait_du_nombre(migrated: Settings) 
     Ce qui tenait sans lui tient toujours : un lot atypique s'explique.
     """
     gabarit = " ".join((TEMPLATES_DIR / DEFAULT_TEMPLATE).read_text(encoding="utf-8").split())
-    assert (
-        "Un lot où tu sélectionnes tout, ou presque rien, s'explique en une ligne." in gabarit
-    )
+    assert "Un lot où tu sélectionnes tout, ou presque rien, s'explique en une ligne." in gabarit
 
 
 def test_un_petit_lot_ne_demande_qu_un_combine(migrated: Settings) -> None:

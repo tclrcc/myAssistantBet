@@ -38,7 +38,6 @@ from .confidence import (
     is_unknown_cause,
 )
 from .confidence import parse as parse_claim
-from .framework import FRAMEWORK_VERSION
 from .inference import (
     ALPHA,
     Equivalence,
@@ -2205,9 +2204,9 @@ def add_pick(
             "                   research_override_cause, exploratoire, tardive, import_id, "
             "                   offset_start, offset_end, claim_offset_start, "
             "                   claim_offset_end, angle_note, invalidation, prose_source, "
-            "                   framework_version, prompt_id, created_at) "
+            "                   prompt_id, created_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-            "        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
                 attached,
@@ -2245,13 +2244,15 @@ def add_pick(
                 # le collage les portait vides, quand il ne les portait pas du
                 # tout — la distinction que cette colonne existe pour tenir.
                 prose_source if (argument or condition) else None,
-                # **Le cadre s'estampille ici, depuis la constante locale.** Il
-                # etait emis par le payload — que rien ne sert — et persiste
-                # nulle part : sur 180 prompts archives, zero portait la chaine.
-                # Le faire declarer par le modele puis relire a l'import
-                # ajouterait un chemin de perte a une valeur que l'application
-                # connait deja.
-                FRAMEWORK_VERSION,
+                # **`framework_version` ne s'ecrit plus, et la colonne reste.**
+                # Le referent existait deja : `sessions.gabarit_sha` est une
+                # empreinte **mecanique** du gabarit rendu, `gabarit_version` le
+                # libelle de la decision qui l'a change. Estampiller ici la
+                # constante du cadre ajoutait une troisieme copie — que rien
+                # n'oblige a concorder avec les deux autres — et elle enregistrait
+                # en plus le mauvais sujet : la Skill, quand ce qui produit est le
+                # gabarit. Les 205 lignes deja ecrites gardent leur `1.3` ; elles
+                # sont historiques, ni remplies ni reecrites.
                 lot,
                 utcnow(),
             ),
@@ -2959,13 +2960,20 @@ class AuditedColumn:
 #: `confidence_claimed` sur le seul sous-cas de l'ecrasement. Le critere reste
 #: donc « toute selection importee devrait la porter », et elle n'y repond pas.
 #: Verifie le 14/08/2026.
+#:
+#: **`framework_version` en est sortie le 27/08/2026, et c'est le meme critere
+#: applique dans l'autre sens.** La colonne a ete auditee tant qu'`add_pick`
+#: l'estampillait ; elle ne s'ecrit plus, donc « toute selection importee devrait
+#: la porter » est devenu faux — la laisser ferait crier au defaut sur le
+#: comportement voulu. Le referent de cadre est `sessions.gabarit_sha`, une
+#: empreinte mecanique du gabarit rendu, et il ne s'audite pas ici : il est ecrit
+#: par `save_prompt` sur la **session**, pas par un import sur la selection.
 AUDITED_COLUMNS: tuple[AuditedColumn, ...] = (
     AuditedColumn("angle", 26, "le type d'angle"),
     AuditedColumn("source_level", 26, "le niveau de source"),
     AuditedColumn("claim_raw_json", 42, "le bloc de confiance"),
     AuditedColumn("confidence_computed", 42, "le cran calculé"),
     AuditedColumn("research_overridden", 43, "les dossiers ouverts"),
-    AuditedColumn("framework_version", 75, "le cadre d'analyse"),
 )
 
 
@@ -5653,8 +5661,9 @@ def _notation(rows: list[Any], results: list[str], minimum: int) -> Notation:
 
 #: La migration qui a deplace la frontiere SAFE/FUN. Sa date d'application est
 #: la borne entre les selections emises sous l'ancien barme et celles emises sous
-#: le nouveau — **la seule borne dont la base dispose**, `framework_version` etant
-#: emis dans le payload et persiste nulle part.
+#: le nouveau — **la seule borne dont la base dispose a l'echelle de la
+#: selection**. `framework_version` ne la donne pas : elle etiquetait la Skill
+#: quand ce qui produit est le gabarit, et elle ne s'ecrit plus.
 TIER_PARTITION_MIGRATION = "071_partition_dure.sql"
 
 
@@ -5750,9 +5759,10 @@ def tier_drift(settings: Settings | None = None, *, exploratory: bool = False) -
     l'une ni l'autre ne reclame.
 
     La coupe temporelle se fait sur la date d'application de la migration qui a
-    deplace la frontiere, et non sur `framework_version` : ce champ est emis dans
-    le payload et **persiste nulle part**. La date d'une migration, elle, est en
-    base depuis toujours — meme idiome que l'audit des colonnes muettes.
+    deplace la frontiere, et non sur `framework_version` : ce champ etiquetait la
+    **Skill** quand le producteur actif est le gabarit, et il ne s'ecrit plus. La
+    date d'une migration, elle, est en base depuis toujours — meme idiome que
+    l'audit des colonnes muettes.
     """
     settings = settings or get_settings()
     with connect(settings) as conn:

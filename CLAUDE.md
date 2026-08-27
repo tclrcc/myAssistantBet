@@ -5511,21 +5511,72 @@ Mesure du 21/08/2026 : `picks` ne portait **qu'une seule colonne de date**. Sur
   pas le meme geste. `Analysis.settled_undated` la compte, et la population est
   **close** : tout resultat pose depuis la migration 075 est date a l'ecriture.
 
-### `framework_version` sur la selection, et non dans le rendu
+### `framework_version` : le referent existait deja, et ce n'etait pas lui
 
-Le champ etait emis par une route que rien ne sert et persiste nulle part — il
-n'a **jamais rien etiquete**. `picks.framework_version` est donc estampille par
-l'application a l'ecriture, depuis sa propre constante.
+**Trois etats en cinq jours sur la meme colonne, et c'est le troisieme qui
+tient.** Le champ etait emis par une route que rien ne sert et ne persistait
+nulle part ; il a ete estampille par l'application a l'ecriture (migration 075,
+22/08/2026) ; il a cesse de l'etre le **27/08/2026**. La colonne reste,
+historique — 205 lignes a `1.3`, ni remplies ni reecrites.
 
-- **Pas d'aller-retour par le modele pour une valeur qu'elle connait.** Le faire
-  declarer dans le rendu puis relire a l'import ajouterait un chemin de perte a
-  une constante locale, et c'est exactement ce chemin qui a rendu le champ
-  inerte.
-- **Aucun retro-remplissage.** Les 352 selections d'avant n'ont pas ete produites
-  sous un cadre que la base connaisse, et leur en preter un ferait ce que le
-  champ existe pour empecher : melanger deux regimes dans une population. `NULL`
-  est la verite, et `AUDITED_COLUMNS` compte les nulles posterieures a la
-  migration — une colonne muette depuis sa naissance doit se voir.
+**Ce qui a fait tomber la deuxieme version est une premisse fausse du brief qui
+l'avait demandee : il fallait creer un referent qui existait.** Migration 054,
+et deux colonnes qui repondent deja aux deux questions :
+
+- `sessions.gabarit_sha` — empreinte **mecanique** du gabarit rendu, calculee par
+  `save_prompt`, qui bouge sur une virgule. Personne ne l'ecrit a la main, donc
+  rien ne peut diverger ;
+- `sessions.gabarit_version` — le libelle de la **decision**, incrementee a la
+  main, qui dit *quel* changement.
+
+**Et le hash faisait deja le travail.** Mesure du 27/08/2026 sur la base servie :
+**cinq empreintes distinctes sous le seul libelle « lot-3 »**, six en comptant
+`lot-4`. La granularite reclamee etait deja en base, sur la session, depuis le
+17/08.
+
+- **Troisieme copie, et du mauvais sujet.** `FRAMEWORK_VERSION` suit la
+  **Skill** — publiee en 1.4 puis desactivee — quand `ACTIVE_PRODUCER` vaut le
+  **gabarit**. Elle etiquetait donc ce qui ne produit pas, a cote de deux
+  ecritures qui etiquettent ce qui produit, et rien n'obligeait les trois a
+  concorder. Cas 3 de la regle des copies : quand on ne peut pas forcer l'accord,
+  **on cesse de dependre de la copie**.
+- **Elle sort de `AUDITED_COLUMNS`, et c'est le meme critere dans l'autre sens.**
+  « Toute selection importee devrait la porter » est devenu faux : la laisser
+  ferait crier au defaut sur le comportement voulu. Une sentinelle tient
+  desormais l'equivalence **dans les deux sens** — auditee si et seulement si le
+  payload produit.
+- **Aucun retro-remplissage, et aucun effacement.** Les 382 selections d'avant la
+  075 n'ont ete produites sous aucun cadre que la base connaisse ; les 205
+  suivantes l'ont ete sous `1.3`, et le nier ferait perdre une borne reelle sur
+  une population reelle. `NULL` est la verite pour ce qu'on ignore.
+- **La migration 075 ne se corrige pas** : une migration deja appliquee ne se
+  modifie jamais, et son commentaire decrit fidelement la decision du 22/08. La
+  version en vigueur est ici.
+
+### Le garde de cadre : ferme parce que la question est repondue ailleurs
+
+`test_le_numero_de_cadre_s_appuie_sur_une_lecture` etait **rouge depuis le
+27/08/2026** — cadre publie `1.4`, constante `1.3` — et le rouge etait
+volontaire : la 1.4 a ete publiee puis la Skill desactivee, le gabarit porte
+seul la methode.
+
+**Un rouge volontaire est un rouge qui finira par se lire comme un rouge
+ordinaire.** Il ne se tait pas pour autant : l'exigence est **conditionnee a
+`ACTIVE_PRODUCER`**, meme forme que `FRAME_ALERT_MUTED`, premiere branche de la
+regle des « a ne pas oublier » — une condition structurelle quand il en existe
+une, jamais une date.
+
+- **Ce que la comparaison garde n'existe que si le numero etiquette une sortie.**
+  Tant que le gabarit produit, il n'en etiquette aucune, et un ecart entre deux
+  copies dont aucune ne sert n'apprend rien. Le jour ou `ACTIVE_PRODUCER`
+  bascule, `build_payload` reemet le champ dans ce qui part et la lecture
+  redevient le seul moyen de savoir sous quel cadre.
+- **La lecture se fait dans tous les cas, seule l'exigence est conditionnee.**
+  Un garde conditionne qui cesserait de s'executer se serait tu pour deux raisons
+  dont une seule est ecrite — exactement le defaut caracteristique du projet,
+  pose sur le dispositif de verification.
+- Le mecanisme reste entier (`services/framework.py`, `myassistantbet-cadre`) :
+  c'est lui qui redeviendra exigeant, et il sert deja la CLI.
 
 ## De quel lot une selection est sortie (`picks.prompt_id`)
 
@@ -6814,11 +6865,11 @@ n'obligeait les deux a concorder.
 - **Le correctif est dans le cadre, pas dans le code**, et il part avec la
   publication du 1.4. L'ecrire ici serait la quinzieme occurrence : une note
   dans un depot qui ne peut pas modifier le fichier concerne.
-- **Cote application, la reponse est de cesser de dependre de l'aller-retour.**
-  `picks.framework_version` (migration 075) est estampille par l'application a
-  l'ecriture de chaque selection, depuis sa propre constante. Une valeur qu'elle
-  connait n'a pas a faire un tour par le modele pour revenir : ce detour n'ajoute
-  qu'un chemin de perte, et c'est celui qui a rendu le champ inerte.
+- **Cote application, la premiere reponse etait de cesser de dependre de
+  l'aller-retour** — `picks.framework_version` estampille localement
+  (migration 075). **Elle a ete retiree le 27/08/2026** : le referent existait
+  deja, sur la session, et une valeur locale estampillee sur la selection restait
+  une troisieme copie du mauvais sujet. Voir « le referent existait deja ».
 
 ### Treizieme occurrence : un numero bumpe sur une declaration
 
