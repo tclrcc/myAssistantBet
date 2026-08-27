@@ -706,3 +706,53 @@ def test_le_journal_des_mises_n_a_plus_d_entree_par_le_prompt(
     session_id, _ = _lot(isolated_settings, ["Lyon", "Nice"])
     corps = build_prompt(session_id, settings=isolated_settings).body
     assert "mises:" not in corps, "le prompt ne demande plus la ligne de report"
+
+
+# -- L'etat de pause, et ce qui le romprait ----------------------------------
+
+
+def test_aucun_chemin_nouveau_n_alimente_le_journal_des_mises() -> None:
+    """**Le module dort ; ce test dit quand il se reveille.**
+
+    Meme geste que `UNPRICED_ARMED` : distinguer « rien ne s'est passe » de « le
+    mecanisme n'existe plus ». Un module inerte et un module supprime rendent la
+    meme chose — une table vide — et seul un test peut dire lequel des deux on a.
+
+    Le recensement passe par `write_paths`, le lecteur qui existe deja, plutot
+    que par une liste ecrite ici : une seconde enumeration aurait diverge au
+    premier chemin ajoute.
+
+    **Si ce test devient rouge, un chemin d'alimentation est revenu.** Voulu, il
+    se declare ici ; accidentel, il faut le savoir avant qu'une ligne entre dans
+    une table qu'on croit vide.
+    """
+    from myassistantbet.services import write_paths
+
+    ecrivains = write_paths.writing_functions(("mises", "bankroll_journee"), updates=True)
+    assert set(ecrivains) == {
+        "myassistantbet.services.stakes.record",
+        "myassistantbet.services.stakes.set_bankroll",
+        "myassistantbet.services.stakes.set_played",
+    }, (
+        "les ecrivains du journal des mises ont change. Le module est en pause "
+        "depuis le 27/08/2026 : son unique alimentation etait la section G du "
+        "gabarit, retiree ce jour-la. Voir l'en-tete de `services/stakes.py`."
+    )
+
+
+def test_le_gabarit_ne_demande_plus_la_ligne_qui_alimente_le_journal(
+    client: TestClient, isolated_settings: Settings
+) -> None:
+    """Le premier maillon de la chaine, et le seul qui ait ete coupe.
+
+    Les trois ecrivains ci-dessus existent toujours et fonctionnent ; ce qui a
+    disparu est ce qui les declenche. Un collage **ancien** portant une section G
+    alimente donc toujours le journal, et c'est voulu — `SECTION_HEAD` accepte
+    encore `[A-G]`.
+    """
+    from myassistantbet.services.prompt import build_prompt
+
+    session_id, _ = _lot(isolated_settings, ["Lyon", "Nice"])
+    corps = build_prompt(session_id, settings=isolated_settings).body
+    assert "mises:" not in corps
+    assert "Répartition de mise" not in corps

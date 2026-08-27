@@ -553,6 +553,14 @@ quatre lignes n'a pas joue quatre tours.
   score et jeux joues des tours de qualification, servis sous `singles` par un
   endpoint deja appele. Non conduit. Le rattachement, lui, est livre (migration 080)
   et n'importait aucun champ.
+- **`COUPON_TRACKING` a perdu la moitie de son objet**, et ce n'est pas une
+  anomalie a diagnostiquer dans six mois. Il gardait deux choses : la section G du
+  gabarit et le champ « montant pose » de la feuille de session. La section est
+  retiree depuis le 27/08/2026 et le champ est garde par l'existence d'une ligne
+  dans `mises`, que plus rien ne cree. Le drapeau garde encore le rattachement aux
+  coupons, qui fonctionne. Le module `stakes` est **en pause et non supprime** —
+  son en-tete porte la chaine complete, et deux tests portent l'etat plutot que le
+  laisser se deduire.
 - **`/stats` repond en 7,6 s**, et ce n'est **pas** une regression : la mesure du
   26/08 la trouve identique avant et apres le lot, et c'est ce qui en fait le
   temoin de la mesure ci-dessus. C'est un probleme en soi — sept secondes sur la

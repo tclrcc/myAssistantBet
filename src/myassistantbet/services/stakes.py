@@ -1,5 +1,44 @@
 """La repartition de mise : une table appliquee, jamais une esperance.
 
+## EN PAUSE DEPUIS LE 27/08/2026 — LIRE CECI D'ABORD
+
+**Ce module est en pause, pas en service.** La section G du gabarit a ete retiree
+ce jour-la : jamais produite — `mises:` valait zero sur les 78 collages archives,
+les tables `mises` et `bankroll_journee` etaient vides — contredite par le cadre
+publie, et payee 650 tokens a chaque prompt.
+
+Rien n'a ete supprime, et c'est une decision : le besoin de savoir ce qu'on a
+reellement pose ne disparait pas, les tables sont vides donc aucune donnee n'est
+en jeu, et ce qui reste ne coute aucun token. Rouvrir le suivi demande de
+**retablir une section de prompt**, pas de refaire un chantier.
+
+**Ce que ca coute, et il faut le lire ici plutot que de le reconstituer** : la
+chaine est intacte et n'a plus d'entree. Elle se lit dans ce sens :
+
+    section G du gabarit
+      -> ligne « mises: bankroll=200 | M1=0.50 | … » rendue par le modele
+      -> `stakes.read` a l'apercu d'import
+      -> `main._record_stakes` a la validation
+      -> table `mises`
+      -> champ « montant pose » de la feuille de session,
+         garde par `{% if coupon_tracking and mise %}` — donc par l'existence
+         d'une ligne dans `mises`
+
+**Le premier maillon est parti, donc aucun des suivants ne se declenche.** Le
+champ de saisie manuelle du montant reel n'apparait plus : il attendait une ligne
+que plus rien ne cree. `tests/test_mises.py` porte l'etat — si l'un de ces tests
+devient rouge, c'est qu'un chemin d'alimentation est revenu, voulu ou non, et il
+faut le savoir.
+
+**Un collage ancien portant une section G alimente toujours le journal**, et c'est
+voulu : `SECTION_HEAD` accepte encore `[A-G]`, `stakes.read` lit encore la ligne.
+Ce qui a disparu est la **demande**, pas la lecture.
+
+**`COUPON_TRACKING` perd la moitie de son objet** : il gardait la section G et le
+champ de montant. Il garde encore le rattachement aux coupons.
+
+## Ce qui suit decrit le module tel qu'il fonctionnerait s'il etait rouvert
+
 L'application reste un banc de mesure de predictions. Elle produit desormais
 aussi une **repartition de mise deterministe**, calculee a partir d'une table de
 configuration et de plafonds ecrits — jamais a partir d'une esperance de gain,
