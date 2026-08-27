@@ -44,7 +44,7 @@ from __future__ import annotations
 
 import ast
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TypeVar
@@ -71,6 +71,29 @@ INSERT = re.compile(
     r"\b(?:insert(?:\s+or\s+\w+)?|replace)\s+into\s+(" + "|".join(GUARDED) + r")\b",
     re.IGNORECASE,
 )
+
+
+def _motif(tables: Sequence[str], updates: bool) -> re.Pattern[str]:
+    """Le motif d'ecriture pour un jeu de tables donne.
+
+    **Le critere devient un parametre, la machinerie ne bouge pas.** Le
+    recensement d'origine ne connaissait que `GUARDED` et que l'insertion, parce
+    que la question posee etait « ou se pose une prediction ». Une seconde
+    question s'est presentee — *ou l'etat « sans prix » peut-il basculer* — et
+    elle porte sur d'autres tables **et sur d'autres verbes** : `commence_time`
+    redate, `api_active` ecrit par la synchronisation, `oddsapi_key` posee a la
+    creation sont des `UPDATE`, et c'est par la que la bascule du 27/08/2026 est
+    passee. Un recensement d'insertions l'aurait manquee.
+
+    Ecrire une seconde enumeration a la main aurait ete la huitieme occurrence du
+    motif du dossier. C'est donc le meme moteur, avec son critere en argument.
+    """
+    alternatives = "|".join(re.escape(nom) for nom in tables)
+    morceaux = [rf"\b(?:insert(?:\s+or\s+\w+)?|replace)\s+into\s+({alternatives})\b"]
+    if updates:
+        morceaux.append(rf"\bupdate\s+({alternatives})\b")
+        morceaux.append(rf"\bdelete\s+from\s+({alternatives})\b")
+    return re.compile("|".join(morceaux), re.IGNORECASE)
 
 
 def _qualname(tree: ast.Module, target: ast.AST) -> str:
@@ -103,6 +126,41 @@ def _modules(root: Path) -> list[tuple[str, ast.Module]]:
     return out
 
 
+def writing_functions(
+    tables: Sequence[str] = GUARDED,
+    root: Path | None = None,
+    updates: bool = False,
+) -> dict[str, tuple[str, ...]]:
+    """Nom qualifie -> tables ecrites, pour toute fonction du paquet qui ecrit.
+
+    Le moteur du recensement, avec son critere en argument : `tables` dit sur
+    quoi, `updates` dit si les `UPDATE` et les `DELETE` comptent. Les deux
+    appelants du depot passent par ici — celui des predictions, qui ne veut que
+    les insertions, et celui de l'etat « sans prix », qui veut les trois verbes.
+
+    **Toutes les tables et non la premiere.** Le critere s'arretait au premier
+    `INSERT` trouve : `combos.record` en porte deux — `combos` puis `combo_legs` —
+    et n'etait donc recense que sur l'un des deux.
+    """
+    motif = _motif(tables, updates)
+    found: dict[str, tuple[str, ...]] = {}
+    for module, tree in _modules(root or PACKAGE):
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            vues = {
+                nom.lower()
+                for child in ast.walk(node)
+                if isinstance(child, ast.Constant) and isinstance(child.value, str)
+                for trouve in motif.finditer(child.value)
+                for nom in trouve.groups()
+                if nom
+            }
+            if vues:
+                found[f"{module}.{_qualname(tree, node)}"] = tuple(sorted(vues))
+    return found
+
+
 def inserting_functions(root: Path | None = None) -> dict[str, tuple[str, ...]]:
     """Nom qualifie -> tables gardees, pour toute fonction du paquet qui insere.
 
@@ -116,22 +174,11 @@ def inserting_functions(root: Path | None = None) -> dict[str, tuple[str, ...]]:
     `INSERT` trouve : `combos.record` en porte deux — `combos` puis `combo_legs` —
     et n'etait donc recense que sur l'un des deux. Sans effet sur la question
     « est-elle declaree », mais le message d'erreur nommait une table sur deux.
+
+    **C'est le moteur ci-dessus, avec le critere d'origine.** Le comportement ne
+    bouge pas d'une ligne : `GUARDED`, insertions seules.
     """
-    found: dict[str, tuple[str, ...]] = {}
-    for module, tree in _modules(root or PACKAGE):
-        for node in ast.walk(tree):
-            if not isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-                continue
-            tables = {
-                trouve.group(1).lower()
-                for child in ast.walk(node)
-                if isinstance(child, ast.Constant) and isinstance(child.value, str)
-                for trouve in [INSERT.search(child.value)]
-                if trouve
-            }
-            if tables:
-                found[f"{module}.{_qualname(tree, node)}"] = tuple(sorted(tables))
-    return found
+    return writing_functions(GUARDED, root, updates=False)
 
 
 def decorated_nodes(root: Path | None = None) -> dict[str, str]:

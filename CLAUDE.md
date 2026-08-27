@@ -2312,10 +2312,22 @@ censee le porter.
 - **Le remplacement d'adversaire se derive de nos propres scans, sans saisie** : un joueur ne
   dispute qu'une rencontre par journee de tournoi, et **c'est la plus recemment creee qui
   tient**. Une rencontre reprogrammee garde son identifiant chez le fournisseur ; un
-  adversaire remplace en produit un nouveau. Mesure sur la base entiere : **un seul cas**, et
-  c'est exactement celui-la — JJ Wolf programme contre Toby Samuel a 19h00 (enregistre a
-  12h32) puis contre Shintaro Mochizuki a 21h45 (enregistre a 21h51). Le `Parcours` listait
-  les deux, ce qui lui donnait deux tours au lieu d'un.
+  adversaire remplace en produit un nouveau. Premier cas mesure — JJ Wolf programme contre
+  Toby Samuel a 19h00 (enregistre a 12h32) puis contre Shintaro Mochizuki a 21h45 (enregistre
+  a 21h51). Le `Parcours` listait les deux, ce qui lui donnait deux tours au lieu d'un.
+  - **« Un seul cas » etait faux, et cette phrase est restee la pendant que le cas devenait
+    systematique.** Mesure du 27/08/2026 sur les qualifications de l'US Open : **8 affiches
+    en double cote ATP, 10 cote WTA**, soit 18 sur une seule edition — `events` porte 111 et
+    112 lignes pour 103 et 102 rencontres reelles. Le fournisseur publie une entree
+    provisoire a une **heure de remplissage** (`18:00:00Z`, la meme partout) puis la
+    rencontre definitive avec son heure reelle et un identifiant nouveau. Ce n'est donc pas
+    un accident de reprogrammation : c'est **le regime normal d'un tableau de
+    qualification**.
+  - **Un document qui minimise un cas systematique est pire qu'un document muet** : il
+    autorise a ne pas chercher. Le controle qui devait le voir cherchait des doublons sur la
+    cle du fournisseur et sur `(jour, affiche)` — deux criteres vrais, tous deux sortis a
+    zero, sur une propriete fausse. Le compte des rencontres passe par le lecteur qui les
+    resout, jamais par un `COUNT(*)`.
   - Limite assumee : un tableau retarde par la pluie peut faire jouer deux simples dans la
     meme journee. Le cas ne s'observe pas en base, et le degat serait une ligne de parcours
     en trop plutot qu'un repos faux — l'inverse de ce que le silence coutait.

@@ -407,12 +407,15 @@ async def run_scan(
             item.oddsapi_key,
             item.events,
         )
-    # **La couverture de prix se reevalue ici**, seul moment ou elle peut avoir
-    # change sans qu'on regarde : le scan vient d'ecrire les cotes du jour. Seules
-    # les **transitions** sont datees — un instantane a chaque passage grossirait
-    # le journal sans rien apprendre, et noierait la bascule au milieu du bruit.
-    # S'y ajoute, une fois, la mise en service : sans elle un journal muet dirait
-    # « rien n'a bascule » et « la regle n'a jamais tourne » du meme silence.
+    # **La couverture de prix se reevalue ici**, parce que le scan vient d'ecrire
+    # les cotes du jour — c'est le chemin le plus frequent, pas le seul. Mesure du
+    # 27/08/2026 : un rattrapage de qualifications a fait basculer deux
+    # competitions a 16:46, et sans autre point de passage le journal les aurait
+    # datees du lendemain. Le recensement de `write_paths` en compte quatorze.
+    # Seules les **transitions** sont datees — un instantane a chaque passage
+    # grossirait le journal sans rien apprendre. S'y ajoute, une fois, la mise en
+    # service : sans elle un journal muet dirait « rien n'a bascule » et « la regle
+    # n'a jamais tourne » du meme silence.
     for libelle, competition in competitions.note_price_coverage(settings):
         logger.info("%s : %s", libelle, competition)
     return report

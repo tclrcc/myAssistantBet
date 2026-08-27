@@ -1803,7 +1803,19 @@ def note_price_coverage(
     regle n'a jamais tourne » : deux causes, une observation. Elle est ecrite
     avant les transitions du meme passage, pour que la chronologie se relise.
 
-    Appelee au scan, seul moment ou l'etat peut avoir change sans qu'on regarde.
+    **L'etat peut basculer sans qu'un scan tourne, et c'est mesure.** Le 27/08/2026
+    a 16:46, un rattrapage de deux journees de qualification a fait entrer deux
+    competitions dans l'etat ; le scan suivant etant prevu a 07:00, le journal les
+    aurait datees du **lendemain**. Un jour de calendrier faux sur un point de
+    rupture rend ininterpretable toute comparaison qui le traverse.
+
+    Le recensement de `write_paths.writing_functions` compte **14 chemins** qui
+    peuvent faire basculer l'etat — insertion d'un evenement ou d'une cote,
+    redatage d'un `commence_time`, ecriture d'`api_active` ou d'`oddsapi_key`. La
+    plupart sont des aides appelees en boucle : leur faire porter cet appel
+    couterait 30 ms par evenement et serait oublie au quinzieme chemin. **Cette
+    fonction ne doit donc pas etre appelee depuis les ecritures**, et le point de
+    passage reste a poser — voir le rapport.
     """
     settings = settings or get_settings()
     moment = (now or datetime.now(UTC)).strftime("%Y-%m-%dT%H:%M:%SZ")

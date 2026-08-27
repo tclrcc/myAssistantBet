@@ -324,3 +324,55 @@ def test_une_forme_insert_or_replace_ne_passe_pas_au_travers(tmp_path: Path) -> 
     ):
         faux = _paquet(tmp_path / f"v{index}", f'def ecrit(conn):\n    conn.execute("{sql}")\n')
         assert write_paths.inserting_functions(faux), f"forme non vue : {sql}"
+
+
+# -- Le critere devient un parametre -----------------------------------------
+
+
+def test_le_recensement_historique_ne_bouge_pas() -> None:
+    """**La generalisation ne doit rien changer a l'usage qui existait.**
+
+    `inserting_functions` passe desormais par le moteur parametrable ; elle doit
+    rendre exactement ce qu'elle rendait — `GUARDED`, insertions seules. Le
+    controle porte sur l'egalite avec un recensement pose a la main sur le meme
+    critere, pas sur une liste de noms qui vieillirait au premier chemin ajoute.
+    """
+    from myassistantbet.services import write_paths
+
+    assert write_paths.inserting_functions() == write_paths.writing_functions(
+        write_paths.GUARDED, updates=False
+    )
+    assert write_paths.mismatches() == [], "les trois vues restent d'accord"
+
+
+def test_les_ecritures_qui_font_basculer_l_etat_sans_prix_sont_recensees() -> None:
+    """**Un recensement d'insertions aurait manque la bascule du 27/08/2026.**
+
+    L'etat « sans prix » depend de l'existence et de la date des evenements, de
+    l'existence et de la fraicheur des cotes, et d'`api_active` / `oddsapi_key`
+    sur la competition. Trois de ces quatre leviers s'actionnent par `UPDATE` —
+    `commence_time` redate par la source, `api_active` ecrit par la
+    synchronisation — et c'est par la que la bascule est passee.
+
+    Ce test ne verifie pas une liste de noms, qui vieillirait a chaque chemin
+    ajoute : il verifie que **le critere voit les trois verbes**, ce qu'un
+    recensement d'insertions seules ne fait pas.
+    """
+    from myassistantbet.services import write_paths
+
+    tables = ("events", "odds", "prompt_odds", "competitions")
+    insertions = write_paths.writing_functions(tables, updates=False)
+    toutes = write_paths.writing_functions(tables, updates=True)
+
+    assert set(insertions) < set(toutes), (
+        "le critere elargi doit voir strictement plus que les seules insertions"
+    )
+    # `sync_from_api` ecrit `api_active`, et elle ne fait aucune insertion sur
+    # les tables surveillees quand le catalogue n'a pas bouge : c'est le chemin
+    # exact qu'un recensement d'insertions manquerait.
+    assert any(nom.endswith("sync_from_api") for nom in toutes)
+
+    # Et le recensement des predictions n'est pas contamine : deux jeux de
+    # tables, deux questions, un seul moteur.
+    assert not set(toutes) & set(write_paths.inserting_functions()) - set(toutes)
+    assert "picks" not in {t for tables_vues in toutes.values() for t in tables_vues}

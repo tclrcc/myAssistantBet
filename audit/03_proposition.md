@@ -491,6 +491,37 @@ trois reponses a la question, pas deux.
    quand — c'est le cas du cadre publie et de la configuration servie, et c'est
    pourquoi le journal d'analyse a cesse de dependre de l'emoji colle.
 
+### Un controle de doublon ne prouve rien sur l'entite qu'on croit compter
+
+**Huitieme occurrence, le 27/08/2026, et la premiere trouvee sur un controle que
+je venais d'ecrire.** Apres avoir rattrape deux journees de qualification, j'ai
+verifie l'absence de doublons sur deux criteres — la cle naturelle
+`(competition_id, tennisapi_fixture_id)` et le couple `(jour, affiche)`. Les deux
+sont sortis a **zero**. **Les deux etaient vrais, et la propriete qu'ils devaient
+etablir etait fausse** : dix-huit rencontres etaient en double.
+
+Le fournisseur publie une entree provisoire a une heure de remplissage puis la
+rencontre definitive, avec son heure reelle et un **identifiant nouveau**. Les
+deux criteres passaient : les identifiants different, et le jour comme le sens de
+l'affiche aussi.
+
+> **La regle** : un controle de doublon pose sur la cle qu'on **maitrise** ne
+> prouve rien sur l'entite qu'on croit compter. La cle du fournisseur identifie
+> une **publication** ; l'entite cherchee etait une **rencontre**, et rien dans le
+> resultat du controle ne dit laquelle des deux il a comptee.
+
+**Le corollaire est ce qui la rend executable** : le compte des rencontres passe
+par le **lecteur qui les resout** — `tournament_day` puis `_resolve_duplicates` —
+jamais par un `COUNT(*)` sur `events`. Un `COUNT(*)` compte des lignes ; la
+question portait sur des matchs.
+
+**Et c'est le lecteur robuste qui a rendu le defaut invisible.**
+`_resolve_duplicates` faisait exactement son travail — il garde la ligne la plus
+recemment creee et nomme l'autre `replaced` — donc la sortie etait juste et rien
+ne depassait. Un lecteur plus faible aurait rendu quatre tours a un qualifie qui
+en a joue trois, et le defaut se serait vu le jour meme. C'est la forme la plus
+couteuse du motif du dossier : la correction en aval masque l'erreur en amont.
+
 ### Le motif jumeau : une propriete qui ne peut pas etre fausse
 
 **Deux proprietes ont ete retirees dans ce lot, et pour la meme raison.** Toutes
