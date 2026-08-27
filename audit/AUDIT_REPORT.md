@@ -538,6 +538,61 @@ resout, jamais par un `COUNT(*)`.
 la main doit se faire sur la sortie de `load_for`, pas sur `events`. Un joueur a
 quatre lignes n'a pas joue quatre tours.
 
+## C.22 — Le profil de tennis vieillit exactement quand il sert, et la passe ne peut pas le rattraper
+
+**Ouvert le 28/08/2026, non instruit.** C'est la cause amont du defaut corrige
+sur la ligne `Ici` : le libelle signale desormais la fenetre, il ne la ferme pas.
+
+`scheduler` appelle `serve_stats.upcoming_players()` a heure fixe, sur les
+evenements dont le coup d'envoi est a venir. Sur un tableau de tennis, **l'affiche
+du tour suivant n'existe qu'une fois le tour precedent fini**, donc apres la
+passe. Cas mesure : la passe du 27/08 a tourne de 05:15 a 05:40 et a rafraichi
+douze profils ; l'evenement `Clara Tauson – Diane Parry` a ete cree a 16:11:08 le
+meme jour. Le profil de Parry datait du **19/08** et a servi l'analyse tel quel.
+
+Le gradient dit que ce n'est pas un accident isole. Sur les 82 joueurs des blocs
+archives portant une ligne `Ici` :
+
+| age du releve | joueurs | dont au moins une rencontre non couverte |
+| ---: | ---: | ---: |
+| 0 j | 20 | **0** |
+| 1 j | 43 | 5 |
+| 2 j | 17 | **11** |
+| 9 j | 2 | **2** |
+
+Ce qui reste a instruire, et dans cet ordre : le cout d'un rafraichissement
+declenche a **l'entree d'un evenement au board** plutot qu'a heure fixe — un
+appel par joueur nouveau, donc borne par le nombre d'affiches publiees dans la
+journee ; et ce que ca deplacerait, la ligne `Ici` etant la seule consommatrice
+mesuree de cette fraicheur. Rien n'a ete chiffre.
+
+**Ce n'est pas un defaut de la ligne.** Le libelle corrige dit maintenant ce qu'il
+sait ; fermer la fenetre est un autre chantier, et il touche la collecte.
+
+## C.23 — Le plafond de tokens ne peut pas mordre la ou le depassement se produit
+
+**Ouvert le 28/08/2026, non instruit, et deja franchi.**
+
+`PROMPT_BUDGET` (23 000) et `MIXED_BUDGET` (20 000) vivent dans `tests/` et
+s'appliquent a deux fixtures de six et trois matchs. `CLAUDE.md` le dit deja —
+« ces deux plafonds ne voient jamais un lot reel » — mais le disait comme une
+limite de lecture. C'est un garde qui ne peut pas se declencher la ou le
+depassement arrive.
+
+Mesure sur les prompts archives : le **228** (27/08/2026) pese **23 552 tokens**,
+soit au-dessus de `PROMPT_BUDGET`, et rien ne s'y est oppose. Le **229** pese
+18 221 pour 15 221 de cadre.
+
+Meme famille que `confidence_floor` et `HiddenEvent.priced` — un controle dont la
+surface d'application ne recouvre pas la surface du risque — avec une difference
+qui compte : **celui-ci a deja ete franchi**, donc l'ecart n'est plus theorique.
+
+Non instruit : ou poser l'alarme. `SPEC-PAYLOAD.md` §7 bis en pose deja une a
+`save_prompt`, sur le prompt reellement produit ; savoir si les deux se
+recouvrent, se doublent ou se contredisent est le prealable, et il n'a pas ete
+fait. **Ne pas relever les plafonds pour faire passer quoi que ce soit** : ici le
+nombre n'est pas faux, c'est sa portee qui est vide.
+
 ## C.21 — Ce qui reste ouvert et n'a pas ete instruit
 
 - **Phase 4** — le generateur de prompts : variables injectees non utilisees,

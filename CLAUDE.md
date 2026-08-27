@@ -6581,6 +6581,59 @@ fenetre. La source de profils n'ajouterait un tour que sur **11 joueurs sur
 192**, toujours un seul : la dependance ne se paie pas pour un mot qui reste vrai
 des deux cotes.
 
+## Un releve anterieur au tournoi n'affirme rien, et il l'affirmait
+
+**Troisieme defaut de la ligne `Ici`, et le plus dangereux des trois** : les deux
+premiers rendaient un fait faux ou incomplet, celui-ci rendait une **absence de
+donnee sous la forme d'un fait**. Mesure du 28/08/2026 sur les 41 blocs de tennis
+archives portant une ligne `Ici`.
+
+Cas reel, prompts 227 et 229 :
+
+    Ici    Diane Parry aucun match dans ce tournoi [releve au 19/08]
+           2 matchs non couvert (tout le Parcours)
+
+Le tournoi avait commence le 22/08. La charge utile datait de **trois jours avant
+la premiere rencontre** : elle ne pouvait en contenir aucune. « Aucun match »
+decrivait notre fenetre de collecte, pas la joueuse — et `Parcours`, deux lignes
+plus haut, lui donnait deux adversaires.
+
+- **Les deux etats se separent sans ambiguite, et c'est mesure** : sur les cinq
+  fragments « aucun match dans ce tournoi » du corpus, **2 portent un releve
+  anterieur** au premier jour connu du tournoi et ont tous deux deux rencontres
+  non couvertes ; **3 portent un releve posterieur** et ont tous trois zero. Le
+  libelle d'origine reste donc juste dans son cas — une entree en lice est un
+  fait sur le match, souvent le fait dominant — et il ne bouge pas. Un banc le
+  garde, aussi important que celui qui monte le cas corrige.
+- **Le repere voyage sur le canal qui porte deja l'identifiant de tournoi**, donc
+  aucune seconde lecture : le premier jour connu sort du meme appel
+  `_tournament_matches` qui produit les fragments. Le recalculer ailleurs aurait
+  fait diverger deux comptes du meme tournoi.
+- **L'invariant rend le partage total, et il n'y a pas de troisieme etat a
+  inventer.** Un joueur n'atteint la branche « sans match » qu'avec un identifiant
+  **recu** — `_tournament_id` ne resout rien sans rencontre a corroborer — donc un
+  partenaire a deja tourne et le repere est renseigne. Verifie sur le corpus : les
+  cinq fragments en ont un.
+- **La mesure de couverture prend un quatrieme etat** (`HereCoverage.stale`).
+  Compter un releve perime comme `renseigne` ferait passer une fenetre de collecte
+  pour un bloc servi — le defaut caracteristique du projet, pose sur l'instrument
+  qui doit le mesurer. `filled` ne peut pas bouger : le nouveau libelle ne
+  remplace que `HERE_NO_MATCH`, donc seuls des blocs `partiel` se reclassent.
+- **Portee : deux fragments dans le corpus archive, un evenement.** Rejeu de
+  `here_coverage` sur les 213 blocs de tennis soumis — 92 renseignes, 71 partiels,
+  **1 perime**, 49 absents. Le rejeu dit ce que le defaut produirait **aujourd'hui**,
+  jamais ce qu'il a produit : les profils ont ete rafraichis depuis, et c'est le
+  corps des prompts archives qui donne l'exposition reelle.
+- **Le motif ne se retrouve nulle part ailleurs, et la raison est structurelle.**
+  Balayage des autres lignes datees : `Historique` et `Fraicheur` ecrivent leur
+  date d'arret, `Service` / `Retour` / `Jeux` rendent « non disponible » — un
+  enonce sur notre donnee, pas sur le joueur — `H2H` dit « aucun match joue depuis
+  <annee> » avec sa fenetre, `palmares` ne dit « jamais joue » que sur un palmares
+  effectivement lu. **`Ici` est la seule ligne dont le sujet est le tournoi en
+  cours**, donc la seule ou quelques jours de retard peuvent retirer exactement ce
+  qu'elle rapporte. Partout ailleurs le passe est clos et le retard ne peut pas
+  inverser l'enonce.
+
 ## Un ecart se nomme sur ce qui se gagne, et se tait sous le bruit
 
 `Ecart` confrontait le taux de premieres balles **mises en jeu**. Sur un bloc

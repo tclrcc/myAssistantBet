@@ -2893,13 +2893,25 @@ def _here_for(
     cache: dict[str, tuple[Any, str]] | None = None,
     competition_id: int | None = None,
     oddsapi_key: str | None = None,
-) -> tuple[list[str], int]:
-    """Les fragments d'un joueur, et l'identifiant de tournoi qu'il a servi."""
+    first_day: str = "",
+) -> tuple[list[str], int, str]:
+    """Les fragments d'un joueur, l'identifiant de tournoi et son premier jour.
+
+    **Le premier jour connu voyage sur le canal qui porte deja l'identifiant**,
+    et c'est ce qui evite une seconde lecture : il sort du meme appel
+    `_tournament_matches` qui produit les fragments. Il sert a une seule chose,
+    departager les deux causes d'une absence — voir plus bas.
+
+    L'invariant qui rend ce partage total : un joueur n'atteint la branche « sans
+    match » qu'avec un identifiant **recu**, `_tournament_id` ne resolvant rien
+    sans rencontre a corroborer. Donc un partenaire a deja tourne, donc
+    `first_day` est renseigne. Il n'y a pas de troisieme etat a inventer.
+    """
     identity = load_identity(player, circuit, settings)
     canonical = identity.canonical if identity and identity.resolved else player
     charge, releve = archived_profile(canonical, settings, cache)
     if charge is None:
-        return [], tournament_id
+        return [], tournament_id, first_day
     identifiant = tournament_id or _tournament_id(
         charge,
         canonical,
@@ -2908,8 +2920,11 @@ def _here_for(
         declared_tournaments(competition_id, settings),
     )
     if not identifiant:
-        return [], 0
+        return [], 0, first_day
     matchs = _tournament_matches(charge, canonical, identifiant, until)
+    # Le premier jour connu de **cette edition**, tous joueurs du bloc confondus.
+    jours = [str(item.played_on)[:10] for item in matchs if item.played_on]
+    repere = min([jour for jour in [first_day, *jours] if jour], default="")
     horodatage = f" [releve au {_short_day(releve)}]" if releve else ""
     # **Ce que la source ne rapporte pas se compte ici aussi.** Un joueur que la
     # source croit entrant alors que nos scans lui donnent trois tours est le cas
@@ -2921,10 +2936,25 @@ def _here_for(
         # entre en lice est un fait sur le match — c'est meme le fait dominant
         # quand l'autre sort de trois tours — et un blanc se lirait comme un
         # defaut de collecte.
-        fragments = [f"{player} {HERE_NO_MATCH}{horodatage}"]
+        #
+        # **Mais l'absence a deux causes, et une seule est un fait sur le
+        # joueur.** Un releve archive avant la premiere rencontre connue de cette
+        # edition ne **pouvait** en contenir aucune : ce qu'il mesure est notre
+        # fenetre de collecte. Cas reel, prompts 227 et 229 du 27/08/2026 —
+        # « Diane Parry aucun match dans ce tournoi [releve au 19/08] » sur un
+        # tournoi commence le 22/08, avec deux adversaires nommes par `Parcours`
+        # deux lignes plus haut.
+        #
+        # Les deux etats se separent sans ambiguite sur le corpus archive : les
+        # cinq fragments de ce genre se rangent en 2 releves anterieurs, tous
+        # deux a deux rencontres non couvertes, et 3 posterieurs, tous trois a
+        # zero. Le libelle d'origine reste donc juste dans son cas et ne bouge
+        # pas — c'est ce que garde le second banc.
+        perime = bool(repere) and str(releve)[:10] < repere
+        fragments = [f"{player} {HERE_NO_INFO if perime else HERE_NO_MATCH}{horodatage}"]
         if manquants:
             fragments.append(manquants)
-        return fragments, identifiant
+        return fragments, identifiant, repere
     parcours = " | ".join(_here_result(item) for item in matchs)
     # **La ligne porte la date de son releve, comme `Parcours` porte la fenetre
     # de nos scans.** Sans elle, une liste s'arretant la veille se lit comme un
@@ -2941,7 +2971,7 @@ def _here_for(
     service = _here_serve([item for item in matchs if item.contested])
     if service:
         fragments.append(service)
-    return fragments, identifiant
+    return fragments, identifiant, repere
 
 
 def contested_days(
@@ -3032,20 +3062,38 @@ def contested_days(
 #: regle que `NEUTRAL_MARK` et `weather.ALERT_MARK`.
 HERE_NO_MATCH = "aucun match dans ce tournoi"
 
+#: Ce qu'un releve **anterieur au tournoi** rend, et c'est l'inverse du
+#: precedent. La charge utile a ete archivee avant la premiere rencontre connue
+#: de cette edition : elle ne pouvait en contenir aucune, donc l'absence mesure
+#: notre fenetre de collecte et non le joueur.
+#:
+#: Cas reel, prompts 227 et 229 du 27/08/2026 : « Diane Parry aucun match dans
+#: ce tournoi [releve au 19/08] », tournoi commence le 22/08, deux adversaires
+#: nommes par `Parcours` deux lignes plus haut.
+#:
+#: **Ni apostrophe ni accent**, comme toute valeur rendue par ce module : elles
+#: traversent Jinja pour la fiche d'un match, et le banc de parite fiche/prompt
+#: compare deux textes bruts.
+HERE_NO_INFO = "aucune information : le releve precede ce tournoi"
+
 
 @dataclass(frozen=True)
 class HereCoverage:
     """Ce que la ligne `Ici` couvre, par circuit et par mois.
 
-    **Trois etats et non deux**, parce qu'ils n'appellent pas la meme lecture :
+    **Quatre etats et non deux**, parce qu'ils n'appellent pas la meme lecture :
     un bloc `renseigne` porte des resultats des deux cotes ; un bloc `partiel`
     en porte d'un cote et « aucun match dans ce tournoi » de l'autre — ce qui est
     un **fait sur le match**, souvent le fait dominant quand l'un sort de trois
-    tours et l'autre entre en lice ; un bloc `absent` n'a pas de ligne du tout,
-    et c'est le seul des trois qui decrive un manque de collecte.
+    tours et l'autre entre en lice ; un bloc `perime` porte un releve archive
+    avant la premiere rencontre connue du tournoi, donc une absence qui mesure
+    **notre collecte** et non le joueur ; un bloc `absent` n'a pas de ligne du
+    tout.
 
     Les fondre ferait lire une entree en lice comme un trou, exactement ce que
-    la mention explicite existe pour eviter.
+    la mention explicite existe pour eviter — et compter un releve perime comme
+    `renseigne` ferait passer une fenetre de collecte pour un bloc servi, ce qui
+    est le defaut caracteristique du projet applique a sa propre mesure.
     """
 
     month: str
@@ -3053,12 +3101,13 @@ class HereCoverage:
     blocks: int = 0
     filled: int = 0
     partial: int = 0
+    stale: int = 0
     absent: int = 0
 
     @property
     def served(self) -> int:
         """Blocs portant une ligne, quelle qu'elle dise."""
-        return self.filled + self.partial
+        return self.filled + self.partial + self.stale
 
     @property
     def share(self) -> float | None:
@@ -3100,7 +3149,9 @@ def here_coverage(settings: Settings | None = None) -> list[HereCoverage]:
         if not circuit:
             continue
         cle = (str(row["commence_time"])[:7], circuit)
-        compte = tally.setdefault(cle, {"blocks": 0, "filled": 0, "partial": 0, "absent": 0})
+        compte = tally.setdefault(
+            cle, {"blocks": 0, "filled": 0, "partial": 0, "stale": 0, "absent": 0}
+        )
         compte["blocks"] += 1
         lignes = here_lines(
             str(row["home"] or ""),
@@ -3113,6 +3164,10 @@ def here_coverage(settings: Settings | None = None) -> list[HereCoverage]:
         )
         if not lignes:
             compte["absent"] += 1
+        # **Le perime prime sur le partiel**, et l'ordre porte la regle : un
+        # bloc qui porte les deux mentions est un bloc dont on sait le moins.
+        elif HERE_NO_INFO in lignes[0][1]:
+            compte["stale"] += 1
         elif HERE_NO_MATCH in lignes[0][1]:
             compte["partial"] += 1
         else:
@@ -3156,13 +3211,18 @@ def here_lines(
 
     fragments: list[str] = []
     identifiant = 0
+    #: Le premier jour connu de l'edition chez la source. **Il voyage avec
+    #: l'identifiant**, sur le meme canal et pour la meme raison : c'est le
+    #: partenaire qui le donne a celui qui entre en lice, et deux lectures
+    #: paralleles auraient fini par designer deux tournois.
+    premier_jour = ""
     # Deux passes : la premiere resout le tournoi sur celui des deux qui a joue,
     # la seconde rend les fragments dans l'ordre du bloc — domicile d'abord,
     # comme partout.
     rendus: dict[str, list[str]] = {}
     for joueur in (home, away):
         if joueur:
-            rendus[joueur], identifiant = _here_for(
+            rendus[joueur], identifiant, premier_jour = _here_for(
                 joueur,
                 circuit,
                 window,
@@ -3172,10 +3232,11 @@ def here_lines(
                 cache,
                 competition_id,
                 oddsapi_key,
+                premier_jour,
             )
     for joueur in (home, away):
         if joueur and not rendus.get(joueur) and identifiant:
-            rendus[joueur], _ = _here_for(
+            rendus[joueur], _, _ = _here_for(
                 joueur,
                 circuit,
                 window,
@@ -3185,6 +3246,7 @@ def here_lines(
                 cache,
                 competition_id,
                 oddsapi_key,
+                premier_jour,
             )
     for joueur in (home, away):
         fragments.extend(rendus.get(joueur) or [])

@@ -1724,8 +1724,19 @@ def _match_source(gagnant: str, perdant: str, jour: str, score: str, tournoi: in
     }
 
 
-def _profil_tournoi(joueur: str, matchs: list[dict], settings: Settings) -> None:
-    """Archive une reponse `matches-played`. **Aucun appel** — c'est le contrat."""
+def _profil_tournoi(
+    joueur: str,
+    matchs: list[dict],
+    settings: Settings,
+    releve: str = "2026-08-18T06:00:00Z",
+) -> None:
+    """Archive une reponse `matches-played`. **Aucun appel** — c'est le contrat.
+
+    `releve` est la date d'archivage. Elle a un defaut pour que les bancs
+    anterieurs ne bougent pas d'une ligne, et elle se regle parce qu'une charge
+    utile **anterieure au tournoi** ne dit pas la meme chose qu'une charge utile
+    fraiche : voir les deux bancs du releve perime.
+    """
     import json as _json
 
     from myassistantbet.providers.tennisapi import PREFIX, PROVIDER
@@ -1738,7 +1749,7 @@ def _profil_tournoi(joueur: str, matchs: list[dict], settings: Settings) -> None
             f"{PREFIX}/profile/{joueur}/matches-played",
             _json.dumps({"singles": matchs}),
             f"sha-{joueur}",
-            "2026-08-18T06:00:00Z",
+            releve,
         ),
         settings=settings,
     )
@@ -2202,7 +2213,51 @@ def test_la_couverture_separe_les_trois_etats(migrated: Settings) -> None:
     # A – B : A a joué, B entre en lice -> partiel. A – X et C – D : absents,
     # X et C/D n'ayant aucun profil.
     assert (lot.partial, lot.absent) == (1, 2)
-    assert lot.served == lot.filled + lot.partial
+    assert lot.served == lot.filled + lot.partial + lot.stale
+
+
+def test_un_releve_perime_ne_compte_pas_comme_bloc_renseigne(migrated: Settings) -> None:
+    """**Compter un releve perime comme `renseigne` ferait passer une fenetre de
+    collecte pour un bloc servi** — le defaut caracteristique du projet, pose sur
+    la mesure elle-meme.
+
+    Le quatrieme etat porte donc son compte, et `served` reste ce que son nom
+    dit : les blocs qui portent une ligne, quelle qu'elle dise.
+    """
+    competition = _tournoi(
+        migrated,
+        [("B", "W", "2026-08-25T12:00:00Z"), ("A", "B", "2026-08-27T12:00:00Z")],
+    )
+    _profil_tournoi("A", [], migrated, releve="2026-08-19T06:00:00Z")
+    _profil_tournoi("B", [_match_source("B", "W", "2026-08-25", "6-0 6-0")], migrated)
+    execute(
+        "INSERT INTO sessions (label, created_at) VALUES ('essai', ?)",
+        (utcnow(),),
+        settings=migrated,
+    )
+    session_id = int(query_one("SELECT MAX(id) AS id FROM sessions", settings=migrated)["id"])
+    execute(
+        "INSERT INTO prompts (session_id, template_name, body, token_estimate, created_at) "
+        "VALUES (?, 't.md.j2', '', 0, ?)",
+        (session_id, utcnow()),
+        settings=migrated,
+    )
+    prompt_id = int(query_one("SELECT MAX(id) AS id FROM prompts", settings=migrated)["id"])
+    event = query_one(
+        "SELECT id FROM events WHERE competition_id = ? AND home = 'A'",
+        (competition,),
+        settings=migrated,
+    )
+    execute(
+        "INSERT INTO prompt_events (prompt_id, event_id) VALUES (?, ?)",
+        (prompt_id, int(event["id"])),
+        settings=migrated,
+    )
+
+    lot = serve_stats.here_coverage(migrated)[0]
+
+    assert (lot.stale, lot.filled, lot.partial) == (1, 0, 0)
+    assert lot.served == 1
 
 
 def test_la_couverture_se_mesure_hors_du_drapeau(migrated: Settings) -> None:
@@ -2308,6 +2363,73 @@ def test_un_parcours_entierement_non_couvert_ne_recopie_pas_parcours(migrated: S
     # Le joueur reste annonce comme entrant chez la source : les deux faits se
     # disent, ils ne se remplacent pas.
     assert serve_stats.HERE_NO_MATCH in valeur
+
+
+def test_un_releve_anterieur_au_tournoi_n_affirme_aucun_match(migrated: Settings) -> None:
+    """**Une absence qui mesure notre collecte se lisait comme un fait.**
+
+    Cas reel, prompts 227 et 229 du 27/08/2026 : le bloc servait
+
+        Ici    Diane Parry aucun match dans ce tournoi [releve au 19/08]
+
+    quand le tournoi avait commence le 22/08 et que `Parcours` lui donnait deux
+    adversaires. La charge utile datait de trois jours avant le premier match :
+    elle ne **pouvait** contenir aucune rencontre de ce tournoi, et « aucun
+    match » decrivait la fenetre de collecte, pas la joueuse.
+
+    C'est le zero credible de l'instruction Tennis API, en production, sur la
+    ligne qui a le plus d'autorite du bloc.
+
+    **La cause est structurelle et non accidentelle** : la passe d'entretien lit
+    `upcoming_players()` a heure fixe, et l'affiche du tour suivant n'existe
+    qu'une fois le tour precedent fini — donc apres elle. Voir le chantier
+    identifie non instruit.
+    """
+    competition = _tournoi(
+        migrated,
+        [("B", "W", "2026-08-25T12:00:00Z"), ("A", "B", "2026-08-27T12:00:00Z")],
+    )
+    _profil_tournoi("A", [], migrated, releve="2026-08-19T06:00:00Z")
+    _profil_tournoi("B", [_match_source("B", "W", "2026-08-25", "6-0 6-0")], migrated)
+
+    valeur = serve_stats.here_lines(
+        "A", "B", "atp", competition, "2026-08-27T12:00:00Z", _avec_ligne(migrated)
+    )[0][1]
+
+    assert serve_stats.HERE_NO_INFO in valeur
+    assert serve_stats.HERE_NO_MATCH not in valeur
+    # La date reste dite : c'est elle qui rend l'affirmation verifiable.
+    assert "[releve au 19/08]" in valeur
+
+
+def test_un_releve_posterieur_au_premier_jour_affirme_toujours_aucun_match(
+    migrated: Settings,
+) -> None:
+    """**Le libelle d'origine est juste dans son cas, et il ne bouge pas.**
+
+    Aussi important que le banc precedent : sur les cinq fragments « aucun match
+    dans ce tournoi » du corpus archive, **trois** portent un releve posterieur
+    au premier jour connu du tournoi — Mertens, Chwalinska, Alexandrova, toutes
+    avec zero match non couvert. La source a eu l'occasion de rapporter et n'a
+    rien : c'est un fait sur la joueuse, souvent le fait dominant quand l'autre
+    sort de trois tours.
+
+    Elargir la correction a ces trois-la ferait perdre l'entree en lice, qui est
+    exactement ce que `HERE_NO_MATCH` existe pour dire.
+    """
+    competition = _tournoi(
+        migrated,
+        [("B", "W", "2026-08-25T12:00:00Z"), ("A", "B", "2026-08-27T12:00:00Z")],
+    )
+    _profil_tournoi("A", [], migrated, releve="2026-08-26T06:00:00Z")
+    _profil_tournoi("B", [_match_source("B", "W", "2026-08-25", "6-0 6-0")], migrated)
+
+    valeur = serve_stats.here_lines(
+        "A", "B", "atp", competition, "2026-08-27T12:00:00Z", _avec_ligne(migrated)
+    )[0][1]
+
+    assert serve_stats.HERE_NO_MATCH in valeur
+    assert serve_stats.HERE_NO_INFO not in valeur
 
 
 def test_ici_ne_rend_pas_le_tournoi_de_la_semaine_passee(migrated: Settings) -> None:
