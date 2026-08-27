@@ -1920,6 +1920,54 @@ procedure.
   fait de la donnee** ? Si oui, ca reste, meme long. Si ca explique seulement *pourquoi*
   la donnee est ainsi, ca descend ici.
 
+**Le plafond ne mord plus, et le motif de cette regle a change — 27/08/2026.** Elle est
+nee d'une marge de **7 tokens** ; le lot de reference mesure aujourd'hui **15 915 tokens
+pour 23 000 permis**, soit sept mille de marge, parce que les deux plafonds ont ete recales
+sur une fixture qui mesurait faux. Continuer a couper « parce que le plafond serre » serait
+justifier une bonne pratique par une raison fausse — et une raison fausse finit par etre
+testee, puis par tomber en emportant la pratique.
+
+- **Le motif qui tient seul est la densite**, et il n'a jamais dependu du plafond : une
+  ligne ajoutee se paie deux fois, la donnee dans chaque bloc et son mode d'emploi en tete,
+  et un mode d'emploi qui gonfle cesse d'etre lu bien avant de couter un token de trop.
+- **La procedure ne bouge pas** : la coupe se mesure avant d'ecrire, dans le plus ancien
+  mode d'emploi de la meme famille, et la question ligne par ligne reste la meme. C'est sa
+  **justification** qui est corrigee, pas son contenu.
+- Les deux plafonds restent ce qu'ils sont — des alarmes contre une explosion
+  **involontaire**, une porte de preambule cassee, un bloc duplique — et non un budget a
+  arbitrer ligne a ligne. Ils l'ont ete pendant trois sessions, et c'est ce regime-la qui
+  n'existe plus.
+
+## Un critere se valide contre le corpus, jamais contre une fixture
+
+**Regle de revue, du 27/08/2026, et les deux moities du meme lot la fondent.** Un critere
+de priorite se juge sur une seule chose : **quelle part du corpus il designe**. Une fixture
+ne peut pas repondre a cette question — elle porte l'etat qu'on lui a donne — et un test
+vert ne dit donc rien du fait qu'un critere discrimine.
+
+| Ce qui a ete ecrit | Ce que la fixture disait | Ce que le corpus disait |
+| --- | --- | --- |
+| `_dense("tennis")` comme bloc « pleinement servi » | un bloc dense | ni `Ici` ni `Service`, rendues sur **79 %** des blocs reels |
+| `SHORT_REST_HOURS = 24` | le test passait | **27 %** de declenchement, sur le rythme normal d'un tournoi |
+
+- **Le seuil de repos est le cas d'ecole.** La distribution des 48 blocs porte un pic net a
+  **23 h, 9 blocs** : c'est le retour de la meme session la veille, donc l'ordinaire. Un
+  seuil pose a 24 h englobe le mode et se declenche sur un quart du lot — exactement ce
+  qu'on reproche aux deux criteres faibles du football. Pose **sous** le mode, a 23 h, il
+  designe 8 % et l'ecart veut alors dire autre chose : le joueur a joue **plus tard hier
+  qu'il ne joue aujourd'hui**.
+- **Un seuil se pose sous un mode, jamais dessus ni dedans.** Un mode est le comportement
+  ordinaire de la population ; un seuil qui le traverse compte du bruit de mesure, et un
+  seuil qui l'englobe compte l'ordinaire.
+- **Le rejeu sur le corpus est ce qui attrape ces deux-la, et il est bon marche** : les
+  blocs rendus sont archives dans `prompts.body`, les fonctions de critere sont pures, et
+  les passer l'une sur l'autre tient en trente lignes. C'est ce qui a montre les 13 blocs
+  la ou une lecture a la main en comptait 6 — elle ne captait que le premier joueur de la
+  ligne.
+- **Corollaire de test** : un test de critere garde une **propriete** — celui-ci se
+  declenche, celui-la non — et le taux, lui, se mesure sur le corpus et se **date** dans le
+  commentaire du seuil. Ecrire le taux dans une assertion la ferait decrire la fixture.
+
 ## Un drapeau booleen ne se construit pas sur un champ dont on a mesure qu'il ment
 
 **Regle de revue, de la meme famille que « cherchez l'identifiant » et tiree du meme
