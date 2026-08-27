@@ -415,7 +415,7 @@ def test_un_joueur_qui_a_rejoue_en_moins_d_un_jour(migrated: Settings) -> None:
     Le double est dans la même question : le fournisseur de cotes ne le sert pas,
     et 10 des 16 joueuses d'une journée WTA avaient joué le double la veille.
 
-    Seuil mesuré avant d'être écrit : **6 blocs sur 48** depuis le 20/08/2026.
+    Seuil mesuré avant d'être écrit : **4 blocs sur 48** depuis le 20/08/2026.
     """
     charge = [
         (label, "valeur") if label != "Elo" else ("Repos", "Fils 19 h (1 j. tournoi) | Norrie 40 h")
@@ -432,11 +432,17 @@ def test_un_joueur_qui_a_rejoue_en_moins_d_un_jour(migrated: Settings) -> None:
     assert any("double engage" in q for q in fiche.dossiers[0].questions)
 
 
-def test_un_repos_confortable_ne_declenche_rien(migrated: Settings) -> None:
-    """Un critère qui se déclencherait partout ne classerait plus rien : « moins
-    de 24 h » désigne 12 % des blocs, « moins de 20 h » un seul sur 48."""
+def test_le_retour_de_la_meme_session_ne_declenche_rien(migrated: Settings) -> None:
+    """**Le seuil se pose sous un mode, et le mode est le cas ordinaire.**
+
+    La distribution des 48 blocs porte un pic net à **23 h — 9 blocs** : c'est le
+    retour de la même session la veille, donc le rythme normal d'un tournoi.
+    « Moins de 24 h » désignerait 27 % du lot, et un critère qui se déclenche sur
+    un quart des blocs ne classe plus rien — c'est le reproche fait aux deux
+    critères faibles du football.
+    """
     repose = [
-        (label, "valeur") if label != "Elo" else ("Repos", "Fils 48 h | Norrie 40 h")
+        (label, "valeur") if label != "Elo" else ("Repos", "Fils 23 h (1 j. tournoi) | Norrie 40 h")
         for label, _ in _dense("tennis")
     ]
 

@@ -78,15 +78,27 @@ NARROW_MARKETS = 1
 
 #: Repos, en heures, sous lequel la charge de la veille devient un facteur.
 #:
-#: **Mesure sur les 48 blocs de tennis rendus depuis le 20/08/2026** : ce seuil
-#: designe **6 blocs (12 %)**, quand « moins de 20 h » n'en designe qu'un. Un
-#: critere de priorite doit designer une minorite stricte sans etre anecdotique,
-#: et c'est la regle appliquee avant de l'ecrire.
+#: **Le seuil se pose sous un mode, et le mode est le cas ordinaire.** Mesure sur
+#: les 48 blocs de tennis rendus depuis le 20/08/2026 : la distribution porte un
+#: pic net a **23 h — 9 blocs** — qui est le retour de la meme session la veille,
+#: c'est-a-dire le rythme normal d'un tournoi. « Moins de 24 h » designe donc
+#: **27 %** des blocs, et un critere qui se declenche sur un quart du lot ne
+#: classe plus rien — c'est le reproche fait aux deux criteres faibles du
+#: football, et il vaudrait ici.
+#:
+#: Sous le mode, l'ecart veut dire autre chose : le joueur a joue **plus tard
+#: hier qu'il ne joue aujourd'hui**. Ce seuil designe **4 blocs (8 %)**, et le
+#: voisin a 22 h en designe 3.
+#:
+#: **Premiere version ecrite a 24 h sur un compte faux**, releve avec une lecture
+#: qui ne captait que le premier joueur de la ligne : 6 blocs au lieu de 13. Un
+#: taux qui surprend se re-verifie sur sa cle avant d'etre ecrit — et celui-la ne
+#: surprenait meme pas.
 #:
 #: La ligne `Repos` porte deja l'ecart en heures : rien a recalculer, seulement a
 #: lire. Deux ecritures du meme ecart auraient fini par differer — meme raison
 #: que `Calendrier` au football.
-SHORT_REST_HOURS = 24
+SHORT_REST_HOURS = 23
 _REST_HOURS = re.compile(r"\b(\d+) h \(")
 
 #: En dessous de combien de matchs les lignes de forme d'un joueur ne decrivent
@@ -677,6 +689,9 @@ def _rest_reasons(lignes: dict[str, str]) -> list[Reason]:
     fournisseur de cotes ne le sert pas, donc un joueur peut porter ce `Repos` et
     une charge tout autre — releve en reel, 10 des 16 joueuses d'une journee WTA
     avaient joue le double la veille.
+
+    **Le seuil se lit sur tous les joueurs de la ligne**, pas sur le premier :
+    c'est par la que sa premiere mesure etait fausse.
     """
     valeur = lignes.get("Repos") or ""
     heures = [int(found) for found in _REST_HOURS.findall(valeur)]

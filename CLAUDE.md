@@ -2167,10 +2167,22 @@ Quatre criteres neufs, chacun mesure avant d'etre ecrit, sur les 48 blocs :
 
 - **`Ici` absente** — 10 blocs (21 %) ;
 - **`Service` absente** — 10 blocs (21 %) ;
-- **`Repos` sous 24 h** — 6 blocs (12 %), quand « moins de 20 h » n'en designe
-  qu'un. La question porte sur ce que `Repos` **ne peut pas** dire : la duree du
-  match precedent — la ligne part du coup d'envoi, aucune source ne publiant la
-  duree — la session, et le **double**, que le fournisseur de cotes ne sert pas ;
+- **`Repos` sous 23 h** — 4 blocs (8 %). La question porte sur ce que `Repos`
+  **ne peut pas** dire : la duree du match precedent — la ligne part du coup
+  d'envoi, aucune source ne publiant la duree — la session, et le **double**, que
+  le fournisseur de cotes ne sert pas ;
+  - **Le seuil se pose sous un mode, et le mode est le cas ordinaire.** La
+    distribution porte un pic net a **23 h, 9 blocs** : c'est le retour de la
+    meme session la veille, donc le rythme normal d'un tournoi. « Moins de 24 h »
+    designerait **27 %** du lot — un critere qui se declenche sur un quart des
+    blocs ne classe plus rien, et c'est exactement le reproche fait aux deux
+    criteres faibles du football. Sous le mode, l'ecart dit autre chose : le
+    joueur a joue **plus tard hier qu'il ne joue aujourd'hui**.
+  - **La premiere version a ete ecrite a 24 h sur un compte faux** — 6 blocs
+    releves au lieu de 13, par une lecture qui ne captait que le premier joueur
+    de la ligne. Le seuil se lit sur **tous** les joueurs. Un taux qui surprend se
+    re-verifie sur sa cle avant d'etre ecrit, et celui-la ne surprenait meme
+    pas : c'est le rejeu des criteres sur les blocs archives qui l'a attrape ;
 - **`Non joue` presente** — 2 blocs (4 %). La ligne dit le fait et s'arrete la ;
   ce que la recherche ajoute est la date du dernier match reellement dispute.
 
