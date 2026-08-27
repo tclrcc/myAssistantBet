@@ -2139,6 +2139,81 @@ son but.
 - Limite connue : les **coordonnees** demandees a l'origine ne sont servies par aucun de nos
   endpoints. Stade, ville et pays le sont ; le reste aurait ete invente.
 
+## Le tennis n'avait pas une conduite de recherche plus faible, il n'en avait pas
+
+**Mesure du 27/08/2026 sur les 62 prompts portant une fiche depuis le 20/08** —
+471 blocs, 360 dossiers :
+
+| | Blocs | Dossiers | Questions distinctes | Dossiers a une seule question |
+| --- | ---: | ---: | ---: | ---: |
+| Football | 423 | 319 | 27 | 187 (59 %) |
+| Tennis | 48 | 41 | **8** | **39 (95 %)** |
+
+**36 des 41 dossiers de tennis portaient la meme unique question.** Un seul
+critere tirait (`Fraicheur`), plus un a 1 % par construction mesuree
+(`_thin_player`). La checklist tennis compte huit rubriques ; sept n'avaient
+aucun critere derriere elles.
+
+**Trois etats du bloc menent a la meme question, et c'est le vrai enseignement.**
+Nos sources ne portent **aucun detail de match pour le tournoi en cours** : le
+fichier hebdomadaire parait apres coup, `Ici` ne couvre que ce que nos scans ont
+vu, `Service` s'arrete sous son seuil de points. Trois criteres qui emettraient
+trois formulations voisines se liraient comme trois recherches quand c'est la
+meme — `TOURNAMENT_DETAIL` est donc **ecrite une fois**, et ce qui differe est le
+**poids** : `STRONG` quand le bloc ne porte rien du tournoi, `MEDIUM` quand
+l'historique accuse du retard.
+
+Quatre criteres neufs, chacun mesure avant d'etre ecrit, sur les 48 blocs :
+
+- **`Ici` absente** — 10 blocs (21 %) ;
+- **`Service` absente** — 10 blocs (21 %) ;
+- **`Repos` sous 24 h** — 6 blocs (12 %), quand « moins de 20 h » n'en designe
+  qu'un. La question porte sur ce que `Repos` **ne peut pas** dire : la duree du
+  match precedent — la ligne part du coup d'envoi, aucune source ne publiant la
+  duree — la session, et le **double**, que le fournisseur de cotes ne sert pas ;
+- **`Non joue` presente** — 2 blocs (4 %). La ligne dit le fait et s'arrete la ;
+  ce que la recherche ajoute est la date du dernier match reellement dispute.
+
+**Une absence ne se reclame que sur un bloc par ailleurs servi.** Sans cette
+garde, un bloc entierement vide produirait trois criteres pour une seule cause,
+et `Densite` la nomme deja — meme regle que `Stats match`. `Forme` est le
+marqueur : les 48 blocs reels la portent tous.
+
+- **Et c'est un montage de test qui l'a revele** : `_dense("tennis")` ne portait
+  ni `Ici` ni `Service`, donc il decrivait un etat que la production atteint une
+  fois sur cinq, et les criteres d'absence s'y declenchaient sur tout le lot.
+  Meme piege que la forme canonique d'une selection posee sur un match commence.
+
+### Le statut dans le tableau se derive du rattachement de phase
+
+`_draw_status_reasons` : un joueur qui figure dans la competition declaree phase
+de celle-ci **est** un qualifie — par definition, pas par inference — et ca ne
+coute aucun appel. C'est la seule des quatre rubriques « statut dans le tableau »
+que l'application puisse etablir ; tete de serie, wild card et lucky loser sont
+la question emise.
+
+**La part attendue est structurelle et non mesuree** : 16 qualifies sur 128 en
+Grand Chelem, soit 12,5 % du champ, decroissant ensuite. Elle n'a pas pu se
+relever sur les prompts archives — aucun tableau principal n'etait entre, le
+rattachement datant du 27/08/2026 — et c'est le premier scan de tableau principal
+qui la donnera. C'est la seule exception assumee a la regle « mesurer avant
+d'ecrire » de ce lot, et sa raison est que le cas n'a jamais existe en base.
+
+### Chantier identifie, non instruit : les deux criteres faibles du football
+
+**238 des 319 questions de football viennent de deux criteres `WEAK`** qui tirent
+sur la simple presence d'une ligne — rotation (130) et effectif (108) — et
+**81 dossiers sur 319 (25 %) ne portent qu'eux**. Ce n'est pas de la couverture,
+c'est du volume : le football n'a pas une meilleure conduite de recherche que le
+tennis, il a plus de blocs.
+
+Les affaiblir demanderait ce que les autres poids ont et qu'ils n'ont pas — **le
+rendement mesure de chaque piste** — et cette mesure n'existe pas. Elle
+supposerait de savoir ce qu'une recherche lancee sur ces deux questions a
+reellement rapporte, donc de relier un dossier ouvert a la selection qui en est
+sortie. Porte laissee **ouverte et datee**, contrairement a celles que ce dossier
+ferme.
+
 ## Ou depenser un budget de recherche fini (`services/research.py`)
 
 **Le vrai plafond d'un lot n'est pas le prompt, c'est le lecteur.** Les deux plafonds de

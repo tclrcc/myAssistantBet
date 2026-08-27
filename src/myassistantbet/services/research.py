@@ -36,7 +36,7 @@ from ..config import Settings, get_settings
 from ..db import connect
 from . import context as context_service
 from .context import CAUSE_LABELS, CAUSE_NOT_COVERED, COLLECTION_FAULTS, NEUTRAL_MARK
-from .labels import affiche, context_family, expected_context
+from .labels import affiche, context_family, expected_context, sort_key
 from .render import MERGED_MARKETS, RenderableEvent
 from .session import context_density
 from .thresholds import value_of as threshold
@@ -75,6 +75,19 @@ DEMOTION = -1
 #: norme est de 12 marches au football et de 3 au tennis, mais « un seul » y
 #: designe la meme part infime.
 NARROW_MARKETS = 1
+
+#: Repos, en heures, sous lequel la charge de la veille devient un facteur.
+#:
+#: **Mesure sur les 48 blocs de tennis rendus depuis le 20/08/2026** : ce seuil
+#: designe **6 blocs (12 %)**, quand « moins de 20 h » n'en designe qu'un. Un
+#: critere de priorite doit designer une minorite stricte sans etre anecdotique,
+#: et c'est la regle appliquee avant de l'ecrire.
+#:
+#: La ligne `Repos` porte deja l'ecart en heures : rien a recalculer, seulement a
+#: lire. Deux ecritures du meme ecart auraient fini par differer — meme raison
+#: que `Calendrier` au football.
+SHORT_REST_HOURS = 24
+_REST_HOURS = re.compile(r"\b(\d+) h \(")
 
 #: En dessous de combien de matchs les lignes de forme d'un joueur ne decrivent
 #: plus rien. **Mesure sur les 406 blocs de tennis archives** : ce seuil designe
@@ -309,7 +322,7 @@ def _dossier(event: RenderableEvent, settings: Settings) -> Dossier:
     item.reasons += _weather_reasons(lignes)
     item.reasons += _squad_reasons(lignes)
     item.reasons += _rotation_reasons(lignes)
-    item.reasons += _tennis_reasons(event, lignes)
+    item.reasons += _tennis_reasons(event, lignes, settings)
     item.reasons += _market_reasons(event)
     item.links = _links(event)
     return item
@@ -605,27 +618,138 @@ def _rotation_reasons(lignes: dict[str, str]) -> list[Reason]:
     ]
 
 
-def _tennis_reasons(event: RenderableEvent, lignes: dict[str, str]) -> list[Reason]:
-    """Les tours de ce tournoi que l'historique ne compte pas encore.
+#: La question que le detail d'un tournoi en cours appelle. **Ecrite une fois**,
+#: parce que trois etats du bloc y menent — aucun score du tournoi, un historique
+#: en retard, un profil de service sous son seuil — et que trois formulations
+#: voisines se liraient comme trois recherches quand c'est la meme.
+TOURNAMENT_DETAIL = "Score set par set, duree et statistiques de service des tours deja joues ici ?"
 
-    C'est le trou le plus couteux d'une journee de tennis : « Fraicheur » dit
-    combien de matchs manquent et les nomme, et ce sont exactement ceux dont
-    aucune de nos lignes ne porte le score ni la duree.
+
+def _tennis_reasons(
+    event: RenderableEvent, lignes: dict[str, str], settings: Settings
+) -> list[Reason]:
+    """Ce qu'une journee de tennis laisse en blanc, et que la recherche comble.
+
+    **Trois etats du bloc menent a la meme question, et un seul poids serait
+    faux.** Nos sources ne portent aucun detail de match pour le tournoi en
+    cours : le fichier hebdomadaire parait apres coup, et la ligne `Ici` ne
+    couvre que ce que nos propres scans ont vu. Un bloc qui n'en porte **rien**
+    n'est pas dans le meme etat qu'un bloc dont l'historique accuse quelques
+    jours de retard.
+
+    Mesure sur les 48 blocs rendus depuis le 20/08/2026 : `Ici` absente sur
+    **10 blocs (21 %)**, `Service` absente sur 10 aussi. La question ne se
+    duplique pas — `Dossier.questions` la rend une fois — mais le poids, lui,
+    ordonne.
     """
     if event.sport_key != "tennis":
         return []
     reasons = []
-    valeur = lignes.get("Fraicheur") or ""
-    if "non comptes" in valeur:
-        reasons.append(
-            Reason(
-                MEDIUM,
-                "tours de ce tournoi non recenses",
-                "Score set par set, duree et statistiques de service des tours deja joues ici ?",
-            )
-        )
+    # **Une absence ne se reclame que sur un bloc par ailleurs servi.** Sans
+    # cette garde, un bloc entierement vide produirait trois criteres pour une
+    # seule cause — et `Densite` la nomme deja. Meme regle que `Stats match`, qui
+    # rend une ligne pour trois absences plutot que trois. `Forme` est le marqueur
+    # : les 48 blocs de tennis rendus depuis le 20/08/2026 la portent tous.
+    servi = bool(lignes.get("Forme"))
+    if servi and not (lignes.get("Ici") or ""):
+        reasons.append(Reason(STRONG, "aucun score de ce tournoi dans le bloc", TOURNAMENT_DETAIL))
+    elif "non comptes" in (lignes.get("Fraicheur") or ""):
+        reasons.append(Reason(MEDIUM, "tours de ce tournoi non recenses", TOURNAMENT_DETAIL))
+    if servi and not (lignes.get("Service") or ""):
+        reasons.append(Reason(MEDIUM, "aucun profil de service", TOURNAMENT_DETAIL))
+    reasons += _rest_reasons(lignes)
+    reasons += _uncontested_reasons(lignes)
+    reasons += _draw_status_reasons(event, settings)
     reasons += _thin_player_reasons(lignes)
     return reasons
+
+
+def _rest_reasons(lignes: dict[str, str]) -> list[Reason]:
+    """Un joueur qui a rejoue en moins d'un jour, et ce que `Repos` ne dit pas.
+
+    **La ligne porte l'ecart, jamais ce qu'il a coute.** Son propre mode d'emploi
+    interdit de comparer deux ecarts a l'heure pres : elle part du **coup
+    d'envoi** du match precedent, aucune source lisible ne publiant sa duree, si
+    bien que celui qui a joue 2h33 et celui qui est passe en 1h05 portent la meme
+    mention. C'est exactement ce qu'une recherche rapporte en une requete.
+
+    Le **double** est dans la meme question, et pour la meme raison : le
+    fournisseur de cotes ne le sert pas, donc un joueur peut porter ce `Repos` et
+    une charge tout autre — releve en reel, 10 des 16 joueuses d'une journee WTA
+    avaient joue le double la veille.
+    """
+    valeur = lignes.get("Repos") or ""
+    heures = [int(found) for found in _REST_HOURS.findall(valeur)]
+    if not heures or min(heures) >= SHORT_REST_HOURS:
+        return []
+    return [
+        Reason(
+            MEDIUM,
+            f"a rejoue en {min(heures)} h",
+            "Duree du match precedent, session de jour ou de nuit, et double engage sur place ?",
+        )
+    ]
+
+
+def _uncontested_reasons(lignes: dict[str, str]) -> list[Reason]:
+    """Un tour passe sans jouer, et depuis quand le joueur n'a pas disputé de match.
+
+    La ligne `Non joue` dit le fait — forfait adverse, adversaire remplace — et
+    s'arrete la, parce que c'est tout ce que nos scans etablissent. Ce qu'elle ne
+    peut pas dire est ce que la recherche rapporte : un joueur offert d'un tour
+    est frais, un joueur qui n'a plus joue depuis dix jours ne l'est pas.
+    """
+    if not (lignes.get("Non joue") or ""):
+        return []
+    return [
+        Reason(
+            MEDIUM,
+            "un tour non dispute dans le parcours",
+            "Dernier match reellement dispute, et etat physique depuis ?",
+        )
+    ]
+
+
+def _draw_status_reasons(event: RenderableEvent, settings: Settings) -> list[Reason]:
+    """Un joueur arrive par les qualifications, et le bloc ne le dit pas.
+
+    **Derive sans un appel, des que `phase_de` est pose** : les rencontres de
+    qualification entrent sous leur propre competition, declaree phase du tableau
+    principal, et un joueur qui y figure **est** un qualifie — pas par inference,
+    par definition. C'est la seule des quatre rubriques « statut dans le
+    tableau » que l'application puisse etablir ; les trois autres — tete de
+    serie, wild card, lucky loser — sont la question emise.
+
+    **La part attendue est structurelle** : un tableau de Grand Chelem compte
+    16 qualifies sur 128, soit 12,5 % du champ, et la proportion decroit ensuite.
+    Elle n'a pas pu etre mesuree sur les prompts archives, aucun tableau
+    principal n'etant encore entre — le rattachement date du 27/08/2026 — et
+    c'est le premier scan de tableau principal qui la relevera.
+    """
+    if event.sport_key != "tennis" or not event.event_id:
+        return []
+    with connect(settings) as conn:
+        # Le rapprochement des noms passe par `sort_key` — casse et accents
+        # ignores, **rien de flou** : deux joueurs differents ne doivent jamais
+        # partager un statut. Meme regle que `tennis_load`.
+        rows = conn.execute(
+            "SELECT q.home, q.away FROM events q "
+            "JOIN competitions phase ON phase.id = q.competition_id "
+            "JOIN events courant ON courant.id = ? "
+            "WHERE phase.phase_de = courant.competition_id",
+            (event.event_id,),
+        ).fetchall()
+    noms = {sort_key(row[cote]) for row in rows for cote in ("home", "away")}
+    qualifies = [nom for nom in (event.home, event.away) if sort_key(nom) in noms]
+    if not qualifies:
+        return []
+    return [
+        Reason(
+            MEDIUM,
+            f"{' et '.join(qualifies)} passe(s) par les qualifications",
+            "Statut de chaque joueur dans le tableau : tete de serie, wild card, lucky loser ?",
+        )
+    ]
 
 
 def _thin_player_reasons(lignes: dict[str, str]) -> list[Reason]:

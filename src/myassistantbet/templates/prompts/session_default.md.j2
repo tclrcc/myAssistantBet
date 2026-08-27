@@ -309,14 +309,16 @@ C-bis. **Sans un fait de niveau 1 ou 2, rien n'entre au tableau principal.**
 Trois objectifs, et ils ne sont pas interchangeables — chacun atteint un niveau
 différent, et c'est le niveau qui décide de ce que le fait pourra porter.
 
-| Objectif | Ce que tu cherches | Où | Fraîcheur | Niveau atteignable |
+| Objectif | Ce que tu cherches | Requête, et où elle doit tomber | Fraîcheur | Niveau |
 |---|---|---|---|---|
-| Cadrage du lot | qui joue et dans quel état — compositions probables, absents, incertains{% if 'tennis' in sports %} ; au tennis, forfaits, abandons de la veille, sortie de cinq sets{% endif %} | agrégateur à format constant | le jour même | 3 |
-| **Fait dirigeant** | l'annonce elle-même | **site officiel du club, de la fédération, du tour** — ou le journaliste nommé qui couvre le club | la semaine | **1 ou 2** |
-| Balayage | ce qui a été publié sur la compétition | actualité, presse | le jour même | 3 à 4 |
+| Cadrage du lot | qui joue et dans quel état — compositions probables, absents, incertains{% if 'tennis' in sports %} ; au tennis, forfaits, abandons de la veille, sortie de cinq sets{% endif %} | {% if 'football' in sports %}`<équipe> compo probable`{% else %}`<joueur> forfait abandon`{% endif %} → agrégateur à format constant | le jour même | 3 |
+| **Fait dirigeant** | l'annonce elle-même | {% if 'football' in sports %}`<club> communiqué <joueur>`{% else %}`<joueur> <tournoi> déclaration`{% endif %} → **le domaine officiel** parmi les résultats, ou le journaliste nommé | la semaine | **1 ou 2** |
+| Balayage | ce qui a été publié sur la compétition | `<compétition> <date du match>` → actualité, presse | le jour même | 3 à 4 |
 
-Formule des requêtes **courtes** — le nom du club ou du joueur, plus ce que tu
-cherches. Une requête qui décrit une phrase entière ne rend rien d'utile.
+**La requête est courte et la cible est un domaine** : le nom du club ou du
+joueur, plus ce que tu cherches, et c'est dans les résultats que tu choisis
+l'éditeur — c'est lui qui donne le niveau, pas la formulation. Une requête qui
+décrit une phrase entière ne rend rien d'utile.
 
 **La requête de cadrage ne dirige aucun angle.** Un agrégateur qui publie le
 onze, les absents et les incertains dans un format constant reste un canal de
@@ -333,9 +335,16 @@ sa valeur structurelle et perd le droit de porter un angle de récence. Sans cet
 règle, une date relative devient silencieusement un fait daté, et la confiance 4
 se construit sur du vide.
 
-Vérifie aussi que la publication est **postérieure à la dernière conférence de
-presse**. Un article paru avant elle ne dit rien des compositions, quelle que
-soit sa fraîcheur apparente.
+**Une publication se date contre le dernier moment qui a pu la démentir**, pas
+contre l'heure qu'il est.
+{%- if 'football' in sports %} Au football c'est la **conférence de presse** : un
+article paru avant elle ne dit rien des compositions, quelle que soit sa
+fraîcheur apparente.
+{%- endif %}{% if 'tennis' in sports %} Au tennis il n'y en a pas ; ce sont
+l'**ordre du jeu**, publié la veille au soir, et la **fin du match précédent** du
+joueur. Un article antérieur à l'un ou à l'autre décrit un joueur qui a joué
+depuis.
+{%- endif %}
 
 **Ce que la recherche ne donne pas.** Une composition probable publiée quelques
 heures avant le coup d'envoi est **déjà dans le prix**. Elle ne procure aucune

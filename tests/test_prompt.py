@@ -2314,6 +2314,43 @@ def test_un_refus_d_acces_n_abaisse_pas_le_niveau_d_un_editeur(migrated: Setting
     assert "l'accès a été indirect" in corps
 
 
+def test_chaque_objectif_de_recherche_porte_sa_forme_de_requete(
+    migrated: Settings,
+) -> None:
+    """**Deux des trois objectifs nommaient une classe d'éditeur, pas une
+    requête.** « Agrégateur à format constant » ne se tape pas dans une barre de
+    recherche ; seul `_links` en émettait une, identique pour les 360 dossiers
+    de la fiche.
+
+    La colonne porte donc les deux : la requête, et le domaine sur lequel elle
+    doit tomber — c'est lui qui donne le niveau, pas la formulation.
+    """
+    corps = " ".join(build_prompt(_lot_de(migrated, 2), settings=migrated, now=NOW).body.split())
+
+    assert "Requête, et où elle doit tomber" in corps
+    assert "`<compétition> <date du match>` → actualité, presse" in corps
+    assert "c'est dans les résultats que tu choisis l'éditeur" in corps
+
+
+def test_la_fraicheur_se_date_contre_ce_qui_a_pu_la_dementir(migrated: Settings) -> None:
+    """**La règle valait pour un seul sport, et sans porte.** « Postérieure à la
+    dernière conférence de presse » est une règle football, servie telle quelle
+    sur un lot de tennis — où il n'y a pas de conférence de presse, et où les
+    deux moments qui datent une publication sont l'ordre du jeu et la fin du
+    match précédent.
+
+    Elle est donc gardée par sport, ce qui la rend juste **et** fait au passage
+    économiser à chaque lot le paragraphe de l'autre.
+    """
+    football = " ".join(build_prompt(_lot_de(migrated, 2), settings=migrated, now=NOW).body.split())
+
+    assert "dernier moment qui a pu la démentir" in football
+    assert "conférence de presse" in football
+    assert "fin du match précédent" not in football, (
+        "la règle tennis ne se paie pas sur un lot football"
+    )
+
+
 def test_la_note_d_independance_est_produite_et_localisee(migrated: Settings) -> None:
     """**Une regle tenue une fois sur quatre n'est pas une regle.**
 

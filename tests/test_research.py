@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 from myassistantbet import db
 from myassistantbet.config import Settings
+from myassistantbet.services import competitions as competitions_service
 from myassistantbet.services import context as context_service
 from myassistantbet.services import research
 from myassistantbet.services.context import KIND_H2H, KIND_TEAMS, store
@@ -41,6 +42,11 @@ REMPLI = {
         "Cartons tps",
         "Formations",
     ],
+    # **Un bloc « dense » doit l'etre vraiment.** `Ici` et `Service` y manquaient,
+    # et ces deux-la sont rendues sur 79 % des blocs de tennis reels : le montage
+    # decrivait donc un etat que la production atteint une fois sur cinq, et les
+    # criteres d'absence s'y declenchaient sur tout le lot. Meme piege que la
+    # forme canonique d'une selection posee sur un match deja commence.
     "tennis": [
         "Elo",
         "Surface",
@@ -50,6 +56,8 @@ REMPLI = {
         "Niveau adv.",
         "Usure",
         "Precedent",
+        "Ici",
+        "Service",
     ],
 }
 
@@ -347,6 +355,192 @@ def test_le_tennis_reclame_les_tours_non_recenses(migrated: Settings) -> None:
     assert [item.index for item in fiche.dossiers] == [1]
     assert "tours de ce tournoi non recenses" in fiche.dossiers[0].motifs
     assert any("statistiques de service" in q for q in fiche.dossiers[0].questions)
+
+
+def test_un_bloc_sans_aucun_score_du_tournoi_passe_devant(migrated: Settings) -> None:
+    """**Trois etats du bloc menent a la meme question, et un seul poids serait
+    faux.**
+
+    Nos sources ne portent aucun detail de match pour le tournoi en cours : le
+    fichier hebdomadaire parait apres coup, et `Ici` ne couvre que ce que nos
+    propres scans ont vu. Un bloc qui n'en porte **rien** n'est pas dans le meme
+    etat qu'un bloc dont l'historique accuse quelques jours de retard.
+
+    La question, elle, est **la meme** — `Dossier.questions` la rend une fois. Ce
+    qui change est le rang.
+    """
+    sans_rien = [
+        (label, "valeur") for label, _ in _dense("tennis") if label not in ("Ici", "Service")
+    ]
+    en_retard = [
+        (label, "valeur") if label != "Ici" else ("Fraicheur", "1 non comptes (Zverev)")
+        for label, _ in _dense("tennis")
+    ]
+    events = [
+        _event(1, sport="tennis", context=en_retard),
+        _event(2, sport="tennis", context=sans_rien),
+    ] + [_event(i, sport="tennis") for i in range(3, 22)]
+
+    fiche = research.sheet(events, migrated)
+
+    assert [item.index for item in fiche.dossiers] == [2, 1], "le bloc muet passe devant"
+    assert "aucun score de ce tournoi dans le bloc" in fiche.dossiers[0].motifs
+    questions = fiche.dossiers[0].questions
+    assert questions == list(dict.fromkeys(questions)), "une seule question pour trois etats"
+
+
+def test_une_absence_ne_se_reclame_que_sur_un_bloc_par_ailleurs_servi(
+    migrated: Settings,
+) -> None:
+    """Sans cette garde, un bloc entièrement vide produirait **trois critères pour
+    une seule cause**, et `Densité` la nomme déjà — même règle que `Stats match`,
+    qui rend une ligne pour trois absences plutôt que trois."""
+    vide = [("Fraicheur", "arretees au 03/08")]
+
+    fiche = research.sheet(
+        [_event(1, sport="tennis", context=vide)]
+        + [_event(i, sport="tennis") for i in range(2, 22)],
+        migrated,
+    )
+
+    motifs = fiche.dossiers[0].motifs if fiche.dossiers else ""
+    assert "aucun score de ce tournoi" not in motifs
+    assert "aucun profil de service" not in motifs
+
+
+def test_un_joueur_qui_a_rejoue_en_moins_d_un_jour(migrated: Settings) -> None:
+    """**La ligne porte l'écart, jamais ce qu'il a coûté.** `Repos` part du coup
+    d'envoi du match précédent — aucune source lisible ne publie sa durée — donc
+    celui qui a joué 2h33 et celui qui est passé en 1h05 portent la même mention.
+    Le double est dans la même question : le fournisseur de cotes ne le sert pas,
+    et 10 des 16 joueuses d'une journée WTA avaient joué le double la veille.
+
+    Seuil mesuré avant d'être écrit : **6 blocs sur 48** depuis le 20/08/2026.
+    """
+    charge = [
+        (label, "valeur") if label != "Elo" else ("Repos", "Fils 19 h (1 j. tournoi) | Norrie 40 h")
+        for label, _ in _dense("tennis")
+    ]
+    events = [_event(1, sport="tennis", context=charge)] + [
+        _event(i, sport="tennis") for i in range(2, 22)
+    ]
+
+    fiche = research.sheet(events, migrated)
+
+    assert fiche.dossiers[0].index == 1
+    assert "a rejoue en 19 h" in fiche.dossiers[0].motifs
+    assert any("double engage" in q for q in fiche.dossiers[0].questions)
+
+
+def test_un_repos_confortable_ne_declenche_rien(migrated: Settings) -> None:
+    """Un critère qui se déclencherait partout ne classerait plus rien : « moins
+    de 24 h » désigne 12 % des blocs, « moins de 20 h » un seul sur 48."""
+    repose = [
+        (label, "valeur") if label != "Elo" else ("Repos", "Fils 48 h | Norrie 40 h")
+        for label, _ in _dense("tennis")
+    ]
+
+    fiche = research.sheet(
+        [_event(1, sport="tennis", context=repose)]
+        + [_event(i, sport="tennis") for i in range(2, 22)],
+        migrated,
+    )
+
+    assert not fiche.dossiers or "a rejoue" not in fiche.dossiers[0].motifs
+
+
+def test_un_tour_non_dispute_appelle_le_dernier_match_reel(migrated: Settings) -> None:
+    """`Non joué` dit le fait et s'arrête là — c'est tout ce que nos scans
+    établissent. Un joueur offert d'un tour est frais, un joueur qui n'a plus
+    joué depuis dix jours ne l'est pas, et seule la recherche le dit."""
+    forfait = [
+        (label, "valeur") if label != "Elo" else ("Non joue", "Gauff 12/08 walkover (Bencic)")
+        for label, _ in _dense("tennis")
+    ]
+
+    fiche = research.sheet(
+        [_event(1, sport="tennis", context=forfait)]
+        + [_event(i, sport="tennis") for i in range(2, 22)],
+        migrated,
+    )
+
+    assert "un tour non dispute dans le parcours" in fiche.dossiers[0].motifs
+    assert any("reellement dispute" in q for q in fiche.dossiers[0].questions)
+
+
+def _tableau_avec_qualifications(settings: Settings) -> tuple[int, int]:
+    """Un tableau principal et sa phase de qualification, rattaches.
+
+    C'est la configuration reelle des 116/117 vers 11/15, posee le 27/08/2026 :
+    les rencontres de qualification entrent sous leur propre competition, et
+    `phase_de` la declare phase du tableau principal.
+    """
+    sport = db.query_one("SELECT id FROM sports WHERE key = 'tennis'", settings=settings)["id"]
+    ids = []
+    for label in ("ATP Grand Chelem", "ATP Grand Chelem Qualifications"):
+        db.execute(
+            "INSERT INTO competitions (sport_id, label, active) VALUES (?, ?, 1)",
+            (sport, label),
+            settings=settings,
+        )
+        ids.append(
+            int(db.query_one("SELECT MAX(id) AS id FROM competitions", settings=settings)["id"])
+        )
+    principal, qualifs = ids
+    competitions_service.set_phase(qualifs, principal, settings)
+    # Le qualifie a joue trois tours sous la competition de qualification.
+    for tour, adversaire in enumerate(("Adv A", "Adv B", "Adv C"), start=1):
+        db.execute(
+            "INSERT INTO events (sport_id, competition_id, home, away, commence_time, source, "
+            "created_at) VALUES (?, ?, 'Club 1', ?, ?, 'tennisapi', ?)",
+            (sport, qualifs, adversaire, f"2026-08-2{tour}T18:00:00Z", "2026-08-20T00:00:00Z"),
+            settings=settings,
+        )
+    db.execute(
+        "INSERT INTO events (id, sport_id, competition_id, home, away, commence_time, source, "
+        "created_at) VALUES (900, ?, ?, 'Club 1', 'Adv 1', '2026-08-30T18:00:00Z', 'api', ?)",
+        (sport, principal, "2026-08-28T00:00:00Z"),
+        settings=settings,
+    )
+    return principal, qualifs
+
+
+def test_un_qualifie_au_tableau_principal_se_derive_sans_appel(migrated: Settings) -> None:
+    """**Gratuit dès que `phase_de` est posé, et par définition plutôt que par
+    inférence** : un joueur qui figure dans la compétition déclarée phase de
+    celle-ci *est* un qualifié.
+
+    C'est la seule des quatre rubriques « statut dans le tableau » que
+    l'application puisse établir ; les trois autres — tête de série, wild card,
+    lucky loser — sont la question émise. Part attendue **structurelle** :
+    16 qualifiés sur 128 en Grand Chelem, soit 12,5 % du champ.
+    """
+    _tableau_avec_qualifications(migrated)
+
+    fiche = research.sheet(
+        [_event(1, event_id=900, sport="tennis")]
+        + [_event(i, sport="tennis") for i in range(2, 22)],
+        migrated,
+    )
+
+    assert "Club 1 passe(s) par les qualifications" in fiche.dossiers[0].motifs
+    assert any("wild card" in q for q in fiche.dossiers[0].questions)
+
+
+def test_sans_rattachement_aucun_statut_n_est_derive(migrated: Settings) -> None:
+    """**Le lien fait tout le travail, et sans lui on ne devine pas.** C'est
+    exactement l'état des deux compétitions de qualification de l'US Open
+    jusqu'au 27/08/2026 : la matière était en base, et rien ne la reliait."""
+    _principal, qualifs = _tableau_avec_qualifications(migrated)
+    competitions_service.set_phase(qualifs, "", migrated)
+
+    fiche = research.sheet(
+        [_event(1, event_id=900, sport="tennis")]
+        + [_event(i, sport="tennis") for i in range(2, 22)],
+        migrated,
+    )
+
+    assert "qualifications" not in (fiche.dossiers[0].motifs if fiche.dossiers else "")
 
 
 def test_chaque_dossier_porte_une_requete_de_recherche(migrated: Settings) -> None:
