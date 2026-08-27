@@ -6683,21 +6683,6 @@ class Feedback:
         )
 
     @property
-    def selection_line(self) -> str:
-        """« 36 % en médiane, sur 6 sessions ». Vide sous le seuil.
-
-        Le compte accompagne le taux, comme partout ailleurs : une mediane sur
-        trois sessions et une mediane sur trente ne disent pas la meme chose.
-        """
-        if self.selection_median is None:
-            return ""
-        pluriel = "s" if self.selection_sessions > 1 else ""
-        return (
-            f"{self.selection_median * 100:.0f} % en médiane, "
-            f"sur {self.selection_sessions} session{pluriel}"
-        )
-
-    @property
     def global_label(self) -> str:
         """« 50 % » — la reference des cibles, ecrite une fois pour le bloc."""
         return "—" if self.global_rate is None else f"{self.global_rate:.0f} %"

@@ -633,7 +633,10 @@ def test_le_taux_de_selection_median_entre_dans_le_prompt(migrated: Settings) ->
 
     assert report.selection_median == 0.5, "la mediane de 25, 50 et 75 %"
     assert report.selection_sessions == 3
-    assert report.selection_line == "50 % en médiane, sur 3 sessions"
+    # `selection_line` a ete retiree avec le « 79 % » : la grandeur reste
+    # calculee — `empty()` la lit — mais elle n'est plus mise en forme pour un
+    # prompt qui ne la transmet plus.
+    assert not hasattr(report, "selection_line")
 
 
 def test_la_mediane_ignore_les_sessions_sans_lot(migrated: Settings) -> None:
@@ -655,7 +658,6 @@ def test_sous_trois_sessions_aucune_mediane(migrated: Settings) -> None:
     report = feedback(migrated)
 
     assert report.selection_median is None
-    assert report.selection_line == ""
 
 
 def test_la_mediane_survit_au_manque_de_recul_sur_les_resultats(migrated: Settings) -> None:
@@ -672,7 +674,7 @@ def test_la_mediane_survit_au_manque_de_recul_sur_les_resultats(migrated: Settin
 
     assert not report.enough, "trop peu de recul pour publier des taux"
     assert report.by_tier == [], "et rien n'est publie de ce cote"
-    assert report.selection_line, "mais le tri, lui, se dit"
+    assert report.selection_median is not None, "mais la mediane, elle, se calcule"
 
 
 def test_le_prompt_presente_le_taux_de_selection_comme_un_constat(migrated: Settings) -> None:
@@ -683,10 +685,14 @@ def test_le_prompt_presente_le_taux_de_selection_comme_un_constat(migrated: Sett
 
     corps = " ".join(build_prompt(session_id, settings=migrated, now=NOW).body.split())
 
-    assert "Part du lot que je sélectionne" in corps
-    assert "50 % en médiane, sur 3 sessions" in corps
-    assert "constat sur mon tri, pas un quota" in corps
-    assert "Il ne se compare à aucune cote" in corps
+    # **Le nombre est parti, la consigne reste.** `_selection_median` comptait
+    # `COUNT(DISTINCT event_id)` sur **toutes** les selections d'une session,
+    # C-bis comprise : un taux de couverture du lot — 79 % — et non un taux de
+    # selection, qui vaut 52 % sur la seule section C. C'etait le seul
+    # pourcentage transmis au modele, et il ancrait la quantite a produire.
+    assert "Part du lot que je sélectionne" not in corps
+    assert "% en médiane" not in corps
+    assert "Un lot où tu sélectionnes tout, ou presque rien, s'explique en une ligne" in corps
 
 
 def test_le_taux_de_selection_ne_produit_aucun_champ_financier() -> None:
@@ -970,9 +976,11 @@ def test_le_taux_de_selection_dit_qu_il_compte_autre_chose() -> None:
         gabarit.split("{% if feedback.enough %}", 1)[1].split("{% else %}", 1)[0].split()
     )
 
-    assert "ne lit pas la même population que le taux de sélection" in enough
-    assert "sessions ayant produit un prompt" in enough
-    assert "Deux nombres différents à quelques lignes d'écart sont donc normaux" in enough
+    # La phrase levait une ambiguite entre **deux** nombres. Le taux de
+    # selection parti, il n'en reste qu'un : la lever encore couterait des
+    # tokens pour desambiguer ce qui ne peut plus se confondre.
+    assert "ne lit pas la même population que le taux de sélection" not in enough
+    assert "Deux nombres différents" not in enough
 
 
 # -- L'etat « pas de cible », vu du prompt -----------------------------------
@@ -1102,7 +1110,7 @@ def test_la_suspension_ne_touche_que_les_taux_de_reussite(
 
     assert (ouvert.enough, suspendu.enough) == (True, False)
     assert suspendu.suspended and not ouvert.suspended
-    assert suspendu.selection_line == ouvert.selection_line
+    assert suspendu.selection_median == ouvert.selection_median
     assert suspendu.settled == ouvert.settled, "les donnees ne bougent pas, leur diffusion oui"
 
 

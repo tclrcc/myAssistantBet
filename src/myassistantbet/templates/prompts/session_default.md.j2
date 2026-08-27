@@ -426,25 +426,13 @@ disent pas la même chose :
 {% endfor %}
 
 {% if not feedback.empty %}## CE QUE L'HISTORIQUE DIT
-{% if feedback.selection_line %}
-Part du lot que je sélectionne : **{{ feedback.selection_line }}**. Le reste est
-passé — un match vu, analysé, et laissé de côté.
-
-C'est un **constat sur mon tri, pas un quota** : écarter un match pour approcher
-ce chiffre serait remplir une case avec du vide, l'erreur que ce prompt nomme
-ailleurs comme la plus coûteuse. Un lot où tu sélectionnes tout, ou presque
-rien, s'explique en une ligne. Il ne se compare à aucune cote.
-{% endif %}
+Un lot où tu sélectionnes tout, ou presque rien, s'explique en une ligne.
 {% if feedback.enough %}
 Taux de réussite de {{ feedback.scope_line }}, jouées ou non :
 gagnées / (gagnées + perdues), sur une **fenêtre glissante** — les
 {{ feedback.window }} dernières, et non tout l'historique : ce compte plafonne,
 il ne se lit pas comme un total. Annulées et en attente hors dénominateur, et
 les regroupements trop peu fournis ne sont pas listés.
-
-Ce compte-là ne lit pas la même population que le taux de sélection ci-dessus,
-qui porte sur mes **sessions ayant produit un prompt**, résultat saisi ou non.
-Deux nombres différents à quelques lignes d'écart sont donc normaux.
 {% if feedback.by_tier %}
 Par palier :
 {%- for row in feedback.by_tier %}
@@ -504,9 +492,7 @@ Ce qu'il ne fait **jamais** : il ne se compare **jamais** à une cote —
 rapprocher un taux de réussite d'un prix, c'est calculer une espérance, et le
 fait que le chiffre vienne de mon propre historique n'y change rien ; il ne
 redéfinit aucun palier ; il ne dit rien de l'issue des matchs d'aujourd'hui ; il
-ne remplace pas un angle manquant — sans angle, la réponse reste PASSE. Et
-**rien de ce qui précède ne vise le taux de sélection** en tête de chapitre : il
-décrit mon tri et ne dépend d'aucun résultat.
+ne remplace pas un angle manquant — sans angle, la réponse reste PASSE.
 {% elif feedback.suspended %}
 Taux par palier et par confiance : **retenus volontairement**.
 
@@ -516,17 +502,13 @@ catégorie annoncée faible cesse d'être produite — donc cesse d'être mesura
 Ce n'est pas un manque de recul, et il n'y a rien à en déduire sur mon
 historique.
 
-N'en tire aucune tendance et n'écris rien **sur ces taux**. Le constat sur le
-taux de sélection, en tête de ce chapitre, n'est pas concerné : il ne dépend
-d'aucun résultat.
+N'en tire aucune tendance et n'écris rien **sur ces taux**.
 {% else %}
 Taux par palier et par confiance : **recul insuffisant, non transmis**.
 Ce bloc lit une **fenêtre glissante** : {{ feedback.scope_line }}, sur
 {{ feedback.days }} journée(s) d'analyse — {{ feedback.missing_note }}.
 
-N'en tire aucune tendance et n'écris rien **sur ces taux**. Le constat sur le
-taux de sélection, en tête de ce chapitre, n'est pas concerné : il ne dépend
-d'aucun résultat.
+N'en tire aucune tendance et n'écris rien **sur ces taux**.
 {% endif %}
 {% endif %}## SORTIE ATTENDUE
 

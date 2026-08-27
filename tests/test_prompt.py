@@ -1069,24 +1069,44 @@ def test_la_clause_de_silence_ne_couvre_que_les_taux(migrated: Settings) -> None
     """« N'en tire aucune tendance, et n'ecris rien a ce sujet » fermait le
     chapitre et annulait, seize lignes plus haut, la demande de commenter un lot
     dont le taux de selection sort de l'ordinaire.
+
+    **La clause de perimetre explicite est partie avec le « 79 % » qu'elle
+    excluait**, et ce n'est pas un affaiblissement : elle levait une ambiguite
+    entre **deux** sujets. Le taux de selection retire, la clause n'a plus qu'un
+    sujet possible, et le perimetre tient par les deux mots en gras — qui, eux,
+    doivent rester.
+
+    C'est la difference entre une coupe et une regression : ce qui est retire
+    n'est pas la regle mais la desambiguisation d'une ambiguite qui n'existe
+    plus.
     """
     # Le gabarit est relu a plat : ses phrases sont coupees en lignes de 80.
     gabarit = " ".join((TEMPLATES_DIR / DEFAULT_TEMPLATE).read_text(encoding="utf-8").split())
 
     assert "N'en tire aucune tendance, et n'écris rien à ce sujet." not in gabarit
     assert "n'écris rien **sur ces taux**" in gabarit
-    assert "Le constat sur le taux de sélection, en tête de ce chapitre, n'est pas" in gabarit
+    # Et le sujet qu'elle excluait n'est plus transmis : sans ça, la coupe
+    # ci-dessus rouvrirait l'ambiguite au lieu de la fermer.
+    assert "Part du lot que je sélectionne" not in gabarit
+    assert "% en médiane" not in gabarit
 
 
-def test_la_clause_de_perimetre_existe_aussi_quand_le_recul_suffit(migrated: Settings) -> None:
-    """Sans elle, le probleme reapparaitrait le jour ou le seuil est franchi —
-    la liste « ce qu'il ne fait jamais » se lirait alors comme couvrant tout."""
-    gabarit = (TEMPLATES_DIR / DEFAULT_TEMPLATE).read_text(encoding="utf-8")
-    enough = " ".join(
-        gabarit.split("{% if feedback.enough %}", 1)[1].split("{% else %}", 1)[0].split()
+def test_la_consigne_sur_le_tri_survit_au_retrait_du_nombre(migrated: Settings) -> None:
+    """**Le nombre part, la consigne reste.**
+
+    `_selection_median` comptait `COUNT(DISTINCT event_id)` sur **toutes** les
+    selections d'une session, C-bis comprise : un taux de **couverture du lot**,
+    79 % en mediane, quand la section C seule en vaut 52. Le prompt l'ecrivait
+    « Part du lot que je selectionne » — faux de 27 points par rapport a ce qu'un
+    lecteur comprend, et **seul pourcentage transmis au modele**, donc un ancrage
+    sur la quantite a produire, pose avant l'analyse.
+
+    Ce qui tenait sans lui tient toujours : un lot atypique s'explique.
+    """
+    gabarit = " ".join((TEMPLATES_DIR / DEFAULT_TEMPLATE).read_text(encoding="utf-8").split())
+    assert (
+        "Un lot où tu sélectionnes tout, ou presque rien, s'explique en une ligne." in gabarit
     )
-
-    assert "rien de ce qui précède ne vise le taux de sélection" in enough
 
 
 def test_un_petit_lot_ne_demande_qu_un_combine(migrated: Settings) -> None:
