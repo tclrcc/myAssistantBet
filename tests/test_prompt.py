@@ -792,21 +792,57 @@ async def test_le_fuseau_des_horaires_est_dit(
 
 
 @respx.mock
-async def test_le_multichoix_n_est_propose_que_si_le_marche_existe(
+async def test_le_multichoix_ne_se_demande_plus_meme_quand_le_marche_existe(
     odds_client: OddsAPIClient, migrated: Settings, load_fixture: Any
 ) -> None:
-    """Sur un lot sans scores exacts, l'imposer fait ecrire « impossible » pour rien."""
-    sans = await _session_enrichie(odds_client, migrated, load_fixture, enrich=False)
-    assert "multichoix scores exacts" not in build_prompt(sans, settings=migrated, now=NOW).body
+    """**La demande est retiree, et ce test garde le retrait plutot que la porte.**
 
+    Il gardait la conditionnalite de la puce — ne pas reclamer un multichoix sur
+    un lot qui n'a pas de scores exacts, sans quoi l'analyse ecrit « impossible »
+    pour rien. La condition etait juste ; c'est l'objet demande qui ne l'etait
+    pas, et trois mesures le disent :
+
+    · **un multichoix n'a de prix dans aucun bloc.** `odds` porte une ligne par
+      score exact, jamais leur reunion. Le demander revenait a demander un prix
+      invente, ce que le gabarit interdit en toutes lettres ailleurs — c'est la
+      raison pour laquelle le score exact en sets, au tennis, se donne **hors du
+      tableau** et sans cote ;
+    · **zero multichoix produit sur les 121 prompts archives** qui portaient la
+      puce. Ce qui en est sorti est dix selections de score exact, chacune une
+      seule ligne, toutes en C-bis, aucune dans un combine ;
+    · **la section C-bis les reclame deja**, et depuis qu'elle existe le
+      recouvrement est total : **59 prompts sur 59** portent les deux. Un score
+      exact a 10.00 est un candidat GIGA+, et C-bis demande au plus une
+      selection par palier haut.
+
+    Ce que la puce faisait de plus etait donc de se rendre sous « D. Combines »,
+    ou elle n'a rien a faire — un multichoix n'est pas un combine — et jusque
+    dans la branche qui dit « n'en propose pas ».
+
+    **Le libelle survit ou il decrit au lieu de demander** : `Tier.range_label`
+    range « scores exacts multichoix » parmi les marches qui tombent au-dessus de
+    8.00, et c'est un fait sur la bande, pas une consigne.
+    """
     respx.get(f"{BASE_URL}/sports/soccer_sweden_allsvenskan/events/{EVENT_ID}/odds").mock(
         return_value=httpx.Response(
             200, json=load_fixture("oddsapi_event_odds_football.json"), headers=QUOTA_HEADERS
         )
     )
-    await run_enrich(odds_client, sans, migrated, now=NOW)
+    session_id = await _session_enrichie(odds_client, migrated, load_fixture, enrich=False)
+    await run_enrich(odds_client, session_id, migrated, now=NOW)
+    corps = build_prompt(session_id, settings=migrated, now=NOW).body
 
-    assert "multichoix scores exacts" in build_prompt(sans, settings=migrated, now=NOW).body
+    # Sans cette premiere assertion le test passerait pour la mauvaise raison :
+    # sur un lot **sans** score exact, l'absence de la demande ne prouve rien.
+    assert "Score exact" in corps, "le lot porte bien le marche qui declenchait la puce"
+    assert "multichoix" not in corps.split("### D. Combinés")[1], (
+        "plus aucune demande de multichoix : l'objet n'a de prix dans aucun bloc"
+    )
+    # Et le libelle reste **la ou il decrit** : sans cette seconde assertion, le
+    # test passerait aussi le jour ou la description du palier disparaitrait.
+    assert "(scores exacts multichoix, marches exotiques)" in corps, (
+        "la bande GIGA+ dit toujours quels marches y tombent — c'est un fait, pas une consigne"
+    )
 
 
 @respx.mock
@@ -1895,6 +1931,79 @@ def test_la_section_des_combines_se_rend_proprement(
     else:
         assert "combiné « solide »" in plat and "combiné « frisson »" in plat
         assert "Les deux combinés doivent être **réellement différents**" in plat
+
+
+# -- La section D ne propose que des combines --------------------------------
+#
+# **Le banc existant ne pouvait pas voir le defaut, et c'est instructif** :
+# `_lot_de` ne monte aucun marche de score exact, donc `exact_scores` y est
+# toujours faux et la puce fautive ne se rendait jamais. Un lot de test qui
+# n'atteint pas une porte ne dit rien de ce qu'elle laisse passer.
+
+
+def _lot_a_scores_exacts(migrated: Settings, matchs: int) -> int:
+    """Un lot de football dont chaque bloc porte un marche de score exact.
+
+    C'est la seule condition de la puce (`exact_scores`), et aucun lot de test
+    ne la remplissait.
+    """
+    session_id = _lot_de(migrated, matchs)
+    for event in db.query("SELECT id FROM events", settings=migrated):
+        for nom, prix in (("1:0", 7.50), ("1:1", 8.00), ("0:1", 9.00)):
+            db.execute(
+                "INSERT INTO odds (event_id, bookmaker, market_key, outcome_name, point, "
+                "price, fetched_at) VALUES (?, 'manual', 'correct_score', ?, NULL, ?, ?)",
+                (int(event["id"]), nom, prix, db.utcnow()),
+                settings=migrated,
+            )
+    return session_id
+
+
+def test_la_section_d_ne_propose_rien_quand_aucun_combine_n_est_demande(
+    migrated: Settings,
+) -> None:
+    """La branche dit « n'en propose pas », et proposait quand meme.
+
+    La puce du multichoix etait gardee par `exact_scores` seul — une condition
+    **independante** du seuil de combine — donc elle survivait a la branche qui
+    l'interdit. Mesure du 28/08/2026 : **38 prompts archives sur 230** portent
+    les deux phrases a quatre lignes d'ecart.
+    """
+    save_threshold("combo_solo_min_lot", "9", migrated)
+    corps = build_prompt(_lot_a_scores_exacts(migrated, 2), settings=migrated, now=NOW).body
+    section = corps.split("### D. Combinés")[1].split("### E.")[0]
+
+    assert "Aucun combiné n'est demandé sur ce lot" in section
+    propositions = [ligne for ligne in section.splitlines() if ligne.startswith("- ")]
+    assert not propositions, (
+        f"une branche qui n'en demande aucun n'en propose aucun : {propositions}"
+    )
+
+
+@pytest.mark.parametrize("taille", [2, 9, 20])
+def test_toute_puce_de_la_section_d_nomme_un_combine(migrated: Settings, taille: int) -> None:
+    """**Dans les trois branches**, et pas seulement dans celle qui les refuse.
+
+    Un multichoix de scores exacts est une selection de section C — le libelle du
+    palier GIGA+ le range lui-meme parmi ses marches — et il n'a aucun prix dans
+    aucun bloc : `odds` porte une ligne par score, jamais leur reunion. Le
+    proposer sous « D. Combinés » demandait donc soit d'inventer un prix, ce que
+    le gabarit interdit, soit de le lire comme une selection ordinaire.
+
+    Mesure du 28/08/2026 : **zero multichoix sur les 121 prompts** qui portaient
+    la puce, et dix selections de score exact — toutes **une seule** ligne,
+    toutes en C-bis, aucune dans un combine.
+    """
+    save_threshold("combo_solo_min_lot", "9", migrated)
+    save_threshold("combo_min_lot", "20", migrated)
+
+    corps = build_prompt(_lot_a_scores_exacts(migrated, taille), settings=migrated, now=NOW).body
+    section = corps.split("### D. Combinés")[1].split("### E.")[0]
+
+    propositions = [ligne for ligne in section.splitlines() if ligne.startswith("- ")]
+    assert all("combiné" in ligne for ligne in propositions), (
+        f"la section D ne propose que des combines : {propositions}"
+    )
 
 
 # -- Le nombre de jambes est un parametre -----------------------------------

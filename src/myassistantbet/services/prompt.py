@@ -1219,9 +1219,6 @@ def build_prompt(
                 if toggle_of(COUPON_TRACKING, settings)
                 else None
             ),
-            exact_scores=any(
-                key.startswith("correct_score") for event in events for key in event.markets
-            ),
             # **Les exemples de format se batissent sur les reperes du lot.** Un
             # `M8` sur un lot de sept, ou un `sets: M3=...` sur un M3 de
             # football, ne trompent pas vraiment mais sement un doute a l'endroit
