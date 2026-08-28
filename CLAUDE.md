@@ -288,7 +288,17 @@ non negociables, toutes couvertes par des tests :
   `Buts encais.` est devenu `Buts pris`, qui dit la meme chose et rappelle le
   « pris » de la ligne `Corners`. `line()` degrade en plus proprement : un libelle
   trop long decale sa ligne d'une colonne, ce qui se voit, au lieu de souder deux
-  mots, ce qui se lit de travers ;
+  mots, ce qui se lit de travers.
+  - **Et le piege attrape aussi tout lecteur ecrit ensuite, pas seulement le
+    rendu.** Un outil de mesure qui redecoupe un bloc archive sur « deux espaces
+    ou plus » perd **tous** les libelles de 11 et 12 caracteres, et il les perd
+    en silence : ils sortent a zero, ce qui se lit « cette ligne n'est jamais
+    rendue ». Mesure du 28/08/2026, sur l'audit de couverture football :
+    `Clean sheet`, `Cartons tps`, `Stats match` et `Buteur abs.` allaient etre
+    rapportes comme **quatre facteurs absents** alors qu'ils sont rendus sur
+    17,4 %, 17,2 %, 7,8 % et 0,4 % des blocs. La decoupe se fait donc a la
+    **position** (`l[2:14]`, `l[14:]`), comme `line()` l'ecrit — jamais sur un
+    separateur, qui n'existe pas ;
 - **le score exact se rend en chiffres, quel que soit le vocabulaire du
   fournisseur** (`render.score_text`). The Odds API nomme chaque issue
   `Cruzeiro:0|Mirassol:0`, API-Football `0:0` — 4 568 issues longues contre
