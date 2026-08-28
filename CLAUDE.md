@@ -1852,6 +1852,34 @@ famille devant chez l'autre), initiales, decoupages multiples.
   qui a fait tomber la derniere occurrence en dix secondes : « 261 profils
   archives » contre « 1 profil » dans le premier jet.
 
+### Elle vaut contre son auteur, et ce qui l'attrape est le denominateur
+
+**Trois mesures fausses dans un seul lot, le 28/08/2026, toutes de moi et non
+d'une source.** Aucune n'etait une erreur de calcul :
+
+| Ce qui etait annonce | La cle qui manquait |
+| --- | --- |
+| 40 % de divergence entre `Tour` et `Ici` | 16 blocs **nommaient la phase**, ou le compte est omis a dessein |
+| 22 joueurs « rendus muets » par la ligne | 6 venaient de prompts **anterieurs a la livraison** de la mention |
+| 18 joueurs « encore muets aujourd'hui » | l'appariement portait sur `(joueurs)` seuls, et Swiatek — Rybakina designe **deux editions** |
+| 2 blocs « question manquante » | c'etaient des **entrees en lice**, donc un fait et non un trou |
+
+Le chiffre juste etait **10 sur 57**, et il n'aurait pas suffi a justifier le
+correctif : c'est son **effet** — 5 blocs sur 31 dont l'asymetrie se retourne —
+qui l'a fait. Un taux ne justifie rien tant qu'on n'a pas dit ce qu'il change.
+
+- **Ce qui les a attrapees est a chaque fois le denominateur**, jamais le
+  numerateur : sur quelle population le taux porte, et cette population est-elle
+  homogene. Compter ce qui **entre** dans un rapprochement, et pas seulement ce
+  qui en sort.
+- **Une fonctionnalite livree en cours de periode coupe le corpus en deux**, et
+  la date de son commit est la borne. Le corpus archive porte plusieurs regimes,
+  et un rejeu qui les melange decrit une population qui n'a jamais existe.
+- **Un rejeu dit ce qu'un defaut produirait aujourd'hui, jamais ce qu'il a
+  produit.** Les deux nombres se rapportent cote a cote ou pas du tout : sur le
+  releve perime, 2 fragments sur le corpus archive contre 1 bloc au rejeu du
+  jour, les profils ayant ete rafraichis entre-temps.
+
 ## Avant de coder une heuristique sur des libelles, cherchez l'identifiant
 
 **Regle de revue, tiree de trois defauts de la meme famille.** Le handicap qui semblait mal
@@ -7308,6 +7336,29 @@ marches ne tombent nulle part.
   `markets_for` ne le demande que sur `KNOCKOUT_CATEGORIES`, donc il n'a pas a
   figurer dans une liste de marches demandes et non revenus. Les blocs de coupe du
   meme lot le portent bien.
+
+## Une distinction qui sert deux consommateurs qui ne se connaissent pas est au bon niveau
+
+**Le pendant positif du motif ci-dessous, et le seul test fiable qu'une
+abstraction soit posee au bon endroit — il ne se voit qu'apres coup.**
+
+`HERE_NO_MATCH` contre `HERE_NO_INFO` a ete ecrite le 28/08/2026 pour un
+**libelle** : separer « le joueur entre en lice », qui est un fait sur lui, de
+« le releve precede le tournoi », qui ne decrit que notre fenetre de collecte.
+
+Elle a tranche, le meme jour et sans y avoir ete pensee, un **critere de la fiche
+de recherche** : les deux blocs qu'une premiere mesure comptait comme « question
+manquante » etaient des entrees en lice, donc rien a chercher. Sans la
+distinction, il aurait fallu l'inventer une seconde fois, et les deux ecritures
+auraient diverge — le motif documente juste en dessous.
+
+- **Le test ne s'anticipe pas, il se constate.** Une abstraction posee « parce
+  qu'elle servira » est une supposition ; une abstraction qu'un second
+  consommateur reprend **sans que le premier l'ait prevu** est une mesure.
+- **Le corollaire pratique** : quand un chantier reclame une distinction qui
+  existe deja ailleurs, verifier d'abord si c'est la meme. Si oui, elle se
+  reutilise ; si non, la nommer autrement — deux distinctions voisines sous un
+  meme nom sont pires que deux noms.
 
 ## Une seconde copie qu'aucun mecanisme n'oblige a concorder derive sans bruit
 
