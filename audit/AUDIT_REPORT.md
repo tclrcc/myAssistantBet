@@ -1451,6 +1451,46 @@ equipes n'ont pas joue les cinq matchs que le seuil exige.
   re-mesure de l'unite de mise : un provisoire non date devient permanent par
   oubli, et une phrase dans un rapport ne se rappelle pas seule.
 
+### `Niveau adv.` est indisponible en Europe jusqu'a fin septembre, et ce n'est pas un defaut
+
+**Constate au deploiement du 28/08/2026, et ecrit ici parce que ca se relira comme
+un defaut.** Quelqu'un ouvrira un bloc de Ligue 1 en septembre, ne verra pas la
+ligne, et cherchera dans le code. La cause n'y est pas.
+
+La chaine tient en quatre maillons, et aucun n'est reparable :
+
+1. la ligne a besoin d'`opponent` dans l'historique de saison, ecrit par
+   `dossier._summarize` **depuis le chantier du 28/08 seulement** ;
+2. sous `SEASON_MIN_MATCHES` matchs joues dans la saison en cours, l'historique se
+   **replie sur la saison precedente** — c'est le cas de tous les championnats
+   europeens jusqu'a la 5e journee ;
+3. la charge utile de cette saison-la est **anterieure au chantier**, donc sans
+   `opponent` ;
+4. sa peremption est **longue a dessein** — « elle ne changera plus » — donc rien
+   ne la reecrit avant longtemps.
+
+**Verifie en direct des deux cotes** : la J-League, dont le fournisseur declare la
+saison en cours a trois matchs, se replie et ne rend pas la ligne ; la Super League
+chinoise, a 24 journees, la rend — `Qingdao Hainiu FC 7.8e moy/5`. Ce n'est donc
+pas un defaut de la ligne mais l'etat du calendrier, et il se resorbe tout seul des
+que chaque championnat passe la cinquieme journee.
+
+**C'est le pendant exact de l'echeance ci-dessus, et c'est pour ca qu'il est ecrit
+a cote** : deux lignes que le calendrier de saison rend indisponibles, pour des
+raisons **differentes** et a des dates **differentes**. Les neuf lignes de saison
+manquent parce que leur seuil n'est pas atteint et reviennent avec les journees
+jouees ; `Niveau adv.` manque parce qu'un releve fige n'a pas le champ, et revient
+avec le repli qui cesse. Les confondre ferait attendre l'une en croyant attendre
+l'autre.
+
+- **Aucune migration ne rattrape le cas**, meme arbitrage que `venue_id` et
+  `home_country` : reecrire un historique que personne ne relira couterait plus que
+  d'attendre le TTL. Un enrichissement force de la saison precedente serait un
+  appel par equipe pour une ligne qui reviendra seule.
+- Ce qui aurait fait perdre du temps sans cette note : chercher dans
+  `_ranks_of` ou dans le classement, qui sont **la moitie qui fonctionne** — les
+  rangs sont bien persistes, verifie sur le releve du 28/08.
+
 ## C.21 — Ce qui reste ouvert et n'a pas ete instruit
 
 - **Phase 4** — le generateur de prompts : variables injectees non utilisees,
