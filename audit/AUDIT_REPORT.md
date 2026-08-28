@@ -1064,10 +1064,17 @@ effective, sous les 754 requis. Ce qui se verra est une extinction en deux
 sessions, ou une chute au tiers en quatorze. Ecrit ici pour qu'on ne demande pas
 dans un mois si la baisse a eu lieu sans que personne puisse repondre.
 
-**Reserve de mesure** : `sessions.open_dossiers` etant gele sur la session, la
-declaration ne se suit pas import par import — on ne verra pas la liste se
-rigidifier dans le detail. C'est le meme correctif que l'estampille de cadre,
-ouvert en C.30.
+**Reserve de mesure, et c'est un ordre entre deux chantiers** :
+`sessions.open_dossiers` etant gele sur la session, la declaration ne se suit pas
+import par import — on ne verra pas la liste se rigidifier dans le detail. C'est
+le meme correctif que l'estampille de cadre, ouvert en C.30.
+
+**La surveillance decrite ci-dessus ne peut donc pas commencer avant C.30.** Les
+deux chantiers sont lies dans cet ordre, et l'inverse ne marche pas : mesurer la
+rigidification sur un champ qui ne garde que le dernier import donnerait une
+serie dont on ne saurait pas ce qu'elle decrit. Ecrit ici parce qu'une dependance
+qui ne vit que dans une conversation se perd — c'est ce que B1 a coute, neuf lots
+durant.
 
 ## C.21 — Ce qui reste ouvert et n'a pas ete instruit
 
