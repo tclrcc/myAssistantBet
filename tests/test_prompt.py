@@ -764,8 +764,20 @@ async def test_le_prompt_donne_la_taille_du_lot_et_son_plafond(
 
     body = build_prompt(session_id, settings=migrated, now=NOW).body
 
+    plat = " ".join(body.split())
+    lot = body.count("\n### M")
+
     assert "Ce lot comporte **1 match(s)**" in body
-    assert "le total ne peut pas dépasser 1, tous paliers confondus" in " ".join(body.split())
+    # Le plafond annonce **est** la taille du lot, jamais une valeur du jour.
+    assert f"donc {lot} ligne" in plat
+    # **Et il ne se donne pas pour infranchissable.** Le gabarit autorise depuis
+    # toujours une seconde ligne sur un match, aux conditions dites neuf lignes
+    # plus bas : le « donc » de la phrase de quota reposait sur une premisse que
+    # le meme chapitre dement. Mesure : 13 des 574 matchs portant une selection
+    # en portent deux, 9 en section C — la permission sert, elle n'est pas
+    # theorique.
+    assert "ne peut pas dépasser" not in plat
+    assert "angles réellement indépendants" in plat
 
 
 @respx.mock

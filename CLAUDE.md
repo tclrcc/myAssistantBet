@@ -6710,6 +6710,78 @@ plus haut, lui donnait deux adversaires.
   qu'elle rapporte. Partout ailleurs le passe est clos et le retard ne peut pas
   inverser l'enonce.
 
+## La fiche de priorite contredisait la fiche de verification
+
+**Mesure du 28/08/2026, et c'est le §8 sur deux sorties qui ne se parlaient
+pas.** Le critere tennis du detail de tournoi se lisait sur `Fraicheur` :
+
+    elif "non comptes" in (lignes.get("Fraicheur") or ""):
+
+Or les deux lignes datent **deux retards differents**. `Fraicheur` porte celui du
+fichier hebdomadaire `tennis-data.co.uk`, qui alimente `Forme`, `Usure`,
+`Profil`, `Marge` et `Niveau adv. ` ; `Ici` porte la couverture du **tournoi en
+cours**. Seule la seconde repond a « quels tours de ce tournoi le bloc ne raconte
+pas ».
+
+Rejeu sur les 41 blocs de tennis archives portant une ligne `Ici` :
+
+| | blocs |
+| --- | ---: |
+| question emise, `Ici` couvre tout | **28** |
+| question emise, `Ici` laisse un trou | 11 |
+| aucune question, aucun trou | 2 |
+| **question ajoutee par le nouveau critere** | **0** |
+
+- **Le gabarit disait deja l'inverse sur ces 28 blocs.** La fiche de verification
+  tennis porte, mot pour mot : « ne les cherche pas, et ne les refais pas de
+  zero » pour ce que `Ici` sert, puis « quand `Ici` nomme des matchs non
+  couverts, ou qu'elle est absente, cherche ces scores-la ». Les deux fiches du
+  meme prompt se contredisaient sur les memes blocs, et c'est la fiche de
+  verification qui avait raison.
+- **Un critere qui se declenche sur 95 % des blocs n'en classe aucun.** 39 des 41
+  blocs portaient au moins un motif ; 13 en portent. Ce n'est pas une perte de
+  couverture, c'est la fin d'un tri qui ne triait pas — meme reproche que celui
+  fait aux deux criteres faibles du football et au seuil de repos pose sur un
+  mode.
+- **La duree ne justifie pas de garder la question.** Elle n'est servie par
+  aucune source, et la fiche de verification la reclame deja une fois pour tout
+  le lot — « va chercher les trois choses qu'aucune source ne sert : la duree,
+  les conditions reelles du court, et le double ». Un dossier n'a pas a repayer
+  ce que le cadre demande partout.
+- **Trois etats de la ligne, deux seulement sont des trous.** `non couvert` et
+  `HERE_NO_INFO` en sont ; `HERE_NO_MATCH` non — c'est une **entree en lice**,
+  donc un fait sur le joueur. Les deux blocs que la premiere mesure comptait
+  comme « question manquante » etaient exactement ceux-la, Chwalinska et
+  Alexandrova, releve posterieur et zero non-couvert. La distinction est celle
+  que le libelle perime venait d'introduire : les deux chantiers se rejoignent.
+- **Le motif nomme le joueur, jamais l'adversaire.** Nommer le joueur est
+  possible sur les 39 blocs qui portaient la question ; nommer l'adversaire
+  recopierait `Parcours` huit lignes plus haut et ne vaudrait que **5 fois sur
+  39**, la ligne ecrivant « (tout le Parcours) » le reste du temps.
+- Les noms viennent de l'**evenement** et jamais de la prose ; seul le marqueur
+  s'y lit, par ses constantes.
+
+## Deux regles du gabarit se contredisaient sur le plafond de selections
+
+`Quotas de ce lot : … Une seule selection par match, **donc** le total ne peut
+pas depasser N` — et neuf lignes plus bas : « Deux selections sur un meme match
+ne se justifient que si elles reposent sur des angles reellement independants ».
+Le « donc » reposait sur une premisse que le meme chapitre dement.
+
+- **La permission sert, elle n'est pas theorique** : sur les 574 matchs portant
+  au moins une selection, **13 en portent deux**, 9 en section C.
+- La regle vivait **deux fois** — une fois sans son exception et suivie du
+  « donc », une fois avec. Elle ne vit plus qu'une fois, la ou elle est
+  qualifiee, et le plafond s'annonce comme ce qu'il est : `N lignes au plus,
+  sauf second angle independant`. Solde : **+10 tokens**.
+- Le banc n'assertait plus la phrase mais la **propriete** : le nombre annonce
+  est la taille du lot, et la phrase ne se donne pas pour infranchissable.
+- **`au moins 1 tour disputes` s'accorde enfin.** Le pluriel etait porte par le
+  seul nom et jamais par le participe. Rien ne cassait — et c'est ce qui le
+  rendait genant : le lecteur se demande si le pluriel porte une information que
+  le chiffre ne porte pas. Corrige dans le meme lot que le reste du texte, et non
+  dans le correctif du compte, ou il aurait rendu le rejeu illisible.
+
 ## Un ecart se nomme sur ce qui se gagne, et se tait sous le bruit
 
 `Ecart` confrontait le taux de premieres balles **mises en jeu**. Sur un bloc

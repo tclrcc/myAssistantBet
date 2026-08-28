@@ -362,7 +362,11 @@ def _rounds_played(
     # « disputes » ne s'ecrit qu'une fois : le second compte se lit dessus, et
     # le repeter allongerait la ligne sans rien ajouter.
     tete, premier = comptes[0]
-    fragments = [f"{tete} tour{'s' if tete > 1 else ''} disputes par {premier}"]
+    # Le pluriel porte sur les **deux** mots : le nom seul laissait « 1 tour
+    # disputes », ou le lecteur cherche une information que le chiffre ne porte
+    # pas.
+    pluriel = "s" if tete > 1 else ""
+    fragments = [f"{tete} tour{pluriel} dispute{pluriel} par {premier}"]
     fragments += [f"{tours} par {joueur}" for tours, joueur in comptes[1:]]
     return f"{ROUNDS_PLAYED} " + ", ".join(fragments)
 

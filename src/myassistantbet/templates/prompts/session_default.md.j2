@@ -733,20 +733,20 @@ par bande de cote dans le temps. Deux sélections au même prix doivent tomber
 dans le même palier, sans quoi ce taux ne mesure plus une bande de cote — et la
 confiance a déjà son propre axe.
 
-Quotas **de ce lot** : {{ quotas | join(', ') }}. Une seule sélection par match,
-donc le total ne peut pas dépasser {{ event_blocks | length }}, tous paliers
-confondus. Vise la fourchette basse de deux ou trois paliers, laisse les autres
-vides.
+Quotas **de ce lot** : {{ quotas | join(', ') }}. Une sélection par match, donc
+{{ event_blocks | length }} ligne{{ 's' if event_blocks | length > 1 }} au plus, tous paliers
+confondus — sauf second angle indépendant sur un même match, aux conditions
+dites plus bas. Vise la fourchette basse de deux ou trois paliers, laisse les
+autres vides.
 
 Les bornes des paliers **au-delà des deux plus sûrs** tiennent déjà compte du
 budget de recherche : chacun de ces paliers réclame un fait nommé et daté de la
 section A, donc un dossier ouvert, et **ce prompt** en ouvre
 {{ research_budget }}. Le calcul est fait — il ne te reste rien à en déduire.
 
-Une sélection par match. Deux sélections sur un même match ne se justifient que
-si elles reposent sur des angles réellement indépendants. Multiplier les lignes
-d'un même match pour atteindre un quota est une façon déguisée de remplir un
-palier avec du vide.
+Deux sélections sur un même match ne se justifient que si elles reposent sur des
+angles réellement indépendants. Multiplier les lignes d'un même match pour
+atteindre un quota est une façon déguisée de remplir un palier avec du vide.
 
 **Deux marchés de la même famille ne sont jamais deux angles indépendants** —
 `Vainqueur` deux fois, ou `O/U 2.5` et `O/U 3.5`, sont la même sélection écrite

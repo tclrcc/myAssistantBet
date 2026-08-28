@@ -342,19 +342,99 @@ def test_les_questions_ne_se_repetent_pas(migrated: Settings) -> None:
     assert len(questions) == len(set(questions))
 
 
-def test_le_tennis_reclame_les_tours_non_recenses(migrated: Settings) -> None:
-    """Le trou le plus couteux d'une journee de tennis : aucune de nos lignes ne
-    porte le score ni la duree des tours deja joues ici."""
-    contexte = [("Fraicheur", "arretees au 03/08\nLehecka 3 non comptes (Zverev, Fils)")]
-    events = [_event(1, sport="tennis", context=contexte)] + [
+def test_le_tennis_reclame_les_tours_que_la_source_ne_couvre_pas(
+    migrated: Settings,
+) -> None:
+    """**Le critere lisait `Fraicheur` pour poser une question a laquelle `Ici`
+    repond.**
+
+    Les deux lignes mesurent deux retards differents : `Fraicheur` celui du
+    fichier hebdomadaire, qui alimente `Forme/Usure/Profil/Marge/Niveau adv.` ;
+    `Ici` la couverture du **tournoi en cours**. Seule la seconde repond a
+    « quels tours de ce tournoi le bloc ne raconte pas ».
+
+    Mesure du 28/08/2026 sur les 41 blocs de tennis archives portant une ligne
+    `Ici` : **28 emettaient la question alors que la ligne couvrait tout**, avec
+    les scores set par set et le service agrege sous les yeux. Et le gabarit
+    disait deja l'inverse sur ces blocs-la — « ne les cherche pas, et ne les
+    refais pas de zero », puis « quand Ici nomme des matchs non couverts, ou
+    qu'elle est absente, cherche ces scores-la ». La fiche de priorite
+    contredisait la fiche de verification dans le meme prompt.
+
+    Le motif **nomme le joueur**, ce qui est possible partout ; il ne nomme pas
+    l'adversaire, ce qui recopierait `Parcours` huit lignes plus haut et ne vaut
+    que 5 fois sur 39.
+    """
+    trou = [
+        (label, "valeur")
+        if label != "Ici"
+        else ("Ici", "Club 1 24/08 bat X 6-3 6-4\n1 match non couvert : Zverev")
+        for label, _ in _dense("tennis")
+    ]
+    events = [_event(1, sport="tennis", context=trou)] + [
         _event(i, sport="tennis") for i in range(2, 22)
     ]
 
     fiche = research.sheet(events, migrated)
 
     assert [item.index for item in fiche.dossiers] == [1]
-    assert "tours de ce tournoi non recenses" in fiche.dossiers[0].motifs
+    assert "tours non couverts ici : Club 1" in fiche.dossiers[0].motifs
     assert any("statistiques de service" in q for q in fiche.dossiers[0].questions)
+
+
+def test_un_bloc_dont_ici_couvre_tout_ne_reclame_plus_ce_detail(
+    migrated: Settings,
+) -> None:
+    """**Ce qui ameliore les blocs n'est pas une source de plus, c'est que la
+    section A cesse de chercher ce que le bloc dit deja.**
+
+    Un critere qui se declenchait sur **95 %** des blocs de tennis n'en classait
+    plus aucun. Le bloc dense porte `Ici` sans trou : il ne reclame donc plus ce
+    detail, et la durée — qu'aucune source ne sert — reste demandee une fois pour
+    toutes par la fiche de verification, pas par un dossier.
+    """
+    events = [_event(i, sport="tennis") for i in range(1, 22)]
+
+    fiche = research.sheet(events, migrated)
+
+    motifs = [motif for item in fiche.dossiers for motif in item.motifs]
+    assert not any("tours non couverts" in motif for motif in motifs)
+    assert not any("aucun score de ce tournoi" in motif for motif in motifs)
+
+
+def test_une_entree_en_lice_n_est_pas_un_trou(migrated: Settings) -> None:
+    """`aucun match dans ce tournoi` est un **fait sur le joueur**, pas un manque.
+
+    Les deux blocs que la premiere mesure comptait comme « question manquante »
+    etaient ceux-la — Chwalinska et Alexandrova, entrees en lice, relevé
+    posterieur au tournoi et zero match non couvert. Rien a chercher.
+
+    C'est la meme distinction que le libelle `HERE_NO_INFO` porte : un releve
+    anterieur au tournoi, lui, est un trou.
+    """
+    from myassistantbet.services.serve_stats import HERE_NO_INFO, HERE_NO_MATCH
+
+    en_lice = [
+        (label, "valeur")
+        if label != "Ici"
+        else ("Ici", f"Club 1 24/08 bat X 6-3 6-4\nAdv 1 {HERE_NO_MATCH} [releve au 26/08]")
+        for label, _ in _dense("tennis")
+    ]
+    perime = [
+        (label, "valeur")
+        if label != "Ici"
+        else ("Ici", f"Club 2 24/08 bat X 6-3 6-4\nAdv 2 {HERE_NO_INFO} [releve au 19/08]")
+        for label, _ in _dense("tennis")
+    ]
+    events = [
+        _event(1, sport="tennis", context=en_lice),
+        _event(2, sport="tennis", context=perime),
+    ] + [_event(i, sport="tennis") for i in range(3, 22)]
+
+    fiche = research.sheet(events, migrated)
+
+    assert [item.index for item in fiche.dossiers] == [2], "seul le releve perime reclame"
+    assert "tours non couverts ici : Adv 2" in fiche.dossiers[0].motifs
 
 
 def test_un_bloc_sans_aucun_score_du_tournoi_passe_devant(migrated: Settings) -> None:

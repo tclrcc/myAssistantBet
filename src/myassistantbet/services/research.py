@@ -631,9 +631,12 @@ def _rotation_reasons(lignes: dict[str, str]) -> list[Reason]:
 
 
 #: La question que le detail d'un tournoi en cours appelle. **Ecrite une fois**,
-#: parce que trois etats du bloc y menent — aucun score du tournoi, un historique
-#: en retard, un profil de service sous son seuil — et que trois formulations
+#: parce que trois etats du bloc y menent — aucun score du tournoi, une couverture
+#: trouee, un profil de service sous son seuil — et que trois formulations
 #: voisines se liraient comme trois recherches quand c'est la meme.
+#:
+#: Le deuxieme etat se lisait sur `Fraicheur` jusqu'au 28/08/2026, donc sur le
+#: retard d'une **autre** source : voir `_here_gaps`.
 TOURNAMENT_DETAIL = "Score set par set, duree et statistiques de service des tours deja joues ici ?"
 
 
@@ -645,14 +648,20 @@ def _tennis_reasons(
     **Trois etats du bloc menent a la meme question, et un seul poids serait
     faux.** Nos sources ne portent aucun detail de match pour le tournoi en
     cours : le fichier hebdomadaire parait apres coup, et la ligne `Ici` ne
-    couvre que ce que nos propres scans ont vu. Un bloc qui n'en porte **rien**
-    n'est pas dans le meme etat qu'un bloc dont l'historique accuse quelques
-    jours de retard.
+    couvre que ce que la source a publie a la date de son releve. Un bloc qui
+    n'en porte **rien** n'est pas dans le meme etat qu'un bloc dont la couverture
+    est trouee.
 
     Mesure sur les 48 blocs rendus depuis le 20/08/2026 : `Ici` absente sur
     **10 blocs (21 %)**, `Service` absente sur 10 aussi. La question ne se
     duplique pas — `Dossier.questions` la rend une fois — mais le poids, lui,
     ordonne.
+
+    **Le second etat se lisait sur la mauvaise ligne**, et le rejeu du 28/08/2026
+    le chiffre : sur les 41 blocs archives portant une ligne `Ici`, **28 sur 41**
+    emettaient la question alors que la ligne couvrait tout. Le critere se lit
+    desormais sur `Ici` — 11 blocs, tous nommant le joueur concerne, et **aucune
+    question ajoutee la ou l'ancien se taisait**.
     """
     if event.sport_key != "tennis":
         return []
@@ -665,8 +674,10 @@ def _tennis_reasons(
     servi = bool(lignes.get("Forme"))
     if servi and not (lignes.get("Ici") or ""):
         reasons.append(Reason(STRONG, "aucun score de ce tournoi dans le bloc", TOURNAMENT_DETAIL))
-    elif "non comptes" in (lignes.get("Fraicheur") or ""):
-        reasons.append(Reason(MEDIUM, "tours de ce tournoi non recenses", TOURNAMENT_DETAIL))
+    elif servi and (trous := _here_gaps(event, lignes)):
+        reasons.append(
+            Reason(MEDIUM, f"tours non couverts ici : {', '.join(trous)}", TOURNAMENT_DETAIL)
+        )
     if servi and not (lignes.get("Service") or ""):
         reasons.append(Reason(MEDIUM, "aucun profil de service", TOURNAMENT_DETAIL))
     reasons += _rest_reasons(lignes)
@@ -674,6 +685,60 @@ def _tennis_reasons(
     reasons += _draw_status_reasons(event, settings)
     reasons += _thin_player_reasons(lignes)
     return reasons
+
+
+def _here_gaps(event: RenderableEvent, lignes: dict[str, str]) -> list[str]:
+    """Les joueurs dont la ligne `Ici` laisse un trou, dans l'ordre du bloc.
+
+    **`Fraicheur` etait la mauvaise ligne, et c'est mesure.** Les deux datent un
+    retard, mais pas le meme : `Fraicheur` celui du fichier hebdomadaire, qui
+    alimente `Forme/Usure/Profil/Marge/Niveau adv.` ; `Ici` la couverture du
+    **tournoi en cours**. Le critere lisait la premiere pour poser une question a
+    laquelle la seconde repond — sur les 41 blocs de tennis archives portant une
+    ligne `Ici`, **28 emettaient la question quand la ligne couvrait tout**,
+    scores set par set et service agrege sous les yeux.
+
+    **Le gabarit disait deja l'inverse sur ces blocs-la** : « ne les cherche pas,
+    et ne les refais pas de zero », puis « quand `Ici` nomme des matchs non
+    couverts, ou qu'elle est absente, cherche ces scores-la ». La fiche de
+    priorite contredisait la fiche de verification dans le meme prompt, et c'est
+    la fiche de verification qui avait raison.
+
+    **Trois etats de la ligne, deux seulement sont des trous** :
+
+    - `non couvert` — nos scans placent ici une rencontre dont la source ne dit
+      rien : un trou, et le fait le plus couteux du bloc quand c'est le dernier
+      tour ;
+    - `HERE_NO_INFO` — le releve precede le tournoi, donc la ligne n'affirme
+      rien : un trou, et il porte sur tout le parcours ;
+    - `HERE_NO_MATCH` — le joueur **entre en lice**. C'est un fait sur lui, pas
+      un manque, et rien n'est a chercher. Les deux blocs que la premiere mesure
+      comptait comme « question manquante » etaient ceux-la.
+
+    **Le joueur se nomme, l'adversaire non.** Nommer est possible partout, et le
+    motif porte deja le nom ; nommer l'adversaire recopierait `Parcours` huit
+    lignes plus haut et ne vaudrait que 5 fois sur 39, la ligne ecrivant
+    « (tout le Parcours) » le reste du temps.
+
+    Les noms viennent de l'evenement et jamais de la prose : seul le **marqueur**
+    s'y lit, et par ses constantes, comme partout dans ce module.
+    """
+    from .serve_stats import HERE_NO_INFO, HERE_UNCOVERED
+
+    valeur = lignes.get("Ici") or ""
+    if not valeur:
+        return []
+    manquants: list[str] = []
+    courant = ""
+    for fragment in valeur.split("\n"):
+        for joueur in (event.home, event.away):
+            if joueur and fragment.startswith(joueur + " "):
+                courant = joueur
+                break
+        marque = HERE_UNCOVERED in fragment or HERE_NO_INFO in fragment
+        if marque and courant and courant not in manquants:
+            manquants.append(courant)
+    return manquants
 
 
 def _rest_reasons(lignes: dict[str, str]) -> list[Reason]:

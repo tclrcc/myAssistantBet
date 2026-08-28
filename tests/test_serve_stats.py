@@ -2687,6 +2687,30 @@ def test_le_mode_d_emploi_du_tour_ne_dit_plus_nos_scans_seuls() -> None:
     assert "sur nos propres relevés" not in texte
 
 
+def test_un_seul_tour_s_accorde_au_singulier(migrated: Settings) -> None:
+    """`au moins 1 tour dispute`, jamais `1 tour disputes`.
+
+    Le pluriel etait porte par le seul nom et jamais par le participe, si bien
+    qu'un joueur entre en lice depuis un tour lisait « 1 tour disputes ». Rien ne
+    casse — et c'est ce qui le rend genant : le lecteur se demande si le pluriel
+    porte une information que le chiffre ne porte pas.
+    """
+    from myassistantbet.services import tennis_round
+
+    competition = _tournoi(
+        migrated,
+        [
+            ("A", "X", "2026-08-15T12:00:00Z"),
+            ("P", "Q", "2026-08-16T13:00:00Z"),
+            ("A", "B", "2026-08-18T12:00:00Z"),
+        ],
+    )
+    valeur = tennis_round.lines(competition, "2026-08-18T12:00:00Z", migrated, "A", "B")[0][1]
+
+    assert f"{tennis_round.ROUNDS_PLAYED} 1 tour dispute par A" in valeur
+    assert "1 tour disputes" not in valeur
+
+
 def test_un_tour_nomme_ne_repete_pas_le_compte(migrated: Settings) -> None:
     """`quart de finale` situe deja le joueur : le compte n'ajouterait rien, et
     une ligne qui sort partout cesse d'informer."""
