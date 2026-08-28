@@ -3579,6 +3579,86 @@ le disait.
   Elle est ecrite **deux fois** — ici et dans `history.tier_for_price`, le module du prompt
   important celui de l'historique — et un test compare les deux implementations.
 
+### Un palier ne s'annonce que sur une cote que le bloc affiche
+
+**Le mecanisme existait, il n'etait pas applique au bon niveau.** `prices_of`
+lisait `event.markets`, donc toute la table `odds`, quand `render` tronque — dix
+scores exacts, cinq lignes O/U, un palier de handicap, le seul Over de chaque
+equipe. Les deux consommateurs annoncaient donc des cotes que personne ne peut
+aller lire.
+
+Mesure du 28/08/2026 sur les 142 lots archives portant la ligne des bornes,
+**bandes de l'epoque appliquees** — la migration 071 deplace SAFE/FUN le 21/08,
+et sans cette precaution 43 blocs sortaient en faux positif :
+
+| | avant | apres |
+| --- | ---: | ---: |
+| lots dont la borne **haute** manque au bloc nomme | **84 (59 %)** | 0 |
+| lots dont la borne **basse** manque au bloc nomme | **66 (46 %)** | 0 |
+| blocs annoncant un palier qu'aucune cote rendue n'atteint | **145 / 1 194 (12,1 %)** | 0 |
+| liste de paliers **du lot** en desaccord | **0 / 142** | 0 |
+
+- **La conclusion evidente etait fausse, et c'est la mesure qui l'a dite.** Le
+  prompt 230 annoncait `501.00 (M3 · Score ex. MT 1:5)` et proposait GIGA+ ; on
+  en a deduit que le palier n'existait que par cette cote invisible. Faux : M1
+  rend un `Score ex. MT 2:2 34.00`, donc GIGA+ est atteint par une cote
+  **visible**. Le quota du lot n'a jamais ete fausse, sur 142 lots. Le defaut
+  vit un cran plus bas, sur la ligne `Paliers` de chaque bloc.
+- **145 sur 145 sont GIGA FUN et 145 sur 145 sont du football**, soit 17,2 % des
+  blocs de football et 17,0 % depuis le 22/08 — regime stable, pas un artefact
+  ancien. La bande 3.60-8.00 y est peuplee par une ligne O/U ou un score exact
+  que la troncature ecarte, quand GIGA+ reste atteint par les scores rendus.
+- **Aucune selection n'a pu etre prise dessus, et c'est mesure deux fois** : sur
+  370 selections rattachees a leur bloc, 369 portent une cote qui figure dans
+  une ligne de marche rendue, et **0** tombe dans un palier fantome de son bloc —
+  y compris sur les 35 blocs fantomes qui portaient pourtant une selection. On
+  ne recopie pas un prix invisible. Ce qui se paie est **une recherche envoyee
+  dans une bande vide, puis une ligne d'excuse pour un palier que le bloc rendait
+  impossible** : le cout exact que `TierScope` existe pour supprimer.
+- **Le correctif ne replique pas la troncature**, ce serait la copie que
+  `markets.py` a deja appris a ne pas faire. Chaque rendu de marche rend
+  `(lignes, retenus)`, tires des **memes cles** qu'il a calculees pour ecrire ses
+  lignes ; `render.rendered_outcomes` est la seule porte. Douze fonctions
+  touchees, et l'invariant passe de la discipline a la **signature** — un rendu
+  neuf ne compile pas sans dire ce qu'il imprime.
+- **La ligne `Cote min` est gardee**, et elle ne designe rien de jouable : 114
+  lots sur 142 y nomment une cote sous 1.25, donc sous toute bande. C'est
+  precisement ce qu'elle dit — il n'y a rien en dessous — et elle epargne la meme
+  relecture que la borne haute. Corrigee, elle nomme une cote rendue.
+- **Une cote inferieure ou egale a 1.00 en est ecartee, et il faut savoir
+  pourquoi elle y arrivait** : elle **est** imprimee, 52 fois sur les 51 892
+  cotes rendues du corpus, dans une echelle O/U qui montre ses deux cotes. Ce
+  n'est pas une cote pour autant — un taux implicite d'au moins 100 %, refuse par
+  `add_pick` — et une borne ne peut pas nommer un prix qu'aucune selection ne
+  pourrait porter.
+- Cout : **-580 tokens sur tout le corpus**, 4 par prompt. 1 049 blocs sur 1 194
+  ne changent pas d'un mot.
+
+### Le garde-fou des cotes existait quatorze fois et n'avait pas de nom
+
+Corollaire du meme chantier, et cas 1 de la regle des copies. « 1.00 ou moins
+n'est pas une cote : ce serait un taux implicite d'au moins 100 % » etait ecrit
+en commentaire au-dessus d'**un** des quatorze endroits qui recopiaient la
+comparaison.
+
+- **Verifie site par site avant d'unifier**, parce que deux gardes proches sous
+  des noms differents seraient pires que deux noms : refus a la saisie d'une
+  selection et d'une cote obtenue, refus d'une ligne de cotes manuelles, refus
+  d'une saisie de grille, et garde devant chaque `1.0 / cote` du residu au prix.
+  Aucun n'est un voisin du predicat ; tous sont le predicat.
+- `render.is_price` le nomme, et les **douze exemplaires Python** l'appellent.
+  Le module est le seul que les cinq appelants puissent importer sans cycle —
+  `history` y arrive deja par `market_families`, `grid` l'importe. Meme
+  raisonnement que `in_band` : **c'est le sens de l'import qui decide, pas
+  l'affinite du sujet**.
+- **Trois exemplaires restent, et ils sont en SQL.** Une clause `WHERE` ne peut
+  pas appeler la fonction, et rouvrir une connexion par ligne paierait
+  l'unification en performance. C'est le second traitement du chapitre des
+  copies : un banc lit **les deux sources** et compare leur seuil, plutot que de
+  recopier la regle.
+- **Un garde sans nom du tout est pire qu'un garde mal nomme** : il ne peut meme
+  pas se chercher. C'est ce qui a permis a la quatorzieme copie de s'ecrire.
+
 ## La ligne `Fraicheur`, ou ce que le retard de l'historique coute en matchs
 
 `Historique` disait jusqu'ou allait le jeu de donnees et `Parcours` nommait les adversaires
