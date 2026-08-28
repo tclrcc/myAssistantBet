@@ -41,6 +41,7 @@ from .labels import affiche, context_family, expected_context, sort_key
 from .render import MERGED_MARKETS, RenderableEvent
 from .session import context_density
 from .thresholds import value_of as threshold
+from .weather import ALERT_MARK
 
 logger = logging.getLogger(__name__)
 
@@ -572,13 +573,38 @@ def _venue_reasons(lignes: dict[str, str]) -> list[Reason]:
 def _weather_reasons(lignes: dict[str, str]) -> list[Reason]:
     """Une alerte officielle en vigueur, et rien d'autre.
 
-    Mesure : sur cinq sessions, la temperature n'a jamais rien change ; l'alerte
-    a change une section entiere, deux fois, parce qu'elle disait que la
-    rencontre pouvait ne pas se jouer. Le critere ne se declenche donc pas sur
-    « 30 C, pluie 80 % » — un lot d'ete monterait en entier — mais sur le seul
-    fait qui puisse l'emporter sur tout le reste du bloc.
+    Mesure d'origine : sur cinq sessions, la temperature n'a jamais rien change ;
+    l'alerte a change une section entiere, deux fois, parce qu'elle disait que la
+    rencontre pouvait ne pas se jouer.
+
+    ## La porte reste fermee, et la raison qui la fermait etait fausse
+
+    Elle etait la **frequence** : « le critere ne se declenche pas sur 30 C,
+    pluie 80 % — un lot d'ete monterait en entier ». C'est vrai des valeurs
+    ordinaires et faux des extremes, et un lecteur qui le verifie rouvre la
+    porte — ce qui est arrive le 28/08/2026. Distribution des 640 relevés
+    archives : 30 C designe **23,4 %** des blocs, mais 35 C **5,5 %**, 41 C
+    **0,9 %** (6 blocs) et 47 km/h **4,1 %** (26 blocs). Un seuil pose la
+    discriminerait tres bien.
+
+    **Ce qui ferme la porte est l'effet, et il se mesure.** Sur les blocs de
+    queue — 35 C, 44 km/h ou 90 % de pluie et au-dela — la prose des selections
+    (`angle_note`, `invalidation`) **cite deja la meteo dans 10 cas sur 14, soit
+    71 %**, contre 27 sur 213 ailleurs — 13 %. Fisher exact `p = 2,6e-6`. Le
+    modele lit la valeur extreme et s'en sert **sans qu'on l'y envoie**, parce
+    qu'elle est ecrite dans le bloc avec son heure et sa date de releve.
+
+    Un critere emettrait donc une question dont la reponse est sur la meme
+    ligne : le defaut corrige au lot precedent, ou la fiche cherchait ce que le
+    bloc disait deja. Ce qui **n'est pas** dans le bloc est l'etat de l'alerte a
+    l'heure du coup d'envoi — report, huis clos, terrain praticable — et c'est le
+    seul cas qui reste.
+
+    **Un docstring faux coute plus qu'un docstring absent** : il fait re-deriver
+    la meme conclusion fausse. La porte est desormais tenue par un banc, pas par
+    ce paragraphe.
     """
-    if "ALERTE" not in (lignes.get("Meteo") or ""):
+    if ALERT_MARK not in (lignes.get("Meteo") or ""):
         return []
     return [
         Reason(

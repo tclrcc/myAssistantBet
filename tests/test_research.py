@@ -453,6 +453,54 @@ def test_la_divergence_double_se_dit_sans_changer_de_poids(migrated: Settings) -
     assert "deux" not in motifs[2]
 
 
+def test_une_meteo_extreme_sans_alerte_n_ouvre_aucun_dossier(migrated: Settings) -> None:
+    """**Porte fermee, et ce banc la tient a la place d'un commentaire.**
+
+    Elle etait gardee par le seul docstring de `_weather_reasons`, qui la fermait
+    sur la **frequence** : « le critere ne se declenche pas sur 30 C, pluie 80 %,
+    un lot d'ete monterait en entier ». Mesure du 28/08/2026 sur les 640 relevés
+    de meteo archives : cet argument **ne tient pas aux extremes**. 30 C designe
+    23,4 % des blocs, mais **41 C n'en designe que 0,9 %** (6 blocs) et
+    **47 km/h 4,1 %** (26 blocs). Un seuil pose la discriminerait tres bien.
+
+    Ce qui ferme la porte est l'**effet**, pas la frequence, et il se mesure :
+    sur les blocs de queue — 35 C, 44 km/h ou 90 % de pluie et au-dela — la prose
+    des selections **cite deja la meteo dans 10 cas sur 14 (71 %)**, contre 27
+    sur 213 (13 %) ailleurs. Fisher exact `p = 2,6e-6`. Le modele lit la valeur
+    extreme et s'en sert sans qu'on l'y envoie, parce qu'elle est **ecrite dans
+    le bloc**, avec son heure et sa date de releve.
+
+    Un critere emettrait donc une question dont la reponse est sur la meme ligne
+    — le defaut corrige au lot precedent, ou la fiche cherchait ce que le bloc
+    disait deja. Ce qui **n'est pas** dans le bloc est l'etat de l'alerte a
+    l'heure du coup d'envoi : report, huis clos, terrain praticable. C'est une
+    recherche, et c'est le seul cas qui reste ouvert.
+    """
+    from myassistantbet.services.weather import ALERT_MARK
+
+    for event_id, index in ((620, 1), (621, 2), (622, 3)):
+        _en_base(migrated, event_id, index)
+    canicule = _event(
+        1, 620, context=[*_dense(), ("Meteo", "41 C, pluie 0 %, rafales 22 km/h a 19:00 local")]
+    )
+    tempete = _event(
+        2, 621, context=[*_dense(), ("Meteo", "24 C, pluie 0 %, rafales 47 km/h a 18:00 local")]
+    )
+    alerte = _event(
+        3,
+        622,
+        context=[*_dense(), ("Meteo", f"22 C, pluie 99 %, rafales 44 km/h — {ALERT_MARK} orage")],
+    )
+
+    fiche = research.sheet(
+        [canicule, tempete, alerte] + [_event(i) for i in range(4, 22)], migrated
+    )
+
+    assert [dossier.index for dossier in fiche.dossiers] == [3], (
+        "seule l'alerte ouvre un dossier : elle seule pose une question que le bloc ne resout pas"
+    )
+
+
 def test_les_questions_ne_se_repetent_pas(migrated: Settings) -> None:
     """Deux criteres peuvent viser la meme verification."""
     _en_base(migrated, 602, 1)

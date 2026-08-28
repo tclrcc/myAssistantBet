@@ -3659,6 +3659,61 @@ comparaison.
 - **Un garde sans nom du tout est pire qu'un garde mal nomme** : il ne peut meme
   pas se chercher. C'est ce qui a permis a la quatorzieme copie de s'ecrire.
 
+### La divergence d'entraineur ouvre un dossier, la meteo extreme non
+
+Deux candidats du meme lot, mesures separement, et **ils ne se concluent pas
+pareil** — 28/08/2026.
+
+**La divergence d'entraineur n'avait aucun critere.** M2 du lot du 28/08 portait
+une double divergence — Milojevic contre Slutski, Tang contre Han — et ne
+figurait pas dans la fiche, quand quatre blocs y etaient sur la seule presence
+d'une ligne `Effectif`. Ce qu'elle coute depasse sa ligne : trois autres lignes
+du **meme bloc** — `Forme 5`, `Formations`, `xG` — decrivent une equipe sous une
+direction dont on ne sait pas si elle est la.
+
+- Taux mesure **depuis le correctif du nom complet** (`f0e500a`, 21/08), qui est
+  un point de rupture : avant lui la comparaison opposait un nom abrege a un nom
+  entier. **87 blocs sur 335, 26,0 %**, dont **33 (9,9 %) sur un bloc qu'aucun
+  critere actuel ne designe** — le « aucun critere » du lot tombe de 54,0 % a
+  44,2 %. Divergence double : 19 (5,7 %).
+- **26 % est la largeur des deux criteres faibles** — `_squad_reasons` 26,0 %,
+  `_rotation_reasons` 30,7 % — donc le reproche que le dossier leur fait
+  vaudrait ici. Deux choses l'en separent, et aucune n'est le taux : il tire sur
+  un **conflit nomme entre deux sources** et non sur la presence d'une ligne, et
+  il ouvre un dossier la ou il n'y en avait aucun.
+- **Le poids ne distingue pas la simple de la double**, et le motif si. Peser la
+  double plus haut serait regler un poids sur son propre exemple — le lot qui a
+  souleve la question en portait justement une. Porte laissee ouverte et datee :
+  le resserrement est une decision d'une ligne, et sa mesure est prise.
+
+**La meteo extreme reste fermee, et la raison qui la fermait etait fausse.** Le
+docstring de `_weather_reasons` la fermait sur la **frequence** — « un lot d'ete
+monterait en entier ». Vrai des valeurs ordinaires, faux des extremes, et c'est
+ce qui a fait rouvrir la porte.
+
+| | part des 640 relevés |
+| --- | ---: |
+| >= 30 C | 23,4 % |
+| >= 41 C | **0,9 %** (6 blocs) |
+| >= 47 km/h | **4,1 %** (26 blocs) |
+
+- **Ce qui ferme la porte est l'effet.** Sur les blocs de queue — 35 C, 44 km/h
+  ou 90 % de pluie et au-dela — la prose des selections cite **deja** la meteo
+  dans **10 cas sur 14 (71 %)**, contre 27 sur 213 ailleurs (13 %). Fisher exact
+  `p = 2,6e-6`. Le modele lit la valeur extreme et s'en sert sans qu'on l'y
+  envoie, parce qu'elle est **ecrite dans le bloc**.
+- Un critere emettrait donc une question dont la reponse est sur la meme ligne —
+  le defaut corrige au lot precedent. Ce qui **n'est pas** dans le bloc est
+  l'etat de l'alerte a l'heure du coup d'envoi, et c'est le seul cas qui reste.
+- **Un docstring faux coute plus qu'un docstring absent** : celui-ci a fait
+  re-deriver la conclusion inverse. La porte est desormais tenue par un banc —
+  premiere branche de la regle des « a ne pas oublier », une condition
+  structurelle qu'un test peut voir.
+
+**La lecon de methode** : une porte fermee se rouvre en verifiant **la raison
+ecrite**, pas la decision. Ici la decision etait bonne et sa raison ne l'etait
+pas ; les deux se corrigent separement.
+
 ## La ligne `Fraicheur`, ou ce que le retard de l'historique coute en matchs
 
 `Historique` disait jusqu'ou allait le jeu de donnees et `Parcours` nommait les adversaires
