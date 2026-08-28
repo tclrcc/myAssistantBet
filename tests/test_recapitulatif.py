@@ -185,25 +185,6 @@ def test_un_football_assez_tard_est_libre(migrated: Settings) -> None:
     assert lignes[tard] == recap_service.LIBRE
 
 
-def test_apres_un_tennis_l_enchainement_est_indetermine(migrated: Settings) -> None:
-    """Aucune source ne publie la duree d'un match de tennis — mesure du
-    07/08/2026, et les CSV qui la portaient ont disparu. Prononcer un
-    enchainement derriere lui serait un booleen bati sur un nombre invente."""
-    settings = migrated
-    tennis = _match(settings, "Alpha", sport="tennis", date="2099-01-01", heure="20:00")
-    apres = _match(settings, "Beta", date="2099-01-01", heure="23:59")
-    _pick(settings, tennis)
-    _pick(settings, apres)
-
-    lignes = {
-        ligne.pick.event_id: ligne.overlap
-        for ligne in recap_service.build(_today(), settings).lines
-    }
-
-    assert lignes[tennis] == recap_service.LIBRE
-    assert lignes[apres] == recap_service.INDETERMINE
-
-
 def test_les_trois_etats_sont_definis_dans_le_rendu(migrated: Settings) -> None:
     """Un libelle sans definition est le defaut que ce projet evite partout."""
     settings = migrated
@@ -231,8 +212,8 @@ def test_une_proposition_porte_sa_regle_comme_nom_et_jamais_un_palier(
 
     assert [proposition.label for proposition in jour.proposals] == [
         "3 jambes, cran ≥ 4",
-        "3 jambes, cran ≥ 3",
         "4 jambes, cran ≥ 3",
+        "3 jambes, cran ≥ 3, familles de marché distinctes",
     ]
     assert not hasattr(recap_service.Proposal, "tier")
     assert not hasattr(recap_service.Proposal, "tier_label")

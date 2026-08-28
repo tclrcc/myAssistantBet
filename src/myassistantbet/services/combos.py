@@ -369,10 +369,20 @@ def jaccard(left: Combo, right: Combo) -> float:
     construction — 4/10 = 0,40, valeur a attendre et non accident. Il s'affiche ;
     il ne s'interdit pas.
     """
-    gauche = {leg.pick_id for leg in left.legs}
-    droite = {leg.pick_id for leg in right.legs}
-    union = gauche | droite
-    return len(gauche & droite) / len(union) if union else 0.0
+    return overlap_index({leg.pick_id for leg in left.legs}, {leg.pick_id for leg in right.legs})
+
+
+def overlap_index(left: set[int], right: set[int]) -> float:
+    """L'indice de Jaccard de deux ensembles de selections.
+
+    Ecrit ici parce que le combine est le premier a en avoir eu besoin, et
+    appele tel quel par le recapitulatif du jour, dont les trois propositions se
+    recouvrent aussi. **C'est la grandeur qui est partagee**, pas la facon de
+    tirer les identifiants — `jaccard` sait lire un `Combo`, le recapitulatif
+    connait deja les siens.
+    """
+    union = left | right
+    return len(left & right) / len(union) if union else 0.0
 
 
 def _lot_of(conn, prompt_id: int) -> set[int]:

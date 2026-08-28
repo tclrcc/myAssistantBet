@@ -1302,6 +1302,65 @@ corrigees, apres avoir ete comptees.
   **declaree** — le banc des orphelines de `stakes` compare desormais par egalite,
   pour qu'une orpheline de plus comme une orpheline de moins soient une decision.
 
+## C.39 — Un etat qui ecrase ce qu'il sait calculer
+
+**Mesure du 29/08/2026, et elle porte sur ce dont j'etais le plus sur.** La
+colonne d'enchainement du recapitulatif faisait basculer en « indetermine » tout
+ce qui suivait une ligne sans fin connue. Rejeu des 23 journees :
+
+| | lignes | part |
+| --- | ---: | ---: |
+| `indetermine` | 280 | **57,3 %** |
+| `chevauche` | 170 | 34,8 % |
+| `libre` | 39 | **8,0 %** |
+
+**Une seule ligne suffisait a effacer le calcul de toutes les autres** : 48 sur
+80 le 22/08, 38 sur 49 le 15/08. La cause est structurelle — la ligne de tennis
+tombe au rang 1 a 3 sur onze journees, les sessions de jour se jouant avant le
+programme de football du soir.
+
+- **La regle etait juste** : aucune source ne publie la duree d'un match de
+  tennis, et l'inventer serait un booleen bati sur un nombre invente. C'est la
+  **forme** qui etait fausse.
+- Deux matchs de football se chevauchent ou non, et un match de tennis intercale
+  n'y change rien. L'etat se calcule donc contre les seules lignes dont la fin
+  est connue ; celle qui n'en a pas porte son propre etat. Ce qu'elle laisse
+  indetermine est **nomme a part**, jamais propage — meme discipline que
+  `Non servis` et ses trois causes.
+- Apres correctif : 62,6 % / 27,6 % / 9,8 %. Les **145 lignes de football** que
+  la contamination effacait retrouvent un etat exact.
+
+**Ce que l'episode dit de la methode** : le premier rendu reel portait le tennis
+en **derniere** ligne, donc aucun etat contamine. Nous avons tous deux conclu que
+la regle ne coutait rien, et le brief suivant classait le point « mineur, a
+instruire seulement si le reste est fait ». **Une mesure sur un seul rendu decrit
+ce rendu** — c'est la meme faute que le seuil de repos pose sur un mode, et que
+la duree de tennis enjambee la veille.
+
+## C.40 — Un vivier surabondant et aucun critere : deux rendus, deux combines
+
+**Mesure du 29/08/2026.** Le recapitulatif donnait le vivier et demandait de
+composer, sans dire comment choisir. Sur 23 journees x 3 propositions, le vivier
+est **determine 1 fois sur 69** — surabondant 64 fois.
+
+- Le premier rendu paraissait determine par « coincidence de nombres ». C'etait
+  une **coincidence d'heure** : le vivier le plus exigeant portait 4 matchs a
+  l'aube du 28/08, 3 a 15:31 parce qu'un match avait commence, et **0** a 19:00.
+  Les deux defauts — pas de critere, pas d'heure — sont le meme fait vu a deux
+  endroits.
+- **Le critere candidat du brief echoue, et il fallait le mesurer avant de le
+  retenir** : « privilegier les prix maison » laisse le vivier sans **aucun**
+  candidat cinq journees sur 23, dont des journees de 12 et 18 matchs. Il est
+  utilisable en **departage**, jamais en cle primaire.
+- Le critere retenu a pour cle primaire le **cran de confiance**, qui n'est pas
+  un prix. Le choix des jambes revient donc a l'application, et le produit avec
+  lui : ce qui reste au modele est le seul jugement que le document annoncait
+  deja.
+
+**Consequence sur la nature du document** : il bascule de « compose » vers
+« audite », et son titre change. Ce n'est pas un appauvrissement — c'est
+l'alignement du document sur ce qu'il disait faire.
+
 ## C.21 — Ce qui reste ouvert et n'a pas ete instruit
 
 - **Phase 4** — le generateur de prompts : variables injectees non utilisees,

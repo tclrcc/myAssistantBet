@@ -1,24 +1,29 @@
 # Récapitulatif — journée du {{ recap.day }}
 
-Tu **composes**, tu ne réanalyses pas.
+**Rendu le {{ recap.rendered_at.strftime('%d/%m/%Y à %H:%M') }} UTC.**
+Les sélections dont le match a commencé sont écartées des combinés : les viviers
+et les combinés de la section B **dépendent de cette heure**, et un même jour
+rendu plus tard en donne d'autres. Mesuré sur le 28/08 — quatre matchs au vivier
+le plus exigeant à l'aube, **zéro** à 19:00.
 
-Les analyses de la journée sont faites. Chaque ligne ci-dessous a été produite
-par une instance qui avait le bloc de son match sous les yeux, avec son cran de
-confiance, sa source et sa condition d'invalidation. Ne réévalue aucune
-sélection, n'en écarte aucune pour un motif sportif, et ne cherche rien sur les
-matchs : une seconde analyse serait contaminée par la première, et l'écart entre
-les deux ne mesurerait rien.
+Tu **audites**, tu ne composes pas et tu ne réanalyses pas.
+
+Les analyses de la journée sont faites, et l'application a choisi les jambes des
+combinés ci-dessous selon une règle écrite. Ne réévalue aucune sélection, n'en
+écarte aucune pour un motif sportif, et ne cherche rien sur les matchs : une
+seconde analyse serait contaminée par la première, et l'écart entre les deux ne
+mesurerait rien.
 
 Trois interdits, et ils tiennent en une ligne chacun :
 
 - **tu n'invente aucune cote** — les prix ci-dessous font autorité, y compris
-  quand ils portent `(ref.)` ;
+  quand ils portent `(ref.)`, et les produits sont déjà calculés ;
 - **tu ne calcules aucune probabilité, aucune espérance, aucune mise** ;
 - **tu ne proposes aucun système de mise** — ni progression, ni montante, ni
   répartition. Ce document rend des faits ; la décision de mise n'est pas ici.
 
 {% if recap.empty %}
-**Aucune sélection n'a été enregistrée ce jour-là.** Il n'y a rien à composer.
+**Aucune sélection n'a été enregistrée ce jour-là.** Il n'y a rien à auditer.
 {% else %}
 ## A. Les sélections de la journée
 
@@ -26,14 +31,16 @@ Trois interdits, et ils tiennent en une ligne chacun :
 Elles sont rangées par heure de coup d'envoi, et non par ordre de saisie.
 
 La colonne **Enchaînement** dit ce qui court encore au moment où la ligne part.
-Trois états, et le troisième n'est pas le deuxième :
+Trois états, et le troisième porte sur la ligne elle-même :
 
 {% for etat in overlap_labels.values() %}- {{ etat }}
 {% endfor %}
 L'état se calcule sur la durée du match précédent quand le sport la rend
-structurelle — le football, 90 minutes plus la mi-temps et les arrêts. **Aucune
-source ne publie la durée d'un match de tennis** : dès qu'une ligne qui précède
-n'a pas de fin connue, l'enchaînement est indéterminé et ne se devine pas.
+structurelle — le football, 90 minutes plus la mi-temps et les arrêts. **Une
+ligne dont la fin est inconnue ne rend pas indéterminé ce qui la suit** : deux
+matchs de football se chevauchent ou non, et un match de tennis intercalé n'y
+change rien. Ce qu'elle laisse indéterminé est son propre chevauchement avec la
+suite, et c'est dit sous le tableau.
 
 | Heure | Match | Compétition | Marché | Sélection | Cote | Palier | Cran | Enchaînement |
 | --- | --- | --- | --- | --- | ---: | --- | ---: | --- |
@@ -44,64 +51,90 @@ n'a pas de fin connue, l'enchaînement est indéterminé et ne se devine pas.
 il faut relever le prix avant. Ce qui ne l'est pas est le **produit** : une cote
 composée de prix qu'on n'obtiendra pas n'existe nulle part.
 
+{% if recap.without_end %}
+**Fin non publiée** : {{ recap.without_end | map(attribute='event_label') | join(', ') }}.
+Aucune source ne donne la durée d'un match de tennis. Leur chevauchement avec ce
+qui suit ne se calcule donc pas — et rien d'autre n'en dépend.
+{% endif %}
 {% if recap.started %}
-Écartée(s) des propositions car le match a déjà commencé :
+Écartée(s) des combinés car le match a déjà commencé :
 {{ recap.started | map(attribute='event_label') | join(', ') }}.
 {% endif %}
+### L'angle et ce qui tue chaque sélection
+
+Ces deux colonnes viennent de la section C de l'analyse d'origine. La seconde est
+ce qui se **contrôle avant de poser** : un combiné de trois jambes fait trois
+conditions à vérifier, et la plupart tombent à l'annonce des compositions.
+
+{% for line in recap.lines -%}
+- **{{ line.pick.event_label }} · {{ line.pick.selection }}** — angle :
+  {{ line.angle_note }} · tue par : {{ line.invalidation }}
+{% endfor %}
 {% if recap.exploratory %}
 ### Section C-bis, tenue à part
 
-{{ recap.exploratory | length }} ligne(s) exploratoire(s), produites sans exigence de fait daté. **Elles n'entrent dans aucune proposition** : leur raison
-d'être est de mesurer ce que vaut une lecture seule sur les cotes hautes, et
-cette mesure fonctionne sans argent.
+{{ recap.exploratory | length }} ligne(s) exploratoire(s), produites sans exigence de fait daté.
+**Elles n'entrent dans aucun combiné** : leur raison d'être est de mesurer ce que
+vaut une lecture seule sur les cotes hautes, et cette mesure fonctionne sans
+argent.
 
 {% for pick in recap.exploratory -%}
 - {{ pick.event_label }} · {{ pick.market }} {{ pick.selection }} · {{ '%.2f' | format(pick.price) if pick.price else '—' }} · {{ pick.tier_label }} · cran {{ pick.confidence or '·' }}
 {% endfor %}
 {% endif %}
-## B. Trois propositions
+## B. Trois combinés, à auditer
 
-Compose trois combinés, chacun défini par sa règle et par rien d'autre. Ils n'ont
-pas de palier : le palier est la bande de cote d'**une sélection**, et un combiné
-de trois jambes sûres à 1.60 rend 4.10 — l'appeler « sûr » ferait désigner deux
-choses par un même mot.
+L'application a choisi les jambes. La règle : **cran de confiance décroissant**,
+puis prix maison en départage, puis heure de coup d'envoi. Une seule jambe par
+match, sans exception — deux sélections sur la même rencontre sont corrélées par
+construction.
+
+Ils n'ont pas de palier : le palier est la bande de cote d'**une sélection**, et
+un combiné de trois jambes sûres à 1.60 rend 4.10 — l'appeler « sûr » ferait
+désigner deux choses par un même mot.
 
 {% for proposal in recap.proposals %}
 ### {{ proposal.label }}
 
 {% if proposal.enough -%}
-Vivier : {{ proposal.pool | length }} sélection(s) sur {{ proposal.matches }} match(s) distinct(s).
+Cote **{{ proposal.price_label }}**{% if proposal.reference_legs %} — dont {{ proposal.reference_legs }} jambe(s) `(ref.)`, donc ce produit n'est pas celui qu'on obtiendra tel quel{% endif %}.
+
+| Heure | Match | Sélection | Cote | Cran |
+| --- | --- | --- | ---: | ---: |
+{% for pick in proposal.chosen | sort(attribute='commence_time') -%}
+| {{ pick.commence_local.strftime('%H:%M') if pick.commence_local else '—' }} | {{ pick.event_label }} | {{ pick.market }} {{ pick.selection }} | {{ '%.2f' | format(pick.price) if pick.price else '—' }}{% if pick.price_source == 'reference' %} (ref.){% endif %} | {{ pick.confidence or '·' }} |
+{% endfor -%}
 {% else -%}
 **Non constructible sur cette journée** : {{ proposal.matches }} match(s) distinct(s) au vivier
-pour {{ proposal.legs }} jambes demandées. Dis-le en une ligne, et n'ajoute aucune jambe
-pour faire le compte.
+pour {{ proposal.legs }} jambes demandées{% if proposal.distinct_families %}, familles de marché distinctes comprises{% endif %}.
 {% endif %}
 {% endfor %}
-Règles communes aux trois :
+{% if recap.overlaps %}
+**Recouvrement** — il est imposé par le vivier et se déclare plutôt que de
+s'interdire :
 
-- **une seule jambe par match**, sans exception. Deux sélections sur la même
-  rencontre sont corrélées par construction ;
-- le vivier est celui des deux paliers les plus sûrs, section C, cran atteint,
-  match non commencé. N'y ajoute rien ;
-- **ne descends jamais sous le cran demandé** pour atteindre une cote. Un combiné
-  plus court et honnête vaut mieux ; dis en une ligne pourquoi ;
-- pour chaque combiné, dis **si deux jambes reposent sur la même cause** — au
-  sens strict de la section C du gabarit d'analyse, pas au sens du tournoi
-  partagé. Deux maillons qui tombent ensemble n'en font qu'un. C'est le seul
-  jugement que ce document te demande : tout le reste se calcule ;
-- signale-le si deux jambes portent la mention `(ref.)`, et dis que la cote
-  composée n'est alors pas celle qu'on obtiendra.
+{% for gauche, droite, communes, indice in recap.overlaps -%}
+- « {{ gauche }} » et « {{ droite }} » : {{ communes }} jambe(s) commune(s), J = {{ '%.2f' | format(indice) }}
+{% endfor %}
+{% endif %}
+## C. Le seul jugement demandé
 
-Donne pour chaque combiné : ses jambes, la cause commune s'il y en a une, et sa
-cote — le produit des cotes ci-dessus, **sans arrondi de complaisance**. Si une
-jambe n'a pas de prix, le produit est incalculable : écris-le, ne l'omets pas.
+Pour chaque combiné, dis **si deux de ses jambes reposent sur la même cause** —
+**au sens strict défini en section C** du gabarit d'analyse, pas au sens du
+tournoi partagé ni du mécanisme apparent. La plupart des conditions
+d'invalidation ci-dessus se contrôlent à l'annonce des compositions : ce n'est
+pas pour autant une cause commune. Deux maillons qui tombent ensemble n'en font
+qu'un ; deux maillons qui se vérifient au même moment ne sont pas liés.
 
-## C. Ce que ce document ne fait pas
+Tout le reste est calculé. Si tu ne vois aucune cause commune, dis-le en une
+ligne — c'est une réponse, et c'est la réponse attendue la plupart du temps.
 
-**Ces propositions ne s'enregistrent pas.** L'application refuse un combiné dont
-les jambes viennent de plusieurs prompts — elles n'ont jamais été comparées entre
+## D. Ce que ce document ne fait pas
+
+**Ces combinés ne s'enregistrent pas.** L'application refuse un combiné dont les
+jambes viennent de plusieurs prompts — elles n'ont jamais été comparées entre
 elles — et une journée en porte plusieurs. Ce n'est pas un manque de la surface :
-c'est la règle, et elle ne bouge pas. Si un de ces combinés est posé, il vivra
+c'est la règle, et elle ne bouge pas. Si l'un de ces combinés est posé, il vivra
 hors de la mesure.
 
 Aucun taux de réussite n'apparaît dans ce document, et c'est délibéré : les

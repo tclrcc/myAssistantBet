@@ -3418,6 +3418,91 @@ partout, et `mises` comme `bankroll_journee` sont vides.
   avec lui. Les deux fichiers deja sur disque restent sous `data/uploads` : ce
   sont des donnees, et on n'en supprime pas.
 
+## Le recapitulatif, deuxieme passe : ce que le premier rendu reel a montre
+
+**29/08/2026.** Six defauts releves sur la journee du 28/08. Deux mesures ont
+renverse leur ordre d'importance, et l'une porte sur ce dont j'etais le plus sur.
+
+- **L'enchainement ecrasait ce qu'il savait calculer, et nous l'avions classe
+  mineur tous les deux.** Rejeu des 23 journees : **57,3 % des lignes** sortaient
+  `indetermine`, **8,0 %** seulement `libre`. La cause est structurelle — la
+  ligne de tennis tombe au **rang 1 a 3 sur onze journees**, les sessions de jour
+  se jouant avant le programme de football du soir — et une seule ligne sans fin
+  connue faisait basculer tout ce qui la suivait : 48 lignes sur 80 le 22/08.
+  - **La regle etait juste, la forme ne l'etait pas.** Deux matchs de football se
+    chevauchent ou non, et un match de tennis intercale n'y change rien. L'etat
+    se calcule donc contre les **seules lignes dont la fin est connue**, et celle
+    qui n'en a pas porte son propre etat (`fin inconnue`) au lieu de contaminer
+    les suivantes. Ce qu'elle laisse indetermine est nomme a part
+    (`DayRecap.without_end`). Meme discipline que `Non servis` et ses trois
+    causes tenues separees.
+  - Apres correctif : 62,6 % `chevauche`, 27,6 % `fin inconnue`, 9,8 % `libre`.
+    Les 145 lignes de football que la contamination effacait retrouvent un etat
+    exact.
+  - **Nous avions juge sur une journee atypique** : le 28/08 mettait le tennis en
+    dernier, ce qui est l'exception. Une mesure sur un seul rendu decrit ce
+    rendu.
+- **Le vivier n'est jamais determine, donc l'application choisit les jambes.**
+  Mesure : determine **1 fois sur 69** (23 journees x 3 propositions). Sans
+  critere ecrit, deux rendus de la meme journee ne donnaient pas les memes
+  combines.
+  - Le critere (`recap._rank`) : **cran de confiance decroissant** en cle
+    primaire — la qualite des preuves, jamais un prix — puis **prix maison en
+    departage seulement**, puis heure et identifiant pour la reproductibilite.
+  - **Le prix maison ne peut pas etre primaire, et c'est mesure** : le vivier
+    n'en porte **aucun** cinq journees sur 23, et un critere qui rendrait « non
+    constructible » une journee de 18 matchs n'en est pas un. En second rang il
+    ne bloque jamais, le cran ayant deja tranche.
+  - **Consequence assumee** : le document bascule de « compose » vers
+    « audite ». Ce qui reste au modele est le seul jugement qu'il ait jamais
+    annonce — deux jambes reposent-elles sur la meme cause. Il ne se vide pas ;
+    il devient ce qu'il disait etre.
+- **Le produit se calcule** (`Proposal.price`, qui appelle `combos.product`).
+  Demander une multiplication a un modele quand rien ne la verifie est le defaut
+  que ce projet corrige partout ailleurs. Deux decimales, comme une cote.
+- **Les trois contraintes different par leur regle, jamais par la seule
+  longueur.** La premiere version portait `3 jambes cran >= 3` et `4 jambes
+  cran >= 3` : meme vivier, donc l'une etait l'autre plus une jambe **par
+  construction**. Ce n'etait pas le modele qui emboitait, c'etait la
+  nomenclature.
+  - Le troisieme axe est la **famille de marche**, choisi sur mesure : identique
+    a sa voisine **4 fois sur 20**, contre **10 fois sur 21** pour les
+    competitions distinctes. `angle` porte deux valeurs, donc aucune journee n'en
+    offre trois ; le niveau de source en offre trois sur cinq journees.
+  - **Le recouvrement se declare, il ne s'interdit pas** — `combos.jaccard` avait
+    deja tranche, et la mediane mesuree de 0,40 sur une paire est exactement la
+    valeur qu'il annonce pour deux combines tires du meme vivier.
+- **L'angle et la condition d'invalidation descendent dans le document.** Sans
+  eux, « meme cause » ne se jugeait que sur les metadonnees — deux championnats
+  differents, donc pas de cause commune — et c'est le modele qui a pose la
+  reserve lui-meme. Les deux colonnes sont pleines **depuis le 17/08**, date de
+  leur migration ; la population sans prose est close, et `PROSE_ABSENTE` la
+  nomme plutot que de rendre une cellule vide.
+  - **`angle` ne descend pas** : deux valeurs fermees, 10 « maniere » et 7
+    « issue » le 28/08. Deux lignes « maniere » n'ont pas une cause commune.
+  - **Le document renvoie a la definition stricte du gabarit d'analyse et n'en
+    ecrit pas une seconde**, parce que **14 conditions sur 17 reposent sur
+    l'annonce des compositions** : juger « meme cause » sur le mecanisme la
+    declencherait presque partout. C'est le §8 sur le vocabulaire, et le meme
+    piege que le « combine safe ».
+  - Cout : le rendu du 28/08 passe de **2 100 a 4 271 tokens**. Le recapitulatif
+    n'a pas de plafond et se lit une fois par jour.
+- **L'heure de generation est dans l'en-tete, et ce qui en depend est dit.** Le
+  vivier de la premiere proposition valait 4 matchs a l'aube du 28/08 et **0** a
+  19:00. C'est le meme fait que le vivier jamais determine, vu a un second
+  endroit : la « coincidence de nombres » du premier rendu etait une
+  **coincidence d'heure**. Un document dont le contenu depend de l'heure sans le
+  dire produit des observations qu'on croit structurelles.
+  - `has_started` est evalue **une seule fois**, dans `build` ; `render` ne le
+    reevalue pas. Le soupcon d'une double evaluation etait infonde.
+
+**Une entorse a la regle, et elle est ecrite** : le defaut de resolution des
+familles — `market_key_effective` rend `h2h`, que la table des familles ne
+connait pas, donc chaque jambe recevait une pseudo-famille unique et la
+contrainte ne mordait jamais — a ete trouve **en lisant le rendu reel**, pas par
+un banc. Le banc existe, il est ecrit apres. La famille se lit sur le **libelle**,
+comme `history._by_family`.
+
 ## La saisie de la cote obtenue a son propre interrupteur
 
 **Un drapeau qui ouvre trois choses dont une seule part n'est plus un drapeau :
