@@ -3503,6 +3503,17 @@ contrainte ne mordait jamais — a ete trouve **en lisant le rendu reel**, pas p
 un banc. Le banc existe, il est ecrit apres. La famille se lit sur le **libelle**,
 comme `history._by_family`.
 
+- **C'est la troisieme forme du garde qui ne mord pas**, apres `confidence_floor`
+  et `HiddenEvent.priced` : les trois se ressemblent a l'execution — la suite est
+  verte, la surface est normale, la seule trace est une absence — et n'ont rien
+  en commun a la cause. Voir C.16 et le paragraphe 8. **Un banc qui verifie
+  qu'une sortie existe ne verifie pas qu'un garde a mordu.**
+- **Et trois defauts de ce lot ont ete trouves en regardant la sortie**, pas en
+  interrogeant le code. Le recapitulatif n'a aucun banc de bout en bout sur
+  donnees reelles, et il ne doit pas en avoir — une assertion qui recopierait la
+  sortie du jour decrirait la fixture. Ce qui en sort est une **etape** : apres
+  tout chantier sur une surface de rendu, lire un rendu reel en entier.
+
 ## La saisie de la cote obtenue a son propre interrupteur
 
 **Un drapeau qui ouvre trois choses dont une seule part n'est plus un drapeau :

@@ -470,6 +470,54 @@ se serait compte sous `onefootball.com` d'un cote et sous `arsenal.com` de
 l'autre — **et l'ecart n'aurait jamais fait echouer un test**, les deux lectures
 etant justes chacune de son cote.
 
+### Un garde qui ne mord pas se manifeste toujours de la meme facon : rien
+
+**Troisieme forme du motif en une semaine, et c'est ce qui en fait une famille.**
+Un controle qui n'ecarte jamais rien produit exactement la meme sortie qu'un
+controle qui n'a rien a ecarter : la suite est verte, la surface est normale, et
+la seule trace est une absence.
+
+| | pourquoi | ce qui l'aurait montre |
+| --- | --- | --- |
+| `confidence_floor` | la population ne le porte pas | son **taux de declenchement** |
+| `HiddenEvent.priced` | la regle qui le produit le contredit | **rien** |
+| `recap._family` | il lit la mauvaise cle | **la sortie**, ligne a ligne |
+
+**Les trois se ressemblent a l'execution et n'ont rien en commun a la cause**,
+donc il n'existe pas un seul geste qui les attrape. Ce qui les rassemble est la
+question a poser : *ai-je vu ce garde ecarter quelque chose ?* Elle est plus
+severe que « le test passe-t-il », et c'est la seule qui separe un garde qui
+protege d'un garde qui decore.
+
+- **Un banc qui verifie qu'une sortie existe ne verifie pas qu'un garde a
+  mordu.** Ceux de la contrainte de familles montaient une proposition et la
+  voyaient sortir ; elle sortait, avec deux jambes de la meme famille. Le banc
+  juste monte un vivier ou le garde **doit** ecarter, et verifie l'ecart.
+- **Un taux de declenchement se mesure comme un taux de couverture.** Le dossier
+  en fait deja la regle pour les criteres de la fiche de recherche — « un critere
+  qui se declenche sur un quart des blocs ne classe plus rien » — et le miroir
+  est vrai : un critere qui ne se declenche jamais ne garde rien.
+
+### La lecture du rendu reel est un moyen de detection, et parfois le seul
+
+**Trois defauts du lot du 29/08/2026 ont ete trouves en regardant la sortie**, pas
+en interrogeant le code : la contamination de l'enchainement, le vivier jamais
+determine, et la famille de marche silencieusement inoperante. Aucun n'aurait
+leve, aucun n'aurait fait rougir un banc.
+
+La raison est structurelle : le recapitulatif n'a **aucun banc de bout en bout sur
+donnees reelles**. Ses bancs montent des fixtures, et une fixture porte l'etat
+qu'on lui a donne — c'est la regle du 27/08 sur le critere valide contre le
+corpus, appliquee a un rendu entier plutot qu'a un seuil.
+
+- **Ce n'est pas un appel a ecrire ce banc-la.** Un banc sur la base servie
+  echouerait le jour ou la journee change, et le dossier a deja tranche : une
+  assertion qui recopie la sortie du jour decrit la fixture au lieu de contraindre
+  la regle.
+- Ce qui en sort est une **etape**, pas un test : apres tout chantier sur une
+  surface de rendu, lire un rendu reel en entier. Le cout est de deux minutes, et
+  il a rapporte trois defauts dont deux structurels.
+
 ### Une fonction renommee laisse son ancien nom dans la prose, et la prose ne compile pas
 
 **Regularite, et non incident : quatrieme occurrence relevee le 28/08/2026.** Le

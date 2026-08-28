@@ -366,6 +366,28 @@ peut se remplir un jour. Le second est **impossible par construction** : aucun
 volume de donnees ne l'aurait rempli, et **aucune mesure ne l'aurait dit** — c'est
 la limite de ce dossier sur ce point, qui n'est pas une limite de population.
 
+### Une troisieme cause, trouvee le 29/08/2026 : le garde silencieusement inoperant
+
+`recap._family` devait empecher deux jambes de meme famille de marche d'entrer
+dans le meme combine. Elle lisait `market_key_effective`, qui rend la cle du
+vocabulaire de rendu — `h2h` — que la table des familles ne connait pas : chaque
+jambe recevait donc une **pseudo-famille unique** et la contrainte n'ecartait
+jamais rien. Le rendu reel du 28/08 retenait `1N2` et `DC`, tous deux `issue`.
+
+**Elle passait tous ses bancs en ne faisant rien**, parce qu'ils verifiaient
+qu'une proposition sortait et non qu'une jambe etait ecartee.
+
+Les trois causes **se ressemblent a l'execution et n'ont rien en commun** :
+
+| | pourquoi il ne mord pas | ce qui l'aurait montre |
+| --- | --- | --- |
+| `confidence_floor` | la population ne le porte pas | une mesure de taux de declenchement |
+| `HiddenEvent.priced` | la regle qui le produit le contredit | **rien** — aucune mesure |
+| `recap._family` | il lit la mauvaise cle | **la sortie**, ligne a ligne |
+
+C'est la difference qui compte pour la detection : le premier se mesure, le
+deuxieme se relit, le troisieme ne se voit qu'en **regardant ce qui est rendu**.
+
 Ce qui l'a montre est un **test**, en echouant sur un `KeyError` : la liste etait
 vide a l'endroit exact ou le drapeau devait s'afficher. Le code, lui, se relisait
 sans surprise — la propriete rendait faux sur le cas ordinaire comme sur le cas
