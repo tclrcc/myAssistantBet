@@ -860,6 +860,190 @@ def test_tirs_rend_les_deux_faces_et_degrade_moitie_par_moitie() -> None:
     assert context._shot_fragment("Estoril", sans_concede) == "Estoril 12.4 dont 4.6 cadres/5"
 
 
+# -- Le taux d'arret du gardien -----------------------------------------------
+
+
+def _feuille(
+    fixture_id: int, notre: int, arrets: float | None, adverse: int, cadres: float | None
+) -> tuple[int, list[dict[str, object]]]:
+    """Une rencontre profilee : nos arrets d'un cote, ses tirs cadres de l'autre.
+
+    `None` retire la statistique de la feuille — c'est ainsi que le fournisseur
+    la sert quand il ne la sert pas, et c'est le cas que le denominateur doit
+    savoir sauter.
+    """
+
+    def stats(arrets: float | None, cadres: float | None) -> list[dict[str, object]]:
+        lignes: list[dict[str, object]] = [{"type": "Total Shots", "value": 10}]
+        if arrets is not None:
+            lignes.append({"type": "Goalkeeper Saves", "value": arrets})
+        if cadres is not None:
+            lignes.append({"type": "Shots on Goal", "value": cadres})
+        return lignes
+
+    return fixture_id, [
+        {"team": {"id": notre}, "statistics": stats(arrets, None)},
+        {"team": {"id": adverse}, "statistics": stats(None, cadres)},
+    ]
+
+
+def test_arrets_compte_des_tirs_cadres_et_non_des_matchs() -> None:
+    """**La seule fraction du bloc dont le denominateur n'est pas le match.**
+
+    Elle ne porte donc pas le `/5` de ses voisines, qui compterait autre chose
+    que ce qu'elle divise : le volume par match se lit sur `Tirs`, une ligne plus
+    haut, en `pris X dont Y`. C'est la moitie de la convention que le preambule
+    enonce ; l'autre moitie est le mot `cadres`, qui nomme ce qui est compte.
+    """
+    profil = {"saves_made": 12, "saves_faced": 15, "matches": 5}
+
+    assert context._saves_fragment("Estoril", profil) == "Estoril 12/15 cadres"
+
+
+def test_le_taux_d_arret_se_calcule_sur_les_totaux_jamais_sur_les_moyennes() -> None:
+    """Les autres lignes de profil sont des moyennes arrondies au dixieme ; un
+    rapport de deux moyennes arrondies n'est pas le rapport vrai.
+
+    Ici 8 arrets sur 13 cadres valent 0,615, quand les moyennes rendues — 2.7 et
+    4.3 — en donnent 0,628. L'ecart grandit avec la petitesse des nombres, et
+    c'est justement le regime de cette ligne.
+    """
+    fixtures = dict(
+        [
+            _feuille(1, 10, 2, 20, 4),
+            _feuille(2, 10, 3, 20, 4),
+            _feuille(3, 10, 3, 20, 5),
+        ]
+    )
+
+    profil = context._profile_from_fixtures(fixtures, 10)
+
+    assert (profil["saves_made"], profil["saves_faced"]) == (8, 13)
+    assert context._saves_fragment("Estoril", profil) == "Estoril 8/13 cadres"
+
+
+def test_une_rencontre_incomplete_n_entre_ni_au_haut_ni_au_bas() -> None:
+    """**Un haut et un bas portant sur deux fenetres differentes ne font pas une
+    fraction**, et rien dans la ligne ne permettrait de le voir.
+
+    La quatrieme rencontre porte les tirs cadres de l'adversaire et pas nos
+    arrets : ses cinq cadres n'entrent pas au denominateur. Le compte general du
+    profil, lui, la garde — `matches` decrit la fenetre appelee, pas celle de
+    cette fraction.
+    """
+    fixtures = dict(
+        [
+            _feuille(1, 10, 3, 20, 4),
+            _feuille(2, 10, 3, 20, 4),
+            _feuille(3, 10, 2, 20, 3),
+            _feuille(4, 10, None, 20, 5),
+        ]
+    )
+
+    profil = context._profile_from_fixtures(fixtures, 10)
+
+    assert (profil["saves_made"], profil["saves_faced"]) == (8, 11)
+    assert profil["matches"] == 4
+
+
+def test_le_taux_d_arret_se_tait_sur_ses_trois_refus() -> None:
+    """Trois refus, et aucun n'est un repli : sous `PROFILE_MIN_MATCHES`
+    rencontres completes — meme seuil et meme raison que ses voisines, une
+    soiree n'est pas une tendance ; aucun tir cadre subi, `0/0` n'etant pas un
+    taux ; et plus d'arrets que de tirs cadres, qui ne peut venir que d'une
+    feuille incoherente. En cas de doute, aucune ligne.
+    """
+    court = dict([_feuille(1, 10, 3, 20, 4), _feuille(2, 10, 3, 20, 4)])
+    assert context._save_totals(court, 10) is None
+
+    vierge = dict([_feuille(1, 10, 0, 20, 0), _feuille(2, 10, 0, 20, 0), _feuille(3, 10, 0, 20, 0)])
+    assert context._save_totals(vierge, 10) is None
+
+    incoherent = dict(
+        [_feuille(1, 10, 6, 20, 4), _feuille(2, 10, 3, 20, 4), _feuille(3, 10, 3, 20, 3)]
+    )
+    assert context._save_totals(incoherent, 10) is None
+
+
+def test_le_taux_d_arret_ne_se_rend_pas_sur_une_fenetre_trop_courte() -> None:
+    """Le garde de publication est celui des autres lignes de profil : sous
+    `PROFILE_MIN_MATCHES` matchs profiles, aucune ligne. La fraction porte deja
+    son denominateur, mais un denominateur ne rattrape pas une fenetre qui ne
+    decrit rien."""
+    assert (
+        context._saves_fragment("Estoril", {"saves_made": 5, "saves_faced": 7, "matches": 2}) == ""
+    )
+    assert context._saves_fragment("Estoril", {"matches": 5}) == ""
+
+
+def test_arrets_atteint_le_bloc_juste_derriere_les_tirs(migrated: Settings) -> None:
+    """**Le service et sa surface se livrent ensemble.** Les bancs ci-dessus
+    mesurent le calcul et le fragment ; aucun ne dit que la ligne atteint le
+    bloc, ni ou elle s'y pose.
+
+    Sa place est la moitie de la convention : la fraction compte des tirs cadres
+    subis, et `Tirs` vient d'en donner la moyenne par match en `pris X dont Y`.
+    Separees, il faudrait retenir le denominateur d'une ligne a l'autre — c'est
+    exactement ce que ce projet retire a l'analyse.
+
+    Le montage passe par `store` et non par la fixture de reference, qui ne
+    porte pas `Goalkeeper Saves` : une fixture qui ne peut pas atteindre l'etat
+    garde rend le banc vert pour une raison qui n'est pas la sienne.
+
+    **Et il porte toute la famille du profil**, ce que le premier jet ne faisait
+    pas : sans `xG` ni `Possession`, la ligne suivait `Tirs` quel que soit
+    l'ordre du code, et l'assertion de position passait pour rien. Verifie en
+    deplacant la ligne apres `Possession` — le banc doit rougir.
+    """
+    _seed_event(migrated)
+    profil = {
+        "home": {
+            "corners": 5.2,
+            "corners_against": 6.4,
+            "yellow": 2.4,
+            "fouls": 12.4,
+            "fouls_against": 10.8,
+            "shots": 12.4,
+            "shots_on": 4.6,
+            "shots_against": 9.8,
+            "shots_on_against": 3.1,
+            "saves_made": 12,
+            "saves_faced": 15,
+            "xg": 1.4,
+            "xg_against": 0.9,
+            "possession": 54.0,
+            "matches": 5,
+        },
+        "away": {
+            "corners": 4.1,
+            "corners_against": 7.0,
+            "yellow": 1.8,
+            "fouls": 11.0,
+            "fouls_against": 12.2,
+            "shots": 9.1,
+            "shots_on": 3.0,
+            "shots_against": 11.2,
+            "shots_on_against": 4.4,
+            "saves_made": 19,
+            "saves_faced": 22,
+            "xg": 0.9,
+            "xg_against": 1.6,
+            "possession": 46.0,
+            "matches": 5,
+        },
+    }
+    store(1, KIND_PROFILE, profil, migrated)
+
+    lignes = context_lines(1, EVENT["home"], EVENT["away"], EVENT["commence_time"], migrated)
+    libelles = [libelle for libelle, _ in lignes]
+
+    assert libelles[libelles.index("Tirs") + 1] == "Arrets"
+    assert {"Corners", "Fautes", "xG", "Possession"} <= set(libelles), (
+        "sans ses voisines, la position de la ligne ne se verifie pas"
+    )
+    assert dict(lignes)["Arrets"] == "BK Hacken 12/15 cadres | Djurgardens IF 19/22 cadres"
+
+
 # -- Dom/Ext : ne rien affirmer sur zero match --------------------------------
 
 

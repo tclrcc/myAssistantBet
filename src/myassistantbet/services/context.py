@@ -934,6 +934,18 @@ PROFILE_STATS = {
     "Shots on Goal": "shots_on",
     "Fouls": "fouls",
     "Ball Possession": "possession",
+    # Le gardien. Servi sur **366 releves sur 366** dans les sept competitions
+    # domestiques sondees et **jamais** en Conference League : la ligne existe
+    # la ou le fournisseur la sert, et le preambule le dit une fois pour le lot.
+    # C'est ici, dans le registre de ce qu'on garde des dix-huit, que le libelle
+    # du fournisseur est ecrit — `_save_totals` le relit a travers cette table
+    # plutot que de le retaper, sans quoi les deux ecritures divergeraient au
+    # premier renommage.
+    #
+    # La moyenne par match qu'en tire la boucle generique n'est **rendue nulle
+    # part**, comme `yellow_against` : ce qui discrimine est la part des tirs
+    # cadres arretee, pas le nombre d'arrets, lequel suit le volume subi.
+    "Goalkeeper Saves": "saves",
     # Couverture inegale : la Super League chinoise la rend `null`, et
     # `_stat_value` l'ecarte alors comme n'importe quelle valeur absente. La
     # ligne n'existe donc que la ou le fournisseur la sert.
@@ -984,7 +996,68 @@ def _profile_from_fixtures(
 
     profile = {name: round(total / counts[name], 1) for name, total in totals.items()}
     profile["matches"] = len(stats_by_fixture)
+    saves = _save_totals(stats_by_fixture, team_id)
+    if saves is not None:
+        profile["saves_made"], profile["saves_faced"] = saves
     return profile
+
+
+def _save_totals(
+    stats_by_fixture: dict[int, list[dict[str, Any]]], team_id: int
+) -> tuple[int, int] | None:
+    """Arrets et tirs cadres subis, en **totaux** sur la fenetre du profil.
+
+    **La seule ligne de profil dont le denominateur n'est pas le match**, et
+    c'est ce qui commande cette fonction. Les autres rendent une moyenne par
+    rencontre ; celle-ci rend une fraction dont le bas est le **tir cadre
+    subi** — le volume par match, lui, se lit sur `Tirs`, juste au-dessus, en
+    `pris X dont Y`.
+
+    Elle se calcule donc sur les totaux et **jamais sur les moyennes deja
+    arrondies** : 2.6 arrets pour 4.0 cadres se lit 0,65 quand le rapport vrai
+    vaut 0,658, et l'ecart grandit quand les deux nombres sont petits.
+
+    Une rencontre n'entre que si **les deux** valeurs y sont — `Goalkeeper
+    Saves` de notre feuille et `Shots on Goal` de celle d'en face. Un haut et un
+    bas portant sur deux fenetres differentes ne font pas une fraction, et le
+    lecteur n'aurait rien pour le voir.
+
+    Trois refus, et aucun n'est un repli : moins de `PROFILE_MIN_MATCHES`
+    rencontres completes, aucun tir cadre subi — `0/0` n'est pas un taux — et
+    plus d'arrets que de tirs cadres, qui ne peut venir que d'une feuille
+    incoherente. En cas de doute, aucune ligne.
+    """
+    made = 0.0
+    faced = 0.0
+    complete = 0
+
+    for entries in stats_by_fixture.values():
+        if len(entries) < 2:
+            continue
+        ours: float | None = None
+        theirs: float | None = None
+        for entry in entries:
+            mine = (entry.get("team") or {}).get("id") == team_id
+            for item in entry.get("statistics") or []:
+                key = PROFILE_STATS.get(str(item.get("type")))
+                if key is None:
+                    continue
+                value = _stat_value(item)
+                if value is None:
+                    continue
+                if key == "saves" and mine:
+                    ours = value
+                elif key == "shots_on" and not mine:
+                    theirs = value
+        if ours is None or theirs is None:
+            continue
+        made += ours
+        faced += theirs
+        complete += 1
+
+    if complete < PROFILE_MIN_MATCHES or faced <= 0 or made > faced:
+        return None
+    return int(made), int(faced)
 
 
 def _covers_fixture_statistics(coverage: dict[str, Any]) -> bool:
@@ -2424,9 +2497,11 @@ def referee_served(competition_id: int | None, settings: Settings | None = None)
 class _Faits:
     """Collecteur des lignes de contexte, **date par type de releve**.
 
-    `context` porte un `fetched_at` par type, et douze types alimentent les
-    vingt-neuf lignes de ce bloc : la date fine est donc atteignable, et c'est
-    elle qui rend un fait verifiable.
+    `context` porte un `fetched_at` par type, et **plusieurs types alimentent un
+    meme bloc** : la date fine est donc atteignable, et c'est elle qui rend un
+    fait verifiable. Les deux comptes qui figuraient ici — douze types,
+    vingt-neuf lignes — avaient derive de deux lignes avant qu'on les relise, et
+    rien ne les tenait : un docstring faux coute plus qu'un docstring absent.
 
     **Une ligne qui melange deux relevés prend la plus ancienne des deux.** Une
     ligne comme `Forme 5` tire ses lettres de `form` et ses buts de `recent` ;
@@ -2669,6 +2744,16 @@ def context_facts(
     )
     if shots:
         faits.add("Tirs", shots, KIND_PROFILE)
+
+    # Juste derriere le volume, et c'est la moitie de la convention : la
+    # fraction compte des tirs cadres subis, dont `Tirs` vient de donner la
+    # moyenne par match. Separees, il faudrait retenir le denominateur d'une
+    # ligne a l'autre.
+    saves = _pair(
+        _saves_fragment(home, profile.get("home")), _saves_fragment(away, profile.get("away"))
+    )
+    if saves:
+        faits.add("Arrets", saves, KIND_PROFILE)
 
     xg = _pair(_xg_fragment(home, profile.get("home")), _xg_fragment(away, profile.get("away")))
     if xg:
@@ -3324,6 +3409,33 @@ def _shot_fragment(team: str, profile: dict[str, Any] | None) -> str:
         detail = f" dont {on_target_against}" if on_target_against is not None else ""
         tail = f"{tail}, pris {conceded}{detail}"
     return f"{team} {profile['shots']}{tail}{_profile_suffix(profile)}"
+
+
+def _saves_fragment(team: str, profile: dict[str, Any] | None) -> str:
+    """`Estoril 12/15 cadres` — tirs cadres subis, et ceux que le gardien arrete.
+
+    **Le second facteur de `buts encaisses = volume x (1 - taux)`, et il ne le
+    devient qu'une fois le volume rendu.** Tant que `Tirs` ne portait pas les
+    tirs concedes, ce taux etait un doublon partiel de `Buts pris` et de
+    `Clean sheet` : sa correlation aux buts encaisses vaut -0,68, et une
+    simulation ou les taux sont tires **au hasard** en rend -0,75 — le chiffre
+    est arithmetique, pas une redite de la defense. Rendu a cote du volume, il
+    en est independant (r = +0,04) et decompose exactement ce que les deux
+    autres lignes agregent.
+
+    Ce qu'il **ne** mesure pas, verifie plutot que suppose : ni la domination
+    adverse (+0,04 avec les tirs cadres subis), ni la qualite des tirs encaisses
+    (-0,27 avec l'`xG` par tir cadre, soit 7 % de la variance). Il porte 30 % de
+    signal, entre `Total buts >2.5` et le plancher `BTTS` — voir l'audit 04.
+
+    **La fraction compte des tirs cadres et non des matchs**, seule du bloc dans
+    ce cas : le denominateur est ecrit, le mot le nomme, et `Tirs` donne le
+    volume par match une ligne plus haut. Elle ne porte donc pas le `/5` de ses
+    voisines, qui compterait autre chose que ce qu'elle divise.
+    """
+    if not _profiled(profile, "saves_faced"):
+        return ""
+    return f"{team} {profile['saves_made']}/{profile['saves_faced']} cadres"
 
 
 def _form_fragment(team: str, stats: dict[str, Any] | None, recent: dict[str, Any] | None) -> str:

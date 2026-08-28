@@ -808,6 +808,44 @@ The Odds API.
     de `Buts pris` tant que le volume n'etait pas rendu (r = −0,68, arithmetique). Rendu a
     part, le volume en fait le **second facteur, exact et independant** (r = +0,04) de la
     decomposition `buts = volume × (1 − taux)`. Voir `audit/04_couverture_football.md`.
+    Livre le 28/08/2026, ci-dessous.
+- **`Arrets`** (`Goalkeeper Saves`, meme appel, zero credit) : `12/15 cadres`, la part des
+  tirs cadres subis que le gardien arrete sur la fenetre du profil. Servi sur **366 releves
+  sur 366** dans les sept competitions domestiques sondees, **jamais en Conference League**.
+  Cout mesure : **18,6 tokens** par bloc, 151 pour le mode d'emploi paye une fois.
+  - **Il ne devient interessant qu'apres le miroir de `Tirs`, et c'est l'inverse de ce
+    qu'une lecture par l'attribution conclut.** Sa correlation aux buts encaisses vaut
+    −0,68, ce qui le fait passer pour une redite de `Buts pris` et de `Clean sheet` ; une
+    simulation ou les taux sont tires **au hasard** en rend −0,75, intervalle
+    [−0,82 ; −0,68]. Le chiffre est **arithmetique** — `buts = volume × (1 − taux)` — et le
+    −0,68 observe est a la borne la plus faible de ce que le pur hasard produit.
+  - Ce qu'il **ne** mesure pas, mesure plutot que suppose : ni la domination adverse
+    (+0,04 avec les tirs cadres subis), ni la qualite de ce qui est concede (−0,27 avec
+    l'`xG` par tir cadre, soit 7 % de la variance). Il porte **30 % de signal** pour
+    `sd = 0,088`, entre `Total buts >2.5` (41 %) et le plancher `BTTS` (24 %).
+  - **La seule ligne du bloc dont le denominateur n'est pas le match**, et la convention se
+    dit plutot que se transformer. Ramener le taux a une moyenne par match rendrait le
+    **nombre d'arrets**, qui suit le volume subi — donc precisement le facteur dont on veut
+    le separer. Trois choses portent la convention ensemble : la ligne se pose **juste
+    derriere `Tirs`**, qui vient de donner le volume par match en `pris X dont Y` ; le mot
+    `cadres` nomme ce qui est compte ; et le preambule le dit une fois pour le lot. Elle ne
+    porte donc **pas** le `/5` de ses voisines, qui compterait autre chose que ce qu'elle
+    divise.
+  - **La fraction se calcule sur les totaux, jamais sur les moyennes deja arrondies** :
+    2.6 arrets pour 4.0 cadres se lit 0,65 quand le rapport vrai vaut 0,658, et l'ecart
+    grandit quand les deux nombres sont petits — le regime exact de cette ligne.
+  - Une rencontre n'entre que si **les deux** valeurs y sont, nos arrets et ses tirs cadres.
+    Un haut et un bas portant sur deux fenetres differentes ne font pas une fraction, et
+    rien dans la ligne ne permettrait de le voir. Trois refus, et aucun n'est un repli :
+    moins de `PROFILE_MIN_MATCHES` rencontres completes, aucun tir cadre subi — `0/0` n'est
+    pas un taux — et plus d'arrets que de cadres, qui ne peut venir que d'une feuille
+    incoherente.
+  - **La moyenne par match que la boucle generique en tire n'est rendue nulle part**, comme
+    `yellow_against` : ce qui discrimine est la part, pas le compte.
+  - Elle entre au referentiel de densite, le **denominateur football passant de 28 a 29**.
+    Les coupes UEFA — 16 % des blocs profiles — y plafonnent donc un point plus bas, sans
+    effet sur le seuil de « bloc pauvre », qui est la moitie. Le preambule dit une fois que
+    son absence parle du fournisseur et non de l'equipe, meme regle que `xG`.
 - **`Fautes` et `Possession`** : un appel `/fixtures/statistics` rend **dix-huit**
   statistiques, `PROFILE_STATS` en gardait cinq. En garder deux de plus ne coute **aucun
   appel** — seulement de la place. `Fouls` accompagne `Cartons` (un arbitre ne sort un

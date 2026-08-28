@@ -1024,7 +1024,14 @@ pourcentages ni moyennes :
     tourne — ça se lit sur le compte, pas sur le nom.
   · **« Fautes »** — commises, puis subies. Elle accompagne « Cartons » : un
     arbitre ne sort un carton que sur une faute.
-  · **« xG »** — buts attendus produits, puis concédés. 2.0 buts pour 0.8 xG,
+{% if 'Arrets' in context_labels %}  · **« Arrêts »** — la **seule fraction du bloc qui ne compte pas des matchs** :
+    `12/15 cadres` = quinze tirs cadrés subis sur la fenêtre, douze arrêtés. Le
+    volume par match est juste au-dessus, sur « Tirs », en `pris X dont Y`. Les
+    buts encaissés valent `volume × (1 − taux)`, et les deux facteurs sont
+    indépendants : cette ligne ne dit rien de ce que l'adversaire produit, « Tirs »
+    rien de ce que le gardien en fait. Son absence ne dit rien de l'équipe,
+    seulement du fournisseur — il ne la sert pas en coupe d'Europe.
+{% endif %}  · **« xG »** — buts attendus produits, puis concédés. 2.0 buts pour 0.8 xG,
     c'est la finition ; l'inverse, une équipe qui se crée des situations sans
     conclure. **Seule ligne du bloc qui soit une sortie de modèle et non un fait
     observé** : ne la convertis **jamais** en probabilité, ne la rapproche jamais

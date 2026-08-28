@@ -100,6 +100,11 @@ CONTEXT_ICONS = {
     "Fautes": "interdit",
     "Possession": "jauge",
     "Tirs": "cible",
+    # Le taux d'arret du gardien. Le bouclier de « Buts pris » et de
+    # « Clean sheet » plutot que la cible de « Tirs » : la ligne compte des tirs
+    # cadres, mais ce qu'elle decrit est ce qui les arrete. Elle entre ici **le
+    # jour ou elle est ecrite** — huit libelles ont deja sorti sans pictogramme.
+    "Arrets": "bouclier",
     "xG": "cible",
     "Stats match": "interdit",
     "Compos": "liste",
@@ -242,6 +247,12 @@ CONTEXT_EXPECTED: dict[str, tuple[str, ...]] = {
         "Corners",
         "Cartons",
         "Tirs",
+        # Le taux d'arret : servi sur 100 % des sept competitions domestiques
+        # sondees, et **nul en Conference League** — les coupes UEFA font 16 %
+        # des blocs profiles, et leur densite y plafonne donc un point plus bas.
+        # Sans effet sur le seuil de « bloc pauvre », qui est la moitie. Le
+        # denominateur football passe de 28 a 29.
+        "Arrets",
         "Fautes",
         "Possession",
         "xG",
