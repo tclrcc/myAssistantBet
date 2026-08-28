@@ -1326,6 +1326,10 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         "price_sources": history_service.PRICE_SOURCES,
         "picks": history_service.list_picks(session_id, settings),
         "worksheet": history_service.worksheet(session_id, settings),
+        # Les journees que ces selections couvrent, pour mener au
+        # recapitulatif. Une liste et non une date : une session deborde
+        # parfois sur le lendemain, et les deux journees sont les siennes.
+        "recap_days": history_service.days_of_session(session_id, settings),
         "result_labels": list(history_service.RESULT_LABELS.items()),
         # Les combines d'**analyse** : ils regroupent des selections, ils ne
         # disent pas ce qui a ete pose chez le bookmaker. Leur recouvrement se

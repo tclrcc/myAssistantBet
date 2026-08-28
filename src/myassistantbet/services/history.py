@@ -1176,6 +1176,27 @@ def list_picks(session_id: int, settings: Settings | None = None) -> list[Pick]:
     return [_pick(row, labels, settings.tz) for row in rows]
 
 
+def days_of_session(session_id: int, settings: Settings | None = None) -> list[str]:
+    """Les journees d'analyse couvertes par les selections d'une session.
+
+    **Une journee n'est pas une session, et l'inverse non plus.** Une journee
+    porte 3 a 19 prompts et parfois deux sessions ; une session, elle, deborde
+    parfois sur le lendemain — **4 sur 24** en base, jusqu'a 59 selections a
+    cheval. Rendre la liste plutot qu'une date evite d'avoir a departager, et il
+    n'y a rien pour le faire : les deux journees sont egalement les siennes.
+
+    Ordre croissant, comme on relit une session.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT date(created_at) AS jour FROM picks "
+            "WHERE session_id = ? ORDER BY jour",
+            (session_id,),
+        ).fetchall()
+    return [str(row["jour"]) for row in rows]
+
+
 def list_picks_for_day(day: str, settings: Settings | None = None) -> list[Pick]:
     """Les selections d'une **journee d'analyse**, toutes sessions confondues.
 

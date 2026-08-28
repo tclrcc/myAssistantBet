@@ -12,6 +12,16 @@
   </div>
   <div class="actions">
     <a class="button" href="/history">← Historique</a>
+    {# **Le récapitulatif se demande d'ici**, la page où vit le travail du jour.
+       Une entrée par journée couverte : une session déborde parfois sur le
+       lendemain — 4 sur 24 en base — et les deux journées sont les siennes.
+       Le libellé porte la date dès qu'il y en a plusieurs, sans quoi deux
+       boutons identiques laisseraient deviner lequel mène où. #}
+    {% for jour in recap_days %}
+      <a class="button" href="/recap/{{ jour }}">
+        Récapitulatif{% if recap_days | length > 1 %} du {{ jour }}{% endif %}
+      </a>
+    {% endfor %}
     <a class="button" href="/session/{{ session_id }}">Shortlist</a>
     <a class="button primary-link" href="/session/{{ session_id }}/prompt">Prompt</a>
   </div>

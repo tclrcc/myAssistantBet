@@ -404,3 +404,45 @@ def test_la_page_historique_porte_le_point_d_entree(client: TestClient, migrated
 
     assert reponse.status_code == 200
     assert f'href="/recap/{_today()}"' in reponse.text
+
+
+def test_la_feuille_de_session_mene_au_recapitulatif(
+    client: TestClient, migrated: Settings
+) -> None:
+    """**C'est la page ou vit le travail du jour**, donc celle d'ou on veut le
+    recapitulatif. Il n'etait accessible que depuis la liste des sessions.
+    """
+    settings = migrated
+    event_id = _match(settings, "Alpha")
+    session_id = board_service.toggle_selection(event_id, True, settings)
+    _pick(settings, event_id)
+
+    page = client.get(f"/history/{session_id}").text
+
+    assert "Alpha" in page, "la feuille doit rester rendue"
+    assert f'href="/recap/{_today()}"' in page
+
+
+def test_une_session_a_cheval_sur_deux_journees_porte_les_deux_liens(
+    client: TestClient, migrated: Settings
+) -> None:
+    """Une journee n'est pas une session, et l'inverse non plus : **4 sessions
+    sur 24 couvrent deux journees** en base. Un lien unique en tairait une, et
+    choisir laquelle demanderait un depart que rien ne justifie.
+    """
+    settings = migrated
+    premier = _match(settings, "Alpha")
+    session_id = board_service.toggle_selection(premier, True, settings)
+    _pick(settings, premier)
+    _pick(settings, _match(settings, "Beta"))
+    with connect(settings) as conn:
+        conn.execute(
+            "UPDATE picks SET created_at = '2026-01-02T12:00:00Z' "
+            "WHERE id = (SELECT MAX(id) FROM picks)"
+        )
+
+    page = client.get(f"/history/{session_id}").text
+
+    assert "Alpha" in page, "la feuille doit rester rendue"
+    assert f'href="/recap/{_today()}"' in page
+    assert 'href="/recap/2026-01-02"' in page
