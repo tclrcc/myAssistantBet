@@ -20,7 +20,8 @@
    la feuille — mais un geste qu'on repete quarante fois de suite ne peut pas
    passer par le second.
 #}
-{% macro pick_row(pick, coupon_tracking, stakes, settlements, resolved=false, previous='pending', error='') %}
+{% macro pick_row(pick, coupon_tracking, real_price_capture, stakes, settlements,
+                  resolved=false, previous='pending', error='') %}
     {#- `id` sur la ligne : c'est l'ancre d'un swap cible, et elle sert aussi a
         retrouver une ligne resolue apres coup. -#}
     <tr id="pick-row-{{ pick.pick_id }}"
@@ -94,12 +95,14 @@
            avec un bookmaker. Réclamée là où elle manque et où elle décide : une
            sélection assise sur un prix de référence sort des taux par bande de
            cote tant qu'elle n'est pas renseignée. #}
-        {# **Réclamée seulement si le suivi des paris est ouvert.** Cette cote ne
-           se relève jamais toute seule — ce serait une intégration
-           transactionnelle avec un bookmaker — donc elle ne peut venir que
-           d'une mise. Sans mise, la case demanderait une valeur qui n'existera
-           jamais, et le palier se lit désormais sur la cote du bloc. #}
-        {% if coupon_tracking and pick.price_source == 'reference' %}
+        {# **Son propre interrupteur, scindé du suivi des paris le 28/08/2026.**
+           Cette cote contrôle le prix enregistré, pas ce qu'on en fait : c'est
+           le seul contrôle qui existe sur `picks.price`, le nombre sur lequel
+           repose tout le résidu. 184 saisies en base, 17 sur 28 sélections le
+           28/08. Elle ne se relève jamais toute seule — ce serait une
+           intégration transactionnelle, interdit n°7 — mais elle se relève à la
+           main, et c'est ce qui la sépare d'une mise. #}
+        {% if real_price_capture and pick.price_source == 'reference' %}
         <form hx-post="/picks/{{ pick.pick_id }}/real-price"
               hx-target="#worksheet" hx-swap="outerHTML">
           <input class="tiny" type="text" name="price" inputmode="decimal"

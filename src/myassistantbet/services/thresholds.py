@@ -537,7 +537,40 @@ class Toggle:
 #: gardee par un test qui lit la source, pas un reglage.
 COUPON_TRACKING = "suivi_coupons"
 
+#: La saisie de la **cote obtenue**, et elle seule. **Scindee de
+#: `COUPON_TRACKING` le 28/08/2026**, parce qu'un drapeau qui ouvre trois choses
+#: dont une seule part n'est plus un drapeau : c'est trois decisions sous un nom.
+#:
+#: Ce qu'elle controle n'a rien a voir avec les paris poses : la cote obtenue
+#: controle le **prix enregistre**, pas ce qu'on en fait. C'est le seul controle
+#: qui existe sur `picks.price`, le nombre sur lequel repose tout le residu au
+#: prix.
+#:
+#: **Ouverte par defaut, et la mesure ne laisse pas le choix** : 184 cotes
+#: obtenues en base, 35 sur 39 selections le 27/08, 17 sur 28 le 28/08, et 38
+#: paliers revus parce que le prix releve ne tombait pas dans la meme bande.
+#:
+#: **Elle garde deux surfaces, et elles basculent ensemble** : le champ de
+#: saisie de la feuille de session et le compteur de manque de
+#: `Worksheet.coverage_line`. Fermee d'un cote et ouverte de l'autre, le
+#: compteur dirait « aucun manque » au moment ou plus rien ne peut etre saisi —
+#: un silence a deux causes. Un banc le verifie.
+REAL_PRICE_CAPTURE = "saisie_cote_obtenue"
+
 TOGGLES: dict[str, Toggle] = {
+    REAL_PRICE_CAPTURE: Toggle(
+        key=REAL_PRICE_CAPTURE,
+        label="Saisie de la cote obtenue",
+        default=True,
+        note=(
+            "Ouvre le champ « cote obtenue » de la feuille de session, et le compteur "
+            "qui dit combien de lignes en manquent. C'est le seul contrôle qui existe "
+            "sur le prix enregistré : sans lui, la cote recopiée du bloc n'est vérifiée "
+            "par rien, et c'est elle qui porte le résidu au prix. Fermé, la colonne "
+            "disparaît et le manque cesse d'être compté — les deux ensemble, pour qu'un "
+            "compteur muet ne se lise pas comme une absence de manque."
+        ),
+    ),
     COUPON_TRACKING: Toggle(
         key=COUPON_TRACKING,
         label="Suivi de l'argent",

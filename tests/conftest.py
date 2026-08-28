@@ -42,9 +42,21 @@ def isolated_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterat
     # machine du developpeur ne verraient pas les memes requetes.
     monkeypatch.setenv("REFERENCE_BOOKMAKERS", "")
     monkeypatch.setenv("DEV_CACHE", "0")
-    monkeypatch.setenv("DEV_CACHE_DIR", str(tmp_path / "dev_cache"))
-    monkeypatch.setenv("BACKUP_DIR", str(tmp_path / "backups"))
     monkeypatch.setenv("BACKUP_KEEP_DAYS", "7")
+    # **Tous les chemins des reglages, et pas ceux dont on se souvient.** Trois
+    # etaient rediriges a la main et le quatrieme ne l'etait pas : les bancs de
+    # capture de coupon ecrivaient dans `data/uploads` de l'instance servie,
+    # prouve le 28/08/2026 par releve des dates de modification. Le symptome
+    # etait masque par un detail sans rapport — le nom d'un fichier de capture
+    # porte l'empreinte de son contenu, donc chaque execution ecrasait le meme
+    # fichier et le compte ne grossissait jamais.
+    #
+    # La boucle lit le modele plutot qu'une liste : un champ ajoute demain est
+    # isole sans que personne ait a y penser, ce qu'une enumeration a la main ne
+    # peut pas promettre. `tests/test_isolation.py` verifie la propriete.
+    for nom, champ in Settings.model_fields.items():
+        if isinstance(champ.default, Path) or champ.annotation is Path:
+            monkeypatch.setenv(nom.upper(), str(tmp_path / nom))
     monkeypatch.setenv("TZ", "Europe/Paris")
     monkeypatch.setenv("SCHEDULER_ENABLED", "0")
     monkeypatch.setenv("HTTP_BACKOFF_BASE", "0")

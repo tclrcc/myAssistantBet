@@ -42,7 +42,7 @@ from myassistantbet.services.history import (
 from myassistantbet.services.inference import MARGIN_REFERENCE, Residual
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import build_prompt, save_prompt
-from myassistantbet.services.thresholds import COUPON_TRACKING, save_toggle
+from myassistantbet.services.thresholds import REAL_PRICE_CAPTURE, save_toggle
 
 LOIN = "2099-01-01"
 
@@ -354,17 +354,18 @@ def test_le_compteur_annonce_les_deux_couvertures(migrated: Settings) -> None:
     quelque chose.
     """
     session_id = _lot(migrated, [("2.00", "win", True)] + [("2.00", "win", False)] * 2)
-    # **La cote obtenue n'est reclamee que si le suivi de l'argent est ouvert** :
-    # elle ne peut venir que d'une mise. Il l'est par defaut depuis le 20/08 —
-    # l'usage a change — et l'eteindre retire la reclamation plutot que de
-    # demander une valeur qui n'existera jamais.
+    # **La cote obtenue suit son propre interrupteur depuis le 28/08/2026.** Le
+    # compteur et le champ de saisie basculent ensemble : annoncer un manque que
+    # rien ne permet de combler enverrait chercher une surface absente.
     ligne = worksheet(session_id, migrated).coverage_line
 
     assert "1 sur 3 sans antériorité établie" in ligne
     assert "3 sur 3 sans cote obtenue" in ligne
 
-    save_toggle(COUPON_TRACKING, "0", migrated)
-    assert "cote obtenue" not in worksheet(session_id, migrated).coverage_line
+    save_toggle(REAL_PRICE_CAPTURE, "0", migrated)
+    ligne = worksheet(session_id, migrated).coverage_line
+    assert "sans antériorité établie" in ligne, "l'autre moitié du compteur reste"
+    assert "cote obtenue" not in ligne
 
 
 def test_le_compteur_se_tait_quand_tout_est_couvert(migrated: Settings) -> None:
@@ -373,7 +374,7 @@ def test_le_compteur_se_tait_quand_tout_est_couvert(migrated: Settings) -> None:
     session_id = _lot(migrated, [("2.00", "win", False)])
     pick_id = worksheet(session_id, migrated).picks[0].pick_id
     db.execute("UPDATE picks SET price_real = 1.95 WHERE id = ?", (pick_id,), settings=migrated)
-    save_toggle(COUPON_TRACKING, "1", migrated)
+    save_toggle(REAL_PRICE_CAPTURE, "1", migrated)
 
     assert worksheet(session_id, migrated).coverage_line == ""
 

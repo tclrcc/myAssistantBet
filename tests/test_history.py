@@ -56,7 +56,11 @@ from myassistantbet.services.history import (
 )
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import RenderedPrompt, build_prompt, save_prompt
-from myassistantbet.services.thresholds import COUPON_TRACKING, save_toggle
+from myassistantbet.services.thresholds import (
+    COUPON_TRACKING,
+    REAL_PRICE_CAPTURE,
+    save_toggle,
+)
 
 from .helpers import NOW, lot_avec_recul
 
@@ -3091,15 +3095,22 @@ def test_la_feuille_reclame_la_cote_obtenue_sur_une_cote_de_reference(
         price_source="reference",
         settings=migrated,
     )
-    # **Gouvernee par le suivi de l'argent**, ouvert par defaut depuis le
-    # 20/08 : cette cote ne peut venir que d'une mise, et l'eteindre retire la
-    # case plutot que de demander une valeur qui n'existera jamais.
+    # **Gouvernee par son propre interrupteur depuis le 28/08/2026**, et plus par
+    # le suivi des paris : cette cote controle le prix enregistre, pas ce qu'on
+    # en fait. Le suivi des paris peut se fermer sans qu'elle bouge.
     page = client.get(f"/history/{session_id}").text
     assert "real-price" in page
     assert 'placeholder="obtenue"' in page
 
     save_toggle(COUPON_TRACKING, "0", migrated)
-    assert 'placeholder="obtenue"' not in client.get(f"/history/{session_id}").text
+    page = client.get(f"/history/{session_id}").text
+    assert "Moutet" in page, "la page doit rester rendue"
+    assert 'placeholder="obtenue"' in page, "elle ne depend plus du suivi des paris"
+
+    save_toggle(REAL_PRICE_CAPTURE, "0", migrated)
+    page = client.get(f"/history/{session_id}").text
+    assert "Moutet" in page, "la page doit rester rendue"
+    assert 'placeholder="obtenue"' not in page
 
 
 def test_la_saisie_de_la_cote_obtenue_rend_le_fragment(

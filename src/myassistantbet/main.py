@@ -1367,6 +1367,9 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         "coupon_tracking": thresholds_service.toggle_of(
             thresholds_service.COUPON_TRACKING, settings
         ),
+        "real_price_capture": thresholds_service.toggle_of(
+            thresholds_service.REAL_PRICE_CAPTURE, settings
+        ),
         "today": now.strftime("%Y-%m-%d"),
         "now_hm": now.strftime("%H:%M"),
         "error": error,
@@ -2023,6 +2026,9 @@ def set_pick_result(
             "pending_count": history_service.pending_count(session_id, settings),
             "coupon_tracking": thresholds_service.toggle_of(
                 thresholds_service.COUPON_TRACKING, settings
+            ),
+            "real_price_capture": thresholds_service.toggle_of(
+                thresholds_service.REAL_PRICE_CAPTURE, settings
             ),
             "stakes": {
                 row.pick_id: row for row in stakes_service.rows_for_session(session_id, settings)

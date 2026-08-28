@@ -60,7 +60,7 @@ from .market_families import family_key, family_label, family_of, family_rank, m
 from .market_families import load as load_families
 from .market_families import market_key as _market_key
 from .render import is_price
-from .thresholds import COUPON_TRACKING, toggle_of
+from .thresholds import REAL_PRICE_CAPTURE, toggle_of
 from .thresholds import value_of as threshold_value
 from .write_paths import writes
 
@@ -1288,10 +1288,12 @@ class Worksheet:
         """
         return sum(1 for pick in self.picks if pick.price_real is None)
 
-    #: Le suivi des paris poses est-il ouvert. Ferme, la cote obtenue cesse
-    #: d'etre une lacune : elle ne peut venir que d'une mise, et il n'y en a pas.
-    #: La reclamer serait demander une valeur qui n'existera jamais.
-    coupon_tracking: bool = False
+    #: La saisie de la cote obtenue est-elle ouverte. **Son propre interrupteur
+    #: depuis le 28/08/2026**, scinde du suivi des paris : cette cote controle le
+    #: prix enregistre, pas ce qu'on en fait. Fermee, le manque cesse d'etre
+    #: compte — les deux surfaces basculent ensemble, sans quoi le compteur
+    #: dirait « aucun manque » quand plus rien ne peut etre saisi.
+    real_price_capture: bool = False
 
     @property
     def coverage_line(self) -> str:
@@ -1300,11 +1302,9 @@ class Worksheet:
         Rien quand tout est couvert : un compteur a zero sur chaque session
         serait du bruit, et c'est le manque qui doit se voir.
 
-        **La cote obtenue n'y figure que si le suivi des paris est ouvert.** Elle
-        ne se releve jamais toute seule — ce serait une integration
-        transactionnelle avec un bookmaker — donc elle ne peut venir que d'une
-        mise. Sans mise, l'annoncer comme un manque reclamerait une valeur qui
-        n'existera jamais, et le palier se lit desormais sur la cote du bloc.
+        **La cote obtenue n'y figure que si sa saisie est ouverte.** Le compteur
+        et le champ sont un seul fait : annoncer un manque que rien ne permet de
+        combler enverrait chercher une surface absente.
         """
         total = self.total
         manques = [
@@ -1312,7 +1312,7 @@ class Worksheet:
             if self.without_antecedence
             else "",
             f"{self.without_real_price} sur {total} sans cote obtenue"
-            if self.coupon_tracking and self.without_real_price
+            if self.real_price_capture and self.without_real_price
             else "",
         ]
         return " · ".join(part for part in manques if part)
@@ -1384,7 +1384,7 @@ def worksheet(session_id: int, settings: Settings | None = None) -> Worksheet:
     return Worksheet(
         pending=_grouped([pick for pick in picks if not pick.settled]),
         settled=_grouped([pick for pick in picks if pick.settled]),
-        coupon_tracking=toggle_of(COUPON_TRACKING, settings),
+        real_price_capture=toggle_of(REAL_PRICE_CAPTURE, settings),
     )
 
 
