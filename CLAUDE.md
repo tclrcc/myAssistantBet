@@ -289,6 +289,31 @@ non negociables, toutes couvertes par des tests :
   « pris » de la ligne `Corners`. `line()` degrade en plus proprement : un libelle
   trop long decale sa ligne d'une colonne, ce qui se voit, au lieu de souder deux
   mots, ce qui se lit de travers ;
+- **le score exact se rend en chiffres, quel que soit le vocabulaire du
+  fournisseur** (`render.score_text`). The Odds API nomme chaque issue
+  `Cruzeiro:0|Mirassol:0`, API-Football `0:0` — 4 568 issues longues contre
+  8 157 courtes en base, aucun evenement servi par les deux : **c'est la source
+  qui decide, jamais la longueur du nom**. Le rendu ecrivait le nom brut prive
+  de ses espaces, ce qui ne fait rien sur la seconde forme et **soude** la
+  premiere : `RealRacingClubdeSantander:1|ElcheCF:1`, sur 188 blocs archives
+  (27 % de ceux qui portent un score exact). Le defaut n'est apparu que le jour
+  ou Pinnacle a servi la profondeur.
+  - La conversion est sans perte, et c'est mesure : **les 4 568 issues longues
+    portent `home:X|away:Y` dans l'ordre de l'evenement**, noms exacts, zero
+    inversion. La forme courte est elle aussi `home:away` (138 accords sur 148
+    contre le favori 1N2 des matchs desequilibres).
+  - Le decoupage se fait au **dernier** deux-points de chaque moitie : un nom de
+    club porte parfois un tiret et jamais deux-points
+    (`Bragantino-SP:0|Corinthians:0`).
+  - **La convention se dit desormais dans le preambule**, gardee sur
+    `exact_scores` — le drapeau se lit sur `rendered_outcomes`, jamais sur
+    `event.markets`. Elle etait absente pour les **deux** formes ; la courte la
+    rend indispensable, l'ordre des equipes ne se lisant plus dans le jeton ;
+- **`Shown` porte le jeton que chaque ligne ecrit pour une issue**, et c'est ce
+  qui empeche un second lecteur d'en fabriquer une autre orthographe. Vide veut
+  dire que la ligne **n'ecrit aucun nom** — une echelle imprime sa ligne et ses
+  deux prix, un 1N2 trois prix nus, et c'est la convention du preambule qui les
+  fait lire. Voir « La borne du lot ecrivait une autre orthographe » ;
 - un marche paye mais non modelise est rendu brut plutot que perdu silencieusement ;
 - l'en-tete ne nomme que le book principal ; **toute ligne servie par une autre source la
   porte en fin de ligne** (`[Pinnacle (ref.)]`, `[saisie manuelle]`, `[dont …]` quand une
@@ -1776,9 +1801,19 @@ bancs de la divergence d'entraineur montent donc des blocs **denses**, sans quoi
 le dossier s'ouvrirait sur la densite. Meme piege que `_dense("tennis")` sans
 `Ici` ni `Service`.
 
+Et une **troisieme forme, du 28/08/2026** : une fixture dont le **vocabulaire
+est invente**. Les bancs du score exact nommaient leurs issues `1-1`, `2-1` —
+une notation qu'**aucun fournisseur ne produit**, zero ligne sur les 12 725 de
+la base. Ils parcouraient la bonne fonction, sur des donnees que la production
+n'a jamais servies, et le `.replace(' ', '')` qu'ils traversaient n'avait donc
+rien a y faire. Les deux autres formes se corrigent en enrichissant le montage ;
+celle-ci se corrige en allant **lire ce que la source ecrit vraiment**.
+
 **La question a se poser sur un montage** : *cette fixture peut-elle atteindre
 l'etat que j'affirme garder, et par ce chemin-la seulement ?* Un « non » a la
 premiere moitie rend le banc muet, un « non » a la seconde le rend complaisant.
+Et une troisieme, qui precede les deux : *ces valeurs, la production les
+produit-elle ?*
 
 ## Un champ dont le nom evoque une date peut etre un entier
 
@@ -2362,6 +2397,26 @@ juge, sur les matchs qui paraissaient les plus lisibles, pas les plus rentables.
 - La fiche **ne parait pas** sous le seuil : classer trois dossiers sur trois n'apprend
   rien, et la ligne de budget ferait renoncer a un match qu'il y avait tout le temps de
   traiter.
+- **Le silence de la fiche est defini, et il ne l'etait pas.** Un lot de huit
+  annonce huit dossiers ouvrables et la fiche en classe trois : le budget et la
+  fiche ne disent pas la meme chose, et le gabarit ecrivait deja « ordre de
+  traitement, pas un tri » — donc les deux enonces etaient compatibles. Ce qui
+  manquait est ce que **l'absence** veut dire : le lecteur ne pouvait pas
+  distinguer « rien a chercher ici » de « rien ne le classe ». Meme famille que
+  `HERE_NO_MATCH` / `HERE_NO_INFO` — nommer le cas vrai et le cas faux.
+  - **Le nombre, lui, n'a rien a corriger, et c'est mesure** (29/08/2026) : sur
+    les 111 fiches archivees, **silence median 1**, moyenne 1,56, et 48 fiches
+    classent tout leur budget. Par periode — 1,58 avant le 17/08, 1,47 du 17 au
+    22, 1,72 apres — donc **regime stable et non derive** ; les vingt derniers
+    prompts sont a 1,40, sous la moyenne du corpus. Le 5 du lot du 28/08 est
+    dans la queue, pas dans une tendance : un silence de 6 s'est deja produit
+    sept fois, les 14 et 15/08.
+  - Elargir les criteres reste le chantier ouvert et date des **deux criteres
+    faibles du football**, avec sa mesure manquante nommee — relier un dossier
+    ouvert a la selection qui en est sortie. Rapprocher le budget de la fiche a
+    ete ecarte : le nombre est lu ailleurs (le paragraphe des paliers hauts en
+    fait sa borne), et le faire dependre des criteres l'aurait fait varier avec
+    eux.
 - **La question emise est ce qui fait la valeur, pas la liste de matchs.** « Cherche sur ce
   match » ne fait rien gagner ; « la composition annoncee de X sort-elle son onze
   offensif » se repond en une requete et clot un point. Chaque critere emet la sienne, et
@@ -3652,6 +3707,54 @@ et sans cette precaution 43 blocs sortaient en faux positif :
 - Cout : **-580 tokens sur tout le corpus**, 4 par prompt. 1 049 blocs sur 1 194
   ne changent pas d'un mot.
 
+### La borne du lot ecrivait une autre orthographe que son bloc
+
+**Le meme defaut, un cran plus bas, et il a survecu au correctif ci-dessus.**
+Celui-la portait sur **quelle** cote la borne nomme ; celui-ci sur **comment
+elle l'ecrit**. `prompt._outcome_text` lisait `outcome.name` brut quand cinq
+rendus impriment une forme a eux — et son docstring annoncait « l'issue telle
+qu'elle se lit ».
+
+Cas reel, prompt 232 du 28/08/2026, 226 lignes d'ecart dans le meme prompt :
+
+    ligne 577 :  ... RealRacingClubdeSantander:2|ElcheCF:2 49.74
+    ligne 803 :  Cote max du lot : 49.74 (M7 · Score ex. MT Real Racing Club de
+                 Santander:2|Elche CF:2)
+
+Mesure sur les 144 lignes de bornes archivees : **45 (31 %)** nomment un score
+exact en forme longue, **1** nomme `No` quand le bloc ecrit `Non`. Deux
+divergences de plus restaient **latentes**, prouvables a la lecture et jamais
+encore sorties : `Eq. buts Lyon Over 1.5` contre `Lyon O1.5` imprime, et
+`Handicap Nice 0.5` contre `Nice +0.5` — `_signed` porte le `+`, `%g` non.
+
+- **Corriger le rendu seul aurait aggrave l'ecart**, et c'est ce qui decide de
+  la forme du correctif : la borne aurait continue de nommer `Real Racing Club
+  de Santander:2|Elche CF:2` quand le bloc ecrit `2:2`, deux chaines n'ayant
+  alors plus rien en commun.
+- **C'est la classe entiere qui se ferme, jamais un marche.** Une table
+  « marche -> orthographe » posee a cote de `_render_one` aurait ete la seconde
+  copie qu'on supprime, et elle aurait diverge au premier rendu ajoute — le
+  piege de `markets.py`. **L'invariant est porte par la signature** : `Rendered`
+  rend des `Shown`, donc un rendu neuf ne compile pas sans dire ce qu'il ecrit.
+  Meme argument que les issues retenues un cran plus haut.
+- **Le partage est « la ligne nomme-t-elle son issue », pas « est-ce
+  lisible ».** `O/U Over 4.5` contre `4.5: 1.71/2.25` imprime n'est pas une
+  seconde orthographe : la ligne n'ecrit aucun nom, et c'est la convention du
+  preambule qui la fait lire. Rien ne peut y diverger. La distinction se mesure
+  sur les 288 bornes archivees — 81 sur un score exact, 36 sur `Eq. buts`,
+  60 sur une echelle O/U.
+- **Le banc passe par `build_prompt`**, jamais par le seul rendu : c'est
+  l'assemblage qui fabrique la divergence, et un banc pose sur `render_event`
+  ne l'aurait pas vue. C'est exactement le controle qui manquait au chantier de
+  la veille.
+  - Son premier jet passait pour une mauvaise raison : il versait tout ce qui
+    suit le dernier bloc dans ce bloc, ligne des bornes comprise, donc il la
+    comparait a elle-meme. Un bloc s'arrete au titre suivant, **quel qu'il
+    soit**.
+- Cout : **-12 370 tokens sur le corpus** (232 prompts), -72 sur le lot du
+  28/08. Le score exact en chiffres rend 24 422 tokens, le libelle raccourci
+  431, et les deux ajouts de preambule en reprennent 12 484.
+
 ### Le garde-fou des cotes existait quatorze fois et n'avait pas de nom
 
 Corollaire du meme chantier, et cas 1 de la regle des copies. « 1.00 ou moins
@@ -3717,12 +3820,34 @@ ce qui a fait rouvrir la porte.
 
 - **Ce qui ferme la porte est l'effet.** Sur les blocs de queue — 35 C, 44 km/h
   ou 90 % de pluie et au-dela — la prose des selections cite **deja** la meteo
-  dans **10 cas sur 14 (71 %)**, contre 27 sur 213 ailleurs (13 %). Fisher exact
-  `p = 2,6e-6`. Le modele lit la valeur extreme et s'en sert sans qu'on l'y
-  envoie, parce qu'elle est **ecrite dans le bloc**.
+  bien plus souvent qu'ailleurs. Le modele lit la valeur extreme et s'en sert
+  sans qu'on l'y envoie, parce qu'elle est **ecrite dans le bloc**.
+- **Le taux, lui, a bouge a la re-mesure, et c'est le chiffre corrige qui tient
+  la porte** (29/08/2026). Sur la population large — toutes les selections a
+  prose renseignee, liste de mots elargie au vent, a la chaleur et au terrain —
+  **11 sur 21 (52 %)** contre 33 sur 231 ailleurs (14 %), Fisher exact
+  `p = 1,3e-4`. Le releve d'origine annoncait 10 sur 14 (71 %) et 27 sur 213 :
+  meme direction, meme significativite, **deux populations differentes**. C'est
+  le second qu'il faut porter — pres de la moitie des blocs de queue ne citent
+  pas la meteo, ce qui affaiblit l'argument sans le renverser. **Une porte
+  fermee sur un chiffre qui bouge se rouvre sur la decouverte de l'ecart plutot
+  que sur une raison** : elle doit donc porter le chiffre corrige.
 - Un critere emettrait donc une question dont la reponse est sur la meme ligne —
   le defaut corrige au lot precedent. Ce qui **n'est pas** dans le bloc est
   l'etat de l'alerte a l'heure du coup d'envoi, et c'est le seul cas qui reste.
+- **Le libelle qualitatif ne rouvre rien, et c'est mesure** (29/08/2026). La
+  piste revient naturellement : `orage grelant` est un mot, pas un nombre, donc
+  les seuils ci-dessus ne le verraient pas. **Ils le voient tous.** Sur les 407
+  matchs distincts portant une ligne Meteo, **3 portent un libelle d'orage et
+  les 3 sont deja dans la queue numerique** — Annecy - Rodez par ses 61 km/h,
+  Ried - Grazer AK par ses 80, Austria Lustenau par ses 100 % de pluie. **Zero
+  en dehors.** Le libelle est colineaire au seuil.
+  - Et l'autre moitie de la piste ne discrimine pas davantage : sur les 659
+    blocs portant la ligne, **88,8 % annoncent « alertes non interrogees »**. Un
+    critere pose dessus se declencherait sur neuf blocs sur dix.
+  - La cle est le match distinct — `(affiche, competition, jour)` — et non le
+    bloc : les 3 matchs occupent 7 blocs archives, un meme match etant rendu
+    plusieurs fois dans sa session.
 - **Un docstring faux coute plus qu'un docstring absent** : celui-ci a fait
   re-deriver la conclusion inverse. La porte est desormais tenue par un banc —
   premiere branche de la regle des « a ne pas oublier », une condition
@@ -3730,7 +3855,8 @@ ce qui a fait rouvrir la porte.
 
 **La lecon de methode** : une porte fermee se rouvre en verifiant **la raison
 ecrite**, pas la decision. Ici la decision etait bonne et sa raison ne l'etait
-pas ; les deux se corrigent separement.
+pas ; les deux se corrigent separement — et le second passage a corrige la
+raison une fois de plus, le taux cite n'etant pas celui de la population large.
 
 ## La ligne `Fraicheur`, ou ce que le retard de l'historique coute en matchs
 

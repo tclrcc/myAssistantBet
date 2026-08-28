@@ -36,6 +36,7 @@ from .ingestion import is_payload
 from .labels import affiche, bookmaker_label, is_reference
 from .render import (
     COMMON_UNPLAYABLE_MIN,
+    CORRECT_SCORE_MARKETS,
     MERGED_MARKETS,
     Outcome,
     RenderableEvent,
@@ -315,7 +316,17 @@ class Price:
 
 
 def _outcome_text(outcome: Outcome) -> str:
-    """`Over 22.5`, `Diana Shnaider`, `Hacken O1.5` — l'issue telle qu'elle se lit."""
+    """L'issue **quand la ligne n'ecrit pas son nom** : `Over 22.5`, `Alcaraz`.
+
+    Le docstring d'origine annoncait « l'issue telle qu'elle se lit », et c'est
+    ce qui a fait sauter la verification : la fonction lisait `outcome.name`
+    brut quand cinq rendus impriment une forme a eux. Ce cas-la est desormais
+    tenu par `Shown.text`, et il ne reste ici que les lignes qui n'ecrivent
+    **aucun** nom d'issue — une echelle O/U, un 1N2, une double chance. Le bloc
+    y porte la ligne et les prix, et c'est la convention du preambule qui les
+    fait lire : il n'y a pas de seconde orthographe, donc rien a faire
+    concorder.
+    """
     parts = [outcome.description or "", outcome.name or ""]
     if outcome.point is not None:
         parts.append(f"{outcome.point:g}")
@@ -366,13 +377,14 @@ def prices_of(event: RenderableEvent) -> list[Price]:
     """
     found = [
         Price(
-            value=float(outcome.price),
+            value=float(montre.outcome.price),
             block=event.index,
             market=market_label(event.sport_key, key),
-            outcome=_outcome_text(outcome),
+            # Le jeton que la ligne a **imprime**, quand elle en imprime un.
+            outcome=montre.text or _outcome_text(montre.outcome),
         )
-        for key, outcome in rendered_outcomes(event)
-        if is_price(outcome.price)
+        for key, montre in rendered_outcomes(event)
+        if is_price(montre.outcome.price)
     ]
     return sorted(found, key=lambda price: price.value)
 
@@ -1090,6 +1102,17 @@ def build_prompt(
             # session : meme regle que les libelles de contexte, un cran plus
             # loin — celle-ci est faite pour ne jamais servir.
             handicap_alerts=any(handicap_alert(event) for event in events),
+            # Vrai des qu'un bloc du lot **imprime** une ligne de score exact.
+            #
+            # Sur ce que le rendu ecrit, jamais sur `event.markets` : la
+            # premiere version de ce drapeau lisait la table `odds`, donc elle
+            # aurait annonce la convention d'un marche que le bloc ne montre
+            # pas. Meme porte que `serve_lines`, un cran plus bas.
+            exact_scores=any(
+                key in CORRECT_SCORE_MARKETS
+                for event in events
+                for key, _ in rendered_outcomes(event)
+            ),
             # Vrai des qu'un bloc du lot porte les lignes de service.
             #
             # **La porte est plus etroite que le drapeau, et c'est voulu.** Le
@@ -1134,9 +1157,6 @@ def build_prompt(
             # aucun appel : ils sortent de la base, donc ils sont toujours la.
             preferences=read_preference(PREFERENCE_NOTES, settings),
             feedback=retour,
-            # Le multichoix scores exacts n'a de sens que si un bloc sert
-            # vraiment ce marche : l'imposer a un lot de tennis fait ecrire
-            # « impossible » a chaque session, ce qui n'apprend rien.
             # Le seuil se lit dans les reglages : « a partir de combien de
             # matchs un lot porte-t-il deux combines » est une decision de
             # l'utilisateur, pas une constante du projet.

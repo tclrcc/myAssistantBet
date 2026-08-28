@@ -782,6 +782,139 @@ pas. Un docstring qui decrit un comportement absent coute plus qu'un docstring
 absent — il fait re-deriver la meme conclusion fausse, et ici il a fait sauter
 l'etape de verification entiere. Corrige dans le meme commit que le comportement.
 
+## C.27 — La borne du lot ecrivait une autre orthographe que son bloc
+
+**Ouvert et corrige le 29/08/2026. C'est C.26 d'un cran plus bas** : le chantier
+de la veille a corrige **quelle** cote la borne nomme, celui-ci **comment elle
+l'ecrit**.
+
+Cas reel, prompt 232, deux lignes du meme prompt a 226 lignes d'ecart :
+
+    ligne 577 :  ... RealRacingClubdeSantander:2|ElcheCF:2 49.74
+    ligne 803 :  Cote max du lot : 49.74 (M7 · Score ex. MT Real Racing Club de
+                 Santander:2|Elche CF:2)
+
+`prompt._outcome_text` lisait `outcome.name` brut quand cinq rendus impriment une
+forme a eux — et son docstring annoncait « l'issue **telle qu'elle se lit** ».
+
+| sur les 144 lignes de bornes archivees | |
+| --- | ---: |
+| nomment un score exact en forme longue | **45 (31 %)** |
+| nomment `No` quand le bloc ecrit `Non` | 1 |
+| divergences **latentes**, jamais encore sorties | `Eq. buts … Over 1.5` / `O1.5`, `Handicap … 0.5` / `+0.5` |
+
+### La cause, et pourquoi le rendu seul n'aurait pas suffi
+
+`render._render_correct_score` ecrivait `outcome.name.replace(' ', '')`. Deux
+vocabulaires de fournisseur en base — The Odds API `Cruzeiro:0|Mirassol:0`,
+API-Football `0:0`, **4 568 contre 8 157, aucun evenement servi par les deux**.
+Le `.replace` ne fait rien sur le second et **soude** le premier. Il n'y a donc
+pas deux chemins de formatage : il y a un chemin ecrit pour un vocabulaire qui
+n'en avait pas besoin, et le defaut n'est apparu que le jour ou Pinnacle a servi
+la profondeur — premier bloc le 09/08, 188 blocs archives (27 % de ceux qui
+portent un score exact), concentres sur sept competitions.
+
+**Rendre la forme courte sans toucher au second lecteur aurait aggrave l'ecart** :
+la borne aurait continue de nommer `Real Racing Club de Santander:2|Elche CF:2`
+quand le bloc ecrit `2:2`, deux chaines n'ayant alors plus rien en commun.
+
+### Aucune selection n'a ete touchee, et c'est mesure
+
+L'hypothese d'un P0 — un nom colle recopie dans la colonne `Match`, qui sert de
+somme de controle a l'appariement des blocs `conf` — est **refutee** : sur les
+81 collages de `imports_raw`, **zero affiche collee**, les seuls tokens en casse
+chameau etant des noms d'editeurs. Le seul pick de score exact sans bloc apparie
+appartient a un import dont les cinq lignes en sont depourvues.
+
+Ce qui a ete touche est le **libelle** de 4 des 10 selections de score exact, et
+le modele en a reecrit trois de lui-meme (`Le Mans FC 1 – Brest 0`) : la base
+porte trois notations pour un marche. Rien n'est retro-rempli.
+
+### Le correctif ferme la classe, jamais un marche
+
+`Rendered` rend des `Shown` — l'issue **et le jeton que la ligne ecrit pour
+elle**. Une table « marche -> orthographe » posee a cote aurait ete la seconde
+copie qu'on supprime, et elle aurait diverge au premier rendu ajoute ;
+**l'invariant est porte par la signature**, comme celui des issues retenues un
+cran plus haut. Un jeton vide dit que la ligne n'ecrit **aucun** nom d'issue —
+une echelle imprime sa ligne et ses deux prix — et il n'y a alors rien a faire
+concorder. Sur les 288 bornes archivees : 81 sur un score exact, 36 sur
+`Eq. buts`, 60 sur une echelle O/U.
+
+Deux defauts voisins partaient avec, sur la meme ligne :
+
+- **`Score ex. MT` faisait 12 caracteres pour un `LABEL_MAX` de 11**, seul
+  libelle de marche sur 26 a depasser. Le test qui garde la regle ne parcourait
+  que `CONTEXT_ICONS`, alors que son propre docstring affirmait que « les cles
+  de marche etaient deja tronquees ». Il les parcourt desormais.
+- **Aucun banc ne pouvait voir le defaut** : les fixtures de score exact
+  nommaient leurs issues `1-1`, une notation qu'aucun fournisseur ne produit.
+  Voir §8 — troisieme forme du montage aveugle.
+
+Cout : **-12 370 tokens sur les 232 prompts archives**, -72 sur le lot du 28/08.
+
+## C.28 — La meteo qualitative est colineaire au seuil numerique : porte fermee
+
+**Resultat negatif du 29/08/2026, ecrit sous la forme qui empeche de le
+refaire.** La porte avait ete fermee la veille sur l'effet ; la piste rouvre
+naturellement parce que `orage grelant` est un mot et non un nombre, donc les
+seuils mesures ne le verraient pas. **Ils le voient tous.**
+
+| sur les 407 matchs distincts portant une ligne Meteo | |
+| --- | ---: |
+| libelle d'orage **et** deja dans la queue 35 C / 90 % / 44 km/h | **3** |
+| libelle d'orage **hors** de cette queue | **0** |
+
+Les trois : Annecy - Rodez (rafales 61), Ried - Grazer AK (rafales 80), Austria
+Lustenau (pluie 100 %). Le bloc M8 du lot qui a souleve la question est donc
+**dans** la queue, par sa pluie.
+
+Et l'autre moitie de la piste ne discrimine pas davantage : sur les 659 blocs
+portant la ligne, **88,8 % annoncent « alertes non interrogees »**. Un critere
+pose dessus se declencherait sur neuf blocs sur dix.
+
+**Le chiffre qui tient la porte a ete corrige au passage**, et c'est le point de
+methode. Le releve d'origine annoncait 10 sur 14 (71 %) contre 27 sur 213 ;
+re-mesure sur la population large — toutes les selections a prose renseignee,
+liste de mots elargie au vent, a la chaleur et au terrain — **11 sur 21 (52 %)**
+contre 33 sur 231 (14 %), Fisher exact `p = 1,3e-4`. Meme direction, meme
+significativite, **deux populations differentes**. Pres de la moitie des blocs de
+queue ne citent pas la meteo : l'argument est affaibli, pas renverse. **Une porte
+fermee sur un chiffre qui bouge se rouvre sur la decouverte de l'ecart plutot que
+sur une raison** — donc elle porte le chiffre corrige.
+
+Ce qui rouvrirait la question, et rien d'autre : l'etat de l'alerte a l'heure du
+coup d'envoi, qui n'est dans aucun bloc.
+
+## C.29 — Le silence de la fiche de recherche n'etait defini nulle part
+
+**Ouvert et corrige le 29/08/2026.** Un lot de huit annonce huit dossiers
+ouvrables et la fiche en classe trois. Le gabarit ecrit deja « ordre de
+traitement, pas un tri » : les deux enonces sont **compatibles**, et la premiere
+formulation du defaut — une contradiction interne — est fausse.
+
+Ce qui manquait est ce que **l'absence** veut dire. Le lecteur ne pouvait pas
+distinguer « rien a chercher ici » de « rien ne le classe ». Meme famille que
+`HERE_NO_MATCH` / `HERE_NO_INFO` : nommer le cas vrai et le cas faux.
+
+**Le nombre n'a rien a corriger, et c'est mesure** sur les 111 fiches archivees :
+
+| | silence median | moyen | fiches pleines |
+| --- | ---: | ---: | ---: |
+| avant le 17/08 | 0 | 1,58 | 23 / 33 |
+| 17 au 22/08 | 1 | 1,47 | 17 / 53 |
+| 23/08 et apres | 1 | 1,72 | 8 / 25 |
+| les 20 derniers | 1 | **1,40** | 8 / 20 |
+
+Regime stable, pas une derive : les vingt derniers prompts sont **sous** la
+moyenne du corpus, et un silence de 6 s'est deja produit sept fois les 14 et
+15/08. Le 5 du lot du 28/08 est dans la queue de la distribution.
+
+Elargir les criteres reste le chantier ouvert et date des deux criteres faibles
+du football. Rapprocher le budget de la fiche a ete ecarte : le nombre est lu
+ailleurs — le paragraphe des paliers hauts en fait sa borne — et le faire
+dependre des criteres l'aurait fait varier avec eux.
+
 ## C.21 — Ce qui reste ouvert et n'a pas ete instruit
 
 - **Phase 4** — le generateur de prompts : variables injectees non utilisees,

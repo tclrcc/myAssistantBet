@@ -2875,3 +2875,136 @@ def test_le_budget_ne_borne_jamais_les_paliers_hauts(migrated: Settings) -> None
     quotas_surs = sum(tier.quota_max for tier in tiers[:QUOTA_FLOOR_TIERS])
     for lot in (budget - 1, budget, budget + 5):
         assert safe_legs_available(tiers, lot, budget) == min(quotas_surs, lot, budget)
+
+
+# -- La borne du lot se lit dans son bloc ------------------------------------
+#
+# Le chantier du 28/08 a corrige **quelle** cote la borne nomme ; il restait
+# **comment elle l'ecrit**. `_outcome_text` lisait `outcome.name` brut quand le
+# bloc imprime une forme rendue, et son docstring annoncait pourtant « l'issue
+# telle qu'elle se lit ».
+#
+# Mesure sur les 144 lignes de bornes archivees : **45 (31 %)** nomment un score
+# exact en forme longue quand le bloc l'ecrit colle, et une nomme `No` quand le
+# bloc ecrit `Non`. La ligne dont la raison d'etre documentee est de « se
+# verifier d'un coup d'oeil » designait une chaine absente de son propre bloc.
+#
+# Deux divergences etaient **latentes**, prouvables a la lecture et jamais
+# encore sorties : `Eq. buts Lyon Over 1.5` contre `Lyon O1.5` imprime, et
+# `Handicap Nice 0.5` contre `Nice +0.5`. C'est la classe entiere que le type
+# `Shown` ferme, pas les deux cas observes.
+
+_BORNE = re.compile(r"\(M(\d+) · (.+?)\)")
+
+
+def _issue_seule(texte: str) -> str:
+    """Le jeton d'issue d'un libelle de borne, son libelle de marche retire."""
+    from myassistantbet.services.render import MARKET_ORDER_BY_SPORT
+
+    libelles = {label for order in MARKET_ORDER_BY_SPORT.values() for _, label in order}
+    prefixes = [label for label in libelles if texte.startswith(label + " ")]
+    return texte[len(max(prefixes, key=len)) :].strip() if prefixes else texte
+
+
+def _ajoute_marches_nommes(migrated: Settings) -> None:
+    """Les marches dont le rendu **ecrit le nom des issues**, sur le seul match du lot.
+
+    Le score exact est servi dans le vocabulaire de The Odds API — celui qui
+    porte les noms d'equipes — parce que c'est **lui** que le rendu abimait, et
+    qu'un lot de test au vocabulaire invente garde une propriete qui n'existe
+    pas. Mesure : 4 568 issues de cette forme en base, aucune de la forme
+    `1-1` que le banc precedent montait.
+    """
+    event_id = int(db.query("SELECT id FROM events", settings=migrated)[0]["id"])
+    lignes = [
+        ("correct_score", "Lyon 0:2|Nice 0:2", None, 49.74),
+        ("correct_score", "Lyon 0:1|Nice 0:1", None, 12.88),
+        ("btts", "Yes", None, 4.15),
+        ("btts", "No", None, 1.25),
+        ("team_totals", "Over", 1.5, 2.30),
+        ("spreads", "Lyon 0", -0.5, 2.07),
+        ("spreads", "Nice 0", 0.5, 1.86),
+    ]
+    for market, nom, point, prix in lignes:
+        db.execute(
+            "INSERT INTO odds (event_id, bookmaker, market_key, outcome_name, description, "
+            "point, price, fetched_at) VALUES (?, 'pinnacle', ?, ?, ?, ?, ?, ?)",
+            (
+                event_id,
+                market,
+                nom,
+                "Lyon 0" if market == "team_totals" else None,
+                point,
+                prix,
+                db.utcnow(),
+            ),
+            settings=migrated,
+        )
+
+
+def _lot_a_bornes(migrated: Settings) -> int:
+    """Un lot dont les deux bornes tombent sur des marches qui nomment leurs issues."""
+    session_id = _lot_de(migrated, 1)
+    _ajoute_marches_nommes(migrated)
+    return session_id
+
+
+def test_la_borne_du_lot_se_lit_dans_le_bloc_qu_elle_nomme(migrated: Settings) -> None:
+    """La borne existe pour se verifier d'un coup d'oeil, donc elle se retrouve.
+
+    Testee **a travers `build_prompt`** : c'est l'assemblage qui fabrique la
+    divergence, un banc pose sur le seul rendu ne l'aurait pas vue — c'est
+    exactement le controle qui manquait au chantier de la veille.
+    """
+    corps = build_prompt(_lot_a_bornes(migrated), settings=migrated, now=NOW).body
+    ligne = [row for row in corps.splitlines() if row.startswith("Cote max du lot")]
+    assert ligne, "le lot porte des cotes, donc il porte ses bornes"
+
+    # Un bloc s'arrete au titre suivant, **quel qu'il soit** : la ligne des
+    # bornes vit en section C, donc apres le dernier bloc. La verser dans lui
+    # aurait rendu l'assertion vraie en se comparant a elle-meme — le premier
+    # jet de ce banc passait pour cette raison.
+    blocs: dict[str, str] = {}
+    courant = ""
+    for row in corps.splitlines():
+        if row.startswith("### "):
+            entete = re.match(r"^### (M\d+) · ", row)
+            courant = entete.group(1) if entete else ""
+            if courant:
+                blocs[courant] = ""
+        elif courant:
+            blocs[courant] += row + "\n"
+
+    bornes = _BORNE.findall(ligne[0])
+    assert len(bornes) == 2, f"deux bornes attendues : {ligne[0]}"
+    for numero, texte in bornes:
+        issue = _issue_seule(texte)
+        assert issue in blocs["M" + numero], (
+            f"la borne nomme « {issue} », absent du bloc M{numero} :\n{ligne[0]}"
+        )
+
+
+def test_la_convention_du_score_exact_ne_se_paie_que_sur_un_lot_qui_en_porte(
+    migrated: Settings,
+) -> None:
+    """Un mode d'emploi se garde sur ce que le lot **imprime**, pas sur la base.
+
+    La convention est neuve parce que la forme courte la rend indispensable :
+    tant que le bloc ecrivait `RealRacingClubdeSantander:1|ElcheCF:1`, l'ordre
+    des equipes se lisait dans le jeton ; il ne s'y lit plus, et **aucune des
+    deux formes n'etait documentee**.
+
+    Le meme lot, avant et apres l'ajout du marche : c'est la seule facon
+    d'isoler la porte. Un second lot serait un second montage, et un montage
+    qui n'atteint pas l'etat garde rend le banc vert pour une raison qui n'est
+    pas la sienne.
+    """
+    session_id = _lot_de(migrated, 1)
+    sans = build_prompt(session_id, settings=migrated, now=NOW).body
+    _ajoute_marches_nommes(migrated)
+    avec = build_prompt(session_id, settings=migrated, now=NOW).body
+
+    convention = "portent le score en chiffres"
+    assert convention not in sans, "un lot sans score exact ne paie pas sa convention"
+    assert convention in avec
+    assert "  Score exact " in avec, "le montage doit vraiment atteindre la porte"

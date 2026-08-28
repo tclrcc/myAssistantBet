@@ -589,16 +589,40 @@ def _weather_reasons(lignes: dict[str, str]) -> list[Reason]:
 
     **Ce qui ferme la porte est l'effet, et il se mesure.** Sur les blocs de
     queue — 35 C, 44 km/h ou 90 % de pluie et au-dela — la prose des selections
-    (`angle_note`, `invalidation`) **cite deja la meteo dans 10 cas sur 14, soit
-    71 %**, contre 27 sur 213 ailleurs — 13 %. Fisher exact `p = 2,6e-6`. Le
-    modele lit la valeur extreme et s'en sert **sans qu'on l'y envoie**, parce
-    qu'elle est ecrite dans le bloc avec son heure et sa date de releve.
+    (`angle_note`, `invalidation`) cite la meteo **bien plus souvent
+    qu'ailleurs**, et le modele s'en sert sans qu'on l'y envoie, parce qu'elle
+    est ecrite dans le bloc avec son heure et sa date de releve.
+
+    Le taux, lui, a bouge a la re-mesure du 28/08/2026, et **c'est le chiffre
+    corrige qui tient la porte** : sur la population large — toutes les
+    selections a prose renseignee, liste de mots elargie au vent, a la chaleur
+    et au terrain — **11 sur 21 (52 %)** contre 33 sur 231 ailleurs (14 %),
+    Fisher exact `p = 1,3e-4`. Le releve d'origine annoncait 10 sur 14 (71 %) et
+    27 sur 213 : meme direction, meme significativite, **deux populations
+    differentes**. Il faut porter le second — pres de la moitie des blocs de
+    queue ne citent pas la meteo, ce qui affaiblit l'argument sans le renverser,
+    et une porte fermee sur un chiffre qui bouge se rouvre sur la decouverte de
+    l'ecart plutot que sur une raison.
 
     Un critere emettrait donc une question dont la reponse est sur la meme
     ligne : le defaut corrige au lot precedent, ou la fiche cherchait ce que le
     bloc disait deja. Ce qui **n'est pas** dans le bloc est l'etat de l'alerte a
     l'heure du coup d'envoi — report, huis clos, terrain praticable — et c'est le
     seul cas qui reste.
+
+    ## Le libelle qualitatif ne rouvre rien, et c'est mesure
+
+    La piste revient naturellement : `orage grelant` est un mot, pas un nombre,
+    donc les seuils ci-dessus ne le verraient pas. **Ils le voient tous.** Sur
+    les 407 matchs distincts portant une ligne Meteo, **3 portent un libelle
+    d'orage et les 3 sont deja dans la queue numerique** — Annecy - Rodez par ses
+    61 km/h, Ried - Grazer AK par ses 80, Austria Lustenau par ses 100 % de
+    pluie. **Zero en dehors.** Le libelle est colineaire au seuil : il n'ajoute
+    aucun pouvoir discriminant.
+
+    Et l'autre moitie de la piste ne peut pas discriminer non plus : sur ces
+    memes 659 blocs, **88,8 % portent « alertes non interrogees »**. Un critere
+    pose dessus se declencherait sur neuf blocs sur dix.
 
     **Un docstring faux coute plus qu'un docstring absent** : il fait re-deriver
     la meme conclusion fausse. La porte est desormais tenue par un banc, pas par

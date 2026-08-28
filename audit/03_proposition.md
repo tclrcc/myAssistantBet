@@ -460,6 +460,7 @@ et ce lot en a rencontre deux de plus le jour meme de sa livraison :
 | le cadre publie et `FRAMEWORK_VERSION` | 1.4 contre 1.3 | par le garde `myassistantbet-cadre`, deux jours apres |
 | `Claim.rung` et le niveau declare | `source_level` lu comme une entree, jamais confronte aux faits | par cet audit, §3 |
 | **un second `json.loads` dans `history`** | rien encore — il venait d'etre ecrit | **avant le commit**, en relisant ce que `confidence.parse` fait deja |
+| la borne du lot et le bloc qu'elle nomme | l'**orthographe** de l'issue : `No` contre `Non`, `Over 1.5` contre `O1.5`, un nom soude contre le meme espace | par une relecture du rendu, 31 % des lignes de bornes archivees |
 
 Le chantier `source_drift` en a produit une cinquieme le meme jour, et elle n'a
 rien coute pour la meme raison : compter les editeurs par un rapprochement de
@@ -490,6 +491,31 @@ trois reponses a la question, pas deux.
 3. **Rien ne les oblige.** Alors la copie derivera, et la seule question est
    quand — c'est le cas du cadre publie et de la configuration servie, et c'est
    pourquoi le journal d'analyse a cesse de dependre de l'emoji colle.
+
+### Une fixture dont le vocabulaire est invente garde une propriete qui n'existe pas
+
+**Troisieme forme du montage aveugle, et elle precede les deux autres.** Les
+deux premieres portent sur ce que la fixture *atteint* : trop riche, elle
+atteint l'etat garde par plusieurs chemins et survit a la disparition du bon ;
+trop pauvre, elle ne l'atteint jamais et le banc est vert pour une raison qui
+n'est pas la sienne. Celle-ci porte sur ce que la fixture **est** : ses valeurs
+n'existent nulle part en production.
+
+Le cas, du 29/08/2026 : les bancs du score exact nommaient leurs issues `1-1`,
+`2-1`. **Aucun fournisseur ne produit cette notation** — zero ligne sur les
+12 725 de la base, qui n'en connait que deux, `1:0` et `Cruzeiro:0|Mirassol:0`.
+Les bancs parcouraient la bonne fonction et traversaient le
+`outcome.name.replace(' ', '')` fautif ; il n'avait simplement rien a faire sur
+des noms sans espaces. Le defaut a vecu du 09/08 au 29/08, sur 188 blocs.
+
+- **Elle ne se corrige pas en enrichissant le montage**, contrairement aux deux
+  autres, mais en **allant lire ce que la source ecrit vraiment** — une requete
+  sur `odds`, trente secondes.
+- **Le symptome est l'absence de symptome** : un banc au vocabulaire invente est
+  vert, stable, et lisible. Rien ne le distingue d'un banc juste, sauf d'aller
+  comparer ses valeurs a la base.
+- La question a se poser sur un montage en gagne donc une, et elle passe en
+  premier : *ces valeurs, la production les produit-elle ?*
 
 ### La copie textuelle est la plus facile a laisser vieillir, parce qu'elle n'echoue jamais
 

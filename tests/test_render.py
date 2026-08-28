@@ -179,37 +179,94 @@ def test_totaux_par_equipe() -> None:
     assert _lines(event)["Eq. buts"] == "Hacken O1.5 2.30 | Djurgarden O1.5 2.45"
 
 
-def test_score_exact_dix_cotes_les_plus_basses_triees() -> None:
-    scores = [
-        ("1-1", 6.5),
-        ("2-1", 8.0),
-        ("1-2", 8.5),
-        ("1-0", 8.5),
-        ("0-1", 9.5),
-        ("2-2", 11.0),
-        ("2-0", 11.0),
-        ("0-0", 11.0),
-        ("3-1", 15.0),
-        ("1-3", 17.0),
-        ("3-0", 21.0),
-        ("4-0", 41.0),
+# -- Le score exact : deux vocabulaires de fournisseur, un seul rendu --------
+#
+# The Odds API nomme chaque issue `Hacken:1|Djurgarden:1`, API-Football `1:1`.
+# Mesure du 28/08/2026 sur la base servie : 4 568 issues longues contre 8 157
+# courtes, aucun evenement servi par les deux — la source decide, jamais la
+# longueur du nom. Le `.replace(' ', '')` du rendu avait ete ecrit pour le
+# second vocabulaire, qui n'en a pas besoin ; sur le premier il soudait, et le
+# defaut n'est apparu que le jour ou Pinnacle a servi la profondeur.
+#
+# **Le montage precedent ne pouvait pas le voir** : il nommait ses issues
+# `1-1`, une notation qu'**aucun fournisseur ne produit** — zero ligne sur les
+# 12 725 de la base. Une fixture dont le vocabulaire est invente garde une
+# propriete qui n'existe pas.
+
+#: Les deux ecritures reelles d'un score, `{h}` et `{a}` etant les buts.
+VOCABULAIRES = {
+    "the odds api": "Hacken:{h}|Djurgarden:{a}",
+    "api-football": "{h}:{a}",
+}
+
+
+def _scores(gabarit: str, buts: list[tuple[int, int]], prix: list[float]) -> list[Outcome]:
+    return [
+        Outcome(gabarit.format(h=home, a=away), price)
+        for (home, away), price in zip(buts, prix, strict=True)
     ]
-    event = _event(markets={"correct_score": [Outcome(name, price) for name, price in scores]})
+
+
+BUTS = [
+    (1, 1),
+    (2, 1),
+    (1, 2),
+    (1, 0),
+    (0, 1),
+    (2, 2),
+    (2, 0),
+    (0, 0),
+    (3, 1),
+    (1, 3),
+    (3, 0),
+    (4, 0),
+]
+PRIX = [6.5, 8.0, 8.5, 8.5, 9.5, 11.0, 11.0, 11.0, 15.0, 17.0, 21.0, 41.0]
+
+
+@pytest.mark.parametrize("vocabulaire", sorted(VOCABULAIRES))
+def test_score_exact_dix_cotes_les_plus_basses_triees(vocabulaire: str) -> None:
+    event = _event(markets={"correct_score": _scores(VOCABULAIRES[vocabulaire], BUTS, PRIX)})
     rendered = render_event(event)
 
     ligne = [row for row in rendered.splitlines() if "Score exact" in row][0]
-    assert ligne.startswith("  Score exact 1-1 6.50 | 2-1 8.00 | ")
+    assert ligne.startswith("  Score exact 1:1 6.50 | 2:1 8.00 | ")
     # 10 cotes retenues, donc les deux plus chers sont exclus.
     assert "21.00" not in rendered
     assert "41.00" not in rendered
     assert rendered.count("|") >= 8
 
 
-def test_score_exact_passe_a_la_ligne_avec_alignement() -> None:
-    scores = [(f"{i}-0", 5.0 + i) for i in range(9)]
-    event = _event(markets={"correct_score": [Outcome(name, price) for name, price in scores]})
+def test_le_score_exact_se_rend_pareil_quel_que_soit_le_vocabulaire() -> None:
+    """Deux ecritures du meme score rendent la meme ligne, ou l'une des deux ment.
 
-    rows = [row for row in render_event(event).splitlines() if "-0 " in row]
+    C'est la propriete, pas la chaine du jour : le bloc decrit un match, pas la
+    source qui l'a servi.
+    """
+    rendus = {
+        nom: [
+            row
+            for row in render_event(
+                _event(markets={"correct_score": _scores(gabarit, BUTS, PRIX)})
+            ).splitlines()
+            if "Score exact" in row
+        ]
+        for nom, gabarit in VOCABULAIRES.items()
+    }
+
+    court, long = rendus["api-football"], rendus["the odds api"]
+    assert court == long, "le vocabulaire du fournisseur ne doit pas traverser le rendu"
+    assert "HackenDjurgarden" not in "".join(long)
+    assert "Hacken" not in "".join(long), "le score se lit en chiffres, l'affiche est en tete"
+
+
+@pytest.mark.parametrize("vocabulaire", sorted(VOCABULAIRES))
+def test_score_exact_passe_a_la_ligne_avec_alignement(vocabulaire: str) -> None:
+    gabarit = VOCABULAIRES[vocabulaire]
+    buts = [(i, 0) for i in range(9)]
+    event = _event(markets={"correct_score": _scores(gabarit, buts, [5.0 + i for i in range(9)])})
+
+    rows = [row for row in render_event(event).splitlines() if ":0 " in row]
     assert len(rows) == 2
     assert rows[1].startswith(" " * 14), "la continuation est alignee sous la valeur"
 
@@ -607,7 +664,7 @@ def test_densite_du_bloc(load_fixture: object) -> None:
             for name, price in (("Over", over), ("Under", under))
         ],
         "btts": [Outcome("Yes", 1.6), Outcome("No", 2.25)],
-        "correct_score": [Outcome(f"{i}-{j}", 6.5 + i + j) for i in range(4) for j in range(4)],
+        "correct_score": [Outcome(f"{i}:{j}", 6.5 + i + j) for i in range(4) for j in range(4)],
     }
 
     assert estimate_tokens(render_event(_event(markets=outcomes))) < 400
@@ -1316,3 +1373,93 @@ def test_les_exemplaires_sql_du_predicat_disent_le_meme_seuil() -> None:
     assert all(ligne.startswith('"') for _, ligne in trouves), "et tous en SQL"
     # La frontiere que ces trois clauses ecrivent, telle que Python la rend.
     assert render.is_price(1.0) is False and render.is_price(1.0000001) is True
+
+
+def test_aucun_libelle_de_marche_ne_remplit_le_champ_de_libelle() -> None:
+    """Le separateur entre le libelle et sa valeur n'existe pas en propre.
+
+    C'est le remplissage de `LABEL_WIDTH` qui le fabrique, donc un libelle qui
+    occupe le champ entier ne laisse rien. `line()` degrade proprement — la
+    ligne se decale d'une colonne au lieu de souder deux mots — mais elle se
+    lit alors de travers de ses voisines.
+
+    **Le test sur `LABEL_MAX` ne parcourait que `CONTEXT_ICONS`**, et son propre
+    docstring affirmait pourtant que « les cles de marche etaient deja tronquees
+    a `LABEL_MAX` ». C'etait faux : `Score ex. MT` faisait 12 caracteres, seul
+    libelle de marche sur 26 a depasser, et c'est la ligne dont la valeur se
+    lisait decalee dans chaque bloc de football servi.
+    """
+    trop_longs = {
+        label: len(label)
+        for order in render.MARKET_ORDER_BY_SPORT.values()
+        for _, label in order
+        if len(label) > render.LABEL_MAX
+    }
+
+    assert not trop_longs, (
+        f"un libelle de marche de plus de {render.LABEL_MAX} caracteres colle sa "
+        f"valeur ou decale sa ligne : {trop_longs}"
+    )
+
+
+def test_tout_jeton_declare_par_un_rendu_s_ecrit_dans_le_bloc() -> None:
+    """L'invariant du chantier : ce que le rendu **dit** imprimer, il l'imprime.
+
+    `Shown.text` est le jeton que la ligne ecrit pour une issue, et il existe
+    pour qu'un second lecteur — la borne du lot — cesse d'en fabriquer une
+    seconde orthographe. Un jeton declare et absent du bloc rouvrirait
+    exactement l'ecart qu'il ferme.
+
+    Vide veut dire « cette ligne n'ecrit aucun nom d'issue » : une echelle
+    imprime sa ligne et ses deux prix, et c'est la convention du preambule qui
+    la fait lire. La distinction est le partage, pas un repli.
+    """
+    event = _event(
+        markets={
+            "h2h": [Outcome("Hacken", 2.55), Outcome("Draw", 3.55), Outcome("Djurgarden", 2.6)],
+            "btts": [Outcome("Yes", 1.6), Outcome("No", 2.25)],
+            "correct_score": _scores(VOCABULAIRES["the odds api"], BUTS[:6], PRIX[:6]),
+            "spreads": [
+                Outcome("Hacken", 2.07, -0.5),
+                Outcome("Djurgarden", 1.86, 0.5),
+            ],
+            "team_totals": [
+                Outcome("Over", 2.3, 1.5, "Hacken"),
+                Outcome("Under", 1.6, 1.5, "Hacken"),
+            ],
+            "totals": [Outcome("Over", 1.72, 2.5), Outcome("Under", 2.05, 2.5)],
+        }
+    )
+    bloc = render_event(event)
+
+    declares = [shown.text for _, shown in render.rendered_outcomes(event) if shown.text]
+    assert declares, "la fixture doit atteindre les rendus qui nomment leurs issues"
+    absents = [texte for texte in declares if texte not in bloc]
+    assert not absents, f"jetons declares et jamais ecrits : {absents}"
+
+
+@pytest.mark.parametrize(
+    ("nom", "attendu"),
+    [
+        # Les deux vocabulaires reels, tels que la base les porte.
+        ("1:0", "1:0"),
+        ("Cruzeiro:0|Mirassol:0", "0:0"),
+        # Un tiret dans le nom du club — 72 issues en base. Le decoupage se fait
+        # au **dernier** deux-points de chaque moitie, jamais au premier.
+        ("Bragantino-SP:0|Corinthians:2", "0:2"),
+        # Deux chiffres, et une equipe dont le nom en porte un.
+        ("Lyon 2:10|Nice 7:3", "10:3"),
+        # Forme inattendue : le marche paye ne se perd pas, il se rend brut.
+        ("Nul", "Nul"),
+        ("a|b|c", "a|b|c"),
+        ("", ""),
+    ],
+)
+def test_le_score_se_lit_au_dernier_deux_points_de_chaque_moitie(nom: str, attendu: str) -> None:
+    """`score_text` est le seul endroit ou le vocabulaire du fournisseur se traduit.
+
+    Il est appele par la ligne qui l'imprime **et** par la borne du lot qui la
+    nomme : deux ecritures auraient diverge, et c'est precisement l'ecart que ce
+    chantier ferme.
+    """
+    assert render.score_text(nom) == attendu

@@ -40,6 +40,10 @@ CONTINUATION = INDENT + " " * LABEL_WIDTH
 #: passaient par aucune troncature. Un test verifie le registre entier.
 LABEL_MAX = LABEL_WIDTH - 1
 
+#: Les deux marches de score exact. Ecrits une fois : le rendu les aiguille, et
+#: le preambule ne paie leur convention de lecture que sur un lot qui en porte.
+CORRECT_SCORE_MARKETS = frozenset({"correct_score", "correct_score_h1"})
+
 #: Nombre de cotes de score exact retenues, et nombre par ligne rendue.
 CORRECT_SCORE_KEEP = 10
 CORRECT_SCORE_PER_LINE = 6
@@ -386,8 +390,68 @@ def _totals_fragments(
 # pour ecrire ses lignes. Rien n'est recalcule, rien n'est reparse.
 
 
+@dataclass(frozen=True)
+class Shown:
+    """Une issue retenue par une ligne, **et le jeton que cette ligne ecrit**.
+
+    `text` vide n'est pas un repli : il dit que la ligne **n'ecrit aucun nom
+    d'issue**. Une echelle imprime sa ligne et ses deux prix (`2.5: 1.71/2.25`),
+    un 1N2 trois prix nus — c'est la convention du preambule qui les fait lire,
+    et il n'y a alors aucune seconde orthographe a faire concorder.
+
+    Le champ existe pour le second lecteur : `prompt.prices_of` nommait l'issue
+    d'une borne depuis `outcome.name` brut quand le bloc en imprimait une forme
+    rendue. Mesure du 28/08/2026 sur les 144 lignes de bornes archivees — **45,
+    soit 31 %**, nommaient un score exact en forme longue quand le bloc l'ecrit
+    colle, une nommait `No` quand le bloc ecrit `Non`, et deux divergences
+    restaient latentes : `Lyon Over 1.5` contre `Lyon O1.5` imprime, `Nice 0.5`
+    contre `Nice +0.5`. La ligne dont la raison d'etre documentee est de se
+    verifier d'un coup d'oeil designait une chaine absente de son propre bloc.
+
+    **L'invariant est porte par la signature**, comme celui des issues retenues
+    un cran plus haut : un rendu neuf ne compile pas sans dire ce qu'il ecrit.
+    Une table de correspondance marche -> orthographe, posee a cote, aurait ete
+    la seconde copie que ce champ supprime.
+    """
+
+    outcome: Outcome
+    text: str = ""
+
+
 #: Les lignes d'un marche, et les issues que ces lignes portent vraiment.
-Rendered = tuple[list[str], list[Outcome]]
+Rendered = tuple[list[str], list[Shown]]
+
+
+def _mute(outcomes: Iterable[Outcome]) -> list[Shown]:
+    """Des issues retenues par une ligne **qui n'ecrit pas leur nom**."""
+    return [Shown(outcome) for outcome in outcomes]
+
+
+def score_text(name: str) -> str:
+    """`2:1` — le score seul, quel que soit le vocabulaire du fournisseur.
+
+    The Odds API nomme chaque issue `Cruzeiro:0|Mirassol:0`, API-Football `0:0`.
+    Mesure du 28/08/2026 sur la base servie : **4 568 issues longues contre
+    8 157 courtes**, aucun evenement servi par les deux — c'est la source qui
+    decide, jamais la longueur du nom. Le rendu ecrivait le nom brut prive de
+    ses espaces, ce qui ne fait rien sur la seconde forme et **soude** la
+    premiere : `RealRacingClubdeSantander:1|ElcheCF:1`, sur 188 blocs archives
+    (27 % de ceux qui portent un score exact).
+
+    La conversion est sans perte, et c'est mesure : **les 4 568 issues longues
+    portent `home:X|away:Y` dans l'ordre de l'evenement**, noms exacts, zero
+    inversion. Le decoupage se fait au **dernier** deux-points de chaque moitie,
+    un nom de club en portant parfois un tiret et jamais deux-points —
+    `Bragantino-SP:0|Corinthians:0`.
+
+    Une forme inattendue rend le nom tel quel : un marche paye ne se perd pas.
+    """
+    halves = (name or "").split("|")
+    if len(halves) == 2:
+        buts = [half.rsplit(":", 1)[-1].strip() for half in halves]
+        if all(but.isdigit() for but in buts):
+            return ":".join(buts)
+    return (name or "").strip()
 
 
 def _render_h2h(event: RenderableEvent, outcomes: list[Outcome], label: str = "1N2") -> Rendered:
@@ -401,8 +465,11 @@ def _render_h2h(event: RenderableEvent, outcomes: list[Outcome], label: str = "1
         # Tennis et sports sans nul : deux issues seulement. Le libelle « 1N2 »
         # n'aurait alors aucun sens.
         parts = [price(value) for value in (home, away) if value is not None]
-        return [line("1-2" if label == "1N2" else label, " / ".join(parts))], ecrits
-    return [line(label, " / ".join(price(value) for value in (home, draw, away) if value))], ecrits
+        return [line("1-2" if label == "1N2" else label, " / ".join(parts))], _mute(ecrits)
+    return (
+        [line(label, " / ".join(price(value) for value in (home, draw, away) if value))],
+        _mute(ecrits),
+    )
 
 
 def _render_double_chance(event: RenderableEvent, outcomes: list[Outcome]) -> Rendered:
@@ -425,14 +492,14 @@ def _render_double_chance(event: RenderableEvent, outcomes: list[Outcome]) -> Re
         return _render_generic("DC", outcomes)
     ordered = [slots.get(key) for key in ("1X", "12", "X2")]
     ecrits = [outcome for outcome in ordered if outcome is not None]
-    return [line("DC", " / ".join(price(outcome.price) for outcome in ecrits))], ecrits
+    return [line("DC", " / ".join(price(outcome.price) for outcome in ecrits))], _mute(ecrits)
 
 
 def _render_totals(label: str, outcomes: list[Outcome], mark: bool = False) -> Rendered:
     fragments, points = _totals_fragments(outcomes, mark=mark)
     if not fragments:
         return [], []
-    return [line(label, " | ".join(fragments))], _at_points(outcomes, points)
+    return [line(label, " | ".join(fragments))], _mute(_at_points(outcomes, points))
 
 
 def _at_points(outcomes: Iterable[Outcome], points: Sequence[float]) -> list[Outcome]:
@@ -451,13 +518,15 @@ def _render_btts(label: str, outcomes: list[Outcome]) -> Rendered:
     yes, no = issues.get("yes"), issues.get("no")
     if yes is None and no is None:
         return [], []
-    parts = []
-    if yes is not None:
-        parts.append(f"Oui {price(yes.price)}")
-    if no is not None:
-        parts.append(f"Non {price(no.price)}")
-    ecrits = [outcome for outcome in (yes, no) if outcome is not None]
-    return [line(label, " / ".join(parts))], ecrits
+    # Le fournisseur ecrit `Yes` / `No`, le bloc `Oui` / `Non` : le jeton
+    # accompagne l'issue, sinon la borne du lot nomme l'anglais.
+    montres = [
+        Shown(outcome, texte)
+        for outcome, texte in ((yes, "Oui"), (no, "Non"))
+        if outcome is not None
+    ]
+    parts = [f"{montre.text} {price(montre.outcome.price)}" for montre in montres]
+    return [line(label, " / ".join(parts))], montres
 
 
 def _render_team_totals(event: RenderableEvent, outcomes: list[Outcome]) -> Rendered:
@@ -469,7 +538,7 @@ def _render_team_totals(event: RenderableEvent, outcomes: list[Outcome]) -> Rend
             by_team.setdefault(team, []).append(outcome)
 
     fragments = []
-    ecrits: list[Outcome] = []
+    ecrits: list[Shown] = []
     for team in (event.home, event.away):
         team_outcomes = by_team.get(team)
         if not team_outcomes:
@@ -480,11 +549,12 @@ def _render_team_totals(event: RenderableEvent, outcomes: list[Outcome]) -> Rend
             continue
         over = grouped[reference].get("Over")
         if over is not None:
-            fragments.append(f"{team} O{_point(reference)} {price(over)}")
+            jeton = f"{team} O{_point(reference)}"
+            fragments.append(f"{jeton} {price(over)}")
             # Le seul Over de la ligne de reference : ni son Under, ni les
             # autres paliers de l'equipe, qui n'atteignent aucune ligne.
             ecrits += [
-                outcome
+                Shown(outcome, jeton)
                 for outcome in team_outcomes
                 if outcome.point == reference and outcome.name == "Over"
             ]
@@ -497,8 +567,9 @@ def _render_correct_score(label: str, outcomes: list[Outcome]) -> Rendered:
     scored = sorted(outcomes, key=lambda outcome: outcome.price)[:CORRECT_SCORE_KEEP]
     if not scored:
         return [], []
-    chunks = [f"{outcome.name.replace(' ', '')} {price(outcome.price)}" for outcome in scored]
-    return _wrap(label, chunks, CORRECT_SCORE_PER_LINE), list(scored)
+    montres = [Shown(outcome, score_text(outcome.name)) for outcome in scored]
+    chunks = [f"{montre.text} {price(montre.outcome.price)}" for montre in montres]
+    return _wrap(label, chunks, CORRECT_SCORE_PER_LINE), montres
 
 
 def _render_main_total_only(label: str, outcomes: list[Outcome]) -> Rendered:
@@ -506,7 +577,7 @@ def _render_main_total_only(label: str, outcomes: list[Outcome]) -> Rendered:
     fragments, points = _totals_fragments(outcomes, keep=1)
     if not fragments:
         return [], []
-    return [line(label, f"O/U {fragments[0]}")], _at_points(outcomes, points)
+    return [line(label, f"O/U {fragments[0]}")], _mute(_at_points(outcomes, points))
 
 
 def _signed(value: float, mark: bool = False) -> str:
@@ -615,7 +686,10 @@ def _render_spreads(
             paire = _spread_pair(event, ladder, secours, quarts)
             rows.append(f"{CONTINUATION}{PLAYABLE_LABEL} {paire}")
             paliers.append(secours)
-    return rows, _at_handicaps(event, outcomes, paliers)
+    return rows, [
+        Shown(outcome, _spread_token(outcome.name, outcome.point or 0.0, quarts))
+        for outcome in _at_handicaps(event, outcomes, paliers)
+    ]
 
 
 def _at_handicaps(
@@ -626,6 +700,11 @@ def _at_handicaps(
     Un handicap se lit du premier nomme (`_by_handicap`) : comparer le `point`
     brut de l'issue au palier retenu rendrait la moitie de l'exterieur toujours
     absente, et la borne du lot nommerait alors un prix affiche.
+
+    La fonction rend des issues et **pas leur jeton** : les deux sports ne
+    l'ecrivent pas pareil. Le football imprime `Nice +0.5`, le tennis une
+    echelle `-2.5: 1.88/2.01` ou aucun nom ne parait. Declarer ici un jeton
+    vaudrait declaration fausse pour l'un des deux.
     """
     gardes = set(paliers)
     return [
@@ -642,13 +721,23 @@ def _at_handicaps(
 PLAYABLE_LABEL = "posable"
 
 
+def _spread_token(team: str, handicap: float, mark: bool) -> str:
+    """`PSG -0.5` — le jeton qu'une ligne de handicap ecrit pour une issue.
+
+    Ecrit une fois, appele par la ligne qui l'imprime et par les issues qu'elle
+    declare : le signe est ce qui se lit de travers quand deux ecritures
+    divergent.
+    """
+    return f"{team} {_signed(handicap, mark)}"
+
+
 def _spread_pair(
     event: RenderableEvent, ladder: dict[float, dict[str, float]], point: float, mark: bool
 ) -> str:
     """Les deux moities d'un palier, signes opposes **par construction**."""
     prices = ladder[point]
     return " | ".join(
-        f"{team} {_signed(handicap, mark)} {price(prices[team])}"
+        f"{_spread_token(team, handicap, mark)} {price(prices[team])}"
         for team, handicap in ((event.home, point), (event.away, -point))
         if team in prices
     )
@@ -684,7 +773,7 @@ def _render_spread_ladder(event: RenderableEvent, outcomes: list[Outcome], label
         ecrits.append(point)
     if not fragments:
         return _render_spreads(event, outcomes, label)
-    return [line(label, " | ".join(fragments))], _at_handicaps(event, outcomes, ecrits)
+    return [line(label, " | ".join(fragments))], _mute(_at_handicaps(event, outcomes, ecrits))
 
 
 def _render_generic(label: str, outcomes: list[Outcome]) -> Rendered:
@@ -694,15 +783,16 @@ def _render_generic(label: str, outcomes: list[Outcome]) -> Rendered:
     tout ce qu'on lui donne.
     """
     chunks = []
-    ecrits = sorted(outcomes, key=lambda item: item.price)
-    for outcome in ecrits:
+    montres: list[Shown] = []
+    for outcome in sorted(outcomes, key=lambda item: item.price):
         name = outcome.name
         if outcome.point is not None:
             name = f"{name} {_point(outcome.point)}"
         if outcome.description:
             name = f"{outcome.description} {name}"
+        montres.append(Shown(outcome, name))
         chunks.append(f"{name} {price(outcome.price)}")
-    return (_wrap(label, chunks, 4), list(ecrits)) if chunks else ([], [])
+    return (_wrap(label, chunks, 4), montres) if chunks else ([], [])
 
 
 #: Ordre d'affichage des marches football, et libelle de chaque ligne.
@@ -724,7 +814,13 @@ MARKET_ORDER: list[tuple[str, str]] = [
     ("team_totals", "Eq. buts"),
     ("alternate_team_totals", "Eq. buts"),
     ("correct_score", "Score exact"),
-    ("correct_score_h1", "Score ex. MT"),
+    # Onze caracteres et non douze : le separateur entre un libelle et sa valeur
+    # n'existe pas en propre, c'est le remplissage de `LABEL_WIDTH` qui le
+    # fabrique. A douze, `line()` decalait cette ligne d'une colonne — degrade
+    # propre, mais elle se lisait de travers de ses voisines dans chaque bloc de
+    # football servi. Seul libelle de marche sur 26 a depasser `LABEL_MAX`, et
+    # le test qui gardait la regle ne parcourait que les libelles de contexte.
+    ("correct_score_h1", "Score ex MT"),
     ("alternate_totals_corners", "Corners"),
     ("corners_1x2", "Corners 1N2"),
     ("alternate_totals_cards", "Cartons"),
@@ -830,7 +926,7 @@ def _render_one(
         return _render_btts(label, outcomes)
     if target == "team_totals":
         return _render_team_totals(event, outcomes)
-    if target in {"correct_score", "correct_score_h1"}:
+    if target in CORRECT_SCORE_MARKETS:
         return _render_correct_score(label, outcomes)
     if target in {"alternate_totals_corners", "alternate_totals_cards"}:
         return _render_main_total_only(label, outcomes)
@@ -864,7 +960,7 @@ def _pooled(event: RenderableEvent) -> dict[str, list[Outcome]]:
     return pooled
 
 
-def _render_markets(event: RenderableEvent) -> tuple[list[str], list[tuple[str, Outcome]]]:
+def _render_markets(event: RenderableEvent) -> tuple[list[str], list[tuple[str, Shown]]]:
     """Rend chaque marche disponible, dans l'ordre, en fusionnant les variantes.
 
     Rend aussi ce qui a ete **imprime**, chaque issue accompagnee de la cle
@@ -876,7 +972,7 @@ def _render_markets(event: RenderableEvent) -> tuple[list[str], list[tuple[str, 
 
     order = MARKET_ORDER_BY_SPORT.get(event.sport_key, MARKET_ORDER)
     rendered: list[str] = []
-    printed: list[tuple[str, Outcome]] = []
+    printed: list[tuple[str, Shown]] = []
     done: set[str] = set()
     for key, label in order:
         target = MERGED_MARKETS.get(key, key)
@@ -886,26 +982,29 @@ def _render_markets(event: RenderableEvent) -> tuple[list[str], list[tuple[str, 
         outcomes = pooled[target]
         rows, ecrits = _render_one(event, target, label, outcomes)
         rendered += _with_source(event, rows, outcomes)
-        printed += [(target, outcome) for outcome in ecrits]
+        printed += [(target, montre) for montre in ecrits]
 
     # Marches payes mais absents du catalogue : rendus en dernier, jamais perdus.
     # Un caractere de moins que la colonne, sinon le libelle touche sa valeur.
     for key in sorted(set(pooled) - done):
         raw, ecrits = _render_generic(key[: LABEL_WIDTH - 1], pooled[key])
         rendered += _with_source(event, raw, pooled[key])
-        printed += [(key, outcome) for outcome in ecrits]
+        printed += [(key, montre) for montre in ecrits]
 
     return rendered, printed
 
 
-def rendered_outcomes(event: RenderableEvent) -> list[tuple[str, Outcome]]:
-    """Les issues que le bloc **affiche**, avec leur cle de marche fusionnee.
+def rendered_outcomes(event: RenderableEvent) -> list[tuple[str, Shown]]:
+    """Les issues que le bloc **affiche**, avec leur cle fusionnee et leur jeton.
 
     Seule porte vers ce que le rendu a retenu. `prompt.prices_of` lisait
     `event.markets`, donc la table `odds` entiere : les bornes du lot et la
     ligne `Paliers` d'un bloc nommaient alors des cotes qu'aucune ligne ne
     porte. Voir le commentaire de tete de la section « Rendu des marches » pour
     la mesure qui l'a fait naitre.
+
+    Le jeton (`Shown.text`) ferme le cran d'en dessous : la borne nommait la
+    bonne cote et l'ecrivait autrement que le bloc.
     """
     return _render_markets(event)[1]
 

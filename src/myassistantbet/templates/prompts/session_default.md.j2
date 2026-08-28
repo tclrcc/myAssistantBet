@@ -412,6 +412,8 @@ en revanche les marchés **présents** — un bloc qui n'en porte qu'un plafonne
 sélection au 1N2, quelle que soit la qualité de la recherche, et il descend d'un
 cran. Compter des marchés n'est pas comparer des prix : aucune valeur n'est lue.
 Traite-les dans cet ordre, et dis en section F ceux que tu n'as pas ouverts.
+**Un bloc absent de la fiche est un bloc que rien ne classe, pas un bloc sans
+rien à chercher** : le budget annoncé plus haut reste le sien.
 
 Un motif de bloc vide dit **ce que la recherche peut espérer**, et les quatre ne
 disent pas la même chose :
@@ -1246,7 +1248,7 @@ serait le calcul d'espérance interdit plus haut, exactement comme pour l'Elo.
 Elles servent à choisir où chercher et à formuler un angle, jamais à l'évaluer
 contre un prix, et une fréquence n'est pas un argument à elle seule.
 
-Deux conventions de marché, enfin :
+Les conventions de marché, enfin :
 
   · **« Handicap »** porte **une seule ligne, ses deux moitiés**, dans l'ordre du
     titre du bloc — jamais deux paris indépendants. `PSG -0.5 1.70 |
@@ -1260,7 +1262,11 @@ Deux conventions de marché, enfin :
     moins de 2,5 buts coté 2.10 ». La même convention vaut pour **« MT O/U »**,
     **« Corners »** et **« Cartons »**. `Eq. buts` fonctionne autrement : elle
     nomme explicitement son sens (`Pafos O1.5 2.38`) et ne porte qu'un seul côté.
-
+{% if exact_scores %}  · **« Score exact »** et **« Score ex MT »** portent le score en chiffres, le
+    **premier nombre pour l'équipe nommée en premier** dans le titre — même
+    convention que « Handicap ». Seules les dix cotes les plus basses sont
+    rendues : une absence n'est pas un refus du bookmaker.
+{% endif %}
 {% endif %}
 {% if 'tennis' in sports %}
 Deux conventions de marché à ne pas confondre, chacune servie en échelle parce
