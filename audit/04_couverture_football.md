@@ -741,13 +741,19 @@ Ce qu'il faudrait : ~10 observations par equipe sur ~100 equipes, soit
 moyenne. La seconde voie est un chantier de categorie 5, et elle rendrait la
 mesure disponible en permanence au lieu d'une fois.
 
-### 5. Ce qu'un facteur ajoute change reellement
+### 5. Ce qu'un facteur ajoute change reellement — instruit a part, et ferme
 
 Aucune des mesures de ce document ne dit qu'une ligne de plus **ameliore une
 selection**. Elles disent qu'une grandeur discrimine entre equipes et qu'un
-marche existe en face. Le lien entre les deux — le rendement mesure d'une ligne —
-est la meme mesure manquante que celle qui bloque l'affaiblissement des deux
-criteres faibles du football, et elle suppose de relier une ligne rendue a la
-selection qui en est sortie.
+marche existe en face.
 
-**C'est la porte ouverte et datee de ce chantier comme du precedent.**
+**Cette question a ete instruite pour elle-meme** — voir `05_rendement_ligne.md`,
+qui la ferme sur trois raisons independantes. La premiere suffit : cinq groupes
+de lignes sont **strictement indissociables** sur les 1 327 blocs, parce qu'elles
+viennent du meme appel et passent la meme garde. Le rendement d'une ligne n'est
+donc pas identifiable, et aucun volume n'y changera rien.
+
+**Consequence pour ce document** : le plancher etabli en §B.1 reste le seul
+critere disponible, et il faut le lire pour ce qu'il est — une ligne admise
+**separe les equipes** au niveau de ce que la production porte deja. Ce n'est pas
+une mesure d'effet.
