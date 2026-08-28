@@ -1703,11 +1703,25 @@ def _side_record(stats: dict[str, Any] | None, side: str) -> str:
     wins = (fixtures.get("wins") or {}).get(side)
     draws = (fixtures.get("draws") or {}).get(side)
     loses = (fixtures.get("loses") or {}).get(side)
-    average = (((stats.get("goals") or {}).get("for") or {}).get("average") or {}).get(side)
+    goals = stats.get("goals") or {}
+    average = ((goals.get("for") or {}).get("average") or {}).get(side)
+    # **Le miroir defensif, et son absence etait le motif du projet.** La ligne
+    # lisait `goals.for.average[side]` et jamais son oppose : on savait ce qu'une
+    # equipe marque a domicile, jamais ce qu'elle y encaisse — alors que le champ
+    # est servi sur **749 releves sur 749**, exactement la ou la ligne sort deja.
+    # Meme asymetrie que `Buts marq.` / `Buts pris`, deja reparee une fois pour
+    # cette raison, et laissee ici : une correction appliquee a un endroit et pas
+    # a son symetrique est le §8.
+    conceded = ((goals.get("against") or {}).get("average") or {}).get(side)
     label = "dom" if side == "home" else "ext"
     record = f"{label} {wins or 0}V-{draws or 0}N-{loses or 0}D"
     if average:
+        # `pris` plutot que `concede` : l'idiome de `Corners` (`7.3 pris 6.3/3`),
+        # deja lu sans mode d'emploi. Le miroir ne se rend **que** derriere sa
+        # moitie offensive — seul, `pris 1.0 bpm` se lirait comme une production.
         record = f"{record} {average} bpm"
+        if conceded:
+            record = f"{record} pris {conceded}"
     return f"{record}/{played}j"
 
 
@@ -3247,11 +3261,39 @@ def _card_fragment(team: str, profile: dict[str, Any] | None) -> str:
 
 
 def _shot_fragment(team: str, profile: dict[str, Any] | None) -> str:
-    """`Estoril 12.4 dont 4.6 cadres/5`."""
+    """`Estoril 12.4 dont 4.6 cadres, pris 9.8 dont 3.1/5`.
+
+    **La quatrieme ligne de profil a ne rendre qu'une face, et la seule.**
+    `Corners` rend « pris », `Fautes` « subies », `xG` « concede » ; celle-ci ne
+    rendait que ce que l'equipe produit, alors que `shots_against` et
+    `shots_on_against` sont **en base a la meme couverture que leurs jumeaux
+    rendus** — 93,5 % et 98,6 %. Une correction appliquee a trois lignes sur
+    quatre est le §8.
+
+    **Le miroir passe la barre que le cote produit passe deja**, et c'est ce qui
+    tranche : les correlations a ce que le bloc porte par ailleurs sont
+    **identiques a 0,01 pres** des deux cotes — total de tirs contre corners,
+    +0,66 produit et +0,65 concede ; contre `xG`, +0,63 et +0,64 ; cadres contre
+    possession, +0,39 et +0,36. Refuser le miroir appliquerait au nouveau une
+    barre que l'ancien ne passe pas.
+
+    Ce qu'il ajoute a `xG` concede, deja rendu : le **volume** face a la
+    **dangerosite**. Six tirs cadres concedes pour 0,9 xG et deux tirs cadres
+    pour 0,9 xG ne decrivent pas la meme defense, et le bloc ne permettait pas de
+    les distinguer. C'est aussi le facteur avec lequel un taux d'arret de gardien
+    serait **independant** (r = +0,04) — voir l'audit 04.
+    """
     if not _profiled(profile, "shots"):
         return ""
     on_target = profile.get("shots_on")
     tail = f" dont {on_target} cadres" if on_target is not None else ""
+    # Chaque moitie degrade separement : le total concede est servi sur 93,5 %
+    # des releves et ses cadres sur 98,6 %, donc l'un peut manquer sans l'autre.
+    conceded = profile.get("shots_against")
+    on_target_against = profile.get("shots_on_against")
+    if conceded is not None:
+        detail = f" dont {on_target_against}" if on_target_against is not None else ""
+        tail = f"{tail}, pris {conceded}{detail}"
     return f"{team} {profile['shots']}{tail}{_profile_suffix(profile)}"
 
 

@@ -12,6 +12,7 @@ from myassistantbet.config import Settings
 from myassistantbet.providers.apifootball import BASE_URL, APIFootballClient
 from myassistantbet.providers.base import ProviderError
 from myassistantbet.providers.weather import GEOCODING_URL, WeatherClient
+from myassistantbet.services import context
 from myassistantbet.services.context import (
     CAUSE_BLOCK_NOTES,
     CAUSE_LABELS,
@@ -225,8 +226,11 @@ async def test_bloc_contexte_complet(
     # Le compte suit les buts : les lettres portent sur la competition, les buts
     # sur les cinq derniers matchs toutes competitions.
     assert lines["Forme 5"] == "BK Hacken VVNDV (5j) 9-4/5 | Djurgardens IF VVVND (5j) 11-3/5"
+    # `pris` est le miroir defensif, servi sur 749 releves sur 749 : la ligne
+    # disait ce qu'une equipe marque a domicile et jamais ce qu'elle y encaisse.
     assert lines["Dom/Ext"] == (
-        "BK Hacken dom 6V-1N-1D 2.1 bpm/8j | Djurgardens IF ext 4V-2N-2D 1.4 bpm/8j"
+        "BK Hacken dom 6V-1N-1D 2.1 bpm pris 1.0/8j | "
+        "Djurgardens IF ext 4V-2N-2D 1.4 bpm pris 1.5/8j"
     )
     assert lines["H2H (3)"] == "1-1 · 0-2 D · 2-2"
     assert "Rygaard" in lines["Absents"]
@@ -795,6 +799,64 @@ async def test_une_couverture_absente_de_la_reponse_ne_bloque_rien(
 
     assert KIND_INJURIES in report.kinds
     assert "aucun signale" in _lines(migrated)["Absents"]
+
+
+# -- Les deux miroirs defensifs -----------------------------------------------
+
+
+def test_dom_ext_ne_rend_pas_le_pris_sans_sa_moitie_offensive() -> None:
+    """**Le miroir ne se rend que derriere ce qu'il reflete.** Seul, `pris 1.0`
+    se lirait comme une production — c'est le meme mot que `Corners` emploie pour
+    ce qui est subi, et rien dans la ligne ne dirait de quel cote il tombe.
+
+    Le cas se produit : `goals.for.average` et `goals.against.average` sont
+    servis ensemble sur 749 releves sur 749, mais une charge utile amputee ne
+    doit pas produire une demi-ligne trompeuse."""
+    sans_offensif = {
+        "fixtures": {"played": {"home": 4}, "wins": {"home": 2}},
+        "goals": {"against": {"average": {"home": "1.0"}}},
+    }
+
+    rendu = context._side_record(sans_offensif, "home")
+
+    assert "pris" not in rendu
+    assert rendu == "dom 2V-0N-0D/4j"
+
+
+def test_dom_ext_rend_le_miroir_quand_les_deux_moities_sont_la() -> None:
+    """L'asymetrie corrigee : `_side_record` lisait `goals.for.average[side]` et
+    jamais son oppose. Meme motif que `Buts marq.` / `Buts pris`, deja repare une
+    fois — une correction appliquee a un endroit et pas a son symetrique."""
+    stats = {
+        "fixtures": {"played": {"home": 8}, "wins": {"home": 6}, "draws": {"home": 1}},
+        "goals": {"for": {"average": {"home": "2.1"}}, "against": {"average": {"home": "0.9"}}},
+    }
+
+    assert context._side_record(stats, "home") == "dom 6V-1N-0D 2.1 bpm pris 0.9/8j"
+
+
+def test_tirs_rend_les_deux_faces_et_degrade_moitie_par_moitie() -> None:
+    """**La quatrieme ligne de profil a ne rendre qu'une face.** `Corners` rend
+    « pris », `Fautes` « subies », `xG` « concede » ; `Tirs` ne disait que la
+    production, alors que les deux champs sont en base a la meme couverture que
+    leurs jumeaux rendus — 93,5 % et 98,6 %.
+
+    Les deux couvertures **different**, donc chaque moitie doit degrader seule :
+    le total concede peut manquer sans ses cadres, et l'inverse."""
+    complet = {"shots": 12.4, "shots_on": 4.6, "shots_against": 9.8, "shots_on_against": 3.1}
+    assert context._shot_fragment("Estoril", {**complet, "matches": 5}) == (
+        "Estoril 12.4 dont 4.6 cadres, pris 9.8 dont 3.1/5"
+    )
+
+    sans_cadres_concedes = {**complet, "matches": 5}
+    del sans_cadres_concedes["shots_on_against"]
+    assert context._shot_fragment("Estoril", sans_cadres_concedes) == (
+        "Estoril 12.4 dont 4.6 cadres, pris 9.8/5"
+    )
+
+    sans_concede = {**complet, "matches": 5}
+    del sans_concede["shots_against"]
+    assert context._shot_fragment("Estoril", sans_concede) == "Estoril 12.4 dont 4.6 cadres/5"
 
 
 # -- Dom/Ext : ne rien affirmer sur zero match --------------------------------

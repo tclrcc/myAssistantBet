@@ -715,6 +715,17 @@ The Odds API.
   `0V-0N-0D` et une moyenne de `0.0`, indiscernables d'une equipe qui ne gagne ni ne marque.
   Quand la ligne existe, elle porte son effectif (`1.4 bpm/8j`) — la statistique vaut pour
   **cette competition**, pas pour toute la saison de l'equipe.
+  - **Elle porte son miroir defensif depuis le 28/08/2026** (`2.1 bpm pris 1.0/8j`), et
+    son absence etait le motif du projet : `_side_record` lisait
+    `goals.for.average[side]` et **jamais** `goals.against.average[side]`, servi sur
+    **749 releves sur 749** — exactement la ou la ligne sort deja. On savait ce qu'une
+    equipe marque a domicile, jamais ce qu'elle y encaisse. Meme asymetrie que
+    `Buts marq.` / `Buts pris`, deja reparee une fois pour cette raison et laissee ici :
+    une correction appliquee a un endroit et pas a son symetrique est le §8. Cout mesure :
+    **5,0 tokens** par ligne, zero appel.
+  - **Le miroir ne se rend que derriere sa moitie offensive.** Seul, `pris 1.0` se lirait
+    comme une production — c'est le mot que `Corners` emploie pour ce qui est subi, et rien
+    dans la ligne ne dirait de quel cote il tombe. Un banc monte la charge utile amputee.
 - **`Classement` et `Enjeu` non plus** (`_standing_played`), et ils etaient les deux
   seules lignes a passer au travers. A zero match, le fournisseur classe quand meme
   tout le monde : l'Eredivisie ouvrait sa saison avec « FC Zwolle 7e (0pts, 0j, +0) »
@@ -776,6 +787,27 @@ The Odds API.
   garant. Verifie en reel : SonderjyskE « Relegation Playoffs » contre Viborg « Play-offs »,
   deux enjeux opposes que le classement seul ne disait pas. `goalsDiff` rejoint la ligne
   `Classement` au passage : il separe deux equipes a egalite de points.
+- **`Tirs` rendait une seule face quand ses trois voisines en rendent deux.** `Corners`
+  ecrit « pris », `Fautes` « subies », `xG` « concede » ; `Tirs` ne disait que la production,
+  alors que `shots_against` et `shots_on_against` sont **en base a la meme couverture que
+  leurs jumeaux rendus** — 93,5 % et 98,6 %. Corrige le 28/08/2026 :
+  `12.4 dont 4.6 cadres, pris 9.8 dont 3.1/5`, **11,1 tokens** et zero appel.
+  - **Le miroir passe la barre que le cote produit passe deja, et c'est ce qui tranche.**
+    Les correlations a ce que le bloc porte par ailleurs sont **identiques a 0,01 pres** des
+    deux cotes : total de tirs contre corners, +0,66 produit et +0,65 concede ; contre `xG`,
+    +0,63 et +0,64 ; cadres contre possession, +0,39 et +0,36. Refuser le miroir
+    appliquerait au nouveau une barre que l'ancien ne passe pas — meme raisonnement que le
+    plancher d'admission des lignes de mi-temps.
+  - Ce qu'il ajoute a `xG` concede, deja rendu : le **volume** face a la **dangerosite**.
+    Constate au rendu — `Rio Ave FC 7.3 dont 2.0 cadres, pris 15.0 dont 5.7/3` pour
+    `0.5 concede 1.6` d'xG : beaucoup de tirs peu dangereux, ce que le bloc ne permettait pas
+    de lire.
+  - **Chaque moitie degrade seule**, les deux couvertures differant de cinq points : le total
+    concede peut manquer sans ses cadres, et l'inverse.
+  - Corollaire pour le chantier du **taux d'arret du gardien** : il etait un doublon partiel
+    de `Buts pris` tant que le volume n'etait pas rendu (r = −0,68, arithmetique). Rendu a
+    part, le volume en fait le **second facteur, exact et independant** (r = +0,04) de la
+    decomposition `buts = volume × (1 − taux)`. Voir `audit/04_couverture_football.md`.
 - **`Fautes` et `Possession`** : un appel `/fixtures/statistics` rend **dix-huit**
   statistiques, `PROFILE_STATS` en gardait cinq. En garder deux de plus ne coute **aucun
   appel** — seulement de la place. `Fouls` accompagne `Cartons` (un arbitre ne sort un
