@@ -1383,6 +1383,74 @@ est **determine 1 fois sur 69** — surabondant 64 fois.
 « audite », et son titre change. Ce n'est pas un appauvrissement — c'est
 l'alignement du document sur ce qu'il disait faire.
 
+## C.41 — La decomposition des lignes de profil n'est pas reproductible, et la voie sans appel est une reduction
+
+**Instruit le 26/08/2026, chiffre le 28/08, non conduit.** Le plancher d'admission
+d'une ligne de contexte se lit par decomposition de variance : quelle part de la
+dispersion entre equipes est du signal et non du bruit d'echantillonnage. C'est ce
+critere qui a fait entrer `A la pause` et les deux miroirs defensifs, et qui a
+ferme `BTTS MT`, `>0.5 MT` et `fige MT`.
+
+**Il n'est pas reproductible sur les lignes de profil**, et la cause est une
+reduction. `context:profile` ne porte plus les valeurs match par match : la charge
+utile est **deja agregee en moyennes** a l'ecriture. La decomposition n'a donc pu
+se faire que sur les 183 matchs collectes une fois pour l'audit 04, soit
+**3 observations par equipe** — un effectif ou l'estimation de la variance intra
+est instable.
+
+**Ce que ces trois observations autorisent, et ce qu'elles n'autorisent pas.** Les
+chiffres obtenus — `xG` produit 70 %, `xG` concede 63 %, tirs cadres concedes
+65 % — vont tous dans le meme sens, celui d'un signal eleve, et ils **ne
+descendent donc pas le plancher** : c'est la seule conclusion qu'ils portent. Ils
+ne sont pas assez surs pour servir de **reference** a un candidat futur, ce qui est
+precisement l'usage qu'on veut en faire.
+
+**Deux voies, et une seule ne coute aucun appel.**
+
+| | cout | ce qu'elle rend |
+| --- | --- | --- |
+| recollecter | ~500 appels `/fixtures/statistics` — ~10 observations sur ~100 equipes | la mesure **une fois** |
+| elargir la reduction de `context:profile` pour garder les valeurs par match | **zero appel** | la mesure **en permanence** |
+
+La seconde est un chantier de **categorie 5** — la matiere est deja telechargee et
+jetee a l'ecriture, exactement comme l'etaient le score a la pause et le rang des
+adversaires avant qu'on les lise. Elle rendrait la decomposition disponible a
+toute date au lieu d'une fois, et c'est ce qui la separe d'une recollecte : la
+question se reposera a chaque ligne candidate.
+
+**Ce qui n'est pas tranche** : la taille de la charge utile. `dossier._summarize`
+existe parce que 43 ko pour 41 matchs faisaient une base dix fois plus grosse pour
+des logos ; garder cinq matchs de dix-huit statistiques par equipe n'est pas du
+meme ordre, mais le chiffre n'a pas ete pose. A mesurer avant d'ecrire, sur une
+copie.
+
+## C.42 — Neuf lignes de saison a 32,7 % : c'est une couverture de reprise, pas une couverture faible
+
+**Echeance datee, et la phrase qui compte tient en une ligne : toute conclusion
+tiree de ces couvertures avant octobre 2026 decrit le mois d'aout.**
+
+Les neuf lignes gardees par `SEASON_MIN_MATCHES` — `Buts marq.`, `Buts pris`,
+`Clean sheet`, `1re MT`, `Buts tard.`, `Cartons tps`, `Formations`, `Dom/Ext`,
+`Classement` — plafonnent a **32,7 %** des blocs dans les mesures de l'audit 04.
+Ce n'est pas un defaut de collecte et ce n'est pas une propriete de ces lignes :
+**toutes ces mesures portent sur une reprise de championnat**, ou la plupart des
+equipes n'ont pas joue les cinq matchs que le seuil exige.
+
+- **Le taux de croisiere n'est pas mesurable avant octobre**, et il n'y a rien a
+  faire d'ici la — ni correctif, ni instrument. C'est le calendrier qui repond.
+- **Le risque est de conclure dans l'intervalle**, et il est concret : un chantier
+  qui lirait « 32,7 % » comme la couverture de ces lignes pourrait les juger
+  faibles, ou pire, en admettre une nouvelle par comparaison a un plancher qui
+  n'est pas le vrai. Le plancher d'admission se lit sur des couvertures de
+  **regime**, pas de reprise.
+- La ligne du score a la pause **echappe a ce plafond**, et c'est ce qui la rend
+  lisible aujourd'hui : elle sort de `_history`, qui replie sur la saison
+  precedente, donc 99,3 % des blocs. Une couverture qui ne depend pas de la date
+  et une couverture qui en depend ne se comparent pas.
+- **Une entree du journal des mesures porte l'echeance**, au meme titre que la
+  re-mesure de l'unite de mise : un provisoire non date devient permanent par
+  oubli, et une phrase dans un rapport ne se rappelle pas seule.
+
 ## C.21 — Ce qui reste ouvert et n'a pas ete instruit
 
 - **Phase 4** — le generateur de prompts : variables injectees non utilisees,

@@ -498,6 +498,35 @@ protege d'un garde qui decore.
   qui se declenche sur un quart des blocs ne classe plus rien » — et le miroir
   est vrai : un critere qui ne se declenche jamais ne garde rien.
 
+#### La question ne vaut que si la poser est mecanique
+
+**Nuance du 28/08/2026, et elle decide de ce que ce paragraphe vaut.** « Ai-je vu
+ce garde ecarter quelque chose » est une bonne question ; ce qui en fait un garde
+plutot qu'une bonne pratique est qu'on la pose **sans soupconner**. Une
+verification qui depend de ce qu'on soupconne ne trouve que ce qu'on soupconne,
+et elle est alors exactement aussi bonne que l'intuition qu'elle etait censee
+remplacer.
+
+Le cas qui l'etablit vient du chantier du taux d'arret, et il est de l'auteur
+contre lui-meme. Le banc de position de la ligne `Arrets` — elle doit suivre
+`Tirs`, qui porte la moitie de sa convention de denominateur — montait un profil
+sans `xG` ni `Possession` : la ligne suivait `Tirs` **quel que soit l'ordre du
+code**, faute de concurrents. Le banc etait vert par vacuite, et deplacer la ligne
+en fin de bloc le laissait vert.
+
+- **Personne ne doutait de ce banc.** Il a ete ecrit dix minutes plus tot, dans le
+  meme chantier, par quelqu'un qui savait exactement ce qu'il gardait. La mutation
+  n'a pas ete tentee parce qu'il paraissait fragile — elle a ete tentee parce que
+  c'est l'etape qui suit l'ecriture d'un garde.
+- **C'est la seule forme sous laquelle une verification attrape son auteur.** Un
+  controle declenche par le doute herite du perimetre du doute ; un controle
+  mecanique n'en herite d'aucun, et c'est pour ca qu'il rapporte la ou l'attention
+  ne va pas.
+- Corollaire pratique, et il est bon marche : la mutation d'un garde neuf coute une
+  substitution et une execution de son fichier de bancs. Le prix a payer pour
+  qu'elle reste mecanique est de ne **jamais** se demander si elle en vaut la
+  peine.
+
 ### La lecture du rendu reel est un moyen de detection, et parfois le seul
 
 **Trois defauts du lot du 29/08/2026 ont ete trouves en regardant la sortie**, pas
