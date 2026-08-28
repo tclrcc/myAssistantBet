@@ -4687,6 +4687,31 @@ qui font la regle :
 - **C'est ce qui rend `as_of` honnete plutot que decoratif.** Une lecture faite
   sur une copie datee porte vraiment la date qu'elle affiche.
 
+**Et la copie se jette — pendant une semaine elle ne se jetait pas.**
+`db.scratch_copy()`, la moitie **ecriture** de cette regle, creait un `mkdtemp`
+et ne le supprimait jamais, alors que son docstring annonce une copie
+« jetable ». Trouve par accident le 28/08/2026 : `/tmp`, un tmpfs de 5,8 Go,
+sature, et **884 tests en erreur sur `database or disk is full`** — des tests
+qui n'avaient rien a se reprocher.
+
+- **Un garde ecrit pour proteger la base servie finissait par casser le banc**,
+  ce qui contredit sa raison d'etre. Le symptome est le pire qui soit : un banc
+  rouge pour une cause **sans rapport avec le code**, c'est-a-dire ce qui fait
+  defaire un correctif juste. Et la prochaine personne a le rencontrer
+  chercherait dans le code plutot que dans `/tmp`.
+- C'est un **contextmanager** : suppression a la sortie normale, conservation sur
+  exception — supprimer retirerait la piece a conviction au moment ou elle sert —
+  et `keep=True` pour le cas minoritaire, **qui doit se voir dans l'appel** et non
+  dans le comportement par defaut. Dans les trois cas ou la copie survit, le
+  chemin est **annonce** : une copie conservee sans son adresse est un fichier
+  perdu de plus dans `/tmp`, donc le meme defaut sous un autre nom.
+- **On ne supprime que ce qu'on a cree** : un `into=` est un repertoire de
+  l'appelant, et y faire le menage emporterait ce qu'il a mis a cote.
+- **Le docstring disait « jetable » et rien ne jetait**, ce qui est la sixieme
+  occurrence du §8 sur la prose : un docstring qui decrit un comportement absent
+  est ce qui a empeche de voir le defaut pendant une semaine. On lit la phrase,
+  on la croit, on ne verifie pas.
+
 ## L'historique des cotes (migration 048) : la table seule, et pourquoi rien ne la lit
 
 **Ce chantier n'affiche rien, ne lit rien, n'alerte sur rien, et ne pose aucun seuil.** Il

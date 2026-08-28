@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -122,7 +123,12 @@ def applied_versions(conn: sqlite3.Connection) -> set[int]:
     return {row["version"] for row in conn.execute("SELECT version FROM schema_migrations")}
 
 
-def scratch_copy(settings: Settings | None = None, into: Path | None = None) -> Settings:
+@contextmanager
+def scratch_copy(
+    settings: Settings | None = None,
+    into: Path | None = None,
+    keep: bool = False,
+) -> Iterator[Settings]:
     """Une copie **jetable et inscriptible** de la base servie, et ses parametres.
 
     Le pendant du `VACUUM INTO` de lecture, pour tout ce qui doit ecrire —
@@ -136,17 +142,63 @@ def scratch_copy(settings: Settings | None = None, into: Path | None = None) -> 
     Rend des `Settings` **derives** plutot que de poser une variable
     d'environnement : c'est le detour par l'environnement qui a echoue, et un
     objet passe en argument ne peut pas se tromper de nom.
+
+    ## Elle se jette, et pendant une semaine elle ne se jetait pas
+
+    Le mot « jetable » etait dans ce docstring des le premier jour, et **rien ne
+    jetait**. Chaque appel laissait son `mkdtemp` derriere lui. Trouve par
+    accident le 28/08/2026 : `/tmp`, un tmpfs de 5,8 Go, sature, et **884 tests
+    en erreur sur `database or disk is full`** — des tests qui n'avaient rien a
+    se reprocher. Deux repertoires de 392 Mo anterieurs a la session qui l'a
+    trouve etablissent que c'est le mecanisme et non un incident isole.
+
+    **Un garde ecrit pour proteger la base servie finissait par casser le banc**,
+    ce qui contredit sa raison d'etre : un banc rouge pour une cause sans rapport
+    avec le code est ce qui fait defaire un correctif juste, et la prochaine
+    personne a le rencontrer cherchera dans le code plutot que dans `/tmp`.
+
+    ## Ce qui est supprime, et ce qui ne l'est pas
+
+    · **a la sortie normale** : le repertoire temporaire, entier. C'est le
+      comportement par defaut, et il n'a pas besoin d'etre demande ;
+    · **sur exception** : rien, et le chemin passe en `WARNING`. Supprimer la
+      retirerait la piece a conviction au moment precis ou elle sert ;
+    · **`keep=True`** : rien, et le chemin passe en `INFO`. Relire une copie
+      apres coup est un cas minoritaire, et il doit **se voir dans l'appel** ;
+    · **`into=`** : rien, jamais. C'est un chemin de l'appelant — **on ne
+      supprime que ce qu'on a cree**, sinon le menage emporterait ce qu'il a mis
+      a cote.
+
+    Dans les trois cas ou la copie survit, **le chemin est annonce** : une copie
+    conservee sans son adresse est un fichier perdu de plus dans `/tmp`, donc le
+    defaut qu'on corrige sous un autre nom.
     """
     settings = settings or get_settings()
-    cible = Path(into) if into else Path(tempfile.mkdtemp(prefix="mab-copie-")) / "copie.db"
-    cible.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(settings.db_path_absolute)
+    dossier = Path(tempfile.mkdtemp(prefix="mab-copie-")) if into is None else None
+    cible = Path(into) if into is not None else dossier / "copie.db"  # type: ignore[union-attr]
     try:
-        conn.execute("VACUUM INTO ?", (str(cible),))
-    finally:
-        conn.close()
+        cible.parent.mkdir(parents=True, exist_ok=True)
+        conn = sqlite3.connect(settings.db_path_absolute)
+        try:
+            conn.execute("VACUUM INTO ?", (str(cible),))
+        finally:
+            conn.close()
+    except BaseException:
+        # La copie n'a pas abouti : il n'y a rien a examiner, et le repertoire
+        # que nous venons de creer ne doit pas survivre a son echec.
+        if dossier is not None:
+            shutil.rmtree(dossier, ignore_errors=True)
+        raise
     logger.info("Copie de travail : %s", cible)
-    return settings.model_copy(update={"db_path": cible})
+    try:
+        yield settings.model_copy(update={"db_path": cible})
+    except BaseException:
+        logger.warning("Copie de travail conservee apres erreur : %s", cible)
+        raise
+    if dossier is not None and not keep:
+        shutil.rmtree(dossier, ignore_errors=True)
+    else:
+        logger.info("Copie de travail conservee : %s", cible)
 
 
 class MigrationRefused(RuntimeError):
@@ -202,7 +254,8 @@ def run_migrations(
         raise MigrationRefused(
             f"run_migrations() refuse : appel non declare sur {settings.db_path_absolute}. "
             "Un script d'exploration ne migre pas une base servie — prends une copie "
-            "jetable avec db.scratch_copy(). Si l'appel est bien celui du demarrage ou "
+            "jetable avec `with db.scratch_copy() as copie:`. Si l'appel est bien celui "
+            "du demarrage ou "
             "d'un deploiement, passe deliberate=True."
         )
     migrations_dir = migrations_dir or settings.migrations_dir

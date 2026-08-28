@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import shutil
 import sqlite3
 import sys
 from pathlib import Path
@@ -119,15 +121,93 @@ def test_une_copie_de_travail_est_inscriptible_et_detachee(isolated_settings: Se
     detour par l'environnement qui a echoue.
     """
     db.run_migrations(isolated_settings)
-    copie = db.scratch_copy(isolated_settings)
-
-    assert copie.db_path_absolute != isolated_settings.db_path_absolute
-    assert copie.db_path_absolute.exists()
-    with db.connect(copie) as conn:
-        conn.execute("UPDATE tiers SET max_price = 9.99 WHERE key = 'safe'")
+    with db.scratch_copy(isolated_settings) as copie:
+        assert copie.db_path_absolute != isolated_settings.db_path_absolute
+        assert copie.db_path_absolute.exists()
+        with db.connect(copie) as conn:
+            conn.execute("UPDATE tiers SET max_price = 9.99 WHERE key = 'safe'")
     with db.connect(isolated_settings) as conn:
         intact = conn.execute("SELECT max_price FROM tiers WHERE key = 'safe'").fetchone()
     assert float(intact["max_price"]) != 9.99, "la base d'origine n'a pas bouge"
+
+
+def test_une_copie_de_travail_ne_survit_pas_a_son_usage(isolated_settings: Settings) -> None:
+    """**C.26 — le garde ecrit pour proteger la base servie faisait tomber le
+    banc.**
+
+    `scratch_copy` creait un `mkdtemp` et ne le supprimait jamais, alors que son
+    docstring annonce une copie « jetable ». Trouve par accident le 28/08/2026 :
+    `/tmp`, un tmpfs de 5,8 Go, sature, et **884 tests en erreur sur
+    `database or disk is full`** — des tests qui n'avaient rien a se reprocher.
+    Deux repertoires de 392 Mo, anterieurs a la session qui l'a trouve,
+    etablissent que c'est le mecanisme et non un incident.
+
+    Un banc qui tombe pour une cause **sans rapport avec le code** est ce qui
+    fait defaire un correctif juste, et la prochaine personne a le rencontrer
+    cherchera dans le code plutot que dans `/tmp`.
+    """
+    db.run_migrations(isolated_settings)
+    with db.scratch_copy(isolated_settings) as copie:
+        cible = copie.db_path_absolute
+        assert cible.exists()
+
+    assert not cible.exists(), "la copie est supprimee a la sortie"
+    assert not cible.parent.exists(), "et le repertoire temporaire avec elle"
+
+
+def test_une_copie_survit_a_l_exception_et_son_chemin_se_dit(
+    isolated_settings: Settings, caplog
+) -> None:
+    """**La seule raison de garder une copie est qu'on va la regarder.**
+
+    Supprimer sur exception retirerait la piece a conviction au moment precis ou
+    elle sert. Elle survit donc, et le chemin est **annonce** — une copie
+    conservee sans son adresse est un fichier perdu de plus dans `/tmp`, ce qui
+    est exactement le defaut qu'on corrige.
+    """
+    db.run_migrations(isolated_settings)
+    with (
+        caplog.at_level(logging.WARNING, logger="myassistantbet.db"),
+        pytest.raises(ZeroDivisionError),
+        db.scratch_copy(isolated_settings) as copie,
+    ):
+        cible = copie.db_path_absolute
+        raise ZeroDivisionError("mesure interrompue")
+
+    assert cible.exists(), "la copie reste a examiner"
+    assert str(cible) in caplog.text, "et le journal dit ou elle est"
+    shutil.rmtree(cible.parent, ignore_errors=True)
+
+
+def test_une_copie_gardee_se_declare_dans_l_appel(isolated_settings: Settings, caplog) -> None:
+    """Relire la copie apres coup est un cas **minoritaire**, et il doit se voir
+    la ou on appelle — pas dans le comportement par defaut."""
+    db.run_migrations(isolated_settings)
+    with (
+        caplog.at_level(logging.INFO, logger="myassistantbet.db"),
+        db.scratch_copy(isolated_settings, keep=True) as copie,
+    ):
+        cible = copie.db_path_absolute
+
+    assert cible.exists(), "l'appel l'a demandee"
+    assert str(cible) in caplog.text
+    shutil.rmtree(cible.parent, ignore_errors=True)
+
+
+def test_un_chemin_choisi_par_l_appelant_ne_se_supprime_pas(
+    isolated_settings: Settings, tmp_path
+) -> None:
+    """**On ne supprime que ce qu'on a cree.** Un `into=` est un repertoire de
+    l'appelant : y faire le menage effacerait ce qu'il y a mis a cote."""
+    db.run_migrations(isolated_settings)
+    voisin = tmp_path / "a-garder.txt"
+    voisin.write_text("releve", encoding="utf-8")
+
+    with db.scratch_copy(isolated_settings, into=tmp_path / "copie.db") as copie:
+        cible = copie.db_path_absolute
+
+    assert cible.exists(), "le chemin est celui de l'appelant, il en dispose"
+    assert voisin.exists(), "et rien d'autre n'a ete touche"
 
 
 def test_migrations_creent_toutes_les_tables(isolated_settings: Settings) -> None:

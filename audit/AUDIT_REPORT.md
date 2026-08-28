@@ -706,6 +706,82 @@ sixieme du dossier** : le premier releve annoncait « 277 sur 358 » et
 « `Classement` 643 fois ». C'etaient des **occurrences**, une par equipe, et non
 des blocs. Le dénominateur contre son auteur, une fois de plus.
 
+## C.26 — Le garde qui protege la base servie faisait tomber le banc
+
+**Ouvert et corrige le 28/08/2026, et trouve par accident.**
+
+`db.scratch_copy()` est la moitie **ecriture** de la regle « toute lecture se
+fait sur une copie », ajoutee le 21/08 apres qu'une migration est partie sur la
+base servie. Elle cree un `mkdtemp`, y fait un `VACUUM INTO`, rend des `Settings`
+derives — et **ne supprime jamais rien**, alors que son docstring annonce, depuis
+le premier jour, une copie « jetable ».
+
+**Le symptome est ce qui rend le defaut interessant.** `/tmp` est un tmpfs de
+5,8 Go ; il a sature, et le banc est sorti a **884 tests en erreur** sur
+`sqlite3.OperationalError: database or disk is full`. Aucun de ces tests n'avait
+quoi que ce soit a se reprocher.
+
+- **Un banc qui tombe pour une cause sans rapport avec le code est ce qui fait
+  defaire un correctif juste.** Le risque etait nomme au chantier 4 du meme
+  dossier ; cette fois il s'est produit.
+- **Et la prochaine personne a le rencontrer n'aurait pas regarde `/tmp`** : elle
+  aurait cherche dans le code, sur 884 lignes rouges qui ne designent rien.
+- **Un garde ecrit pour proteger la base servie qui finit par casser le banc est
+  un effet de bord qui contredit sa raison d'etre.**
+
+### Ce qui etablit que c'est le mecanisme et non un incident
+
+La session qui l'a trouve avait sa part — quatre copies de 413 Mo la ou une
+suffisait, plus 2,3 Go de repertoires `pytest-of-ubuntu`. Ce n'est pas ce qui
+tranche. Ce qui tranche est ce qui restait **avant** elle :
+
+| | |
+| --- | --- |
+| repertoires `mab-copie-*` trouves | **28** |
+| dont anterieurs a la session | 2 de **392 Mo**, dates du 27/08 22:04 et du 28/08 09:36 |
+| les 26 autres | 452 Ko chacun, **un par execution du banc** |
+
+Un seul appelant existe dans le depot — `tests/test_db.py` — et **aucun test ne
+dependait de la persistance** : la copie est lue dans le corps du test et jamais
+apres. Les 392 Mo, eux, viennent d'appels ad hoc sur l'instance servie, donc du
+geste que la regle recommande.
+
+A ce rythme, quinze copies de la base servie remplissent le tmpfs.
+
+### Le correctif, et les quatre cas
+
+`scratch_copy` devient un **contextmanager** :
+
+| cas | ce qui est supprime | ce qui est dit |
+| --- | --- | --- |
+| sortie normale | le repertoire temporaire, entier | rien |
+| exception dans le bloc | **rien** | le chemin, en `WARNING` |
+| `keep=True` | **rien** | le chemin, en `INFO` |
+| `into=` fourni | **rien, jamais** | le chemin, en `INFO` |
+
+- **Conserver sur exception** parce que supprimer retirerait la piece a
+  conviction au moment precis ou elle sert.
+- **`keep=True` plutot qu'un defaut permissif** : relire une copie apres coup est
+  un cas minoritaire, et il doit se voir **dans l'appel**.
+- **`into=` n'est jamais nettoye** — on ne supprime que ce qu'on a cree, sinon le
+  menage emporterait ce que l'appelant a mis a cote dans son repertoire.
+- **Dans les trois cas ou la copie survit, le chemin est annonce.** Une copie
+  conservee sans son adresse est un fichier perdu de plus dans `/tmp`, c'est-a-dire
+  le defaut qu'on corrige sous un autre nom.
+- Un echec du `VACUUM INTO` lui-meme nettoie aussi : il n'y a alors rien a
+  examiner, et le repertoire ne doit pas survivre a son echec.
+
+Mesure apres correctif : le banc complet laissait **une** copie par execution, il
+n'en laisse **aucune** — verifie avant et apres sur 2 765 tests.
+
+### La prose, sixieme occurrence
+
+**Le docstring disait « jetable » et rien ne jetait.** C'est ce qui a empeche de
+voir le defaut pendant une semaine : on lit la phrase, on la croit, on ne verifie
+pas. Un docstring qui decrit un comportement absent coute plus qu'un docstring
+absent — il fait re-deriver la meme conclusion fausse, et ici il a fait sauter
+l'etape de verification entiere. Corrige dans le meme commit que le comportement.
+
 ## C.21 — Ce qui reste ouvert et n'a pas ete instruit
 
 - **Phase 4** — le generateur de prompts : variables injectees non utilisees,
