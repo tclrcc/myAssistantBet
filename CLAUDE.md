@@ -6579,6 +6579,72 @@ chaque match serait redemande toutes les dix minutes jusqu'a son coup d'envoi.
 `_lineup_payload()` est ecrit une seule fois : `fetch_context` et le balayage le
 partagent, sans quoi le banc serait collecte d'un cote et oublie de l'autre.
 
+## Le code charge et le gabarit servi peuvent diverger, et rien ne le disait
+
+**Mesure a la minute du 28/08/2026, et le defaut s'est produit sur un lot
+livre.** Le gabarit Jinja est relu **sur le disque a chaque generation** — c'est
+voulu, l'editer suffit a changer le prompt sans redeploiement. Les modules
+Python, eux, sont charges **une fois**, au demarrage. Un `git pull` ou une
+edition sans redemarrage laisse donc l'application dans un etat mixte : gabarit
+du jour, code de la veille.
+
+| | |
+| --- | --- |
+| processus demarre | **13:12:16** |
+| `render.py` ecrit | **13:51:19** — 39 min apres |
+| commit | **14:16:16** — 64 min apres |
+
+La moitie du lot passait — les changements de gabarit — et l'autre non. **Aucune
+erreur** : le prompt se genere, il est a moitie a jour. Le defaut n'a ete trouve
+qu'en **relisant un prompt ligne a ligne**.
+
+- **`/health` repondait « ok » pendant ce temps**, et c'est le cas ou un
+  indicateur existe et repond a la question sans y repondre : il expose
+  `version`, qui est celle du **paquet** et ne bouge pas quand le code bouge.
+- `services/runtime.py` compare une empreinte prise **a l'import** — donc au
+  demarrage, ce que Python vient de charger — a une empreinte du disque **au
+  moment de l'appel**. Aucun git, aucune date : deux sommes de la meme chose a
+  deux instants. `changelog.fingerprint` est **appelee** et non reecrite, comme
+  `prompt.template_fingerprint` l'appelle pour les gabarits.
+- **Toutes les sources et pas seulement celles du rendu** : n'importe quel module
+  change le comportement, et une empreinte partielle ferait manquer exactement le
+  changement qu'on n'avait pas prevu. Cout mesure : **11 ms pour 74 modules**.
+- **L'instantane depend de l'ordre d'import**, et c'est la seule chose fragile :
+  `main` importe `runtime` au niveau du module. Un import paresseux capturerait
+  le disque **apres** l'edition, et le garde ne verrait plus rien. Un banc lit
+  `main.py` et l'exige.
+- **Trois etats, jamais deux.** `inconnu` couvre le cas ou les sources ne sont pas
+  lisibles : rendre « a jour » alors serait indiscernable d'une verification
+  reussie, et il ne rend pas non plus « obsolete » — on n'accuse pas plus qu'on
+  ne rassure quand on ne sait pas.
+
+**Deux surfaces, et il faut les deux.** `/health` repond a qui l'interroge ; le
+bandeau se voit **quand on ne cherchait pas**, et c'est precisement ce qui a
+manque. La pastille ne s'eteint qu'au redemarrage, donc elle reste sous les
+yeux — meme famille que les competitions non rattachees.
+
+- **Rien dans le prompt, et c'est une decision.** Le modele ne peut pas redemarrer
+  un service : l'information n'a rien a faire dans une sortie qui s'adresse a
+  lui, si utile soit-elle a l'humain. Un banc lit le gabarit et le verifie.
+- Ce que le garde ne dit pas : **quoi** a change, ni depuis quand. Le seul geste
+  qu'il appelle est un redemarrage, et il est le meme quelle que soit la ligne
+  modifiee. Il ne voit pas non plus les dependances — `uv run --frozen` les fige,
+  et un `uv sync` sans redemarrage tombe sous la meme regle sans etre visible
+  ici. Limite connue, pas oubli.
+
+**Chantier ouvert, date du 29/08/2026, non fait : l'estampille de cadre est gelee
+sur la session.** `sessions.gabarit_version` et `gabarit_sha` sont poses par
+`COALESCE` au premier prompt. Le gel est **juste pour le passe** — ne pas
+reetiqueter ce qui a deja ete rendu — et **faux pour la suite** : il etiquette
+les prompts neufs avec l'ancien cadre. Mesure : **6 prompts sur 86 (7 %)**
+portent une estampille qui ne designe pas le cadre en vigueur, la session du
+28/08 etant estampillee `lot-4` apres avoir produit sous lot-5 puis lot-6.
+`sessions.open_dossiers` a le meme defaut avec un symptome mesure — **30
+selections ecrasees pour `ligne_absente` sur des sessions declarees
+`renseignee`**, l'etat de session ne gardant que le dernier import. Les deux se
+reprennent **ensemble**, migration et colonne sur `prompts` : c'est un seul
+geste.
+
 ## Deploiement et sauvegardes
 
 - Les fichiers de deploiement sont dans `deploy/` : unite systemd durcie, unite et minuteur

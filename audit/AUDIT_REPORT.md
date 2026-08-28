@@ -915,6 +915,77 @@ du football. Rapprocher le budget de la fiche a ete ecarte : le nombre est lu
 ailleurs — le paragraphe des paliers hauts en fait sa borne — et le faire
 dependre des criteres l'aurait fait varier avec eux.
 
+## C.30 — Le code charge et le gabarit servi divergent sans un mot
+
+**Ouvert et corrige le 29/08/2026, apres que le defaut s'est produit sur un lot
+livre la veille.**
+
+Le gabarit Jinja est relu **sur le disque a chaque generation** — c'est voulu.
+Les modules Python sont charges **une fois**, au demarrage. Un deploiement sans
+redemarrage laisse donc l'application a moitie a jour, **et rien ne le dit** : le
+prompt se genere, aucune erreur ne se leve.
+
+| | |
+| --- | --- |
+| processus demarre | **13:12:16** |
+| `render.py` ecrit | **13:51:19** — 39 min apres le demarrage |
+| commit `124755e` | **14:16:16** — 64 min apres |
+
+Le fichier source est posterieur au processus qui aurait du le charger : il ne
+pouvait pas l'avoir fait. La moitie du lot passait — les changements de gabarit —
+et l'autre non. **Le defaut n'a ete trouve qu'en relisant un prompt ligne a
+ligne.**
+
+### `/health` repondait « ok », et c'est le coeur du sujet
+
+Il expose `version`, qui est celle du **paquet** : elle ne bouge pas quand le code
+bouge. Un indicateur existait, il repondait a la question **sans y repondre** —
+meme famille que `UNPRICED_ARMED`, distinguer « rien n'a change » de « le
+mecanisme n'a pas tourne ».
+
+### Le garde
+
+`services/runtime.py` compare une empreinte prise **a l'import** — donc au
+demarrage, ce que Python vient de charger — a une empreinte du disque **au moment
+de l'appel**. Aucun git, aucune date, aucune version de paquet : deux sommes de
+la meme chose a deux instants. `changelog.fingerprint` est **appelee** et non
+reecrite.
+
+- **Toutes les sources**, pas seulement celles du rendu : une empreinte partielle
+  ferait manquer exactement le changement qu'on n'avait pas prevu. **11 ms pour
+  74 modules**, gratuit au demarrage et negligeable sur une generation.
+- **L'instantane depend de l'ordre d'import**, seule fragilite : `main` importe
+  `runtime` au niveau du module. Paresseux, il capturerait le disque **apres**
+  l'edition. Un banc lit `main.py` et l'exige.
+- **Trois etats.** `inconnu` couvre des sources illisibles : rendre « a jour »
+  serait indiscernable d'une verification reussie, et rendre « obsolete »
+  accuserait sans savoir.
+
+### Deux surfaces, et pas la troisieme
+
+`/health` repond a qui l'interroge ; le **bandeau** se voit quand on ne cherchait
+pas, et c'est ce qui a manque. La pastille ne s'eteint qu'au redemarrage — meme
+famille que les competitions non rattachees, qui restent sous les yeux jusqu'au
+geste.
+
+**Rien dans le prompt, et c'est une decision.** Le modele ne peut pas redemarrer
+un service : l'information n'a rien a faire dans une sortie qui s'adresse a lui.
+Un banc lit le gabarit et le verifie.
+
+### Chantier ouvert, non fait : l'estampille de cadre est gelee sur la session
+
+`sessions.gabarit_version` et `gabarit_sha` sont poses par `COALESCE` au premier
+prompt. Le gel est **juste pour le passe** — ne pas reetiqueter ce qui a deja ete
+rendu — et **faux pour la suite** : il etiquette les prompts neufs avec l'ancien
+cadre, au moment meme ou la regle « un seul point de rupture » sert.
+
+Mesure : **6 prompts sur 86 (7 %)** portent une estampille qui ne designe pas le
+cadre en vigueur ; la session du 28/08 est estampillee `lot-4` apres avoir produit
+sous lot-5 puis lot-6. `sessions.open_dossiers` a le meme defaut avec un symptome
+mesure — **30 selections ecrasees pour `ligne_absente` sur des sessions declarees
+`renseignee`**, l'etat de session ne gardant que le dernier import. Les deux se
+reprennent **ensemble** : migration et colonne sur `prompts`, un seul geste.
+
 ## C.21 — Ce qui reste ouvert et n'a pas ete instruit
 
 - **Phase 4** — le generateur de prompts : variables injectees non utilisees,

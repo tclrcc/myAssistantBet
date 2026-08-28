@@ -44,6 +44,21 @@
     {% endif %}
   </div>
 
+  {# **Une pastille faite pour ne jamais paraitre.** Le gabarit est relu sur le
+     disque a chaque generation, le code une fois au demarrage : un deploiement
+     sans redemarrage laisse l'application a moitie a jour, et rien ne le disait.
+     Elle ne s'eteint qu'au redemarrage, donc elle reste sous les yeux — meme
+     famille que les competitions non rattachees. `/health` repond a qui
+     l'interroge ; celle-ci se voit quand on ne cherchait pas. #}
+  {% if banner.code and banner.code.stale %}
+  <div class="banner-item">
+    <span class="label">Code</span>
+    <span class="value alert">obsolète</span>
+    <span class="muted">{{ banner.code.modules }} modules ont changé depuis le
+      démarrage — redémarrer le service</span>
+  </div>
+  {% endif %}
+
   {% if banner.mapping_pending %}
   <div class="banner-item">
     <span class="label">Mapping</span>

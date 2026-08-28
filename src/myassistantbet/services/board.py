@@ -17,7 +17,7 @@ from ..providers.apifootball import PROVIDER as APIFOOTBALL_PROVIDER
 from ..providers.base import last_known_quota
 from ..providers.oddsapi import PROVIDER as ODDSAPI_PROVIDER
 from . import competitions as competitions_service
-from . import tennis_round, tournament_day
+from . import runtime, tennis_round, tournament_day
 from .competitions import category_label, category_rank
 from .labels import affiche, sort_key
 from .mapping_ui import pending_count
@@ -138,6 +138,15 @@ class Banner:
     unpriced_competitions: list[competitions_service.UnpricedCompetition] = field(
         default_factory=list
     )
+    #: Le code charge contre le code sur le disque. **Une pastille faite pour ne
+    #: jamais paraitre** : elle ne s'allume qu'apres un deploiement sans
+    #: redemarrage, et rien ne l'eteint qu'un redemarrage — meme famille que les
+    #: competitions non rattachees, qui restent sous les yeux jusqu'au geste.
+    #:
+    #: `/health` repond a qui l'interroge ; le bandeau se voit **quand on ne
+    #: cherchait pas**, et c'est ce qui manquait le 28/08/2026 — le defaut n'a
+    #: ete trouve qu'en relisant un prompt ligne a ligne.
+    code: runtime.RuntimeState | None = None
 
     @property
     def hidden_events(self) -> int:
@@ -561,6 +570,7 @@ def banner(
     if last_scan is not None and last_scan["at"]:
         state.last_scan_at = _local(last_scan["at"], settings.tz)
 
+    state.code = runtime.state()
     state.session_id = current_session(settings)
     state.selected_count, state.started_count = selection_counts(settings, now)
     state.mapping_pending = pending_count(settings)

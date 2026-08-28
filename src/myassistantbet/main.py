@@ -50,6 +50,11 @@ from .services import odds_view as odds_view_service
 from .services import payload as payload_service
 from .services import picks_import as picks_import_service
 from .services import prompt as prompt_service
+
+# Importe **au niveau du module**, donc a l'ouverture du processus : c'est
+# cet import qui prend l'instantane du code charge. Paresseux, il
+# capturerait le disque apres l'edition et le garde ne verrait plus rien.
+from .services import runtime
 from .services import sections as sections_service
 from .services import session as session_service
 from .services import set_scores as set_scores_service
@@ -2331,9 +2336,20 @@ def health() -> JSONResponse:
     """Etat de l'application : base de donnees et configuration (sans secrets)."""
     settings = get_settings()
     db_state = db.health(settings)
+    # `version` est celle du **paquet** : elle ne bouge pas quand le code bouge,
+    # et c'est ce qui a laisse `/health` repondre « ok » sur un processus servant
+    # un code vieux de quarante minutes. Le bloc ci-dessous repond a la question
+    # que celle-la ne pose pas.
+    code = runtime.state()
     payload = {
         "status": "ok" if db_state["ok"] else "degraded",
         "version": __version__,
+        "code": {
+            "etat": code.label,
+            "charge": code.loaded,
+            "disque": code.disk,
+            "modules": code.modules,
+        },
         "db": db_state,
         "config": settings.public_dict(),
     }
