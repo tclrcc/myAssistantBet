@@ -337,6 +337,8 @@ def split(day: str, settings: Settings | None = None) -> Split:
             "SELECT created_at, result, price FROM picks "
             " WHERE result IN ('win', 'loss') "
             "   AND exploratoire = 0 AND tardive = 0 "
+            # `price > 1.0` : `render.is_price` en SQL, troisieme et dernier
+            # exemplaire — voir son docstring.
             "   AND price IS NOT NULL AND price > 1.0",
         ).fetchall()
     cotes: dict[str, list[tuple[bool, float]]] = {"avant": [], "apres": []}

@@ -220,6 +220,38 @@ def price(value: float) -> str:
     return f"{value:.2f}"
 
 
+def is_price(value: float | None) -> bool:
+    """Une cote decimale, ou rien. **La regle du projet, enfin nommee.**
+
+    « 1.00 ou moins n'est pas une cote : ce serait un taux implicite d'au moins
+    100 % » — la phrase existait, en commentaire, au-dessus d'un des quatorze
+    endroits ou la comparaison etait recopiee.
+
+    **Les quatorze disaient bien la meme chose, et c'est verifie site par site**
+    plutot que suppose : refus a la saisie d'une selection (`add_pick`) et d'une
+    cote obtenue, refus a l'analyse d'une ligne de cotes manuelles, refus d'une
+    saisie de grille, et garde devant chaque `1.0 / cote` du residu au prix.
+    Aucun n'est un voisin du predicat : tous sont le predicat. Deux gardes
+    proches sous des noms differents seraient pires que deux noms — c'est aussi
+    vrai d'un garde sans nom du tout, qui ne peut meme pas se chercher.
+
+    **Trois exemplaires restent, et ils sont en SQL** : `history` en compte deux,
+    `changelog` un. Une clause `WHERE` ne peut pas appeler cette fonction, et
+    reouvrir une connexion par ligne pour la lui faire appeler serait payer une
+    unification en performance. Ils portent la reference a ce nom en commentaire.
+
+    Ce module est le seul que les cinq appelants peuvent importer sans cycle :
+    `history` y arrive par `market_families`, `grid` l'importe deja, et `render`
+    lui-meme ne depend que de `config`, `coverage` et `labels`. C'est la meme
+    raison qui avait fait vivre `in_band` dans `history` — c'est le sens de
+    l'import qui decide, pas l'affinite du sujet.
+
+    Pure, sans base : elle se teste sur des valeurs choisies, et non sur celles
+    du jour.
+    """
+    return value is not None and float(value) > 1.0
+
+
 #: Le signe qui marque une ligne en quart. **Au football seulement** : `-0.25`,
 #: `+0.75`, `1.25`, `2.75` sont des paris asiatiques scindes, une demi-mise sur
 #: chacune des deux lignes voisines, et aucun book francais ne les propose. Elles

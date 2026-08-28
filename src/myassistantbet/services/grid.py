@@ -25,7 +25,7 @@ from ..db import connect, utcnow
 from .labels import affiche
 from .manual import MANUAL_BOOKMAKER, MANUAL_MARKET, ManualError
 from .matching import normalize
-from .render import LABEL_WIDTH, MARKET_ORDER_BY_SPORT
+from .render import LABEL_WIDTH, MARKET_ORDER_BY_SPORT, is_price
 from .session import has_started
 
 logger = logging.getLogger(__name__)
@@ -145,7 +145,7 @@ def parse_price(raw: str) -> float | None:
         price = float(text)
     except ValueError:
         return None
-    return price if price > 1.0 else None
+    return price if is_price(price) else None
 
 
 def build_view(

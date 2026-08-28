@@ -59,6 +59,7 @@ from .labels import affiche, sort_key
 from .market_families import family_key, family_label, family_of, family_rank, market_key_for
 from .market_families import load as load_families
 from .market_families import market_key as _market_key
+from .render import is_price
 from .thresholds import COUPON_TRACKING, toggle_of
 from .thresholds import value_of as threshold_value
 from .write_paths import writes
@@ -1676,6 +1677,9 @@ def tier_offers(settings: Settings | None = None) -> list[TierOffer]:
         # match, remplace a chaque prompt. C'est bien le marche fige, pas celui
         # d'aujourd'hui — et c'est toute la raison d'etre de la table.
         prix = conn.execute(
+            # `price > 1.0` est `render.is_price` en SQL — voir son docstring :
+            # trois exemplaires restent, faute qu'une clause WHERE puisse appeler
+            # une fonction Python sans rouvrir une connexion par ligne.
             "SELECT session_id, price FROM prompt_odds WHERE price > 1.0"
         ).fetchall()
         produits = conn.execute(
@@ -2072,7 +2076,7 @@ def add_pick(
     # un prix posterieur, donc une autre grandeur. Elle reste facultative — les
     # selections anterieures a cette regle n'en portent pas — mais 1.00 ou
     # moins n'est pas une cote : ce serait un taux implicite d'au moins 100 %.
-    if price_value is not None and price_value <= 1.0:
+    if price_value is not None and not is_price(price_value):
         raise HistoryError("« Cote » doit être supérieure à 1.00.")
     # Une cote hors de toutes les bandes n'a pas de palier, et la ranger sous
     # celui qui a ete choisi au formulaire ferait entrer dans un taux par bande
@@ -2332,7 +2336,7 @@ def set_real_price(pick_id: int, price: str = "", settings: Settings | None = No
     """
     settings = settings or get_settings()
     value = _as_float(price, "Cote obtenue")
-    if value is not None and value <= 1.0:
+    if value is not None and not is_price(value):
         raise HistoryError("« Cote obtenue » doit être supérieure à 1.00.")
     _reject_out_of_band(value, settings, "Cote obtenue")
     tier = tier_for_price(value, settings)
@@ -4211,14 +4215,10 @@ def exploratory(settings: Settings | None = None) -> Exploratory:
     report.by_tier.sort(
         key=lambda item: tier_order.index(item.key) if item.key in tier_order else 99
     )
-    implicites = [
-        1.0 / float(row["price"]) for row in tranchees if row["price"] and float(row["price"]) > 1.0
-    ]
+    implicites = [1.0 / float(row["price"]) for row in tranchees if is_price(row["price"])]
     report.residual = Residual(
         observed=sum(
-            1
-            for row in tranchees
-            if str(row["result"]) == "win" and row["price"] and float(row["price"]) > 1.0
+            1 for row in tranchees if str(row["result"]) == "win" and is_price(row["price"])
         ),
         implied=implicites,
     )
@@ -4388,7 +4388,7 @@ def _fill_band(bande: LateBand, row: Any) -> None:
         return
     bande.settled += 1
     bande.won += 1 if resultat == "win" else 0
-    if row["price"] and float(row["price"]) > 1.0:
+    if is_price(row["price"]):
         bande.residual = Residual(
             observed=bande.residual.observed + (1 if resultat == "win" else 0),
             implied=[*bande.residual.implied, 1.0 / float(row["price"])],
@@ -4422,7 +4422,7 @@ def late(settings: Settings | None = None) -> Late:
             report.declared[motif] = report.declared.get(motif, 0) + 1
         else:
             report.undeclared += 1
-    prix = [row for row in tranchees if row["price"] and float(row["price"]) > 1.0]
+    prix = [row for row in tranchees if is_price(row["price"])]
     report.residual = Residual(
         observed=sum(1 for row in prix if str(row["result"]) == "win"),
         implied=[1.0 / float(row["price"]) for row in prix],
@@ -5479,6 +5479,7 @@ def dossiers(settings: Settings | None = None) -> Dossiers:
         prix = conn.execute(
             "SELECT k.price, k.result FROM picks k "
             " WHERE k.exploratoire = 0 AND k.confidence_computed = 3 "
+            # `k.price > 1.0` : `render.is_price` en SQL, meme exemplaire.
             "   AND k.result IN ('win', 'loss') AND k.price > 1.0"
         ).fetchall()
     if prix:
@@ -6087,7 +6088,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
     prices = [
         row
         for row, result in zip(rows, results, strict=True)
-        if result in ("win", "loss") and _antecedence(row) and (_column(row, "price") or 0) > 1.0
+        if result in ("win", "loss") and _antecedence(row) and is_price(_column(row, "price"))
     ]
     report.residual_by_angle = _residual_rows(
         [
@@ -6293,7 +6294,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
             if str(ligne["result"]) not in ("win", "loss"):
                 continue
             price = _column(ligne, "price")
-            if not price or price <= 1.0:
+            if not is_price(price):
                 report.unpriced += 1
                 continue
             implicites.append(1.0 / float(price))
@@ -6311,14 +6312,14 @@ def analysis(settings: Settings | None = None) -> Analysis:
         1
         for ligne in rows
         if str(ligne["result"]) in ("win", "loss")
-        and (_column(ligne, "price") or 0) > 1.0
+        and is_price(_column(ligne, "price"))
         and int(ligne["session_id"]) not in figees
     )
     # Groupees par match, pour la borne conservatrice du bloc de tete.
     par_match: dict[Any, list[float]] = {}
     for row in rows:
         price = _column(row, "price")
-        if str(row["result"]) in ("win", "loss") and price and price > 1.0:
+        if str(row["result"]) in ("win", "loss") and is_price(price):
             par_match.setdefault(row["event_id"] or f"seule-{row['id']}", []).append(1.0 / price)
     report.residual_clusters = list(par_match.values())
     # **Et les rencontres concernees, nommees.** Le compte disait qu'il faut

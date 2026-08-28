@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from .labels import sort_key
+from .render import is_price
 
 logger = logging.getLogger(__name__)
 
@@ -85,7 +86,7 @@ def parse_odds(raw: str) -> ParsedOdds:
             parsed.rejected.append(line.strip())
             continue
         name = match.group("name").strip(" ;=")
-        if not name or price <= 1.0:
+        if not name or not is_price(price):
             parsed.rejected.append(line.strip())
             continue
         parsed.outcomes.append((name, price))

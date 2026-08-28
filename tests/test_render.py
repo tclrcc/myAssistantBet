@@ -1272,3 +1272,47 @@ def test_un_handicap_entier_ne_reclame_aucun_repli() -> None:
 
     assert render.PLAYABLE_LABEL not in rendu
     assert render.QUARTER_MARK not in rendu
+
+
+# -- Ce qui compte comme une cote --------------------------------------------
+
+
+def test_une_cote_est_strictement_superieure_a_un() -> None:
+    """`1.00` n'est pas une cote : ce serait un taux implicite d'au moins 100 %.
+
+    La phrase existait, en commentaire, au-dessus d'un des quatorze endroits qui
+    recopiaient la comparaison. Elle a desormais un nom, et ce banc tient sa
+    frontiere plutot que ses valeurs du jour.
+    """
+    assert render.is_price(None) is False
+    assert render.is_price(1.0) is False
+    assert render.is_price(0.5) is False
+    assert render.is_price(1.01) is True
+    assert render.is_price(34.0) is True
+
+
+def test_les_exemplaires_sql_du_predicat_disent_le_meme_seuil() -> None:
+    """**Trois exemplaires restent, et ils sont en SQL.**
+
+    Une clause `WHERE` ne peut pas appeler `is_price`, et rouvrir une connexion
+    par ligne pour la lui faire appeler paierait l'unification en performance.
+    C'est le second traitement du §8 : quand une seule ecriture est impossible,
+    un banc compare les deux. Il lit **les deux sources** au lieu de recopier la
+    regle — si `is_price` cessait d'etre « strictement au-dessus de 1.00 », les
+    trois `WHERE` mentiraient sans qu'aucun autre test ne bronche.
+    """
+    from myassistantbet.config import PACKAGE_DIR
+
+    services = PACKAGE_DIR / "services"
+    trouves = [
+        (source.name, ligne.strip())
+        for source in sorted(services.glob("*.py"))
+        for ligne in source.read_text(encoding="utf-8").splitlines()
+        # Les lignes de **code** : un commentaire qui cite le predicat pour dire
+        # ou il vit n'est pas un exemplaire de plus.
+        if "price > 1.0" in ligne and not ligne.strip().startswith("#")
+    ]
+    assert len(trouves) == 3, f"trois exemplaires SQL, ni plus ni moins : {trouves}"
+    assert all(ligne.startswith('"') for _, ligne in trouves), "et tous en SQL"
+    # La frontiere que ces trois clauses ecrivent, telle que Python la rend.
+    assert render.is_price(1.0) is False and render.is_price(1.0000001) is True
