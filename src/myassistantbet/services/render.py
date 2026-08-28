@@ -332,7 +332,7 @@ def main_line(lines: dict[float, dict[str, float]]) -> float | None:
 
 def _totals_fragments(
     outcomes: Iterable[Outcome], keep: int = TOTALS_KEEP, mark: bool = False
-) -> list[str]:
+) -> tuple[list[str], list[float]]:
     """`1.5: 1.22/4.10 | 2.75†: 1.72/2.05 | …`, limite aux lignes utiles.
 
     **Le marquage se pose la ou la ligne est ecrite.** Mesure du 20/08/2026 sur
@@ -344,10 +344,11 @@ def _totals_fragments(
     grouped = _by_point(outcomes)
     reference = main_line(grouped)
     if reference is None:
-        return []
+        return [], []
 
     retained = sorted(grouped, key=lambda p: (abs(p - reference), p))[:keep]
     fragments = []
+    ecrits: list[float] = []
     for point in sorted(retained):
         prices = grouped[point]
         over, under = prices.get("Over"), prices.get("Under")
@@ -355,66 +356,111 @@ def _totals_fragments(
             continue
         both = f"{price(over) if over else '·'}/{price(under) if under else '·'}"
         fragments.append(f"{_point(point, mark)}: {both}")
-    return fragments
+        ecrits.append(point)
+    # Les lignes **ecrites**, pas les lignes retenues : celles dont les deux
+    # cotes manquent passent la boucle sans rien imprimer.
+    return fragments, ecrits
 
 
 # -- Rendu des marches ------------------------------------------------------
+#
+# **Chaque rendu de marche dit aussi ce qu'il a imprime.** Ce n'est pas une
+# redite de ses lignes : le rendu **tronque** — dix scores exacts, cinq lignes
+# O/U, un seul palier de handicap, le seul Over de chaque equipe — et ce qu'il
+# jette n'existe nulle part dans le bloc.
+#
+# Mesure du 28/08/2026 sur les 142 lots archives portant la ligne des bornes :
+# 84 (59 %) annoncaient une cote haute absente du bloc qu'elle nomme, 66 (46 %)
+# une cote basse, et **145 blocs sur 1 194 (12,1 %) annoncaient un palier
+# qu'aucune de leurs cotes rendues n'atteint** — 145 sur 145 GIGA FUN, 145 sur
+# 145 du football. Le lot du 28/08 en portait 4 sur 8.
+#
+# La cause etait une seconde lecture : `prompt.prices_of` lisait `event.markets`,
+# donc la table `odds` entiere. Repliquer les regles de troncature de son cote
+# aurait ete la copie que `markets.py` a deja appris a ne pas faire — elle
+# aurait diverge au premier marche ajoute. C'est donc le rendu qui rend ses
+# retenus, et **l'invariant est porte par la signature** plutot que par la
+# discipline : un rendu neuf ne compile pas sans dire ce qu'il imprime.
+#
+# Chaque fonction tire ses retenus des **memes** cles qu'elle a deja calculees
+# pour ecrire ses lignes. Rien n'est recalcule, rien n'est reparse.
 
 
-def _render_h2h(event: RenderableEvent, outcomes: list[Outcome], label: str = "1N2") -> list[str]:
+#: Les lignes d'un marche, et les issues que ces lignes portent vraiment.
+Rendered = tuple[list[str], list[Outcome]]
+
+
+def _render_h2h(event: RenderableEvent, outcomes: list[Outcome], label: str = "1N2") -> Rendered:
     prices = {outcome.name: outcome.price for outcome in outcomes}
     home, draw, away = prices.get(event.home), prices.get("Draw"), prices.get(event.away)
     if home is None and away is None:
-        return _render_generic(label, outcomes) if outcomes else []
+        return _render_generic(label, outcomes) if outcomes else ([], [])
+    nommes = (event.home, "Draw", event.away) if draw is not None else (event.home, event.away)
+    ecrits = [outcome for outcome in outcomes if outcome.name in nommes and outcome.price]
     if draw is None:
         # Tennis et sports sans nul : deux issues seulement. Le libelle « 1N2 »
         # n'aurait alors aucun sens.
         parts = [price(value) for value in (home, away) if value is not None]
-        return [line("1-2" if label == "1N2" else label, " / ".join(parts))]
-    return [line(label, " / ".join(price(value) for value in (home, draw, away) if value))]
+        return [line("1-2" if label == "1N2" else label, " / ".join(parts))], ecrits
+    return [line(label, " / ".join(price(value) for value in (home, draw, away) if value))], ecrits
 
 
-def _render_double_chance(event: RenderableEvent, outcomes: list[Outcome]) -> list[str]:
+def _render_double_chance(event: RenderableEvent, outcomes: list[Outcome]) -> Rendered:
     """DC : 1X / 12 / X2, identifies par les equipes citees dans l'issue."""
-    slots: dict[str, float] = {}
+    slots: dict[str, Outcome] = {}
     for outcome in outcomes:
         name = outcome.name.casefold()
         has_home = event.home.casefold() in name
         has_away = event.away.casefold() in name
         has_draw = "draw" in name or "nul" in name
         if has_home and has_draw:
-            slots["1X"] = outcome.price
+            slots["1X"] = outcome
         elif has_home and has_away:
-            slots["12"] = outcome.price
+            slots["12"] = outcome
         elif has_away and has_draw:
-            slots["X2"] = outcome.price
+            slots["X2"] = outcome
 
     if len(slots) < 2:
         # Nommage inattendu : on rend brut plutot que de deviner.
         return _render_generic("DC", outcomes)
     ordered = [slots.get(key) for key in ("1X", "12", "X2")]
-    return [line("DC", " / ".join(price(value) for value in ordered if value is not None))]
+    ecrits = [outcome for outcome in ordered if outcome is not None]
+    return [line("DC", " / ".join(price(outcome.price) for outcome in ecrits))], ecrits
 
 
-def _render_totals(label: str, outcomes: list[Outcome], mark: bool = False) -> list[str]:
-    fragments = _totals_fragments(outcomes, mark=mark)
-    return [line(label, " | ".join(fragments))] if fragments else []
+def _render_totals(label: str, outcomes: list[Outcome], mark: bool = False) -> Rendered:
+    fragments, points = _totals_fragments(outcomes, mark=mark)
+    if not fragments:
+        return [], []
+    return [line(label, " | ".join(fragments))], _at_points(outcomes, points)
 
 
-def _render_btts(label: str, outcomes: list[Outcome]) -> list[str]:
-    prices = {outcome.name.casefold(): outcome.price for outcome in outcomes}
-    yes, no = prices.get("yes"), prices.get("no")
+def _at_points(outcomes: Iterable[Outcome], points: Sequence[float]) -> list[Outcome]:
+    """Les issues posees sur ces lignes-la. **Les memes cles que le rendu.**
+
+    Une echelle imprime ses lignes retenues et jette les autres ; les issues
+    retenues sont exactement celles qui portent une de ces lignes. Recalculer la
+    retention ici aurait ete la seconde ecriture qu'on supprime.
+    """
+    gardes = set(points)
+    return [outcome for outcome in outcomes if outcome.point in gardes]
+
+
+def _render_btts(label: str, outcomes: list[Outcome]) -> Rendered:
+    issues = {outcome.name.casefold(): outcome for outcome in outcomes}
+    yes, no = issues.get("yes"), issues.get("no")
     if yes is None and no is None:
-        return []
+        return [], []
     parts = []
     if yes is not None:
-        parts.append(f"Oui {price(yes)}")
+        parts.append(f"Oui {price(yes.price)}")
     if no is not None:
-        parts.append(f"Non {price(no)}")
-    return [line(label, " / ".join(parts))]
+        parts.append(f"Non {price(no.price)}")
+    ecrits = [outcome for outcome in (yes, no) if outcome is not None]
+    return [line(label, " / ".join(parts))], ecrits
 
 
-def _render_team_totals(event: RenderableEvent, outcomes: list[Outcome]) -> list[str]:
+def _render_team_totals(event: RenderableEvent, outcomes: list[Outcome]) -> Rendered:
     """`Häcken O1.5 2.30 | Djurgården O1.5 2.45` — ligne principale par equipe."""
     by_team: dict[str, list[Outcome]] = {}
     for outcome in outcomes:
@@ -423,6 +469,7 @@ def _render_team_totals(event: RenderableEvent, outcomes: list[Outcome]) -> list
             by_team.setdefault(team, []).append(outcome)
 
     fragments = []
+    ecrits: list[Outcome] = []
     for team in (event.home, event.away):
         team_outcomes = by_team.get(team)
         if not team_outcomes:
@@ -434,24 +481,32 @@ def _render_team_totals(event: RenderableEvent, outcomes: list[Outcome]) -> list
         over = grouped[reference].get("Over")
         if over is not None:
             fragments.append(f"{team} O{_point(reference)} {price(over)}")
-    return [line("Eq. buts", " | ".join(fragments))] if fragments else []
+            # Le seul Over de la ligne de reference : ni son Under, ni les
+            # autres paliers de l'equipe, qui n'atteignent aucune ligne.
+            ecrits += [
+                outcome
+                for outcome in team_outcomes
+                if outcome.point == reference and outcome.name == "Over"
+            ]
+    if not fragments:
+        return [], []
+    return [line("Eq. buts", " | ".join(fragments))], ecrits
 
 
-def _render_correct_score(label: str, outcomes: list[Outcome]) -> list[str]:
-    scored = sorted(
-        ((outcome.name.replace(" ", ""), outcome.price) for outcome in outcomes),
-        key=lambda item: item[1],
-    )[:CORRECT_SCORE_KEEP]
+def _render_correct_score(label: str, outcomes: list[Outcome]) -> Rendered:
+    scored = sorted(outcomes, key=lambda outcome: outcome.price)[:CORRECT_SCORE_KEEP]
     if not scored:
-        return []
-    chunks = [f"{name} {price(value)}" for name, value in scored]
-    return _wrap(label, chunks, CORRECT_SCORE_PER_LINE)
+        return [], []
+    chunks = [f"{outcome.name.replace(' ', '')} {price(outcome.price)}" for outcome in scored]
+    return _wrap(label, chunks, CORRECT_SCORE_PER_LINE), list(scored)
 
 
-def _render_main_total_only(label: str, outcomes: list[Outcome]) -> list[str]:
+def _render_main_total_only(label: str, outcomes: list[Outcome]) -> Rendered:
     """Corners et cartons : uniquement la ligne principale, comme dans la SPEC."""
-    fragments = _totals_fragments(outcomes, keep=1)
-    return [line(label, f"O/U {fragments[0]}")] if fragments else []
+    fragments, points = _totals_fragments(outcomes, keep=1)
+    if not fragments:
+        return [], []
+    return [line(label, f"O/U {fragments[0]}")], _at_points(outcomes, points)
 
 
 def _signed(value: float, mark: bool = False) -> str:
@@ -512,7 +567,7 @@ def _main_handicap(ladder: dict[float, dict[str, float]]) -> float | None:
 
 def _render_spreads(
     event: RenderableEvent, outcomes: list[Outcome], label: str = "Handicap"
-) -> list[str]:
+) -> Rendered:
     """Handicap : **un seul palier, ses deux cotes**, dans l'ordre du titre.
 
     Chaque camp choisissait auparavant sa ligne de son cote — la plus proche de
@@ -545,9 +600,10 @@ def _render_spreads(
     ladder = _by_handicap(event, outcomes)
     point = _main_handicap(ladder)
     if point is None:
-        return []
+        return [], []
     quarts = event.sport_key == "football"
     rows = [line(label, _spread_pair(event, ladder, point, quarts))]
+    paliers = [point]
     if quarts and is_quarter(point):
         posables = {
             niveau: prix
@@ -558,7 +614,26 @@ def _render_spreads(
         if secours is not None:
             paire = _spread_pair(event, ladder, secours, quarts)
             rows.append(f"{CONTINUATION}{PLAYABLE_LABEL} {paire}")
-    return rows
+            paliers.append(secours)
+    return rows, _at_handicaps(event, outcomes, paliers)
+
+
+def _at_handicaps(
+    event: RenderableEvent, outcomes: Iterable[Outcome], paliers: Sequence[float]
+) -> list[Outcome]:
+    """Les deux moities des paliers imprimes, **sur la meme convention d'ancrage**.
+
+    Un handicap se lit du premier nomme (`_by_handicap`) : comparer le `point`
+    brut de l'issue au palier retenu rendrait la moitie de l'exterieur toujours
+    absente, et la borne du lot nommerait alors un prix affiche.
+    """
+    gardes = set(paliers)
+    return [
+        outcome
+        for outcome in outcomes
+        if outcome.point is not None
+        and (outcome.point if outcome.name == event.home else -outcome.point) in gardes
+    ]
 
 
 #: Ce qui introduit le palier de repli quand l'equilibre tombe en quart. **Ce
@@ -579,7 +654,7 @@ def _spread_pair(
     )
 
 
-def _render_spread_ladder(event: RenderableEvent, outcomes: list[Outcome], label: str) -> list[str]:
+def _render_spread_ladder(event: RenderableEvent, outcomes: list[Outcome], label: str) -> Rendered:
     """`-3.5: 1.65/2.30 | -2.5: 1.88/2.01 | …` — l'echelle des handicaps jeux.
 
     Au tennis, le handicap jeux est un continuum comme un total, et le book en
@@ -598,6 +673,7 @@ def _render_spread_ladder(event: RenderableEvent, outcomes: list[Outcome], label
 
     retained = sorted(by_point, key=lambda point: (abs(point - reference), point))[:TOTALS_KEEP]
     fragments = []
+    ecrits: list[float] = []
     for point in sorted(retained):
         prices = by_point[point]
         home, away = prices.get(event.home), prices.get(event.away)
@@ -605,22 +681,28 @@ def _render_spread_ladder(event: RenderableEvent, outcomes: list[Outcome], label
             continue
         both = f"{price(home) if home else '·'}/{price(away) if away else '·'}"
         fragments.append(f"{_signed(point)}: {both}")
+        ecrits.append(point)
     if not fragments:
         return _render_spreads(event, outcomes, label)
-    return [line(label, " | ".join(fragments))]
+    return [line(label, " | ".join(fragments))], _at_handicaps(event, outcomes, ecrits)
 
 
-def _render_generic(label: str, outcomes: list[Outcome]) -> list[str]:
-    """Repli pour un marche paye mais non modelise : on l'affiche plutot que le perdre."""
+def _render_generic(label: str, outcomes: list[Outcome]) -> Rendered:
+    """Repli pour un marche paye mais non modelise : on l'affiche plutot que le perdre.
+
+    Le repli ne tronque rien — c'est meme sa raison d'etre — donc il imprime
+    tout ce qu'on lui donne.
+    """
     chunks = []
-    for outcome in sorted(outcomes, key=lambda item: item.price):
+    ecrits = sorted(outcomes, key=lambda item: item.price)
+    for outcome in ecrits:
         name = outcome.name
         if outcome.point is not None:
             name = f"{name} {_point(outcome.point)}"
         if outcome.description:
             name = f"{outcome.description} {name}"
         chunks.append(f"{name} {price(outcome.price)}")
-    return _wrap(label, chunks, 4) if chunks else []
+    return (_wrap(label, chunks, 4), list(ecrits)) if chunks else ([], [])
 
 
 #: Ordre d'affichage des marches football, et libelle de chaque ligne.
@@ -727,7 +809,7 @@ def ordered_labels(sport_key: str, keys: Iterable[str]) -> list[str]:
 
 def _render_one(
     event: RenderableEvent, target: str, label: str, outcomes: list[Outcome]
-) -> list[str]:
+) -> Rendered:
     """Rendu dedie d'un marche, ou repli generique s'il n'en a pas."""
     if target in {"h2h", "h2h_s1", "h2h_s2", "to_qualify"}:
         return _render_h2h(event, outcomes, label)
@@ -782,12 +864,19 @@ def _pooled(event: RenderableEvent) -> dict[str, list[Outcome]]:
     return pooled
 
 
-def _render_markets(event: RenderableEvent) -> list[str]:
-    """Rend chaque marche disponible, dans l'ordre, en fusionnant les variantes."""
+def _render_markets(event: RenderableEvent) -> tuple[list[str], list[tuple[str, Outcome]]]:
+    """Rend chaque marche disponible, dans l'ordre, en fusionnant les variantes.
+
+    Rend aussi ce qui a ete **imprime**, chaque issue accompagnee de la cle
+    fusionnee sous laquelle elle s'affiche : c'est cette cle qui donne son
+    libelle a la borne du lot, et une issue annoncee sous `alternate_totals`
+    serait introuvable a l'oeil, la ligne s'appelant `Jeux O/U`.
+    """
     pooled = _pooled(event)
 
     order = MARKET_ORDER_BY_SPORT.get(event.sport_key, MARKET_ORDER)
     rendered: list[str] = []
+    printed: list[tuple[str, Outcome]] = []
     done: set[str] = set()
     for key, label in order:
         target = MERGED_MARKETS.get(key, key)
@@ -795,15 +884,30 @@ def _render_markets(event: RenderableEvent) -> list[str]:
             continue
         done.add(target)
         outcomes = pooled[target]
-        rendered += _with_source(event, _render_one(event, target, label, outcomes), outcomes)
+        rows, ecrits = _render_one(event, target, label, outcomes)
+        rendered += _with_source(event, rows, outcomes)
+        printed += [(target, outcome) for outcome in ecrits]
 
     # Marches payes mais absents du catalogue : rendus en dernier, jamais perdus.
     # Un caractere de moins que la colonne, sinon le libelle touche sa valeur.
     for key in sorted(set(pooled) - done):
-        raw = _render_generic(key[: LABEL_WIDTH - 1], pooled[key])
+        raw, ecrits = _render_generic(key[: LABEL_WIDTH - 1], pooled[key])
         rendered += _with_source(event, raw, pooled[key])
+        printed += [(key, outcome) for outcome in ecrits]
 
-    return rendered
+    return rendered, printed
+
+
+def rendered_outcomes(event: RenderableEvent) -> list[tuple[str, Outcome]]:
+    """Les issues que le bloc **affiche**, avec leur cle de marche fusionnee.
+
+    Seule porte vers ce que le rendu a retenu. `prompt.prices_of` lisait
+    `event.markets`, donc la table `odds` entiere : les bornes du lot et la
+    ligne `Paliers` d'un bloc nommaient alors des cotes qu'aucune ligne ne
+    porte. Voir le commentaire de tete de la section « Rendu des marches » pour
+    la mesure qui l'a fait naitre.
+    """
+    return _render_markets(event)[1]
 
 
 def _with_source(event: RenderableEvent, rows: list[str], outcomes: list[Outcome]) -> list[str]:
@@ -1110,7 +1214,7 @@ def _tiers_line(event: RenderableEvent) -> list[str]:
 
 def _markets_block(event: RenderableEvent, common: Sequence[str] = ()) -> list[str]:
     rows = (
-        _render_markets(event)
+        _render_markets(event)[0]
         + _alert_line(event)
         + _unplayable_line(event, common)
         + _unserved_line(event)

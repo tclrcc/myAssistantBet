@@ -1547,6 +1547,95 @@ def test_chaque_bloc_dit_les_paliers_que_ses_cotes_atteignent(migrated: Settings
     )
 
 
+def _marches_du_bloc(corps: str, bloc: int) -> str:
+    """La section MARCHES d'un bloc, sans son contexte ni les blocs voisins.
+
+    Les bornes du lot et la ligne `Paliers` disent ce qu'on peut aller **lire**
+    dans un bloc : les verifier contre le corps entier laisserait passer une
+    cote qui ne figure que dans une ligne de contexte.
+    """
+    part = corps.split(f"### M{bloc} ", 1)[1].split("\n### ", 1)[0]
+    return part.split("\nMARCHES ", 1)[1]
+
+
+def _lot_a_cote_tronquee(migrated: Settings) -> int:
+    """Un bloc dont la cote la plus haute est **jetee par la troncature**.
+
+    `_render_correct_score` ne garde que les `CORRECT_SCORE_KEEP` cotes les plus
+    basses. Le `3:1` a 5.00 n'atteint donc aucune ligne du bloc — et il est la
+    seule cote du lot a tomber dans la bande GIGA FUN.
+    """
+    session_id = _lot_de(migrated, 1)
+    event = db.query_one("SELECT id FROM events", settings=migrated)
+    scores = [
+        ("1:0", 1.50),
+        ("0:1", 1.60),
+        ("1:1", 1.70),
+        ("2:0", 1.90),
+        ("0:2", 2.00),
+        ("2:1", 2.20),
+        ("1:2", 2.40),
+        ("3:0", 2.60),
+        ("0:3", 2.80),
+        ("2:2", 3.00),
+        ("3:1", 5.00),
+    ]
+    for nom, prix in scores:
+        db.execute(
+            "INSERT INTO odds (event_id, bookmaker, market_key, outcome_name, point, price, "
+            "fetched_at) VALUES (?, 'manual', 'correct_score', ?, NULL, ?, ?)",
+            (int(event["id"]), nom, prix, db.utcnow()),
+            settings=migrated,
+        )
+    return session_id
+
+
+def test_la_borne_du_lot_nomme_une_cote_que_son_bloc_rend(migrated: Settings) -> None:
+    """Mesure du 28/08/2026 : sur les 142 lots archives portant la ligne, **84
+    (59 %) annoncent une borne haute absente du bloc qu'elle nomme**, et 66
+    (46 %) une borne basse. Le prompt 230 disait
+    `501.00 (M3 · Score ex. MT 1:5)` quand M3 ne rendait rien au-dessus de 41.00.
+
+    La cause est une seconde lecture : `prices_of` lisait `event.markets`, donc
+    toute la table `odds`, quand le rendu tronque. Une borne annoncee est faite
+    pour etre **verifiee d'un coup d'oeil** — c'est la raison documentee de son
+    emplacement — et elle ne peut pas nommer une ligne que le bloc ne porte pas.
+    """
+    corps = build_prompt(_lot_a_cote_tronquee(migrated), settings=migrated, now=NOW).body
+
+    haute = re.search(r"Cote max du lot : ([\d.]+) \(M(\d+) ·", corps)
+    basse = re.search(r"Cote min : ([\d.]+) \(M(\d+) ·", corps)
+    assert haute is not None and basse is not None, "le lot porte ses deux bornes"
+    for borne in (haute, basse):
+        marches = _marches_du_bloc(corps, int(borne.group(2)))
+        assert borne.group(1) in marches, (
+            f"{borne.group(1)} est annoncee dans M{borne.group(2)} sans y etre lisible"
+        )
+
+
+def test_un_palier_annonce_est_atteint_par_une_cote_rendue(migrated: Settings) -> None:
+    """Mesure du 28/08/2026 : **145 blocs sur 1 194 (12,1 %) annoncent un palier
+    qu'aucune de leurs cotes rendues n'atteint** — 145 sur 145 sont GIGA FUN et
+    145 sur 145 sont du football, 17,2 % des blocs de football. Le lot du 28/08
+    en portait 4 sur 8.
+
+    C'est le cout exact que `TierScope` existe pour supprimer, reste au niveau du
+    bloc : une recherche envoyee dans une bande vide, puis une ligne d'excuse
+    pour un palier que le bloc rendait impossible. Aucune selection n'a pu y etre
+    prise — 0 sur 370 — parce qu'aucune cote n'y etait copiable.
+    """
+    corps = build_prompt(_lot_a_cote_tronquee(migrated), settings=migrated, now=NOW).body
+
+    bloc = _marches_du_bloc(corps, 1).split("Paliers", 1)[1].split("\n", 1)[0]
+    lot = corps.split("Paliers présents dans ce lot : ", 1)[1].split(".", 1)[0]
+    assert "ULTRA FUN" in bloc and "ULTRA FUN" in lot, (
+        "le palier que le bloc rend vraiment doit rester annonce — sans quoi ce "
+        "test passerait pour une ligne disparue"
+    )
+    assert "GIGA FUN" not in bloc, "un palier que seule une cote tronquee atteint"
+    assert "GIGA FUN" not in lot, "et le lot le reprend de ses blocs"
+
+
 def test_un_palier_hors_du_lot_ne_se_commente_pas(migrated: Settings) -> None:
     """La consigne « un palier vide se commente » ne porte plus que sur les
     paliers reellement proposes : ailleurs, elle reclamait une excuse."""

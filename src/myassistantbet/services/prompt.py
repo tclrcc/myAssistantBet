@@ -42,9 +42,11 @@ from .render import (
     common_unplayable,
     estimate_tokens,
     handicap_alert,
+    is_price,
     market_label,
     ordered_labels,
     render_event,
+    rendered_outcomes,
     unplayable_markets,
 )
 from .research import sheet as research_sheet
@@ -321,21 +323,56 @@ def _outcome_text(outcome: Outcome) -> str:
 
 
 def prices_of(event: RenderableEvent) -> list[Price]:
-    """Toutes les cotes d'un bloc, dans l'ordre croissant.
+    """Les cotes que le bloc **affiche**, dans l'ordre croissant.
 
     Le marche est nomme par son **libelle fusionne**, celui qu'affiche le bloc :
     une cote annoncee sous `alternate_totals` serait introuvable a l'oeil, la
     ligne s'appelant `Jeux O/U`.
+
+    **Ce que ce bloc rend, et non ce que la base porte.** La fonction lisait
+    `event.markets`, c'est-a-dire toutes les lignes de `odds` — quand le rendu
+    tronque a dix scores exacts, cinq lignes O/U, un palier de handicap et le
+    seul Over de chaque equipe. Les deux consommateurs annoncaient donc des
+    cotes que personne ne peut aller lire :
+
+    · la **borne du lot** est faite pour se verifier d'un coup d'oeil, et c'est
+      la raison documentee de son emplacement (`Price.label`). Mesure du
+      28/08/2026 sur les 142 lots archives qui la portent : 84 (59 %) nommaient
+      une cote haute absente de leur propre bloc, 66 (46 %) une cote basse. Le
+      prompt 230 annoncait `501.00 (M3 · Score ex. MT 1:5)` quand M3 ne rendait
+      rien au-dessus de 41.00 ;
+    · la ligne **`Paliers`** d'un bloc envoyait chercher dans une bande vide.
+      145 blocs sur 1 194 (12,1 %) annoncaient un palier qu'aucune de leurs
+      cotes rendues n'atteint — 145 sur 145 GIGA FUN, 145 sur 145 du football,
+      soit 17,2 % des blocs de football. C'est le cout exact que `TierScope`
+      existe pour supprimer, reste un cran plus bas que lui.
+
+    **Aucune selection n'a pu etre prise dessus, et c'est mesure** : 0 sur 370
+    rattachees a leur bloc, dont 35 blocs fantomes qui portaient pourtant une
+    selection. On ne recopie pas un prix invisible. Ce qui se paie est une
+    recherche envoyee dans une bande vide, puis une ligne d'excuse pour un
+    palier que le bloc rendait impossible.
+
+    **La liste du lot, elle, n'a jamais bouge** — 0 desaccord sur 142 — les
+    cotes tronquees tombant dans des bandes que d'autres cotes visibles
+    atteignent deja. L'invariant devient vrai par construction plutot que par
+    chance ; les quotas et la section C-bis ne changent pas.
+
+    Le filtre `is_price` n'est pas la troncature : 1.00 **est** imprime, 52 fois
+    sur les 51 892 cotes rendues du corpus, dans une echelle O/U qui montre ses
+    deux cotes. Ce n'est pas pour autant une cote — c'est un taux implicite d'au
+    moins 100 %, et `add_pick` la refuse. Une borne ne peut pas nommer un prix
+    qu'aucune selection ne pourrait porter.
     """
     found = [
         Price(
             value=float(outcome.price),
             block=event.index,
-            market=market_label(event.sport_key, MERGED_MARKETS.get(key, key)),
+            market=market_label(event.sport_key, key),
             outcome=_outcome_text(outcome),
         )
-        for key, outcomes in event.markets.items()
-        for outcome in outcomes
+        for key, outcome in rendered_outcomes(event)
+        if is_price(outcome.price)
     ]
     return sorted(found, key=lambda price: price.value)
 
