@@ -521,6 +521,37 @@ Le corollaire de forme, quand la derivation est possible : **supprimer la copie
 plutot que la corriger**. C'est ce qui separe le message de demarrage des deux
 autres — les deux docstrings ont ete reecrits, celui-la a cesse d'exister.
 
+#### Et il en existe une seconde espece : l'affirmation qui empeche de regarder
+
+**Distinguee le 28/08/2026, sur la sixieme occurrence, parce qu'elle ne se
+repare pas comme les cinq precedentes.**
+
+Les cinq premieres sont des **copies qui divergent** : deux ecritures d'un meme
+etat, justes au depart, separees par un changement qui n'a touche que l'une des
+deux. Le remede est celui ci-dessus — deriver, ou lister.
+
+La sixieme n'a pas de seconde ecriture. `db.scratch_copy()` annoncait une copie
+« **jetable** » et **rien n'a jamais jete** : la phrase n'a pas vieilli, elle
+etait fausse le premier jour. Ce n'est pas une copie qui derive, c'est une
+affirmation qui **remplace la verification**.
+
+- **Le degat n'est pas qu'elle soit fausse, c'est qu'elle rassure.** Sans le mot
+  « jetable », quelqu'un aurait fini par se demander qui nettoie ; avec lui, on
+  lit, on croit, et l'etape de verification saute entierement. Elle a tenu une
+  semaine, et ce qui l'a fait tomber n'est pas une relecture mais un tmpfs
+  sature.
+- **C'est le defaut caracteristique du projet applique a la prose** : la phrase
+  rend la meme sortie — un lecteur rassure — que le comportement soit la ou non.
+- **Elle ne se derive pas**, et c'est ce qui la separe des cinq autres : il n'y a
+  aucun etat dont la deriver, seulement un comportement a ecrire. Son remede est
+  donc un **test**, jamais une reformulation.
+
+> **La question a se poser en ecrivant un docstring** : *cette phrase decrit-elle
+> ce que le code fait, ou ce que j'ai l'intention qu'il fasse ?* La seconde
+> s'ecrit au futur ou ne s'ecrit pas. Un adjectif qui promet un comportement —
+> « jetable », « idempotent », « borne », « thread-safe » — est une assertion
+> deguisee, et elle se pose dans le banc avant de se poser dans la prose.
+
 ### Un controle de doublon ne prouve rien sur l'entite qu'on croit compter
 
 **Huitieme occurrence, le 27/08/2026, et la premiere trouvee sur un controle que
