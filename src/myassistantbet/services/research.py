@@ -36,6 +36,7 @@ from ..config import Settings, get_settings
 from ..db import connect
 from . import context as context_service
 from .context import CAUSE_LABELS, CAUSE_NOT_COVERED, COLLECTION_FAULTS, NEUTRAL_MARK
+from .dossier import COACH_DIVERGENCE_MARK
 from .labels import affiche, context_family, expected_context, sort_key
 from .render import MERGED_MARKETS, RenderableEvent
 from .session import context_density
@@ -334,6 +335,7 @@ def _dossier(event: RenderableEvent, settings: Settings) -> Dossier:
     item.reasons += _weather_reasons(lignes)
     item.reasons += _squad_reasons(lignes)
     item.reasons += _rotation_reasons(lignes)
+    item.reasons += _coach_reasons(lignes)
     item.reasons += _tennis_reasons(event, lignes, settings)
     item.reasons += _market_reasons(event)
     item.links = _links(event)
@@ -626,6 +628,77 @@ def _rotation_reasons(lignes: dict[str, str]) -> list[Reason]:
             WEAK,
             f"prochain match dans {min(jours)}j",
             "Une rotation a-t-elle ete annoncee en conference de presse ?",
+        )
+    ]
+
+
+def _coach_reasons(lignes: dict[str, str]) -> list[Reason]:
+    """Deux sources nomment deux entraineurs, et le bloc n'en tire rien.
+
+    **C'etait le meilleur candidat du lot du 28/08 et il n'avait aucun critere.**
+    M2 portait une **double** divergence — Milojevic contre Slutski, Tang contre
+    Han — et ne figurait pas dans la fiche, quand quatre blocs y etaient sur la
+    seule presence d'une ligne « Effectif ».
+
+    Ce qu'elle coute depasse la ligne : un entraineur qui n'est peut-etre plus en
+    poste rend suspectes **trois autres lignes du meme bloc** — « Forme 5 »,
+    « Formations » et « xG » decrivent une equipe sous une direction dont on ne
+    sait pas si elle est la. Et le mode d'emploi du bloc dit lui-meme que la
+    conference de presse tranche en une requete : rendement eleve, une seule
+    recherche.
+
+    ## Le taux, et il faut le lire avec sa population
+
+    Mesure du 28/08/2026 sur les blocs de football archives, **depuis le
+    correctif du nom complet** (`f0e500a`, 21/08) : avant lui la comparaison
+    opposait un nom abrege a un nom entier, les mentions d'incertitude tombaient
+    de 71 a 6, et le taux d'avant ne decrit pas la meme population.
+
+    | | blocs | part |
+    | --- | ---: | ---: |
+    | au moins une divergence | 87 / 335 | **26,0 %** |
+    | dont sur un bloc qu'aucun critere actuel ne designe | 33 | 9,9 % |
+    | divergence **double** | 19 | 5,7 % |
+
+    **26 % est large, et c'est la meme largeur que `_squad_reasons`** (26,0 %) ou
+    `_rotation_reasons` (30,7 %) — exactement le reproche fait aux deux criteres
+    faibles. Deux choses l'en separent, et aucune n'est le taux :
+
+    · il ne tire pas sur la **presence d'une ligne** mais sur un **conflit
+      nomme** entre deux sources. La ligne « Effectif » parait des que des
+      feuilles ont ete lues ; celle-ci ne parait que quand elles se contredisent ;
+    · il ouvre un dossier sur **33 blocs (9,9 %) qui n'en ont aucun aujourd'hui**,
+      donc le « aucun critere » du lot tombe de 54,0 % a 44,2 %.
+
+    ## Pourquoi le poids ne distingue pas la simple de la double
+
+    Une divergence sur les deux equipes rend suspects les agregats **des deux
+    cotes**, donc la comparaison entiere, et le motif le dit. Mais la peser plus
+    haut serait **regler un poids sur son propre exemple** — le lot qui a souleve
+    la question portait justement une double — et c'est la faute que ce module a
+    deja payee deux fois. `MEDIUM` dans les deux cas, comme le terrain neutre et
+    l'alerte meteo.
+
+    **Porte laissee ouverte et datee** : si 26 % se revele trop large sur deux ou
+    trois lots, le resserrement sur la seule double est une decision d'une ligne,
+    et sa mesure est deja prise — 5,7 %, dont 3,3 % sans aucun autre critere.
+
+    La mention se relit **sur la ligne rendue**, comme `_rotation_reasons` relit
+    « dans 3j » : la fiche ne recalcule rien de ce que le bloc a deja ecrit, et
+    `COACH_DIVERGENCE_MARK` est partage avec `dossier` plutot que recopie.
+    """
+    valeur = lignes.get("Entraineur") or ""
+    touchees = valeur.count(COACH_DIVERGENCE_MARK)
+    if not touchees:
+        return []
+    portee = "les deux equipes" if touchees >= 2 else "une equipe"
+    return [
+        Reason(
+            MEDIUM,
+            f"divergence d'entraineur sur {portee}",
+            "Qui dirige reellement l'equipe le jour du match ? La conference de presse "
+            "d'avant-match tranche — et si l'entraineur a change, la forme, les "
+            "formations et l'xG du bloc decrivent une autre equipe.",
         )
     ]
 

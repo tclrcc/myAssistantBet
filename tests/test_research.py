@@ -331,6 +331,128 @@ def test_chaque_critere_emet_sa_question(migrated: Settings) -> None:
     assert any("rotation" in q for q in questions), "le match rapproche"
 
 
+def test_une_divergence_d_entraineur_ouvre_un_dossier(migrated: Settings) -> None:
+    """**Le meilleur candidat du lot du 28/08, et il n'avait aucun critere.**
+
+    Sur ce lot, M2 portait une **double** divergence — Milojevic contre Slutski,
+    Tang contre Han — et n'etait pas dans la fiche, quand quatre blocs y
+    figuraient sur la seule presence d'une ligne « Effectif ». Un entraineur qui
+    n'est peut-etre plus en poste rend suspectes trois lignes du meme bloc :
+    « Forme 5 », « Formations » et « xG » decrivent une equipe sous une direction
+    dont on ne sait pas si elle est la.
+
+    **Aucune porte fermee derriere**, contrairement a la meteo, et le mode
+    d'emploi du bloc dit lui-meme que la conference de presse tranche en une
+    requete.
+
+    Taux mesure le 28/08/2026 sur les 335 blocs de football rendus **depuis le
+    correctif du nom complet** (`f0e500a`, 21/08 — avant lui la comparaison
+    portait un nom abrege contre un nom entier, et le taux ne decrit pas la meme
+    population) : **87 blocs, 26,0 %**. Dont **33 (9,9 %) sur un bloc qu'aucun
+    critere actuel ne designe** — le « aucun critere » du lot tombe de 54,0 % a
+    44,2 %.
+    """
+    from myassistantbet.services.dossier import COACH_DIVERGENCE_MARK
+
+    _en_base(migrated, 610, 1)
+    # **Un bloc dense, et c'est indispensable** : sur un bloc pauvre le dossier
+    # s'ouvrirait sur la densite, et ce banc passerait le jour ou le critere
+    # disparait. Meme piege que `_dense("tennis")` sans `Ici` ni `Service`.
+    contexte = [
+        *_dense(),
+        (
+            "Entraineur",
+            f"Club 1 feuille du 22/08 : Vladan Milojevic | fiche : Leonid Slutski "
+            f"— {COACH_DIVERGENCE_MARK}",
+        ),
+    ]
+
+    fiche = research.sheet(
+        [_event(1, 610, context=contexte)] + [_event(i) for i in range(2, 22)], migrated
+    )
+
+    assert fiche.dossiers, "une divergence d'entraineur vaut un dossier"
+    assert fiche.dossiers[0].index == 1
+    assert any("dirige" in question for question in fiche.dossiers[0].questions), (
+        "la question porte sur qui est en poste, pas sur ce que le bloc nomme deja"
+    )
+
+
+def test_une_divergence_d_entraineur_passe_devant_un_critere_faible(
+    migrated: Settings,
+) -> None:
+    """C'est l'effet mesure, et c'est lui qui justifie le poids.
+
+    Un bloc dont la seule piste est une ligne « Effectif » — une piste datee qui
+    peut n'etre qu'une rotation — ne vaut pas un bloc ou deux sources nomment
+    deux entraineurs differents. Sur le lot du 28/08 les quatre dossiers
+    proposes venaient tous du premier cas, et le second n'y figurait pas.
+    """
+    from myassistantbet.services.dossier import COACH_DIVERGENCE_MARK
+
+    _en_base(migrated, 611, 1)
+    _en_base(migrated, 612, 2)
+    divergent = _event(
+        1,
+        611,
+        context=[
+            *_dense(),
+            (
+                "Entraineur",
+                f"Club 1 feuille du 22/08 : A B | fiche : C D — {COACH_DIVERGENCE_MARK}",
+            ),
+        ],
+    )
+    faible = _event(2, 612, context=[*_dense(), ("Effectif", "Tzur, plus vu depuis le 23/07")])
+
+    fiche = research.sheet([divergent, faible] + [_event(i) for i in range(3, 22)], migrated)
+
+    assert [dossier.index for dossier in fiche.dossiers][:2] == [1, 2]
+
+
+def test_la_divergence_double_se_dit_sans_changer_de_poids(migrated: Settings) -> None:
+    """**Le motif nomme l'etendue, le poids ne bouge pas.**
+
+    Une divergence sur les deux equipes rend suspects les agregats des deux
+    cotes, donc la comparaison entiere — et le chercheur doit savoir qu'il a deux
+    conferences de presse a lire, pas une. Mais **regler le poids dessus serait
+    le regler sur son propre exemple**, la faute deja payee deux fois : le lot
+    qui a souleve la question portait justement une double divergence.
+
+    La mesure du cas etroit est prise et datee, pour que le resserrement soit une
+    decision d'une ligne le jour ou 26 % se revele trop large : **19 blocs sur
+    335, soit 5,7 %**, dont 11 (3,3 %) sans aucun autre critere.
+    """
+    from myassistantbet.services.dossier import COACH_DIVERGENCE_MARK
+
+    _en_base(migrated, 613, 1)
+    _en_base(migrated, 614, 2)
+    marque = COACH_DIVERGENCE_MARK
+    double = _event(
+        1,
+        613,
+        context=[
+            *_dense(),
+            (
+                "Entraineur",
+                f"Club 1 f : A | fiche : B — {marque} | Adv 1 f : C | fiche : D — {marque}",
+            ),
+        ],
+    )
+    simple = _event(
+        2, 614, context=[*_dense(), ("Entraineur", f"Club 2 f : A | fiche : B — {marque}")]
+    )
+
+    fiche = research.sheet([double, simple] + [_event(i) for i in range(3, 22)], migrated)
+    par_bloc = {dossier.index: dossier for dossier in fiche.dossiers}
+
+    motifs = {cle: " ".join(r.motif for r in val.reasons) for cle, val in par_bloc.items()}
+
+    assert par_bloc[1].score == par_bloc[2].score, "meme poids"
+    assert "deux" in motifs[1], "le motif dit que les deux equipes sont touchees"
+    assert "deux" not in motifs[2]
+
+
 def test_les_questions_ne_se_repetent_pas(migrated: Settings) -> None:
     """Deux criteres peuvent viser la meme verification."""
     _en_base(migrated, 602, 1)

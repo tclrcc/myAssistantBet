@@ -963,8 +963,21 @@ def _coach_fragment(
         # une recherche possible. L'anciennete, elle, ne vient que de la fiche.
         complet = f"{vu} ({tenure})" if tenure else str(vu)
         return f"{team} {complet} — feuille du {quand}, apparié sur l'initiale du prénom"
-    return f"{team} feuille du {quand} : {vu} | fiche : {fiche} — divergence"
+    return f"{team} feuille du {quand} : {vu} | fiche : {fiche} — {COACH_DIVERGENCE_MARK}"
 
+
+#: La mention qui dit que les deux sources ne nomment pas le meme homme.
+#:
+#: **Une constante et non un litteral recopie**, meme regle que `NEUTRAL_MARK` et
+#: `weather.ALERT_MARK` : `research._coach_reasons` la relit pour ouvrir un
+#: dossier, et deux ecritures auraient fini par ne plus designer la meme
+#: mention — le critere se serait tu sans qu'aucun test ne bronche, exactement le
+#: defaut caracteristique du projet.
+#:
+#: Elle se relit **sur la ligne rendue** et non sur `_coach_match`, comme
+#: `_rotation_reasons` relit « dans 3j » sur `Calendrier` : la fiche de recherche
+#: ne recalcule rien de ce que le bloc a deja ecrit.
+COACH_DIVERGENCE_MARK = "divergence"
 
 #: Les deux sources nomment le meme homme, et c'est etabli — identifiant, ou
 #: libelles identiques une fois casse et accents replies.
