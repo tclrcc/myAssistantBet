@@ -593,6 +593,65 @@ recouvrent, se doublent ou se contredisent est le prealable, et il n'a pas ete
 fait. **Ne pas relever les plafonds pour faire passer quoi que ce soit** : ici le
 nombre n'est pas faux, c'est sa portee qui est vide.
 
+## C.24 — « Une seule selection par match, tous tableaux confondus » : trois lectures, et aucune n'est celle qui s'applique
+
+**Ouvert le 28/08/2026, non instruit, a prendre au prochain lot de gabarit.**
+
+Le defaut 4 a retire une des deux ecritures de la regle « une selection par
+match ». Il en reste **deux** : celle de la section C, qualifiee par son
+exception, et celle de la section C-bis, en gras et sans exception :
+
+    Contraintes qui ne tombent pas : **une seule selection par match, tous
+    tableaux confondus** — un match retenu en section C ne peut pas reparaitre
+    ici.
+
+Lu seul, le gras contredit une permission situee **quatre-vingts lignes plus
+haut**, celle que le defaut 4 vient justement de rendre explicite. Un lecteur qui
+commence par C-bis en conclut que deux lignes ne sont jamais permises. L'em-dash
+qui suit dit autre chose, plus etroit — et c'est lui qui decrit le code.
+
+**La question a instruire n'est pas la formulation, c'est la regle.** Les deux
+lectures ne sont pas la meme :
+
+- « une seule selection par match, tous tableaux confondus » interdit deux lignes
+  partout ;
+- « pas de C-bis sur un match deja pris en C » autorise deux lignes en C et
+  interdit le melange.
+
+**Et le code n'applique exactement ni l'une ni l'autre.** Deux ecrivains, deux
+portees :
+
+| | ou | portee | ce qu'il applique |
+| --- | --- | --- | --- |
+| `history.add_pick` | service | **la session, en base** | une seconde ligne sur un match exige une note d'independance |
+| `picks_import` (`ingestion.DUPLICATE`) | import | **le collage courant** | une ligne C-bis est refusee sur un match deja pris en C *dans ce collage* |
+
+`principaux` se construit sur les lignes du collage en cours, jamais sur la base.
+Deux imports d'une meme session ne se voient donc pas.
+
+**Mesure sur la base servie : 4 matchs portent une ligne en C et une en C-bis**,
+tous posterieurs a la livraison de la regle (17/08/2026), tous en deux imports
+d'une meme session — 856 (session 18, 11:07 puis 22:14), 918, 935 et 989
+(session 20, ~12:50 puis ~16:20). Dans les quatre, la ligne arrivee en second
+porte sa note d'independance : `add_pick` a bien mordu, la regle C-bis non.
+
+Comptes voisins pour situer : 9 matchs portent deux lignes en section C — le
+comportement voulu — et **0** porte deux lignes en C-bis.
+
+Ce qui reste a decider, et c'est une decision de regle avant d'etre une
+correction de texte :
+
+1. laquelle des deux lectures est voulue ;
+2. si c'est la seconde, le gras doit cesser d'affirmer la premiere ;
+3. si la regle doit valoir sur la session et non sur le collage, elle appartient
+   a `add_pick` — seul ecrivain qui voie la base — et `picks_import` cesse d'en
+   porter une version plus etroite. **Deux ecritures d'une meme regle, dont une
+   seule voit la base**, sont la forme que ce projet documente ailleurs sous
+   « une seconde copie qu'aucun mecanisme n'oblige a concorder ».
+
+Rien n'a ete touche : elargir le perimetre en fin de lot rendrait le rejeu des
+quatre defauts illisible.
+
 ## C.21 — Ce qui reste ouvert et n'a pas ete instruit
 
 - **Phase 4** — le generateur de prompts : variables injectees non utilisees,
