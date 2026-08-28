@@ -15,6 +15,7 @@ from myassistantbet.main import app
 from myassistantbet.providers.oddsapi import BASE_URL
 from myassistantbet.services import board as board_service
 from myassistantbet.services import session as session_service
+from myassistantbet.services.labels import expected_context
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.scan import active_competitions
 
@@ -478,9 +479,13 @@ def test_la_shortlist_affiche_la_densite(client: TestClient, isolated_settings: 
     page = " ".join(client.get(f"/session/{session_id}").text.split())
 
     assert "<th>Contexte</th>" in page
-    # 26 : « Lieu » a cesse d'etre conditionnelle, et « Arbitre » l'a rejointe —
-    # servie sur 209 des 210 matchs d'une saison de Conference League.
-    assert "0/26" in page
+    # **Le denominateur se derive du referentiel, il ne se recopie pas.** Ecrit
+    # en dur, il valait 26 et l'entree d'une ligne l'a fait tomber : une
+    # assertion qui casse en n'apprenant rien d'autre que « il faut recopier la
+    # nouvelle sortie » decrit au lieu de contraindre. Ce qui doit etre vrai est
+    # qu'un bloc sans aucun contexte affiche **zero sur le referentiel de son
+    # sport**.
+    assert f"0/{len(expected_context('football'))}" in page
 
 
 def test_un_enrichissement_vide_est_annonce(

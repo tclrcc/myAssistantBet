@@ -1176,6 +1176,79 @@ def _goals_fragment(
     return fragment if from_season == season else f"{fragment} ({from_season})"
 
 
+def _halftime_fragment(
+    team: str, history: tuple[list[dict[str, Any]], int] | None, season: int
+) -> str:
+    """`Estoril mene 11/34, >1.5 13/34` — ce que l'equipe fait avant la pause.
+
+    **La donnee dormait en base depuis l'origine du module.** `_summarize` garde
+    `score.halftime` de chaque match — 24 740 releves, 99,1 % des matchs joues —
+    et rien ne le lisait. En face, quatre marches de mi-temps sont achetes et
+    rendus sur la moitie des blocs : mesure du 28/08/2026, **136 blocs sur 213
+    portaient un marche de mi-temps sans aucune ligne de contexte de mi-temps**.
+
+    **Ce n'est pas un doublon de « 1re MT », et les deux grandeurs sont
+    mesurees.** Celle-la donne la **part des buts** tombes avant la pause —
+    denominateur des buts — quand celle-ci donne une **frequence de match**. Leur
+    correlation vaut 0,16 sur les 508 equipes a dix matchs ou plus : elles ne
+    disent pas la meme chose. Meme distinction que « Total buts » et « Buts
+    marq. », que le gabarit separe deja. Et la population differe autant que la
+    grandeur : « 1re MT » sort de `/teams/statistics`, scope a une competition et
+    garde a `SEASON_MIN_MATCHES`, donc sur un tiers des blocs ; celle-ci sort du
+    meme historique que « Total buts », donc sur 99,3 % d'entre eux.
+
+    **Deux grandeurs, et chacune a gagne sa place separement** — le classement se
+    fait par decomposition de variance, calibree contre les lignes **deja
+    livrees** et non contre un seuil invente :
+
+      · `mene` porte 47 % de signal pour `sd = 0,075`, ce qui le place entre
+        « Clean sheet » et « Total buts >2.5 ». Il vise `MT/FT` et le 1N2 de
+        mi-temps ;
+      · `>1.5` porte 30 % pour `sd = 0,053`, au-dessus du plancher que la
+        production etablit — « Total buts BTTS », a 24 % et `sd = 0,048`. Il vise
+        `totals_h1`, dont la ligne 1.5 est la plus servie de la base.
+
+    Les deux sont **orthogonaux** (r = 0,20), donc la seconde n'est pas la
+    premiere sous un autre nom.
+
+    Trois candidates ont ete ecartees, et une methode avec. `BTTS MT` (21 %,
+    `sd = 0,036`), `>0.5 MT` (20 %, 0,037) et `fige MT` (19 %, 0,033) tombent
+    **sous** le plancher de la production. Un premier classement par ratio de
+    deciles donnait l'inverse — il monte mecaniquement quand `p` est petit, et
+    85 % de la dispersion de `BTTS MT` n'est que du bruit d'echantillonnage sur
+    dix a quarante matchs.
+
+    Le denominateur est celui des matchs **dont le score a la pause est connu**,
+    et il peut donc differer de celui de « Total buts ». En pratique il ne differe
+    pas : 605 releves d'equipe sur 606 le portent sur tous leurs matchs. Il est
+    ecrit dans la ligne, donc l'ecart se verrait.
+    """
+    if history is None:
+        return ""
+    matches, from_season = history
+    connus = [match for match in matches if match.get("halftime")]
+    if not connus:
+        return ""
+    mene = sum(1 for match in connus if _leads_at_half(match))
+    over = sum(1 for match in connus if sum(match["halftime"]) > 1.5)
+    total = len(connus)
+    fragment = f"{team} mene {mene}/{total}, >1.5 {over}/{total}"
+    return fragment if from_season == season else f"{fragment} ({from_season})"
+
+
+def _leads_at_half(match: dict[str, Any]) -> bool:
+    """Vrai si l'equipe du dossier menait a la pause, du bon cote du score.
+
+    Ecrit a part et **jamais recopie** : `at_home` decide quelle moitie du score
+    est la notre, et une seconde ecriture de ce test rendrait la ligne inverse sur
+    l'un des deux camps sans que rien ne casse — le pire defaut que ce bloc
+    puisse produire, et le projet l'a deja paye sur le signe du handicap.
+    """
+    home, away = match["halftime"]
+    ours, theirs = (home, away) if match.get("at_home") else (away, home)
+    return ours > theirs
+
+
 def _streak_fragment(
     team: str, history: tuple[list[dict[str, Any]], int] | None, season: int
 ) -> str:
@@ -1439,6 +1512,15 @@ def dossier_lines(
             (
                 _goals_fragment(home, home_history, season or 0),
                 _goals_fragment(away, away_history, season or 0),
+            ),
+        ),
+        (
+            # Juste apres « Total buts », dont elle est le pendant de mi-temps :
+            # meme historique, meme fenetre, meme idiome de fraction.
+            "A la pause",
+            (
+                _halftime_fragment(home, home_history, season or 0),
+                _halftime_fragment(away, away_history, season or 0),
             ),
         ),
         (

@@ -1034,12 +1034,19 @@ pourcentages ni moyennes :
     pourcentage invite à diviser par une cote. Une part de ballon ne se rapporte
     à aucun marché. Elle dit qui subit.
 
-Trois lignes viennent de l'historique de saison, **toutes compétitions
+{% if 'A la pause' in context_labels %}Quatre{% else %}Trois{% endif %} lignes viennent de l'historique de saison, **toutes compétitions
 confondues** et non de la seule compétition du jour :
 
   · **« Total buts »** — les buts **du match, les deux équipes réunies**, à ne
     pas confondre avec « Buts marq. », qui ne compte que ceux de l'équipe.
     `>2.5 23/36` = 23 de ses 36 matchs. Scores retenus **à 90 minutes**.
+{% if 'A la pause' in context_labels %}  · **« A la pause »** — dans combien de matchs l'équipe **menait** à la pause,
+    et dans combien il s'y était marqué plus de 1,5 but. C'est une **fréquence de
+    match**, là où « 1re MT » donne une **part des buts** : une équipe qui marque
+    les trois quarts de ses buts avant la pause peut n'avoir mené que trois fois.
+    Elle éclaire les quatre marchés de mi-temps — `MT O/U`, `BTTS MT`, `MT/FT`,
+    `Score ex. MT` — que rien d'autre du bloc ne décrit.
+{% endif %}
   · **« Série »** — la série **en cours**, à 90 minutes, jamais le record de la
     saison. Deux raisons de ne pas la voir, distinctes : moins de deux matchs,
     et un résultat isolé n'est pas une série ; ou un `(2025)` sur « Total buts »,

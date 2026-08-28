@@ -552,7 +552,8 @@ def test_la_ligne_densite_porte_le_motif_de_l_echec(migrated: Settings) -> None:
     event = session_service.renderable_events(session_id, migrated, NOW)[0]
     lignes = dict(event.context_lines)
 
-    assert "0/26 ligne" in lignes["Densite"]
+    # Derive du referentiel, jamais recopie : voir le meme banc cote routes.
+    assert f"0/{len(labels.expected_context('football'))} ligne" in lignes["Densite"]
     assert "n'est rattachée à aucune source de contexte" in lignes["Densite"]
 
 

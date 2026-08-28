@@ -83,6 +83,13 @@ CONTEXT_ICONS = {
     # Les deux fenetres d'une meme repartition : meme pictogramme, la valeur
     # ecrit laquelle.
     "Buts tard.": "chrono",
+    # Ce que l'equipe fait **avant la pause**, en frequence de match. Meme chrono
+    # que les deux fenetres ci-dessus : les trois lignes parlent du **moment**,
+    # et c'est ce qui les separe des autres lignes de buts. Elle entre ici **le
+    # jour ou elle est ecrite** — huit libelles ont deja sorti sans pictogramme,
+    # releves en rendant 250 evenements reels, et la colonne se vidait sans rien
+    # dire.
+    "A la pause": "chrono",
     # Le rapprochement se fait sur le premier mot : « Cartons tps » heriterait
     # sinon du pictogramme de « Cartons », alors que la ligne dit *quand* ils
     # tombent et non combien.
@@ -240,6 +247,12 @@ CONTEXT_EXPECTED: dict[str, tuple[str, ...]] = {
         "xG",
         "Entraineur",
         "Total buts",
+        # Elle sort de l'historique de saison, comme « Total buts », donc sur la
+        # meme population : 99,3 % des blocs du regime courant. Systematique,
+        # donc au referentiel — l'exclure sous-estimerait la densite d'un bloc
+        # complet, meme raison que « Lieu ». Le denominateur football passe de 26
+        # a 27.
+        "A la pause",
         "Serie",
         "Calendrier",
     ),

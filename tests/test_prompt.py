@@ -877,6 +877,42 @@ async def test_le_palier_se_lit_sur_la_cote_seule(
     assert "la confiance a déjà son propre axe" in plat
 
 
+def test_le_compte_des_lignes_d_historique_suit_ce_qui_est_documente() -> None:
+    """« Quatre lignes viennent de l'historique de saison » — et il faut qu'il y
+    en ait quatre.
+
+    **Le compte est du texte, donc il ne casse rien quand il ment.** Une ligne
+    ajoutee au paragraphe sans que le nombre suive laisse une phrase fausse a
+    l'endroit meme ou l'on vient de gagner en justesse : c'est le defaut que le
+    projet a deja paye sur le preambule de `Serie`, et la regle qui en sort est
+    que toute condition ajoutee a une ligne se verifie contre la phrase qui
+    l'explique.
+
+    Le banc compare donc le nombre **annonce** au nombre de puces reellement
+    documentees dans ce paragraphe, dans les deux branches de la porte.
+    """
+    import re
+
+    from myassistantbet.services.prompt import DEFAULT_TEMPLATE, TEMPLATES_DIR
+
+    texte = (TEMPLATES_DIR / DEFAULT_TEMPLATE).read_text(encoding="utf-8")
+    debut = texte.index("lignes viennent de l'historique de saison")
+    fin = texte.index("Une année entre parenthèses", debut)
+    section = texte[debut:fin]
+
+    mots = {"Trois": 3, "Quatre": 4, "Cinq": 5}
+    annonce = re.search(r"\{% if '([^']+)' in context_labels %\}(\w+)\{% else %\}(\w+)", texte)
+    assert annonce, "le compte doit rester garde par la ligne qui le fait varier"
+    garde, avec, sans = annonce.group(1), mots[annonce.group(2)], mots[annonce.group(3)]
+
+    puces = re.findall(r"· \*\*« ([^»]+) »\*\*", section)
+    gardees = re.findall(r"\{% if '([^']+)' in context_labels %\}  · \*\*« ", section)
+
+    assert len(puces) == avec, f"{avec} annoncees, {len(puces)} documentees : {puces}"
+    assert len(puces) - len(gardees) == sans, "le compte sans la ligne gardee doit tomber juste"
+    assert garde in gardees, f"« {garde} » compte pour une puce mais n'en garde aucune"
+
+
 def test_chaque_porte_du_preambule_vise_un_libelle_qui_existe() -> None:
     """Le preambule ne documente que les lignes **presentes dans le lot**, par des
     conditions du genre `{% if 'Buteurs' in context_labels %}`.

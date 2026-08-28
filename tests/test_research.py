@@ -20,6 +20,7 @@ from myassistantbet.services import context as context_service
 from myassistantbet.services import prompt as prompt_service
 from myassistantbet.services import research
 from myassistantbet.services.context import KIND_H2H, KIND_TEAMS, store
+from myassistantbet.services.labels import expected_context
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import build_prompt
 from myassistantbet.services.render import RenderableEvent
@@ -32,46 +33,39 @@ COUP_ENVOI = datetime(2026, 8, 13, 20, 0, tzinfo=PARIS)
 LEAGUE = 113
 
 
-#: Assez de lignes pour depasser le seuil de densite : un evenement de
-#: remplissage ne doit pas se retrouver dans la fiche pour un bloc vide.
-REMPLI = {
-    "football": [
-        "Classement",
-        "Enjeu",
-        "Forme 5",
-        "Dom/Ext",
-        "H2H",
-        "Absents",
-        "Repos",
-        "Buts marq.",
-        "Buts pris",
-        "Clean sheet",
-        "1re MT",
-        "Cartons tps",
-        "Formations",
-    ],
-    # **Un bloc « dense » doit l'etre vraiment.** `Ici` et `Service` y manquaient,
-    # et ces deux-la sont rendues sur 79 % des blocs de tennis reels : le montage
-    # decrivait donc un etat que la production atteint une fois sur cinq, et les
-    # criteres d'absence s'y declenchaient sur tout le lot. Meme piege que la
-    # forme canonique d'une selection posee sur un match deja commence.
-    "tennis": [
-        "Elo",
-        "Surface",
-        "Forme",
-        "Profil",
-        "Marge",
-        "Niveau adv.",
-        "Usure",
-        "Precedent",
-        "Ici",
-        "Service",
-    ],
-}
+#: Ce qu'un bloc **pleinement servi** porte, et c'est le referentiel de densite
+#: lui-meme qui le dit — jamais une seconde liste ecrite a la main.
+#:
+#: **Elle l'etait, et elle a vieilli exactement comme le motif le prevoit.** Le
+#: montage portait treize libelles pour un referentiel de vingt-six, soit
+#: **50,0 %** : au ras du seuil de « bloc pauvre », qui est la moitie. L'entree
+#: d'une ligne au referentiel — `A la pause`, 28/08/2026 — l'a fait basculer a
+#: 48 %, et **quinze bancs sont tombes ensemble** sur ce seul montage. Deux
+#: ecritures de la meme notion que rien n'obligeait a concorder.
+#:
+#: S'y ajoutent les lignes **conditionnelles** que la production rend malgre
+#: tout tres souvent : `Ici` et `Service` sortent sur 79 % des blocs de tennis
+#: reels, et un montage qui les omettait decrivait un etat atteint une fois sur
+#: cinq — les criteres d'absence s'y declenchaient alors sur tout le lot.
+FREQUENTES = {"football": (), "tennis": ("Ici", "Service")}
+
+
+def _avec(sport: str, label: str, valeur: str) -> list[tuple[str, str]]:
+    """Un bloc dense dont **une** ligne porte la valeur du banc.
+
+    Ecrit une fois, et il remplace au lieu d'ajouter : le premier jet echangeait
+    un libelle contre un autre (`Elo` contre `Repos`), ce qui produisait deux
+    entrees `Repos` des que le referentiel a porte la vraie. Le lecteur prend la
+    derniere, donc la valeur du banc etait ecrasee — et le test tombait sans que
+    rien ne dise pourquoi.
+    """
+    lignes = [(nom, valeur if nom == label else "valeur") for nom, _ in _dense(sport)]
+    return lignes if any(nom == label for nom, _ in lignes) else [*lignes, (label, valeur)]
 
 
 def _dense(sport: str = "football") -> list[tuple[str, str]]:
-    return [(label, "valeur") for label in REMPLI[sport]]
+    labels = list(expected_context(sport)) + list(FREQUENTES[sport])
+    return [(label, "valeur") for label in labels]
 
 
 def _event(
@@ -682,10 +676,7 @@ def test_un_joueur_qui_a_rejoue_en_moins_d_un_jour(migrated: Settings) -> None:
 
     Seuil mesuré avant d'être écrit : **4 blocs sur 48** depuis le 20/08/2026.
     """
-    charge = [
-        (label, "valeur") if label != "Elo" else ("Repos", "Fils 19 h (1 j. tournoi) | Norrie 40 h")
-        for label, _ in _dense("tennis")
-    ]
+    charge = _avec("tennis", "Repos", "Fils 19 h (1 j. tournoi) | Norrie 40 h")
     events = [_event(1, sport="tennis", context=charge)] + [
         _event(i, sport="tennis") for i in range(2, 22)
     ]
@@ -706,10 +697,7 @@ def test_le_retour_de_la_meme_session_ne_declenche_rien(migrated: Settings) -> N
     un quart des blocs ne classe plus rien — c'est le reproche fait aux deux
     critères faibles du football.
     """
-    repose = [
-        (label, "valeur") if label != "Elo" else ("Repos", "Fils 23 h (1 j. tournoi) | Norrie 40 h")
-        for label, _ in _dense("tennis")
-    ]
+    repose = _avec("tennis", "Repos", "Fils 23 h (1 j. tournoi) | Norrie 40 h")
 
     fiche = research.sheet(
         [_event(1, sport="tennis", context=repose)]

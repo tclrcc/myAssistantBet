@@ -8,6 +8,7 @@ se dire au lieu de ressembler a une panne de rapprochement.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -463,6 +464,100 @@ async def test_l_historique_donne_les_buts_du_match_et_le_btts(
     assert _lines(migrated)["Total buts"] == (
         "BK Hacken >2.5 23/36, BTTS 22/36 (2025) | Djurgardens IF >2.5 19/28, BTTS 16/28 (2025)"
     )
+
+
+def _match(goals: tuple[int, int], halftime: tuple[int, int] | None, at_home: bool) -> dict:
+    """Un match de l'historique de saison, dans la forme que `_summarize` ecrit."""
+    entry: dict[str, Any] = {"goals": list(goals), "at_home": at_home}
+    if halftime is not None:
+        entry["halftime"] = list(halftime)
+    return entry
+
+
+def test_a_la_pause_compte_du_bon_cote_du_score() -> None:
+    """**Le signe est ce que ce fragment peut produire de pire**, et il ne casse
+    rien : une ligne qui compterait le camp adverse resterait plausible, avec des
+    fractions bien formees. C'est le defaut deja paye sur le handicap.
+
+    Les deux moities du meme score sont donc montees a l'identique, une fois a
+    domicile et une fois a l'exterieur : l'equipe mene dans le premier cas et
+    jamais dans le second."""
+    # Le **meme** score, vu des deux cotes : `1-0` a la pause pour l'equipe qui
+    # recoit, donc l'equipe qui se deplace est menee. Un fragment qui lirait la
+    # mauvaise moitie rendrait « 4/4 » dans les deux cas.
+    devant = [_match((2, 0), (1, 0), at_home=True) for _ in range(4)]
+    derriere = [_match((2, 0), (1, 0), at_home=False) for _ in range(4)]
+
+    assert dossier._halftime_fragment("Lyon", (devant, 2026), 2026).startswith("Lyon mene 4/4")
+    assert dossier._halftime_fragment("Lyon", (derriere, 2026), 2026).startswith("Lyon mene 0/4")
+
+
+def test_a_la_pause_ne_compte_que_les_matchs_dont_la_pause_est_connue() -> None:
+    """Le denominateur est celui des matchs **dont le score a la pause est
+    connu**, et il peut donc differer de celui de « Total buts ». Il est ecrit
+    dans la ligne, donc l'ecart se voit — mais il faut qu'il soit juste, sans quoi
+    la ligne compterait un match qu'elle n'a pas lu."""
+    matches = [
+        _match((1, 0), (1, 0), at_home=True),
+        _match((3, 1), (2, 0), at_home=True),
+        _match((0, 0), None, at_home=True),
+    ]
+
+    rendu = dossier._halftime_fragment("Lyon", (matches, 2026), 2026)
+
+    assert rendu == "Lyon mene 2/2, >1.5 1/2"
+
+
+def test_a_la_pause_se_tait_quand_aucune_pause_n_est_connue() -> None:
+    """Un historique sans aucun score a la pause ne rend **rien**. `0/0` ne
+    decrirait personne — meme regle que « 1re MT » sur une equipe qui n'a ni
+    marque ni encaisse."""
+    matches = [_match((1, 0), None, at_home=True) for _ in range(6)]
+
+    assert dossier._halftime_fragment("Lyon", (matches, 2026), 2026) == ""
+
+
+def test_a_la_pause_ecrit_la_saison_de_repli() -> None:
+    """Meme regle que « Total buts », dont elle partage l'historique : une
+    frequence sur la saison passee reste lisible, mais taire laquelle c'est
+    laisser croire a la saison en cours."""
+    matches = [_match((1, 0), (1, 0), at_home=True) for _ in range(5)]
+
+    assert dossier._halftime_fragment("Lyon", (matches, 2025), 2026).endswith("(2025)")
+    assert "(" not in dossier._halftime_fragment("Lyon", (matches, 2026), 2026)
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_a_la_pause_sort_du_meme_historique_que_total_buts(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """**La ligne dormait en base depuis l'origine du module** : `_summarize`
+    gardait `score.halftime` de chaque match et rien ne le lisait, quand quatre
+    marches de mi-temps sont achetes et rendus sur la moitie des blocs.
+
+    Le banc passe par le parcours reel plutot que par le seul fragment : ce qui
+    devait etre garanti est qu'elle sorte **sur la meme population que « Total
+    buts »**, dont elle partage l'appel, la fenetre et le seuil."""
+    _seed_event(migrated)
+    _mock_dossier(load_fixture)
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    lignes = _lines(migrated)
+    assert ("Total buts" in lignes) == ("A la pause" in lignes)
+    assert "A la pause" in lignes
+
+    # Le denominateur est celui des matchs **dont la pause est connue**, donc un
+    # sous-ensemble de ceux que « Total buts » compte : la fixture en porte 38
+    # sur 41. C'est la propriete qui garantit que la ligne n'a pas recopie un
+    # denominateur qu'elle n'a pas lu.
+    def _denominateurs(ligne: str) -> list[int]:
+        return [int(found) for found in re.findall(r"/(\d+)", ligne)]
+
+    assert max(_denominateurs(lignes["A la pause"])) <= max(_denominateurs(lignes["Total buts"]))
+    # Et le repli de saison traverse le parcours reel, comme pour « Total buts ».
+    assert ("(2025)" in lignes["A la pause"]) == ("(2025)" in lignes["Total buts"])
 
 
 @respx.mock

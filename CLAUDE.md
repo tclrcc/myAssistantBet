@@ -976,6 +976,58 @@ de fois qu'elle joue.
   - `Total buts` compte les buts **du match**, `Buts marq.` (phase 11) ceux de **l'equipe**.
     Deux lignes voisines et deux grandeurs differentes : le template les separe
     explicitement, et un test le verifie.
+  - **`A la pause` lisait une donnee ecrite depuis l'origine du module et jamais
+    relue.** `_summarize` garde `score.halftime` de chaque match — 24 740 releves,
+    99,1 % des matchs joues, et 605 releves d'equipe sur 606 le portent sur *tous*
+    leurs matchs. En face, **quatre marches de mi-temps sont achetes et rendus** :
+    `MT O/U` 52,0 %, `BTTS MT` 51,7 %, `MT/FT` 50,7 %, `Score ex. MT` 49,0 % des
+    blocs du regime courant — et **136 blocs sur 213 en portaient un sans aucune
+    ligne de contexte de mi-temps**. Cout : **26,9 tokens par bloc** mesures sur un
+    rendu reel, 129 pour le mode d'emploi paye une fois, **zero appel**.
+    - **Ce n'est pas un doublon de `1re MT`, et les deux grandeurs sont mesurees** :
+      celle-la donne la **part des buts** tombes avant la pause — denominateur des
+      buts — celle-ci une **frequence de match**. Leur correlation vaut **0,16**.
+      Meme distinction que `Total buts` et `Buts marq.`, et la population differe
+      autant que la grandeur : `1re MT` sort de `/teams/statistics`, scope a une
+      competition, donc sur **32,7 %** des blocs ; `A la pause` sort du meme
+      historique que `Total buts`, donc sur **99,3 %**.
+    - **Deux grandeurs, et chacune a gagne sa place separement**, par decomposition
+      de variance calibree contre les lignes **deja livrees** : `mene` porte 47 %
+      de signal pour `sd = 0,075` — entre `Clean sheet` et `Total buts >2.5` — et
+      `>1.5` 30 % pour `sd = 0,053`, au-dessus du plancher que la production
+      etablit, `Total buts BTTS` a 24 % et `sd = 0,048`. Elles sont orthogonales
+      (r = 0,20).
+    - **Trois candidates ecartees, et une methode avec.** `BTTS MT` (21 %, 0,036),
+      `>0.5 MT` (20 %, 0,037) et `fige MT` (19 %, 0,033) tombent **sous** ce
+      plancher. Un premier classement par **ratio de deciles** donnait l'inverse :
+      il monte mecaniquement quand `p` est petit, et 85 % de la dispersion de
+      `BTTS MT` n'est que du bruit d'echantillonnage sur dix a quarante matchs.
+      Deux corrections de methode l'ont montre — la variance d'echantillonnage se
+      calcule **par unite** (`p_i(1-p_i)/n_i`, la moyenne globale surestimant le
+      bruit de trois points), et **la part de signal depend de la fenetre quand
+      l'ecart-type vrai n'en depend pas**, donc seul le second compare deux lignes
+      de fenetres differentes.
+    - `_leads_at_half` est ecrite **a part et jamais recopiee** : `at_home` decide
+      quelle moitie du score est la notre, et une seconde ecriture rendrait la
+      ligne inverse sur un seul des deux camps sans que rien ne casse — le defaut
+      deja paye sur le signe du handicap. Un banc monte le **meme** score vu des
+      deux cotes.
+    - Le denominateur est celui des matchs **dont la pause est connue**, donc un
+      sous-ensemble de celui de `Total buts`. Il est ecrit dans la ligne, donc
+      l'ecart se verrait ; en pratique il n'y en a pas.
+    - **Elle entre au referentiel de densite**, le denominateur football passant de
+      26 a 27 : systematique, donc l'exclure sous-estimerait un bloc complet — meme
+      raison que `Lieu`. **Quinze bancs sont tombes ensemble** sur ce changement, et
+      c'etait le bon symptome : `tests/test_research.py` portait une seconde liste
+      de « bloc pleinement servi », ecrite a la main, a **treize libelles sur
+      vingt-six** — soit exactement 50 %, au ras du seuil de « bloc pauvre ». Elle
+      derive desormais de `expected_context()`, plus les lignes conditionnelles que
+      la production rend quand meme tres souvent. Deux ecritures de la meme notion
+      que rien n'obligeait a concorder.
+    - **Le compte du preambule est garde par un test.** « Quatre lignes viennent de
+      l'historique de saison » est du texte : il ne casse rien quand il ment. Le
+      banc compare le nombre annonce au nombre de puces documentees, dans les deux
+      branches de la porte.
   - `Serie` est la serie **en cours**. `biggest.streak` de `/teams/statistics` donne le
     record de la saison, ce qui se lit comme la serie en cours et dit l'inverse.
   - **Et elle ne se rend pas du tout sur un repli de saison**, contrairement a
