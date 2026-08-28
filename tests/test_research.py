@@ -10,14 +10,22 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 from zoneinfo import ZoneInfo
 
+import pytest
+
 from myassistantbet import db
 from myassistantbet.config import Settings
+from myassistantbet.services import board as board_service
 from myassistantbet.services import competitions as competitions_service
 from myassistantbet.services import context as context_service
+from myassistantbet.services import prompt as prompt_service
 from myassistantbet.services import research
 from myassistantbet.services.context import KIND_H2H, KIND_TEAMS, store
+from myassistantbet.services.manual import build, save
+from myassistantbet.services.prompt import build_prompt
 from myassistantbet.services.render import RenderableEvent
 from myassistantbet.services.thresholds import value_of
+
+from .helpers import NOW
 
 PARIS = ZoneInfo("Europe/Paris")
 COUP_ENVOI = datetime(2026, 8, 13, 20, 0, tzinfo=PARIS)
@@ -138,15 +146,6 @@ def _aller(settings: Settings, event_id: int, buts_adversaire: int, buts_nous: i
 # -- Le budget ---------------------------------------------------------------
 
 
-def test_un_lot_qui_tient_dans_le_budget_ne_produit_aucune_fiche(migrated: Settings) -> None:
-    """Classer trois dossiers sur trois n'apprend rien, et la ligne de budget
-    ferait renoncer a un match qu'il y avait tout le temps de traiter."""
-    fiche = research.sheet([_event(i) for i in range(1, 4)], migrated)
-
-    assert fiche.crowded is False
-    assert fiche.dossiers == []
-
-
 def test_un_lot_trop_grand_est_declare_a_l_etroit(migrated: Settings) -> None:
     """**Le critere est une propriete, jamais la valeur du jour.**
 
@@ -212,8 +211,11 @@ def test_un_tie_ouvert_passe_devant_un_tie_joue(migrated: Settings) -> None:
 
     fiche = research.sheet(events, migrated)
 
-    assert [item.index for item in fiche.dossiers] == [2], "seul le tie ouvert est propose"
+    assert fiche.dossiers[0].index == 2, "le tie ouvert passe devant"
     assert "tie ouvert : ecart 1" in fiche.dossiers[0].motifs
+    # Les neuf autres suivent depuis que le lot entier entre dans la fiche : ce
+    # qui se garde ici est le **rang**, pas le fait d'etre seul propose.
+    assert [item.index for item in fiche.dossiers[1:]] == [1, 3, 4, 5, 6, 7, 8, 9, 10]
 
 
 def test_un_ecart_de_deux_buts_est_un_etat_a_part_entiere(migrated: Settings) -> None:
@@ -267,10 +269,23 @@ def test_l_equipe_menee_qui_recoit_est_un_modificateur_pas_un_critere(
     assert research.OPEN_TIE_WEIGHTS[1] > research.MEDIUM
 
 
-def test_un_dossier_sans_aucun_critere_n_est_pas_propose(migrated: Settings) -> None:
-    """La fiche dirait « cherche ici » sur un dossier dont rien ne le justifie."""
+def test_sur_un_lot_sature_un_dossier_sans_critere_n_est_pas_propose(
+    migrated: Settings,
+) -> None:
+    """**La completion ne vaut que si elle n'est pas un choix.**
+
+    Sur un lot qui tient dans le budget, tous les blocs entrent — les lister
+    n'est pas les choisir. Sur un lot plus long, ajouter des blocs sans critere
+    reviendrait a en designer quelques-uns au hasard, ce qui est pire qu'un
+    silence : un silence, au moins, ne choisit pas.
+
+    Mesure sur les 113 fiches archivees (29/08/2026) : **80 (71 %) tiennent dans
+    leur budget**, et 10 des 33 saturees ne remplissent meme pas le leur avec
+    leurs seuls blocs classes.
+    """
     fiche = research.sheet([_event(i) for i in range(1, 22)], migrated)
 
+    assert fiche.crowded
     assert fiche.dossiers == []
 
 
@@ -1210,3 +1225,125 @@ def test_la_retrogradation_ne_fait_pas_disparaitre_un_dossier(migrated: Settings
 
     assert retenu is not None, "un dossier a un seul critere reste propose"
     assert retenu.merit > 0 and retenu.score < retenu.merit
+
+
+# -- Tous les blocs du lot entrent dans la fiche ------------------------------
+#
+# **Decision de l'utilisateur, appuyee sur une mesure du 29/08/2026.** Sur les
+# 1 000 blocs des prompts archives portant une fiche, 373 n'etaient classes par
+# aucun critere et arrivaient donc sans question. Quand l'un d'eux a produit une
+# selection, celle-ci portait **0,97 fait date contre 0,95** pour les blocs
+# classes : le silence ne decrivait pas « rien a trouver », il decrivait « rien
+# que nos criteres detectent ».
+
+
+def test_un_bloc_sans_critere_entre_avec_une_consigne_et_sans_question(
+    migrated: Settings,
+) -> None:
+    """Il entre, il porte la consigne de retenue, et il **n'emet aucune question**.
+
+    C'est la propriete qui separe « ouvrir la fiche a tous les blocs » d'« ecrire
+    un critere qui tire partout » : le second se declencherait sur 95 % des blocs
+    et n'en classerait plus aucun — le defaut paye deux fois cette semaine, 36
+    dossiers de tennis sur 41 puis 4 de football sur 4.
+    """
+    fiche = research.sheet([_event(i) for i in range(1, 4)], migrated)
+
+    assert not fiche.crowded
+    assert len(fiche.dossiers) == 3, "le lot tient dans le budget, donc tout y entre"
+    for dossier in fiche.dossiers:
+        assert dossier.silent
+        assert dossier.motifs == research.NO_SIGNAL
+        assert dossier.questions == [], "une consigne de retenue n'emet pas de question"
+
+
+def _lot_rendu(migrated: Settings, matchs: int) -> int:
+    """Un lot de football monte a la main, rendu par le gabarit reel."""
+    session_id = 0
+    for index in range(matchs):
+        event_id = save(
+            build(
+                "football",
+                "Match amical",
+                f"Lyon {index}",
+                f"Nice {index}",
+                "2026-08-04",
+                "20:45",
+                f"Lyon {index} 2.10\nNul 3.40\nNice {index} 3.20",
+                "",
+                "",
+                settings=migrated,
+            ),
+            migrated,
+        )
+        session_id = board_service.toggle_selection(event_id, True, migrated)
+    return session_id
+
+
+def test_un_bloc_muet_n_emet_pas_non_plus_de_requete(
+    migrated: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """La requete de recherche est une question deguisee, et elle ne se rend pas.
+
+    Le dossier la porte toujours — `links` decrit ou aller quand il y a a
+    aller — mais le gabarit la tait sous un bloc muet, sur `silent` et non sur
+    une seconde lecture des motifs.
+
+    **La fiche vient de la vraie fonction, sur des blocs denses**, parce qu'un
+    lot monte a la main sort a `0/26` de densite : tous ses blocs portent alors
+    le critere de bloc vide, et aucun n'est muet. Le banc ne peut pas atteindre
+    autrement l'etat qu'il garde — et un montage qui ne l'atteint pas rend vert
+    pour une raison qui n'est pas la sienne.
+    """
+    dense = [_event(i) for i in range(1, 4)]
+    assert all(item.silent for item in research.sheet(dense, migrated).dossiers), (
+        "le montage doit vraiment produire des dossiers muets"
+    )
+    monkeypatch.setattr(
+        prompt_service, "research_sheet", lambda events, settings: research.sheet(dense, settings)
+    )
+    corps = build_prompt(_lot_rendu(migrated, 3), settings=migrated, now=NOW).body
+
+    fiche = corps.split("À CHERCHER EN PRIORITÉ")[1].split("\n### ")[0]
+    assert research.NO_SIGNAL in fiche
+    assert "-> rechercher" not in fiche
+
+
+def test_les_blocs_classes_passent_devant_les_muets(migrated: Settings) -> None:
+    """L'ordre reste un ordre de passage : ce qui porte un motif d'abord."""
+    _en_base(migrated, 701, 1)
+    _aller(migrated, 701, buts_adversaire=1)
+    events = [_event(1, 701), _event(2), _event(3)]
+
+    fiche = research.sheet(events, migrated)
+
+    assert not fiche.dossiers[0].silent
+    assert all(dossier.silent for dossier in fiche.dossiers[1:])
+
+
+def test_le_gabarit_definit_les_deux_etats_de_la_fiche(migrated: Settings) -> None:
+    """Un lot sature garde son silence defini, un lot complet sa consigne.
+
+    Toute condition ajoutee a une ligne se verifie contre la phrase qui
+    l'explique : le silence n'existe plus quand la fiche liste tout, et la phrase
+    qui le definissait deviendrait fausse rendue la.
+    """
+    corps = build_prompt(_lot_rendu(migrated, 3), settings=migrated, now=NOW).body
+
+    assert research.NO_SIGNAL in corps
+    assert "tous ses blocs y figurent" in corps
+    assert "Un bloc absent de la fiche" not in corps
+
+
+def test_le_libelle_du_bloc_muet_ne_vit_qu_a_un_endroit(migrated: Settings) -> None:
+    """Le preambule le definit, la fiche l'ecrit — **une seule ecriture**.
+
+    Recopie cote gabarit, il aurait diverge du jour ou l'un des deux change :
+    une copie de prose n'echoue jamais, elle vieillit.
+    """
+    gabarit = (prompt_service.TEMPLATES_DIR / prompt_service.DEFAULT_TEMPLATE).read_text(
+        encoding="utf-8"
+    )
+
+    assert research.NO_SIGNAL not in gabarit
+    assert "research.no_signal" in gabarit

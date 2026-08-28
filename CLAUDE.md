@@ -2397,6 +2397,52 @@ juge, sur les matchs qui paraissaient les plus lisibles, pas les plus rentables.
 - La fiche **ne parait pas** sous le seuil : classer trois dossiers sur trois n'apprend
   rien, et la ligne de budget ferait renoncer a un match qu'il y avait tout le temps de
   traiter.
+- **Tous les blocs du lot entrent dans la fiche des qu'il tient dans le budget**
+  (29/08/2026), et ceux qu'aucun critere ne classe portent une **consigne de
+  retenue** — `aucun signal detecte — cadrage du lot seul` — **jamais une
+  question**. Une question generique appliquee aux blocs muets le serait par
+  construction : c'est le defaut paye deux fois cette semaine, 36 dossiers de
+  tennis sur 41 portant la meme phrase, puis 4 de football sur 4.
+  - **La mesure qui l'a decide, et ce qu'elle ne dit pas.** Sur les 1 000 blocs
+    des prompts archives portant une fiche, 373 n'etaient classes par rien.
+    Quand l'un d'eux a produit une selection, celle-ci portait **0,97 fait date
+    contre 0,95** pour les blocs classes : le silence ne decrivait pas « rien a
+    trouver », il decrivait « rien que nos criteres detectent ». Ce qu'elle ne
+    dit pas : ces blocs produisent une selection **16 % du temps contre 45 %**,
+    et l'ecart est confondu — la fiche selectionne **et** dirige. Il ne prouve
+    rien sur les 84 % restants, d'ou une consigne qui **retient** au lieu
+    d'envoyer.
+  - **La completion ne vaut que si elle n'est pas un choix.** Sur un lot plus
+    long que le budget, ajouter des blocs sans critere reviendrait a en designer
+    quelques-uns au hasard — pire qu'un silence, qui au moins ne choisit pas.
+    Mesure : **80 fiches sur 113 (71 %)** tiennent dans leur budget, et 10 des 33
+    saturees ne remplissent meme pas le leur avec leurs blocs classes.
+  - **Aucune requete sous un bloc muet.** `-> rechercher "…"` est une question
+    deguisee, et la rendre contredirait la consigne. Le gabarit se garde sur
+    `Dossier.silent`, ecrit une fois et lu par le libelle comme par la requete.
+  - Les muets ferment la marche **dans l'ordre du lot** et non par `rank_key` :
+    rien ne les departage, et les trier sur la densite fabriquerait la hierarchie
+    que leur consigne dit absente.
+  - Cout : **+170 tokens** sur le lot du 28/08 (8 blocs, 5 muets), +7 209 sur les
+    232 prompts archives.
+- **La perte est acceptee, et elle est ecrite** (decision de l'utilisateur,
+  29/08/2026). `dossiers_ouverts` distingue une selection recherchee d'une
+  lecture, et c'est le seul recoupement qui ne depende pas de la declaration du
+  modele. Il **ne tombe pas** — `picks_import` n'importe jamais `research`, et
+  l'ecrasement compare la liste declaree a l'evenement du pick, jamais a la
+  fiche — mais il **s'amincit** en proportion de ce que la fiche gagne.
+  - **Le modele ne recopie pas la fiche**, et c'est mesure : declaration plus
+    courte que la fiche dans **7 sessions sur 10**, ecart median 2, part du lot
+    declaree ouverte **mediane 70 %**, minimum 20 %. Les cas nets : fiche a 10 →
+    2 declares, fiche a 8 → 4.
+  - **Rien ne le remplacerait s'il s'eteignait** : il ne resterait que la
+    declaration (`source_level`, blocs `conf`), sans recoupement. L'application
+    ne peut pas verifier qu'une recherche a eu lieu.
+  - Ce qui porte alors seul est la phrase du gabarit — « si un bloc n'appelle
+    aucune recherche, ne l'ouvre pas et ne l'inscris pas dans
+    `dossiers_ouverts` ». Elle a ete **deplacee au contact de la fiche** plutot
+    que recopiee : deux formulations de la meme regle a quatre paragraphes
+    d'ecart auraient derive.
 - **Le silence de la fiche est defini, et il ne l'etait pas.** Un lot de huit
   annonce huit dossiers ouvrables et la fiche en classe trois : le budget et la
   fiche ne disent pas la meme chose, et le gabarit ecrivait deja « ordre de

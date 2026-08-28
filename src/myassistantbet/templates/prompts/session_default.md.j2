@@ -399,12 +399,6 @@ Le lot tient dans ce budget : **tous les matchs sont ouvrables**, et aucun n'est
 de traitement** — par lequel commencer, pas lesquels laisser. La section F
 continue de nommer ceux que tu n'as pas ouverts.
 {% endif %}
-Ce nombre est un **plafond, jamais un objectif**. Un dossier ouvert est un dossier où tu
-as réellement cherché ; si un bloc n'appelle aucune recherche, ne l'ouvre pas et ne
-l'inscris pas dans `dossiers_ouverts`. Une liste gonflée pour atteindre le budget rend
-`lecture` indiscernable d'un fait daté, et c'est la seule comparaison que ce relevé
-puisse produire.
-
 La fiche ci-dessous classe les dossiers par **ce qu'une recherche peut y changer**.
 Elle ne regarde aucune cote : trier sur le prix ne ferait jamais chercher là où le
 marché est confiant, donc ne ferait jamais trouver ce qui le contredit. Elle compte
@@ -412,8 +406,13 @@ en revanche les marchés **présents** — un bloc qui n'en porte qu'un plafonne
 sélection au 1N2, quelle que soit la qualité de la recherche, et il descend d'un
 cran. Compter des marchés n'est pas comparer des prix : aucune valeur n'est lue.
 Traite-les dans cet ordre, et dis en section F ceux que tu n'as pas ouverts.
-**Un bloc absent de la fiche est un bloc que rien ne classe, pas un bloc sans
+{% if research.crowded %}**Un bloc absent de la fiche est un bloc que rien ne classe, pas un bloc sans
 rien à chercher** : le budget annoncé plus haut reste le sien.
+{% else %}Le lot tenant dans le budget, **tous ses blocs y figurent**. Ceux qu'aucun critère
+ne classe portent **« {{ research.no_signal }} »** : ça ne veut pas dire qu'il n'y a rien à
+y trouver, seulement que rien de particulier n'y appelle une recherche. Fais-y le cadrage
+minimal et passe — n'y fabrique pas de piste pour justifier une ligne.
+{% endif %}
 
 Un motif de bloc vide dit **ce que la recherche peut espérer**, et les quatre ne
 disent pas la même chose :
@@ -431,15 +430,23 @@ disent pas la même chose :
     pourquoi. Traite-le comme un dossier fort : on ne peut pas affirmer qu'une
     recherche n'y servirait à rien.
 
+Ce nombre est un **plafond, jamais un objectif**. Un dossier ouvert est un dossier où tu
+as réellement cherché ; si un bloc n'appelle aucune recherche, ne l'ouvre pas et ne
+l'inscris pas dans `dossiers_ouverts`. Une liste gonflée pour atteindre le budget rend
+`lecture` indiscernable d'un fait daté, et c'est la seule comparaison que ce relevé
+puisse produire.
+
 À CHERCHER EN PRIORITÉ
 {% for dossier in research.dossiers %}
 {{ loop.index }}. M{{ dossier.index }} {{ dossier.label }}  [{{ dossier.motifs }}]
 {%- for question in dossier.questions %}
    - {{ question }}
 {%- endfor %}
-{%- for link in dossier.links %}
+{#- Aucune requête sous un bloc muet : la consigne dit de ne pas y chercher, et
+    une requête posée dessous serait une question déguisée. #}
+{%- if not dossier.silent %}{% for link in dossier.links %}
    -> {{ link }}
-{%- endfor %}
+{%- endfor %}{% endif %}
 {% endfor %}
 {% endif %}
 {% for block in event_blocks %}

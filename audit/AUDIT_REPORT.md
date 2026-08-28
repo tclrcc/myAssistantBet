@@ -986,6 +986,89 @@ mesure — **30 selections ecrasees pour `ligne_absente` sur des sessions declar
 `renseignee`**, l'etat de session ne gardant que le dernier import. Les deux se
 reprennent **ensemble** : migration et colonne sur `prompts`, un seul geste.
 
+## C.31 — La fiche classe tous les blocs, et la perte qui l'accompagne est ecrite
+
+**Decision de l'utilisateur du 29/08/2026, appuyee sur une mesure faite avant
+d'ecrire une ligne.** Le budget annoncait 8 dossiers, le texte disait « tous les
+matchs sont ouvrables », et la fiche en classait 3 : cinq blocs arrivaient sans
+question.
+
+### Le silence ne decrivait pas la realite
+
+Sur les 1 000 blocs des prompts archives portant une fiche :
+
+| | blocs | ont produit ≥1 selection | `lecture` | faits dates / selection |
+| --- | ---: | ---: | ---: | ---: |
+| classes par la fiche | 627 | 281 (**45 %**) | 14 % | **0,95** |
+| silence de la fiche | 373 | 61 (**16 %**) | 26 % | **0,97** |
+
+Fisher : production `p = 4,3e-21`, part de `lecture` `p = 0,034`.
+
+**Ce qui se conclut** : conditionnellement a une selection produite, le rendement
+en faits dates est **identique**. Quand l'analyse a travaille un bloc muet, elle
+y a trouve autant — le silence decrivait « rien que nos criteres detectent ».
+
+**Ce qui ne se conclut pas** : le 45 % contre 16 % est **confondu**, la fiche
+selectionnant **et** dirigeant, et il ne prouve rien sur les 84 % restants. D'ou
+une consigne qui retient au lieu d'envoyer.
+
+### La forme : une consigne, jamais une question
+
+`aucun signal detecte — cadrage du lot seul`, et **aucune requete de recherche**
+sous un bloc muet — `-> rechercher "…"` serait une question deguisee. Une
+question generique le serait par construction : c'est le defaut paye deux fois
+cette semaine, 36 dossiers de tennis sur 41 portant la meme phrase mot pour mot,
+puis 4 de football sur 4.
+
+**La completion ne vaut que si elle n'est pas un choix** : elle ne s'applique que
+si le lot tient dans le budget. Au-dela, ajouter des blocs sans critere
+reviendrait a en designer quelques-uns au hasard — pire qu'un silence, qui au
+moins ne choisit pas. Mesure : **80 fiches sur 113 (71 %)** tiennent dans leur
+budget, et 10 des 33 saturees ne remplissent meme pas le leur.
+
+Cout : **+170 tokens** sur le lot du 28/08 (8 blocs dont 5 muets), +7 209 sur les
+232 prompts archives.
+
+### La perte sur `dossiers_ouverts`, acceptee et chiffree
+
+Le garde-fou **ne tombe pas structurellement** : `picks_import` n'importe jamais
+`research`, et l'ecrasement compare la liste declaree a l'evenement du pick,
+jamais a la fiche. Elargir la fiche ne peut donc pas l'eteindre mecaniquement.
+
+Et **le modele ne recopie pas la fiche** : declaration plus courte que la fiche
+dans **7 sessions sur 10**, ecart median 2, part du lot declaree ouverte
+**mediane 70 %**, minimum 20 % — fiche a 10 pour 2 declares, fiche a 8 pour 4.
+
+Il **s'amincit** en revanche en proportion de ce que la fiche gagne, et **rien ne
+le remplacerait** s'il s'eteignait : il ne resterait que la declaration
+(`source_level`, blocs `conf`), sans recoupement. L'application ne peut pas
+verifier qu'une recherche a eu lieu.
+
+**`hors_dossiers` est la seule cause d'ecrasement qui observe le modele**, et son
+rendement baissera mecaniquement. Sur les 320 selections des sessions portant la
+ligne : **19 `hors_dossiers` (5,9 %)**, contre 30 `ligne_absente` et 18
+`reperes_non_resolus`, qui sont des defauts de collage.
+
+**Ce qu'il faudrait pour voir la baisse**, le groupe « avant » etant fige a 320
+selections (10 sessions, ~32 par session) :
+
+| baisse | selections par groupe | selections apres | detectable ? |
+| --- | ---: | ---: | --- |
+| 5,9 % → 3,0 % (moitie) | 754 | — | **non, jamais** contre ce groupe avant |
+| 5,9 % → 2,0 % (un tiers) | 377 | **459** (~14 sessions) | oui |
+| 5,9 % → 0 % (extinction) | 125 | **78** (~2 sessions) | oui |
+
+**Une division par deux ne sera donc pas detectable**, quel que soit le temps
+qu'on laisse : le groupe « avant » plafonne la puissance a 640 en taille
+effective, sous les 754 requis. Ce qui se verra est une extinction en deux
+sessions, ou une chute au tiers en quatorze. Ecrit ici pour qu'on ne demande pas
+dans un mois si la baisse a eu lieu sans que personne puisse repondre.
+
+**Reserve de mesure** : `sessions.open_dossiers` etant gele sur la session, la
+declaration ne se suit pas import par import — on ne verra pas la liste se
+rigidifier dans le detail. C'est le meme correctif que l'estampille de cadre,
+ouvert en C.30.
+
 ## C.21 — Ce qui reste ouvert et n'a pas ete instruit
 
 - **Phase 4** — le generateur de prompts : variables injectees non utilisees,

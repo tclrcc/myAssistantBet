@@ -235,6 +235,16 @@ class Dossier:
         )
 
     @property
+    def silent(self) -> bool:
+        """Aucun critere ne classe ce bloc.
+
+        L'etat se nomme une fois et se lit deux — le libelle du dossier et le
+        rendu de sa requete de recherche. Deux lectures paralleles auraient fini
+        par ne plus designer les memes blocs.
+        """
+        return not any(reason.weight for reason in self.reasons)
+
+    @property
     def motifs(self) -> str:
         """`tie ouvert : ecart 1 · l'equipe menee recoit`.
 
@@ -243,7 +253,7 @@ class Dossier:
         nomme partout ailleurs. Seul un poids nul reste tu : il ne decide de
         rien.
         """
-        return " · ".join(reason.motif for reason in self.reasons if reason.weight)
+        return " · ".join(reason.motif for reason in self.reasons if reason.weight) or NO_SIGNAL
 
     @property
     def questions(self) -> list[str]:
@@ -255,6 +265,25 @@ class Dossier:
         return vues
 
 
+#: Ce que porte un bloc qu'aucun critere ne classe. **Une consigne, jamais une
+#: question** : une question generique appliquee a tous les blocs muets le
+#: serait par construction, et c'est exactement le defaut paye deux fois cette
+#: semaine — 36 dossiers de tennis sur 41 portant la meme phrase mot pour mot,
+#: puis 4 dossiers de football sur 4.
+#:
+#: **Mesure qui fonde l'ouverture** (29/08/2026) : sur les 1 000 blocs des
+#: prompts archives portant une fiche, 373 n'etaient classes par aucun critere.
+#: Quand l'un d'eux a produit une selection, celle-ci portait **0,97 fait date
+#: contre 0,95** pour les blocs classes. Le silence ne decrivait donc pas « rien
+#: a trouver » mais « rien que nos criteres detectent ».
+#:
+#: Ce que la mesure **ne dit pas** : ces blocs produisent une selection 16 % du
+#: temps contre 45 % pour les classes. L'ecart est confondu — la fiche selectionne
+#: **et** dirige — et il ne prouve rien sur les 84 % restants. D'ou une consigne
+#: qui retient plutot qu'elle n'envoie.
+NO_SIGNAL = "aucun signal détecté — cadrage du lot seul"
+
+
 @dataclass
 class Sheet:
     """La fiche de recherche d'un lot."""
@@ -262,6 +291,16 @@ class Sheet:
     lot: int
     budget: int
     dossiers: list[Dossier] = field(default_factory=list)
+
+    @property
+    def no_signal(self) -> str:
+        """Le libelle d'un bloc muet, **expose au gabarit**.
+
+        Le preambule le definit et la fiche l'ecrit : recopie cote gabarit, il
+        aurait diverge du jour ou l'un des deux change — le motif recurrent de
+        ce depot, applique a une prose qui n'echoue jamais.
+        """
+        return NO_SIGNAL
 
     @property
     def crowded(self) -> bool:
@@ -306,17 +345,34 @@ def sheet(events: list[RenderableEvent], settings: Settings | None = None) -> Sh
         return resultat
 
     dossiers = [_dossier(event, settings) for event in events]
-    # Un score nul ou negatif ne se propose pas : la fiche dirait « cherche
+    # Un score nul ou negatif ne se classe pas : la fiche dirait « cherche
     # ici » sur un dossier dont tous les criteres disent l'inverse. Le filtre lit
     # `merit` et non `score` : une retrogradation ordonne, elle n'ecarte pas.
     retenus = [item for item in dossiers if item.merit > 0]
     retenus.sort(key=lambda item: item.rank_key)
+    # **Les blocs muets ferment la marche, et seulement si le lot tient dans le
+    # budget.** La completion ne vaut que si elle n'est pas un choix : sur un lot
+    # plus long que le budget, ajouter des blocs sans critere reviendrait a en
+    # designer quelques-uns au hasard — pire qu'un silence, qui au moins ne
+    # choisit pas. Mesure sur les 113 fiches archivees : **80 (71 %) tiennent
+    # dans leur budget**, et 10 des 33 saturees ne remplissent meme pas le leur
+    # avec leurs blocs classes.
+    #
+    # Ordre du lot et non `rank_key` : ces blocs n'ont rien qui les departage, et
+    # les trier sur la densite fabriquerait la hierarchie que leur consigne dit
+    # justement absente.
+    if not resultat.crowded:
+        retenus += sorted(
+            (item for item in dossiers if item.merit <= 0), key=lambda item: item.index
+        )
     # `min(budget, lot)` par construction : `retenus` ne peut pas depasser le lot.
     resultat.dossiers = retenus[:budget]
+    muets = sum(1 for item in resultat.dossiers if item.silent)
     logger.info(
-        "fiche de recherche : %d dossiers retenus sur %d, budget %d",
+        "fiche de recherche : %d dossiers sur %d, dont %d sans critere, budget %d",
         len(resultat.dossiers),
         len(events),
+        muets,
         budget,
     )
     return resultat
