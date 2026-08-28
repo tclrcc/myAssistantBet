@@ -24,7 +24,7 @@ from myassistantbet.main import app
 from myassistantbet.providers.apifootball import BASE_URL, PROVIDER, APIFootballClient
 from myassistantbet.providers.base import record_api_usage
 from myassistantbet.services import dossier
-from myassistantbet.services.context import KIND_SHEETS, KIND_TEAMS
+from myassistantbet.services.context import KIND_SHEETS, KIND_STANDINGS, KIND_TEAMS
 from myassistantbet.services.context import store as store_context
 
 from .helpers import (
@@ -525,6 +525,83 @@ def test_a_la_pause_ecrit_la_saison_de_repli() -> None:
 
     assert dossier._halftime_fragment("Lyon", (matches, 2025), 2026).endswith("(2025)")
     assert "(" not in dossier._halftime_fragment("Lyon", (matches, 2026), 2026)
+
+
+def test_le_niveau_des_adversaires_se_tait_sous_trois_rangs_connus() -> None:
+    """Un rang moyen sur deux matchs decrit une soiree, pas un calendrier — meme
+    seuil que `PROFILE_MIN_MATCHES` et meme raison.
+
+    Mesure sur 606 equipes : **86 % ont au moins trois adversaires classes** parmi
+    leurs cinq derniers, donc le seuil ne tait pas la ligne, il ecarte la queue.
+    """
+    rangs = {"10": 3, "11": 7}
+    matches = [_match((1, 0), (1, 0), at_home=True) | {"opponent": adv} for adv in (10, 11, 99)]
+
+    assert dossier._level_fragment("Lyon", (matches, 2026), rangs) == ""
+
+
+def test_le_niveau_des_adversaires_ne_compte_que_les_classes() -> None:
+    """Un adversaire de coupe ou de coupe d'Europe n'est dans aucune table : le
+    denominateur tombe alors sous cinq, et il est **ecrit**. Mesure : 60 % des
+    equipes ont leurs cinq adversaires classes, 86 % en ont au moins trois."""
+    rangs = {"10": 2, "11": 8, "12": 14}
+    matches = [_match((1, 0), (1, 0), at_home=True) | {"opponent": adv} for adv in (10, 11, 12, 99)]
+
+    # (2 + 8 + 14) / 3 = 8.0, et le quatrieme adversaire n'est pas classe.
+    assert dossier._level_fragment("Lyon", (matches, 2026), rangs) == "Lyon 8.0e moy/3"
+
+
+def test_le_niveau_des_adversaires_porte_sur_la_fenetre_de_forme_5() -> None:
+    """La fenetre est celle de `Forme 5`, dont le niveau eclaire la lecture. Une
+    autre ferait porter les deux lignes sur deux periodes — ce que le compte de
+    `Forme 5` a deja du corriger une fois."""
+    rangs = {str(adv): 1 for adv in range(1, 6)} | {str(adv): 20 for adv in range(90, 96)}
+    vieux = [_match((1, 0), (1, 0), at_home=True) | {"opponent": adv} for adv in range(90, 96)]
+    recents = [_match((1, 0), (1, 0), at_home=True) | {"opponent": adv} for adv in range(1, 6)]
+
+    rendu = dossier._level_fragment("Lyon", (vieux + recents, 2026), rangs)
+
+    assert rendu == "Lyon 1.0e moy/5", "seuls les cinq derniers comptent"
+
+
+def test_le_niveau_des_adversaires_se_tait_sans_classement() -> None:
+    """Un releve de classement anterieur au 28/08/2026 ne porte pas la table des
+    rangs : la ligne ne sort qu'apres le prochain enrichissement, et jamais un
+    « inconnu » qui se lirait comme un fait sur l'equipe."""
+    matches = [_match((1, 0), (1, 0), at_home=True) | {"opponent": adv} for adv in (10, 11, 12)]
+
+    assert dossier._level_fragment("Lyon", (matches, 2026), {}) == ""
+
+
+@respx.mock
+@pytest.mark.anyio
+async def test_le_niveau_des_adversaires_traverse_le_parcours_reel(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """**Les deux moities etaient telechargees et jetees** : `_summarize` gardait
+    tout d'un match sauf l'adversaire, et `_standings_entry` parcourt le
+    classement entier pour n'en retenir que deux lignes. Zero appel de plus.
+
+    Le banc croise les **deux echelles** — l'historique est range par equipe, le
+    classement par evenement — parce qu'un banc pose sur le seul fragment ne
+    verifierait pas ce croisement. Le releve de classement est pose comme
+    `fetch_context` l'ecrit : les deux modules sont separes par construction, et
+    c'est l'autre moitie qui est gardee cote `test_context`.
+    """
+    _seed_event(migrated)
+    _mock_dossier(load_fixture)
+    store_context(
+        1,
+        KIND_STANDINGS,
+        {"home": {"rank": 4}, "rangs": {"215": 5, "242": 9, "217": 2, "4724": 12, "211": 1}},
+        migrated,
+    )
+
+    await dossier.refresh_event(api_client, 1, migrated, now=NOW)
+
+    lignes = _lines(migrated)
+    assert "Niveau adv." in lignes
+    assert re.fullmatch(r"[^|]+ \d+\.\de moy/\d", lignes["Niveau adv."].split(" | ")[0])
 
 
 @respx.mock

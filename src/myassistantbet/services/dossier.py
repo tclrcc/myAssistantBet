@@ -33,7 +33,7 @@ from ..config import Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.apifootball import CALL_COST, PROVIDER, APIFootballClient
 from ..providers.base import ProviderError, last_known_quota
-from .context import KIND_SHEETS, KIND_TEAMS, payload_of
+from .context import KIND_SHEETS, KIND_STANDINGS, KIND_TEAMS, payload_of
 from .context import load as load_context
 from .labels import sort_key
 
@@ -431,6 +431,12 @@ def _summarize(fixtures: list[dict[str, Any]], team_id: int) -> list[dict[str, A
     grosse, et des sauvegardes avec, pour des logos et des drapeaux. Ce qui est
     garde permet de tout recalculer : date, competition, cote, score a 90
     minutes, score a la pause, statut.
+
+    **L'adversaire y est entre le 28/08/2026**, et son absence coutait une ligne
+    entiere : sans lui, le niveau des matchs recents n'est pas calculable, et
+    « Forme 5 » traite une victoire sur le dernier comme une victoire sur le
+    premier — exactement ce que `Niveau adv.` corrige au tennis. Il est dans la
+    charge utile deja telechargee, donc il ne coute aucun appel.
     """
     summary = []
     for fixture in fixtures:
@@ -450,6 +456,9 @@ def _summarize(fixtures: list[dict[str, Any]], team_id: int) -> list[dict[str, A
                 "league": league.get("name"),
                 "friendly": _is_friendly(league),
                 "at_home": int(home_id) == team_id,
+                "opponent": (teams.get("away") or {}).get("id")
+                if int(home_id) == team_id
+                else home_id,
                 "goals": list(score) if score else None,
                 "halftime": [halftime.get("home"), halftime.get("away")]
                 if halftime.get("home") is not None
@@ -1236,6 +1245,61 @@ def _halftime_fragment(
     return fragment if from_season == season else f"{fragment} ({from_season})"
 
 
+#: Adversaires classes qu'il faut au minimum pour rendre le niveau. Meme seuil
+#: que `PROFILE_MIN_MATCHES` et pour la meme raison : un rang moyen sur deux
+#: matchs decrit une soiree. Mesure sur 606 equipes — **86 % en ont au moins
+#: trois** parmi leurs cinq derniers, 14 % restent muettes.
+LEVEL_MIN_RANKED = 3
+#: Fenetre du niveau : celle de `Forme 5`, dont il eclaire la lecture. Une autre
+#: ferait porter les deux lignes sur deux periodes, ce que le compte de
+#: `Forme 5` a deja du corriger une fois.
+LEVEL_LAST = 5
+
+
+def _level_fragment(
+    team: str, history: tuple[list[dict[str, Any]], int] | None, ranks: dict[str, int]
+) -> str:
+    """`Estoril 8.4e moy/4` — le rang moyen des adversaires recemment rencontres.
+
+    **Le pendant football de `Niveau adv.`**, dont le dossier ecrit qu'il rend
+    `Forme` lisible : « la suite de lettres traite une victoire sur le 150e comme
+    une victoire sur le 5e ». Au football `Forme 5` avait exactement ce defaut, et
+    rien ne le corrigeait.
+
+    **Les deux moities etaient telechargees et jetees**, donc la ligne ne coute
+    aucun appel : `_summarize` gardait tout d'un match **sauf l'adversaire**, et
+    `_standings_entry` parcourt le classement entier pour n'en retenir que deux
+    lignes.
+
+    Mesure du 28/08/2026, sur 66 equipes de trois championnats a saison civile —
+    donc a vingt journees jouees : **55 % de signal pour `sd = 0,108`** sur les
+    cinq derniers matchs. C'est au-dessus de toutes les lignes de saison en
+    production, dont le plancher est `Total buts BTTS` a 24 % et `sd = 0,048`.
+
+    **Et elle ne s'eteint pas quand la saison avance**, ce qui etait la crainte :
+    l'ecart-type du rang moyen vaut 0,151 apres cinq journees et **0,159 apres
+    vingt**. Une fenetre de cinq echantillonne cinq adversaires parmi vingt, et
+    cet echantillon reste disperse meme quand le calendrier cumule s'equilibre —
+    les deux ne sont pas la meme chose.
+
+    Le compte accompagne la moyenne, comme partout : un adversaire de coupe ou de
+    coupe d'Europe n'est dans aucune table, donc le denominateur tombe sous cinq.
+    Mesure : 60 % des equipes ont leurs cinq adversaires classes, 86 % en ont au
+    moins trois.
+    """
+    if history is None or not ranks:
+        return ""
+    matches, _ = history
+    rangs = [
+        ranks[cle]
+        for match in matches[-LEVEL_LAST:]
+        if (cle := str(match.get("opponent"))) in ranks
+    ]
+    if len(rangs) < LEVEL_MIN_RANKED:
+        return ""
+    return f"{team} {sum(rangs) / len(rangs):.1f}e moy/{len(rangs)}"
+
+
 def _leads_at_half(match: dict[str, Any]) -> bool:
     """Vrai si l'equipe du dossier menait a la pause, du bon cote du score.
 
@@ -1451,6 +1515,25 @@ def _scorers_of(event_id: int, league_id: Any, season: int | None, settings: Set
     return known[0]
 
 
+def _ranks_of(event_id: int, settings: Settings) -> dict[str, int]:
+    """Le rang de chaque equipe du championnat, depuis le releve de classement.
+
+    **Le dossier lit deja un contexte d'evenement** — `KIND_TEAMS` lui donne les
+    identifiants d'equipe — donc la dependance n'est pas nouvelle. Elle est ici
+    la seule facon de croiser deux echelles : l'historique est range **par
+    equipe**, le classement **par evenement**, et c'est le second qui porte la
+    table.
+
+    Vide sur un releve anterieur au 28/08/2026 : la table n'y figure pas, et la
+    ligne ne sort donc qu'apres le prochain enrichissement. Aucune migration —
+    elle rattraperait un historique que personne ne relira, meme arbitrage que
+    `venue_id` et `home_country`.
+    """
+    known = payload_of(event_id, KIND_STANDINGS, settings)
+    rangs = known.get("rangs") if isinstance(known, dict) else None
+    return rangs if isinstance(rangs, dict) else {}
+
+
 def dossier_lines(
     event_id: int,
     home: str,
@@ -1476,6 +1559,7 @@ def dossier_lines(
     home_history = _history(home_id, season, settings)
     away_history = _history(away_id, season, settings)
     scorers = _scorers_of(event_id, league_id, season, settings)
+    ranks = _ranks_of(event_id, settings)
     # Les feuilles de match sont rangees par evenement, la fiche d'entraineur
     # par equipe : c'est ici qu'elles se rejoignent, et nulle part ailleurs.
     feuilles = load_context(event_id, settings).get(KIND_SHEETS) or {}
@@ -1512,6 +1596,16 @@ def dossier_lines(
             (
                 _goals_fragment(home, home_history, season or 0),
                 _goals_fragment(away, away_history, season or 0),
+            ),
+        ),
+        (
+            # Le niveau vient juste apres, parce qu'il qualifie ce que « Forme 5 »
+            # et les fractions ci-dessus decrivent : contre qui elles ont ete
+            # obtenues.
+            "Niveau adv.",
+            (
+                _level_fragment(home, home_history, ranks),
+                _level_fragment(away, away_history, ranks),
             ),
         ),
         (

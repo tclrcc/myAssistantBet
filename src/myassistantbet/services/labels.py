@@ -246,6 +246,10 @@ CONTEXT_EXPECTED: dict[str, tuple[str, ...]] = {
         "Possession",
         "xG",
         "Entraineur",
+        # Le niveau des adversaires : deux moities telechargees et jetees, donc
+        # zero appel. Rendu sur 86 % des equipes — sous trois adversaires classes
+        # la ligne se tait. Le denominateur football passe de 27 a 28.
+        "Niveau adv.",
         "Total buts",
         # Elle sort de l'historique de saison, comme « Total buts », donc sur la
         # meme population : 99,3 % des blocs du regime courant. Systematique,

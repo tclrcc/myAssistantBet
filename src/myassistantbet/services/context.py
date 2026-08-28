@@ -840,6 +840,29 @@ def _record_pending(
 # -- Recuperation -----------------------------------------------------------
 
 
+def _standings_ranks(standings: list[dict[str, Any]]) -> dict[str, int]:
+    """Le rang de **chaque** equipe de la table, par identifiant.
+
+    Meme parcours que `_standings_entry`, meme appel, et rien de plus : la table
+    est deja en memoire. Les cles sont des chaines parce que JSON n'en connait
+    pas d'autres — les relire en entier evite un `int()` a chaque lecture.
+
+    Sur un tour de coupe, les deux equipes ne partagent pas de championnat et
+    `fetch_context` appelle deux tables : elles se fondent ici en une seule, ce
+    qui est correct puisqu'un identifiant d'equipe est unique chez le
+    fournisseur.
+    """
+    rangs: dict[str, int] = {}
+    for league in standings:
+        for group in ((league.get("league") or {}).get("standings")) or []:
+            for row in group or []:
+                team_id = (row.get("team") or {}).get("id")
+                rank = row.get("rank")
+                if team_id is not None and rank is not None:
+                    rangs[str(team_id)] = int(rank)
+    return rangs
+
+
 def _standings_entry(standings: list[dict[str, Any]], team_id: int) -> dict[str, Any] | None:
     for league in standings:
         groups = ((league.get("league") or {}).get("standings")) or []
@@ -1369,6 +1392,12 @@ async def fetch_context(
                 lambda lid=league_id, yr=season: client.standings(lid, yr),
             )
             payload[side] = _standings_entry(standings, team_id)
+            # **Le classement entier etait parcouru puis jete.** `_standings_entry`
+            # lit toute la table pour n'en garder que deux lignes ; le rang des
+            # autres equipes est telecharge et perdu, alors qu'il est ce qui rend
+            # « Forme 5 » lisible — une suite de lettres traite une victoire sur
+            # le dernier comme une victoire sur le premier. Zero appel de plus.
+            payload.setdefault("rangs", {}).update(_standings_ranks(standings))
         if payload.get("home") or payload.get("away"):
             store(report.event_id, KIND_STANDINGS, payload, settings)
             report.kinds.append(KIND_STANDINGS)

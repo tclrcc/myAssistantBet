@@ -42,6 +42,7 @@ from myassistantbet.services.context import (
     failure_causes,
     fetch_context,
     load,
+    payload_of,
     refresh_due_lineups,
     store,
 )
@@ -2189,6 +2190,36 @@ def test_la_forme_dit_sur_combien_de_matchs_portent_ses_buts(migrated: Settings)
     # douze buts en deux matchs.
     assert "V (1j) 6-8/5" in forme
     assert "DV (2j) 12-4/5" in forme
+
+
+@respx.mock
+@pytest.mark.anyio
+@respx.mock
+@pytest.mark.anyio
+async def test_le_classement_garde_le_rang_de_toutes_les_equipes(
+    api_client: APIFootballClient, migrated: Settings, load_fixture: Any
+) -> None:
+    """**La table entiere etait parcourue puis jetee.** `_standings_entry` la lit
+    pour n'en garder que deux lignes ; le rang des autres equipes etait
+    telecharge et perdu, alors qu'il est ce qui rend « Forme 5 » lisible — une
+    suite de lettres traite une victoire sur le dernier comme une victoire sur le
+    premier.
+
+    C'est la moitie **ecriture** du croisement : `dossier` lit ensuite cette table
+    pour rendre « Niveau adv. », et sa moitie **lecture** est gardee cote
+    `test_dossier`. Zero appel de plus — la table est deja en memoire.
+    """
+    _seed_event(migrated)
+    _mock_all(load_fixture)
+
+    await fetch_context(api_client, EVENT, migrated)
+
+    rangs = payload_of(1, KIND_STANDINGS, migrated)["rangs"]
+    # La fixture porte neuf equipes classees : les deux du match et les
+    # adversaires de ses derniers matchs.
+    assert len(rangs) > 2, "seules les deux equipes du match etaient gardees"
+    assert rangs["376"] == 4, "le rang de l'equipe du match reste juste"
+    assert all(isinstance(rang, int) for rang in rangs.values())
 
 
 @respx.mock

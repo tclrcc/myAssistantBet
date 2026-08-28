@@ -890,15 +890,36 @@ def test_le_compte_des_lignes_d_historique_suit_ce_qui_est_documente() -> None:
 
     Le banc compare donc le nombre **annonce** au nombre de puces reellement
     documentees dans ce paragraphe, dans les deux branches de la porte.
+
+    **La borne est structurelle et non textuelle**, et c'est une correction : le
+    premier jet s'arretait a la phrase « Une annee entre parentheses », donc sa
+    validite dependait d'une propriete du document qu'il ne verifiait pas — le
+    jour ou ce paragraphe se deplace, le comptage deborde sur des puces d'une
+    autre famille et le banc devient vert pour une mauvaise raison. La liste se
+    ferme desormais sur sa **forme** : la premiere ligne qui n'est ni une puce, ni
+    sa continuation, ni une balise de porte.
     """
     import re
 
     from myassistantbet.services.prompt import DEFAULT_TEMPLATE, TEMPLATES_DIR
 
     texte = (TEMPLATES_DIR / DEFAULT_TEMPLATE).read_text(encoding="utf-8")
-    debut = texte.index("lignes viennent de l'historique de saison")
-    fin = texte.index("Une année entre parenthèses", debut)
-    section = texte[debut:fin]
+    lignes = texte.split("\n")
+    ouverture = next(
+        n for n, ligne in enumerate(lignes) if "lignes viennent de l'historique de saison" in ligne
+    )
+    debut = next(n for n in range(ouverture, len(lignes)) if "  · **«" in lignes[n])
+    fin = debut
+    while fin < len(lignes) and (
+        "  · **«" in lignes[fin]
+        or lignes[fin].startswith("    ")
+        or lignes[fin].strip() in ("", "{% endif %}")
+    ):
+        fin += 1
+    section = "\n".join(lignes[debut:fin])
+    assert "Une année entre parenthèses" not in section, (
+        "la liste deborde sur le paragraphe suivant"
+    )
 
     mots = {"Trois": 3, "Quatre": 4, "Cinq": 5}
     annonce = re.search(r"\{% if '([^']+)' in context_labels %\}(\w+)\{% else %\}(\w+)", texte)

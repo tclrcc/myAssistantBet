@@ -1008,6 +1008,46 @@ de fois qu'elle joue.
   - `Total buts` compte les buts **du match**, `Buts marq.` (phase 11) ceux de **l'equipe**.
     Deux lignes voisines et deux grandeurs differentes : le template les separe
     explicitement, et un test le verifie.
+  - **`Niveau adv.` dit contre qui la forme a ete obtenue**, et ses deux moities
+    etaient **telechargees et jetees** — donc zero appel. `_summarize` gardait
+    tout d'un match **sauf l'adversaire** ; `_standings_entry` parcourt le
+    classement entier pour n'en retenir que **deux lignes**. C'est le pendant
+    football de la ligne du meme nom au tennis, dont le dossier ecrit qu'elle
+    rend `Forme` lisible : « la suite de lettres traite une victoire sur le 150e
+    comme une victoire sur le 5e ». `Forme 5` avait exactement ce defaut.
+    - **Mesure du 28/08/2026**, 66 equipes de trois championnats a saison civile,
+      donc a vingt journees jouees : **55 % de signal pour `sd = 0,108`** sur les
+      cinq derniers matchs — au-dessus de **toutes** les lignes de saison en
+      production, dont le plancher est `Total buts BTTS` a 24 % et `sd = 0,048`.
+    - **Elle ne s'eteint pas quand la saison avance, et c'etait la crainte a
+      lever.** L'ecart-type du rang moyen vaut 0,151 apres cinq journees et
+      **0,159 apres vingt** : une fenetre de cinq echantillonne cinq adversaires
+      parmi vingt, et cet echantillon reste disperse meme quand le calendrier
+      **cumule** s'equilibre. Les deux ne sont pas la meme chose, et la confusion
+      aurait ferme la ligne a tort.
+    - La fenetre est celle de `Forme 5`, dont elle eclaire la lecture : une autre
+      ferait porter les deux lignes sur deux periodes, ce que le compte de
+      `Forme 5` a deja du corriger une fois.
+    - Sous `LEVEL_MIN_RANKED` (3) adversaires classes, **aucune ligne** — meme
+      seuil que `PROFILE_MIN_MATCHES` et meme raison. Mesure sur 606 equipes :
+      **60 % ont leurs cinq adversaires classes, 86 % en ont au moins trois**. Un
+      adversaire de coupe ou d'Europe n'est dans aucune table, et c'est ce que dit
+      le denominateur quand il tombe sous cinq.
+    - **Le croisement de deux echelles**, et c'est ce qui le rend delicat :
+      l'historique est range **par equipe**, le classement **par evenement**.
+      `_ranks_of` lit le second depuis le dossier — la dependance n'est pas
+      nouvelle, `KIND_TEAMS` y est deja lu — et les deux moities se gardent
+      **chacune a son endroit** : l'ecriture cote `test_context`, la lecture cote
+      `test_dossier`.
+    - **Aucune migration** : un releve anterieur ne porte ni `rangs` ni
+      `opponent`, la ligne ne sort donc qu'apres le prochain enrichissement. Meme
+      arbitrage que `venue_id` et `home_country` — rattraper un historique que
+      personne ne relira couterait plus que d'attendre le TTL.
+    - **Sa puce du preambule est hors du paragraphe de l'historique de saison**,
+      et le compte de celui-ci ne bouge pas : la ligne est **a cheval sur deux
+      sources**, donc elle n'appartient pas a cette famille. Le banc du compte ne
+      mord pas, et c'est la bonne raison — il aurait mordu pour la mauvaise si la
+      puce avait ete posee la.
   - **`A la pause` lisait une donnee ecrite depuis l'origine du module et jamais
     relue.** `_summarize` garde `score.halftime` de chaque match — 24 740 releves,
     99,1 % des matchs joues, et 605 releves d'equipe sur 606 le portent sur *tous*
@@ -3130,6 +3170,38 @@ se deduit donc, ou ne se dit pas.
     moyen de tout ce qui n'a pas ete saisi n'a aucune coherence sportive et ne dirait
     rien des matchs, alors que le compte, lui, est juste. Sans lui, des selections
     quittaient le regroupement sans qu'une seule ligne ne le signale.
+
+## Un miroir manquant se juge contre son propre symetrique, jamais dans l'absolu
+
+**Regle de revue, du 28/08/2026, tiree de deux miroirs livres le meme jour.** Quand
+une ligne rend une face d'une grandeur et pas l'autre, la question n'est pas « le
+miroir discrimine-t-il assez » mais **« le cote deja rendu passe-t-il une barre
+plus haute »**.
+
+C'est la forme que prend le plancher d'admission — voir
+`audit/04_couverture_football.md` — appliquee non pas a un candidat contre la
+production, mais a **un candidat contre son propre symetrique deja en place**.
+
+Mesure qui l'a fondee, sur les tirs concedes : les correlations a ce que le bloc
+porte par ailleurs sont **identiques a 0,01 pres** des deux cotes — total de tirs
+contre corners, +0,66 produit et +0,65 concede ; contre `xG`, +0,63 et +0,64 ;
+cadres contre possession, +0,39 et +0,36.
+
+- **L'objection qu'elle desamorce est reelle** : le total de tirs concedes est
+  correle a 0,65 aux corners concedes et 0,64 a l'`xG` concede, donc il redit une
+  part de ce que le bloc dit deja. Juge seul, il tomberait sous le §8.
+- **Mais le cote produit porte exactement la meme redondance**, et il est rendu
+  depuis toujours. Refuser le miroir appliquerait au nouveau une barre que
+  l'ancien ne passe pas — ce n'est pas un critere, c'est un privilege
+  d'anciennete. Meme raisonnement que `BTTS MT`, admis parce qu'il etait au
+  niveau exact de `BTTS`.
+- **Le corollaire vaut dans les deux sens** : un miroir nettement *moins*
+  discriminant que sa moitie offensive ne se justifie pas par la symetrie. La
+  symetrie autorise, elle n'oblige pas.
+
+**La question a se poser devant tout miroir manquant** : *le cote deja rendu
+passerait-il le critere que j'oppose au miroir ?* Si non, le critere n'est pas
+celui du bloc, c'est celui du jour.
 
 ## Un remount n'est pas un raccourcissement, et le correctif n'est pas le meme
 

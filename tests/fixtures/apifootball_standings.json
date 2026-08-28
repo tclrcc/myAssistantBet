@@ -58,6 +58,61 @@
               "all": {
                 "played": 16
               }
+            },
+            {
+              "rank": 10,
+              "team": {
+                "id": 215,
+                "name": "Moreirense"
+              },
+              "points": 29,
+              "all": {
+                "played": 16
+              }
+            },
+            {
+              "rank": 11,
+              "team": {
+                "id": 242,
+                "name": "Famalicao"
+              },
+              "points": 28,
+              "all": {
+                "played": 16
+              }
+            },
+            {
+              "rank": 12,
+              "team": {
+                "id": 217,
+                "name": "SC Braga"
+              },
+              "points": 27,
+              "all": {
+                "played": 16
+              }
+            },
+            {
+              "rank": 13,
+              "team": {
+                "id": 4724,
+                "name": "Alverca"
+              },
+              "points": 26,
+              "all": {
+                "played": 16
+              }
+            },
+            {
+              "rank": 14,
+              "team": {
+                "id": 211,
+                "name": "Benfica"
+              },
+              "points": 25,
+              "all": {
+                "played": 16
+              }
             }
           ]
         ]
