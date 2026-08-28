@@ -1076,6 +1076,156 @@ serie dont on ne saurait pas ce qu'elle decrit. Ecrit ici parce qu'une dependanc
 qui ne vit que dans une conversation se perd — c'est ce que B1 a coute, neuf lots
 durant.
 
+## C.32 — Un garde de frontiere decrit comme une propriete de l'objet
+
+**Mesure du 28/08/2026, sur le corpus des dix combines enregistres.** Le combine
+8 porte **une jambe**, `declared_price` 5.09, produit recalcule **2.08**. Le bloc
+d'origine en declarait trois — `["M7", "M8", "M3"]`, relu dans `imports_raw`.
+
+`CLAUDE.md` affirme qu'« un combine dont une jambe n'a pas ete importee n'est pas
+enregistre ampute ». **La phrase est vraie a l'import et fausse ensuite.**
+
+- Le garde existe, il est correct, et il n'a jamais ete contourne :
+  `picks_import._attach_combos` refuse tout combine dont un repere ne se resout
+  pas (`4af17cd`, 14/08, huit jours avant le combine 8), et `main._record_combos`
+  refuse si une ligne n'a pas ete importee. Les imports 68 et 70 ont declare un
+  combine et n'en ont produit **aucun** : le garde a tire.
+- La cause est en aval, dans le schema :
+  `combo_legs.pick_id ... ON DELETE CASCADE` (migration 047). **29 identifiants de
+  selection manquent globalement**, dont 401, 402, 407, 408, 409 autour de
+  l'import 48. Supprimer une selection ampute silencieusement tout combine qui la
+  contenait, et `declared_price` reste en face d'un produit qui ne le vaut plus.
+
+**La famille de §8 qu'elle nomme** : une phrase qui decrit un **garde de
+frontiere** — vrai a l'instant ou la ligne entre — se lit comme une **propriete de
+l'objet** — vraie tant qu'il existe. Les deux se distinguent par une seule
+question : *qu'est-ce qui peut arriver a cette ligne apres son ecriture ?*
+
+**Ouvert, non corrige.** Trois traitements possibles et aucun n'est evident : un
+`ON DELETE RESTRICT`, qui interdirait de supprimer une selection referencee ; une
+marque d'amputation sur `combos` ; ou l'aveu, en rendant `computed_price`
+incalculable des que le nombre de jambes ne vaut plus celui du bloc declare — mais
+le bloc n'est pas conserve, seuls ses offsets le sont.
+
+## C.33 — L'idempotence vit une couche au-dessus et ne descend pas
+
+**Meme mesure, meme corpus.** Les combines 1, 2 et 3 sont **le meme combine** :
+memes trois jambes, meme `prompt_id` 159, meme `import_id` 18 — ecrits le 19/08 a
+17:26, le 20/08 a 09:18 et le 20/08 a 19:13.
+
+- `imports_raw` porte `UNIQUE (session_id, sha256)` : recoller le meme texte rend
+  **le meme** identifiant d'import. La deduplication existe, et elle fonctionne.
+- `picks` n'a pas ete triple — deux selections pour l'import 18.
+- **`combos` n'a aucune cle naturelle**, et `main._record_combos` s'execute
+  inconditionnellement a chaque import portant un champ de combine.
+
+**Ce n'est pas le defaut d'appariement d'import deja connu** (C.27 et le collage
+partiel posterieur a un collage complet), et la verification a ete faite avant de
+l'ecrire comme neuf : celui-la porte sur des blocs `conf` et produit des **rejets**,
+celui-ci produit une **ecriture dupliquee**.
+
+La regle generale : une deduplication posee sur une couche ne protege pas celles
+qui la consomment. `imports_raw` repond a « ce texte est-il deja entre » ;
+`combos` ne repond a rien.
+
+**Portee** : 3 lignes sur 10, soit 30 % du corpus de combines. Aucune consequence
+sur une population mesuree — `analysis()` ne lit pas `combos` — mais toute lecture
+de ce corpus doit deduire les doublons avant de compter.
+
+## C.34 — `price_real` valait 9, il en vaut 184
+
+**Copie de document vieillie, et ce n'est pas le nombre qui coute.** `CLAUDE.md`
+et `history.Worksheet.without_real_price` portent tous deux « 9 lignes sur 116 ».
+Mesure du 28/08/2026 : **184**.
+
+Le nombre fonde **deux conclusions** qui sont a re-mesurer avec lui, et non
+seulement a corriger :
+
+- « le controle qui valide ou invalide le resultat principal du projet ne peut
+  donc pas etre fait » — a 184 paires, il le peut peut-etre ;
+- « les 9 paires ont **toutes** `price_source = reference` », d'ou la reserve que
+  l'ecart mesure ne dit rien des selections cotees chez le book principal. La
+  composition des 184 n'a pas ete relue.
+
+Sixieme occurrence de la regle : **compter les copies avant de declarer une
+correction faite**, et `grep` sur le chiffre plutot que sur le souvenir de
+l'avoir ecrit. Ici il y en a au moins deux, et la mesure qui les met a jour n'a
+pas ete conduite — c'est elle le chantier, pas la substitution du nombre.
+
+## C.35 — Le zero de `stop_reason` etait une propriete de la population
+
+**Instruit le 28/08/2026, et les deux hypotheses de depart etaient fausses.**
+`combos.stop_reason` et `combos.target_price` sont nuls sur **10 combines sur
+10** — deux champs dont le module dit qu'ils diront si la cible est bien reglee.
+Ni `confidence_floor` (un garde qui ne se declenche jamais) ni `HiddenEvent.priced`
+(une propriete inatteignable) : une troisieme forme, et c'est la regle du
+denominateur.
+
+- Les dix sont **tous `court`**, et le gabarit dit en toutes lettres que `arret`
+  « se laisse vide sur le court, dont le nombre de jambes est fixe d'avance ».
+  `stop_reason` nul est le **comportement documente**.
+- Les dix viennent d'un prompt de lot **9 ou 10**, donc de la branche « un seul
+  combine » (`combo_solo_min_lot` = 9, `combo_min_lot` = 20). Cette branche
+  **n'annonce aucune cote cible**. `target_price` nul suit.
+- Verifie sur les collages bruts : les dix blocs portent les deux cles, remplies
+  `"cible": null, "arret": ""`. Le modele a repondu correctement a une question
+  qu'on ne lui posait pas.
+
+**Le constat qui reste, et il etait sous les deux hypotheses : aucun combine
+`long` n'a jamais existe.** Zero bloc `"type": "long"` sur les 78 collages, et la
+branche a deux combines a tire **4 fois sur 85 prompts** sans jamais produire. Le
+denominateur des deux champs est **0 long**, pas 10 combines.
+
+Consequence : la question « la cible est-elle bien reglee » n'a **aucune
+observation**, et elle n'en aura pas tant que les lots ne franchiront pas
+`combo_min_lot`. Porte ouverte, et son horizon se compte en lots de vingt matchs,
+pas en jours.
+
+## C.36 — La montante : fermee par le calendrier avant de l'etre par le principe
+
+**Resultat negatif du 28/08/2026, ecrit sous la forme qui empeche de le refaire.**
+La demande — « quelles selections peuvent servir pour une montante » — a ete
+instruite en trois voies. Elle est close, et **pas pour la raison attendue**.
+
+Le debat de principe portait sur §9 : une montante est un systeme de mise
+progressif, et demander quelles selections y conviennent revient a les classer par
+probabilite de gain. Ce debat n'a pas eu a etre tranche.
+
+**Une montante enchaine**, donc elle a besoin de matchs qui ne se chevauchent pas.
+Restreint a ce qui s'etablit — le football, dont la duree est le format du sport —
+l'enchainement le plus long parmi les selections `SAFE` a cran >= 4 :
+
+| | mediane | min | max | journees < 3 pas |
+| --- | ---: | ---: | ---: | ---: |
+| enchainement etabli, `SAFE` & cran >= 4 | **1** | 0 | 5 | **20 / 23** |
+| enchainement etabli, `SAFE` seul | 2 | 0 | 10 | 15 / 23 |
+
+**Le calendrier interdit la fonctionnalite les trois quarts du temps.** Une
+montante a deux pas n'est pas une montante.
+
+- **Correction d'un premier releve, et elle va dans le sens defavorable** : la
+  premiere mesure annoncait une mediane de 2, en pretant au tennis une duree de
+  150 minutes. **Aucune source ne la publie** — verifie le 07/08/2026, et les
+  fichiers qui la portaient ont disparu. Un chevauchement calcule dessus est un
+  booleen bati sur un nombre invente, exactement la regle du 21/08.
+- Second constat, independant : parmi ces memes candidates, la mediane de celles
+  cotees chez le **book principal** vaut **0**, et 18 journees sur 23 en portent
+  moins de deux. Une progression calculee sur une cote qu'on n'obtiendra pas est
+  une fiction arithmetique.
+- Le filtre deterministe, lui, **fonctionne** : `SAFE` & cran >= 4 rend une
+  mediane de 3 selections par jour et **jamais zero** sur 23 journees. Ce n'est
+  pas le compte qui manque, c'est l'enchainement.
+
+**Ce qui a ete livre a la place** : le recapitulatif rend le **chevauchement
+horaire**, que rien n'affichait — le palier et le cran etaient deja a l'ecran — et
+ne nomme aucun systeme de mise. La decision de mise reste entiere et hors de
+l'outil.
+
+**Ce qui rouvrirait la question, et rien d'autre** : un regime de lots ou les
+coups d'envoi s'etalent assez pour qu'un enchainement de trois pas existe la
+plupart des jours. Ce n'est pas une question de volume de selections — le compte
+est deja la — c'est une propriete du calendrier des competitions suivies.
+
 ## C.21 — Ce qui reste ouvert et n'a pas ete instruit
 
 - **Phase 4** — le generateur de prompts : variables injectees non utilisees,

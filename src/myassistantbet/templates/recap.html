@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Récapitulatif du {{ day }} — MyAssistantBet{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Récapitulatif — {{ day }}</h1>
+  <div class="actions">
+    <a class="button" href="/history">← Historique</a>
+  </div>
+</div>
+
+<div class="prompt-actions">
+  <span class="muted">
+    {{ recap.lines | length }} sélection(s) · {{ recap.competitions }} compétition(s) ·
+    {{ recap.sessions }} session(s){% if recap.exploratory %} · {{ recap.exploratory | length }} en C-bis{% endif %}
+  </span>
+  <button type="button" class="primary" id="copy">Copier</button>
+  <a class="button" href="/recap/{{ day }}.md">Télécharger .md</a>
+</div>
+
+{# Les propositions ne s'enregistrent pas, et le dire ici evite de chercher un
+   bouton absent : `combos.prompt_id NOT NULL` refuse une jambe venue d'un autre
+   prompt, et une journee en porte 3 a 19. #}
+<p class="muted small">
+  Les combinés proposés par ce prompt ne s'enregistrent pas : une journée porte
+  plusieurs prompts, et l'application refuse un combiné dont les jambes n'ont
+  jamais été comparées entre elles.
+</p>
+
+<pre id="prompt-body">{{ body }}</pre>
+
+<script>
+  document.getElementById("copy").addEventListener("click", async (event) => {
+    const button = event.currentTarget;
+    const text = document.getElementById("prompt-body").textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+      button.textContent = "Copié ✓";
+    } catch {
+      const range = document.createRange();
+      range.selectNodeContents(document.getElementById("prompt-body"));
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(range);
+      button.textContent = "Sélectionné — Ctrl+C";
+    }
+    setTimeout(() => { button.textContent = "Copier"; }, 2500);
+  });
+</script>
+{% endblock %}

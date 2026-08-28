@@ -50,6 +50,7 @@ from .services import odds_view as odds_view_service
 from .services import payload as payload_service
 from .services import picks_import as picks_import_service
 from .services import prompt as prompt_service
+from .services import recap as recap_service
 
 # Importe **au niveau du module**, donc a l'ouverture du processus : c'est
 # cet import qui prend l'instantane du code charge. Paresseux, il
@@ -1192,6 +1193,50 @@ def prompt_download(
     )
 
 
+# --- Recapitulatif du jour -------------------------------------------------
+
+
+def _recap(day: str) -> tuple[recap_service.DayRecap, str]:
+    """Le recapitulatif et son corps, et l'entree de journal qui le date.
+
+    **Au premier rendu**, jamais a la livraison ni au deploiement : c'est
+    l'idiome de `note_price_coverage` et de `note_feedback`. Ecrite ici et non
+    dans `render` — la fonction de rendu est appelee par les bancs, et un
+    journal qui se remplirait a chaque test ne daterait plus rien.
+    """
+    settings = get_settings()
+    recap = recap_service.build(day, settings)
+    corps = recap_service.render(recap, settings)
+    recap_service.note_service(db.utcnow()[:10], settings)
+    return recap, corps
+
+
+@app.get("/recap/{day}.md")
+def recap_download(day: str) -> PlainTextResponse:
+    """Le meme corps, en telechargement Markdown."""
+    _, corps = _recap(day)
+    return PlainTextResponse(
+        corps,
+        media_type="text/markdown; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="recap-{day}.md"'},
+    )
+
+
+@app.get("/recap/{day}", response_class=HTMLResponse)
+def recap_page(request: Request, day: str) -> HTMLResponse:
+    """Le recapitulatif d'une journee d'analyse, tous lots confondus.
+
+    Une journee et non une session : elle porte 3 a 19 prompts, et parfois deux
+    sessions. La borne est `picks.created_at`, la date de la decision.
+    """
+    recap, corps = _recap(day)
+    return templates.TemplateResponse(
+        request,
+        "recap.html",
+        {"recap": recap, "body": corps, "day": day},
+    )
+
+
 # --- Historique et picks ---------------------------------------------------
 
 
@@ -1202,7 +1247,13 @@ def history_page(request: Request) -> HTMLResponse:
     return templates.TemplateResponse(
         request,
         "history.html",
-        {"sessions": history_service.list_sessions(settings)},
+        {
+            "sessions": history_service.list_sessions(settings),
+            # La journee d'analyse, en UTC comme `picks.created_at` : le
+            # recapitulatif se borne sur cette colonne, et deux horloges
+            # rendraient un jour de decalage le soir.
+            "today": db.utcnow()[:10],
+        },
     )
 
 

@@ -33,6 +33,7 @@ import logging
 import math
 import re
 import statistics
+from collections.abc import Sequence
 from dataclasses import dataclass, field, replace
 
 from ..config import Settings, get_settings
@@ -222,6 +223,24 @@ class Leg:
     result: str
 
 
+def product(prices: Sequence[float | None]) -> float | None:
+    """Le produit de cotes, ou `None` des qu'une manque.
+
+    **Incalculable plutot que faux** : omettre une jambe sans prix donnerait une
+    cote plus basse que la vraie, sans que rien ne le dise. Une liste vide n'est
+    pas non plus un produit — `math.prod` rendrait 1.0, qui se lirait comme une
+    cote.
+
+    Ecrite ici parce que le combine est le premier a en avoir eu besoin, et
+    appelee telle quelle par le recapitulatif du jour : c'est la regle de la
+    jambe manquante qui est partagee, pas la multiplication.
+    """
+    valeurs = list(prices)
+    if not valeurs or any(prix is None for prix in valeurs):
+        return None
+    return math.prod(prix for prix in valeurs if prix is not None)
+
+
 @dataclass
 class Combo:
     """Un combine relu en base."""
@@ -240,13 +259,14 @@ class Combo:
         """La cote **recalculee depuis les jambes**, jamais celle qu'on a lue.
 
         Le produit ecrit dans la reponse est une affirmation du modele ; celui-ci
-        est une consequence des prix enregistres. Une jambe sans prix rend le
-        produit incalculable plutot que faux — l'omettre donnerait une cote plus
-        basse que la vraie, sans que rien ne le dise.
+        est une consequence des prix enregistres.
+
+        La regle vit dans `product`, et cette propriete l'appelle : le
+        recapitulatif du jour multiplie les memes prix pour ses propositions, et
+        deux ecritures du meme produit auraient fini par ne pas traiter la jambe
+        sans prix de la meme facon.
         """
-        if not self.legs or any(leg.price is None for leg in self.legs):
-            return None
-        return math.prod(leg.price for leg in self.legs if leg.price)
+        return product([leg.price for leg in self.legs])
 
     @property
     def price_gap(self) -> float | None:

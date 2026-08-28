@@ -288,6 +288,14 @@ class Pick:
     #: compareraient mal.
     created_at: str = ""
     commence_time: str = ""
+    #: La ligne vient de la section **C-bis**, et de la population tardive.
+    #: `_PICK_JOIN` les ramenait deja — `k.*` — et `_pick` les jetait, si bien
+    #: qu'une lecture de picks ne pouvait pas distinguer les deux populations
+    #: sans refaire sa propre requete. Elles decident de tout ici : C-bis ne
+    #: recoit aucune mise, et une selection tardive porte une cote qui n'a
+    #: jamais ete un prix d'avant-match.
+    exploratory: bool = False
+    late: bool = False
 
     @property
     def late_label(self) -> str:
@@ -1148,6 +1156,8 @@ def _pick(row: Any, tier_labels: dict[str, str], tz: str = "") -> Pick:
         commence_time=str(_column(row, "commence_time") or ""),
         competition=_column(row, "competition") or "",
         sport_order=int(_column(row, "sport_order") or 99),
+        exploratory=bool(_column(row, "exploratoire") or 0),
+        late=bool(_column(row, "tardive") or 0),
         commence_local=(
             _local(row["commence_time"], tz)
             if tz and _column(row, "commence_time") is not None
@@ -1188,6 +1198,31 @@ def list_picks(session_id: int, settings: Settings | None = None) -> list[Pick]:
         labels = _tier_labels(conn)
         rows = conn.execute(
             _PICK_JOIN + "WHERE k.session_id = ? ORDER BY k.id", (session_id,)
+        ).fetchall()
+    return [_pick(row, labels, settings.tz) for row in rows]
+
+
+def list_picks_for_day(day: str, settings: Settings | None = None) -> list[Pick]:
+    """Les selections d'une **journee d'analyse**, toutes sessions confondues.
+
+    La journee est celle de `picks.created_at` — la date de la **decision** — et
+    non celle du coup d'envoi : meme borne que `changelog.split` et que
+    l'etalement de `feedback()`, et c'est elle qui decrit ce qu'on a produit
+    dans la seance.
+
+    **Une journee n'est pas une session**, et c'est mesure : elle porte 3 a 19
+    prompts, et deux sessions le 22/08/2026. Une lecture scopee a la session
+    manquerait la moitie du jour sans qu'aucune ligne ne le signale.
+
+    Meme jointure et meme mappeur que `list_picks` : ce qui change est la
+    clause, jamais la lecture. Une seconde requete aurait fini par ne plus
+    ramener les memes colonnes.
+    """
+    settings = settings or get_settings()
+    with connect(settings) as conn:
+        labels = _tier_labels(conn)
+        rows = conn.execute(
+            _PICK_JOIN + "WHERE date(k.created_at) = ? ORDER BY k.id", (str(day).strip(),)
         ).fetchall()
     return [_pick(row, labels, settings.tz) for row in rows]
 
@@ -1240,6 +1275,13 @@ class Worksheet:
         sur 9 lignes sur 116 — toutes issues d'un book de reference. Le controle
         qui valide ou invalide le resultat principal du projet ne peut donc pas
         etre fait, et il ne le sera jamais retroactivement.
+
+        **Le chiffre est perime : 184 au 28/08/2026.** Il n'est pas remplace ici,
+        parce qu'il fonde deux conclusions — celle qui precede, et la reserve que
+        les paires soient toutes de reference — et que les substituer sans les
+        re-mesurer garderait la conclusion en jetant la premisse. Le chantier est
+        ouvert et date (audit C.34). Ce qui compte pour cette propriete n'a pas
+        bouge : c'est un compteur, pas un filtre.
 
         Meme lecon que l'anteriorite, sur une autre colonne : chaque session qui
         passe sans elle est une session definitivement non verifiable.

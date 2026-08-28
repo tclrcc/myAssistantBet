@@ -4,6 +4,9 @@
 <div class="page-head">
   <h1>Historique</h1>
   <div class="actions">
+    {# Une journee et non une session : elle porte 3 a 19 prompts, et parfois
+       deux sessions. La borne est `picks.created_at`. #}
+    <a class="button" href="/recap/{{ today }}">Récapitulatif du jour</a>
     <a class="button primary-link" href="/stats">Statistiques</a>
     <a class="button" href="/">← Board</a>
   </div>

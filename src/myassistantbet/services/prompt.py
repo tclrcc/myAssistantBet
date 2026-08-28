@@ -958,7 +958,7 @@ def competition_notes(
     return list(seen.values())
 
 
-def _collapse_blank_lines(body: str) -> str:
+def collapse_blank_lines(body: str) -> str:
     """Au plus une ligne vide d'affilee, partout.
 
     Chaque porte du preambule — `{% if 'tennis' in sports %}` et les quinze
@@ -1250,7 +1250,7 @@ def build_prompt(
     )
     return RenderedPrompt(
         template_name=template_name,
-        body=_collapse_blank_lines(body),
+        body=collapse_blank_lines(body),
         blocks=len(blocks),
         # Le meme calcul que celui ecrit dans le corps, et par la meme
         # expression : deux ecritures auraient diverge au premier ajustement, et

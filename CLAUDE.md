@@ -3144,6 +3144,110 @@ distinctes (`1N2` et `Handicap`, `Eq. buts` et `Se qualifie`), la neuvieme est
   toute facon deja **bloquante**, `add_pick` refusant la ligne sans elle. La
   compter ici redirait ce qu'un refus dit deja, sur une valeur illisible.
 
+## Le recapitulatif du jour (`services/recap.py`)
+
+Un second prompt, qui **compose et ne reanalyse pas**. Il rassemble une journee
+d'analyse — toutes sessions confondues — et ne demande au modele que ce
+qu'aucun calcul ne peut trancher : deux angles sont-ils independants.
+
+- **Une journee, jamais une session.** La borne est `picks.created_at`, la date
+  de la **decision**, comme `changelog.split` et l'etalement de `feedback()`. Une
+  journee porte **3 a 19 prompts** et parfois deux sessions — mesure du
+  22/08/2026 — donc une lecture scopee a la session manquerait la moitie du jour
+  sans qu'aucune ligne ne le signale. `history.list_picks_for_day` reutilise
+  `_PICK_JOIN` et `_pick` : ce qui change est la clause, jamais la lecture.
+- **La montante est fermee par le calendrier avant de l'etre par le principe**,
+  et c'est un resultat negatif date (28/08/2026, C.36). Une montante enchaine ;
+  restreint a ce qui s'etablit, l'enchainement le plus long sur `SAFE` et
+  cran >= 4 vaut **1 en mediane**, 20 journees sur 23 sous trois pas. Le filtre
+  deterministe, lui, marche — mediane 3 selections par jour, jamais zero. Ce
+  n'est pas le compte qui manque, c'est l'enchainement.
+  - **Le premier releve annoncait 2, en pretant au tennis une duree de 150
+    minutes qu'aucune source ne publie.** La correction va dans le sens
+    defavorable, et elle est la raison de la regle qui suit.
+  - Le rendu ne nomme donc **aucun systeme de mise**. Ce qui manquait n'etait ni
+    le palier ni le cran — ils sont deja a l'ecran — c'etait le **chevauchement
+    horaire**. Nommer un filtre par un systeme de mise deux jours apres le
+    retrait de la section G ferait deux dispositifs pour la meme chose, l'un en
+    pause et documente, l'autre neuf et muet.
+- **Le chevauchement ne se prononce que la ou la fin est structurelle.**
+  `FOOTBALL_MINUTES` vaut 115 — 45 + mi-temps + 45 + arrets — et ce **n'est pas
+  une duree mesuree, c'est le format du sport**. Aucun autre sport du catalogue
+  n'a d'equivalent : la duree d'un match de tennis n'est publiee nulle part.
+  D'ou **trois etats et jamais deux** (`OVERLAP_LABELS`) : `libre`, `chevauche`,
+  et `indetermine` des qu'une ligne qui precede n'a pas de fin connue. Le rendu
+  definit les trois — un libelle sans definition est le defaut que ce projet
+  evite partout.
+- **Les trois propositions portent leur regle comme nom** — `3 jambes, cran >= 4`,
+  `3 jambes, cran >= 3`, `4 jambes, cran >= 3` — et **aucun adjectif**. Le mot
+  « palier » n'a qu'un sens dans l'application : la bande de la cote d'**une
+  selection**. `Combo` n'en porte aucun, `by_tier()` repartit les jambes, et il
+  faut qu'il en reste ainsi — trois jambes SAFE a 1.60 rendent 4.10, donc
+  appeler ce combine « safe » ferait designer deux choses par un meme mot et le
+  taux par bande de cote cesserait de mesurer une bande de cote. Un test verifie
+  que `Proposal` n'a ni `tier` ni `tier_label`.
+  - Les deux grandeurs qui nomment sont **deja en base** ; l'adjectif ne l'est
+    pas. Meme idiome que `Tier.quota_for` : la borne s'ecrit, elle ne se deduit
+    pas de tete.
+  - Le vivier se compte en **matchs distincts**, jamais en lignes : une seule
+    jambe par match, donc deux selections sur la meme rencontre n'en font qu'une.
+    `enough` compare le compte de matchs au nombre de jambes.
+  - Le vivier est celui des **deux paliers les plus surs**, lus par
+    `QUOTA_FLOOR_TIERS` et jamais recopies — le gabarit d'analyse y puise deja
+    ses combines, et deux ecritures auraient diverge a la premiere bande deplacee.
+- **Un match commence sort des propositions** (`session.has_started`), regle du
+  projet : un evenement dont l'heure est passee quitte le prompt. Il reste dans
+  la liste de la journee, marque.
+- **La corrélation : le meme match est refuse, la meme competition ne l'est
+  pas.** Le refus est gratuit — **0 combine sur 10** portait deux jambes sur un
+  meme match — et il garde une propriete vraie pour l'avenir. Le signalement de
+  la competition partagee toucherait **8 combines sur 10** : ce serait du decor,
+  et le dossier a deja mesure ce que ca coute. La **competition unique** est le
+  signal qui classe — 1 sur 10 — et elle ne s'ecrira qu'au-dela de dix combines.
+  Sa condition de reouverture se compte **en combines et non en jours** : les
+  propositions du recapitulatif ne s'enregistrant pas, le corpus ne croit que par
+  la section D du gabarit d'analyse, soit environ un combine par session.
+- **Les propositions ne s'enregistrent pas, et le rendu le dit.**
+  `combos.prompt_id` est `NOT NULL` et `record()` refuse une jambe venue d'un
+  autre prompt — les selections de deux prompts n'ont jamais ete comparees entre
+  elles. La contrainte **n'est pas levee** : un combine de journee enjambe 3 a 19
+  prompts. Le taire ferait chercher un bouton absent.
+- **Aucun taux ne remonte.** Meme raison que `FEEDBACK_SUSPENDED` : transmettre
+  la mesure ferme la boucle qu'elle mesure. Un compte de selections par palier
+  n'en est pas un ; un « dont N gagnees » en serait un. Le banc lit
+  `history.RESULT_LABELS` plutot que de recopier le vocabulaire.
+- **C-bis est tenue a part et n'alimente aucune proposition.** Decision de
+  principe deja ecrite dans `stakes.py` : produite sans fait date, a cotes
+  hautes, c'est la combinaison qui vide une bankroll, et la mesure qu'elle porte
+  fonctionne sans argent. Sur le lot du 28/08, **11 lignes sur 28**.
+- `(ref.)` accompagne chaque prix qui ne vient pas du book principal. La
+  selection reste **posable** — un marche « A relever » se pose, il faut relever
+  le prix avant — mais le **produit** ne l'est pas : mediane **0** selection cotee
+  chez le book principal parmi les candidates, 18 journees sur 23 sous deux.
+- **Le gabarit vit dans `templates/recap/`**, pas dans `templates/prompts/` :
+  `prompt.list_templates` et `template_fingerprint` balaient ce dernier, et y
+  poser ce gabarit l'aurait propose comme gabarit d'analyse dans le menu **et**
+  fait bouger l'empreinte du cadre sans qu'aucune decision d'analyse ait ete
+  prise. La regle des lignes vides doubles, elle, est **appelee**
+  (`prompt.collapse_blank_lines`, rendue publique pour ca) et non recopiee.
+- **`combos.product` est ecrite une fois** et sert les deux : « une jambe sans
+  prix rend le produit incalculable plutot que faux » vaut pour un combine
+  enregistre comme pour une proposition. Une liste vide n'est pas un produit non
+  plus — `math.prod` rendrait 1.0, qui se lirait comme une cote.
+- **Une entree de journal date le premier rendu** (`note_service`, portee
+  `RESTITUTION`), et jamais la livraison ni le deploiement — idiome de
+  `note_price_coverage` et de `note_feedback`. Ce n'est **pas** un point de
+  rupture : le recapitulatif n'ecrit rien, `analysis()` ignore `played`, et rien
+  de ce qu'il rend n'entre en base. Mais `picks.played` vaut **zero sur 615
+  selections** depuis toujours ; le jour ou il cesse de valoir zero, cette
+  surface sera la cause la plus probable, et seule une entree datee dira a partir
+  de quand. Elle est ecrite par la route et non par `render` — les bancs
+  appellent `render`, et un journal qui se remplirait a chaque test ne daterait
+  plus rien.
+- **Aucun format structure n'entre**, donc rien a ajouter au banc de transport :
+  la reponse du modele ne se recolle nulle part. C'est la contrepartie directe du
+  point precedent — ce qui ne s'enregistre pas n'a pas de lecteur a durcir.
+
 ## Le budget de recherche borne les paliers hauts
 
 Tout palier **au-dela des deux plus surs** reclame un fait nomme et date de la
@@ -4446,7 +4550,9 @@ seul instant ou l'information arrive assez tot pour changer quelque chose.
 
 - **La cote obtenue est la vraie lacune, avant `angle` et `source_level`.** Le
   chiffre de tete repose sur `price`, un nombre recopie a la main ; `price_real`
-  est le seul controle possible, et il est renseigne sur **9 lignes sur 116**,
+  est le seul controle possible, et il est renseigne sur **9 lignes sur 116** —
+  chiffre **perime**, il en vaut 184 au 28/08/2026, et les deux conclusions qui
+  en decoulent sont a re-mesurer avec lui (audit C.34) —
   toutes issues d'un book de reference. Le controle qui valide ou invalide le
   resultat principal du projet ne peut donc pas etre fait sur l'existant, et il
   ne le sera jamais retroactivement.
