@@ -27,7 +27,7 @@
    alors que la repartition des confiances, elle, etait complete. Le score en
    sets y entre pour la meme raison : il ne lit aucun pick, seulement des scores
    annonces et constates. #}
-{% if analysis.empty and stats.empty and not labelling and set_scores.empty
+{% if analysis.empty and not labelling and set_scores.empty
       and exploratory.empty and combos.empty and late.empty %}
   <p class="empty">
     Rien à mesurer pour l'instant. Saisis le résultat de quelques sélections —
@@ -51,7 +51,6 @@
      ('tardives', 'Écrites après le coup d\'envoi', not late.empty),
      ('combines', 'Les combinés proposés', not combos.empty),
      ('etiquettes', 'Comment tu étiquettes', labelling | length > 0),
-     ('paris', 'Ce que valent tes paris', coupon_tracking),
    ] %}
 {% if sections | selectattr(2) | list | length > 1 %}
 <nav class="section-nav" aria-label="Sommaire">
@@ -207,20 +206,8 @@
      ne peut pas avoir le même poids visuel que celui qui ne l'est pas. #}
   <div class="kpi">
     {{ tally(analysis.overall, "Sélections tranchées") }}
-    {% if analysis.comparable %}
-      {{ tally(analysis.played, "Jouées") }}
-      {{ tally(analysis.skipped, "Écartées") }}
-    {% endif %}
   </div>
 
-  {% if analysis.comparable %}
-  <p class="block-note">
-    Les deux derniers chiffres se lisent ensemble : si ce que tu écartes gagne
-    aussi souvent que ce que tu joues, le tri n'apporte rien. C'est la seule
-    mesure de ce que vaut ton filtre — et elle ne coûte qu'un résultat saisi sur
-    une ligne que tu n'as pas jouée.
-  </p>
-  {% endif %}
 
   {# LA SECTION DES REGROUPEMENTS, REPLIÉE.
 
@@ -526,8 +513,7 @@
        marché, et près des bornes l'écart de marge fait basculer de bande.
 
        **Elles n'en sortent plus pour autant, et c'est une décision du
-       17/08/2026** : le prix réel ne peut venir que d'une mise, et aucun pari
-       n'est posé — zéro coupon sur douze sessions. L'exclusion était donc une
+       17/08/2026** : l'exclusion était une
        attente sans terme, qui coûtait 20 sélections tranchées sur 178 à l'axe
        le plus fourni de la page. La différence se mesure maintenant sur son
        propre axe, « Par origine du prix ». #}
@@ -2120,104 +2106,10 @@
 </section>
 {% endif %}
 
-{# **Le suivi des paris posés est désactivé par défaut, et c'est un constat
-   plutôt qu'une préférence** : aucun pari n'est posé — zéro coupon sur douze
-   sessions. L'application n'est pas un carnet de mises, c'est un banc de mesure
-   de prédictions.
-
-   Le bloc annonçait cette absence comme un manque — « ce n'est pas une collecte
-   qui manque, c'est un geste qui n'a pas eu lieu » — ce qui est vrai et se lit
-   comme un reproche. Un usage assumé n'a pas à s'excuser. Rien n'est supprimé :
-   le réglage rallume l'ensemble, tables et calculs compris. #}
-{% if coupon_tracking %}
-<section class="stats-block" id="paris">
-  <div class="block-head">
-    <h2>Ce que valent tes paris</h2>
-    <span class="muted small">uniquement ce qui a été posé chez le bookmaker</span>
-  </div>
-
-{% if stats.empty %}
-  <p class="notice">
-    <strong>Aucun coupon saisi.</strong> Rien n'a été enregistré comme posé chez le
-    bookmaker, donc ce bloc n'a rien à compter.
-  </p>
-  <p class="notice">
-    <strong>Et le reste de cette page ne mesure pas les paris posés.</strong> Les
-    sélections et les combinés comptés ailleurs valent qu'ils aient été joués ou non :
-    ils répondent à « ce que vaut l'analyse », pas à « ce que valent mes paris ». Leur
-    présence ne comble pas ce bloc, et ce bloc vide ne les affaiblit pas.
-  </p>
-{% else %}
-  <div class="kpi">
-    {{ hero(stats.overall, "Taux des paris posés") }}
-    {% for row in coupon_rates %}
-      {{ tile(row, row.label) }}
-    {% endfor %}
-  </div>
-
-  <div class="charts">
-    {{ card("Par palier", stats.by_tier,
-            note=(stats.quarantined ~ " pari(s) posé(s) à une cote de référence dont le prix
-                   obtenu n'est pas saisi : hors de cet axe, comptés partout ailleurs.")
-                  if stats.quarantined else "") }}
-    {{ card("Par sport", stats.by_sport) }}
-  </div>
-
-  {% if coupon_rates %}
-  {% call why("Pourquoi les types de coupons ne s'additionnent pas") %}
-  <p>
-    Les types de coupons sont séparés : un combiné tombe dès qu'une jambe cède,
-    il ne se compare pas à un pari simple. Les additionner produirait un taux
-    qui ne décrit ni l'un ni l'autre.
-  </p>
-  {% endcall %}
-  {% endif %}
-
-  <details class="panel">
-    <summary>
-      Le détail chiffré
-      <span class="muted small">gagnés, perdus, annulés, en attente</span>
-    </summary>
-    <div class="stats">
-      <div>
-        <h3>Par palier</h3>
-        {% with rows = stats.by_tier, heading = "Palier" %}
-          {% include "_rates.html" %}
-        {% endwith %}
-      </div>
-      <div>
-        <h3>Par sport</h3>
-        {% with rows = stats.by_sport, heading = "Sport" %}
-          {% include "_rates.html" %}
-        {% endwith %}
-      </div>
-      {% if coupon_rates %}
-      <div>
-        <h3>Coupons</h3>
-        {% with rows = coupon_rates, heading = "Type" %}
-          {% include "_rates.html" %}
-        {% endwith %}
-      </div>
-      {% endif %}
-    </div>
-    {% with minimum_rows = analysis.minimum_rows %}
-    {% endwith %}
-    {% if coupon_rates %}
-    <p class="block-note">
-      Les lignes « Coupons » n'ont pas de taux implicite : un coupon porte une jambe
-      ou dix, et sa cote d'ensemble n'est pas calculée — la capture la porte déjà.
-    </p>
-    {% endif %}
-  </details>
-{% endif %}
-</section>
-{% endif %}
-
 <p class="page-foot">
   Taux = gagnés / (gagnés + perdus). Les paris annulés et ceux en attente sont exclus
   du dénominateur. Aucun indicateur financier n'est produit : rien n'est multiplié par
-  une mise, aucun solde ni aucun gain n'est calculé, et la cote d'ensemble d'un coupon
-  ne l'est pas davantage.
+  une mise, aucun solde ni aucun gain n'est calculé.
   Rien de ce qui précède n'échappe à la règle, pas même le résidu du bloc de tête :
   il compare des issues déjà tranchées à des prix déjà enregistrés, et rien n'y est
   multiplié par une mise. En faire l'annonce de ce que rapporterait la suite serait

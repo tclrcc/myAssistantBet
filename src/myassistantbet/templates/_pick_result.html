@@ -5,6 +5,6 @@
    23/08/2026 reviendrait avec lui. Un test verifie cette absence — c'est la
    propriete qui tient le correctif, pas le nombre de pixels du jour. #}
 {% from "_pick_row.html" import pick_row %}
-{{ pick_row(pick, coupon_tracking, real_price_capture, stakes, settlements,
+{{ pick_row(pick, real_price_capture, stakes, settlements,
             resolved=resolved, previous=previous, error=error) }}
 <span id="worksheet-pending-count" hx-swap-oob="true">{{ pending_count }}</span>

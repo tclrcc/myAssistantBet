@@ -31,7 +31,6 @@ from myassistantbet.services import combos as combos_service
 from myassistantbet.services import history as history_service
 from myassistantbet.services import set_scores as set_scores_service
 from myassistantbet.services import stats_export
-from myassistantbet.services import thresholds as thresholds_service
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import build_prompt, save_prompt
 
@@ -127,7 +126,6 @@ def _lot_complet(settings: Settings) -> int:
 
     # Le suivi des paris poses : **desactive par defaut**, donc son bloc est
     # absent d'une page ordinaire. La parite doit pouvoir le comparer.
-    thresholds_service.save_toggle(thresholds_service.COUPON_TRACKING, "1", settings)
     return session_id
 
 
@@ -393,7 +391,6 @@ def test_la_page_et_l_export_lisent_le_meme_assemblage(migrated: Settings) -> No
     found = stats_export.report(migrated)
     contexte = found.context
     assert contexte["analysis"] is found.analysis
-    assert contexte["stats"] is found.stats
     assert contexte["set_scores"] is found.set_scores
     assert contexte["set_score_matrix"] is found.set_score_matrix
 

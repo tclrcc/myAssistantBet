@@ -21,8 +21,7 @@ chaine est intacte et n'a plus d'entree. Elle se lit dans ce sens :
       -> `main._record_stakes` a la validation
       -> table `mises`
       -> champ « montant pose » de la feuille de session,
-         garde par `{% if coupon_tracking and mise %}` — donc par l'existence
-         d'une ligne dans `mises`
+         garde par l'existence d'une ligne dans `mises`
 
 **Le premier maillon est parti, donc aucun des suivants ne se declenche.** Le
 champ de saisie manuelle du montant reel n'apparait plus : il attendait une ligne
@@ -34,8 +33,19 @@ faut le savoir.
 voulu : `SECTION_HEAD` accepte encore `[A-G]`, `stakes.read` lit encore la ligne.
 Ce qui a disparu est la **demande**, pas la lecture.
 
-**`COUPON_TRACKING` perd la moitie de son objet** : il gardait la section G et le
-champ de montant. Il garde encore le rattachement aux coupons.
+**`COUPON_TRACKING` a ete retire le 28/08/2026, avec les coupons.** Il gardait
+la section G, le champ de montant et le bloc des paris poses ; les trois sont
+partis. Ce qui gardait la **cote obtenue** vit desormais sous son propre nom,
+`saisie_cote_obtenue`, et reste ouvert : elle controle le prix enregistre, pas
+ce qu'on en fait.
+
+**Une seconde moitie de chaine est partie ce jour-la, cote emission.**
+`prompt.build_prompt` passait encore `mise=stakes.brief(...)` au gabarit, garde
+par cet interrupteur — pour une variable que le gabarit ne lit plus depuis le
+retrait de la section G. Un producteur sans consommateur, exactement la forme
+decrite ci-dessus, et il ne se voyait pas parce qu'un argument de `.render()`
+qu'aucune porte ne consomme ne leve rien. La chaine **d'ingestion** ci-dessous,
+elle, n'a pas bouge.
 
 ## Ce qui suit decrit le module tel qu'il fonctionnerait s'il etait rouvert
 
@@ -126,6 +136,27 @@ from ..db import connect, utcnow
 from .thresholds import value_of as threshold
 
 logger = logging.getLogger(__name__)
+
+#: Les fonctions publiques du module qui n'ont **plus aucun appelant**, et
+#: pourquoi elles restent.
+#:
+#: `brief` est la moitie **emission** de la chaine en pause : elle produisait la
+#: ligne de bankroll que la section G du gabarit rendait. La section est partie
+#: le 27/08/2026 ; son appelant, lui, a survecu un jour de plus parce qu'il etait
+#: garde par `COUPON_TRACKING`, et il est parti avec cet interrupteur le 28/08.
+#: Elle aurait du sortir avec la section : ce qui la maintenait en vie etait un
+#: argument que le gabarit ne lisait plus.
+#:
+#: **Elle n'est pas supprimee**, meme regle que le reste du module : rouvrir le
+#: suivi demande de retablir une section de prompt, pas de refaire un chantier,
+#: et `Brief` porte une propriete testee — le second rendu d'une journee ne croit
+#: pas disposer du plafond entier.
+#:
+#: **La liste est exacte et non un minimum** : `tests/test_mises.py` compare les
+#: orphelines a celle-ci par egalite. Une fonction qui perd son dernier appelant
+#: fait rougir la suite ; une fonction qui en retrouve un aussi, et c'est voulu —
+#: rouvrir la chaine est une decision, pas un effet de bord.
+EN_PAUSE_SANS_APPELANT = ("brief",)
 
 #: Les unites que porte une selection de section C. **Le pivot de la table** :
 #: tout le reste s'exprime en fraction de celle-ci.

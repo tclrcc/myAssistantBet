@@ -227,15 +227,8 @@ class Pick:
     selection: str
     price: float | None
     confidence: int | None
-    #: Vrai uniquement si le pick est rattache a un coupon : « joue » veut dire
-    #: pose chez le bookmaker, pas propose par l'analyse.
-    played: bool
-    stake: float | None
     result: str
-    #: Renseignes depuis la phase des coupons ; vides sur les lectures qui n'en
-    #: ont pas l'usage, ce qui evite une jointure a chaque affichage de pick.
     sport_label: str = ""
-    coupon_id: int | None = None
     #: Justification d'independance d'une seconde selection sur le meme match.
     #: **Rendue sur la feuille de session**, sans quoi elle serait ecrite et
     #: jamais relue — le sort exact reserve a `/players/squads`, retire faute de
@@ -861,22 +854,6 @@ class RateRow:
         return self.band is not None and bounds is not None and self.band.excludes(bounds)
 
 
-@dataclass
-class Stats:
-    """Taux de reussite par palier et par sport."""
-
-    by_tier: list[RateRow] = field(default_factory=list)
-    by_sport: list[RateRow] = field(default_factory=list)
-    overall: RateRow = field(default_factory=lambda: RateRow("all", "Tous"))
-    #: Paris poses a un prix de **reference** dont la cote obtenue n'a pas ete
-    #: relevee. Ils sortent des taux par bande de cote, jamais du reste.
-    quarantined: int = 0
-
-    @property
-    def empty(self) -> bool:
-        return self.overall.total == 0
-
-
 # -- Lecture ----------------------------------------------------------------
 
 
@@ -1120,9 +1097,9 @@ def _tier_labels(conn) -> dict[str, str]:
 
 
 def _pick(row: Any, tier_labels: dict[str, str], tz: str = "") -> Pick:
-    # « combine » designe desormais un coupon a plusieurs jambes : laisser ce
-    # mot ici ferait lire un pari la ou il n'y a qu'une selection dont le match
-    # n'a pas ete rapproche.
+    # « combine » designe un regroupement de selections : laisser ce mot ici
+    # ferait lire un combine la ou il n'y a qu'une selection dont le match n'a
+    # pas ete rapproche.
     event_label = affiche(row["home"], row["away"]) if row["home"] else "— hors match —"
     return Pick(
         pick_id=int(row["id"]),
@@ -1135,10 +1112,7 @@ def _pick(row: Any, tier_labels: dict[str, str], tz: str = "") -> Pick:
         selection=row["selection"],
         price=row["price"],
         confidence=row["confidence"],
-        played=bool(row["played"]),
-        stake=row["stake"],
         result=row["result"] or "pending",
-        coupon_id=row["coupon_id"],
         price_source=_column(row, "price_source") or "",
         price_real=_column(row, "price_real"),
         tier_real=_column(row, "tier_real") or "",
@@ -1360,7 +1334,7 @@ def pending_count(session_id: int, settings: Settings | None = None) -> int:
     """Combien de selections attendent encore un resultat.
 
     Un `COUNT` plutot que `worksheet().pending_count` : la feuille charge la
-    session entiere, ses combines et ses coupons, et ce compte se redemande a
+    session entiere et ses combines, et ce compte se redemande a
     chaque saisie de resultat — quarante fois de suite sur une soiree de coupe.
 
     `void` compte comme tranche : un pari annule n'attend plus rien. La regle
@@ -2044,6 +2018,31 @@ def attach_claim(
     return True
 
 
+#: Les colonnes de `picks` qui n'ont plus **ni ecrivain ni lecteur**, et qui
+#: restent en base. Elles sont vides sur les 615 lignes, elles ne coutent rien,
+#: et une suppression ne se defait pas — le depot n'a jamais supprime ni une
+#: selection, ni un evenement, ni une competition.
+#:
+#: · `played` et `coupon_id` — le suivi des paris poses est retire le
+#:   28/08/2026. `coupons` n'a jamais porte une ligne, et `played` valait faux
+#:   sur les 615 selections : ce n'etait pas une mesure qui s'eteint, c'est une
+#:   surface d'ecriture qui n'a jamais servi.
+#: · `stake` — **orpheline independamment des coupons, et depuis plus
+#:   longtemps**. Son unique ecrivain etait `add_pick(stake=…)`, nourri par
+#:   `form.get("stake")` d'un formulaire ou ce champ n'a jamais existe : le seul
+#:   `name="stake"` du depot vivait dans le formulaire de coupon et alimentait
+#:   `coupons.stake`. Aucun lecteur non plus — `Pick.stake` n'etait rendu nulle
+#:   part. C'est la forme exacte que `stakes.py` a recue le 27/08/2026 : une
+#:   chaine dont le premier maillon manque, et dont aucun maillon suivant ne se
+#:   declenche.
+#:
+#: **Annoter plutot que supprimer, et le nommer plutot que le taire** : une
+#: colonne orpheline muette est une surface qui a l'air active et ne l'est pas.
+#: `tests/test_retrait_coupons.py` garde l'etat — si un ecrivain revient, il
+#: faudra que ce soit une decision.
+COLONNES_SANS_LECTEUR = ("played", "stake", "coupon_id")
+
+
 @writes(SELECTION, CONF, EXPLORATOIRE)
 def add_pick(
     session_id: int,
@@ -2054,7 +2053,6 @@ def add_pick(
     event_id: str = "",
     price: str = "",
     confidence: str = "",
-    stake: str = "",
     angle: str = "",
     source_level: str = "",
     price_source: str = "",
@@ -2090,18 +2088,14 @@ def add_pick(
     import_id: str | int = "",
     offsets: str = "",
     claim_offsets: str = "",
-    played: bool = False,
     result: str = "pending",
     settings: Settings | None = None,
 ) -> int:
     """Enregistre une selection. Renvoie son id.
 
-    **Elle n'est pas jouee pour autant** : `played` ne passe a vrai qu'au
-    rattachement a un coupon, c'est a dire quand le pari a reellement ete pose
-    chez le bookmaker. Sans cette regle, une selection proposee par Claude puis
-    ecartee comptait dans les taux au meme titre qu'un pari joue, et les
-    indicateurs melangeaient deux questions differentes : ce que vaut l'analyse,
-    et ce que valent mes paris.
+    **Elle n'ecrit aucune des colonnes de `COLONNES_SANS_LECTEUR`**, et les
+    trois restent en base : vides, sans cout, et une suppression ne se defait
+    pas.
     """
     settings = settings or get_settings()
     if not market.strip():
@@ -2124,7 +2118,6 @@ def add_pick(
     # celui qui a ete choisi au formulaire ferait entrer dans un taux par bande
     # de cote une selection qui n'y appartient pas.
     _reject_out_of_band(price_value, settings, "Cote")
-    stake_value = _as_float(stake, "Mise")
     confidence_value = _as_float(confidence, "Confiance")
     if confidence_value is not None and not 1 <= confidence_value <= 5:
         raise HistoryError("« Confiance » doit être comprise entre 1 et 5.")
@@ -2241,7 +2234,7 @@ def add_pick(
 
         cursor = conn.execute(
             "INSERT INTO picks (session_id, event_id, tier, market, selection, price, "
-            "                   confidence, played, stake, result, angle, source_level, "
+            "                   confidence, result, angle, source_level, "
             "                   source_level_effective, "
             "                   price_source, independence_note, market_key, "
             "                   late_reason, confidence_computed, claim_raw_json, "
@@ -2251,7 +2244,7 @@ def add_pick(
             "                   offset_start, offset_end, claim_offset_start, "
             "                   claim_offset_end, angle_note, invalidation, prose_source, "
             "                   prompt_id, created_at) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
             "        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 session_id,
@@ -2261,8 +2254,6 @@ def add_pick(
                 selection.strip(),
                 price_value,
                 int(confidence_value) if confidence_value is not None else None,
-                1 if played else 0,
-                stake_value,
                 result,
                 angle_value,
                 source_value,
@@ -2568,10 +2559,12 @@ def _reference_priced(row: Any) -> bool:
 
     **Ce n'est plus une quarantaine, et c'est une decision datee du
     17/08/2026.** Ces selections sortaient du regroupement par palier « en
-    attendant leur prix reel » — un prix qui n'arrivera **jamais** : il ne peut
-    venir que d'une mise, et aucun pari n'est pose. Zero coupon sur douze
-    sessions ; l'application n'est pas un carnet de mises, c'est un banc de
-    mesure de predictions.
+    attendant leur prix reel » — une attente sans terme. L'application est un
+    banc de mesure de predictions, pas un carnet de mises.
+
+    **La cote obtenue, elle, se saisit et se saisit beaucoup** : 184 lignes en
+    base, 17 sur 28 selections le 28/08/2026. Ce qui n'arrive pas est le prix
+    de **chaque** ligne, pas le prix tout court.
 
     L'attente coutait donc 20 selections tranchees sur 178 a l'axe le plus
     fourni de la page, sans terme. Et le gabarit tranche deja la question
@@ -2709,47 +2702,6 @@ def _tally(rows: list[Any], key_field: str, labels: dict[str, str]) -> list[Rate
         entry = grouped.setdefault(key, RateRow(key=key, label=labels.get(key, key)))
         _count(entry, row["result"] or "pending", row)
     return list(grouped.values())
-
-
-def stats(settings: Settings | None = None) -> Stats:
-    """Taux de reussite par palier et par sport, sur les picks **joues**.
-
-    Joue veut dire rattache a un coupon, donc reellement pose chez le
-    bookmaker. Une selection proposee puis ecartee ne compte pas : elle
-    repondrait a une autre question que celle posee ici.
-
-    Aucune ponderation par la mise : ce serait un indicateur financier, donc
-    hors du perimetre de l'application.
-    """
-    settings = settings or get_settings()
-    with connect(settings) as conn:
-        tier_order = [row["key"] for row in conn.execute("SELECT key FROM tiers ORDER BY position")]
-        tier_labels = _tier_labels(conn)
-        sport_labels = {
-            row["key"]: row["label"] for row in conn.execute("SELECT key, label FROM sports")
-        }
-        rows = conn.execute(
-            "SELECT k.id, k.tier, k.result, k.price, k.event_id, "
-            "       k.price_source, k.price_real, k.tier_real, s.key AS sport_key FROM picks k "
-            "LEFT JOIN events e ON e.id = k.event_id "
-            "LEFT JOIN sports s ON s.id = e.sport_id "
-            "WHERE k.played = 1 AND k.exploratoire = 0"
-        ).fetchall()
-
-    # **Plus aucune mise a l'ecart**, et c'est la decision du 17/08/2026 : le
-    # prix reel n'arrivera jamais, il ne peut venir que d'une mise et aucun pari
-    # n'est pose. La cote du bloc fait autorite — le gabarit le dit deja — donc
-    # elle sert de cote de calcul. Le compte reste, comme description.
-    quarantined = sum(1 for row in rows if _reference_priced(row))
-    by_tier = _tally(rows, "tier_effective", tier_labels)
-    by_tier.sort(key=lambda item: tier_order.index(item.key) if item.key in tier_order else 99)
-    by_sport = sorted(_tally(rows, "sport_key", sport_labels), key=lambda item: item.label)
-
-    overall = RateRow(key="all", label="Tous")
-    for entry in by_tier:
-        overall.merge(entry)
-
-    return Stats(by_tier=by_tier, by_sport=by_sport, overall=overall, quarantined=quarantined)
 
 
 @dataclass
@@ -3135,14 +3087,8 @@ class Family:
 class Analysis:
     """Ce que vaut l'analyse, jouee ou non.
 
-    Distincte de `stats()`, qui ne mesure que les paris reellement poses. Ici
-    on juge la **selection** : avait-elle raison ? Une selection ecartee dont
-    le resultat est connu compte donc autant qu'une selection jouee.
-
-    `played` et `skipped` se lisent ensemble : si les selections ecartees
-    gagnent aussi souvent que celles jouees, le tri n'apporte rien. C'est la
-    seule facon de mesurer ce que vaut le geste de trier, et elle ne coute
-    qu'un resultat saisi sur une ligne qu'on n'a pas jouee.
+    On juge la **selection** : avait-elle raison ? Ce qu'on en a fait ensuite
+    n'entre pas — aucun montant, aucun pari pose.
     """
 
     settled: int = 0
@@ -3250,8 +3196,15 @@ class Analysis:
     #: de selection. Le passer au detecteur de recouvrement n'aurait rien dit :
     #: une session ne recouvre par construction aucun palier ni aucun sport.
     by_session: list[SessionRate] = field(default_factory=list)
-    played: RateRow = field(default_factory=lambda: RateRow("played", "Jouées"))
-    skipped: RateRow = field(default_factory=lambda: RateRow("skipped", "Écartées"))
+    #: Toutes les selections tranchees, quel que soit ce qu'on en a fait.
+    #:
+    #: **Elle etait deduite d'un partage jouees / ecartees qui n'a jamais ete
+    #: rendu.** Le garde `comparable` exigeait au moins une selection jouee, et
+    #: `played` valait faux sur les 615 lignes de la base : les deux chiffres et
+    #: leur phrase — « si ce que tu ecartes gagne aussi souvent que ce que tu
+    #: joues, le tri n'apporte rien » — n'ont pas paru une seule fois. Ce n'est
+    #: pas une carte devenue morte, c'est une carte qui n'a jamais vecu.
+    overall: RateRow = field(default_factory=lambda: RateRow("all", "Toutes"))
     #: Marches ecartes faute d'echantillon. Annonce plutot que tue en silence.
     hidden_markets: int = 0
     #: Selections tranchees dont la cote vient d'un book de **reference** et dont
@@ -3519,11 +3472,6 @@ class Analysis:
         return self.settled + self.without_antecedence == self.recorded and not self.gaps
 
     @property
-    def comparable(self) -> bool:
-        """Vrai si les deux cotes de la comparaison ont de quoi etre lues."""
-        return self.played.settled > 0 and self.skipped.settled > 0
-
-    @property
     def enough(self) -> bool:
         """Assez de recul pour qu'un regroupement se lise comme une tendance.
 
@@ -3593,19 +3541,6 @@ class Analysis:
     def clustered_rows(self) -> int:
         """Regroupements ou des selections se partagent des matchs."""
         return sum(1 for rows in self.groups for row in rows if row.clustered)
-
-    @property
-    def overall(self) -> RateRow:
-        """Les deux populations reunies : le taux de l'analyse, tous picks confondus.
-
-        Deduit de `played` et `skipped` plutot que compte a part : deux
-        comptages du meme ensemble finiraient par diverger, et il faudrait
-        alors arbitrer lequel dit vrai.
-        """
-        total = RateRow(key="all", label="Toutes")
-        for entry in (self.played, self.skipped):
-            total.merge(entry)
-        return total
 
 
 #: Famille de marches qui ne retient d'un raisonnement que le nom d'un camp.
@@ -5850,10 +5785,10 @@ def tier_drift(settings: Settings | None = None, *, exploratory: bool = False) -
 
 
 def analysis(settings: Settings | None = None) -> Analysis:
-    """Taux de reussite de **toutes** les selections, jouees ou non.
+    """Taux de reussite de **toutes** les selections tranchees.
 
-    Aucun filtre sur `played` : c'est precisement ce qui distingue cette vue de
-    `stats()`. Aucun montant n'y entre non plus.
+    Aucun montant n'y entre, et c'est une separation de tables plutot qu'une
+    consigne : la requete ne joint ni `mises` ni `bankroll_journee`.
     """
     settings = settings or get_settings()
     with connect(settings) as conn:
@@ -5864,7 +5799,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
             row["key"]: row["label"] for row in conn.execute("SELECT key, label FROM sports")
         }
         rows = conn.execute(
-            "SELECT k.id, k.session_id, k.tier, k.result, k.market, k.confidence, k.played, "
+            "SELECT k.id, k.session_id, k.tier, k.result, k.market, k.confidence, "
             "       k.event_id, k.created_at, k.price, k.angle, "
             # **La carte lit l'effectif, jamais la declaration.** Un niveau
             # annonce sur un dossier que l'analyse declare n'avoir pas ouvert
@@ -6295,7 +6230,7 @@ def analysis(settings: Settings | None = None) -> Analysis:
     _with_complements(report.groups)
 
     for row, result in zip(rows, results, strict=True):
-        _count(report.played if row["played"] else report.skipped, result, row)
+        _count(report.overall, result, row)
 
     # Le palier n'entre pas dans la comparaison : il est defini par des tranches
     # de cote, donc correle par construction a tout ce qui depend du prix. Le

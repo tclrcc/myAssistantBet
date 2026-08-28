@@ -3369,45 +3369,78 @@ lot merite d'etre coupe.
   Le template par defaut n'est pas supprimable.
 - Bandes de cotes : bornes controlees avant ecriture (haute > basse, quota max >= min).
 
-## Coupons joues (`services/coupons.py`)
+## Les coupons sont retires (28/08/2026)
 
-Un **pick** est une selection ; un **coupon** est ce qui a ete pose chez le bookmaker :
-une mise, une ou plusieurs jambes, un resultat global. Un coupon se compose de picks
-deja saisis — rien n'est retape.
+Un **pick** est une selection ; un **coupon** etait ce qui avait ete pose chez le
+bookmaker. **Rien ne l'a jamais ete** : `coupons` n'a porte aucune ligne,
+`picks.played` valait faux sur les 615 selections, `picks.coupon_id` etait nul
+partout, et `mises` comme `bankroll_journee` sont vides.
 
-- **`played` ne passe a vrai qu'au rattachement a un coupon**, et repasse a faux si le
-  coupon est supprime. C'est la definition : joue = pose chez le book, pas propose par
-  l'analyse. Une selection ecartee ne pese donc ni sur les taux (`stats()`) ni sur le
-  retour d'experience du prompt (`feedback()`) — sans quoi les indicateurs melangeraient
-  deux questions differentes : ce que vaut l'analyse, et ce que valent mes paris.
-  `add_pick()` a donc `played=False` par defaut, et la migration 011 a aligne l'existant.
-- Corollaire a ne pas oublier en test : marquer `played` a la main ferait passer un test
-  sans que le parcours reel fonctionne. Les tests d'agregats passent par un coupon.
+- **Le module, les routes, les surfaces et 46 bancs sont partis.** Restent les
+  colonnes et leurs migrations (010, 011) : elles sont vides, elles ne coutent
+  rien, et **une migration de suppression ne se defait pas** — le depot n'a
+  jamais supprime ni une selection, ni un evenement, ni une competition, et
+  `combo_legs.pick_id ON DELETE CASCADE` vient de montrer (C.32) ce qu'une
+  suppression ampute en aval. `history.COLONNES_SANS_LECTEUR` les nomme.
+- **Le precedent de `/players/squads` ne s'applique pas**, et la difference
+  decide du traitement : la migration 022 supprimait des **lignes** collectees
+  des mois sans lecteur. Ici il n'y a aucune ligne. Squads etait une collecte
+  sans lecteur ; les coupons etaient une **surface d'ecriture sans
+  utilisateur**, et il n'y a rien a nettoyer derriere elle.
+- **Ce que le retrait rend visible.** `history.stats()` lisait `WHERE played = 1`,
+  donc zero ligne depuis toujours ; `coupons.rates()` rendait une liste vide ; et
+  `Analysis.played` / `skipped` etaient gardes par `comparable`, qui exige
+  `played.settled > 0` — **les deux chiffres et leur phrase n'ont jamais ete
+  rendus une seule fois**. Ce n'est pas une carte qui devient morte, c'est une
+  carte qui n'a jamais vecu. `Analysis.overall` ne bouge pas d'une unite : il
+  etait deduit d'une fusion dont une moitie etait toujours vide.
+- **`picks.stake` est orpheline independamment des coupons, et depuis plus
+  longtemps.** Son unique ecrivain etait `add_pick(stake=…)`, nourri par
+  `form.get("stake")` d'un formulaire ou ce champ n'a jamais existe : le seul
+  `name="stake"` du depot vivait dans le formulaire de coupon et alimentait
+  `coupons.stake`. Aucun lecteur non plus. C'est la forme exacte que `stakes.py`
+  a recue le 27/08 — une chaine dont le premier maillon manque.
+- **`COUPON_TRACKING` a ete scinde avant d'etre retire**, et c'etait le vrai
+  risque du chantier : il ouvrait le bloc des paris **et** la saisie de la cote
+  obtenue. Voir le chapitre suivant.
+- **`stakes` n'est pas touche** : aucun croisement mesure — `coupons` n'etait
+  ecrit que par `coupons.py`, `mises` et `bankroll_journee` que par `stakes.py`,
+  et `stakes.set_played` ecrit `mises.montant_joue` et **jamais** `picks.played`,
+  malgre son nom. Les deux decisions de principe du module tiennent : « C-bis ne
+  recoit aucune mise », et la garde dans la signature de `plan()`.
+  - Une seule chose en est partie, et elle aurait du partir le 27/08 :
+    `prompt.build_prompt` passait encore `mise=stakes.brief(…)` au gabarit, pour
+    une variable que la section G lisait et qui n'existe plus. `brief` rejoint la
+    pause, **declaree** dans `stakes.EN_PAUSE_SANS_APPELANT` — que le banc des
+    orphelines compare par **egalite**, pour qu'une orpheline de plus comme une
+    orpheline de moins soient toutes deux une decision.
+- Le televersement de captures part avec eux, et `upload_dir` / `upload_max_bytes`
+  avec lui. Les deux fichiers deja sur disque restent sous `data/uploads` : ce
+  sont des donnees, et on n'en supprime pas.
 
-- Le type et le resultat ne sont **jamais stockes** : ils se deduisent des jambes. Un
-  champ enregistre pourrait contredire les jambes, et il faudrait alors arbitrer.
-- Regle du resultat : une jambe perdue fait tomber le coupon, meme si d'autres sont en
-  attente ; une jambe annulee est neutre (le book recalcule la cote sans elle) ; tout
-  annule vaut annule. Chaque cas a son test.
-- Ce que ca repare : un combine s'enregistrait comme un pick sans evenement, donc sans
-  sport, et les taux par sport l'ignoraient en silence. Ses jambes portent desormais
-  chacune leur match.
-- Les taux de coupons sont **separes par type** : un combine tombe des qu'une jambe cede,
-  il ne se compare pas a un pari simple. Les melanger produirait un taux qui ne decrit
-  ni l'un ni l'autre.
-- **Aucun calcul financier** : la mise est memorisee, jamais agregee, jamais multipliee
-  par une cote — et la **cote totale du coupon n'est meme pas calculee**, la capture la
-  porte deja. Un test verifie qu'aucun champ financier n'existe sur `Coupon`.
-- La capture est une **piece jointe, jamais une source de donnees** : la machine ne la lit
-  pas. La lire supposerait un modele de vision (interdit n°6) ou un OCR local peu fiable.
-- Securite du televersement : liste blanche de types **confirmee par les octets de tete**,
-  taille bornee, et **le nom fourni par le navigateur n'est jamais utilise** — il est
-  refabrique (`coupon-{id}-{empreinte}.{ext}`). Le nom relu en base est revalide contre ce
-  motif avant d'ouvrir le fichier : une base modifiee a la main ne doit pas faire servir
-  `../../.env`.
-- Les captures vivent sous `data/`, donc deja couvertes par le `ReadWritePaths` de l'unite
-  systemd et le `.gitignore`. Elles ne sont **pas** dans la sauvegarde, qui ne porte que
-  sur la base.
+## La saisie de la cote obtenue a son propre interrupteur
+
+**Un drapeau qui ouvre trois choses dont une seule part n'est plus un drapeau :
+c'est trois decisions sous un nom.** `suivi_coupons` gardait le bloc des paris
+poses, le journal des mises **et** la colonne « cote obtenue ». Retirer les
+coupons en emportant le drapeau aurait supprime la troisieme.
+
+- **Elle n'a rien a voir avec les paris poses** : la cote obtenue controle le
+  **prix enregistre**, pas ce qu'on en fait. C'est le seul controle qui existe
+  sur `picks.price`, le nombre sur lequel repose tout le residu.
+- **Mesure du 28/08/2026** : **184 cotes obtenues en base**, 35 sur 39
+  selections le 27/08, 17 sur 28 le 28/08, et **38 paliers revus** parce que le
+  prix releve ne tombait pas dans la meme bande. C'est la colonne la plus
+  vivante du regime courant — et ce fichier annoncait encore « 9 lignes sur
+  116 » a un autre endroit, voir C.34.
+- `saisie_cote_obtenue` la porte seule, **ouverte par defaut**, et garde **deux
+  surfaces qui basculent ensemble** : le champ de la feuille de session et le
+  compteur de manque de `Worksheet.coverage_line`. Fermee d'un cote et ouverte
+  de l'autre, le compteur dirait « aucun manque » au moment ou plus rien ne peut
+  etre saisi — un silence a deux causes. Un banc le verifie.
+- **Les surfaces du journal des mises se gardent desormais sur leur donnee** et
+  non sur un drapeau : `mises` etant vide, elles ne se rendent pas, et un
+  interrupteur n'ajoutait rien.
 
 ## Le preambule ne documente que ce que le lot porte vraiment
 
@@ -5594,20 +5627,21 @@ visees et cote cible — et la cible reste une cible, jamais un plancher.
   pas une unite de mesure, et ses jambes restent des selections ordinaires comptees
   individuellement. Le produit des taux n'est qu'un ordre de grandeur : les jambes d'une
   meme session ne sont pas independantes, ce que `clustered_p_value` sait deja ailleurs.
-- **Aucun combine n'existe en base au 14/08/2026** — `coupons` vide, `coupon_id` nul sur
+- **Aucun combine n'existe en base au 14/08/2026** — `coupons` vide (table retiree du
+  code depuis), `coupon_id` nul sur
   les 149 selections, `played` faux partout. Le recouvrement historique n'etait donc pas
   mesurable : tout ce qui precede porte sur ce que le vivier **autorise**, jamais sur ce
   qui a ete pose.
 
 ## Le combine est un objet d'analyse (`services/combos.py`, migration 047)
 
-**Il ne passe pas par `coupons`, et la collision etait reelle.** `coupons.attach()` est le
-**seul** ecrivain de `picks.played`, et il ecrit aussi `picks.coupon_id` : faire passer les
+**Il ne passait pas par `coupons`, et la collision etait reelle** : `coupons.create()`
+etait le seul ecrivain de `picks.played` et de `picks.coupon_id`, et faire passer les
 combines par la aurait fait apparaitre comme paris poses des combines que personne n'a
-joues. La page pose deux questions distinctes — ce que valent les selections, ce que valent
-les paris — et un combine produit par le modele appartient sans ambiguite a la premiere.
-S'il devient un pari, c'est un geste fait apres, et qui ne le change pas. **Le mot « joue »
-n'apparait nulle part sur ces cartes.**
+joues. Le suivi des paris est retire depuis le 28/08/2026 ; ce qui reste de la regle est
+qu'un combine **n'ecrit aucune** des colonnes de `history.COLONNES_SANS_LECTEUR`, et un
+banc le verifie en base plutot que sur l'objet — precisement parce que l'objet ne les
+porte plus. **Le mot « joue » n'apparait nulle part sur ces cartes.**
 
 - **Un combine reste rattache a un prompt** (`prompt_id NOT NULL`), et une jambe venue d'un
   autre prompt est refusee. Les selections de deux prompts n'ont jamais ete comparees entre
@@ -6392,9 +6426,11 @@ Mesure du 21/08/2026 : `picks` ne portait **qu'une seule colonne de date**. Sur
   un horodatage qui survivrait a l'effacement affirmerait une connaissance qui
   n'existe plus — le defaut caracteristique du projet, pose sur la colonne qui
   sert justement a dater ce qu'on sait.
-- **Deux ecrivains et pas un** : `set_result` et `coupons.settle_all`, qui ecrit
-  `result` en masse sur les jambes d'un combine. Le laisser sans date ferait de
-  chaque jambe une ligne hors de portee de toute relecture.
+- **`set_result` est le seul ecrivain**, et il l'est redevenu : `coupons.settle_all`
+  ecrivait `result` en masse sur les jambes d'un coupon, et il est parti avec eux
+  le 28/08/2026. Une ecriture de resultat qui ne daterait pas mettrait chaque
+  ligne hors de portee de toute relecture — c'est pour ce second chemin que la
+  garde avait ete ecrite.
 - **La reprise ne prend que les reglements `applique`, jamais `divergent`**, et
   la distinction decide du **sens de l'erreur** — la seule chose qui compte pour
   une borne. Sur une ligne appliquee, le reglement a pose le resultat :
@@ -6898,8 +6934,8 @@ par `md5sum`. Pour voir le theme sombre, neutraliser temporairement la media que
   suivante : trois trous sur quatre rangees. `break-inside: avoid` empeche qu'une carte
   soit coupee au passage d'une colonne. Les fragments HTMX sont des templates `_*.html` autonomes, inclus par les pages
 completes : `_board.html` porte l'id `#board`, `_banner.html` porte l'id `#banner`,
-`_worksheet.html` porte l'id `#worksheet` (selections + coupons d'une session, qui
-changent ensemble : le resultat d'une jambe modifie celui de son coupon).
+`_worksheet.html` porte l'id `#worksheet` (les selections d'une session et les
+combines qui les regroupent).
 
 **Une route ciblee par HTMX rend le fragment, jamais la page.** Rendre `picks.html` dans
 un `hx-swap="outerHTML"` imbriquerait un `<html>` complet dans le `<div>` remplace. Les
@@ -6957,19 +6993,23 @@ divergent et l'en-tete colle trop haut ou trop bas.
 
 ## Les deux mesures, a ne jamais confondre
 
-- `history.stats()` et `coupons.rates()` : **ce que valent mes paris**. Filtrent sur
-  `played`, donc sur ce qui a ete pose chez le bookmaker.
-- `history.analysis()` : **ce que vaut l'analyse**. Aucun filtre sur `played` — une
-  selection ecartee dont le resultat est connu compte autant qu'une jouee.
-  - `played` et `skipped` s'y lisent **ensemble** : si l'ecarte gagne aussi souvent que le
-    joue, le tri n'apporte rien. C'est la seule mesure de ce que vaut le geste de trier,
-    et elle ne coute qu'un resultat saisi sur une ligne qu'on n'a pas jouee.
+**Il n'y en a plus qu'une, et c'est le resultat du retrait des coupons.**
+
+- `history.analysis()` : **ce que vaut l'analyse**. Toutes les selections
+  tranchees, sans distinction de ce qu'on en a fait ; aucun montant n'y entre, et
+  c'est une separation de tables plutot qu'une consigne — la requete ne joint ni
+  `mises` ni `bankroll_journee`.
   - `hidden_markets` annonce les marches ecartes faute d'echantillon. Un plafond silencieux
     se lirait « tout est couvert » alors que non.
-  - `Analysis.overall` est **deduit** de `played` et `skipped`, jamais compte a part :
-    deux comptages du meme ensemble finiraient par diverger.
+- **La seconde mesure — « ce que valent mes paris » — n'a jamais existe.**
+  `history.stats()` filtrait sur `played`, faux sur les 615 selections, et
+  `Analysis.played` / `skipped` etaient gardes par `comparable`, qui exigeait au
+  moins une selection jouee. La phrase qui devait les faire lire ensemble — « si
+  l'ecarte gagne aussi souvent que le joue, le tri n'apporte rien » — **n'a pas
+  paru une fois**. `Analysis.overall` etait deduit d'une fusion dont une moitie
+  etait toujours vide ; il compte desormais directement, et rend le meme nombre.
 
-Les deux vivent sur `/stats`, jamais melangees, et aucune ne produit d'indicateur financier.
+Ce qui vit sur `/stats` ne produit aucun indicateur financier.
 
 ### Les seuils de lecture sont communs aux deux surfaces, la reaction ne l'est pas
 

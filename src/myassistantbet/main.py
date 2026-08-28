@@ -13,7 +13,7 @@ from zoneinfo import ZoneInfo
 
 import httpx
 from fastapi import FastAPI, Form, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from jinja2 import TemplateNotFound
@@ -33,7 +33,6 @@ from .services import combos as combos_service
 from .services import competitions as competitions_service
 from .services import context as context_service
 from .services import controls as controls_service
-from .services import coupons as coupons_service
 from .services import coverage as coverage_service
 from .services import dossier as dossier_service
 from .services import elo as elo_service
@@ -1328,10 +1327,9 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         "picks": history_service.list_picks(session_id, settings),
         "worksheet": history_service.worksheet(session_id, settings),
         "result_labels": list(history_service.RESULT_LABELS.items()),
-        "coupons": coupons_service.list_for_session(session_id, settings),
-        # Les combines d'**analyse**, distincts des coupons : ils ne disent pas
-        # ce qui a ete pose chez le bookmaker, et le mot « joue » n'apparait pas
-        # sur eux. Leur recouvrement se rend a cote, jamais tu.
+        # Les combines d'**analyse** : ils regroupent des selections, ils ne
+        # disent pas ce qui a ete pose chez le bookmaker. Leur recouvrement se
+        # rend a cote, jamais tu.
         "combos": combos,
         "combo_overlaps": combos_service.overlaps(combos),
         # Le score exact en sets : la seule mesure de la lecture de la maniere
@@ -1341,11 +1339,6 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         "set_score_options": list(set_scores_service.SCORES),
         "set_scores_error": None,
         "set_scores_saved": False,
-        "available_picks": coupons_service.available_picks(session_id, settings),
-        # Un pari se saisit apres l'avoir pose : l'instant present est le bon
-        # defaut, et le corriger reste possible.
-        # Le suivi des paris poses, desactive par defaut : c'est lui qui ouvre
-        # la colonne « cote obtenue » et le bouton « jouer ».
         # **Le journal des mises est attache ici et non dans `worksheet()`.**
         # `history.py` produit la mesure d'analyse — residu au prix, crans,
         # intervalles — et un test lit sa source pour verifier qu'il ne connait
@@ -1364,17 +1357,12 @@ def _picks_context(session_id: int, error: str | None = None, **extra: object) -
         # voit ici. C'est la lecon de `set_open_dossiers` au lot 14 — un signal
         # qui ecrase n'est pas un signal.
         "settlements": {row.pick_id: row for row in settlement_service.pending(settings)},
-        "coupon_tracking": thresholds_service.toggle_of(
-            thresholds_service.COUPON_TRACKING, settings
-        ),
         "real_price_capture": thresholds_service.toggle_of(
             thresholds_service.REAL_PRICE_CAPTURE, settings
         ),
         "today": now.strftime("%Y-%m-%d"),
         "now_hm": now.strftime("%H:%M"),
         "error": error,
-        "coupon_error": None,
-        "coupon_notice": None,
         "preview": None,
         "imported": 0,
         "import_failures": [],
@@ -1432,7 +1420,6 @@ async def add_pick(request: Request, session_id: int) -> HTMLResponse:
             event_id=form.get("event_id", ""),
             price=form.get("price", ""),
             confidence=form.get("confidence", ""),
-            stake=form.get("stake", ""),
             angle=form.get("angle", ""),
             source_level=form.get("source_level", ""),
             price_source=form.get("price_source", ""),
@@ -1834,131 +1821,6 @@ def _record_combos(
 # --- Coupons joues ---------------------------------------------------------
 
 
-async def _attach_screenshot(coupon_id: int, upload: object) -> str | None:
-    """Attache une capture si le formulaire en portait une. Renvoie l'erreur eventuelle.
-
-    Une capture refusee n'annule jamais le coupon : le pari a bien ete pose, et
-    le perdre parce que l'image ne convient pas serait absurde.
-    """
-    filename = getattr(upload, "filename", "") or ""
-    if not filename:
-        return None
-    try:
-        content = await upload.read()  # type: ignore[attr-defined]
-    finally:
-        # Starlette adosse chaque envoi a un fichier temporaire : ne pas le
-        # fermer laisse un descripteur ouvert jusqu'au ramasse-miettes.
-        await upload.close()  # type: ignore[attr-defined]
-    try:
-        coupons_service.save_screenshot(
-            coupon_id,
-            filename,
-            content,
-            getattr(upload, "content_type", "") or "",
-            get_settings(),
-        )
-    except history_service.HistoryError as exc:
-        logger.warning("Capture refusee pour le coupon %d : %s", coupon_id, exc)
-        return str(exc)
-    return None
-
-
-@app.post("/history/{session_id}/coupons", response_class=HTMLResponse)
-async def add_coupon(request: Request, session_id: int) -> HTMLResponse:
-    """Enregistre un pari joue a partir de picks deja saisis."""
-    _require_session(session_id)
-    form = await request.form()
-    pick_ids = [int(value) for value in form.getlist("pick_id") if str(value).isdigit()]
-
-    try:
-        coupon_id = coupons_service.create(
-            session_id,
-            pick_ids,
-            stake=str(form.get("stake", "")),
-            date_value=str(form.get("date", "")),
-            time_value=str(form.get("time", "")),
-            bookmaker=str(form.get("bookmaker", coupons_service.DEFAULT_BOOKMAKER)),
-            note=str(form.get("note", "")),
-            settings=get_settings(),
-        )
-    except history_service.HistoryError as exc:
-        return templates.TemplateResponse(
-            request, "picks.html", _picks_context(session_id, coupon_error=str(exc))
-        )
-
-    problem = await _attach_screenshot(coupon_id, form.get("screenshot"))
-    return templates.TemplateResponse(
-        request,
-        "picks.html",
-        _picks_context(
-            session_id,
-            coupon_error=problem,
-            coupon_notice=None if problem else "Coupon enregistré.",
-        ),
-    )
-
-
-@app.post("/coupons/{coupon_id}/screenshot", response_class=HTMLResponse)
-async def add_coupon_screenshot(request: Request, coupon_id: int) -> HTMLResponse:
-    """Ajoute ou remplace la capture d'un coupon deja enregistre."""
-    session_id = _coupon_session(coupon_id)
-    form = await request.form()
-    problem = await _attach_screenshot(coupon_id, form.get("screenshot"))
-    return templates.TemplateResponse(
-        request, "picks.html", _picks_context(session_id, coupon_error=problem)
-    )
-
-
-@app.get("/coupons/{coupon_id}/screenshot")
-def coupon_screenshot(coupon_id: int) -> FileResponse:
-    """Sert la capture d'un coupon. Le nom est revalide avant d'ouvrir le fichier."""
-    path = coupons_service.screenshot_path(coupon_id, get_settings())
-    if path is None or not path.is_file():
-        raise HTTPException(status_code=404, detail="Aucune capture pour ce coupon")
-    return FileResponse(path)
-
-
-@app.post("/picks/{pick_id}/play", response_class=HTMLResponse)
-def play_pick(request: Request, pick_id: int) -> HTMLResponse:
-    """Transforme une selection en pari simple, en un clic."""
-    session_id = _pick_session(pick_id)
-    try:
-        coupons_service.play_single(pick_id, get_settings())
-    except history_service.HistoryError as exc:
-        return templates.TemplateResponse(
-            request, "_worksheet.html", _picks_context(session_id, coupon_error=str(exc))
-        )
-    return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
-
-
-@app.post("/coupons/{coupon_id}/settle", response_class=HTMLResponse)
-def settle_coupon(request: Request, coupon_id: int, result: str = Form(default="")) -> HTMLResponse:
-    """Applique un resultat aux jambes encore en attente d'un coupon."""
-    session_id = _coupon_session(coupon_id)
-    try:
-        coupons_service.settle_all(coupon_id, result, get_settings())
-    except history_service.HistoryError as exc:
-        return templates.TemplateResponse(
-            request, "_worksheet.html", _picks_context(session_id, coupon_error=str(exc))
-        )
-    return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
-
-
-@app.post("/coupons/{coupon_id}/delete", response_class=HTMLResponse)
-def remove_coupon(request: Request, coupon_id: int) -> HTMLResponse:
-    """Supprime un coupon. Ses jambes redeviennent des picks libres."""
-    session_id = _coupon_session(coupon_id)
-    coupons_service.delete(coupon_id, get_settings())
-    return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
-
-
-def _coupon_session(coupon_id: int) -> int:
-    row = db.query_one("SELECT session_id FROM coupons WHERE id = ?", (coupon_id,))
-    if row is None:
-        raise HTTPException(status_code=404, detail="Coupon inconnu")
-    return int(row["session_id"])
-
-
 @app.get("/history/{session_id}/worksheet", response_class=HTMLResponse)
 def worksheet_fragment(request: Request, session_id: int) -> HTMLResponse:
     """La feuille de session, rendue seule — le « Rafraichir » de la saisie.
@@ -2024,9 +1886,6 @@ def set_pick_result(
             "previous": previous,
             "error": error,
             "pending_count": history_service.pending_count(session_id, settings),
-            "coupon_tracking": thresholds_service.toggle_of(
-                thresholds_service.COUPON_TRACKING, settings
-            ),
             "real_price_capture": thresholds_service.toggle_of(
                 thresholds_service.REAL_PRICE_CAPTURE, settings
             ),
@@ -2153,7 +2012,7 @@ def set_pick_event(
         history_service.set_event(pick_id, event_id, get_settings())
     except history_service.HistoryError as exc:
         return templates.TemplateResponse(
-            request, "_worksheet.html", _picks_context(session_id, coupon_error=str(exc))
+            request, "_worksheet.html", _picks_context(session_id, error=str(exc))
         )
     return templates.TemplateResponse(request, "_worksheet.html", _picks_context(session_id))
 

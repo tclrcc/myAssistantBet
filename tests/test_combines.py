@@ -92,24 +92,23 @@ def _pick(settings: Settings, session_id: int, event_id: int, price: float, conf
 
 
 def test_un_combine_ne_marque_aucune_selection_jouee(migrated: Settings) -> None:
-    """**Le controle central du module.** `coupons.attach()` est le seul ecrivain
-    de `picks.played`, et faire passer les combines par la ferait apparaitre
-    comme paris poses des combines que personne n'a joues. La page pose deux
-    questions distinctes ; un combine appartient a la premiere."""
+    """**Le controle central du module.** Le suivi des paris poses est retire le
+    28/08/2026 ; `played` et `coupon_id` restent en base, orphelines et vides.
+    Un combine d'analyse ne doit y toucher ni maintenant ni si le suivi revenait
+    — il regroupe des selections, il ne dit pas ce qui a ete pose."""
     session_id, events = _lot(migrated, ["Lyon", "Nice", "Reims"])
     prompt_id = _prompt(migrated, session_id, events)
     picks = [_pick(migrated, session_id, event, 1.45, 4) for event in events]
 
     combos_service.record(session_id, prompt_id, kind="court", pick_ids=picks, settings=migrated)
 
-    for pick in list_picks(session_id, migrated):
-        assert pick.played is False, "un combine d'analyse n'est pas un pari pose"
+    assert len(list_picks(session_id, migrated)) == 3, "les selections sont bien la"
     with connect(migrated) as conn:
         assert conn.execute("SELECT COUNT(*) FROM coupons").fetchone()[0] == 0
-        assert (
-            conn.execute("SELECT COUNT(*) FROM picks WHERE coupon_id IS NOT NULL").fetchone()[0]
-            == 0
-        )
+        laissees = conn.execute(
+            "SELECT COUNT(*) FROM picks WHERE played = 1 OR coupon_id IS NOT NULL"
+        ).fetchone()[0]
+    assert laissees == 0, "un combine d'analyse n'ecrit aucune colonne de pari pose"
 
 
 def test_aucun_champ_financier_sur_un_combine(migrated: Settings) -> None:
@@ -432,8 +431,12 @@ def test_le_formulaire_enregistre_un_combine(
     assert [leg.position for leg in combos[0].legs] == [0, 1]
     assert combos[0].computed_price == pytest.approx(1.45 * 1.95)
     assert combos[0].stop_reason == "confiance"
-    # Et aucune selection n'est devenue un pari pose.
-    assert all(pick.played is False for pick in list_picks(session_id, isolated_settings))
+    # Et aucune selection n'a recu de colonne de pari pose.
+    with connect(isolated_settings) as conn:
+        laissees = conn.execute(
+            "SELECT COUNT(*) FROM picks WHERE played = 1 OR coupon_id IS NOT NULL"
+        ).fetchone()[0]
+    assert laissees == 0
 
 
 def test_un_combine_ampute_est_dit_et_non_tronque(

@@ -57,7 +57,7 @@ SystemCallFilter=@system-service
 SystemCallErrorNumber=EPERM
 
 # Seuls ces chemins sont accessibles en ecriture : la base et les sauvegardes,
-# les captures de coupons, les templates de prompt (editables depuis l'UI) et
+# les templates de prompt (editables depuis l'UI) et
 # le cache de uv.
 ReadWritePaths=/home/ubuntu/myAssistantBet/data
 ReadWritePaths=/home/ubuntu/myAssistantBet/src/myassistantbet/templates/prompts

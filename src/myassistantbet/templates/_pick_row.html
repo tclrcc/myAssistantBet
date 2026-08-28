@@ -20,7 +20,7 @@
    la feuille — mais un geste qu'on repete quarante fois de suite ne peut pas
    passer par le second.
 #}
-{% macro pick_row(pick, coupon_tracking, real_price_capture, stakes, settlements,
+{% macro pick_row(pick, real_price_capture, stakes, settlements,
                   resolved=false, previous='pending', error='') %}
     {#- `id` sur la ligne : c'est l'ancre d'un swap cible, et elle sert aussi a
         retrouver une ligne resolue apres coup. -#}
@@ -117,7 +117,7 @@
            La mise proposée est affichée à côté, en gris : c'est l'écart entre
            les deux qui se lit, comme la cote déclarée d'un combiné. #}
         {% set mise = stakes.get(pick.pick_id) %}
-        {% if coupon_tracking and mise %}
+        {% if mise %}
         <form hx-post="/picks/{{ pick.pick_id }}/stake"
               hx-target="#worksheet" hx-swap="outerHTML">
           <input class="tiny" type="text" name="montant" inputmode="decimal"
@@ -199,18 +199,6 @@
           proposé : {{ reglement.verdict }}
         </button>
           {% endif %}
-        {% endif %}
-      </td>
-      <td class="nowrap pick-play">
-        {% if pick.coupon_id %}
-          <a class="badge ok" href="#coupon-{{ pick.coupon_id }}">coupon {{ pick.coupon_id }}</a>
-        {% elif coupon_tracking %}
-          <button type="button" class="link-action"
-                  hx-post="/picks/{{ pick.pick_id }}/play"
-                  hx-target="#worksheet" hx-swap="outerHTML"
-                  title="Enregistre un pari simple sur cette sélection">jouer</button>
-        {% else %}
-          <span class="muted">·</span>
         {% endif %}
       </td>
       <td class="tight pick-drop">

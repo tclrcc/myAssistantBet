@@ -1226,6 +1226,82 @@ coups d'envoi s'etalent assez pour qu'un enchainement de trois pas existe la
 plupart des jours. Ce n'est pas une question de volume de selections — le compte
 est deja la — c'est une propriete du calendrier des competitions suivies.
 
+## C.37 — La suite de tests ecrivait dans l'instance servie
+
+**Mesure du 28/08/2026, prouvee et non deduite.** `isolated_settings` redirigeait
+`DB_PATH`, `DEV_CACHE_DIR` et `BACKUP_DIR` — et **pas `UPLOAD_DIR`**. Les bancs de
+capture de coupon ecrivaient donc dans `data/uploads` de l'instance servie.
+
+- **Preuve** : releve des dates de modification, execution de
+  `pytest -k "capture or screenshot"`, nouveau releve. Les deux fichiers sont
+  passes a l'instant du run. Deduit du code, le constat aurait ete une lecture ;
+  mesure, il est un fait.
+- **Le symptome etait masque par un detail sans rapport** : le nom d'un fichier
+  de capture porte l'empreinte de son contenu (`coupon-{id}-{empreinte}.{ext}`),
+  donc chaque execution **ecrasait** le meme fichier. Le compte de fichiers ne
+  grossissait jamais, et c'est ce qui a rendu la fuite invisible.
+- **Meme famille que l'incident du 21/08** — un garde qui isole trois chemins et
+  pas le quatrieme — et sœur de `db.scratch_copy`, qui est la moitie **ecriture**
+  de la regle « toute lecture se fait sur une copie ».
+- **Il se serait efface tout seul.** Les bancs fautifs partent avec les coupons :
+  sans ce releve, personne n'aurait jamais su que la fixture n'etait pas isolee.
+  **Un defaut qui se resout par la suppression de son seul temoin est un defaut
+  qu'on ne retrouve pas** — c'est la raison de le corriger dans le meme lot.
+
+**Le correctif enonce la propriete et non le champ.** `conftest` boucle sur les
+champs `Path` de `Settings` : un chemin ajoute demain est isole sans que personne
+y pense, et le banc survit au retrait de `upload_dir` — ce qui est arrive le jour
+meme. **Aucun cinquieme chemin**, verifie : le modele en porte exactement quatre.
+
+**Un cas voisin existe et n'est pas le meme** : `tests/test_settings_ui.py` ecrit
+de vrais gabarits dans `src/myassistantbet/templates/prompts/`, hors de toute
+isolation — mais avec une fixture de nettoyage explicite et un commentaire qui le
+dit. C'est un garde plus faible qu'une isolation (un plantage en cours de test
+laisse un fichier, et `template_fingerprint()` balaie ce repertoire), et c'est une
+decision assumee, pas un oubli. Laisse tel quel.
+
+## C.38 — Le retrait des coupons, et ce qu'il rend visible
+
+**Chantier du 28/08/2026.** Le suivi des paris poses est retire : module, routes,
+surfaces, 46 bancs. Les colonnes et les migrations 010 et 011 restent.
+
+- **Rien n'y a jamais ete ecrit** : `coupons` vide, `picks.coupon_id` nul sur 615,
+  `picks.played` faux sur 615, `mises` et `bankroll_journee` vides.
+- **Le precedent de `/players/squads` ne s'applique pas.** La migration 022
+  supprimait des **lignes** collectees des mois sans lecteur ; il n'y a ici aucune
+  ligne. Squads etait une **collecte sans lecteur**, les coupons une **surface
+  d'ecriture sans utilisateur** — la seconde ne laisse rien a nettoyer.
+- **Ce que le retrait rend visible, et c'est le resultat du lot** :
+  `history.stats()` lisait `WHERE played = 1`, donc zero ligne depuis toujours ;
+  `coupons.rates()` rendait une liste vide ; `Analysis.played` / `skipped`
+  etaient gardes par `comparable`, qui exige `played.settled > 0`. **Les deux
+  chiffres et leur phrase n'ont jamais ete rendus une seule fois.** Ce n'est pas
+  une carte qui devient morte, c'est une carte qui n'a jamais vecu.
+  `Analysis.overall` etait deduit d'une fusion dont une moitie etait toujours
+  vide : il compte desormais directement et rend le meme nombre.
+
+**Le vrai risque du chantier n'etait pas dans le brief.** `COUPON_TRACKING`
+n'etait pas un interrupteur de coupons : il ouvrait aussi la saisie de la **cote
+obtenue**, qui controle le prix enregistre et non ce qu'on en fait — le seul
+controle qui existe sur `picks.price`, le nombre sur lequel repose tout le
+residu. Elle est **vivante** : 184 lignes, 35 sur 39 selections le 27/08, 17 sur
+28 le 28/08, 38 paliers revus. Le drapeau a donc ete **scinde avant** le retrait,
+et `saisie_cote_obtenue` la porte seule, ouverte, avec ses deux surfaces liees.
+
+**Trois copies de « ce que le gate ouvre » se contredisaient**, dont une rendue a
+l'ecran des reglages et promettant encore la section G, retiree la veille. Toutes
+corrigees, apres avoir ete comptees.
+
+**Ce que le lot a trouve en passant, et qui n'etait pas demande** :
+
+- `picks.stake` est orpheline **independamment des coupons** — son unique
+  ecrivain etait nourri par un champ de formulaire qui n'a jamais existe, et elle
+  n'avait aucun lecteur. La forme exacte que `stakes.py` a recue le 27/08 ;
+- `prompt.build_prompt` passait encore `mise=stakes.brief(…)` au gabarit, pour une
+  variable que la section G lisait et qui n'existe plus. `brief` rejoint la pause,
+  **declaree** — le banc des orphelines de `stakes` compare desormais par egalite,
+  pour qu'une orpheline de plus comme une orpheline de moins soient une decision.
+
 ## C.21 — Ce qui reste ouvert et n'a pas ete instruit
 
 - **Phase 4** — le generateur de prompts : variables injectees non utilisees,

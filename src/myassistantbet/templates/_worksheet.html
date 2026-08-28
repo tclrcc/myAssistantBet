@@ -28,7 +28,7 @@
       </td>
     </tr>
     {% for pick in picks %}
-    {{ pick_row(pick, coupon_tracking, real_price_capture, stakes, settlements) }}
+    {{ pick_row(pick, real_price_capture, stakes, settlements) }}
     {% endfor %}
     {% endfor %}
   </tbody>
@@ -36,8 +36,12 @@
 {% endmacro %}
 
 <div id="worksheet">
-  {% if coupon_error %}<div class="report report-warn">{{ coupon_error }}</div>{% endif %}
-  {% if coupon_notice %}<div class="report">{{ coupon_notice }}</div>{% endif %}
+
+  {# Le motif d'un geste refuse. **Rendu ici et pas seulement dans la page** :
+     les routes de la feuille repondent par ce fragment, et un refus qui ne
+     s'afficherait que sur la page entiere serait un echec silencieux — c'est
+     le defaut corrige le 23/08 sur la saisie d'un resultat. #}
+  {% if error %}<div class="report report-warn">{{ error }}</div>{% endif %}
 
   {% if worksheet.empty %}
     <div class="section-head"><h2>Sélections</h2></div>
@@ -78,7 +82,7 @@
 
      Rien quand rien n'est engagé — même règle que partout : ce qui n'a pas de
      donnée est omis, jamais rendu vide. #}
-  {% if coupon_tracking and day_state.line %}
+  {% if day_state.line %}
   <p class="block-note">
     <strong>Journée {{ day_state.journee }}</strong> — {{ day_state.line }}.
   </p>
@@ -97,8 +101,6 @@
           hauteur, donc ne peut pas reproduire le saut qu'on vient de corriger. -#}
       <span id="worksheet-pending-count">{{ worksheet.pending_count }}</span>
       sur {{ worksheet.total }} sélection(s)
-      {%- set libres = picks | rejectattr('coupon_id') | list | length %}
-      {%- if libres %} · {{ libres }} pas encore jouée(s){% endif %}
     </span>
     {#- **Le tri ne se refait pas sous la main.** Les lignes tranchees restent
         en place tant qu'on saisit ; ce bouton est le geste explicite qui les
@@ -199,131 +201,5 @@
     impossibles. Il est affiché, pas corrigé.
   </p>
   {% endif %}
-  {% endif %}
-
-  <div class="section-head">
-    <h2>Coupons joués</h2>
-    <span class="muted small">
-      ce qui a réellement été posé chez le bookmaker — le résultat se déduit des jambes
-    </span>
-  </div>
-
-  {% if available_picks and coupon_tracking %}
-  <details class="panel" {% if available_picks | length > 1 %}{% endif %}>
-    <summary>
-      Composer un coupon
-      <span class="muted small">
-        {{ available_picks | length }} sélection(s) disponible(s) — pour un pari simple,
-        le bouton « jouer » suffit
-      </span>
-    </summary>
-    <form method="post" action="/history/{{ session_id }}/coupons"
-          enctype="multipart/form-data" class="coupon-form">
-      <table class="board">
-        <thead>
-          <tr>
-            <th class="tight">
-              <input type="checkbox" data-check-all="pick_id"
-                     aria-label="Tout sélectionner" title="Tout sélectionner">
-            </th>
-            <th>Match</th>
-            <th>Palier</th>
-            <th>Sélection</th>
-            <th class="num">Cote</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for pick in available_picks %}
-          <tr>
-            <td class="tight">
-              <input type="checkbox" name="pick_id" value="{{ pick.pick_id }}"
-                     aria-label="Inclure {{ pick.selection }}">
-            </td>
-            <td>{{ pick.event_label }}</td>
-            <td class="nowrap">{{ pick.tier_label }}</td>
-            <td class="affiche">{{ pick.selection }}
-              <span class="muted small">{{ pick.market }}</span></td>
-            <td class="num">{{ '%.2f'|format(pick.price) if pick.price else '·' }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-
-      <div class="pick-form">
-        <label class="narrow">Mise
-          <input type="text" name="stake" inputmode="decimal" placeholder="5"></label>
-        <label class="narrow">Date<input type="date" name="date" value="{{ today }}"></label>
-        <label class="narrow">Heure<input type="time" name="time" value="{{ now_hm }}"></label>
-        <label class="narrow">Book<input type="text" name="bookmaker" value="betclic"></label>
-        <label class="grow">Note
-          <input type="text" name="note" placeholder="cash-out, erreur de saisie…"></label>
-        <label>Capture
-          <input type="file" name="screenshot" accept="image/png,image/jpeg,image/webp"></label>
-        <button type="submit" class="primary">Enregistrer le coupon</button>
-      </div>
-    </form>
-  </details>
-  {% endif %}
-
-  {% if not coupons %}
-    <p class="empty">Aucun pari enregistré pour cette session.</p>
-  {% else %}
-  <div class="coupons">
-    {% for coupon in coupons %}
-    <article class="coupon result-{{ coupon.result }}" id="coupon-{{ coupon.coupon_id }}">
-      <header>
-        <span class="tag">{{ coupon.kind }}</span>
-        <b class="coupon-result">{{ coupon.result_label }}</b>
-        <span class="muted small">
-          {{ coupon.placed_local.strftime('%d/%m à %H:%M') if coupon.placed_local else '' }}
-          · {{ coupon.bookmaker }}
-          {% if coupon.stake %} · mise {{ coupon.stake }}{% endif %}
-        </span>
-        <span class="push"></span>
-        {% if coupon.result == 'pending' %}
-          <button type="button" class="link-action"
-                  hx-post="/coupons/{{ coupon.coupon_id }}/settle"
-                  hx-vals='{"result": "win"}'
-                  hx-target="#worksheet" hx-swap="outerHTML"
-                  title="Marque gagnées toutes les jambes encore en attente">tout gagné</button>
-        {% endif %}
-        {% if coupon.screenshot %}
-          <a class="link-action" href="/coupons/{{ coupon.coupon_id }}/screenshot"
-             target="_blank">capture</a>
-        {% endif %}
-        <button type="button" class="link-danger"
-                hx-post="/coupons/{{ coupon.coupon_id }}/delete"
-                hx-target="#worksheet" hx-swap="outerHTML"
-                hx-confirm="Supprimer ce coupon ? Ses jambes redeviendront des sélections libres.">
-          ✕
-        </button>
-      </header>
-
-      <ol class="legs">
-        {% for leg in coupon.legs %}
-        <li class="result-{{ leg.result }}">
-          <span class="leg-pick">{{ leg.selection }}</span>
-          <span class="muted small">{{ leg.event_label }} · {{ leg.market }}</span>
-          {% if leg.price %}<span class="num muted">{{ '%.2f'|format(leg.price) }}</span>{% endif %}
-          <span class="leg-result">{{ leg.result_label }}</span>
-        </li>
-        {% endfor %}
-      </ol>
-
-      {% if coupon.combined and coupon.sports | length == 1 %}
-        <p class="muted small">Toutes les jambes sur un seul sport : {{ coupon.sports[0] }}.</p>
-      {% endif %}
-      {% if coupon.note %}<p class="muted small">{{ coupon.note }}</p>{% endif %}
-
-      {% if not coupon.screenshot %}
-      <form method="post" action="/coupons/{{ coupon.coupon_id }}/screenshot"
-            enctype="multipart/form-data" class="shot-form">
-        <input type="file" name="screenshot" accept="image/png,image/jpeg,image/webp">
-        <button type="submit" class="link-action">joindre la capture</button>
-      </form>
-      {% endif %}
-    </article>
-    {% endfor %}
-  </div>
   {% endif %}
 </div>

@@ -35,7 +35,6 @@ from myassistantbet.config import Settings
 from myassistantbet.db import connect
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
-from myassistantbet.services import coupons as coupons_service
 from myassistantbet.services import imports_raw
 from myassistantbet.services.framework import FRAMEWORK_VERSION
 from myassistantbet.services.history import add_pick, analysis, set_result
@@ -125,27 +124,6 @@ def test_un_resultat_annule_est_date_aussi(migrated: Settings) -> None:
     set_result(pick_id, "void", migrated)
 
     assert _colonne(migrated, pick_id, "result_at") is not None
-
-
-def test_les_jambes_d_un_coupon_sont_datees_par_le_meme_geste(migrated: Settings) -> None:
-    """**Ce chemin écrit `result` en masse**, et le laisser sans date ferait de
-    chaque jambe de combiné une ligne hors de portée de toute relecture."""
-    session_id, premier = _pick(migrated, "Lyon")
-    second = add_pick(
-        session_id,
-        "safe",
-        "1N2",
-        "Nice",
-        event_id=str(_match(migrated, "Nice")),
-        price="1.60",
-        settings=migrated,
-    )
-    coupon_id = coupons_service.create(session_id, [premier, second], settings=migrated)
-
-    coupons_service.settle_all(coupon_id, "win", migrated)
-
-    assert _colonne(migrated, premier, "result_at") is not None
-    assert _colonne(migrated, second, "result_at") is not None
 
 
 def test_les_tranchees_sans_date_se_comptent(migrated: Settings) -> None:

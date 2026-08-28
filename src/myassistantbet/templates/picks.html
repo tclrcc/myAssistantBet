@@ -5,7 +5,7 @@
   <div>
     <h1>{{ session_label }}</h1>
     <p class="subtitle">
-      {{ picks | length }} sélection(s) · {{ coupons | length }} pari(s) enregistré(s)
+      {{ picks | length }} sélection(s)
       {%- if prompts %} · {{ prompts | length }} prompt(s), dernier à
       {{ prompts[0].created_local.strftime('%H:%M') }}{% endif %}
     </p>

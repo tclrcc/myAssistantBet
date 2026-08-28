@@ -37,14 +37,12 @@ from zoneinfo import ZoneInfo
 from ..config import Settings, get_settings
 from . import changelog as changelog_service
 from . import combos as combos_service
-from . import coupons as coupons_service
 from . import history as history_service
 from . import ingestion as ingestion_service
 from . import prompt as prompt_service
 from . import sections as sections_service
 from . import set_scores as set_scores_service
 from .inference import EQUIVALENCE_MARGIN, MARGIN_REFERENCE
-from .thresholds import COUPON_TRACKING, toggle_of
 
 #: Formats servis. `md` s'adresse a un lecteur — humain ou modele — hors de
 #: l'application ; `json` rend le meme releve a une machine.
@@ -63,8 +61,7 @@ class Section:
 
     `block` vide designe un bloc de premier niveau (un `h2` de la page, un `##`
     du fichier) ; sinon c'est le bloc auquel la section appartient. Deux blocs
-    portent des cartes de meme titre — « Par palier » mesure l'analyse dans
-    l'un, les paris poses dans l'autre — et seul le couple les distingue.
+    portent des cartes de meme titre, et seul le couple les distingue.
     """
 
     block: str
@@ -93,7 +90,6 @@ EXPLORATORY_BLOCK = "Sélections exploratoires"
 #: selection ecrite en connaissant le debut du match.
 LATE_BLOCK = "Sélections écrites après le coup d'envoi"
 LABELLING_BLOCK = "Comment tu étiquettes"
-BETS_BLOCK = "Ce que valent tes paris"
 
 #: Les sections que la page peut rendre, bloc par bloc. Une carte absente du lot
 #: n'est rendue ni a l'ecran ni dans le fichier ; c'est l'inverse qui serait un
@@ -129,10 +125,6 @@ SECTIONS: tuple[Section, ...] = (
     Section(LABELLING_BLOCK, "Par palier"),
     Section(LABELLING_BLOCK, "Session par session"),
     Section(LABELLING_BLOCK, "Faisceau session par session"),
-    Section("", BETS_BLOCK),
-    Section(BETS_BLOCK, "Par palier"),
-    Section(BETS_BLOCK, "Par sport"),
-    Section(BETS_BLOCK, "Coupons"),
 )
 
 
@@ -167,8 +159,6 @@ class StatsReport:
     #: c'est le jour de la bascule que la serie devra montrer, et un lecteur qui
     #: ne sait pas a quelle distance on en est ne peut pas la lire.
     feedback: history_service.Feedback = field(default_factory=history_service.Feedback)
-    stats: history_service.Stats = field(default_factory=history_service.Stats)
-    coupon_rates: list[history_service.RateRow] = field(default_factory=list)
     set_scores: set_scores_service.Report = field(default_factory=set_scores_service.Report)
     #: Ce que l'ingestion a perdu, par type et par motif. **Un compte, jamais un
     #: taux** : il est juste a tout effectif, et il dit ce qu'aucun autre chiffre
@@ -234,7 +224,6 @@ class StatsReport:
     #: un constat plutot qu'une preference** : aucun pari n'est pose depuis douze
     #: sessions. La page presentait cette absence comme un manque, ce qui est
     #: vrai et se lit comme un reproche — un usage assume n'a pas a s'excuser.
-    coupon_tracking: bool = False
     generated_at: datetime | None = None
 
     @property
@@ -248,8 +237,6 @@ class StatsReport:
             "scale_shift": self.scale_shift,
             "evidence_shift": self.evidence_shift,
             "feedback": self.feedback,
-            "stats": self.stats,
-            "coupon_rates": self.coupon_rates,
             "set_scores": self.set_scores,
             "set_score_options": self.set_score_options,
             "set_score_matrix": self.set_score_matrix,
@@ -263,7 +250,6 @@ class StatsReport:
             "tier_usage": self.tier_usage,
             "tier_scope": self.tier_scope,
             "exploratory": self.exploratory,
-            "coupon_tracking": self.coupon_tracking,
             "late": self.late,
             "late_gap": self.late_gap,
         }
@@ -273,7 +259,6 @@ class StatsReport:
         """Meme condition que la page : rien a mesurer nulle part."""
         return (
             self.analysis.empty
-            and self.stats.empty
             and not self.labelling
             and self.set_scores.empty
             and self.combos.empty
@@ -388,13 +373,6 @@ class StatsReport:
             # « cette page ne mesure pas les paris poses » — vraie distinction
             # tant que le suivi etait cense servir. Ferme, la question ne se pose
             # plus : l'ecran des reglages dit ou le rouvrir.
-            (Section("", BETS_BLOCK), self.coupon_tracking),
-            (Section(BETS_BLOCK, "Par palier"), self.coupon_tracking and not self.stats.empty),
-            (Section(BETS_BLOCK, "Par sport"), self.coupon_tracking and not self.stats.empty),
-            (
-                Section(BETS_BLOCK, "Coupons"),
-                self.coupon_tracking and bool(self.coupon_rates),
-            ),
         ]
         return [section for section, shown in rendered if shown]
 
@@ -636,8 +614,6 @@ def report(settings: Settings | None = None) -> StatsReport:
         scale_shift=history_service.scale_shift(settings),
         evidence_shift=history_service.evidence_shift(settings),
         feedback=history_service.feedback(settings),
-        stats=history_service.stats(settings),
-        coupon_rates=coupons_service.rates(settings),
         set_scores=sets,
         set_score_options=list(set_scores_service.SCORES),
         set_score_matrix=set_scores_service.matrix_rows(sets),
@@ -652,7 +628,6 @@ def report(settings: Settings | None = None) -> StatsReport:
         tier_scope=history_service.tier_scope(settings),
         exploratory=exploratoire,
         late=history_service.late(settings),
-        coupon_tracking=toggle_of(COUPON_TRACKING, settings),
         generated_at=datetime.now(ZoneInfo(settings.tz)),
     )
 
@@ -1005,9 +980,6 @@ def as_json(found: StatsReport) -> dict[str, Any]:
         },
         "totals": {
             "overall": _rate(analysis.overall),
-            "played": _rate(analysis.played),
-            "skipped": _rate(analysis.skipped),
-            "comparable": analysis.comparable,
             "settled_events": analysis.settled_events,
         },
         "groups": {
@@ -1163,13 +1135,6 @@ def as_json(found: StatsReport) -> dict[str, Any]:
             "enough": found.feedback.enough,
             "line": found.feedback.missing_line,
         },
-        "bets": {
-            "overall": _rate(found.stats.overall),
-            "by_tier": [_rate(row) for row in found.stats.by_tier],
-            "by_sport": [_rate(row) for row in found.stats.by_sport],
-            "quarantined": found.stats.quarantined,
-            "coupons": [_rate(row) for row in found.coupon_rates],
-        },
     }
 
 
@@ -1305,7 +1270,6 @@ def as_markdown(found: StatsReport) -> str:
         f"- **Sessions couvertes** : {found.sessions}",
         f"- **Sélections tranchées** : {analysis.settled} "
         f"({analysis.overall.won} gagnée(s), {analysis.overall.lost} perdue(s))",
-        f"- **Dont jouées / écartées** : {analysis.played.settled} / {analysis.skipped.settled}",
         f"- **Annulées** : {analysis.overall.void} · **en attente** : {analysis.overall.pending}",
         f"- **Hors périmètre, antériorité non établie** : {analysis.without_antecedence}",
         f"- **Journées d'analyse** : {analysis.days}",
@@ -1372,21 +1336,11 @@ def as_markdown(found: StatsReport) -> str:
             "| Population | Gagnées | Tranchées | Taux | Intervalle 95 % |",
             "| --- | ---: | ---: | ---: | :---: |",
         ]
-        populations = [(analysis.overall, "Toutes")]
-        if analysis.comparable:
-            populations += [(analysis.played, "Jouées"), (analysis.skipped, "Écartées")]
-        for row, libelle in populations:
+        for row, libelle in [(analysis.overall, "Toutes")]:
             out.append(
                 f"| {libelle} | {row.won} | {row.settled} | {row.rate_label} "
                 f"| {row.interval_label or '—'} |"
             )
-        if analysis.comparable:
-            out += [
-                "",
-                "Les deux dernières lignes se lisent ensemble : si ce qui est écarté gagne "
-                "aussi souvent que ce qui est joué, le tri n'apporte rien.",
-            ]
-
         if analysis.carried_rows:
             out += ["", "### Ce qui s'écarte", ""]
             for row in analysis.carried_rows:
@@ -1947,10 +1901,6 @@ def as_markdown(found: StatsReport) -> str:
             "leur précision.",
         ]
 
-    # **Le bloc n'est plus rendu quand le suivi est ferme**, et le pied de page
-    # reste : il decrit la definition du taux, qui vaut pour tout le fichier.
-    if found.coupon_tracking:
-        out += _bets(found)
     out += [
         "",
         "---",
@@ -1959,43 +1909,3 @@ def as_markdown(found: StatsReport) -> str:
         "exclus du dénominateur.",
     ]
     return "\n".join(out).rstrip() + "\n"
-
-
-def _bets(found: StatsReport) -> list[str]:
-    """« Ce que valent tes paris » — le seul bloc que le suivi des coupons ouvre."""
-    out = ["", f"## {BETS_BLOCK}", "", "Uniquement ce qui a été posé chez le bookmaker."]
-    if found.stats.empty:
-        # **Deux phrases, jamais une, et jamais un silence.** Le bloc etait
-        # masque des deux cotes : une meme sortie pour « aucun pari pose » et
-        # pour « cette page ne mesure pas les paris poses ». Le fichier existe
-        # justement pour faire relire ces chiffres ailleurs, ou un bloc absent
-        # ne se distingue pas d'un bloc qui n'a jamais existe.
-        out += [
-            "",
-            "**Aucun coupon saisi.** Rien n'a été enregistré comme posé chez le "
-            "bookmaker : ce n'est pas une collecte qui manque, c'est un geste qui n'a "
-            "pas eu lieu.",
-            "",
-            "**Et le reste de ce relevé ne mesure pas les paris posés.** Les sélections "
-            "comptées ailleurs valent qu'elles aient été jouées ou non — elles répondent "
-            "à « ce que vaut l'analyse », pas à « ce que valent mes paris ».",
-        ]
-    else:
-        out += [
-            "",
-            f"**Taux des paris posés** : {found.stats.overall.won} gagné(s), "
-            f"{found.stats.overall.lost} perdu(s) — {found.stats.overall.settled} tranché(s), "
-            f"{found.stats.overall.rate_label}, intervalle "
-            f"{found.stats.overall.interval_label or '—'}.",
-        ]
-        out += _card(found, BETS_BLOCK, "Par palier", found.stats.by_tier)
-        out += _card(found, BETS_BLOCK, "Par sport", found.stats.by_sport)
-        out += _card(found, BETS_BLOCK, "Coupons", found.coupon_rates)
-        if found.coupon_rates:
-            out += [
-                "",
-                "Les types de coupons sont séparés : un combiné tombe dès qu'une jambe "
-                "cède, il ne se compare pas à un pari simple. Aucune cote d'ensemble "
-                "n'est calculée.",
-            ]
-    return out

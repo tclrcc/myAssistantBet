@@ -520,25 +520,8 @@ class Toggle:
     note: str
 
 
-#: Le suivi de l'argent. **Rallume le 20/08/2026, et le constat qui l'avait
-#: eteint a change** : il avait ete pose sur une mesure — aucun pari pose,
-#: `coupons` vide, `played` faux sur 235 selections — et cette mesure decrivait
-#: un usage, pas une regle. L'usage a change, l'interrupteur suit.
-#:
-#: **Ce qu'il ouvre desormais**, en plus du bloc de paris poses : la section G du
-#: gabarit et le journal des mises. Le gate n'est pas cosmetique — la section
-#: pese **592 tokens de cout fixe** sur chaque prompt, et la faire payer a qui ne
-#: mise pas serait exactement ce que les portes du preambule existent pour
-#: eviter.
-#:
-#: **Ce qu'il n'ouvre pas, et ne doit jamais ouvrir** : la mesure d'analyse. Le
-#: residu au prix, les crans et les intervalles ne connaissent aucun montant,
-#: quel que soit l'etat de cet interrupteur — c'est une separation de tables,
-#: gardee par un test qui lit la source, pas un reglage.
-COUPON_TRACKING = "suivi_coupons"
-
 #: La saisie de la **cote obtenue**, et elle seule. **Scindee de
-#: `COUPON_TRACKING` le 28/08/2026**, parce qu'un drapeau qui ouvre trois choses
+#: `suivi_coupons` le 28/08/2026**, parce qu'un drapeau qui ouvre trois choses
 #: dont une seule part n'est plus un drapeau : c'est trois decisions sous un nom.
 #:
 #: Ce qu'elle controle n'a rien a voir avec les paris poses : la cote obtenue
@@ -569,21 +552,6 @@ TOGGLES: dict[str, Toggle] = {
             "par rien, et c'est elle qui porte le résidu au prix. Fermé, la colonne "
             "disparaît et le manque cesse d'être compté — les deux ensemble, pour qu'un "
             "compteur muet ne se lise pas comme une absence de manque."
-        ),
-    ),
-    COUPON_TRACKING: Toggle(
-        key=COUPON_TRACKING,
-        label="Suivi de l'argent",
-        default=True,
-        note=(
-            "Ouvre le bloc « Ce que valent tes paris » de la page de statistiques, la "
-            "colonne « cote obtenue », le bouton « jouer » de la feuille de session, la "
-            "**section G du gabarit** (répartition de mise) et le journal des mises. "
-            "Désactivé, l'application ne mesure que les prédictions et le prompt "
-            "économise 592 tokens de coût fixe. **La mesure d'analyse ne dépend pas de "
-            "cet interrupteur** : le résidu au prix, les crans et les intervalles "
-            "ignorent les montants dans les deux états, et c'est une séparation de "
-            "tables, pas un réglage."
         ),
     ),
 }

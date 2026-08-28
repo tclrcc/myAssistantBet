@@ -1048,48 +1048,6 @@ tr:hover .link-quiet, .link-quiet:focus-visible { color: var(--muted); }
 .seg-void.is-on { background: var(--panel-3); color: var(--text); }
 .seg-pending.is-on { background: var(--warn); }
 
-/* Un coupon est une carte et non une ligne de tableau : ses jambes sont une
-   liste de longueur variable, qu'une cellule rendrait illisible. */
-.coupons { display: flex; flex-direction: column; gap: var(--s3); }
-.coupon {
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--muted);
-  border-radius: var(--radius);
-  padding: var(--s3) var(--s4);
-}
-.coupon.result-win { border-left-color: var(--ok); }
-.coupon.result-loss { border-left-color: var(--alert); }
-.coupon.result-pending { border-left-color: var(--warn); }
-.coupon > header {
-  display: flex;
-  align-items: center;
-  gap: var(--s3);
-  flex-wrap: wrap;
-  margin-bottom: var(--s2);
-}
-.coupon .push { margin-left: auto; }
-.coupon-result { font-size: var(--text-md); }
-.coupon.result-win .coupon-result { color: var(--ok); }
-.coupon.result-loss .coupon-result { color: var(--alert); }
-
-.legs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--s1); }
-.legs li {
-  display: flex;
-  align-items: baseline;
-  gap: var(--s2);
-  padding: var(--s1) var(--s2);
-  border-radius: var(--radius-sm);
-  background: var(--panel-2);
-  font-size: var(--text-md);
-}
-.legs .leg-pick { font-weight: 550; }
-.legs .leg-result { margin-left: auto; color: var(--muted); font-size: var(--text-sm); }
-.legs li.result-win .leg-result { color: var(--ok); }
-.legs li.result-loss .leg-result { color: var(--alert); }
-.shot-form { display: flex; align-items: center; gap: var(--s2); margin-top: var(--s2); }
-.coupon-form { margin: 0; }
-.coupon-form .pick-form { margin: var(--s3) 0 0; }
 .pick-form .grow { flex: 1; min-width: 180px; }
 .pick-form .grow input, .pick-form .grow select { width: 100%; }
 
@@ -2077,7 +2035,6 @@ td .sport {
 .odds-summary,
 .market,
 details.panel,
-.coupon,
 .grid-head,
 .paste-form,
 .chart-card,

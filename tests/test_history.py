@@ -6,13 +6,11 @@ from dataclasses import fields
 
 import pytest
 from fastapi.testclient import TestClient
-from markupsafe import escape
 
 from myassistantbet import db
 from myassistantbet.config import Settings
 from myassistantbet.main import app
 from myassistantbet.services import board as board_service
-from myassistantbet.services import coupons as coupons_service
 from myassistantbet.services import history, market_families
 from myassistantbet.services.competitions import set_category
 from myassistantbet.services.history import (
@@ -46,7 +44,6 @@ from myassistantbet.services.history import (
     set_event,
     set_real_price,
     set_result,
-    stats,
     tier_drift,
     tier_for_price,
     tier_scope,
@@ -56,11 +53,6 @@ from myassistantbet.services.history import (
 )
 from myassistantbet.services.manual import build, save
 from myassistantbet.services.prompt import RenderedPrompt, build_prompt, save_prompt
-from myassistantbet.services.thresholds import (
-    COUPON_TRACKING,
-    REAL_PRICE_CAPTURE,
-    save_toggle,
-)
 
 from .helpers import NOW, lot_avec_recul
 
@@ -118,7 +110,6 @@ def test_ajout_d_un_pick(migrated: Settings) -> None:
         event_id=str(event_id),
         price="1,72",
         confidence="3",
-        stake="5",
         settings=migrated,
     )
 
@@ -127,7 +118,6 @@ def test_ajout_d_un_pick(migrated: Settings) -> None:
     assert picks[0].pick_id == pick_id
     assert picks[0].price == 1.72, "la virgule decimale est acceptee"
     assert picks[0].confidence == 3
-    assert picks[0].stake == 5.0
     assert picks[0].result == "pending"
     assert picks[0].tier_label == "🔵 FUN"
     assert picks[0].event_label == "Lyon – Nice"
@@ -178,12 +168,10 @@ def test_confiance_hors_bornes_refusee(migrated: Settings) -> None:
 def test_champs_optionnels_vides(migrated: Settings) -> None:
     session_id, _ = _session_avec_match(migrated)
 
-    add_pick(
-        session_id, "safe", "O/U", "Over", price="", confidence="", stake="", settings=migrated
-    )
+    add_pick(session_id, "safe", "O/U", "Over", price="", confidence="", settings=migrated)
 
     pick = list_picks(session_id, migrated)[0]
-    assert (pick.price, pick.confidence, pick.stake) == (None, None, None)
+    assert (pick.price, pick.confidence) == (None, None)
 
 
 # -- Resultats --------------------------------------------------------------
@@ -227,13 +215,12 @@ def _joue(
     result: str,
     market: str = "O/U",
     selection: str = "Over",
-    stake: str = "",
 ) -> int:
-    """Saisit une selection **et la joue** : un pick ne compte qu'en coupon.
+    """Saisit une selection et son resultat.
 
-    C'est le chemin reel depuis la phase 10 — `played` ne passe a vrai qu'au
-    rattachement. Marquer le pick a la main ferait passer les tests sans que le
-    parcours fonctionne.
+    **Elle ne se joue plus** : le suivi des paris poses est retire le
+    28/08/2026, et `analysis()` n'a jamais filtre sur `played`. Le nom du helper
+    a suivi.
     """
     pick_id = add_pick(
         session_id,
@@ -241,107 +228,17 @@ def _joue(
         market,
         selection,
         event_id=str(event_id) if event_id else "",
-        stake=stake,
         # Meme raison que `_propose` : ces montages reutilisent un match unique.
         independence_note="angles indépendants (fixture)",
         settings=settings,
     )
     set_result(pick_id, result, settings)
-    coupons_service.create(session_id, [pick_id], settings=settings)
     return pick_id
 
 
 def _picks(settings: Settings, session_id: int, event_id: int, results: dict[str, str]) -> None:
     for tier, result in results.items():
         _joue(settings, session_id, event_id, tier, result)
-
-
-def test_taux_par_palier(migrated: Settings) -> None:
-    session_id, event_id = _session_avec_match(migrated)
-    for tier, result in [
-        ("safe", "win"),
-        ("safe", "win"),
-        ("safe", "loss"),
-        ("fun", "loss"),
-        ("fun", "void"),
-        ("ultra_fun", "pending"),
-    ]:
-        _joue(migrated, session_id, event_id, tier, result)
-
-    by_tier = {row.key: row for row in stats(migrated).by_tier}
-
-    assert by_tier["safe"].rate_label == "67 %"
-    assert (by_tier["safe"].won, by_tier["safe"].lost) == (2, 1)
-    assert by_tier["fun"].rate_label == "0 %"
-    assert by_tier["fun"].void == 1, "un pari annule ne compte pas au denominateur"
-    assert by_tier["ultra_fun"].rate is None, "rien de tranche, donc pas de taux"
-
-
-def test_taux_par_sport(migrated: Settings) -> None:
-    foot_session, foot_event = _session_avec_match(migrated, "football")
-    tennis_event = save(
-        build(
-            "tennis",
-            "ATP",
-            "Moutet",
-            "Bergs",
-            "2099-01-01",
-            "11:00",
-            "",
-            "",
-            "",
-            settings=migrated,
-        ),
-        migrated,
-    )
-    board_service.toggle_selection(tennis_event, True, migrated)
-    _picks(migrated, foot_session, foot_event, {"safe": "win"})
-    _joue(migrated, foot_session, tennis_event, "fun", "loss", "Vainqueur", "Moutet")
-
-    by_sport = {row.label: row for row in stats(migrated).by_sport}
-
-    assert by_sport["Football"].rate_label == "100 %"
-    assert by_sport["Tennis"].rate_label == "0 %"
-
-
-def test_pick_sans_match_classe_hors_sport(migrated: Settings) -> None:
-    session_id, _ = _session_avec_match(migrated)
-    _joue(migrated, session_id, None, "safe", "win", "Combiné", "3 sélections")
-
-    labels = {row.label for row in stats(migrated).by_sport}
-
-    assert "—" in labels
-
-
-def test_total_general(migrated: Settings) -> None:
-    session_id, event_id = _session_avec_match(migrated)
-    for tier, result in [("safe", "win"), ("fun", "loss"), ("ultra_fun", "win")]:
-        _joue(migrated, session_id, event_id, tier, result)
-
-    overall = stats(migrated).overall
-
-    assert (overall.won, overall.lost) == (2, 1)
-    assert overall.rate_label == "67 %"
-
-
-def test_stats_vides(migrated: Settings) -> None:
-    assert stats(migrated).empty is True
-
-
-def test_aucun_indicateur_financier(migrated: Settings) -> None:
-    """SPEC section 9 : la mise est memorisee, jamais agregee."""
-    session_id, event_id = _session_avec_match(migrated)
-    _joue(migrated, session_id, event_id, "safe", "win", stake="100")
-
-    result = stats(migrated)
-
-    for row in [*result.by_tier, *result.by_sport, result.overall]:
-        assert not hasattr(row, "roi")
-        assert not hasattr(row, "profit")
-        assert not hasattr(row, "stake")
-
-
-# -- Sessions ---------------------------------------------------------------
 
 
 def test_liste_des_sessions(migrated: Settings) -> None:
@@ -391,7 +288,6 @@ def test_ajout_via_le_formulaire(client: TestClient, isolated_settings: Settings
             "selection": "Over 2.5",
             "price": "1.72",
             "confidence": "3",
-            "stake": "5",
         },
     )
 
@@ -447,106 +343,11 @@ def test_pick_inconnu_renvoie_404(client: TestClient) -> None:
     assert client.post("/picks/999/delete").status_code == 404
 
 
-def test_taux_affiches_apres_saisie(client: TestClient, isolated_settings: Settings) -> None:
-    session_id, event_id = _session_avec_match(isolated_settings)
-    _joue(isolated_settings, session_id, event_id, "safe", "win")
-    save_toggle(COUPON_TRACKING, "1", isolated_settings)
-
-    response = client.get("/stats")
-
-    assert "100 %" in response.text
-    assert "🟢 SAFE" in response.text
-    assert "Football" in response.text
-    assert "Ce que valent tes paris" in response.text
-
-
 def test_page_de_stats_vide(client: TestClient) -> None:
     response = client.get("/stats")
 
     assert response.status_code == 200
     assert "Rien à mesurer" in response.text
-
-
-def test_le_bloc_des_paris_poses_se_dit_vide_quand_le_suivi_est_ouvert(
-    client: TestClient, isolated_settings: Settings
-) -> None:
-    """**Deux phrases distinctes, et leur confusion etait le defaut.**
-
-    Le bloc etait masque quand aucun coupon n'existait : une meme sortie pour
-    « aucun pari pose » et pour « cette page ne mesure pas les paris poses ».
-    Impossible alors de distinguer un compte nul d'une mesure absente.
-
-    Le suivi **ouvert**, cette distinction vaut toujours et le bloc se rend vide
-    plutot que de disparaitre. C'est le suivi **ferme** qui la rend sans objet —
-    voir le test suivant.
-    """
-    session_id, event_id = _session_avec_match(isolated_settings, "football")
-    pick_id = add_pick(
-        session_id,
-        tier="safe",
-        market="1N2",
-        selection="Lyon",
-        event_id=str(event_id),
-        price="1.45",
-        settings=isolated_settings,
-    )
-    set_result(pick_id, "win", settings=isolated_settings)
-    save_toggle(COUPON_TRACKING, "1", isolated_settings)
-
-    page = client.get("/stats").text
-
-    assert "Ce que valent tes paris" in page, "le bloc se rend, il ne se masque plus"
-    assert "Aucun coupon saisi" in page
-    # La seconde phrase, qui ne dit pas la meme chose que la premiere : ce bloc
-    # vide n'affaiblit pas les autres, qui repondent a une autre question.
-    assert "le reste de cette page ne mesure pas les paris posés" in page.lower()
-    assert "elles répondent" in page or "ils répondent" in page
-
-
-def test_le_suivi_de_l_argent_se_ferme_par_le_reglage(
-    client: TestClient, isolated_settings: Settings
-) -> None:
-    """**Le constat qui fermait ce suivi a change, et l'interrupteur suit.**
-
-    Il avait ete pose sur une mesure — aucun pari pose, `coupons` vide, `played`
-    faux sur 235 selections — et cette mesure decrivait un **usage**, pas une
-    regle. L'usage a change le 20/08/2026 : l'application produit desormais une
-    repartition de mise, donc l'argent se suit.
-
-    Ce que ce test garde n'a pas bouge d'un mot : **c'est l'interrupteur qui
-    gouverne la surface**, et lui seul. Seule la valeur par defaut a change de
-    cote, et l'eteindre restitue exactement l'etat d'avant — rien n'a ete
-    supprime.
-    """
-    session_id, event_id = _session_avec_match(isolated_settings, "football")
-    pick_id = add_pick(
-        session_id,
-        tier="safe",
-        market="1N2",
-        selection="Lyon",
-        event_id=str(event_id),
-        price="1.45",
-        settings=isolated_settings,
-    )
-    set_result(pick_id, "win", settings=isolated_settings)
-
-    # Ouvert par defaut depuis le 20/08 : c'est le nouvel etat ordinaire.
-    assert "Ce que valent tes paris" in client.get("/stats").text
-
-    save_toggle(COUPON_TRACKING, "0", isolated_settings)
-    page = client.get("/stats").text
-    reglages = client.get("/settings").text
-
-    assert "Ce que valent tes paris" not in page
-    assert "un geste qui n'a pas eu lieu" not in page
-    # **Par `escape` et non en retirant l'apostrophe.** Jinja rend `l&#39;argent`,
-    # et comparer le texte brut ferait echouer l'assertion pour une raison
-    # typographique — le piege deja paye sur la parite fiche/prompt. Affaiblir
-    # l'assertion la ferait passer sans plus rien verifier.
-    assert str(escape("Suivi de l'argent")) in reglages, "le réglage dit où le rouvrir"
-
-
-# -- Selecteur de match : sport et competition ------------------------------
 
 
 def test_les_matchs_sont_groupes_par_sport_et_competition(migrated: Settings) -> None:
@@ -948,40 +749,6 @@ def _propose(
     )
     set_result(pick_id, result, settings)
     return pick_id
-
-
-def test_l_analyse_compte_aussi_ce_qui_n_a_pas_ete_joue(migrated: Settings) -> None:
-    """C'est toute la difference avec `stats()`, qui ne mesure que le terrain."""
-    session_id, event_id = _session_avec_match(migrated)
-    _propose(migrated, session_id, event_id, "safe", "win")
-    _joue(migrated, session_id, event_id, "safe", "loss")
-
-    report = analysis(migrated)
-
-    assert report.settled == 2
-    assert stats(migrated).overall.settled == 1, "un seul pari joue"
-
-
-def test_l_analyse_oppose_les_jouees_aux_ecartees(migrated: Settings) -> None:
-    """Si l'ecarte gagne autant que le joue, le tri n'apporte rien."""
-    session_id, event_id = _session_avec_match(migrated)
-    for _ in range(3):
-        _joue(migrated, session_id, event_id, "safe", "win")
-    _propose(migrated, session_id, event_id, "fun", "loss")
-    _propose(migrated, session_id, event_id, "fun", "loss")
-
-    report = analysis(migrated)
-
-    assert report.played.rate == 1.0
-    assert report.skipped.rate == 0.0
-    assert report.comparable
-
-
-def test_la_comparaison_se_tait_s_il_manque_un_cote(migrated: Settings) -> None:
-    session_id, event_id = _session_avec_match(migrated)
-    _propose(migrated, session_id, event_id, "safe", "win")
-
-    assert not analysis(migrated).comparable, "rien de joue : il n'y a rien a opposer"
 
 
 def test_l_analyse_expose_la_confiance(migrated: Settings) -> None:
@@ -1890,8 +1657,10 @@ def test_un_echantillon_etale_ne_declenche_aucun_avertissement(
     assert "journée(s) d'analyse" not in client.get("/stats").text
 
 
-def test_le_taux_global_reunit_joue_et_ecarte(migrated: Settings) -> None:
-    """Deduit des deux populations : deux comptages du meme ensemble divergent."""
+def test_le_taux_global_compte_toutes_les_tranchees(migrated: Settings) -> None:
+    """**Un seul comptage depuis le 28/08/2026.** Il etait deduit d'un partage
+    jouees / ecartees garde par `comparable`, qui exigeait au moins une
+    selection jouee — donc jamais rendu sur les 615 lignes de la base."""
     session_id, event_id = _session_avec_match(migrated)
     _joue(migrated, session_id, event_id, "safe", "win")
     _propose(migrated, session_id, event_id, "fun", "loss")
@@ -1899,7 +1668,7 @@ def test_le_taux_global_reunit_joue_et_ecarte(migrated: Settings) -> None:
     report = analysis(migrated)
 
     assert (report.overall.won, report.overall.lost) == (1, 1)
-    assert report.overall.won == report.played.won + report.skipped.won
+    assert report.overall.settled == 2
 
 
 # -- Le « pourquoi » : type d'angle et niveau de source ---------------------
@@ -2942,31 +2711,6 @@ def test_le_journal_d_analyse_recalcule_le_palier_depuis_la_cote_declaree(
     assert [row.key for row in rapport.by_tier] == ["safe"], "recalcule, pas l'emoji"
 
 
-def test_le_journal_de_mise_garde_la_cote_obtenue(migrated: Settings) -> None:
-    """Le palier de la cote **obtenue** y est legitime : le pari a ete pose a ce
-    prix-la. C'est la seule des deux lectures ou une donnee d'execution a sa
-    place."""
-    from myassistantbet.services.coupons import create as create_coupon
-
-    session_id, event_id = _session_avec_match(migrated)
-    pick_id = add_pick(
-        session_id,
-        tier="safe",
-        market="1N2",
-        selection="Lyon",
-        event_id=str(event_id),
-        price="1.45",
-        settings=migrated,
-    )
-    # La cote obtenue tombe dans une autre bande que la cote declaree.
-    set_real_price(pick_id, "2.40", migrated)
-    set_result(pick_id, "win", migrated)
-    create_coupon(session_id, [pick_id], stake="10", settings=migrated)
-
-    assert [row.key for row in stats(migrated).by_tier] == ["ultra_fun"], "cote obtenue"
-    assert [row.key for row in analysis(migrated).by_tier] == ["safe"], "cote declaree"
-
-
 def test_l_ecart_entre_palier_emis_et_recalcule_se_compte(migrated: Settings) -> None:
     """L'emoji cesse d'etre un classement et devient un **signal d'adherence** :
     son ecart au recalcul dit si le modele classe comme l'application classe.
@@ -3075,42 +2819,6 @@ def test_la_confiance_n_entre_pas_dans_le_classement(migrated: Settings) -> None
 
     parametres = set(inspect.signature(tier_for_price).parameters)
     assert parametres == {"price", "settings"}, parametres
-
-
-def test_la_feuille_reclame_la_cote_obtenue_sur_une_cote_de_reference(
-    client: TestClient, migrated: Settings
-) -> None:
-    """Elle ne se releve jamais toute seule — ce serait une integration
-    transactionnelle avec un bookmaker, interdit n°7. Elle est donc reclamee la
-    ou elle manque, et **seulement** la : sur une cote du book principal, il n'y
-    a rien a saisir."""
-    session_id, event_id = _session_avec_match(migrated)
-    add_pick(
-        session_id,
-        tier="fun",
-        market="Hand. jeux",
-        selection="Moutet -2.5",
-        event_id=str(event_id),
-        price="1.92",
-        price_source="reference",
-        settings=migrated,
-    )
-    # **Gouvernee par son propre interrupteur depuis le 28/08/2026**, et plus par
-    # le suivi des paris : cette cote controle le prix enregistre, pas ce qu'on
-    # en fait. Le suivi des paris peut se fermer sans qu'elle bouge.
-    page = client.get(f"/history/{session_id}").text
-    assert "real-price" in page
-    assert 'placeholder="obtenue"' in page
-
-    save_toggle(COUPON_TRACKING, "0", migrated)
-    page = client.get(f"/history/{session_id}").text
-    assert "Moutet" in page, "la page doit rester rendue"
-    assert 'placeholder="obtenue"' in page, "elle ne depend plus du suivi des paris"
-
-    save_toggle(REAL_PRICE_CAPTURE, "0", migrated)
-    page = client.get(f"/history/{session_id}").text
-    assert "Moutet" in page, "la page doit rester rendue"
-    assert 'placeholder="obtenue"' not in page
 
 
 def test_la_saisie_de_la_cote_obtenue_rend_le_fragment(

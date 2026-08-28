@@ -234,7 +234,7 @@ def lot_avec_recul(
     le defaut, lui, les ferme.
     """
     from myassistantbet import db
-    from myassistantbet.services import board, coupons
+    from myassistantbet.services import board
     from myassistantbet.services.history import (
         FEEDBACK_MIN_COMPETITIONS,
         FEEDBACK_MIN_DAYS,
@@ -303,10 +303,6 @@ def lot_avec_recul(
                 (f"2026-07-{1 + rang % FEEDBACK_MIN_DAYS:02d}T12:00:00Z", pick_id),
                 settings=settings,
             )
-            # « Joue » veut dire pose chez le bookmaker, donc rattache a un
-            # coupon. Le marquer a la main ferait passer la fixture sans que le
-            # parcours reel fonctionne.
-            coupons.create(session_id, [pick_id], settings=settings)
             rang += 1
     return session_id
 

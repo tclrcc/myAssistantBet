@@ -1,14 +1,14 @@
 """Le combine comme **objet d'analyse**, jamais comme pari pose.
 
-La page pose deux questions distinctes — ce que valent les selections, ce que
-valent les paris — et un combine produit par le modele appartient sans ambiguite
-a la premiere. S'il devient un pari, c'est un geste fait apres, et qui ne le
-change pas.
+Un combine produit par le modele regroupe des selections ; il ne dit pas ce qui
+a ete pose chez le bookmaker. S'il devient un pari, c'est un geste fait apres, et
+qui ne le change pas. Le mot « joue » n'apparait donc nulle part ici.
 
-D'ou la separation stricte d'avec `coupons` : `coupons.attach()` est le **seul**
-ecrivain de `picks.played`, et le faire passer par la ferait apparaitre comme
-paris poses des combines que personne n'a joues. Le mot « joue » n'apparait donc
-nulle part ici.
+**La separation etait d'abord tenue contre `coupons`, qui n'existe plus** — le
+suivi des paris poses est retire le 28/08/2026, apres avoir porte zero ligne. Ce
+qui reste est la regle elle-meme : un combine n'ecrit aucune des colonnes de
+`history.COLONNES_SANS_LECTEUR`, et un banc le verifie en base plutot que sur
+l'objet, precisement parce que l'objet ne les porte plus.
 
 **Un combine reste rattache a un prompt** (`prompt_id NOT NULL`), et une jambe
 venue d'un autre prompt est refusee. Les selections de deux prompts n'ont jamais

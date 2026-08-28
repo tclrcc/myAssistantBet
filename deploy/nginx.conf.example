@@ -61,9 +61,10 @@ server {
     access_log /var/log/nginx/myassistantbet.access.log;
     error_log  /var/log/nginx/myassistantbet.error.log;
 
-    # Un peu au-dessus de `upload_max_bytes` (5 Mo) : c'est l'application qui
-    # doit refuser une capture trop lourde, avec son message, plutot que nginx
-    # avec un 413 muet.
+    # **Plus aucun televersement depuis le retrait des coupons (28/08/2026)**,
+    # et la borne reste : ce qui passe par ici est un collage de rendu, qui pese
+    # 30 Ko. Six megaoctets laissent la marge sans qu'un 413 muet de nginx
+    # remplace le message de l'application.
     client_max_body_size 6m;
 
     location / {

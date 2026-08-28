@@ -28,7 +28,7 @@ from jinja2 import (
 from ..config import PACKAGE_DIR, Settings, get_settings
 from ..db import connect, utcnow
 from ..providers.oddsapi import SCAN_MARKETS
-from . import changelog, stakes
+from . import changelog
 from .competitions import is_knockout, reads_domestic_aggregates
 from .enrich import markets_for
 from .history import SCALE_VERSION, feedback, in_band
@@ -52,7 +52,7 @@ from .render import (
 )
 from .research import sheet as research_sheet
 from .session import has_started, renderable_events, session_label, started_labels
-from .thresholds import COUPON_TRACKING, SAFE_BANDS, solid_combo_conflict, toggle_of
+from .thresholds import SAFE_BANDS, solid_combo_conflict
 from .thresholds import value_of as threshold
 from .weather import ALERT_MARK
 
@@ -1230,15 +1230,6 @@ def build_prompt(
             # nu — sans quoi quatre rendus du meme jour auraient chacun cru
             # disposer du plafond entier, c'est-a-dire le contournement par
             # decoupage que le plafond par journee existe pour fermer.
-            # **Garde par l'interrupteur du suivi d'argent**, et ce n'est pas
-            # cosmetique : la section pese 592 tokens de cout fixe, et la faire
-            # payer a qui ne mise pas serait exactement ce que les portes du
-            # preambule existent pour eviter.
-            mise=(
-                stakes.brief(moment.strftime("%Y-%m-%d"), settings)
-                if toggle_of(COUPON_TRACKING, settings)
-                else None
-            ),
             # **Les exemples de format se batissent sur les reperes du lot.** Un
             # `M8` sur un lot de sept, ou un `sets: M3=...` sur un M3 de
             # football, ne trompent pas vraiment mais sement un doute a l'endroit

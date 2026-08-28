@@ -537,18 +537,17 @@ def test_la_section_g_ne_se_produit_plus_sur_aucun_lot(
     prompt, pas le module.
     """
     from myassistantbet.services.prompt import build_prompt
-    from myassistantbet.services.thresholds import COUPON_TRACKING, save_toggle
 
     session_id, _ = _lot(isolated_settings, ["Lyon", "Nice"])
+    corps = build_prompt(session_id, settings=isolated_settings).body
 
-    ouvert = build_prompt(session_id, settings=isolated_settings).body
-    save_toggle(COUPON_TRACKING, "0", isolated_settings)
-    ferme = build_prompt(session_id, settings=isolated_settings).body
-
-    for corps, etat in ((ouvert, "suivi ouvert"), (ferme, "suivi ferme")):
-        assert "G. Répartition de mise" not in corps, f"section G rendue, {etat}"
-        assert "BANKROLL DE SESSION" not in corps, f"mention de bankroll rendue, {etat}"
-        assert "mises:" not in corps, f"ligne de report rendue, {etat}"
+    # Plus aucun interrupteur ne la garde depuis le 28/08/2026 : elle etait
+    # conditionnee a `suivi_coupons`, retire avec les coupons. Le banc porte
+    # donc la propriete seule, et prouve d'abord que le prompt est rendu.
+    assert "SESSION D'ANALYSE" in corps
+    assert "G. Répartition de mise" not in corps
+    assert "BANKROLL DE SESSION" not in corps
+    assert "mises:" not in corps
 
 
 def test_l_etat_de_la_journee_lit_la_bankroll_et_ne_projette_rien(
@@ -629,6 +628,13 @@ def test_aucune_fonction_du_module_de_mise_n_est_sans_lecteur() -> None:
             elif isinstance(cible, ast.Name) and interne:
                 appels.add(cible.id)
     orphelines = sorted(publiques - appels)
+    # **Egalite et non inclusion.** La chaine est en pause : sa moitie emission
+    # n'a plus d'appelant depuis le retrait de la section G, et c'est declare.
+    # Comparer par egalite garde les deux sens — une orpheline de plus rougit,
+    # une orpheline qui retrouve un appelant aussi, parce que rouvrir la chaine
+    # est une decision et pas un effet de bord.
+    if orphelines == sorted(stakes.EN_PAUSE_SANS_APPELANT):
+        return
     assert not orphelines, (
         f"Ces fonctions de `stakes` n'ont aucun appelant : {orphelines}. "
         "Une fonction sans lecteur se retire ou reçoit sa surface — c'est la "

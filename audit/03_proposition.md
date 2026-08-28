@@ -470,6 +470,40 @@ se serait compte sous `onefootball.com` d'un cote et sous `arsenal.com` de
 l'autre — **et l'ecart n'aurait jamais fait echouer un test**, les deux lectures
 etant justes chacune de son cote.
 
+### Une fonction renommee laisse son ancien nom dans la prose, et la prose ne compile pas
+
+**Regularite, et non incident : quatrieme occurrence relevee le 28/08/2026.** Le
+code se renomme d'un geste — l'outil suit les appelants, et un appel reste
+correct ou echoue tout de suite. La prose qui nomme la fonction n'a aucun de ces
+deux comportements : elle reste, elle reste **plausible**, et elle designe
+quelque chose qui n'existe plus.
+
+| Ecrit | Ce qui existait |
+| --- | --- |
+| `coupons.attach()` est le seul ecrivain de `picks.played` — `CLAUDE.md` | `coupons.create()` |
+| meme phrase — en-tete de `combos.py` | idem |
+| meme phrase — chapitre du combine, `CLAUDE.md` | idem |
+| `stakes.set_played` ecrit `picks.played` — deduit du **nom** | elle ecrit `mises.montant_joue` |
+
+Les trois premieres sont une seule affirmation recopiee ; la quatrieme est pire
+et vient de la meme famille : un lecteur — moi, en instruisant ce chantier — a
+conclu du **nom** ce qu'il fallait lire dans le corps. Le docstring, lui, disait
+juste : « l'ecriture va dans `mises` et jamais dans `picks` ».
+
+- **Le degat n'est pas l'inexactitude, c'est la confiance.** Une prose qui nomme
+  une fonction se lit comme verifiable, alors qu'elle n'est verifiee par rien. La
+  quatrieme occurrence a failli faire refuser un decoupage juste — « `stakes` et
+  les coupons sont plus enchevetres que ca » — sur un nom.
+- **Ce qui l'attrape est le recensement de source**, pas la relecture :
+  `write_paths.writing_functions(('picks',), updates=True)` rend la liste des
+  ecrivains reels en une seconde, et elle ne contient pas `stakes.set_played`.
+  L'outil existait deja, rendu parametrable le 27/08 pour une autre question.
+- **La regle qui en sort** : une affirmation de prose qui nomme une fonction se
+  verifie **par l'enumeration**, jamais par la lecture du nom ni par le souvenir
+  de l'avoir ecrite. Et apres tout renommage, `grep` sur l'ancien nom — meme
+  corollaire que « compter les copies avant de declarer la correction faite »,
+  applique aux identifiants plutot qu'aux chiffres.
+
 ### La regle d'ecriture, et c'est une regle et non un constat
 
 **Avant d'ecrire une seconde lecture d'une donnee deja lue ailleurs, nommer le
