@@ -6440,6 +6440,20 @@ partagent, sans quoi le banc serait collecte d'un cote et oublie de l'autre.
   ce verrou pour `data/`, `templates/prompts/` et `.venv/`, et pour eux seuls.
 - `backup.py` utilise **`VACUUM INTO`**, jamais une copie de fichier : en mode WAL, copier
   le `.db` seul livrerait une base incomplete.
+- **`Failed with result 'exit-code'` a l'arret n'est pas une panne, et il faut le savoir
+  avant de chercher.** Uvicorn sort en **143** sur `SIGTERM`, ce qui est la facon normale de
+  s'arreter ; systemd n'a pas de vocabulaire pour « termine sur demande » et l'ecrit en
+  echec. Chaque `systemctl restart` laisse donc au journal, dans cet ordre :
+  `Main process exited, code=exited, status=143/n/a`, puis
+  `myassistantbet.service: Failed with result 'exit-code'`, puis un demarrage propre. Un
+  redemarrage sain ressemble ainsi trait pour trait a un plantage.
+  - **Ce qui distingue les deux est ce qui suit**, jamais la ligne elle-meme : un arret
+    demande est precede de `Stopping myassistantbet.service`, et suivi de
+    `Started` puis de `Schema deja a jour`. Une vraie panne n'a pas la premiere.
+  - Meme famille que le test rouge volontaire du garde de cadre : **date et explique, il ne
+    coute rien ; muet, il coute une investigation** — et celle-la se paierait un jour de
+    panne, c'est-a-dire au pire moment. La consigne n'est pas de le faire taire :
+    `SuccessExitStatus=143` masquerait un vrai 143 le jour ou il en arrive un.
 - La rotation ne supprime **jamais la sauvegarde la plus recente**, meme expiree.
 - L'application ecoute uniquement sur `127.0.0.1`. Elle n'a aucune authentification par
   choix : c'est nginx qui la protege. Toute modification du deploiement doit conserver ces

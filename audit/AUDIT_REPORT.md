@@ -652,6 +652,60 @@ correction de texte :
 Rien n'a ete touche : elargir le perimetre en fin de lot rendrait le rejeu des
 quatre defauts illisible.
 
+## C.25 — La reserve « indicatif » d'`Enjeu` tient : porte fermee, mesuree le 28/08/2026
+
+**Resultat negatif, ecrit sous la forme qui empeche de le refaire.** La question
+revient naturellement — une ligne ecrite est lue malgre sa reserve, et le dossier
+a deja paye ce trajet avec le libelle « Non jouable ». Elle est close.
+
+Le fait qui la souleve est reel et plus large qu'un cas de reprise :
+
+| | blocs portant la ligne | dont avec la reserve | part des 1 252 blocs football |
+| --- | ---: | ---: | ---: |
+| `Enjeu` | 358 (28,6 %) | **208 (58,1 %)** | 16,6 % |
+| `Classement` | 885 (70,7 %) | **330 (37,3 %)** | 26,4 % |
+
+Journees concernees : `Enjeu` 1 → 125, 2 → 49, 3 → 27, 4 → 7 ; `Classement`
+1 → 193, 2 → 90, 3 → 30, 4 → 14, 5 → 3. Ce n'est pas un accident de reprise de
+championnat, c'est le regime ordinaire d'une fin d'aout.
+
+**La mesure d'effet dit que la reserve tient.** Sur les blocs qui la portent, la
+prose des selections (`angle_note`, `invalidation`) cite un mot d'enjeu ou de
+classement — relegation, maintien, play-off, montee, podium — dans **9 cas sur
+108, soit 8 %**, contre **22 sur 207 ailleurs, soit 11 %**. Fisher exact
+**p = 0,558**, et la direction est meme legerement inverse de la crainte.
+
+**Mais l'argument decisif n'est pas ce `p`, c'est le cout structurel de
+l'omission.** L'absence d'`Enjeu` **porte deja un sens**, et le preambule
+l'ecrit : « Absente, la competition ne declare rien a cette place — pas une
+equipe sans enjeu ». Omettre la ligne sous un seuil donnerait a cette absence une
+**seconde cause, indiscernable de la premiere** — exactement ce que
+`HERE_NO_MATCH` contre `HERE_NO_INFO` vient de corriger sur `Ici`, reintroduit
+sur la ligne qu'on pretendait assainir.
+
+**Et la regle ne se serait pas etendue a `Classement`.** 33 des 330 lignes
+reservees nomment une **division**, qui est un fait vrai a toute date :
+`_division_fragment` a ete livre le 22/08 precisement parce que « le bloc opposait
+un rang a un silence ». Une regle posee sur `Enjeu` et etendue uniformement a sa
+voisine aurait recasse ce correctif — meme extension uniforme que le rattachement
+`phase_de` a deja refusee.
+
+- **`enjeu_min_journees` reste a 8.** L'abaisser retirerait la reserve sur 34 des
+  208 lignes (journees 3 et 4), c'est-a-dire **affirmerait un classement plus
+  tot** : le sens inverse du probleme souleve.
+- Cout de la reserve, pour memoire : 208 lignes, **5 866 tokens** sur le corpus,
+  28 par ligne, environ 40 par prompt. Ce n'est pas ce qui decide.
+
+Ce qui rouvrirait la question, et rien d'autre : une mesure montrant une analyse
+qui **batit** sur un enjeu reserve — un scenario de motivation adosse a une ligne
+de 1re journee. La colonne pour le voir existe (`angle_note`), et le releve
+ci-dessus est le point de depart.
+
+**Erreur de mesure a signaler, parce qu'elle est de moi et qu'elle est la
+sixieme du dossier** : le premier releve annoncait « 277 sur 358 » et
+« `Classement` 643 fois ». C'etaient des **occurrences**, une par equipe, et non
+des blocs. Le dénominateur contre son auteur, une fois de plus.
+
 ## C.21 — Ce qui reste ouvert et n'a pas ete instruit
 
 - **Phase 4** — le generateur de prompts : variables injectees non utilisees,
