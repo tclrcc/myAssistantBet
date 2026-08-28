@@ -552,6 +552,59 @@ ne depassait. Un lecteur plus faible aurait rendu quatre tours a un qualifie qui
 en a joue trois, et le defaut se serait vu le jour meme. C'est la forme la plus
 couteuse du motif du dossier : la correction en aval masque l'erreur en amont.
 
+### Un controle sur la valeur ne voit pas un defaut sur l'emplacement
+
+**Neuvieme occurrence, le 28/08/2026, et c'est la variante de C.24 :** deux
+mecanismes rendent la meme sortie visible, et rien dans la sortie ne dit lequel
+a joue.
+
+`TierScope.range_line` annonce une borne **et l'endroit ou elle se lit** —
+`501.00 (M3 · Score ex. MT 1:5)` — et c'est sa raison d'etre documentee : une
+borne sans son emplacement oblige a relire tous les blocs, et personne ne le
+fait. Elle porte donc deux affirmations, une valeur et une adresse, sous une
+seule ligne.
+
+Mesure sur les 142 lots archives : **66 lots annoncent une borne basse absente du
+bloc qu'elle nomme, et 61 seulement voient leur valeur changer**. Les cinq
+autres annoncaient **la bonne valeur a la mauvaise adresse** — une cote de meme
+prix existait ailleurs dans le lot, tronquee ici et rendue la.
+
+> **La regle** : quand une sortie affirme une valeur *et* un emplacement, le
+> controle porte sur le couple. Verifier la seule valeur declare sains
+> exactement les cas ou l'adresse ment — et l'adresse est la moitie qui coute,
+> puisque c'est elle qui envoie chercher.
+
+**Le corollaire de mesure est le meme que celui du controle de doublon** : le
+critere juste n'est pas « la borne est-elle la plus haute » mais « la borne
+figure-t-elle dans le bloc qu'elle designe ». Le premier est calculable sans
+regarder le rendu, et c'est ce qui le rend tentant ; il ne repond pas a la
+question posee.
+
+### Le zero d'un controle de parseur vaut autant que le resultat qu'il encadre
+
+**Corollaire du meme rejeu, et il vaut d'etre pose separement.** Le rejeu
+comparait, bloc par bloc, les paliers annonces aux paliers que les cotes rendues
+atteignent. Il rendait deux comptes et non un : les paliers **annonces sans etre
+rendus** — le defaut cherche — et les paliers **rendus sans etre annonces**, qui
+ne peuvent pas exister si la lecture est juste, le rendu etant par construction
+un sous-ensemble de ce que le code lisait.
+
+Le second est sorti a **zero sur 1 194 blocs**, et c'est lui qui autorise a lire
+le premier. Sans ce controle, un parseur qui inventerait des prix rendrait les
+deux comptes non nuls, et rien ne dirait si les 145 blocs designes sont un
+defaut du gabarit ou un defaut de lecture.
+
+> **La regle** : un rejeu sur corpus rend la mesure **et sa contre-mesure** —
+> celle dont la valeur est connue d'avance. Un rejeu qui ne rend que son
+> resultat ne peut pas distinguer un defaut du systeme d'un defaut de son
+> instrument.
+
+Il a servi une seconde fois dans le meme rejeu : la contre-mesure sortait a 43,
+et non a zero, tant que les bandes de cote d'aujourd'hui etaient appliquees a
+des prompts anterieurs a la migration 071. Ce sont les 43 faux positifs que la
+regle des points de rupture evite — et c'est le controle, non la vigilance, qui
+les a nommes.
+
 ### Le motif jumeau : une propriete qui ne peut pas etre fausse
 
 **Deux proprietes ont ete retirees dans ce lot, et pour la meme raison.** Toutes
