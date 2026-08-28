@@ -184,42 +184,87 @@ elles ne disent pas la meme chose. Meme distinction que `Total buts` (buts du
 match) et `Buts marq.` (buts de l'equipe), que le gabarit separe deja
 explicitement.
 
-**Laquelle des grandeurs entre — chacune gagne sa place separement.** Cinq
-candidates, calibrees contre les **deux grandeurs deja en production** sur la
-ligne `Total buts`, sur 508 equipes a >= 10 matchs et 642 paires reelles :
+**Laquelle des grandeurs entre — chacune gagne sa place separement.**
 
-| grandeur | p moyen | part de signal | ecart-type vrai | Newcombe exclut 0 | verdict |
-| --- | ---: | ---: | ---: | ---: | --- |
-| `mene MT` | 0,333 | **44 %** | 0,072 | **14,0 %** | **entre** |
-| *`>2.5` (prod)* | *0,540* | *38 %* | *0,067* | *9,8 %* | *reference haute* |
-| `>1.5 MT` | 0,362 | 27 % | 0,050 | 8,3 % | n'entre pas |
-| `BTTS MT` | 0,201 | 21 % | 0,035 | 6,5 % | **entre** |
-| *`BTTS` (prod)* | *0,547* | *21 %* | *0,044* | *7,2 %* | *reference basse* |
-| `>0.5 MT` | 0,716 | 15 % | 0,033 | 7,2 % | n'entre pas |
-| `fige MT` | 0,202 | 15 % | 0,029 | 5,3 % | n'entre pas |
+La premiere version de cette section calibrait les cinq candidates contre les
+**deux** grandeurs de `Total buts` seules. L'instrument a ensuite ete retourne sur
+**toutes** les lignes de saison deja livrees, et le resultat a change le verdict :
+voir « Le plancher n'etait pas celui que je croyais » juste apres.
 
-- **`mene a la pause` entre sans discussion** : il depasse `>2.5` — la grandeur la
-  mieux etablie du bloc — sur les trois criteres. Il est **orthogonal a tout le
-  reste** (r <= 0,41, et r = 0,02 avec `BTTS MT`), et il vise `MT/FT`, rendu sur
-  la moitie des blocs.
-- **`BTTS MT` entre** : il est exactement au niveau de `BTTS`, deja en production
-  **sur la meme ligne**. Le refuser appliquerait aux nouveaux une barre que les
-  anciens ne passent pas — ce n'est pas un critere, c'est un privilege
-  d'anciennete. Il a un marche dedie (`btts_h1`, 51,7 %) et l'idiome existe deja.
-- **`>1.5 MT` n'entre pas malgre un signal superieur a `BTTS MT`** : r = **0,75**
-  entre les deux, c'est le meme angle. `BTTS MT` a un marche dedie quand `>1.5 MT`
-  partage `totals_h1` avec `>0.5 MT`.
-- **`>0.5 MT` et `fige MT` n'entrent pas** : sous le plancher de production, et
-  `>0.5 MT` est correle 0,52 a `1re MT` deja rendue. `fige MT` n'a de surcroit
-  **aucun marche direct** — il decrit le match et non l'equipe.
+Deux precisions de methode, et la seconde a deplace tous les chiffres :
+
+1. **La variance d'echantillonnage se calcule par unite**, `p_i(1-p_i)/n_i`, et
+   non avec la moyenne globale `p(1-p)/n`. `p(1-p)` etant concave, la seconde
+   surestime le bruit et sous-estime le signal — de 3 points sur `>2.5`, de
+   3 sur `BTTS`. Les chiffres ci-dessous sont ceux de la premiere forme, et ce
+   sont les seuls que ce document porte ;
+2. **la part de signal depend de la fenetre, l'ecart-type vrai non.** Une ligne
+   sur 39 matchs et une ligne sur 10 ne se comparent donc pas sur la part — c'est
+   `sd vrai`, propriete de la population et non de l'echantillon, qui les
+   departage. Les deux sont rendus.
+
+| grandeur | statut | obs/unite | signal | **sd vrai** |
+| --- | --- | ---: | ---: | ---: |
+| `Profil` part 2 sets | *livree, tennis* | 10 | 40 % | *0,119* |
+| `Profil` part tie-break | *livree, tennis* | 10 | 38 % | *0,107* |
+| `Buts marq. >1.5` | *livree* | 39 | 58 % | *0,097* |
+| `Buts pris >1.5` | *livree* | 39 | 53 % | *0,085* |
+| `Buts pris >0.5` | *livree* | 39 | 50 % | *0,075* |
+| `Clean sheet` | *livree* | 39 | 50 % | *0,075* |
+| **`mene MT`** | **candidat** | 39 | **47 %** | **0,075** |
+| `Total buts >2.5` | *livree* | 39 | 41 % | *0,070* |
+| `Buts marq. >0.5` | *livree* | 39 | 47 % | *0,066* |
+| `sans marquer` | *livree* | 39 | 47 % | *0,066* |
+| **`>1.5 MT`** | **candidat** | 39 | **30 %** | **0,053** |
+| `Total buts BTTS` | *livree* | 39 | 24 % | ***0,048 — le plancher*** |
+| `>0.5 MT` | candidat | 39 | 20 % | 0,037 |
+| `BTTS MT` | candidat | 39 | 21 % | 0,036 |
+| `fige MT` | candidat | 39 | 19 % | 0,033 |
+
+#### Le plancher n'etait pas celui que je croyais, et il inverse un arbitrage
+
+**La decomposition n'avait jamais ete appliquee aux lignes deja livrees.** Je
+m'en etais servi pour ecarter `BTTS MT` et `fige MT` — 85 % de leur dispersion
+n'est que du bruit — sans verifier ce que portent les lignes que le bloc rend
+depuis des mois.
+
+Trois resultats, et le troisieme decide :
+
+- **le plancher de la production est `Total buts BTTS`**, a 24 % et
+  `sd = 0,048`. Toutes les autres lignes de saison sont entre 41 et 58 % ;
+- **les lignes de profil et de tennis en portent plus, pas moins.** `Usure`
+  atteint 67 % de signal, `xG` produit 70 % et `xG` concede 63 %. Le plancher
+  n'est donc pas abaisse par elles — c'etait l'hypothese a verifier, et elle est
+  fausse. *(Reserve : les lignes de profil sont mesurees sur 3 observations par
+  equipe, ou l'estimation de la variance intra est instable. A ne pas conclure
+  fermement.)* ;
+- **`>1.5 MT` passe le plancher et `BTTS MT` ne le passe plus.** 0,053 contre
+  0,048 pour l'un, 0,036 pour l'autre.
+
+**L'arbitrage entre les deux s'inverse donc.** Il tenait sur deux points : leur
+correlation de 0,75 — c'est le meme angle, un seul entre — et un marche dedie
+pour `BTTS MT`. Le premier est intact, le second ne departage plus rien
+(`MT O/U` 52,0 % des blocs contre `btts_h1` 51,7 %, et `totals_h1` a 1.5 est la
+ligne la plus servie, 394 relevés). Ce qui reste est la discrimination, et elle
+designe `>1.5 MT`.
+
+> **Entrent : `mene MT` et `>1.5 MT`.** Le premier se place entre `Clean sheet`
+> et `Total buts >2.5`, le second entre `Total buts BTTS` et le plancher. Ils
+> sont **orthogonaux** (r = 0,20), et `>1.5` reprend l'idiome de `Total buts`
+> (`>2.5 29/56`) sans fabriquer un second vocabulaire.
+>
+> **Sortent : `BTTS MT`, `>0.5 MT`, `fige MT`** — les trois sous le plancher que
+> la production elle-meme etablit.
 
 **Cout mesure**, sur des noms d'equipe reels :
 
 | variante | caracteres | tokens | part du bloc de contexte (423 tokens) |
 | --- | ---: | ---: | ---: |
 | `mene` seul | 61 | 16,9 | +4,0 % |
-| **`mene` + `BTTS MT`** | **83** | **23,1** | **+5,5 %** |
+| **`mene` + `>1.5 MT`** | **83** | **23,1** | **+5,5 %** |
 | les trois | 106 | 29,6 | +7,0 % |
+
+`Legia Warszawa mene 13/27, >1.5 7/27 | Śląsk Wrocław mene 6/26, >1.5 12/26`
 
 Plus le mode d'emploi au preambule, paye une fois par lot et garde par
 `context_labels`.
@@ -322,7 +367,7 @@ Le brief demande d'instruire sans conclure d'avance. **Collecte de 183 matchs su
 Ma reserve de l'etape 1 — « un agregat sur cinq matchs est court, la condition 3
 va mordre » — **est fausse sur l'ampleur, et c'etait a mesurer** : le taux
 d'arret se place **entre les deux grandeurs de production**, plus pres de `>2.5`
-(38 %, 9,8 %) que de `BTTS` (21 %, 7,2 %). Le denominateur n'est pas le match
+(41 %) que du plancher `BTTS` (24 %). Le denominateur n'est pas le match
 mais le **tir cadre** — 14 tirs medians sur 3 matchs dans l'echantillon, ~22 en
 regime de production a `PROFILE_LAST` = 5.
 
@@ -581,7 +626,7 @@ serait produire un jugement que rien ne gage.**
 
 ### Ce que le critere **n'ecarte pas**, et pourquoi c'est un resultat
 
-`mene MT` et `BTTS MT` passent les trois conditions de la forme admissible :
+`mene MT` et `>1.5 MT` passent les trois conditions de la forme admissible :
 fenetre et denominateurs ecrits (`6/20`), contraste entre les deux equipes,
 et — pour la forme **juxtaposee** — rien n'est affirme qui doive etre gage.
 
@@ -611,7 +656,7 @@ de lire une colonne.
 
 | # | Chantier | Cat. | Cout | Population | Ce qui le porte |
 | ---: | --- | :---: | --- | ---: | --- |
-| 1 | **Le score a la pause** — `mene MT` + `BTTS MT` | 2 | 0 appel, **23 tokens/bloc** | **99,3 %** | 24 740 lignes en base ; 4 marches sur ~50 % des blocs, **64 % sans aucune ligne MT** ; `mene MT` bat `>2.5` sur les 3 criteres |
+| 1 | **Le score a la pause** — `mene MT` + `>1.5 MT` | 2 | 0 appel, **23 tokens/bloc** | **99,3 %** | 24 740 lignes en base ; 4 marches sur ~50 % des blocs, **64 % sans aucune ligne MT** ; `mene MT` se place entre `Clean sheet` et `>2.5`, `>1.5 MT` au-dessus du plancher |
 | 2 | **Le miroir defensif de `Dom/Ext`** | 2 | 0 appel, **5 tokens** | **91,3 %** | 100 % de couverture ; asymetrie deja reparee sur `Buts marq.`/`Buts pris` et pas ici — §8 |
 | 3 | **Les tirs concedes** sur `Tirs` | 2 | 0 appel, **8 tokens** | **80,7 %** | 3 lignes de profil sur 4 rendent les deux faces ; `shots_on_against` a 98,6 % ; c'est le facteur **independant** du taux d'arret |
 | 4 | **Le niveau des adversaires** | 5 | 0 appel, 2 reductions a elargir | ~82 % de la fenetre | pendant de `Niveau adv.` au tennis ; `Forme 5` traite une victoire sur le dernier comme une victoire sur le premier |
@@ -673,17 +718,28 @@ portent sur une **reprise de championnat**. `Buts marq.`, `Buts pris`,
 octobre. La ligne du n° 1, elle, echappe a ce plafond : elle sort de
 `_history`, qui replie sur la saison precedente.
 
-### 4. La part de signal des lignes de profil deja en production
+### 4. Ce que la decomposition des lignes de profil ne tranche pas encore
 
-La calibration de §B.1 oppose les candidats a `>2.5` et `BTTS`, qui viennent de
-`team_context:season`. Les lignes de profil — `Corners`, `Tirs`, `xG` — sont des
-**moyennes sur 5 matchs** et n'ont pas ete calibrees de la meme facon : leur part
-de signal est inconnue. Si elle etait basse, le plancher d'admission du bloc
-serait plus bas que celui que j'ai employe, et `>1.5 MT` ou `fige MT`
-repasseraient la barre.
+**La mesure a ete faite** — voir « Le plancher n'etait pas celui que je
+croyais » — et elle a inverse un arbitrage. Ce qui reste ouvert est sa partie
+la plus fragile.
 
-Cette mesure demande de reconstituer les valeurs match par match derriere les
-moyennes deja agregees — donc les 183 relevés collectes ici, plus autant.
+Les lignes de **profil** (`Corners`, `Tirs`, `xG`, `Possession`, `Fautes`) sont
+des moyennes sur cinq matchs, et leur charge utile est **deja agregee en base** :
+`context:profile` ne porte plus les valeurs match par match. Leur decomposition
+n'a donc pu se faire que sur les 183 matchs collectes ici, soit **3 observations
+par equipe** — un effectif ou l'estimation de la variance intra est instable.
+
+Les chiffres obtenus (`xG` produit 70 %, `xG` concede 63 %, tirs cadres concedes
+65 %) vont tous dans le meme sens, celui d'un signal eleve, et ils **ne
+descendent donc pas le plancher**. Mais ils ne sont pas assez surs pour servir de
+reference a un candidat futur.
+
+Ce qu'il faudrait : ~10 observations par equipe sur ~100 equipes, soit
+~500 appels `/fixtures/statistics` — ou, sans un appel, **elargir la reduction de
+`context:profile` pour garder les valeurs par match** plutot que leur seule
+moyenne. La seconde voie est un chantier de categorie 5, et elle rendrait la
+mesure disponible en permanence au lieu d'une fois.
 
 ### 5. Ce qu'un facteur ajoute change reellement
 
