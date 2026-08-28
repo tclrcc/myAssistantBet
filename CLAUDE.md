@@ -1762,6 +1762,24 @@ etait produite depuis un lot. Un titre `G.` ne fermait donc aucune section. La
 plage suit le gabarit, et un test compare les deux — une section H ajoutee
 demain se solde par un test rouge et non par un silence.
 
+**Meme famille, sur le montage plutot que sur la cible** : une fixture qui ne
+peut pas atteindre l'etat garde rend le banc vert pour une raison qui n'est pas
+la sienne. Constate le 28/08/2026 — `_lot_de` ne monte aucun marche de score
+exact, donc `exact_scores` y etait toujours faux, et la puce fautive de la
+section D ne se rendait sur **aucun** des bancs qui parcouraient pourtant les
+trois branches de la section. Ils verifiaient tous la bonne section, sur un lot
+qui ne pouvait pas la declencher.
+
+Elle a une soeur, sur l'autre bord : un banc dont la fixture atteint l'etat par
+**plusieurs** chemins passe le jour ou le chemin garde disparait — les trois
+bancs de la divergence d'entraineur montent donc des blocs **denses**, sans quoi
+le dossier s'ouvrirait sur la densite. Meme piege que `_dense("tennis")` sans
+`Ici` ni `Service`.
+
+**La question a se poser sur un montage** : *cette fixture peut-elle atteindre
+l'etat que j'affirme garder, et par ce chemin-la seulement ?* Un « non » a la
+premiere moitie rend le banc muet, un « non » a la seconde le rend complaisant.
+
 ## Un champ dont le nom evoque une date peut etre un entier
 
 **Regle de revue, meme jour, et c'est la soeur de « cherchez l'identifiant ».**
